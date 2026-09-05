@@ -1,0 +1,5 @@
+SOURCE PROJECT: COMPLETE
+TARGET: M5Stack NanoC6 / ESP32-C6FH4 / 4 MB
+DESIRED MERGED OUTPUT: CETELUMA_NanoC6_WiFi_BLE_Bridge.bin @ 0x0000
+
+This workspace currently does not contain an ESP32-C6 RISC-V compiler, Arduino-ESP32 core, PlatformIO, or Arduino CLI, and outbound package installation is blocked. Therefore no compiled binary is included until the project is run through a real ESP32-C6 toolchain. Do not rename source data to .bin; that would not be flashable firmware.
