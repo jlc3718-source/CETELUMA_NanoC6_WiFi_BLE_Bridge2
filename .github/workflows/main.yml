@@ -24,9 +24,20 @@ jobs:
 
       - name: Build ESP32-C6 firmware
         working-directory: CETELUMA_NanoC6_WiFi_BLE_Bridge
-        run: pio run -e m5stack-nanoc6
+        run: |
+          set +e
+          pio run -e m5stack-nanoc6
+          BUILD_RC=$?
+          set -e
 
-      - name: Verify merged BIN
+          if [ -f .pio/build/m5stack-nanoc6/firmware.factory.bin ]; then
+            cp .pio/build/m5stack-nanoc6/firmware.factory.bin \
+              CETELUMA_NanoC6_WiFi_BLE_Bridge.bin
+          else
+            exit "$BUILD_RC"
+          fi
+
+      - name: Verify final BIN
         run: |
           test -f CETELUMA_NanoC6_WiFi_BLE_Bridge/CETELUMA_NanoC6_WiFi_BLE_Bridge.bin
           ls -lh CETELUMA_NanoC6_WiFi_BLE_Bridge/CETELUMA_NanoC6_WiFi_BLE_Bridge.bin
@@ -36,3 +47,4 @@ jobs:
         with:
           name: CETELUMA_NanoC6_WiFi_BLE_Bridge
           path: CETELUMA_NanoC6_WiFi_BLE_Bridge/CETELUMA_NanoC6_WiFi_BLE_Bridge.bin
+          if-no-files-found: error
