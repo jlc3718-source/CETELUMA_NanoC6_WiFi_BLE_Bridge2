@@ -20,7 +20,7 @@ jobs:
         run: pip install platformio
 
       - name: Extract firmware project
-        run: unzip -o CETELUMA_NanoC6_WiFi_BLE_Bridge_Source.zip
+        run: unzip -o CETELUMA_NanoC6_WiFi_BLE_Bridge_Source_FIXED.zip
 
       - name: Build ESP32-C6 firmware
         working-directory: CETELUMA_NanoC6_WiFi_BLE_Bridge
