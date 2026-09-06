@@ -12,6 +12,8 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_USER_HOME: /home/runner/.android
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -27,8 +29,15 @@ jobs:
       - name: Restore stable Android debug signing identity
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: craumer-light-control-debug-signing-v1
+          path: /home/runner/.android/debug.keystore
+          key: craumer-light-control-debug-signing-v2
+      - name: Ensure stable Android debug signing identity exists
+        run: |
+          mkdir -p /home/runner/.android
+          if [ ! -f /home/runner/.android/debug.keystore ]; then
+            keytool -genkeypair -keystore /home/runner/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Craumer,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          test -f /home/runner/.android/debug.keystore
       - name: Extract Craumer base project
         run: |
           rm -rf build_source
