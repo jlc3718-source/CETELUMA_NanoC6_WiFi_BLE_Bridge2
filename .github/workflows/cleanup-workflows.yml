@@ -1,0 +1,36 @@
+name: One-Time Workflow Cleanup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/cleanup-workflows.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove obsolete workflows
+        run: |
+          git rm -f --ignore-unmatch             .github/workflows/main.yml             .github/workflows/compile-anderson-home.yml             .github/workflows/build-anderson-home-app.yml             .github/workflows/build-anderson-home-app-v2.yml             .github/workflows/build-anderson-home-app-v3.yml             .github/workflows/cleanup-workflows.yml
+
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo "Nothing to clean."
+          else
+            git commit -m "Clean up obsolete GitHub workflows"
+            git push origin HEAD:main
+          fi
