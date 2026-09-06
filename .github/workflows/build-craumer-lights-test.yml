@@ -64,6 +64,8 @@ jobs:
         run: python craumer-lights-test/v16_mega_domain_probe.py
       - name: Probe Eufy Mega direct inventory routes
         run: python craumer-lights-test/v17_mega_inventory_probe.py
+      - name: Apply raw inventory diagnostic mapping
+        run: python craumer-lights-test/v18_raw_inventory_mapping.py
       - name: Apply permanent app name and login persistence
         run: python craumer-lights-test/app_name_patch.py
       - name: Build Android debug APK
