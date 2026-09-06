@@ -1,0 +1,52 @@
+name: Compile Anderson Home NanoC6 V3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Anderson_Home_Complete_Project.zip'
+      - '.github/workflows/compile-anderson-home-v3.yml'
+
+jobs:
+  build-firmware:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Extract Anderson Home project
+        run: |
+          rm -rf build_source
+          mkdir build_source
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+
+      - name: Configure NanoC6 large app partition
+        run: |
+          FW=build_source/Anderson_Home_Complete_Project/firmware/platformio.ini
+          sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW"
+          grep -n 'board_.*flash\|partitions' "$FW" || true
+
+      - name: Compile NanoC6 firmware
+        run: |
+          pio run             -d build_source/Anderson_Home_Complete_Project/firmware             -e m5stack-nanoc6
+
+      - name: Rename firmware
+        run: |
+          cp build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6/firmware.bin              Anderson_Home_NanoC6_firmware.bin
+
+      - name: Upload firmware.bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-NanoC6-firmware
+          path: Anderson_Home_NanoC6_firmware.bin
+          if-no-files-found: error
