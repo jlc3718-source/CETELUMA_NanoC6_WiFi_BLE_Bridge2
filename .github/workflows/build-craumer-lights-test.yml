@@ -40,10 +40,10 @@ jobs:
         working-directory: build_source/Craumer_Lights_Eufy_Test_v2/android
         run: gradle --no-daemon assembleDebug
       - name: Copy APK
-        run: cp build_source/Craumer_Lights_Eufy_Test_v2/android/app/build/outputs/apk/debug/app-debug.apk Craumer_Lights_Eufy_Test_v9.apk
+        run: cp build_source/Craumer_Lights_Eufy_Test_v2/android/app/build/outputs/apk/debug/app-debug.apk Craumer_Light_Control.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Lights-Eufy-Test-v9
-          path: Craumer_Lights_Eufy_Test_v9.apk
+          name: Craumer-Light-Control
+          path: Craumer_Light_Control.apk
           if-no-files-found: error
