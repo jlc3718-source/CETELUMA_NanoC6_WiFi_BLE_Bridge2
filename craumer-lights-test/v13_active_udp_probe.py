@@ -3,6 +3,8 @@ from pathlib import Path
 root=Path('build_source/Craumer_Lights_Eufy_Test_v2')
 p=root/'android/app/src/main/java/com/craumer/lights/testv6/MainActivity.kt'
 s=p.read_text()
+if 'import java.net.InetAddress\n' not in s:
+    s=s.replace('import java.net.InetSocketAddress\n','import java.net.InetSocketAddress\nimport java.net.InetAddress\n',1)
 helper='''        private fun activeUdpCraumerProbe(): List<String> {
             val targets = listOf(
                 "Front House Lights" to "192.168.68.81",
