@@ -4,13 +4,11 @@ root=Path('build_source/Craumer_Lights_Eufy_Test_v2')
 p=root/'android/app/src/main/java/com/craumer/lights/testv6/MainActivity.kt'
 s=p.read_text()
 
-# v16 deliberately does not add BLE. It probes the documented reverse-engineered
-# Eufy Security cloud inventory routes with the existing authenticated HTTP helper.
-# No control commands are sent.
-call_anchor='''            try {
-                notes += "Craumer BLE identity scan:"
-'''
-call='''            try {
+# v16 is cloud-only. No BLE code or permissions are added.
+# It probes read-only Eufy cloud inventory routes using the existing authenticated helper.
+anchor='''            notes += "Eufy-side device-like records inspected: $eufyRecordCount"\n'''
+insert='''            notes += "Eufy-side device-like records inspected: $eufyRecordCount"
+            try {
                 notes += "Craumer encrypted-cloud inventory probe:"
                 val cloudPaths = listOf(
                     "v1/house/list",
@@ -38,12 +36,9 @@ call='''            try {
             } catch (e: Exception) {
                 notes += "Encrypted-cloud inventory probe failed: ${e.message}"
             }
-
-            try {
-                notes += "Craumer BLE identity scan:"
 '''
-if call_anchor not in s:
-    raise SystemExit('v16 call anchor missing')
-s=s.replace(call_anchor,call,1)
+if anchor not in s:
+    raise SystemExit('v16 summary anchor missing')
+s=s.replace(anchor,insert,1)
 p.write_text(s)
-print('Applied v16 Eufy cloud inventory probe (read-only)')
+print('Applied v16 Eufy cloud inventory probe (read-only, no BLE)')
