@@ -1,0 +1,52 @@
+name: Build Anderson Home Android App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Anderson_Home_Complete_Project.zip'
+      - '.github/workflows/build-anderson-home-app.yml'
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Extract Anderson Home project
+        run: |
+          rm -rf build_source
+          mkdir build_source
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
+
+      - name: Build Android debug APK
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Copy APK
+        run: |
+          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/apk/debug/app-debug.apk \
+             Anderson_Home_Controller.apk
+          ls -lh Anderson_Home_Controller.apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-Android-App
+          path: Anderson_Home_Controller.apk
+          if-no-files-found: error
