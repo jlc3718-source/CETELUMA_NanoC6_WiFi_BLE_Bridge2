@@ -49,6 +49,8 @@ jobs:
         run: python craumer-lights-test/v12_udp_discovery_probe.py
       - name: Probe exact targets with UDP
         run: python craumer-lights-test/v13_active_udp_probe.py
+      - name: Probe exact Eufy light identity
+        run: python craumer-lights-test/v14_exact_identity_probe.py
       - name: Apply permanent app name and login persistence
         run: python craumer-lights-test/app_name_patch.py
       - name: Build Android debug APK
