@@ -12,7 +12,6 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,14 +34,16 @@ jobs:
         run: python craumer-lights-test/v7_patch.py
       - name: Apply Craumer v8 discovery
         run: python craumer-lights-test/v8_patch.py
+      - name: Apply Craumer v9 LAN discovery
+        run: python craumer-lights-test/v9_patch.py
       - name: Build Android debug APK
         working-directory: build_source/Craumer_Lights_Eufy_Test_v2/android
         run: gradle --no-daemon assembleDebug
       - name: Copy APK
-        run: cp build_source/Craumer_Lights_Eufy_Test_v2/android/app/build/outputs/apk/debug/app-debug.apk Craumer_Lights_Eufy_Test_v8.apk
+        run: cp build_source/Craumer_Lights_Eufy_Test_v2/android/app/build/outputs/apk/debug/app-debug.apk Craumer_Lights_Eufy_Test_v9.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Lights-Eufy-Test-v8
-          path: Craumer_Lights_Eufy_Test_v8.apk
+          name: Craumer-Lights-Eufy-Test-v9
+          path: Craumer_Lights_Eufy_Test_v9.apk
           if-no-files-found: error
