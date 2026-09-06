@@ -1,4 +1,4 @@
-name: Build Craumer Lights Eufy Test
+name: Build Craumer Light Control
 
 on:
   workflow_dispatch:
@@ -36,6 +36,8 @@ jobs:
         run: python craumer-lights-test/v8_patch.py
       - name: Apply Craumer v9 LAN discovery
         run: python craumer-lights-test/v9_patch.py
+      - name: Apply permanent app name
+        run: python craumer-lights-test/app_name_patch.py
       - name: Build Android debug APK
         working-directory: build_source/Craumer_Lights_Eufy_Test_v2/android
         run: gradle --no-daemon assembleDebug
