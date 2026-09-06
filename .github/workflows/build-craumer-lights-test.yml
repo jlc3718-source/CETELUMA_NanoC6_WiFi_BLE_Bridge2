@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - 'Craumer_Lights_Eufy_Test_v2.zip'
+      - 'craumer-lights-test/**'
       - '.github/workflows/build-craumer-lights-test.yml'
 
 jobs:
@@ -27,12 +28,15 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Extract Craumer test project
+      - name: Extract Craumer base project
         run: |
           rm -rf build_source
           mkdir build_source
           unzip -q Craumer_Lights_Eufy_Test_v2.zip -d build_source
           test -f build_source/Craumer_Lights_Eufy_Test_v2/android/settings.gradle.kts
+
+      - name: Apply current Craumer revision
+        run: python craumer-lights-test/v7_patch.py
 
       - name: Build Android debug APK
         working-directory: build_source/Craumer_Lights_Eufy_Test_v2/android
@@ -40,12 +44,12 @@ jobs:
 
       - name: Copy APK
         run: |
-          cp build_source/Craumer_Lights_Eufy_Test_v2/android/app/build/outputs/apk/debug/app-debug.apk Craumer_Lights_Eufy_Test.apk
-          ls -lh Craumer_Lights_Eufy_Test.apk
+          cp build_source/Craumer_Lights_Eufy_Test_v2/android/app/build/outputs/apk/debug/app-debug.apk Craumer_Lights_Eufy_Test_v7.apk
+          ls -lh Craumer_Lights_Eufy_Test_v7.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Lights-Eufy-Test
-          path: Craumer_Lights_Eufy_Test.apk
+          name: Craumer-Lights-Eufy-Test-v7
+          path: Craumer_Lights_Eufy_Test_v7.apk
           if-no-files-found: error
