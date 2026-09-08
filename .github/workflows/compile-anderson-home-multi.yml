@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'Anderson_Home_MultiController_4FX_Source.zip'
+      - 'multi_overlay/**'
       - '.github/workflows/compile-anderson-home-multi.yml'
 
 jobs:
@@ -23,24 +23,38 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Extract final multi-controller source
+      - name: Extract base and apply multi-controller overlay
         run: |
           rm -rf build_source
           mkdir build_source
-          unzip -q Anderson_Home_MultiController_4FX_Source.zip -d build_source
-          test -d build_source/src
-          test -d build_source/include
-          sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' build_source/platformio.ini
-          grep -n 'board_.*flash\|partitions' build_source/platformio.ini || true
-          grep -n '<option>Jump</option><option>Breath</option><option>Strobe</option><option>Gradient</option>' build_source/include/WebUI.h
-          ! grep -q 'Effect::Solid\|Effect::Fade\|Effect::Pulse\|Effect::Rainbow\|Effect::Chase\|Effect::Twinkle\|Effect::Meteor\|Effect::CandyCane\|Effect::Fire\|Effect::Water' build_source/src/EventCatalog.cpp
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          FW=build_source/Anderson_Home_Complete_Project/firmware
+          test -d "$FW/src"
+          test -d "$FW/include"
+          cp -v multi_overlay/include/BleController.h "$FW/include/BleController.h"
+          cp -v multi_overlay/include/Types.h "$FW/include/Types.h"
+          cp -v multi_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
+          cp -v multi_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
+          cp -v multi_overlay/src/main.cpp "$FW/src/main.cpp"
+          python multi_overlay/patch_webui.py "$FW/include/WebUI.h"
+          python multi_overlay/reconfigure_effects.py "$FW"
+          sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
+          grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
+
+          # Build must expose only the requested effect set and all catalog effects must be remapped.
+          grep -q '<option>Jump</option><option>Breath</option><option>Strobe</option><option>Gradient</option>' "$FW/include/WebUI.h"
+          ! grep -q 'Effect::Solid\|Effect::Fade\|Effect::Pulse\|Effect::Rainbow\|Effect::Chase\|Effect::Twinkle\|Effect::Meteor\|Effect::CandyCane\|Effect::Fire\|Effect::Water' "$FW/src/EventCatalog.cpp"
+          grep -q 'bleAddress2' "$FW/include/Types.h"
+          grep -q 'setTarget' "$FW/include/BleController.h"
+          grep -q 'FFF0' "$FW/src/BleController.cpp"
+          grep -q 'FFF3' "$FW/src/BleController.cpp"
 
       - name: Compile NanoC6 firmware
-        run: pio run -d build_source -e m5stack-nanoc6
+        run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
 
       - name: Export firmware images
         run: |
-          BUILD=build_source/.pio/build/m5stack-nanoc6
+          BUILD=build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
           cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_4FX_ALL_IN_ONE.bin
