@@ -31,10 +31,51 @@ jobs:
           FW=build_source/Anderson_Home_Complete_Project/firmware
           test -d "$FW/src"
           test -d "$FW/include"
-          cp -v multi_overlay/include/* "$FW/include/"
-          cp -v multi_overlay/src/* "$FW/src/"
+          cp -v multi_overlay/include/BleController.h "$FW/include/BleController.h"
+          cp -v multi_overlay/include/Types.h "$FW/include/Types.h"
+          cp -v multi_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
+          cp -v multi_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
+          cp -v multi_overlay/src/main.cpp "$FW/src/main.cpp"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
+
+      - name: Add multi-controller controls to Anderson Home UI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('build_source/Anderson_Home_Complete_Project/firmware/include/WebUI.h')
+          s=p.read_text()
+
+          replacements=[]
+          replacements.append((
+          '.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}.wraprow{flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}.label{font-size:13px;margin:11px 0 6px}',
+          '.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}.wraprow{flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}.grid3{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}.label{font-size:13px;margin:11px 0 6px}'
+          ))
+          replacements.append((
+          '''      <strong>Bluetooth Light Controller</strong><div class="sub">The NanoC6 scans for the existing LED BLE controller and bridges commands to it.</div>
+      <div class="card" style="margin-top:10px"><div id="bleStatus" class="small">Not connected</div><div id="bleMeta" class="sub">Protocol: Auto</div></div>
+      <div class="label">Protocol</div><select id="bleProtocol" class="field"><option value="0">Auto detect</option><option value="1">LEDBLE (7E…EF)</option><option value="2">RGBIC/SPI (7B…BF)</option><option value="3">RGBIC/SPI shifted</option></select>''',
+          '''      <strong>Bluetooth Light Controllers</strong><div class="sub">Add up to two controllers. Schedules and events always control both; manual control can target All, A, or B.</div>
+      <div class="card" style="margin-top:10px"><div id="bleStatus" class="small">Not connected</div><div id="bleMeta" class="sub">Protocol: Auto</div><div id="selectedControllers" class="bleList" style="margin-top:8px"></div><div class="grid3" style="margin-top:8px"><button id="targetAll" class="btn primary">All Lights</button><button id="targetA" class="btn">A</button><button id="targetB" class="btn">B</button></div></div>
+      <div class="label">Protocol</div><select id="bleProtocol" class="field"><option value="0">Auto detect</option><option value="1">LEDBLE (7E…EF)</option><option value="2">RGBIC/SPI (7B…BF)</option><option value="3">RGBIC/SPI shifted</option><option value="4">ELK-BLEDDM / Lotus Lantern</option></select>'''
+          ))
+          replacements.append((
+          '''function applyState(s){if(!s)return;power=s.power??power;brightness=s.brightness??brightness;speed=s.speed??speed;$('masterPower').checked=power;$('brightness').value=brightness;$('homeBrightness').value=brightness;$('brightVal').textContent=brightness+'%';$('homeBrightVal').textContent=brightness+'%';$('speed').value=speed;$('speedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1]||'Normal';if(s.running)setRunning(s.running.name,s.running.colors,s.running.effect);$('scheduleWindow').textContent=s.scheduleWindow||$('scheduleWindow').textContent;$('nextEvent').textContent=s.nextEvent||'—';if(s.wifi){$('currentSsid').textContent=s.wifi.ssid||'Not connected';$('wifiMeta').textContent=`Signal: ${s.wifi.rssi??'—'} dBm • IP: ${s.wifi.ip||'—'}`}$('bleStatus').textContent=s.ble?.connected?`Connected: ${s.ble.name||s.ble.address}`:'Not connected';$('bleMeta').textContent=`Protocol: ${s.ble?.protocol||'Auto'}`;}''',
+          '''function applyState(s){if(!s)return;power=s.power??power;brightness=s.brightness??brightness;speed=s.speed??speed;$('masterPower').checked=power;$('brightness').value=brightness;$('homeBrightness').value=brightness;$('brightVal').textContent=brightness+'%';$('homeBrightVal').textContent=brightness+'%';$('speed').value=speed;$('speedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1]||'Normal';if(s.running)setRunning(s.running.name,s.running.colors,s.running.effect);$('scheduleWindow').textContent=s.scheduleWindow||$('scheduleWindow').textContent;$('nextEvent').textContent=s.nextEvent||'—';if(s.wifi){$('currentSsid').textContent=s.wifi.ssid||'Not connected';$('wifiMeta').textContent=`Signal: ${s.wifi.rssi??'—'} dBm • IP: ${s.wifi.ip||'—'}`}
+const bc=s.ble?.connectedCount||0;$('bleStatus').textContent=bc?`Connected: ${bc} controller${bc===1?'':'s'}`:'Not connected';$('bleMeta').textContent=`Protocol: ${s.ble?.protocol||'Auto'} • Manual target: ${['All','A','B'][s.ble?.target||0]}`;const sc=$('selectedControllers');sc.innerHTML='';(s.ble?.controllers||[]).forEach(c=>{const r=document.createElement('div');r.className='card bleDevice';r.innerHTML=`<div><div class="small"><strong>${c.slot===0?'A':'B'} • ${c.name||c.address}</strong></div><div class="sub">${c.connected?'Connected':'Saved / reconnecting'} • ${c.address}</div></div>`;const x=document.createElement('button');x.className='btn';x.textContent='Remove';x.onclick=()=>post('/api/ble/remove',{slot:c.slot}).then(loadState);r.appendChild(x);sc.appendChild(r)});['targetAll','targetA','targetB'].forEach((id,i)=>$(id).classList.toggle('primary',(s.ble?.target||0)===i));}'''
+          ))
+          replacements.append((
+          '''$('scanBle').addEventListener('click',async()=>{status('Scanning Bluetooth…');try{const r=await api('/api/ble/scan');const box=$('bleList');box.innerHTML='';(r.devices||[]).forEach(d=>{const row=document.createElement('div');row.className='card bleDevice';row.innerHTML=`<div><div class="small"><strong>${d.name||'BLE controller'}</strong></div><div class="sub">${d.address} • ${d.rssi} dBm</div></div>`;const b=document.createElement('button');b.className='btn';b.textContent='Use';b.addEventListener('click',()=>post('/api/ble/select',{address:d.address,protocol:+$('bleProtocol').value}).then(loadState));row.appendChild(b);box.appendChild(row)});status(`${(r.devices||[]).length} controllers found.`)}catch(e){status(API_MODE?'Bluetooth scan failed.':'Preview mode — BLE scanning requires the NanoC6.') }});'''.replace(".') }}", ".')}"),
+          '''$('scanBle').addEventListener('click',async()=>{status('Scanning Bluetooth…');try{const r=await api('/api/ble/scan');const box=$('bleList');box.innerHTML='';(r.devices||[]).forEach(d=>{const row=document.createElement('div');row.className='card bleDevice';row.innerHTML=`<div><div class="small"><strong>${d.name||'BLE controller'}</strong></div><div class="sub">${d.address} • ${d.rssi} dBm</div></div>`;const b=document.createElement('button');b.className='btn';b.textContent='Add / Use';b.addEventListener('click',()=>post('/api/ble/select',{address:d.address,protocol:+$('bleProtocol').value}).then(loadState));row.appendChild(b);box.appendChild(row)});status(`${(r.devices||[]).length} controllers found.`)}catch(e){status(API_MODE?'Bluetooth scan failed.':'Preview mode — BLE scanning requires the NanoC6.')}});
+$('targetAll').addEventListener('click',()=>post('/api/ble/target',{target:0}).then(loadState));$('targetA').addEventListener('click',()=>post('/api/ble/target',{target:1}).then(loadState));$('targetB').addEventListener('click',()=>post('/api/ble/target',{target:2}).then(loadState));'''
+          ))
+
+          for old,new in replacements:
+              if old not in s:
+                  raise SystemExit('Expected WebUI block not found; refusing blind patch: '+old[:80])
+              s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
 
       - name: Compile NanoC6 firmware
         run: |
