@@ -12,19 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Extract and locate source
+      - name: Extract firmware source
         run: |
           rm -rf inspect_source source_snapshot
-          mkdir inspect_source source_snapshot
+          mkdir inspect_source
           unzip -q Anderson_Home_Complete_Project.zip -d inspect_source
-          echo '--- files ---'
-          find inspect_source -maxdepth 6 -type f | sort
-          find inspect_source -type f \( -name 'BleController.h' -o -name 'BleController.cpp' -o -name 'main.cpp' -o -name 'SettingsStore.h' -o -name 'SettingsStore.cpp' -o -name 'platformio.ini' \) -exec cp {} source_snapshot/ \;
-          echo '--- snapshot ---'
-          ls -la source_snapshot
+          FW=$(find inspect_source -type f -name platformio.ini -printf '%h\n' | head -1)
+          test -n "$FW"
+          echo "Firmware root: $FW"
+          cp -a "$FW" source_snapshot
+          find source_snapshot -maxdepth 3 -type f | sort
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Source-Snapshot
+          name: Anderson-Complete-Firmware-Source
           path: source_snapshot/
           if-no-files-found: error
