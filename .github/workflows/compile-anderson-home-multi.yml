@@ -1,0 +1,60 @@
+name: Compile Anderson Home Multi Controller
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'multi_overlay/**'
+      - '.github/workflows/compile-anderson-home-multi.yml'
+
+jobs:
+  build-firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Extract base project and apply multi-controller overlay
+        run: |
+          rm -rf build_source
+          mkdir build_source
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          FW=build_source/Anderson_Home_Complete_Project/firmware
+          test -d "$FW/src"
+          test -d "$FW/include"
+          cp -v multi_overlay/include/* "$FW/include/"
+          cp -v multi_overlay/src/* "$FW/src/"
+          sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
+          grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
+
+      - name: Compile NanoC6 firmware
+        run: |
+          pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
+
+      - name: Export firmware images
+        run: |
+          BUILD=build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6
+          test -s "$BUILD/firmware.factory.bin"
+          test -s "$BUILD/firmware.bin"
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_APP_ONLY.bin
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-NanoC6-MULTI-CONTROLLER
+          path: |
+            Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_MULTI_APP_ONLY.bin
+          if-no-files-found: error
