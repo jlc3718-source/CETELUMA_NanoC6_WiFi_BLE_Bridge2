@@ -5,14 +5,13 @@ root=Path(sys.argv[1])
 main=root/'src/main.cpp'
 web=root/'include/WebUI.h'
 
-# --- Firmware: accept session token from custom header, query parameter, or cookie ---
+# --- Firmware: accept session token from query parameter, custom header, or cookie ---
 s=main.read_text()
-old='''static uint8_t requestRole(){\n  String t=server.hasHeader("X-Anderson-Session")?server.header("X-Anderson-Session"):sessionCookie();t.trim();if(!t.length())return 0;if(adminSessionToken.length()&&t==adminSessionToken)return 2;if(userSessionToken.length()&&t==userSessionToken)return 1;return 0;\n}'''
+old='''static uint8_t requestRole(){\n  String t=sessionCookie();if(!t.length())return 0;if(adminSessionToken.length()&&t==adminSessionToken)return 2;if(userSessionToken.length()&&t==userSessionToken)return 1;return 0;\n}'''
 new='''static uint8_t requestRole(){\n  String t;if(server.hasArg("ahsess"))t=server.arg("ahsess");else if(server.hasHeader("X-Anderson-Session"))t=server.header("X-Anderson-Session");else t=sessionCookie();t.trim();if(!t.length())return 0;if(adminSessionToken.length()&&t==adminSessionToken)return 2;if(userSessionToken.length()&&t==userSessionToken)return 1;return 0;\n}'''
 if old not in s: raise SystemExit('requestRole anchor missing')
 s=s.replace(old,new,1)
 
-# Login response returns the opaque token so WebView/browser can persist it itself.
 old='''JsonDocument out;out["ok"]=true;out["name"]=isJason?"Jason":"Shirley";out["role"]=isJason?"admin":"user";String json;serializeJson(out,json);sendJson(json);'''
 new='''JsonDocument out;out["ok"]=true;out["name"]=isJason?"Jason":"Shirley";out["role"]=isJason?"admin":"user";out["token"]=token;String json;serializeJson(out,json);sendJson(json);'''
 if old not in s: raise SystemExit('login response anchor missing')
@@ -24,7 +23,7 @@ if old not in s: raise SystemExit('collectHeaders anchor missing')
 s=s.replace(old,new,1)
 main.write_text(s)
 
-# --- UI: persist token in localStorage and send it redundantly in query + header.
+# --- UI: persist token in localStorage and attach it to every API request ---
 s=web.read_text()
 old="let ahLoginUser='';"
 new=r'''const ahNativeFetch=window.fetch.bind(window);
@@ -48,22 +47,20 @@ let ahLoginUser='';'''
 if old not in s: raise SystemExit('login script anchor missing')
 s=s.replace(old,new,1)
 
-# Do not reload after a successful PIN. Enter the authenticated UI immediately.
-old="""const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ahLoginUser,pin}),cache:'no-store'});if(!r.ok){const t=await r.text();throw new Error(t||('HTTP '+r.status))}const q=await r.json();if(q.token)localStorage.setItem('ahSessionToken',q.token);location.reload()"""
+old="""const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ahLoginUser,pin}),cache:'no-store'});if(!r.ok){const t=await r.text();throw new Error(t||('HTTP '+r.status))}location.reload()"""
 new="""const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ahLoginUser,pin}),cache:'no-store'});if(!r.ok){const t=await r.text();throw new Error(t||('HTTP '+r.status))}const q=await r.json();if(q.token)localStorage.setItem('ahSessionToken',q.token);if(typeof applyRole==='function')applyRole({signedIn:true,role:q.role,name:q.name});document.getElementById('loginOverlay').style.display='none';if(typeof refreshAfterLogin==='function')await refreshAfterLogin()"""
 if old not in s: raise SystemExit('PIN login fetch anchor missing')
 s=s.replace(old,new,1)
 
-old="$('logoutUser').addEventListener('click',async()=>{try{await post('/api/logout',{})}catch(e){}localStorage.removeItem('ahSessionToken');location.reload()});"
+old="$('logoutUser').addEventListener('click',async()=>{try{await post('/api/logout',{})}catch(e){}location.reload()});"
 new="$('logoutUser').addEventListener('click',async()=>{try{await post('/api/logout',{})}catch(e){}localStorage.removeItem('ahSessionToken');location.reload()});"
 if old not in s: raise SystemExit('logout handler anchor missing')
-# Keep logout line unchanged intentionally; anchor confirms prior patch was applied.
+s=s.replace(old,new,1)
 
-# Firmware upload uses XHR. Put token in both query and header for WebView compatibility.
-old="x.open('POST','/api/update');const ahTok=localStorage.getItem('ahSessionToken')||'';if(ahTok)x.setRequestHeader('X-Anderson-Session',ahTok);$('uploadFirmware').disabled=true;"
+old="x.open('POST','/api/update');$('uploadFirmware').disabled=true;"
 new="const ahTok=localStorage.getItem('ahSessionToken')||'';x.open('POST','/api/update'+(ahTok?('?ahsess='+encodeURIComponent(ahTok)):''));if(ahTok)x.setRequestHeader('X-Anderson-Session',ahTok);$('uploadFirmware').disabled=true;"
 if old not in s: raise SystemExit('OTA XHR anchor missing')
 s=s.replace(old,new,1)
 
 web.write_text(s)
-print('Made PIN session persistence robust for browser and Android WebView')
+print('Fixed PIN session persistence and eliminated login reload loop')
