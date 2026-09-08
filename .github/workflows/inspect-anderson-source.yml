@@ -1,0 +1,32 @@
+name: Inspect Anderson Source
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/inspect-anderson-source.yml'
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source
+        run: |
+          rm -rf inspect_source
+          mkdir inspect_source
+          unzip -q Anderson_Home_Complete_Project.zip -d inspect_source
+          mkdir source_snapshot
+          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/BleController.h source_snapshot/
+          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/BleController.cpp source_snapshot/
+          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/main.cpp source_snapshot/
+          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.h source_snapshot/
+          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp source_snapshot/
+          cp inspect_source/Anderson_Home_Complete_Project/firmware/platformio.ini source_snapshot/
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Source-Snapshot
+          path: source_snapshot/
+          if-no-files-found: error
