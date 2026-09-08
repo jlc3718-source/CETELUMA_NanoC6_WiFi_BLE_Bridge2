@@ -1,4 +1,4 @@
-name: Build Anderson Home Android App V5
+name: Build Anderson Home Android App V6
 
 on:
   workflow_dispatch:
@@ -33,6 +33,21 @@ jobs:
           path: ~/.android/debug.keystore
           key: anderson-home-android-signing-v1
 
+      - name: Create signing key on first build
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Anderson Home,O=Anderson Home,C=US"
+          fi
+          test -s "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+
       - name: Extract Anderson Home project
         run: |
           rm -rf build_source
@@ -56,7 +71,7 @@ jobs:
           s = p.read_text()
           run = int(os.environ['GITHUB_RUN_NUMBER'])
           s = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {1000 + run}', s)
-          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "1.2.{run}"', s)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "1.3.{run}"', s)
           p.write_text(s)
           PY
           cat app/build.gradle.kts
@@ -65,10 +80,11 @@ jobs:
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: gradle --no-daemon assembleDebug
 
-      - name: Verify persistent signature and copy APK
+      - name: Verify signature and copy APK
         run: |
-          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | grep -E 'SHA256:|Alias name:'
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
           cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/apk/debug/app-debug.apk Anderson_Home_Controller_Updateable.apk
+          test -s Anderson_Home_Controller_Updateable.apk
           ls -lh Anderson_Home_Controller_Updateable.apk
 
       - name: Upload Android APK
