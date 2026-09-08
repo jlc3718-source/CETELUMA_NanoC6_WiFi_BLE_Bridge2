@@ -39,10 +39,11 @@ jobs:
           python multi_overlay/patch_webui.py "$FW/include/WebUI.h"
           python multi_overlay/reconfigure_effects.py "$FW"
           python multi_overlay/fix_preview_events.py "$FW/include/WebUI.h"
+          python multi_overlay/edit_events_defaults.py "$FW"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
 
-          # Build must expose only the requested effect set and all catalog effects must be remapped.
+          # Guardrails for the complete Anderson Home feature set.
           grep -q '<option>Jump</option><option>Breath</option><option>Strobe</option><option>Gradient</option>' "$FW/include/WebUI.h"
           ! grep -q 'Effect::Solid\|Effect::Fade\|Effect::Pulse\|Effect::Rainbow\|Effect::Chase\|Effect::Twinkle\|Effect::Meteor\|Effect::CandyCane\|Effect::Fire\|Effect::Water' "$FW/src/EventCatalog.cpp"
           grep -q 'bleAddress2' "$FW/include/Types.h"
@@ -51,6 +52,11 @@ jobs:
           grep -q 'FFF3' "$FW/src/BleController.cpp"
           grep -q 'speedInterval(level)' "$FW/include/WebUI.h"
           grep -q 'previewing on all light strings' "$FW/include/WebUI.h"
+          grep -q 'Edit' "$FW/include/WebUI.h"
+          grep -q 'Save Event' "$FW/include/WebUI.h"
+          grep -q 'brightness=100,speedLevel=1' "$FW/src/main.cpp"
+          grep -q 'loadEventOverrides' "$FW/src/main.cpp"
+          grep -q 'applyEventOverrideByIndex' "$FW/src/Scheduler.cpp"
 
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
@@ -60,16 +66,16 @@ jobs:
           BUILD=build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_4FX_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_4FX_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_MULTI_4FX_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_MULTI_4FX_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_APP_ONLY.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-MULTI-4FX-PREVIEW-FIX
+          name: Anderson-Home-NanoC6-MULTI-4FX-EDITABLE-EVENTS
           path: |
-            Anderson_Home_NanoC6_MULTI_4FX_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_MULTI_4FX_APP_ONLY.bin
+            Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_MULTI_4FX_EDITABLE_EVENTS_APP_ONLY.bin
           if-no-files-found: error
