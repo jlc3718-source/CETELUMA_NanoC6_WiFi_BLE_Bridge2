@@ -58,22 +58,36 @@ jobs:
           s = s.replace(old_begin,new_begin)
 
           old_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();sc->setActiveScan(true);sc->setInterval(90);sc->setWindow(60);sc->start(ms,false);NimBLEScanResults results=sc->getResults();\n  for(int i=0;i<results.getCount();i++){const NimBLEAdvertisedDevice* d=results.getDevice(i);String n=d->getName().c_str();String u=n;u.toUpperCase();if(u.indexOf("LED")>=0 || u.indexOf("RGB")>=0){out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});}}\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});sc->clearResults();return out;'''
-          new_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();\n  sc->setActiveScan(true);\n  sc->setInterval(80);\n  sc->setWindow(40);\n  // NimBLE-Arduino 2.x blocking scan, used only on explicit user request.\n  NimBLEScanResults results=sc->getResults(ms,false);\n  for(int i=0;i<results.getCount();i++){\n    const NimBLEAdvertisedDevice* d=results.getDevice(i);\n    String n=d->getName().c_str();\n    if(!n.length()) n="Unnamed BLE";\n    out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});\n  }\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});\n  sc->clearResults();\n  return out;'''
+          new_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();\n  sc->setActiveScan(true);\n  sc->setInterval(80);\n  sc->setWindow(40);\n  // NimBLE-Arduino 2.x blocking scan, used only on explicit user request.\n  NimBLEScanResults results=sc->getResults(ms,false);\n  for(int i=0;i<results.getCount();i++){\n    const NimBLEAdvertisedDevice* d=results.getDevice(i);\n    String n=d->getName().c_str();\n    if(!n.length()) n="Unnamed BLE";\n    out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});\n  }\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});\n  // Keep the latest results cached so selection can retain the advertised name.\n  return out;'''
           if old_scan not in s:
               raise SystemExit('Expected original BLE scan implementation not found; refusing blind patch')
-          p.write_text(s.replace(old_scan,new_scan))
+          s = s.replace(old_scan,new_scan)
+
+          old_select = '''bool BleController::selectAndConnect(const String& addr,uint8_t p){protocol=p;if(cfg){cfg->bleAddress=addr;cfg->bleProtocol=p;}return connectAddress(addr);}'''
+          new_select = '''bool BleController::selectAndConnect(const String& addr,uint8_t p){\n  String advertisedName;\n#ifndef MOCK_BLE\n  NimBLEScanResults cached=NimBLEDevice::getScan()->getResults();\n  for(int i=0;i<cached.getCount();i++){\n    const NimBLEAdvertisedDevice* d=cached.getDevice(i);\n    String a=d->getAddress().toString().c_str();\n    if(a.equalsIgnoreCase(addr)){advertisedName=d->getName().c_str();break;}\n  }\n#endif\n  uint8_t selected=p;\n  if(selected==0 && advertisedName.length()) selected=detectProtocol(advertisedName);\n  protocol=selected;\n  bool ok=connectAddress(addr);\n  if(ok){\n    if(advertisedName.length()) deviceName=advertisedName;\n    if(cfg){cfg->bleAddress=addr;cfg->bleProtocol=protocol;}\n  }\n  return ok;\n}'''
+          if old_select not in s:
+              raise SystemExit('Expected BLE select implementation not found; refusing blind patch')
+          p.write_text(s.replace(old_select,new_select))
 
           m = Path('build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp')
           ms = m.read_text()
-          old_route = 'auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
-          new_route = 'auto found=ble.scan(2500);JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
-          if old_route not in ms:
+          old_route_scan = 'auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
+          new_route_scan = 'auto found=ble.scan(2500);JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
+          if old_route_scan not in ms:
               raise SystemExit('Expected BLE scan route not found; refusing blind patch')
-          m.write_text(ms.replace(old_route,new_route))
+          ms = ms.replace(old_route_scan,new_route_scan)
+
+          old_route_select = '''JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);auto&s=store.get();s.bleAddress=addr;s.bleProtocol=p;store.saveAll();if(ok)applyRunning(true);sendJson(stateJson(),ok?200:500);'''
+          new_route_select = '''JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);if(ok){store.saveAll();applyRunning(true);}sendJson(stateJson(),ok?200:500);'''
+          if old_route_select not in ms:
+              raise SystemExit('Expected BLE select route not found; refusing blind patch')
+          m.write_text(ms.replace(old_route_select,new_route_select))
           PY
           BASE=build_source/Anderson_Home_Complete_Project/firmware/src
           grep -n -A 18 'BleController::begin' "$BASE/BleController.cpp"
           grep -n -A 26 'BleController::scan' "$BASE/BleController.cpp"
+          grep -n -A 28 'BleController::selectAndConnect' "$BASE/BleController.cpp"
+          grep -n -A 4 'api/ble/select' "$BASE/main.cpp"
 
       - name: Configure NanoC6 large app partition
         run: |
@@ -98,7 +112,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-SAFE-MANUAL-BLE
+          name: Anderson-Home-NanoC6-BLE-CONTROL-FIX
           path: |
             Anderson_Home_NanoC6_ALL_IN_ONE.bin
             Anderson_Home_NanoC6_app_only.bin
