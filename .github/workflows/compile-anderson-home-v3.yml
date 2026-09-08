@@ -30,6 +30,16 @@ jobs:
           mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
 
+      - name: Inspect BLE scan implementation
+        run: |
+          BASE=build_source/Anderson_Home_Complete_Project/firmware/src
+          echo '--- BleController.h ---'
+          sed -n '1,260p' "$BASE/BleController.h" || true
+          echo '--- BleController.cpp ---'
+          sed -n '1,360p' "$BASE/BleController.cpp" || true
+          echo '--- main.cpp BLE routes/setup ---'
+          grep -n -C 15 -E 'api/ble|ble\.begin|ble\.scan|selectAndConnect|NimBLE|BLE' "$BASE/main.cpp" || true
+
       - name: Fix Wi-Fi scan in setup mode
         run: |
           python - <<'PY'
