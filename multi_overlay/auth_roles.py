@@ -14,10 +14,8 @@ anchor='static bool timeValid(){return time(nullptr)>1700000000;}\n'
 helpers=r'''
 
 // PIN-authenticated role separation. 0=signed out, 1=Shirley/user, 2=Jason/admin.
-// The public repository intentionally contains placeholders only. The release BINs
-// are patched after CI so the real default PINs never appear in GitHub source/logs.
-static const char* JASON_PIN_SEED="JPN0000";
-static const char* SHIRLEY_PIN_SEED="SPN0000";
+static const char* JASON_PIN_SEED="JPN7788";
+static const char* SHIRLEY_PIN_SEED="SPN0904";
 static String adminSessionToken,userSessionToken;
 static uint8_t loginFailures=0;static uint32_t loginLockUntil=0;
 
