@@ -38,6 +38,7 @@ jobs:
           cp -v multi_overlay/src/main.cpp "$FW/src/main.cpp"
           python multi_overlay/patch_webui.py "$FW/include/WebUI.h"
           python multi_overlay/reconfigure_effects.py "$FW"
+          python multi_overlay/fix_preview_events.py "$FW/include/WebUI.h"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
 
@@ -48,6 +49,8 @@ jobs:
           grep -q 'setTarget' "$FW/include/BleController.h"
           grep -q 'FFF0' "$FW/src/BleController.cpp"
           grep -q 'FFF3' "$FW/src/BleController.cpp"
+          grep -q 'speedInterval(level)' "$FW/include/WebUI.h"
+          grep -q 'previewing on all light strings' "$FW/include/WebUI.h"
 
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
@@ -65,7 +68,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-MULTI-4FX
+          name: Anderson-Home-NanoC6-MULTI-4FX-PREVIEW-FIX
           path: |
             Anderson_Home_NanoC6_MULTI_4FX_ALL_IN_ONE.bin
             Anderson_Home_NanoC6_MULTI_4FX_APP_ONLY.bin
