@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - 'Anderson_Home_Complete_Project.zip'
+      - 'anderson_multi_overlay.zip'
       - '.github/workflows/compile-anderson-home-v3.yml'
 
 jobs:
@@ -30,121 +31,14 @@ jobs:
           mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
 
-      - name: Fix Wi-Fi scan in setup mode
+      - name: Apply multi-controller overlay
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp')
-          s = p.read_text()
-          old = '''  server.on("/api/wifi/scan",HTTP_GET,[]{\n    int n=WiFi.scanNetworks(false,true);JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();for(int i=0;i<n;i++){JsonObject x=a.add<JsonObject>();x["ssid"]=WiFi.SSID(i);x["rssi"]=WiFi.RSSI(i);}WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);\n  });'''
-          new = '''  server.on("/api/wifi/scan",HTTP_GET,[]{\n    if(setupAP) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);\n    WiFi.setSleep(false);\n    WiFi.scanDelete();\n    delay(150);\n    int n=WiFi.scanNetworks(false,true,false,500);\n    JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();\n    if(n>0){\n      for(int i=0;i<n;i++){\n        String ssid=WiFi.SSID(i);\n        if(!ssid.length()) continue;\n        bool duplicate=false;\n        for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}\n        if(duplicate) continue;\n        JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);\n      }\n    }\n    WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);\n  });'''
-          if old not in s:
-              raise SystemExit('Expected Wi-Fi scan handler not found; refusing blind patch')
-          p.write_text(s.replace(old,new))
-          PY
-
-      - name: Make BLE discovery safe and manual
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          p = Path('build_source/Anderson_Home_Complete_Project/firmware/src/BleController.cpp')
-          s = p.read_text()
-
-          old_begin = '''  NimBLEDevice::init("AndersonHome-Bridge");\n  NimBLEDevice::setPower(3);\n  if(cfg->bleAddress.length()) connectAddress(cfg->bleAddress);\n  else {\n    auto found=scan(3000);\n    if(!found.empty()) selectAndConnect(found[0].address,cfg->bleProtocol);\n  }'''
-          new_begin = '''  NimBLEDevice::init("AndersonHome-Bridge");\n  NimBLEDevice::setPower(3);\n  // Do not scan automatically during boot. Bring Wi-Fi/web UI up first.\n  if(cfg->bleAddress.length()) connectAddress(cfg->bleAddress);'''
-          if old_begin not in s:
-              raise SystemExit('Expected BLE begin implementation not found; refusing blind patch')
-          s = s.replace(old_begin,new_begin)
-
-          old_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();sc->setActiveScan(true);sc->setInterval(90);sc->setWindow(60);sc->start(ms,false);NimBLEScanResults results=sc->getResults();\n  for(int i=0;i<results.getCount();i++){const NimBLEAdvertisedDevice* d=results.getDevice(i);String n=d->getName().c_str();String u=n;u.toUpperCase();if(u.indexOf("LED")>=0 || u.indexOf("RGB")>=0){out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});}}\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});sc->clearResults();return out;'''
-          new_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();\n  sc->setActiveScan(true);\n  sc->setInterval(80);\n  sc->setWindow(40);\n  NimBLEScanResults results=sc->getResults(ms,false);\n  for(int i=0;i<results.getCount();i++){\n    const NimBLEAdvertisedDevice* d=results.getDevice(i);\n    String n=d->getName().c_str();\n    if(!n.length()) n="Unnamed BLE";\n    out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});\n  }\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});\n  // Do not clear results here: selection uses the cached advertised name.\n  return out;'''
-          if old_scan not in s:
-              raise SystemExit('Expected original BLE scan implementation not found; refusing blind patch')
-          s = s.replace(old_scan,new_scan)
-
-          old_select = '''bool BleController::selectAndConnect(const String& addr,uint8_t p){protocol=p;if(cfg){cfg->bleAddress=addr;cfg->bleProtocol=p;}return connectAddress(addr);}'''
-          new_select = '''bool BleController::selectAndConnect(const String& addr,uint8_t p){\n  String advertisedName;\n#ifndef MOCK_BLE\n  NimBLEScanResults cached=NimBLEDevice::getScan()->getResults();\n  for(int i=0;i<cached.getCount();i++){\n    const NimBLEAdvertisedDevice* d=cached.getDevice(i);\n    String a=d->getAddress().toString().c_str();\n    if(a.equalsIgnoreCase(addr)){advertisedName=d->getName().c_str();break;}\n  }\n#endif\n  uint8_t selected=p;\n  if(selected==0 && advertisedName.length()) selected=detectProtocol(advertisedName);\n  protocol=selected;\n  bool ok=connectAddress(addr);\n  if(ok){\n    if(advertisedName.length()) deviceName=advertisedName;\n    if(cfg){cfg->bleAddress=addr;cfg->bleProtocol=protocol;}\n  }\n  return ok;\n}'''
-          if old_select not in s:
-              raise SystemExit('Expected BLE select implementation not found; refusing blind patch')
-          p.write_text(s.replace(old_select,new_select))
-
-          m = Path('build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp')
-          ms = m.read_text()
-          old_route_scan = 'auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
-          new_route_scan = 'auto found=ble.scan(2500);JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
-          if old_route_scan not in ms:
-              raise SystemExit('Expected BLE scan route not found; refusing blind patch')
-          ms = ms.replace(old_route_scan,new_route_scan)
-
-          old_route_select = '''JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);auto&s=store.get();s.bleAddress=addr;s.bleProtocol=p;store.saveAll();if(ok)applyRunning(true);sendJson(stateJson(),ok?200:500);'''
-          new_route_select = '''JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);if(ok){store.saveAll();applyRunning(true);}sendJson(stateJson(),ok?200:500);'''
-          if old_route_select not in ms:
-              raise SystemExit('Expected BLE select route not found; refusing blind patch')
-          m.write_text(ms.replace(old_route_select,new_route_select))
-          PY
-
-      - name: Add ELK-BLEDDM Lotus Lantern protocol
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('build_source/Anderson_Home_Complete_Project/firmware/src/BleController.cpp')
-          s = p.read_text()
-
-          old = '''String BleController::protocolName() const{uint8_t p=protocol;if(p==0)p=detectProtocol(deviceName);if(p==1)return "LEDBLE A";if(p==2)return "RGBIC B";if(p==3)return "RGBIC B shifted";return "Auto";}\nuint8_t BleController::detectProtocol(const String& n) const{String u=n;u.toUpperCase();if(u.startsWith("LEDCAR-02")||u.startsWith("LEDDMX-02")||u.startsWith("LEDDMX-04"))return 3;if(u.startsWith("LEDCAR-01")||u.startsWith("LEDDMX"))return 2;return 1;}'''
-          new = '''String BleController::protocolName() const{uint8_t p=protocol;if(p==0)p=detectProtocol(deviceName);if(p==1)return "LEDBLE A";if(p==2)return "RGBIC B";if(p==3)return "RGBIC B shifted";if(p==4)return "ELK-BLEDDM / Lotus Lantern";return "Auto";}\nuint8_t BleController::detectProtocol(const String& n) const{String u=n;u.toUpperCase();if(u.startsWith("ELK-BLEDDM")||u.startsWith("ELK-BLEDOM")||u.startsWith("ELK-"))return 4;if(u.startsWith("LEDCAR-02")||u.startsWith("LEDDMX-02")||u.startsWith("LEDDMX-04"))return 3;if(u.startsWith("LEDCAR-01")||u.startsWith("LEDDMX"))return 2;return 1;}'''
-          if old not in s:
-              raise SystemExit('Protocol detection block not found')
-          s = s.replace(old,new)
-
-          old = '''  NimBLERemoteService* svc = client->getService("FFE0");\n  if (!svc) { disconnect(); return false; }\n  chr = svc->getCharacteristic("FFE1");\n  if (!chr) { disconnect(); return false; }'''
-          new = '''  NimBLERemoteService* svc = nullptr;\n  if(protocol==4){\n    // ELK-BLEDDM / Lotus Lantern: normal UUID pair is FFF0/FFF3.\n    svc = client->getService("FFF0");\n    if(svc) chr = svc->getCharacteristic("FFF3");\n    // Some ELK variants use the alternate FFE5/FFE9 pair.\n    if(!chr){svc = client->getService("FFE5");if(svc) chr = svc->getCharacteristic("FFE9");}\n  } else {\n    svc = client->getService("FFE0");\n    if(svc) chr = svc->getCharacteristic("FFE1");\n  }\n  if (!svc || !chr) { disconnect(); return false; }'''
-          if old not in s:
-              raise SystemExit('GATT service block not found')
-          s = s.replace(old,new)
-
-          old = '''  if(!connected())return false;return chr->writeValue(data,len,true);'''
-          new = '''  if(!connected())return false;\n  // FFF3/FFE9 on ELK controllers is normally write-without-response.\n  return chr->writeValue(data,len,protocol==4?false:true);'''
-          if old not in s:
-              raise SystemExit('writeFrame block not found')
-          s = s.replace(old,new)
-
-          old = '''void BleController::setPower(bool on){uint8_t p=protocol?protocol:detectProtocol(deviceName);uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x04,(uint8_t)(on?1:0),0xFF,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x04,(uint8_t)(on?1:0),0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x04,(uint8_t)(on?1:0),0xFF,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          new = '''void BleController::setPower(bool on){uint8_t p=protocol?protocol:detectProtocol(deviceName);uint8_t f[9];if(p==4){uint8_t x[9]={0x7E,0x04,0x04,(uint8_t)(on?0xF0:0x00),0x00,(uint8_t)(on?0x01:0x00),0xFF,0x00,0xEF};memcpy(f,x,9);}else if(p==1){uint8_t x[9]={0x7E,0xFF,0x04,(uint8_t)(on?1:0),0xFF,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x04,(uint8_t)(on?1:0),0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x04,(uint8_t)(on?1:0),0xFF,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          if old not in s:
-              raise SystemExit('setPower not found')
-          s = s.replace(old,new)
-
-          old = '''void BleController::setColor(uint32_t c){uint8_t p=protocol?protocol:detectProtocol(deviceName),R=r8(c),G=g8(c),B=b8(c);uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x05,0x03,R,G,B,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x07,R,G,B,0x00,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x07,R,G,B,0x00,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          new = '''void BleController::setColor(uint32_t c){uint8_t p=protocol?protocol:detectProtocol(deviceName),R=r8(c),G=g8(c),B=b8(c);uint8_t f[9];if(p==4){uint8_t x[9]={0x7E,0x07,0x05,0x03,R,G,B,0x10,0xEF};memcpy(f,x,9);}else if(p==1){uint8_t x[9]={0x7E,0xFF,0x05,0x03,R,G,B,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x07,R,G,B,0x00,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x07,R,G,B,0x00,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          if old not in s:
-              raise SystemExit('setColor not found')
-          s = s.replace(old,new)
-
-          old = '''void BleController::setBrightness(uint8_t B){B=constrain(B,0,100);uint8_t p=protocol?protocol:detectProtocol(deviceName);uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x01,B,0x00,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x01,(uint8_t)(B*32/100),B,0x01,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x01,B,0x00,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          new = '''void BleController::setBrightness(uint8_t B){B=constrain(B,0,100);uint8_t p=protocol?protocol:detectProtocol(deviceName);uint8_t f[9];if(p==4){uint8_t x[9]={0x7E,0x04,0x01,B,0x00,0x00,0x00,0x00,0xEF};memcpy(f,x,9);}else if(p==1){uint8_t x[9]={0x7E,0xFF,0x01,B,0x00,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x01,(uint8_t)(B*32/100),B,0x01,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x01,B,0x00,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          if old not in s:
-              raise SystemExit('setBrightness not found')
-          s = s.replace(old,new)
-
-          old = '''void BleController::setSpeed(uint8_t S){S=constrain(S,0,100);uint8_t p=protocol?protocol:detectProtocol(deviceName);uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x02,S,0x00,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x02,S,0x00,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x02,S,0x00,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          new = '''void BleController::setSpeed(uint8_t S){S=constrain(S,0,100);uint8_t p=protocol?protocol:detectProtocol(deviceName);if(p==4)return;uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x02,S,0x00,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x02,S,0x00,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x02,S,0x00,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          if old not in s:
-              raise SystemExit('setSpeed not found')
-          s = s.replace(old,new)
-
-          old = '''void BleController::setMode(uint8_t M){uint8_t p=protocol?protocol:detectProtocol(deviceName);uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x03,M,0x03,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x03,M,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x03,M,0xFF,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          new = '''void BleController::setMode(uint8_t M){uint8_t p=protocol?protocol:detectProtocol(deviceName);if(p==4)return;uint8_t f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x03,M,0x03,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x03,M,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x03,M,0xFF,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeFrame(f,9);}'''
-          if old not in s:
-              raise SystemExit('setMode not found')
-          s = s.replace(old,new)
-
-          p.write_text(s)
-          PY
-          BASE=build_source/Anderson_Home_Complete_Project/firmware/src
-          grep -n -A 8 'detectProtocol' "$BASE/BleController.cpp"
-          grep -n -A 34 'connectAddress' "$BASE/BleController.cpp"
-          grep -n 'setPower\|setColor\|setBrightness\|setSpeed\|setMode' "$BASE/BleController.cpp"
+          FW=build_source/Anderson_Home_Complete_Project/firmware
+          unzip -oq anderson_multi_overlay.zip -d "$FW"
+          test -s "$FW/src/BleController.cpp"
+          test -s "$FW/include/BleController.h"
+          test -s "$FW/include/WebUI.h"
+          grep -n 'bleAddress2\|ELK-BLEDDM' "$FW/include/Types.h" "$FW/src/BleController.cpp" | head -20
 
       - name: Configure NanoC6 large app partition
         run: |
@@ -161,16 +55,16 @@ jobs:
           BUILD=build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_app_only.bin
-          sha256sum Anderson_Home_NanoC6_ALL_IN_ONE.bin Anderson_Home_NanoC6_app_only.bin
-          ls -lh Anderson_Home_NanoC6_ALL_IN_ONE.bin Anderson_Home_NanoC6_app_only.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_app_only.bin
+          sha256sum Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_app_only.bin
+          ls -lh Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_app_only.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-ELK-BLEDDM
+          name: Anderson-Home-NanoC6-MULTI-CONTROLLER
           path: |
-            Anderson_Home_NanoC6_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_app_only.bin
+            Anderson_Home_NanoC6_MULTI_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_MULTI_app_only.bin
           if-no-files-found: error
