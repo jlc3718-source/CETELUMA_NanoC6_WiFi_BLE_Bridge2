@@ -1,8 +1,8 @@
 #include "SettingsStore.h"
 void SettingsStore::begin(){
   prefs.begin("anderson",false);
-  s.ssid=prefs.getString("ssid","");
-  s.password=prefs.getString("pass","");
+  s.ssid=prefs.getString("ssid","Anderson");
+  s.password=prefs.getString("pass","HarleyD5");
   s.tz=prefs.getString("tz","EST5EDT,M3.2.0,M11.1.0");
   s.onMinutes=prefs.getUShort("on",17*60); s.offMinutes=prefs.getUShort("off",23*60);
   s.leadDays=prefs.getUChar("lead",2); s.trailDays=prefs.getUChar("trail",0); s.overlap=prefs.getUChar("overlap",0);
