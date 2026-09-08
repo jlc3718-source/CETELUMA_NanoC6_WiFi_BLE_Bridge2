@@ -1,0 +1,179 @@
+name: Build Anderson Home App V8 DDNS Only
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-anderson-home-app-v8-ddns-only.yml'
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore persistent Anderson signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: anderson-home-android-signing-v1
+
+      - name: Require existing Anderson signing key
+        run: |
+          test -s "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+
+      - name: Extract Anderson Home project
+        run: |
+          rm -rf build_source
+          mkdir build_source
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
+
+      - name: Install DDNS-only MainActivity
+        run: |
+          cat > build_source/Anderson_Home_Complete_Project/android/app/src/main/java/com/andersonhome/controller/MainActivity.kt <<'KOTLIN'
+          package com.andersonhome.controller
+
+          import android.graphics.Bitmap
+          import android.os.Bundle
+          import android.view.View
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceError
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebResourceResponse
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var web: WebView
+              private lateinit var status: TextView
+              private var mainFrameLoadFailed = false
+
+              private val controllerUrl = "http://anderson101.tplinkdns.com/"
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  web = findViewById(R.id.web)
+                  status = findViewById(R.id.status)
+
+                  web.settings.javaScriptEnabled = true
+                  web.settings.domStorageEnabled = true
+                  web.webChromeClient = WebChromeClient()
+
+                  web.webViewClient = object : WebViewClient() {
+                      override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                          mainFrameLoadFailed = false
+                          status.text = "Connecting to Anderson Home…"
+                      }
+
+                      override fun onReceivedError(
+                          view: WebView?,
+                          request: WebResourceRequest?,
+                          error: WebResourceError?
+                      ) {
+                          if (request?.isForMainFrame == true) {
+                              mainFrameLoadFailed = true
+                              status.text = "Anderson Home unavailable"
+                          }
+                      }
+
+                      override fun onReceivedHttpError(
+                          view: WebView?,
+                          request: WebResourceRequest?,
+                          errorResponse: WebResourceResponse?
+                      ) {
+                          if (request?.isForMainFrame == true && (errorResponse?.statusCode ?: 0) >= 400) {
+                              mainFrameLoadFailed = true
+                              status.text = "Anderson Home unavailable"
+                          }
+                      }
+
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          if (!mainFrameLoadFailed && !url.isNullOrBlank()) {
+                              status.text = "Connected"
+                          }
+                      }
+                  }
+
+                  findViewById<Button>(R.id.retry).setOnClickListener {
+                      loadController()
+                  }
+
+                  // DDNS-only build: no local/setup fallback.
+                  findViewById<Button>(R.id.setup).visibility = View.GONE
+
+                  loadController()
+              }
+
+              private fun loadController() {
+                  mainFrameLoadFailed = false
+                  status.text = "Connecting to Anderson Home…"
+                  web.loadUrl(controllerUrl)
+              }
+
+              @Deprecated("Deprecated in Java")
+              override fun onBackPressed() {
+                  if (web.canGoBack()) web.goBack() else super.onBackPressed()
+              }
+          }
+          KOTLIN
+
+      - name: Configure Android build and version
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: |
+          printf '%s\n' \
+            'android.useAndroidX=true' \
+            'android.enableJetifier=true' \
+            'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+            > gradle.properties
+          sed -i '/buildFeatures { viewBinding = false }/a\    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }' app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          p = Path('app/build.gradle.kts')
+          s = p.read_text()
+          run = int(os.environ['GITHUB_RUN_NUMBER'])
+          s = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {30000 + run}', s)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "3.0.{run}"', s)
+          p.write_text(s)
+          PY
+          cat app/build.gradle.kts
+
+      - name: Build Android update APK
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Verify and copy APK
+        run: |
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/apk/debug/app-debug.apk Anderson_Home_Controller_DDNS_Only.apk
+          test -s Anderson_Home_Controller_DDNS_Only.apk
+          sha256sum Anderson_Home_Controller_DDNS_Only.apk
+          ls -lh Anderson_Home_Controller_DDNS_Only.apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-DDNS-Only-APK
+          path: Anderson_Home_Controller_DDNS_Only.apk
+          if-no-files-found: error
