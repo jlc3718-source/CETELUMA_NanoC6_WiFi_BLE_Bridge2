@@ -34,7 +34,7 @@ if state not in s: raise SystemExit('state route not found')
 s=s.replace(state,login,1)
 
 s=s.replace('server.on("/api/resume",HTTP_POST,[]{manualOverride=false;', 'server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;',1)
-s=s.replace('server.on("/api/control",HTTP_POST,[]{\n    JsonDocument d;', 'server.on("/api/control",HTTP_POST,[]{\n    if(!requireUser())return;JsonDocument d;',1)
+s=s.replace('server.on("/api/control",HTTP_POST,[]{\n    JsonDocument d;', 'server.on("/api/control",HTTP_POST,[]{\n    if(!requireUser())return;if(requestRole()==1)ble.setTarget(0);JsonDocument d;',1)
 s=s.replace('server.on("/api/events",HTTP_GET,[]{\n    int year=', 'server.on("/api/events",HTTP_GET,[]{\n    if(!requireUser())return;int year=',1)
 s=s.replace('server.on("/api/favorites",HTTP_GET,[]{\n    JsonDocument d;', 'server.on("/api/favorites",HTTP_GET,[]{\n    if(!requireUser())return;JsonDocument d;',1)
 
