@@ -1,4 +1,4 @@
-name: Build Anderson Home Android App V4
+name: Build Anderson Home Android App V5
 
 on:
   workflow_dispatch:
@@ -27,6 +27,12 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Restore persistent Anderson signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: anderson-home-android-signing-v1
+
       - name: Extract Anderson Home project
         run: |
           rm -rf build_source
@@ -34,7 +40,7 @@ jobs:
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
           test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
 
-      - name: Configure AndroidX and Java 17
+      - name: Configure Android build and version
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: |
           printf '%s\n' \
@@ -43,22 +49,31 @@ jobs:
             'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
             > gradle.properties
           sed -i '/buildFeatures { viewBinding = false }/a\    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }' app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          p = Path('app/build.gradle.kts')
+          s = p.read_text()
+          run = int(os.environ['GITHUB_RUN_NUMBER'])
+          s = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {1000 + run}', s)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "1.2.{run}"', s)
+          p.write_text(s)
+          PY
           cat app/build.gradle.kts
 
       - name: Build Android debug APK
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: gradle --no-daemon assembleDebug
 
-      - name: Copy APK
+      - name: Verify persistent signature and copy APK
         run: |
-          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/apk/debug/app-debug.apk Anderson_Home_Controller.apk
-          ls -lh Anderson_Home_Controller.apk
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | grep -E 'SHA256:|Alias name:'
+          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/apk/debug/app-debug.apk Anderson_Home_Controller_Updateable.apk
+          ls -lh Anderson_Home_Controller_Updateable.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-Android-App
-          path: Anderson_Home_Controller.apk
+          name: Anderson-Home-Android-App-Updateable
+          path: Anderson_Home_Controller_Updateable.apk
           if-no-files-found: error
-
-# Build requested 2026-09-08
