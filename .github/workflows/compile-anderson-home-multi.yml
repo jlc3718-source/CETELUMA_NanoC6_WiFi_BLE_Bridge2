@@ -1,4 +1,4 @@
-name: Compile Anderson Home Multi Controller 4FX
+name: Compile Anderson Home Multi Controller 4FX OTA
 
 on:
   workflow_dispatch:
@@ -42,8 +42,11 @@ jobs:
           python multi_overlay/edit_events_defaults.py "$FW"
           python multi_overlay/rgb_wheel_saved_colors.py "$FW"
           python multi_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
-          sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
+          python multi_overlay/ota_firmware_and_lights_wheel.py "$FW"
+          cp -v multi_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
+          sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
+          cat "$FW/partitions_ota.csv"
 
           # Guardrails for the complete Anderson Home feature set.
           grep -q '<option>Jump</option><option>Breath</option><option>Strobe</option><option>Gradient</option>' "$FW/include/WebUI.h"
@@ -64,25 +67,40 @@ jobs:
           grep -q 'colorChip' "$FW/include/WebUI.h"
           grep -q "document.createTextNode('Enabled')" "$FW/include/WebUI.h"
           grep -q "document.createTextNode('Favorites')" "$FW/include/WebUI.h"
+          grep -q '/api/update' "$FW/src/main.cpp"
+          grep -q '/api/reboot' "$FW/src/main.cpp"
+          grep -q 'Update.begin' "$FW/src/main.cpp"
+          grep -q 'Firmware Update' "$FW/include/WebUI.h"
+          grep -q 'lightSavedColorGrid' "$FW/include/WebUI.h"
+          grep -q 'partitions_ota.csv' "$FW/platformio.ini"
 
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
 
-      - name: Export firmware images
+      - name: Verify OTA slot capacity and export firmware images
         run: |
-          BUILD=build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6
+          FW=build_source/Anderson_Home_Complete_Project/firmware
+          BUILD="$FW/.pio/build/m5stack-nanoc6"
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path('build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6/firmware.bin').stat().st_size
+          slot=0x1E0000
+          print(f'App size: {app} bytes; OTA slot: {slot} bytes; headroom: {slot-app} bytes')
+          if app >= slot:
+              raise SystemExit('Firmware does not fit in OTA slot')
+          PY
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-MULTI-4FX-RGB-WHEEL-LABELS
+          name: Anderson-Home-NanoC6-OTA-RGB-WHEEL
           path: |
-            Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
+            Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
           if-no-files-found: error
