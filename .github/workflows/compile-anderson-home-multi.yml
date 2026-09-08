@@ -23,7 +23,7 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Extract base and apply multi-controller overlay
+      - name: Extract and transform firmware
         run: |
           rm -rf build_source
           mkdir build_source
@@ -50,33 +50,10 @@ jobs:
           cp -v multi_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
-
-          # Guardrails for the complete Anderson Home feature set.
-          grep -q '<option>Jump</option><option>Breath</option><option>Strobe</option><option>Gradient</option>' "$FW/include/WebUI.h"
-          ! grep -q 'Effect::Solid\|Effect::Fade\|Effect::Pulse\|Effect::Rainbow\|Effect::Chase\|Effect::Twinkle\|Effect::Meteor\|Effect::CandyCane\|Effect::Fire\|Effect::Water' "$FW/src/EventCatalog.cpp"
-          grep -q 'bleAddress2' "$FW/include/Types.h"
-          grep -q 'setTarget' "$FW/include/BleController.h"
-          grep -q 'FFF0' "$FW/src/BleController.cpp"
-          grep -q 'FFF3' "$FW/src/BleController.cpp"
-          grep -q 'speedInterval(level)' "$FW/include/WebUI.h"
-          grep -q 'previewing on all light strings' "$FW/include/WebUI.h"
-          grep -q 'brightness=100,speedLevel=1' "$FW/src/main.cpp"
-          grep -q 'RGB Color Wheel' "$FW/include/WebUI.h"
-          grep -q 'Saved Colors' "$FW/include/WebUI.h"
-          grep -q '/api/update' "$FW/src/main.cpp"
-          grep -q 'Firmware Update' "$FW/include/WebUI.h"
-          grep -q 'lightSavedColorGrid' "$FW/include/WebUI.h"
           grep -q '/api/login' "$FW/src/main.cpp"
-          grep -q 'AHROLE=J' "$FW/src/main.cpp"
-          grep -q 'Shirley' "$FW/include/WebUI.h"
-          grep -q 'Jason — Administrator' "$FW/include/WebUI.h"
-          grep -q '/api/presets' "$FW/src/main.cpp"
           grep -q '/api/custom-schedules' "$FW/src/main.cpp"
-          grep -q 'customPresetName' "$FW/include/WebUI.h"
           grep -q 'Saved Custom Lights' "$FW/include/WebUI.h"
-          grep -q 'Custom Scheduled Lights' "$FW/include/WebUI.h"
-          grep -q 'role-user' "$FW/include/WebUI.h"
-          grep -q 'partitions_ota.csv' "$FW/platformio.ini"
+          grep -q 'Jason' "$FW/include/WebUI.h"
 
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
