@@ -30,6 +30,12 @@ jobs:
           mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
 
+      - name: Inspect Wi-Fi scan implementation
+        run: |
+          SRC=build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp
+          echo '--- Wi-Fi scan references ---'
+          grep -n -C 12 -E 'wifi/scan|scanNetworks|WiFi\.mode|softAP|Anderson Home - Setup|andersonhome' "$SRC" || true
+
       - name: Configure NanoC6 large app partition
         run: |
           FW=build_source/Anderson_Home_Complete_Project/firmware/platformio.ini
@@ -63,4 +69,4 @@ jobs:
             Anderson_Home_NanoC6_app_only.bin
           if-no-files-found: error
 
-# Corrected factory-image export: firmware.factory.bin is the single 0x0000 flash image.
+# Diagnostic Wi-Fi scan inspection added before the build.
