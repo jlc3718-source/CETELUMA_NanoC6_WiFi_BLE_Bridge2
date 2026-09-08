@@ -1,0 +1,372 @@
+name: Build Anderson Home App V7 Local First DDNS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-anderson-home-app-v7-local-ddns.yml'
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore persistent Anderson signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: anderson-home-android-signing-v1
+
+      - name: Require existing Anderson signing key
+        run: |
+          test -s "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+
+      - name: Extract Anderson Home project
+        run: |
+          rm -rf build_source
+          mkdir build_source
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
+
+      - name: Install local-first DDNS fallback MainActivity
+        run: |
+          cat > build_source/Anderson_Home_Complete_Project/android/app/src/main/java/com/andersonhome/controller/MainActivity.kt <<'KOTLIN'
+          package com.andersonhome.controller
+
+          import android.graphics.Bitmap
+          import android.net.Uri
+          import android.net.nsd.NsdManager
+          import android.net.nsd.NsdServiceInfo
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceError
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebResourceResponse
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var web: WebView
+              private lateinit var status: TextView
+              private lateinit var nsd: NsdManager
+              private val handler = Handler(Looper.getMainLooper())
+
+              private var discovering = false
+              private var discoveryListener: NsdManager.DiscoveryListener? = null
+              private var mainFrameLoadFailed = false
+              private var pageConnected = false
+              private var remoteAttempted = false
+
+              private val defaultUrl = "http://anderson-home.local/"
+              private val setupUrl = "http://192.168.4.1/"
+              private val remoteUrl = "http://anderson101.tplinkdns.com/"
+
+              private val localDiscoveryRunnable = Runnable {
+                  if (!pageConnected && !remoteAttempted && !isSetupUrl(web.url)) {
+                      status.text = "Searching local network…"
+                      discover()
+                  }
+              }
+
+              private val remoteFallbackRunnable = Runnable {
+                  if (!pageConnected && !remoteAttempted && !isSetupUrl(web.url)) {
+                      loadRemote()
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  web = findViewById(R.id.web)
+                  status = findViewById(R.id.status)
+                  nsd = getSystemService(NSD_SERVICE) as NsdManager
+
+                  web.settings.javaScriptEnabled = true
+                  web.settings.domStorageEnabled = true
+                  web.webChromeClient = WebChromeClient()
+
+                  web.webViewClient = object : WebViewClient() {
+                      override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                          mainFrameLoadFailed = false
+                          pageConnected = false
+                          status.text = when {
+                              isSetupUrl(url) -> "Opening setup…"
+                              isRemoteUrl(url) -> "Connecting remotely…"
+                              else -> "Connecting locally…"
+                          }
+                      }
+
+                      override fun onReceivedError(
+                          view: WebView?,
+                          request: WebResourceRequest?,
+                          error: WebResourceError?
+                      ) {
+                          if (request?.isForMainFrame == true) {
+                              handleMainFrameFailure(request.url?.toString())
+                          }
+                      }
+
+                      override fun onReceivedHttpError(
+                          view: WebView?,
+                          request: WebResourceRequest?,
+                          errorResponse: WebResourceResponse?
+                      ) {
+                          if (request?.isForMainFrame == true && (errorResponse?.statusCode ?: 0) >= 400) {
+                              handleMainFrameFailure(request.url?.toString())
+                          }
+                      }
+
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          if (mainFrameLoadFailed || url.isNullOrBlank()) return
+
+                          if (isSetupUrl(url)) {
+                              pageConnected = true
+                              cancelConnectionTimers()
+                              status.text = "Setup mode"
+                              return
+                          }
+
+                          pageConnected = true
+                          cancelConnectionTimers()
+                          stopDiscovery()
+
+                          if (isRemoteUrl(url)) {
+                              status.text = "Connected remotely"
+                          } else {
+                              status.text = "Connected locally"
+                              if (isLocalControllerUrl(url)) {
+                                  getPreferences(MODE_PRIVATE)
+                                      .edit()
+                                      .putString("url", url)
+                                      .apply()
+                              }
+                          }
+                      }
+                  }
+
+                  findViewById<Button>(R.id.retry).setOnClickListener { connect() }
+
+                  findViewById<Button>(R.id.setup).setOnClickListener {
+                      cancelConnectionTimers()
+                      stopDiscovery()
+                      pageConnected = false
+                      remoteAttempted = false
+                      status.text = "Opening setup…"
+                      web.loadUrl(setupUrl)
+                  }
+
+                  connect()
+              }
+
+              private fun connect() {
+                  cancelConnectionTimers()
+                  stopDiscovery()
+                  mainFrameLoadFailed = false
+                  pageConnected = false
+                  remoteAttempted = false
+                  status.text = "Connecting locally…"
+
+                  val saved = getPreferences(MODE_PRIVATE).getString("url", defaultUrl) ?: defaultUrl
+                  val localUrl = if (isLocalControllerUrl(saved)) saved else defaultUrl
+                  web.loadUrl(localUrl)
+
+                  handler.postDelayed(localDiscoveryRunnable, 2000)
+                  handler.postDelayed(remoteFallbackRunnable, 5000)
+              }
+
+              private fun loadRemote() {
+                  if (remoteAttempted || pageConnected) return
+                  remoteAttempted = true
+                  stopDiscovery()
+                  status.text = "Local unavailable — trying DDNS…"
+                  web.loadUrl(remoteUrl)
+              }
+
+              private fun handleMainFrameFailure(url: String?) {
+                  mainFrameLoadFailed = true
+
+                  when {
+                      isSetupUrl(url) -> {
+                          cancelConnectionTimers()
+                          status.text = "Setup unavailable — join AndersonHome-Setup Wi-Fi"
+                      }
+                      isRemoteUrl(url) -> {
+                          cancelConnectionTimers()
+                          stopDiscovery()
+                          status.text = "Local and remote controller unavailable"
+                      }
+                      else -> {
+                          status.text = "Local controller not found — discovering…"
+                          discover()
+                          if (!remoteAttempted) {
+                              handler.removeCallbacks(remoteFallbackRunnable)
+                              handler.postDelayed(remoteFallbackRunnable, 3000)
+                          }
+                      }
+                  }
+              }
+
+              private fun cancelConnectionTimers() {
+                  handler.removeCallbacks(localDiscoveryRunnable)
+                  handler.removeCallbacks(remoteFallbackRunnable)
+              }
+
+              private fun isSetupUrl(url: String?): Boolean {
+                  return try {
+                      Uri.parse(url ?: "").host == "192.168.4.1"
+                  } catch (_: Exception) {
+                      false
+                  }
+              }
+
+              private fun isRemoteUrl(url: String?): Boolean {
+                  return try {
+                      Uri.parse(url ?: "").host.equals("anderson101.tplinkdns.com", ignoreCase = true)
+                  } catch (_: Exception) {
+                      false
+                  }
+              }
+
+              private fun isLocalControllerUrl(url: String): Boolean {
+                  return try {
+                      val host = Uri.parse(url).host ?: return false
+                      if (host.equals("anderson-home.local", ignoreCase = true)) return true
+                      if (host == "192.168.4.1") return false
+                      if (host.equals("anderson101.tplinkdns.com", ignoreCase = true)) return false
+                      if (host.startsWith("10.")) return true
+                      if (host.startsWith("192.168.")) return true
+                      if (host.startsWith("172.")) {
+                          val second = host.split(".").getOrNull(1)?.toIntOrNull() ?: return false
+                          return second in 16..31
+                      }
+                      false
+                  } catch (_: Exception) {
+                      false
+                  }
+              }
+
+              private fun discover() {
+                  if (discovering || remoteAttempted || pageConnected) return
+                  discovering = true
+
+                  val listener = object : NsdManager.DiscoveryListener {
+                      override fun onDiscoveryStarted(serviceType: String?) {}
+
+                      override fun onServiceFound(service: NsdServiceInfo) {
+                          if (!remoteAttempted && service.serviceName.contains("Anderson", true)) {
+                              nsd.resolveService(service, object : NsdManager.ResolveListener {
+                                  override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {}
+
+                                  override fun onServiceResolved(info: NsdServiceInfo) {
+                                      if (remoteAttempted || pageConnected) return
+                                      val host = info.host.hostAddress ?: return
+                                      runOnUiThread {
+                                          if (remoteAttempted || pageConnected) return@runOnUiThread
+                                          cancelConnectionTimers()
+                                          stopDiscovery()
+                                          status.text = "Local controller found"
+                                          web.loadUrl("http://$host:${info.port}/")
+                                      }
+                                  }
+                              })
+                          }
+                      }
+
+                      override fun onServiceLost(service: NsdServiceInfo?) {}
+                      override fun onDiscoveryStopped(serviceType: String?) { discovering = false }
+                      override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) { discovering = false }
+                      override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) { discovering = false }
+                  }
+
+                  discoveryListener = listener
+                  try {
+                      nsd.discoverServices("_http._tcp.", NsdManager.PROTOCOL_DNS_SD, listener)
+                  } catch (_: Exception) {
+                      discovering = false
+                      discoveryListener = null
+                  }
+              }
+
+              private fun stopDiscovery() {
+                  val listener = discoveryListener ?: return
+                  try {
+                      nsd.stopServiceDiscovery(listener)
+                  } catch (_: Exception) {
+                  }
+                  discoveryListener = null
+                  discovering = false
+              }
+
+              override fun onDestroy() {
+                  cancelConnectionTimers()
+                  stopDiscovery()
+                  super.onDestroy()
+              }
+
+              @Deprecated("Deprecated in Java")
+              override fun onBackPressed() {
+                  if (web.canGoBack()) web.goBack() else super.onBackPressed()
+              }
+          }
+          KOTLIN
+
+      - name: Configure Android build and version
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: |
+          printf '%s\n' \
+            'android.useAndroidX=true' \
+            'android.enableJetifier=true' \
+            'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+            > gradle.properties
+          sed -i '/buildFeatures { viewBinding = false }/a\    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }' app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          p = Path('app/build.gradle.kts')
+          s = p.read_text()
+          run = int(os.environ['GITHUB_RUN_NUMBER'])
+          s = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {20000 + run}', s)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "2.0.{run}"', s)
+          p.write_text(s)
+          PY
+          cat app/build.gradle.kts
+
+      - name: Build Android update APK
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Verify and copy APK
+        run: |
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/apk/debug/app-debug.apk Anderson_Home_Controller_Local_First_DDNS.apk
+          test -s Anderson_Home_Controller_Local_First_DDNS.apk
+          ls -lh Anderson_Home_Controller_Local_First_DDNS.apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-Local-First-DDNS-APK
+          path: Anderson_Home_Controller_Local_First_DDNS.apk
+          if-no-files-found: error
