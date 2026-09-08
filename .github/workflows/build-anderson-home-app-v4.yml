@@ -93,3 +93,5 @@ jobs:
           name: Anderson-Home-Android-App-Updateable
           path: Anderson_Home_Controller_Updateable.apk
           if-no-files-found: error
+
+# Verification build: confirms cached signing key reuse plus incremented versionCode.
