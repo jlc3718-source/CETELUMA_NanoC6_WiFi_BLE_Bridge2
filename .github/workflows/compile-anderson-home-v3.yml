@@ -62,3 +62,5 @@ jobs:
             Anderson_Home_NanoC6_ALL_IN_ONE.bin
             Anderson_Home_NanoC6_app_only.bin
           if-no-files-found: error
+
+# Corrected factory-image export: firmware.factory.bin is the single 0x0000 flash image.
