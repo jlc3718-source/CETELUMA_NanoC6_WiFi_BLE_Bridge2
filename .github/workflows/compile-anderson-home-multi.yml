@@ -41,6 +41,7 @@ jobs:
           python multi_overlay/fix_preview_events.py "$FW/include/WebUI.h"
           python multi_overlay/edit_events_defaults.py "$FW"
           python multi_overlay/rgb_wheel_saved_colors.py "$FW"
+          python multi_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = huge_app.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
 
@@ -61,6 +62,8 @@ jobs:
           grep -q 'Saved Colors' "$FW/include/WebUI.h"
           grep -q '/api/colors' "$FW/src/main.cpp"
           grep -q 'colorChip' "$FW/include/WebUI.h"
+          grep -q "document.createTextNode('Enabled')" "$FW/include/WebUI.h"
+          grep -q "document.createTextNode('Favorites')" "$FW/include/WebUI.h"
 
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
@@ -70,16 +73,16 @@ jobs:
           BUILD=build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_APP_ONLY.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-MULTI-4FX-RGB-WHEEL
+          name: Anderson-Home-NanoC6-MULTI-4FX-RGB-WHEEL-LABELS
           path: |
-            Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_APP_ONLY.bin
+            Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_MULTI_4FX_RGB_WHEEL_LABELS_APP_ONLY.bin
           if-no-files-found: error
