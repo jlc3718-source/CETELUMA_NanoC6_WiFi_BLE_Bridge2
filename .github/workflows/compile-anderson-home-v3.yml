@@ -30,16 +30,6 @@ jobs:
           mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
 
-      - name: Inspect BLE scan implementation
-        run: |
-          BASE=build_source/Anderson_Home_Complete_Project/firmware/src
-          echo '--- BleController.h ---'
-          sed -n '1,260p' "$BASE/BleController.h" || true
-          echo '--- BleController.cpp ---'
-          sed -n '1,360p' "$BASE/BleController.cpp" || true
-          echo '--- main.cpp BLE routes/setup ---'
-          grep -n -C 15 -E 'api/ble|ble\.begin|ble\.scan|selectAndConnect|NimBLE|BLE' "$BASE/main.cpp" || true
-
       - name: Fix Wi-Fi scan in setup mode
         run: |
           python - <<'PY'
@@ -47,13 +37,35 @@ jobs:
           p = Path('build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp')
           s = p.read_text()
           old = '''  server.on("/api/wifi/scan",HTTP_GET,[]{\n    int n=WiFi.scanNetworks(false,true);JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();for(int i=0;i<n;i++){JsonObject x=a.add<JsonObject>();x["ssid"]=WiFi.SSID(i);x["rssi"]=WiFi.RSSI(i);}WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);\n  });'''
-          new = '''  server.on("/api/wifi/scan",HTTP_GET,[]{\n    // ESP32-C6: keep both AP and STA enabled while the setup AP is active,\n    // then perform a synchronous active scan with an explicit dwell time.\n    if(setupAP) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);\n    WiFi.setSleep(false);\n    WiFi.scanDelete();\n    delay(150);\n    int n=WiFi.scanNetworks(false,true,false,500);\n    JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();\n    if(n>0){\n      for(int i=0;i<n;i++){\n        String ssid=WiFi.SSID(i);\n        if(!ssid.length()) continue;\n        bool duplicate=false;\n        for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}\n        if(duplicate) continue;\n        JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);\n      }\n    }\n    WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);\n  });'''
+          new = '''  server.on("/api/wifi/scan",HTTP_GET,[]{\n    if(setupAP) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);\n    WiFi.setSleep(false);\n    WiFi.scanDelete();\n    delay(150);\n    int n=WiFi.scanNetworks(false,true,false,500);\n    JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();\n    if(n>0){\n      for(int i=0;i<n;i++){\n        String ssid=WiFi.SSID(i);\n        if(!ssid.length()) continue;\n        bool duplicate=false;\n        for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}\n        if(duplicate) continue;\n        JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);\n      }\n    }\n    WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);\n  });'''
           if old not in s:
               raise SystemExit('Expected Wi-Fi scan handler not found; refusing blind patch')
           p.write_text(s.replace(old,new))
           PY
-          SRC=build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp
-          grep -n -A 26 'api/wifi/scan' "$SRC"
+
+      - name: Fix BLE discovery for NimBLE 2.x
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('build_source/Anderson_Home_Complete_Project/firmware/src/BleController.cpp')
+          s = p.read_text()
+          old_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();sc->setActiveScan(true);sc->setInterval(90);sc->setWindow(60);sc->start(ms,false);NimBLEScanResults results=sc->getResults();\n  for(int i=0;i<results.getCount();i++){const NimBLEAdvertisedDevice* d=results.getDevice(i);String n=d->getName().c_str();String u=n;u.toUpperCase();if(u.indexOf("LED")>=0 || u.indexOf("RGB")>=0){out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});}}\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});sc->clearResults();return out;'''
+          new_scan = '''  NimBLEScan* sc=NimBLEDevice::getScan();\n  sc->stop();\n  sc->clearResults();\n  sc->setActiveScan(true);\n  sc->setInterval(100);\n  sc->setWindow(100);\n  // NimBLE-Arduino 2.x: getResults(duration, ...) is the blocking scan API.\n  NimBLEScanResults results=sc->getResults(ms,false);\n  for(int i=0;i<results.getCount();i++){\n    const NimBLEAdvertisedDevice* d=results.getDevice(i);\n    String n=d->getName().c_str();\n    if(!n.length()) n="Unnamed BLE";\n    out.push_back({n,String(d->getAddress().toString().c_str()),d->getRSSI()});\n  }\n  std::sort(out.begin(),out.end(),[](const BleFound&a,const BleFound&b){return a.rssi>b.rssi;});\n  sc->clearResults();\n  return out;'''
+          if old_scan not in s:
+              raise SystemExit('Expected BLE scan implementation not found; refusing blind patch')
+          p.write_text(s.replace(old_scan,new_scan))
+
+          m = Path('build_source/Anderson_Home_Complete_Project/firmware/src/main.cpp')
+          ms = m.read_text()
+          old_route = 'auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
+          new_route = 'auto found=ble.scan(8000);JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();'
+          if old_route not in ms:
+              raise SystemExit('Expected BLE scan route not found; refusing blind patch')
+          m.write_text(ms.replace(old_route,new_route))
+          PY
+          BASE=build_source/Anderson_Home_Complete_Project/firmware/src
+          grep -n -A 28 'BleController::scan' "$BASE/BleController.cpp"
+          grep -n -A 3 'api/ble/scan' "$BASE/main.cpp"
 
       - name: Configure NanoC6 large app partition
         run: |
@@ -78,7 +90,7 @@ jobs:
       - name: Upload all-in-one firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-WIFI-SCAN-FIX
+          name: Anderson-Home-NanoC6-WIFI-BLE-FIX
           path: |
             Anderson_Home_NanoC6_ALL_IN_ONE.bin
             Anderson_Home_NanoC6_app_only.bin
