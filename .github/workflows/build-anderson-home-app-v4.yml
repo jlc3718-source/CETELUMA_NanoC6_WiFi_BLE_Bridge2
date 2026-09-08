@@ -1,4 +1,4 @@
-name: Build Anderson Home Android App V6
+name: Build Anderson Home Android App V7
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - 'Anderson_Home_Complete_Project.zip'
+      - 'android_overlay/**'
       - '.github/workflows/build-anderson-home-app-v4.yml'
 
 jobs:
@@ -54,6 +55,9 @@ jobs:
           mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
           test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
+          python3 android_overlay/enable_file_upload.py build_source/Anderson_Home_Complete_Project/android
+          grep -q 'onShowFileChooser' build_source/Anderson_Home_Complete_Project/android/app/src/main/java/com/andersonhome/controller/MainActivity.kt
+          grep -q 'fileChooserLauncher' build_source/Anderson_Home_Complete_Project/android/app/src/main/java/com/andersonhome/controller/MainActivity.kt
 
       - name: Configure Android build and version
         working-directory: build_source/Anderson_Home_Complete_Project/android
@@ -71,7 +75,7 @@ jobs:
           s = p.read_text()
           run = int(os.environ['GITHUB_RUN_NUMBER'])
           s = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {1000 + run}', s)
-          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "1.3.{run}"', s)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "1.4.{run}"', s)
           p.write_text(s)
           PY
           cat app/build.gradle.kts
@@ -90,8 +94,6 @@ jobs:
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-Android-App-Updateable
+          name: Anderson-Home-Android-App-Updateable-Firmware-Upload
           path: Anderson_Home_Controller_Updateable.apk
           if-no-files-found: error
-
-# Verification build: confirms cached signing key reuse plus incremented versionCode.
