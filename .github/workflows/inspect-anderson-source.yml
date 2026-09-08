@@ -12,18 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Extract source
+      - name: Extract and locate source
         run: |
-          rm -rf inspect_source
-          mkdir inspect_source
+          rm -rf inspect_source source_snapshot
+          mkdir inspect_source source_snapshot
           unzip -q Anderson_Home_Complete_Project.zip -d inspect_source
-          mkdir source_snapshot
-          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/BleController.h source_snapshot/
-          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/BleController.cpp source_snapshot/
-          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/main.cpp source_snapshot/
-          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.h source_snapshot/
-          cp inspect_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp source_snapshot/
-          cp inspect_source/Anderson_Home_Complete_Project/firmware/platformio.ini source_snapshot/
+          echo '--- files ---'
+          find inspect_source -maxdepth 6 -type f | sort
+          find inspect_source -type f \( -name 'BleController.h' -o -name 'BleController.cpp' -o -name 'main.cpp' -o -name 'SettingsStore.h' -o -name 'SettingsStore.cpp' -o -name 'platformio.ini' \) -exec cp {} source_snapshot/ \;
+          echo '--- snapshot ---'
+          ls -la source_snapshot
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
