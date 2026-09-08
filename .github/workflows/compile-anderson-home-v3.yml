@@ -38,11 +38,11 @@ jobs:
 
       - name: Compile NanoC6 firmware
         run: |
-          pio run             -d build_source/Anderson_Home_Complete_Project/firmware             -e m5stack-nanoc6
+          pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
 
       - name: Rename firmware
         run: |
-          cp build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6/firmware.bin              Anderson_Home_NanoC6_firmware.bin
+          cp build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6/firmware.bin Anderson_Home_NanoC6_firmware.bin
 
       - name: Upload firmware.bin
         uses: actions/upload-artifact@v4
@@ -50,3 +50,5 @@ jobs:
           name: Anderson-Home-NanoC6-firmware
           path: Anderson_Home_NanoC6_firmware.bin
           if-no-files-found: error
+
+# Build requested 2026-09-08
