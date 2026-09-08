@@ -1,0 +1,28 @@
+name: Inspect Anderson Android Source
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/inspect-anderson-android.yml'
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract Android source
+        run: |
+          rm -rf inspect_android
+          mkdir inspect_android
+          unzip -q Anderson_Home_Complete_Project.zip -d inspect_android
+          find inspect_android/Anderson_Home_Complete_Project/android -maxdepth 6 -type f | sort
+          echo '--- MainActivity ---'
+          find inspect_android/Anderson_Home_Complete_Project/android -type f \( -name 'MainActivity.kt' -o -name 'MainActivity.java' \) -print -exec sed -n '1,260p' {} \;
+      - name: Upload Android source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Android-Source
+          path: inspect_android/Anderson_Home_Complete_Project/android
+          if-no-files-found: error
