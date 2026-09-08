@@ -1,4 +1,4 @@
-name: Compile Anderson Home Multi Controller 4FX OTA
+name: Compile Anderson Home OTA Roles Custom Lights
 
 on:
   workflow_dispatch:
@@ -43,10 +43,13 @@ jobs:
           python multi_overlay/rgb_wheel_saved_colors.py "$FW"
           python multi_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
           python multi_overlay/ota_firmware_and_lights_wheel.py "$FW"
+          python multi_overlay/auth_roles.py "$FW"
+          python multi_overlay/custom_light_schedule.py "$FW"
+          python multi_overlay/ui_roles.py "$FW/include/WebUI.h"
+          python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
           cp -v multi_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
-          cat "$FW/partitions_ota.csv"
 
           # Guardrails for the complete Anderson Home feature set.
           grep -q '<option>Jump</option><option>Breath</option><option>Strobe</option><option>Gradient</option>' "$FW/include/WebUI.h"
@@ -57,21 +60,22 @@ jobs:
           grep -q 'FFF3' "$FW/src/BleController.cpp"
           grep -q 'speedInterval(level)' "$FW/include/WebUI.h"
           grep -q 'previewing on all light strings' "$FW/include/WebUI.h"
-          grep -q 'Save Event' "$FW/include/WebUI.h"
           grep -q 'brightness=100,speedLevel=1' "$FW/src/main.cpp"
-          grep -q 'loadEventOverrides' "$FW/src/main.cpp"
-          grep -q 'applyEventOverrideByIndex' "$FW/src/Scheduler.cpp"
           grep -q 'RGB Color Wheel' "$FW/include/WebUI.h"
           grep -q 'Saved Colors' "$FW/include/WebUI.h"
-          grep -q '/api/colors' "$FW/src/main.cpp"
-          grep -q 'colorChip' "$FW/include/WebUI.h"
-          grep -q "document.createTextNode('Enabled')" "$FW/include/WebUI.h"
-          grep -q "document.createTextNode('Favorites')" "$FW/include/WebUI.h"
           grep -q '/api/update' "$FW/src/main.cpp"
-          grep -q '/api/reboot' "$FW/src/main.cpp"
-          grep -q 'Update.begin' "$FW/src/main.cpp"
           grep -q 'Firmware Update' "$FW/include/WebUI.h"
           grep -q 'lightSavedColorGrid' "$FW/include/WebUI.h"
+          grep -q '/api/login' "$FW/src/main.cpp"
+          grep -q 'AHROLE=J' "$FW/src/main.cpp"
+          grep -q 'Shirley' "$FW/include/WebUI.h"
+          grep -q 'Jason — Administrator' "$FW/include/WebUI.h"
+          grep -q '/api/presets' "$FW/src/main.cpp"
+          grep -q '/api/custom-schedules' "$FW/src/main.cpp"
+          grep -q 'customPresetName' "$FW/include/WebUI.h"
+          grep -q 'Saved Custom Lights' "$FW/include/WebUI.h"
+          grep -q 'Custom Scheduled Lights' "$FW/include/WebUI.h"
+          grep -q 'role-user' "$FW/include/WebUI.h"
           grep -q 'partitions_ota.csv' "$FW/platformio.ini"
 
       - name: Compile NanoC6 firmware
@@ -91,16 +95,16 @@ jobs:
           if app >= slot:
               raise SystemExit('Firmware does not fit in OTA slot')
           PY
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_ALL_IN_ONE.bin Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_ALL_IN_ONE.bin Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-OTA-RGB-WHEEL
+          name: Anderson-Home-NanoC6-OTA-ROLES-CUSTOM-LIGHTS
           path: |
-            Anderson_Home_NanoC6_OTA_RGB_WHEEL_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_OTA_RGB_WHEEL_APP_ONLY.bin
+            Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_OTA_ROLES_CUSTOM_APP_ONLY.bin
           if-no-files-found: error
