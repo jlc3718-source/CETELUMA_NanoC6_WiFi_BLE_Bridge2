@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'multi_overlay/**'
+      - 'firmware/**'
       - 'FIRMWARE_VERSION.txt'
       - '.github/workflows/compile-anderson-home-multi.yml'
 
@@ -13,137 +13,76 @@ jobs:
   build-firmware:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository with history
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install PlatformIO
-        run: pip install platformio
+      - name: Install pinned PlatformIO
+        run: pip install platformio==6.2.0
 
-      - name: Assemble current Anderson Home source
+      - name: Generate compressed web UI
         run: |
-          set -euo pipefail
-          BASE=3c9c65bac1953ecac42282bc57a0cc942e30dee4
-          rm -rf build_source baseline_overlay /tmp/Anderson_Home_Complete_Project.zip
-          mkdir -p build_source baseline_overlay/include baseline_overlay/src
-
-          # Preserve the hardware-proven pre-auth core from the historical baseline.
-          git show "$BASE:Anderson_Home_Complete_Project.zip" > /tmp/Anderson_Home_Complete_Project.zip
-          unzip -q /tmp/Anderson_Home_Complete_Project.zip -d build_source
-          FW=build_source/Anderson_Home_Complete_Project/firmware
-          test -d "$FW/src"
-          test -d "$FW/include"
-
-          for P in \
-            multi_overlay/include/BleController.h \
-            multi_overlay/include/Types.h \
-            multi_overlay/src/BleController.cpp \
-            multi_overlay/src/SettingsStore.cpp \
-            multi_overlay/src/main.cpp \
-            multi_overlay/patch_webui.py \
-            multi_overlay/reconfigure_effects.py \
-            multi_overlay/fix_preview_events.py \
-            multi_overlay/edit_events_defaults.py \
-            multi_overlay/rgb_wheel_saved_colors.py \
-            multi_overlay/label_event_checkboxes.py \
-            multi_overlay/ota_firmware_and_lights_wheel.py \
-            multi_overlay/partitions_ota.csv; do
-              mkdir -p "baseline_overlay/$(dirname "${P#multi_overlay/}")"
-              git show "$BASE:$P" > "baseline_overlay/${P#multi_overlay/}"
-          done
-
-          cp baseline_overlay/include/BleController.h "$FW/include/BleController.h"
-          cp baseline_overlay/include/Types.h "$FW/include/Types.h"
-          cp baseline_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
-          cp baseline_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
-          cp baseline_overlay/src/main.cpp "$FW/src/main.cpp"
-
-          python baseline_overlay/patch_webui.py "$FW/include/WebUI.h"
-          python baseline_overlay/reconfigure_effects.py "$FW"
-          python baseline_overlay/fix_preview_events.py "$FW/include/WebUI.h"
-          python baseline_overlay/edit_events_defaults.py "$FW"
-          python baseline_overlay/rgb_wheel_saved_colors.py "$FW"
-          python baseline_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
-          python baseline_overlay/ota_firmware_and_lights_wheel.py "$FW"
-
-          python multi_overlay/custom_light_schedule.py "$FW"
-          python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
-          python multi_overlay/favorites_speed_schedule_remote.py "$FW"
-
-          # Default station credentials; saved NVS credentials still override these.
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('build_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp')
-          s=p.read_text()
-          s=s.replace('prefs.getString("ssid","")','prefs.getString("ssid","Anderson")',1)
-          s=s.replace('prefs.getString("pass","")','prefs.getString("pass","HarleyD5")',1)
-          p.write_text(s)
+          import gzip
+          html=Path('firmware/web/index.html').read_bytes()
+          gz=gzip.compress(html,compresslevel=9,mtime=0)
+          out=Path('firmware/include/WebUIGzip.h')
+          lines=['#pragma once','#include <Arduino.h>','',f'static const size_t WEB_UI_GZ_LEN={len(gz)};','static const uint8_t WEB_UI_GZ[] PROGMEM = {']
+          for i in range(0,len(gz),20):
+              lines.append('  '+','.join(f'0x{b:02x}' for b in gz[i:i+20])+',')
+          lines.append('};')
+          out.write_text('\n'.join(lines)+'\n')
+          print(f'Web UI: {len(html)} bytes -> {len(gz)} bytes gzip; saved {len(html)-len(gz)} bytes')
           PY
 
-          # One consolidated release finalizer handles persistence, OTA, settings sync and UI state.
-          python multi_overlay/release_finalize.py "$FW"
-
-          cp baseline_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
-          sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
-
-          # Release guardrails.
-          ! grep -q '/api/login' "$FW/src/main.cpp"
-          ! grep -q 'AHSESS' "$FW/src/main.cpp"
-          ! grep -q 'JPN7788\|SPN0904' "$FW/src/main.cpp"
-          ! grep -q 'loginOverlay\|Signed out\|Who is using the controller' "$FW/include/WebUI.h"
-          ! grep -q 'ANDERSON_RED_BACKGROUND' "$FW/include/WebUI.h"
-          grep -q "let currentRole='admin'" "$FW/include/WebUI.h"
-          grep -q '/api/presets' "$FW/src/main.cpp"
-          grep -q '/api/custom-schedules' "$FW/src/main.cpp"
-          grep -q '/api/update' "$FW/src/main.cpp"
-          grep -q 'customScheduleRefreshPending' "$FW/src/main.cpp"
-          grep -q 'ANDERSON_FIRMWARE_VERSION' "$FW/src/main.cpp"
-          grep -Fq 'JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);' "$FW/src/main.cpp"
-          grep -q 'ANDERSON_SETTINGS_UI_LIVE_SYNC' "$FW/include/WebUI.h"
-          grep -q 'ANDERSON_BLUE_BACKGROUND' "$FW/include/WebUI.h"
-          ! grep -q 'ANDERSON_REMOVE_LIGHTS_TAB' "$FW/include/WebUI.h"
-          grep -q 'data-tab="lights"' "$FW/include/WebUI.h"
-          grep -q 'data-page="lights"' "$FW/include/WebUI.h"
-          grep -q 'ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD' "$FW/include/WebUI.h"
-          grep -q 'Save was acknowledged, but the custom light could not be read back' "$FW/include/WebUI.h"
-          grep -q 'Firmware Revision' "$FW/include/WebUI.h"
-          grep -q 'Favorite Colors' "$FW/include/WebUI.h"
-          grep -q 'RGB Color Wheel' "$FW/include/WebUI.h"
-          grep -q 'Anderson' "$FW/src/SettingsStore.cpp"
-          grep -q 'HarleyD5' "$FW/src/SettingsStore.cpp"
-          grep -q 'FFF0' "$FW/src/BleController.cpp"
-          grep -q 'FFF3' "$FW/src/BleController.cpp"
+      - name: Verify release source
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+          grep -q "ANDERSON_FIRMWARE_VERSION=\"${VERSION}\"" firmware/src/main.cpp
+          grep -q ">v${VERSION}<" firmware/web/index.html
+          grep -q 'anderson-preset' firmware/src/main.cpp
+          grep -q 'anderson-csched' firmware/src/main.cpp
+          grep -q 'r\["id"\]=newId' firmware/src/main.cpp
+          grep -q 'r\["backend"\]="NVS"' firmware/src/main.cpp
+          grep -q 'server.sendHeader("Content-Encoding","gzip")' firmware/src/main.cpp
+          grep -q 'server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate")' firmware/src/main.cpp
+          ! grep -R -q 'SPIFFS\|LittleFS' firmware/src firmware/include
+          ! grep -q '/api/login\|AHSESS\|loginOverlay\|Signed out' firmware/src/main.cpp firmware/web/index.html
+          grep -q 'data-tab="lights"' firmware/web/index.html
+          grep -q 'Save was acknowledged, but the custom light could not be read back' firmware/web/index.html
+          grep -q '/api/update' firmware/src/main.cpp
+          grep -q 'FFF0' firmware/src/BleController.cpp
+          grep -q 'FFF3' firmware/src/BleController.cpp
+          grep -q '32f6bf400b276b0f61cf42c50490a7808ee3457e' firmware/platformio.ini
 
       - name: Compile NanoC6 firmware
-        run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
+        run: pio run -d firmware -e m5stack-nanoc6
 
       - name: Verify OTA capacity and export release files
         run: |
           set -euo pipefail
-          FW=build_source/Anderson_Home_Complete_Project/firmware
-          BUILD="$FW/.pio/build/m5stack-nanoc6"
+          BUILD="firmware/.pio/build/m5stack-nanoc6"
           VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
-          test -n "$VERSION"
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
           python3 - <<'PY'
           from pathlib import Path
-          app=Path('build_source/Anderson_Home_Complete_Project/firmware/.pio/build/m5stack-nanoc6/firmware.bin').stat().st_size
+          app=Path('firmware/.pio/build/m5stack-nanoc6/firmware.bin').stat().st_size
           slot=0x1E0000
           print(f'App size: {app} bytes; OTA slot: {slot} bytes; headroom: {slot-app} bytes')
           if app >= slot:
               raise SystemExit('Firmware does not fit in OTA slot')
           PY
-          cp "$BUILD/firmware.bin" "and_${VERSION}.bin"
-          cp "$BUILD/firmware.factory.bin" "and_${VERSION}_full.bin"
-          sha256sum "and_${VERSION}.bin" "and_${VERSION}_full.bin"
-          ls -lh "and_${VERSION}.bin" "and_${VERSION}_full.bin"
+          cp "$BUILD/firmware.bin" "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin"
+          cp "$BUILD/firmware.factory.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
+          sha256sum "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
+          ls -lh "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Upload firmware
@@ -151,6 +90,6 @@ jobs:
         with:
           name: Anderson-Home-NanoC6-v${{ env.VERSION }}
           path: |
-            and_${{ env.VERSION }}.bin
-            and_${{ env.VERSION }}_full.bin
+            Anderson_Home_NanoC6_v${{ env.VERSION }}_APP_ONLY.bin
+            Anderson_Home_NanoC6_v${{ env.VERSION }}_ALL_IN_ONE.bin
           if-no-files-found: error
