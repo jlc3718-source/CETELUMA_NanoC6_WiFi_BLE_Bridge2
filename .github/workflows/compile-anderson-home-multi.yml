@@ -1,4 +1,4 @@
-name: Compile Anderson Home Proven Baseline Plus Features
+name: Build Anderson Home Firmware
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - 'multi_overlay/**'
+      - 'FIRMWARE_VERSION.txt'
       - '.github/workflows/compile-anderson-home-multi.yml'
 
 jobs:
@@ -25,21 +26,20 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Restore proven pre-auth baseline and apply later functional changes
+      - name: Assemble current Anderson Home source
         run: |
           set -euo pipefail
           BASE=3c9c65bac1953ecac42282bc57a0cc942e30dee4
           rm -rf build_source baseline_overlay /tmp/Anderson_Home_Complete_Project.zip
           mkdir -p build_source baseline_overlay/include baseline_overlay/src
 
-          # Start from the exact firmware/project used by the screenshot-era working build.
+          # Preserve the hardware-proven pre-auth core from the historical baseline.
           git show "$BASE:Anderson_Home_Complete_Project.zip" > /tmp/Anderson_Home_Complete_Project.zip
           unzip -q /tmp/Anderson_Home_Complete_Project.zip -d build_source
           FW=build_source/Anderson_Home_Complete_Project/firmware
           test -d "$FW/src"
           test -d "$FW/include"
 
-          # Restore the exact pre-auth core and overlay files from that same commit.
           for P in \
             multi_overlay/include/BleController.h \
             multi_overlay/include/Types.h \
@@ -58,11 +58,11 @@ jobs:
               git show "$BASE:$P" > "baseline_overlay/${P#multi_overlay/}"
           done
 
-          cp -v baseline_overlay/include/BleController.h "$FW/include/BleController.h"
-          cp -v baseline_overlay/include/Types.h "$FW/include/Types.h"
-          cp -v baseline_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
-          cp -v baseline_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
-          cp -v baseline_overlay/src/main.cpp "$FW/src/main.cpp"
+          cp baseline_overlay/include/BleController.h "$FW/include/BleController.h"
+          cp baseline_overlay/include/Types.h "$FW/include/Types.h"
+          cp baseline_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
+          cp baseline_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
+          cp baseline_overlay/src/main.cpp "$FW/src/main.cpp"
 
           python baseline_overlay/patch_webui.py "$FW/include/WebUI.h"
           python baseline_overlay/reconfigure_effects.py "$FW"
@@ -72,13 +72,11 @@ jobs:
           python baseline_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
           python baseline_overlay/ota_firmware_and_lights_wheel.py "$FW"
 
-          # Later requested functional changes, deliberately excluding every auth/role/session patch.
           python multi_overlay/custom_light_schedule.py "$FW"
           python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
           python multi_overlay/favorites_speed_schedule_remote.py "$FW"
-          python multi_overlay/stabilize_custom_storage.py "$FW"
 
-          # Keep the later requested default STA credentials; saved NVS credentials still override these.
+          # Default station credentials; saved NVS credentials still override these.
           python3 - <<'PY'
           from pathlib import Path
           p=Path('build_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp')
@@ -88,25 +86,29 @@ jobs:
           p.write_text(s)
           PY
 
-          # Compatibility only: later feature code sees full-control mode, with no login/authentication system.
-          python multi_overlay/no_auth_compat.py "$FW"
+          # One consolidated release finalizer handles persistence, OTA, settings sync and UI state.
+          python multi_overlay/release_finalize.py "$FW"
 
-          cp -v baseline_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
+          cp baseline_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
 
-          # Hard guardrails: this build must stay on the proven UI and contain no authentication/profile machinery.
+          # Release guardrails.
           ! grep -q '/api/login' "$FW/src/main.cpp"
           ! grep -q 'AHSESS' "$FW/src/main.cpp"
           ! grep -q 'JPN7788\|SPN0904' "$FW/src/main.cpp"
           ! grep -q 'loginOverlay\|Signed out\|Who is using the controller' "$FW/include/WebUI.h"
+          ! grep -q 'ANDERSON_RED_BACKGROUND' "$FW/include/WebUI.h"
           grep -q "let currentRole='admin'" "$FW/include/WebUI.h"
           grep -q '/api/presets' "$FW/src/main.cpp"
           grep -q '/api/custom-schedules' "$FW/src/main.cpp"
+          grep -q '/api/update' "$FW/src/main.cpp"
           grep -q 'customScheduleRefreshPending' "$FW/src/main.cpp"
-          grep -q 'Custom light could not be saved to persistent storage' "$FW/src/main.cpp"
-          grep -q 'Schedule could not be saved to persistent storage' "$FW/src/main.cpp"
+          grep -q 'ANDERSON_FIRMWARE_VERSION' "$FW/src/main.cpp"
+          grep -q 'ANDERSON_SETTINGS_UI_LIVE_SYNC' "$FW/include/WebUI.h"
+          grep -q 'ANDERSON_BLUE_BACKGROUND' "$FW/include/WebUI.h"
+          grep -q 'ANDERSON_REMOVE_LIGHTS_TAB' "$FW/include/WebUI.h"
+          grep -q 'Firmware Revision' "$FW/include/WebUI.h"
           grep -q 'Favorite Colors' "$FW/include/WebUI.h"
-          grep -q 'homeSpeed' "$FW/include/WebUI.h"
           grep -q 'RGB Color Wheel' "$FW/include/WebUI.h"
           grep -q 'Anderson' "$FW/src/SettingsStore.cpp"
           grep -q 'HarleyD5' "$FW/src/SettingsStore.cpp"
@@ -116,11 +118,13 @@ jobs:
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
 
-      - name: Verify OTA slot capacity and export firmware images
+      - name: Verify OTA capacity and export release files
         run: |
           set -euo pipefail
           FW=build_source/Anderson_Home_Complete_Project/firmware
           BUILD="$FW/.pio/build/m5stack-nanoc6"
+          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+          test -n "$VERSION"
           test -s "$BUILD/firmware.factory.bin"
           test -s "$BUILD/firmware.bin"
           python3 - <<'PY'
@@ -131,16 +135,17 @@ jobs:
           if app >= slot:
               raise SystemExit('Firmware does not fit in OTA slot')
           PY
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
+          cp "$BUILD/firmware.bin" "and_${VERSION}.bin"
+          cp "$BUILD/firmware.factory.bin" "and_${VERSION}_full.bin"
+          sha256sum "and_${VERSION}.bin" "and_${VERSION}_full.bin"
+          ls -lh "and_${VERSION}.bin" "and_${VERSION}_full.bin"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-CUSTOM-SAVE-FIX
+          name: Anderson-Home-NanoC6-v${{ env.VERSION }}
           path: |
-            Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
+            and_${{ env.VERSION }}.bin
+            and_${{ env.VERSION }}_full.bin
           if-no-files-found: error
