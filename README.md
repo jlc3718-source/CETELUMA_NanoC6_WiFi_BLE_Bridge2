@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v1.1.3**.
+Current firmware: **v1.1.4**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 

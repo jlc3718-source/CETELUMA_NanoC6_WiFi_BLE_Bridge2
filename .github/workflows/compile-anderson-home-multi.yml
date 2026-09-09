@@ -62,6 +62,8 @@ jobs:
           grep -q 'anderson-csched' firmware/src/main.cpp
           grep -q 'r\["id"\]=newId' firmware/src/main.cpp
           grep -q 'r\["backend"\]="NVS"' firmware/src/main.cpp
+          grep -Fq 'String deleteId=d["deleteId"] | ""' firmware/src/main.cpp
+          ! grep -Fq 'd["deleteId"].as<String>()' firmware/src/main.cpp
           grep -q 'server.sendHeader("Content-Encoding","gzip")' firmware/src/main.cpp
           grep -q 'server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate")' firmware/src/main.cpp
           ! grep -R -q 'SPIFFS\|LittleFS' firmware/src firmware/include
