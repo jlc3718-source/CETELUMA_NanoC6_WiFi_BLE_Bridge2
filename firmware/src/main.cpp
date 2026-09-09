@@ -38,7 +38,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.8";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.9";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 static bool writeMasterConfig();
@@ -48,10 +48,10 @@ static constexpr uint8_t ROLE_NONE=0,ROLE_USER=1,ROLE_ADMIN=2;
 static constexpr const char* AUTH_HEADER="X-Anderson-Session";
 static constexpr const char* RECOVERY_PIN_HEADER="X-Anderson-Recovery-PIN";
 static constexpr uint32_t AUTH_SESSION_TTL_MS=8UL*60UL*60UL*1000UL;
-struct AuthSession{String token;uint8_t role=ROLE_NONE;uint32_t lastSeen=0;};
+struct AuthSession{String token;String profile;uint8_t role=ROLE_NONE;uint32_t lastSeen=0;};
 static AuthSession authSessions[4];
 static bool pinProtectionEnabled=false;
-static String shirleyPinSalt,shirleyPinHash,jasonPinSalt,jasonPinHash;
+static String shirleyPinSalt,shirleyPinHash,kellyPinSalt,kellyPinHash,jasonPinSalt,jasonPinHash;
 static IPAddress pinAttemptIp;static bool pinAttemptIpSet=false;static uint8_t pinFailureCount=0;static uint32_t pinBlockedUntil=0;
 
 static bool fourDigitPin(const String& pin){if(pin.length()!=4)return false;for(size_t i=0;i<4;i++)if(pin[i]<'0'||pin[i]>'9')return false;return true;}
@@ -59,15 +59,21 @@ static String hexBytes(const uint8_t* data,size_t len){static const char h[]="01
 static String randomHex(size_t bytes){uint8_t data[32];if(bytes>sizeof(data))bytes=sizeof(data);esp_fill_random(data,bytes);return hexBytes(data,bytes);}
 static String pinDigest(const String& profile,const String& pin,const String& salt){String material=String("anderson-pin-v1|")+profile+"|"+salt+"|"+pin;uint8_t digest[32];if(mbedtls_sha256((const uint8_t*)material.c_str(),material.length(),digest,0)!=0)return "";return hexBytes(digest,sizeof(digest));}
 static bool constantTimeEqual(const String& a,const String& b){if(a.length()!=b.length())return false;uint8_t diff=0;for(size_t i=0;i<a.length();i++)diff|=(uint8_t)(a[i]^b[i]);return diff==0;}
-static bool pinAuthConfigured(){return shirleyPinSalt.length()==32&&jasonPinSalt.length()==32&&shirleyPinHash.length()==64&&jasonPinHash.length()==64;}
-static void clearAuthSessions(){for(auto&s:authSessions){s.token="";s.role=ROLE_NONE;s.lastSeen=0;}}
-static bool storePinAuthConfig(bool enabled,const String& ss,const String& sh,const String& js,const String& jh){JsonDocument d;d["version"]=1;d["enabled"]=enabled;d["shirleySalt"]=ss;d["shirleyHash"]=sh;d["jasonSalt"]=js;d["jasonHash"]=jh;String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-auth",false))return false;size_t wrote=p.putString("config",raw);String verify=p.getString("config","");p.end();return wrote==raw.length()&&verify==raw;}
-static void loadPinAuthConfig(){Preferences p;if(!p.begin("anderson-auth",true))return;String raw=p.getString("config","");p.end();JsonDocument d;if(!raw.length()||deserializeJson(d,raw))return;shirleyPinSalt=d["shirleySalt"]|String("");shirleyPinHash=d["shirleyHash"]|String("");jasonPinSalt=d["jasonSalt"]|String("");jasonPinHash=d["jasonHash"]|String("");pinProtectionEnabled=(d["enabled"]|false)&&pinAuthConfigured();}
-static bool configureProfilePins(const String& shirleyPin,const String& jasonPin){if(!fourDigitPin(shirleyPin)||!fourDigitPin(jasonPin)||shirleyPin==jasonPin)return false;String ss=randomHex(16),js=randomHex(16),sh=pinDigest("shirley",shirleyPin,ss),jh=pinDigest("jason",jasonPin,js);if(sh.length()!=64||jh.length()!=64||!storePinAuthConfig(true,ss,sh,js,jh))return false;shirleyPinSalt=ss;shirleyPinHash=sh;jasonPinSalt=js;jasonPinHash=jh;pinProtectionEnabled=true;clearAuthSessions();return true;}
-static bool disablePinProtection(){if(!pinAuthConfigured())return false;if(!storePinAuthConfig(false,shirleyPinSalt,shirleyPinHash,jasonPinSalt,jasonPinHash))return false;pinProtectionEnabled=false;clearAuthSessions();return true;}
-static uint8_t sessionRoleForToken(const String& token,bool touch=true){if(token.length()!=64)return ROLE_NONE;uint32_t now=millis();for(auto&s:authSessions){if(!s.token.length())continue;if((uint32_t)(now-s.lastSeen)>AUTH_SESSION_TTL_MS){s.token="";s.role=ROLE_NONE;continue;}if(constantTimeEqual(s.token,token)){if(touch)s.lastSeen=now;return s.role;}}return ROLE_NONE;}
-static String issueAuthSession(uint8_t role){uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;bool found=false;for(size_t i=0;i<4;i++){uint32_t age=(uint32_t)(now-authSessions[i].lastSeen);if(!authSessions[i].token.length()||age>AUTH_SESSION_TTL_MS){slot=i;found=true;break;}if(!found||age>oldestAge){oldestAge=age;slot=i;}}authSessions[slot].token=randomHex(32);authSessions[slot].role=role;authSessions[slot].lastSeen=now;return authSessions[slot].token;}
-static void revokeAuthSession(const String& token){for(auto&s:authSessions)if(token.length()&&constantTimeEqual(s.token,token)){s.token="";s.role=ROLE_NONE;s.lastSeen=0;}}
+static bool pinRecordConfigured(const String& salt,const String& hash){return salt.length()==32&&hash.length()==64;}
+static bool basePinAuthConfigured(){return pinRecordConfigured(shirleyPinSalt,shirleyPinHash)&&pinRecordConfigured(jasonPinSalt,jasonPinHash);}
+static bool kellyPinConfigured(){return pinRecordConfigured(kellyPinSalt,kellyPinHash);}
+static bool pinAuthConfigured(){return basePinAuthConfigured()&&kellyPinConfigured();}
+static uint8_t profileRole(const String& profile){return profile=="jason"?ROLE_ADMIN:((profile=="shirley"||profile=="kelly")?ROLE_USER:ROLE_NONE);}
+static const char* profileDisplayName(const String& profile){if(profile=="shirley")return "Shirley";if(profile=="kelly")return "Kelly";if(profile=="jason")return "Jason";return "";}
+static void clearAuthSessions(){for(auto&s:authSessions){s.token="";s.profile="";s.role=ROLE_NONE;s.lastSeen=0;}}
+static bool storePinAuthConfig(bool enabled,const String& ss,const String& sh,const String& ks,const String& kh,const String& js,const String& jh){JsonDocument d;d["version"]=2;d["enabled"]=enabled;d["shirleySalt"]=ss;d["shirleyHash"]=sh;d["kellySalt"]=ks;d["kellyHash"]=kh;d["jasonSalt"]=js;d["jasonHash"]=jh;String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-auth",false))return false;size_t wrote=p.putString("config",raw);String verify=p.getString("config","");p.end();return wrote==raw.length()&&verify==raw;}
+static void loadPinAuthConfig(){Preferences p;if(!p.begin("anderson-auth",true))return;String raw=p.getString("config","");p.end();JsonDocument d;if(!raw.length()||deserializeJson(d,raw))return;shirleyPinSalt=d["shirleySalt"]|String("");shirleyPinHash=d["shirleyHash"]|String("");kellyPinSalt=d["kellySalt"]|String("");kellyPinHash=d["kellyHash"]|String("");jasonPinSalt=d["jasonSalt"]|String("");jasonPinHash=d["jasonHash"]|String("");pinProtectionEnabled=(d["enabled"]|false)&&basePinAuthConfigured();}
+static bool configureProfilePins(const String& shirleyPin,const String& kellyPin,const String& jasonPin){if(!fourDigitPin(shirleyPin)||!fourDigitPin(kellyPin)||!fourDigitPin(jasonPin)||shirleyPin==kellyPin||shirleyPin==jasonPin||kellyPin==jasonPin)return false;String ss=randomHex(16),ks=randomHex(16),js=randomHex(16),sh=pinDigest("shirley",shirleyPin,ss),kh=pinDigest("kelly",kellyPin,ks),jh=pinDigest("jason",jasonPin,js);if(sh.length()!=64||kh.length()!=64||jh.length()!=64||!storePinAuthConfig(true,ss,sh,ks,kh,js,jh))return false;shirleyPinSalt=ss;shirleyPinHash=sh;kellyPinSalt=ks;kellyPinHash=kh;jasonPinSalt=js;jasonPinHash=jh;pinProtectionEnabled=true;clearAuthSessions();return true;}
+static bool disablePinProtection(){if(!basePinAuthConfigured())return false;if(!storePinAuthConfig(false,shirleyPinSalt,shirleyPinHash,kellyPinSalt,kellyPinHash,jasonPinSalt,jasonPinHash))return false;pinProtectionEnabled=false;clearAuthSessions();return true;}
+static uint8_t sessionRoleForToken(const String& token,bool touch=true){if(token.length()!=64)return ROLE_NONE;uint32_t now=millis();for(auto&s:authSessions){if(!s.token.length())continue;if((uint32_t)(now-s.lastSeen)>AUTH_SESSION_TTL_MS){s.token="";s.profile="";s.role=ROLE_NONE;continue;}if(constantTimeEqual(s.token,token)){if(touch)s.lastSeen=now;return s.role;}}return ROLE_NONE;}
+static String issueAuthSession(uint8_t role,const String& profile){uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;bool found=false;for(size_t i=0;i<4;i++){uint32_t age=(uint32_t)(now-authSessions[i].lastSeen);if(!authSessions[i].token.length()||age>AUTH_SESSION_TTL_MS){slot=i;found=true;break;}if(!found||age>oldestAge){oldestAge=age;slot=i;}}authSessions[slot].token=randomHex(32);authSessions[slot].profile=profile;authSessions[slot].role=role;authSessions[slot].lastSeen=now;return authSessions[slot].token;}
+static String sessionProfileForToken(const String& token){if(token.length()!=64)return "";for(auto&s:authSessions)if(s.token.length()&&constantTimeEqual(s.token,token))return s.profile;return "";}
+static void revokeAuthSession(const String& token){for(auto&s:authSessions)if(token.length()&&constantTimeEqual(s.token,token)){s.token="";s.profile="";s.role=ROLE_NONE;s.lastSeen=0;}}
 static uint8_t requestRole(){if(!pinProtectionEnabled)return ROLE_ADMIN;return sessionRoleForToken(server.header(AUTH_HEADER));}
 static bool requireRole(uint8_t needed){uint8_t role=requestRole();if(role>=needed)return true;server.sendHeader("Cache-Control","no-store");if(role==ROLE_NONE)server.send(401,"application/json","{\"ok\":false,\"error\":\"A valid profile PIN is required\"}");else server.send(403,"application/json","{\"ok\":false,\"error\":\"This profile cannot use that control\"}");return false;}
 static bool requireUser(){return requireRole(ROLE_USER);}
@@ -76,8 +82,8 @@ static void syncPinAttemptClient(){IPAddress ip=server.client().remoteIP();if(!p
 static uint32_t pinRetryAfter(){syncPinAttemptClient();int32_t remaining=(int32_t)(pinBlockedUntil-millis());return remaining>0?(uint32_t)(remaining+999)/1000:0;}
 static void notePinFailure(){syncPinAttemptClient();if(++pinFailureCount>=5){pinFailureCount=0;pinBlockedUntil=millis()+60000UL;}}
 static void clearPinFailures(){syncPinAttemptClient();pinFailureCount=0;pinBlockedUntil=0;}
-static bool verifyProfilePin(const String& profile,const String& pin,uint8_t& role){role=profile=="jason"?ROLE_ADMIN:(profile=="shirley"?ROLE_USER:ROLE_NONE);if(role==ROLE_NONE||!fourDigitPin(pin))return false;const String& salt=role==ROLE_ADMIN?jasonPinSalt:shirleyPinSalt;const String& expected=role==ROLE_ADMIN?jasonPinHash:shirleyPinHash;return constantTimeEqual(pinDigest(profile,pin,salt),expected);}
-static String pinAuthStatusJson(){JsonDocument d;uint8_t role=pinProtectionEnabled?sessionRoleForToken(server.header(AUTH_HEADER),false):ROLE_NONE;d["pinEnabled"]=pinProtectionEnabled;d["configured"]=pinAuthConfigured();d["pinLength"]=4;d["authenticated"]=role!=ROLE_NONE;if(role!=ROLE_NONE){d["role"]=role==ROLE_ADMIN?"admin":"user";d["name"]=role==ROLE_ADMIN?"Jason":"Shirley";}String out;serializeJson(d,out);return out;}
+static bool verifyProfilePin(const String& profile,const String& pin,uint8_t& role){role=profileRole(profile);if(role==ROLE_NONE||!fourDigitPin(pin))return false;const String& salt=profile=="jason"?jasonPinSalt:(profile=="kelly"?kellyPinSalt:shirleyPinSalt);const String& expected=profile=="jason"?jasonPinHash:(profile=="kelly"?kellyPinHash:shirleyPinHash);return constantTimeEqual(pinDigest(profile,pin,salt),expected);}
+static String pinAuthStatusJson(){JsonDocument d;String token=server.header(AUTH_HEADER);uint8_t role=pinProtectionEnabled?sessionRoleForToken(token,false):ROLE_NONE;String profile=role!=ROLE_NONE?sessionProfileForToken(token):String("");d["pinEnabled"]=pinProtectionEnabled;d["configured"]=pinAuthConfigured();d["kellyConfigured"]=kellyPinConfigured();d["pinLength"]=4;d["authenticated"]=role!=ROLE_NONE;if(role!=ROLE_NONE){d["role"]=role==ROLE_ADMIN?"admin":"user";d["name"]=profileDisplayName(profile);}String out;serializeJson(d,out);return out;}
 
 // Custom lights and schedules use NVS directly so APP-only OTA updates never touch them.
 static bool customFsReady=true;
@@ -217,18 +223,19 @@ void setupRoutes(){
   server.on("/recovery",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("X-Content-Type-Options","nosniff");server.send_P(200,"text/html",RECOVERY_UI);});
   server.on("/api/auth/status",HTTP_GET,[]{sendJson(pinAuthStatusJson());});
   server.on("/api/auth/unlock",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;String profile=d["profile"]|String("");profile.toLowerCase();String pin=d["pin"]|String("");uint8_t role=profile=="jason"?ROLE_ADMIN:(profile=="shirley"?ROLE_USER:ROLE_NONE);
-    if(role==ROLE_NONE){server.send(400,"application/json","{\"ok\":false,\"error\":\"Choose Shirley or Jason\"}");return;}
-    if(!pinProtectionEnabled){JsonDocument out;out["ok"]=true;out["pinEnabled"]=false;out["role"]=role==ROLE_ADMIN?"admin":"user";out["name"]=role==ROLE_ADMIN?"Jason":"Shirley";String json;serializeJson(out,json);sendJson(json);return;}
+    JsonDocument d;if(!body(d))return;String profile=d["profile"]|String("");profile.toLowerCase();String pin=d["pin"]|String("");uint8_t role=profileRole(profile);
+    if(role==ROLE_NONE){server.send(400,"application/json","{\"ok\":false,\"error\":\"Choose Shirley, Kelly, or Jason\"}");return;}
+    if(!pinProtectionEnabled){JsonDocument out;out["ok"]=true;out["pinEnabled"]=false;out["role"]=role==ROLE_ADMIN?"admin":"user";out["name"]=profileDisplayName(profile);String json;serializeJson(out,json);sendJson(json);return;}
+    if(profile=="kelly"&&!kellyPinConfigured()){server.send(409,"application/json","{\"ok\":false,\"error\":\"Jason must configure Kelly's PIN in Settings before Kelly can sign in\"}");return;}
     uint32_t retry=pinRetryAfter();if(retry){JsonDocument out;out["ok"]=false;out["error"]=String("Too many incorrect PIN attempts. Try again in ")+String(retry)+" seconds.";out["retryAfter"]=retry;String json;serializeJson(out,json);sendJson(json,429);return;}
     if(!verifyProfilePin(profile,pin,role)){notePinFailure();server.sendHeader("Cache-Control","no-store");server.send(401,"application/json","{\"ok\":false,\"error\":\"Incorrect four-digit PIN\"}");return;}
-    clearPinFailures();JsonDocument out;out["ok"]=true;out["pinEnabled"]=true;out["token"]=issueAuthSession(role);out["role"]=role==ROLE_ADMIN?"admin":"user";out["name"]=role==ROLE_ADMIN?"Jason":"Shirley";out["expiresIn"]=AUTH_SESSION_TTL_MS/1000;String json;serializeJson(out,json);sendJson(json);
+    clearPinFailures();JsonDocument out;out["ok"]=true;out["pinEnabled"]=true;out["token"]=issueAuthSession(role,profile);out["role"]=role==ROLE_ADMIN?"admin":"user";out["name"]=profileDisplayName(profile);out["expiresIn"]=AUTH_SESSION_TTL_MS/1000;String json;serializeJson(out,json);sendJson(json);
   });
   server.on("/api/auth/logout",HTTP_POST,[]{revokeAuthSession(server.header(AUTH_HEADER));server.sendHeader("Cache-Control","no-store");server.send(204);});
   server.on("/api/auth/config",HTTP_POST,[]{
     if(pinProtectionEnabled&&!requireAdmin())return;JsonDocument d;if(!body(d))return;bool enable=d["enabled"]|true;
-    if(!enable){if(!pinAuthConfigured()){server.send(409,"application/json","{\"ok\":false,\"error\":\"No profile PINs have been configured\"}");return;}if(!disablePinProtection()){server.send(500,"application/json","{\"ok\":false,\"error\":\"PIN protection could not be disabled\"}");return;}sendJson("{\"ok\":true,\"pinEnabled\":false}");return;}
-    String shirleyPin=d["shirleyPin"]|String(""),jasonPin=d["jasonPin"]|String("");if(!fourDigitPin(shirleyPin)||!fourDigitPin(jasonPin)){server.send(400,"application/json","{\"ok\":false,\"error\":\"Both PINs must contain exactly four digits\"}");return;}if(shirleyPin==jasonPin){server.send(400,"application/json","{\"ok\":false,\"error\":\"Shirley and Jason must use different PINs\"}");return;}if(!configureProfilePins(shirleyPin,jasonPin)){server.send(500,"application/json","{\"ok\":false,\"error\":\"PINs could not be saved and verified\"}");return;}JsonDocument out;out["ok"]=true;out["pinEnabled"]=true;out["token"]=issueAuthSession(ROLE_ADMIN);String json;serializeJson(out,json);sendJson(json);
+    if(!enable){if(!basePinAuthConfigured()){server.send(409,"application/json","{\"ok\":false,\"error\":\"No profile PINs have been configured\"}");return;}if(!disablePinProtection()){server.send(500,"application/json","{\"ok\":false,\"error\":\"PIN protection could not be disabled\"}");return;}sendJson("{\"ok\":true,\"pinEnabled\":false}");return;}
+    String shirleyPin=d["shirleyPin"]|String(""),kellyPin=d["kellyPin"]|String(""),jasonPin=d["jasonPin"]|String("");if(!fourDigitPin(shirleyPin)||!fourDigitPin(kellyPin)||!fourDigitPin(jasonPin)){server.send(400,"application/json","{\"ok\":false,\"error\":\"All three PINs must contain exactly four digits\"}");return;}if(shirleyPin==kellyPin||shirleyPin==jasonPin||kellyPin==jasonPin){server.send(400,"application/json","{\"ok\":false,\"error\":\"Shirley, Kelly, and Jason must use three different PINs\"}");return;}if(!configureProfilePins(shirleyPin,kellyPin,jasonPin)){server.send(500,"application/json","{\"ok\":false,\"error\":\"PINs could not be saved and verified\"}");return;}JsonDocument out;out["ok"]=true;out["pinEnabled"]=true;out["token"]=issueAuthSession(ROLE_ADMIN,"jason");String json;serializeJson(out,json);sendJson(json);
   });
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
   server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
@@ -293,7 +300,7 @@ void setupRoutes(){
     String saved;serializeJson(list,saved);p.putString("saved",saved);p.end();writeMasterConfig();JsonDocument out;JsonArray oa=out["colors"].to<JsonArray>();for(JsonVariant v:arr)oa.add(v.as<String>());String json;serializeJson(out,json);sendJson(json);
   });
 
-  // ANDERSON_HOME_CUSTOM_LIGHTS: both profiles may preview and change Enabled/Favorite; only Jason may create or delete.
+  // ANDERSON_HOME_CUSTOM_LIGHTS: all profiles may preview and change Enabled/Favorite; only Jason may create or delete.
   server.on("/api/presets",HTTP_GET,[]{
     if(!requireUser())return;if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}String raw=presetStoreRaw();JsonDocument check;if(deserializeJson(check,raw)||!check.is<JsonArray>())raw="[]";String json;json.reserve(raw.length()+20);json="{\"presets\":";json+=raw;json+="}";sendJson(json);
   });

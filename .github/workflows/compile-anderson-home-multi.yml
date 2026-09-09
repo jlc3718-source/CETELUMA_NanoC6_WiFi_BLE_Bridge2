@@ -76,10 +76,11 @@ jobs:
           ! grep -q '/api/login\|AHSESS\|loginOverlay\|Signed out' firmware/src/main.cpp firmware/web/index.html
           grep -q 'id="profileGate"' firmware/web/index.html
           grep -q 'data-profile="shirley"' firmware/web/index.html
+          grep -q 'data-profile="kelly"' firmware/web/index.html
           grep -q 'data-profile="jason"' firmware/web/index.html
           grep -q 'ANDERSON_LOCKOUT_SAFE_PROFILE_GATE' firmware/web/index.html
           grep -q 'Emergency APP-only Firmware Recovery' firmware/web/index.html firmware/src/main.cpp
-          grep -q 'href="/recovery"' firmware/web/index.html
+          ! grep -q 'href="/recovery"' firmware/web/index.html
           grep -Fq 'server.on("/recovery",HTTP_GET' firmware/src/main.cpp
           grep -q "let currentRole='none',currentUser=''" firmware/web/index.html
           grep -q 'ANDERSON_FOUR_DIGIT_PIN_AUTH' firmware/src/main.cpp
@@ -90,7 +91,10 @@ jobs:
           grep -q 'pin.length()!=4' firmware/src/main.cpp
           grep -q 'id="profilePinForm"' firmware/web/index.html
           grep -q 'id="shirleyPinConfirm"' firmware/web/index.html
+          grep -q 'id="kellyPinConfirm"' firmware/web/index.html
           grep -q 'id="jasonPinConfirm"' firmware/web/index.html
+          grep -Fq "profile==='shirley'||profile==='kelly'" firmware/web/index.html
+          grep -Fq "const saved=await post('/api/settings',o);applyState(saved)" firmware/web/index.html
           grep -Fq 'action="/api/update?recovery=1"' firmware/web/index.html firmware/src/main.cpp
           grep -q 'otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()' firmware/src/main.cpp
           grep -q 'ANDERSON_PROTECTED_OTA' firmware/src/main.cpp
@@ -112,6 +116,11 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           source=Path('firmware/src/main.cpp').read_text()
+          for marker in ('kellySalt','kellyHash','pinDigest("kelly"','profile=="kelly"','kellyPin==jasonPin'):
+              if marker not in source:
+                  raise SystemExit(f'Kelly independent PIN support is incomplete: {marker}')
+          if 'pinProtectionEnabled=(d["enabled"]|false)&&basePinAuthConfigured()' not in source:
+              raise SystemExit('Existing two-profile PIN protection must remain enabled during Kelly migration')
           update=source.split('server.on("/api/update",HTTP_POST',1)[1].split('server.on("/api/reboot",HTTP_POST',1)[0]
           if 'verifyProfilePin("jason",recoveryPin,recoveryRole)' not in update:
               raise SystemExit('Independent recovery must verify Jason PIN directly')
