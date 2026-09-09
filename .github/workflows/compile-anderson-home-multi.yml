@@ -76,6 +76,7 @@ jobs:
           python multi_overlay/custom_light_schedule.py "$FW"
           python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
           python multi_overlay/favorites_speed_schedule_remote.py "$FW"
+          python multi_overlay/stabilize_custom_storage.py "$FW"
 
           # Keep the later requested default STA credentials; saved NVS credentials still override these.
           python3 - <<'PY'
@@ -101,6 +102,9 @@ jobs:
           grep -q "let currentRole='admin'" "$FW/include/WebUI.h"
           grep -q '/api/presets' "$FW/src/main.cpp"
           grep -q '/api/custom-schedules' "$FW/src/main.cpp"
+          grep -q 'customScheduleRefreshPending' "$FW/src/main.cpp"
+          grep -q 'Custom light could not be saved to persistent storage' "$FW/src/main.cpp"
+          grep -q 'Schedule could not be saved to persistent storage' "$FW/src/main.cpp"
           grep -q 'Favorite Colors' "$FW/include/WebUI.h"
           grep -q 'homeSpeed' "$FW/include/WebUI.h"
           grep -q 'RGB Color Wheel' "$FW/include/WebUI.h"
@@ -127,16 +131,16 @@ jobs:
           if app >= slot:
               raise SystemExit('Firmware does not fit in OTA slot')
           PY
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-BASELINE-PLUS-FEATURES
+          name: Anderson-Home-NanoC6-CUSTOM-SAVE-FIX
           path: |
-            Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
+            Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_CUSTOM_SAVE_FIX_APP_ONLY.bin
           if-no-files-found: error
