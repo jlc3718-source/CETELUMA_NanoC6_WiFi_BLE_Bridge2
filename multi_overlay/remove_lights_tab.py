@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 
+# Anderson Home v1.0.4: remove the Lights navigation tab while keeping its backend features intact.
 p=Path(sys.argv[1])
 s=p.read_text()
 marker='ANDERSON_REMOVE_LIGHTS_TAB'
