@@ -93,7 +93,13 @@ jobs:
           grep -q 'id="jasonPinConfirm"' firmware/web/index.html
           grep -Fq 'action="/api/update?recovery=1"' firmware/web/index.html firmware/src/main.cpp
           grep -q 'otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()' firmware/src/main.cpp
-          grep -q 'Intentionally public: this is the lockout-safe APP-only recovery path' firmware/src/main.cpp
+          grep -q 'ANDERSON_PROTECTED_OTA' firmware/src/main.cpp
+          grep -q 'X-Anderson-Recovery-PIN' firmware/src/main.cpp firmware/web/index.html
+          grep -q 'id="recoveryPin"' firmware/web/index.html
+          grep -q 'id="homeCustomLightList"' firmware/web/index.html
+          grep -q 'ANDERSON_HOME_CUSTOM_LIGHTS' firmware/src/main.cpp
+          grep -Fq 'o["enabled"]=true;o["favorite"]=false' firmware/src/main.cpp
+          grep -Fq 'loadPresetTheme(o["presetId"].as<String>(),q,qb,qs,nullptr,true)' firmware/src/main.cpp
           grep -q 'data-tab="lights"' firmware/web/index.html
           grep -q 'id="customPresetList"' firmware/web/index.html
           ! grep -q 'id="presetList"' firmware/web/index.html
@@ -107,8 +113,13 @@ jobs:
           from pathlib import Path
           source=Path('firmware/src/main.cpp').read_text()
           update=source.split('server.on("/api/update",HTTP_POST',1)[1].split('server.on("/api/reboot",HTTP_POST',1)[0]
-          if 'requireUser()' in update or 'requireAdmin()' in update:
-              raise SystemExit('Emergency firmware update must remain outside PIN authentication')
+          if 'verifyProfilePin("jason",recoveryPin,recoveryRole)' not in update:
+              raise SystemExit('Independent recovery must verify Jason PIN directly')
+          if 'uint8_t role=requestRole()' not in update:
+              raise SystemExit('Routine firmware update must verify the active Jason session')
+          html=Path('firmware/web/index.html').read_text()
+          if "x.setRequestHeader('X-Anderson-Session',window.andersonAuthToken)" not in html:
+              raise SystemExit('Routine firmware upload must send the Jason session')
           PY
 
       - name: Check web UI JavaScript syntax
