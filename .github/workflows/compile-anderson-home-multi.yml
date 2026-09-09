@@ -1,4 +1,4 @@
-name: Compile Anderson Home Basic Profiles
+name: Compile Anderson Home Proven Baseline Plus Features
 
 on:
   workflow_dispatch:
@@ -12,8 +12,10 @@ jobs:
   build-firmware:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out repository with history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,40 +25,96 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Extract and transform firmware
+      - name: Restore proven pre-auth baseline and apply later functional changes
         run: |
-          rm -rf build_source
-          mkdir build_source
-          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          set -euo pipefail
+          BASE=3c9c65bac1953ecac42282bc57a0cc942e30dee4
+          rm -rf build_source baseline_overlay /tmp/Anderson_Home_Complete_Project.zip
+          mkdir -p build_source baseline_overlay/include baseline_overlay/src
+
+          # Start from the exact firmware/project used by the screenshot-era working build.
+          git show "$BASE:Anderson_Home_Complete_Project.zip" > /tmp/Anderson_Home_Complete_Project.zip
+          unzip -q /tmp/Anderson_Home_Complete_Project.zip -d build_source
           FW=build_source/Anderson_Home_Complete_Project/firmware
           test -d "$FW/src"
           test -d "$FW/include"
-          cp -v multi_overlay/include/BleController.h "$FW/include/BleController.h"
-          cp -v multi_overlay/include/Types.h "$FW/include/Types.h"
-          cp -v multi_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
-          cp -v multi_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
-          cp -v multi_overlay/src/main.cpp "$FW/src/main.cpp"
-          python multi_overlay/patch_webui.py "$FW/include/WebUI.h"
-          python multi_overlay/reconfigure_effects.py "$FW"
-          python multi_overlay/fix_preview_events.py "$FW/include/WebUI.h"
-          python multi_overlay/edit_events_defaults.py "$FW"
-          python multi_overlay/rgb_wheel_saved_colors.py "$FW"
-          python multi_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
-          python multi_overlay/ota_firmware_and_lights_wheel.py "$FW"
-          python multi_overlay/auth_roles.py "$FW"
+
+          # Restore the exact pre-auth core and overlay files from that same commit.
+          for P in \
+            multi_overlay/include/BleController.h \
+            multi_overlay/include/Types.h \
+            multi_overlay/src/BleController.cpp \
+            multi_overlay/src/SettingsStore.cpp \
+            multi_overlay/src/main.cpp \
+            multi_overlay/patch_webui.py \
+            multi_overlay/reconfigure_effects.py \
+            multi_overlay/fix_preview_events.py \
+            multi_overlay/edit_events_defaults.py \
+            multi_overlay/rgb_wheel_saved_colors.py \
+            multi_overlay/label_event_checkboxes.py \
+            multi_overlay/ota_firmware_and_lights_wheel.py \
+            multi_overlay/partitions_ota.csv; do
+              mkdir -p "baseline_overlay/$(dirname "${P#multi_overlay/}")"
+              git show "$BASE:$P" > "baseline_overlay/${P#multi_overlay/}"
+          done
+
+          cp -v baseline_overlay/include/BleController.h "$FW/include/BleController.h"
+          cp -v baseline_overlay/include/Types.h "$FW/include/Types.h"
+          cp -v baseline_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
+          cp -v baseline_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
+          cp -v baseline_overlay/src/main.cpp "$FW/src/main.cpp"
+
+          python baseline_overlay/patch_webui.py "$FW/include/WebUI.h"
+          python baseline_overlay/reconfigure_effects.py "$FW"
+          python baseline_overlay/fix_preview_events.py "$FW/include/WebUI.h"
+          python baseline_overlay/edit_events_defaults.py "$FW"
+          python baseline_overlay/rgb_wheel_saved_colors.py "$FW"
+          python baseline_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
+          python baseline_overlay/ota_firmware_and_lights_wheel.py "$FW"
+
+          # Later requested functional changes, deliberately excluding every auth/role/session patch.
           python multi_overlay/custom_light_schedule.py "$FW"
-          python multi_overlay/ui_roles.py "$FW/include/WebUI.h"
           python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
           python multi_overlay/favorites_speed_schedule_remote.py "$FW"
-          cp -v multi_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
+
+          # Keep the later requested default STA credentials; saved NVS credentials still override these.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('build_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp')
+          s=p.read_text()
+          s=s.replace('prefs.getString("ssid","")','prefs.getString("ssid","Anderson")',1)
+          s=s.replace('prefs.getString("pass","")','prefs.getString("pass","HarleyD5")',1)
+          p.write_text(s)
+          PY
+
+          # Compatibility only: later feature code sees full-control mode, with no login/authentication system.
+          python multi_overlay/no_auth_compat.py "$FW"
+
+          cp -v baseline_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
-          grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
+
+          # Hard guardrails: this build must stay on the proven UI and contain no authentication/profile machinery.
+          ! grep -q '/api/login' "$FW/src/main.cpp"
+          ! grep -q 'AHSESS' "$FW/src/main.cpp"
+          ! grep -q 'JPN7788\|SPN0904' "$FW/src/main.cpp"
+          ! grep -q 'loginOverlay\|Signed out\|Who is using the controller' "$FW/include/WebUI.h"
+          grep -q "let currentRole='admin'" "$FW/include/WebUI.h"
+          grep -q '/api/presets' "$FW/src/main.cpp"
+          grep -q '/api/custom-schedules' "$FW/src/main.cpp"
+          grep -q 'Favorite Colors' "$FW/include/WebUI.h"
+          grep -q 'homeSpeed' "$FW/include/WebUI.h"
+          grep -q 'RGB Color Wheel' "$FW/include/WebUI.h"
+          grep -q 'Anderson' "$FW/src/SettingsStore.cpp"
+          grep -q 'HarleyD5' "$FW/src/SettingsStore.cpp"
+          grep -q 'FFF0' "$FW/src/BleController.cpp"
+          grep -q 'FFF3' "$FW/src/BleController.cpp"
 
       - name: Compile NanoC6 firmware
         run: pio run -d build_source/Anderson_Home_Complete_Project/firmware -e m5stack-nanoc6
 
       - name: Verify OTA slot capacity and export firmware images
         run: |
+          set -euo pipefail
           FW=build_source/Anderson_Home_Complete_Project/firmware
           BUILD="$FW/.pio/build/m5stack-nanoc6"
           test -s "$BUILD/firmware.factory.bin"
@@ -69,16 +127,16 @@ jobs:
           if app >= slot:
               raise SystemExit('Firmware does not fit in OTA slot')
           PY
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-BASIC-PROFILES
+          name: Anderson-Home-NanoC6-BASELINE-PLUS-FEATURES
           path: |
-            Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
+            Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_BASELINE_PLUS_FEATURES_APP_ONLY.bin
           if-no-files-found: error
