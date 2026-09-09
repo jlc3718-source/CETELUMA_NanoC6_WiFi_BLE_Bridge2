@@ -1,4 +1,4 @@
-name: Compile Anderson Home OTA Roles Custom Lights
+name: Compile Anderson Home Basic Profiles
 
 on:
   workflow_dispatch:
@@ -48,7 +48,6 @@ jobs:
           python multi_overlay/ui_roles.py "$FW/include/WebUI.h"
           python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
           python multi_overlay/favorites_speed_schedule_remote.py "$FW"
-          python multi_overlay/fix_session_persistence.py "$FW"
           cp -v multi_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
           sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
           grep -n 'board_.*flash\|partitions' "$FW/platformio.ini" || true
@@ -70,16 +69,16 @@ jobs:
           if app >= slot:
               raise SystemExit('Firmware does not fit in OTA slot')
           PY
-          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_PIN_SESSION_FIX_ALL_IN_ONE.bin
-          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_PIN_SESSION_FIX_APP_ONLY.bin
-          sha256sum Anderson_Home_NanoC6_PIN_SESSION_FIX_ALL_IN_ONE.bin Anderson_Home_NanoC6_PIN_SESSION_FIX_APP_ONLY.bin
-          ls -lh Anderson_Home_NanoC6_PIN_SESSION_FIX_ALL_IN_ONE.bin Anderson_Home_NanoC6_PIN_SESSION_FIX_APP_ONLY.bin
+          cp "$BUILD/firmware.factory.bin" Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin
+          cp "$BUILD/firmware.bin" Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
+          sha256sum Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
+          ls -lh Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-PIN-SESSION-FIX
+          name: Anderson-Home-NanoC6-BASIC-PROFILES
           path: |
-            Anderson_Home_NanoC6_PIN_SESSION_FIX_ALL_IN_ONE.bin
-            Anderson_Home_NanoC6_PIN_SESSION_FIX_APP_ONLY.bin
+            Anderson_Home_NanoC6_BASIC_PROFILES_ALL_IN_ONE.bin
+            Anderson_Home_NanoC6_BASIC_PROFILES_APP_ONLY.bin
           if-no-files-found: error
