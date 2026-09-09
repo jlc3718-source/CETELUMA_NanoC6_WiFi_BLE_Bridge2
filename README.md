@@ -1,56 +1,35 @@
-# CETELUMA NanoC6 Wi-Fi → BLE Light Bridge
+# Anderson Home NanoC6 Light Controller
 
-Target: **M5Stack NanoC6 (ESP32-C6FH4, 4 MB flash)**.
+Current target: **M5Stack NanoC6 / ESP32-C6FH4 / 4 MB flash**.
 
-This firmware leaves the existing 24 V CETELUMA installation and BLE controller untouched:
+The NanoC6 hosts the Anderson Home web interface and bridges Wi-Fi commands to the two existing ELK-BLEDDM / Lotus Lantern light controllers over BLE.
 
-`Phone → 2.4 GHz Wi-Fi → NanoC6 → BLE → existing CETELUMA/LEDBLE controller → lights`
+## Current architecture
 
-## Included features
+- Two-controller BLE support with automatic reconnect after reboot.
+- ELK-BLEDDM / Lotus Lantern FFF0 / FFF3 protocol support.
+- Effects limited to Jump, Breath, Strobe, and Gradient.
+- Events, favorites, custom lights, custom schedules, Wi-Fi settings, and controller identities persist across APP-ONLY OTA updates.
+- Persistent custom-light and schedule data is stored in the dedicated SPIFFS data partition with an NVS mirror.
+- Recovery AP remains `AndersonHome-Setup`.
+- OTA firmware updates are available from **Settings → Firmware Update**.
+- Firmware revision is tracked in `FIRMWARE_VERSION.txt` and displayed in the Settings tab.
 
-- Approved simple dark CETELUMA web dashboard.
-- Power, RGB color, brightness, effect/pattern and speed controls.
-- Built-in presets plus up to 10 custom presets saved to nonvolatile flash.
-- Custom preset recall includes color, brightness, pattern and speed.
-- Wi-Fi scan/change from the web interface; no reflash when SSID/password changes.
-- Wi-Fi credentials stored in ESP32 Preferences/NVS.
-- Setup/recovery AP: `CETELUMA-Bridge-Setup`, password `ceteluma24`.
-- Hold the NanoC6 GPIO9 button for ~5 seconds while firmware is running to start recovery setup mode.
-- `http://ceteluma.local` on the home LAN when mDNS is available.
-- BLE auto-scan/reconnect to compatible controllers advertising `LEDBLE*`, `LEDCAR*`, or `LEDDMX*`.
-- FFE0/FFE1 9-byte protocol support for common LEDBLE dialect A and LEDCAR/LEDDMX RGBIC dialect B variants.
+## Flashing
 
-## Flash target
+Routine updates use the **APP-ONLY** binary through the Anderson Home firmware updater. No flash address is used for OTA updates.
 
-The requested delivery file is a **single merged/factory image** named:
+For recovery or partition-layout migration only, use the **ALL-IN-ONE** image at:
 
-`CETELUMA_NanoC6_WiFi_BLE_Bridge.bin`
+`0x0000`
 
-It should be flashed at address **0x0000**.
+Do not flash an APP-ONLY image at `0x0000`.
 
-## Build
+## Repository layout
 
-Official M5Stack NanoC6 PlatformIO target:
-
-```ini
-board = esp32-c6-devkitc-1
-framework = arduino
--D ARDUINO_USB_MODE=1
--D ARDUINO_USB_CDC_ON_BOOT=1
-```
-
-Build with PlatformIO, then merge bootloader + partition table + boot_app0 + firmware into one flash image at 0x0000 using the addresses from PlatformIO's generated flash arguments.
-
-## First use
-
-1. Flash the merged `.bin` at `0x0000`.
-2. Reboot normally (do not hold GPIO9).
-3. If no saved Wi-Fi exists, connect phone to `CETELUMA-Bridge-Setup` using password `ceteluma24`.
-4. Open `http://192.168.4.1`.
-5. Scan/select your 2.4 GHz Wi-Fi and tap **Save & Connect**.
-6. On home Wi-Fi, open `http://ceteluma.local` or the bridge IP shown in your router.
-7. The bridge automatically searches for the closest compatible LED controller.
-
-## Important BLE note
-
-The original LEDBLE phone app and this bridge generally should not try to hold the same BLE controller connection simultaneously. Fully close the original app if commands fail.
+- `.github/workflows/compile-anderson-home-multi.yml` — current NanoC6 firmware build.
+- `.github/workflows/build-anderson-home-app-v8-ddns-only.yml` — current Android DDNS wrapper build.
+- `multi_overlay/` — only the current firmware transforms used by the active build.
+- `android_overlay/` — Android wrapper helpers retained for future app updates.
+- `Anderson_Home_Complete_Project.zip` — base project retained for Android builds.
+- `FIRMWARE_VERSION.txt` — current firmware revision.
