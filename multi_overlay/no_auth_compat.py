@@ -22,8 +22,8 @@ if "let currentRole='admin'" not in s:
     s=s[:first]+"\nlet currentRole='admin',currentUser='Jason';\n"+s[first:]
 web.write_text(s)
 
-# Final persistence / BLE restore / appearance and OTA transforms run after legacy patches.
 here=Path(__file__).resolve().parent
 subprocess.check_call([sys.executable,str(here/'littlefs_master_storage.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'auto_ota_reboot.py'),str(root)])
+subprocess.check_call([sys.executable,str(here/'legacy_guardrail_compat.py'),str(root)])
 print('Applied open full-control compatibility, LittleFS master persistence, BLE restore, blue UI, and automatic OTA reboot')
