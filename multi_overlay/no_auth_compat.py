@@ -25,7 +25,6 @@ web.write_text(s)
 here=Path(__file__).resolve().parent
 subprocess.check_call([sys.executable,str(here/'littlefs_master_storage.py'),str(root)])
 
-# The LittleFS schedule route defers scheduler refresh after the HTTP response.
 s=main.read_text()
 if 'static bool customScheduleRefreshPending' not in s:
     a='static bool timeValid(){return time(nullptr)>1700000000;}\n'
@@ -37,6 +36,7 @@ main.write_text(s)
 subprocess.check_call([sys.executable,str(here/'auto_ota_reboot.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'legacy_guardrail_compat.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'settings_time_persistence_fix.py'),str(root)])
-# Theme must be applied after all other UI transforms so nothing changes it back to blue.
+subprocess.check_call([sys.executable,str(here/'storage_hard_fix.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'red_background.py'),str(web)])
-print('Applied persistence, BLE restore, OTA reboot, schedule refresh, settings time persistence, and red UI')
+subprocess.check_call([sys.executable,str(here/'version_display.py'),str(root)])
+print('Applied verified persistence, BLE restore, OTA reboot, settings persistence, red UI, and firmware revision display')
