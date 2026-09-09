@@ -24,6 +24,6 @@ web.write_text(s)
 
 # Final persistence and OTA transforms run after the legacy compatibility patches.
 here=Path(__file__).resolve().parent
-subprocess.check_call([sys.executable,str(here/'spiffs_custom_storage.py'),str(root)])
+subprocess.check_call([sys.executable,str(here/'spiffs_custom_storage_runner.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'auto_ota_reboot.py'),str(root)])
 print('Applied open full-control compatibility, SPIFFS storage, and automatic OTA reboot')
