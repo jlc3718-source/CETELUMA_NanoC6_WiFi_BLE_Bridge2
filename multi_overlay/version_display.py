@@ -2,7 +2,8 @@ from pathlib import Path
 import sys
 
 root=Path(sys.argv[1])
-version=sys.argv[2].strip()
+version=(sys.argv[2].strip() if len(sys.argv)>2 else Path('FIRMWARE_VERSION.txt').read_text().strip())
+if not version: raise SystemExit('firmware version missing')
 main=root/'src/main.cpp'
 web=root/'include/WebUI.h'
 
@@ -14,7 +15,7 @@ if 'ANDERSON_FIRMWARE_VERSION' not in s:
 state='JsonDocument d;d["power"]=power;'
 if state in s:
     s=s.replace(state,'JsonDocument d;d["firmwareVersion"]=ANDERSON_FIRMWARE_VERSION;d["power"]=power;',1)
-else:
+elif 'd["firmwareVersion"]' not in s:
     raise SystemExit('stateJson anchor missing for firmware version')
 main.write_text(s)
 
