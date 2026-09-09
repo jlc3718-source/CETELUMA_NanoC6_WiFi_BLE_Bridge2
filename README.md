@@ -1,35 +1,19 @@
 # Anderson Home NanoC6 Light Controller
 
-Current target: **M5Stack NanoC6 / ESP32-C6FH4 / 4 MB flash**.
+Target: **M5Stack NanoC6 / ESP32-C6FH4, 4 MB flash**.
 
-The NanoC6 hosts the Anderson Home web interface and bridges Wi-Fi commands to the two existing ELK-BLEDDM / Lotus Lantern light controllers over BLE.
+Current production firmware keeps the OTA partition layout intact and supports app-only updates through Settings.
 
-## Current architecture
+## Current features
+- Anderson Home web UI with blue background.
+- Two saved ELK-BLEDDM / Lotus Lantern BLE controllers with automatic reconnect.
+- Jump, Breath, Strobe, and Gradient effects.
+- Custom lights and custom schedules with persistent SPIFFS storage plus NVS mirrors.
+- Persistent settings backup outside the OTA app slots.
+- Firmware revision displayed in Settings.
+- Automatic OTA upload, validation, reboot, reconnect, and detailed update-stage status.
 
-- Two-controller BLE support with automatic reconnect after reboot.
-- ELK-BLEDDM / Lotus Lantern FFF0 / FFF3 protocol support.
-- Effects limited to Jump, Breath, Strobe, and Gradient.
-- Events, favorites, custom lights, custom schedules, Wi-Fi settings, and controller identities persist across APP-ONLY OTA updates.
-- Persistent custom-light and schedule data is stored in the dedicated SPIFFS data partition with an NVS mirror.
-- Recovery AP remains `AndersonHome-Setup`.
-- OTA firmware updates are available from **Settings → Firmware Update**.
-- Firmware revision is tracked in `FIRMWARE_VERSION.txt` and displayed in the Settings tab.
+## Updating
+Routine releases use the **APP-ONLY** `.bin` from Settings → Firmware Update.
 
-## Flashing
-
-Routine updates use the **APP-ONLY** binary through the Anderson Home firmware updater. No flash address is used for OTA updates.
-
-For recovery or partition-layout migration only, use the **ALL-IN-ONE** image at:
-
-`0x0000`
-
-Do not flash an APP-ONLY image at `0x0000`.
-
-## Repository layout
-
-- `.github/workflows/compile-anderson-home-multi.yml` — current NanoC6 firmware build.
-- `.github/workflows/build-anderson-home-app-v8-ddns-only.yml` — current Android DDNS wrapper build.
-- `multi_overlay/` — only the current firmware transforms used by the active build.
-- `android_overlay/` — Android wrapper helpers retained for future app updates.
-- `Anderson_Home_Complete_Project.zip` — base project retained for Android builds.
-- `FIRMWARE_VERSION.txt` — current firmware revision.
+A full merged image is for recovery only and must be flashed at **0x0 with Erase OFF** unless a future release explicitly changes the partition layout.
