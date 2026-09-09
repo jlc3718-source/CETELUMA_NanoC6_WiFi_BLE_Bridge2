@@ -3,6 +3,10 @@
 
 static uint8_t r8(uint32_t c){return (c>>16)&0xFF;} static uint8_t g8(uint32_t c){return (c>>8)&0xFF;} static uint8_t b8(uint32_t c){return c&0xFF;}
 static uint32_t hsv(float h,float s,float v){h=fmodf(h,360.0f);if(h<0)h+=360.0f;float c=v*s,x=c*(1.0f-fabsf(fmodf(h/60.0f,2.0f)-1.0f)),m=v-c,r=0,g=0,b=0;if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}return ((uint32_t)((r+m)*255)<<16)|((uint32_t)((g+m)*255)<<8)|(uint32_t)((b+m)*255);}
+static uint32_t softwareEffectIntervalMs(uint8_t speedLevel){
+  static constexpr uint32_t intervalsMs[5]={2000,1000,500,250,100};
+  return intervalsMs[constrain(speedLevel,1,5)-1];
+}
 
 String BleController::protocolLabel(uint8_t p) const{if(p==1)return "LEDBLE A";if(p==2)return "RGBIC B";if(p==3)return "RGBIC B shifted";if(p==4)return "ELK-BLEDDM / Lotus Lantern";return "Auto";}
 uint8_t BleController::detectProtocol(const String& n) const{String u=n;u.toUpperCase();if(u.startsWith("ELK-BLEDDM")||u.startsWith("ELK-BLEDOM")||u.startsWith("ELK-"))return 4;if(u.startsWith("LEDCAR-02")||u.startsWith("LEDDMX-02")||u.startsWith("LEDDMX-04"))return 3;if(u.startsWith("LEDCAR-01")||u.startsWith("LEDDMX"))return 2;return 1;}
@@ -104,7 +108,9 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
     activeTheme=t;activeValid=true;setPower(true);setBrightness(bright);setSpeed(sp);lastEffect=0;
   }
   uint8_t count=max((uint8_t)1,t.colorCount);
-  uint32_t interval=map(constrain(speedLevel,1,5),1,5,700,95);
+  // One logical interval is shared by every software-generated effect. The controller only
+  // receives color/brightness frames, so it cannot clamp the maximum interval used here.
+  uint32_t interval=softwareEffectIntervalMs(speedLevel);
 
   // Jump: discrete color-to-color changes. One color intentionally behaves as a steady color.
   if(t.effect==Effect::Jump){
@@ -117,7 +123,7 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
     return;
   }
 
-  // Strobe: sharp on/off flashes; configured colors rotate between flashes.
+  // Strobe: each selected interval remains one complete off/on flash.
   if(t.effect==Effect::Strobe){
     uint32_t half=max((uint32_t)45,interval/2);
     if(!force && nowMs-lastEffect<half)return;
@@ -129,7 +135,8 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
     return;
   }
 
-  // Breath and Gradient are smooth software animations so they work identically on both ELK strings.
+  // Breath and Gradient use interval-derived frames and an eight-interval fade cycle so neither
+  // effect can fall back to a separate fixed speed.
   uint32_t frame=max((uint32_t)55,interval/5);
   if(!force && nowMs-lastEffect<frame)return;
   lastEffect=nowMs;

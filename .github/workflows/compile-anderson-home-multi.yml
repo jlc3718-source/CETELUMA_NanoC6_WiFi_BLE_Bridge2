@@ -120,6 +120,17 @@ jobs:
           html=Path('firmware/web/index.html').read_text()
           if "x.setRequestHeader('X-Anderson-Session',window.andersonAuthToken)" not in html:
               raise SystemExit('Routine firmware upload must send the Jason session')
+          ble=Path('firmware/src/BleController.cpp').read_text()
+          expected='{2000,1000,500,250,100}'
+          if f'intervalsMs[5]={expected}' not in ble:
+              raise SystemExit('NanoC6 software-effect speed intervals do not match the release contract')
+          if '[0,2000,1000,500,250,100]' not in html or '||500}' not in html:
+              raise SystemExit('Web preview speed intervals do not match the NanoC6 firmware')
+          if 'map(constrain(speedLevel,1,5),1,5,700,95)' in ble:
+              raise SystemExit('Legacy software-effect timing map is still present')
+          for marker in ('nowMs-lastEffect<interval','nowMs/interval','interval/2','interval/5','interval*8UL'):
+              if marker not in ble:
+                  raise SystemExit(f'Software effect no longer derives its timing from the selected interval: {marker}')
           PY
 
       - name: Check web UI JavaScript syntax
