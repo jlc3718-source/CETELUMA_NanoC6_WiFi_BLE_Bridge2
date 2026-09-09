@@ -38,5 +38,6 @@ subprocess.check_call([sys.executable,str(here/'legacy_guardrail_compat.py'),str
 subprocess.check_call([sys.executable,str(here/'settings_time_persistence_fix.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'storage_hard_fix.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'blue_background.py'),str(web)])
+subprocess.check_call([sys.executable,str(here/'remove_lights_tab.py'),str(web)])
 subprocess.check_call([sys.executable,str(here/'version_display.py'),str(root)])
-print('Applied verified persistence, BLE restore, OTA reboot, settings persistence, blue UI, and firmware revision display')
+print('Applied verified persistence, BLE restore, OTA reboot, settings persistence, blue UI, Lights tab removal, and firmware revision display')
