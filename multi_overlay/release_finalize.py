@@ -133,35 +133,9 @@ if '</head>' in w:
 else:
     w += blue_css
 
-# Hide the obsolete Lights navigation tab while retaining the underlying controls/data APIs.
-if 'ANDERSON_REMOVE_LIGHTS_TAB' not in w:
-    lights_patch = r'''
-<style>
-/* ANDERSON_REMOVE_LIGHTS_TAB */
-[data-tab="lights"],[data-page="lights"],[href="#lights"],#tabLights,#lightsTab{display:none!important;}
-</style>
-<script>
-/* ANDERSON_REMOVE_LIGHTS_TAB */
-(function(){
-  function removeLightsTab(){
-    document.querySelectorAll('button,a,[role="tab"]').forEach(function(el){
-      var txt=(el.textContent||'').trim().toLowerCase();
-      var cls=(typeof el.className==='string'?el.className:'').toLowerCase();
-      var tab=(el.getAttribute('data-tab')||'').toLowerCase();
-      var href=(el.getAttribute('href')||'').toLowerCase();
-      var inNav=!!el.closest('nav,.tabs,.tabbar,.nav,.bottom-nav,.top-nav');
-      if(tab==='lights'||href==='#lights'||(txt==='lights'&&(inNav||cls.indexOf('tab')>=0))){el.remove();}
-    });
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',removeLightsTab);else removeLightsTab();
-  setTimeout(removeLightsTab,250);
-})();
-</script>
-'''
-    if '</body>' in w:
-        w = w.replace('</body>', lights_patch + '\n</body>', 1)
-    else:
-        w += lights_patch
+# The Lights tab is intentionally visible again. Custom shows are created and scheduled there.
+if 'ANDERSON_REMOVE_LIGHTS_TAB' in w:
+    raise SystemExit('obsolete Lights-tab hiding code is still present')
 web.write_text(w)
 
 # Embed firmware revision in the API and Settings page.
@@ -186,4 +160,4 @@ if 'Firmware Revision' not in w:
     w = w.replace(panel_anchor, panel + panel_anchor, 1)
 web.write_text(w)
 
-print(f'Finalized Anderson Home firmware v{version}: storage, OTA, schedule UI sync, blue theme, Lights tab removal, and revision display')
+print(f'Finalized Anderson Home firmware v{version}: storage, OTA, schedule UI sync, blue theme, Lights tab restoration, and revision display')
