@@ -82,6 +82,18 @@ jobs:
           grep -q 'href="/recovery"' firmware/web/index.html
           grep -Fq 'server.on("/recovery",HTTP_GET' firmware/src/main.cpp
           grep -q "let currentRole='none',currentUser=''" firmware/web/index.html
+          grep -q 'ANDERSON_FOUR_DIGIT_PIN_AUTH' firmware/src/main.cpp
+          grep -Fq 'server.on("/api/auth/unlock",HTTP_POST' firmware/src/main.cpp
+          grep -Fq 'server.on("/api/auth/config",HTTP_POST' firmware/src/main.cpp
+          grep -q 'X-Anderson-Session' firmware/src/main.cpp firmware/web/index.html
+          grep -q 'mbedtls_sha256' firmware/src/main.cpp
+          grep -q 'pin.length()!=4' firmware/src/main.cpp
+          grep -q 'id="profilePinForm"' firmware/web/index.html
+          grep -q 'id="shirleyPinConfirm"' firmware/web/index.html
+          grep -q 'id="jasonPinConfirm"' firmware/web/index.html
+          grep -Fq 'action="/api/update?recovery=1"' firmware/web/index.html firmware/src/main.cpp
+          grep -q 'otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()' firmware/src/main.cpp
+          grep -q 'Intentionally public: this is the lockout-safe APP-only recovery path' firmware/src/main.cpp
           grep -q 'data-tab="lights"' firmware/web/index.html
           grep -q 'id="customPresetList"' firmware/web/index.html
           ! grep -q 'id="presetList"' firmware/web/index.html
@@ -91,6 +103,13 @@ jobs:
           grep -q 'FFF0' firmware/src/BleController.cpp
           grep -q 'FFF3' firmware/src/BleController.cpp
           grep -q '32f6bf400b276b0f61cf42c50490a7808ee3457e' firmware/platformio.ini
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('firmware/src/main.cpp').read_text()
+          update=source.split('server.on("/api/update",HTTP_POST',1)[1].split('server.on("/api/reboot",HTTP_POST',1)[0]
+          if 'requireUser()' in update or 'requireAdmin()' in update:
+              raise SystemExit('Emergency firmware update must remain outside PIN authentication')
+          PY
 
       - name: Check web UI JavaScript syntax
         run: |

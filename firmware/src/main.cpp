@@ -7,6 +7,9 @@
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include <esp_app_desc.h>
+#include <esp_random.h>
+#include <esp_system.h>
+#include <mbedtls/sha256.h>
 #include <time.h>
 #include "WebUIGzip.h"
 #include "Types.h"
@@ -28,21 +31,52 @@ uint8_t brightness=100,speedLevel=1;
 Theme runningTheme;
 uint32_t buttonDown=0,lastScheduleCheck=0;
 bool setupAP=false;
-bool otaUploadAllowed=false,otaUploadOk=false;String otaUploadError;
+bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
 static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsigned long)c);return b;}
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.5";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.6";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 static bool writeMasterConfig();
 
-static uint8_t requestRole(){return 2;}
-static bool requireUser(){return true;}
-static bool requireAdmin(){return true;}
+// ANDERSON_FOUR_DIGIT_PIN_AUTH: PIN hashes live in NVS; browser sessions live only in RAM.
+static constexpr uint8_t ROLE_NONE=0,ROLE_USER=1,ROLE_ADMIN=2;
+static constexpr const char* AUTH_HEADER="X-Anderson-Session";
+static constexpr uint32_t AUTH_SESSION_TTL_MS=8UL*60UL*60UL*1000UL;
+struct AuthSession{String token;uint8_t role=ROLE_NONE;uint32_t lastSeen=0;};
+static AuthSession authSessions[4];
+static bool pinProtectionEnabled=false;
+static String shirleyPinSalt,shirleyPinHash,jasonPinSalt,jasonPinHash;
+static IPAddress pinAttemptIp;static bool pinAttemptIpSet=false;static uint8_t pinFailureCount=0;static uint32_t pinBlockedUntil=0;
+
+static bool fourDigitPin(const String& pin){if(pin.length()!=4)return false;for(size_t i=0;i<4;i++)if(pin[i]<'0'||pin[i]>'9')return false;return true;}
+static String hexBytes(const uint8_t* data,size_t len){static const char h[]="0123456789abcdef";String out;out.reserve(len*2);for(size_t i=0;i<len;i++){out+=h[data[i]>>4];out+=h[data[i]&15];}return out;}
+static String randomHex(size_t bytes){uint8_t data[32];if(bytes>sizeof(data))bytes=sizeof(data);esp_fill_random(data,bytes);return hexBytes(data,bytes);}
+static String pinDigest(const String& profile,const String& pin,const String& salt){String material=String("anderson-pin-v1|")+profile+"|"+salt+"|"+pin;uint8_t digest[32];if(mbedtls_sha256((const uint8_t*)material.c_str(),material.length(),digest,0)!=0)return "";return hexBytes(digest,sizeof(digest));}
+static bool constantTimeEqual(const String& a,const String& b){if(a.length()!=b.length())return false;uint8_t diff=0;for(size_t i=0;i<a.length();i++)diff|=(uint8_t)(a[i]^b[i]);return diff==0;}
+static bool pinAuthConfigured(){return shirleyPinSalt.length()==32&&jasonPinSalt.length()==32&&shirleyPinHash.length()==64&&jasonPinHash.length()==64;}
+static void clearAuthSessions(){for(auto&s:authSessions){s.token="";s.role=ROLE_NONE;s.lastSeen=0;}}
+static bool storePinAuthConfig(bool enabled,const String& ss,const String& sh,const String& js,const String& jh){JsonDocument d;d["version"]=1;d["enabled"]=enabled;d["shirleySalt"]=ss;d["shirleyHash"]=sh;d["jasonSalt"]=js;d["jasonHash"]=jh;String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-auth",false))return false;size_t wrote=p.putString("config",raw);String verify=p.getString("config","");p.end();return wrote==raw.length()&&verify==raw;}
+static void loadPinAuthConfig(){Preferences p;if(!p.begin("anderson-auth",true))return;String raw=p.getString("config","");p.end();JsonDocument d;if(!raw.length()||deserializeJson(d,raw))return;shirleyPinSalt=d["shirleySalt"]|String("");shirleyPinHash=d["shirleyHash"]|String("");jasonPinSalt=d["jasonSalt"]|String("");jasonPinHash=d["jasonHash"]|String("");pinProtectionEnabled=(d["enabled"]|false)&&pinAuthConfigured();}
+static bool configureProfilePins(const String& shirleyPin,const String& jasonPin){if(!fourDigitPin(shirleyPin)||!fourDigitPin(jasonPin)||shirleyPin==jasonPin)return false;String ss=randomHex(16),js=randomHex(16),sh=pinDigest("shirley",shirleyPin,ss),jh=pinDigest("jason",jasonPin,js);if(sh.length()!=64||jh.length()!=64||!storePinAuthConfig(true,ss,sh,js,jh))return false;shirleyPinSalt=ss;shirleyPinHash=sh;jasonPinSalt=js;jasonPinHash=jh;pinProtectionEnabled=true;clearAuthSessions();return true;}
+static bool disablePinProtection(){if(!pinAuthConfigured())return false;if(!storePinAuthConfig(false,shirleyPinSalt,shirleyPinHash,jasonPinSalt,jasonPinHash))return false;pinProtectionEnabled=false;clearAuthSessions();return true;}
+static uint8_t sessionRoleForToken(const String& token,bool touch=true){if(token.length()!=64)return ROLE_NONE;uint32_t now=millis();for(auto&s:authSessions){if(!s.token.length())continue;if((uint32_t)(now-s.lastSeen)>AUTH_SESSION_TTL_MS){s.token="";s.role=ROLE_NONE;continue;}if(constantTimeEqual(s.token,token)){if(touch)s.lastSeen=now;return s.role;}}return ROLE_NONE;}
+static String issueAuthSession(uint8_t role){uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;bool found=false;for(size_t i=0;i<4;i++){uint32_t age=(uint32_t)(now-authSessions[i].lastSeen);if(!authSessions[i].token.length()||age>AUTH_SESSION_TTL_MS){slot=i;found=true;break;}if(!found||age>oldestAge){oldestAge=age;slot=i;}}authSessions[slot].token=randomHex(32);authSessions[slot].role=role;authSessions[slot].lastSeen=now;return authSessions[slot].token;}
+static void revokeAuthSession(const String& token){for(auto&s:authSessions)if(token.length()&&constantTimeEqual(s.token,token)){s.token="";s.role=ROLE_NONE;s.lastSeen=0;}}
+static uint8_t requestRole(){if(!pinProtectionEnabled)return ROLE_ADMIN;return sessionRoleForToken(server.header(AUTH_HEADER));}
+static bool requireRole(uint8_t needed){uint8_t role=requestRole();if(role>=needed)return true;server.sendHeader("Cache-Control","no-store");if(role==ROLE_NONE)server.send(401,"application/json","{\"ok\":false,\"error\":\"A valid profile PIN is required\"}");else server.send(403,"application/json","{\"ok\":false,\"error\":\"This profile cannot use that control\"}");return false;}
+static bool requireUser(){return requireRole(ROLE_USER);}
+static bool requireAdmin(){return requireRole(ROLE_ADMIN);}
+static void syncPinAttemptClient(){IPAddress ip=server.client().remoteIP();if(!pinAttemptIpSet||ip!=pinAttemptIp){pinAttemptIp=ip;pinAttemptIpSet=true;pinFailureCount=0;pinBlockedUntil=0;}}
+static uint32_t pinRetryAfter(){syncPinAttemptClient();int32_t remaining=(int32_t)(pinBlockedUntil-millis());return remaining>0?(uint32_t)(remaining+999)/1000:0;}
+static void notePinFailure(){syncPinAttemptClient();if(++pinFailureCount>=5){pinFailureCount=0;pinBlockedUntil=millis()+60000UL;}}
+static void clearPinFailures(){syncPinAttemptClient();pinFailureCount=0;pinBlockedUntil=0;}
+static bool verifyProfilePin(const String& profile,const String& pin,uint8_t& role){role=profile=="jason"?ROLE_ADMIN:(profile=="shirley"?ROLE_USER:ROLE_NONE);if(role==ROLE_NONE||!fourDigitPin(pin))return false;const String& salt=role==ROLE_ADMIN?jasonPinSalt:shirleyPinSalt;const String& expected=role==ROLE_ADMIN?jasonPinHash:shirleyPinHash;return constantTimeEqual(pinDigest(profile,pin,salt),expected);}
+static String pinAuthStatusJson(){JsonDocument d;uint8_t role=pinProtectionEnabled?sessionRoleForToken(server.header(AUTH_HEADER),false):ROLE_NONE;d["pinEnabled"]=pinProtectionEnabled;d["configured"]=pinAuthConfigured();d["pinLength"]=4;d["authenticated"]=role!=ROLE_NONE;if(role!=ROLE_NONE){d["role"]=role==ROLE_ADMIN?"admin":"user";d["name"]=role==ROLE_ADMIN?"Jason":"Shirley";}String out;serializeJson(d,out);return out;}
 
 // Custom lights and schedules use NVS directly so APP-only OTA updates never touch them.
 static bool customFsReady=true;
@@ -95,8 +129,8 @@ static String firmwareJson(){
 static const char RECOVERY_UI[] PROGMEM=R"AHREC(<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0a3f88"><title>Anderson Home Firmware Recovery</title>
 <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:24px 14px;background:linear-gradient(155deg,#061934,#0b438d 52%,#04152d);color:#f4f7fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}main{width:min(100%,540px);margin:0 auto}.brand{text-align:center;margin:8px 0 20px}h1{font-size:26px;margin:0}.sub{font-size:13px;line-height:1.45;color:#aeb8c5}.panel{padding:18px;border:1px solid #49566a;border-radius:18px;background:#101720;box-shadow:0 18px 46px #0005}.meta{margin:12px 0;padding:11px;border:1px solid #2a3a4c;border-radius:12px;background:#0c1219}.label{font-size:13px;margin:12px 0 6px}.field,.btn{width:100%;min-height:46px;padding:10px;border:1px solid #34465a;border-radius:12px;background:#0e151e;color:#f4f7fb;font:inherit}.btn{margin-top:10px;cursor:pointer;background:linear-gradient(#27aaff,#148de1);border-color:#3bb2ff;font-weight:750}.btn:disabled{opacity:.55}progress{width:100%;height:14px;margin-top:11px}a{color:#7dc9ff}.status{min-height:42px;margin-top:8px}</style></head>
-<body><main><div class="brand"><h1>Anderson Home</h1><div class="sub">Independent firmware recovery</div></div><section class="panel"><strong>Emergency APP-only Firmware Recovery</strong><div class="sub">This page does not depend on the profile chooser or the main controller interface.</div><div id="meta" class="meta sub">Checking controller firmware…</div><form id="form" method="post" action="/api/update" enctype="multipart/form-data"><div class="label">APP-only firmware BIN</div><input id="file" class="field" type="file" name="firmware" accept=".bin,application/octet-stream" required><button id="upload" class="btn" type="submit">Upload, Install &amp; Reboot</button></form><progress id="progress" max="100" value="0"></progress><div id="status" class="sub status" aria-live="polite">Choose only the APP_ONLY.bin release file. Your saved settings remain in persistent storage.</div><div class="sub"><a href="/">Return to user chooser</a></div></section></main>
-<script>(function(){let before='';const get=id=>document.getElementById(id),say=message=>get('status').textContent=message;async function info(){try{const response=await fetch('/api/firmware?recovery='+Date.now(),{cache:'no-store'});if(!response.ok)throw 0;const firmware=await response.json();before=firmware.runningPartition||before;get('meta').innerHTML='<strong>Running:</strong> '+(firmware.runningPartition||'—')+(firmware.version?' • '+firmware.version:'')+'<br>Update slot: '+(firmware.nextPartition||'—')}catch(error){get('meta').textContent='Firmware details unavailable; the upload form remains ready.'}}function wait(){let tries=0;say('Controller is rebooting. Waiting for it to return…');const poll=async()=>{tries++;try{const response=await fetch('/api/firmware?recovery='+Date.now(),{cache:'no-store'});if(response.ok){const firmware=await response.json();if(!before||firmware.runningPartition!==before||tries>=8){before=firmware.runningPartition||before;say('Recovery completed. The controller is back online.');get('upload').disabled=false;info();return}}}catch(error){}if(tries<45)setTimeout(poll,1000);else{say('Upload finished, but reconnect timed out. Reopen this page after Wi-Fi reconnects.');get('upload').disabled=false}};setTimeout(poll,2800)}get('form').addEventListener('submit',event=>{event.preventDefault();const file=get('file').files&&get('file').files[0];if(!file)return say('Choose an APP-only .bin firmware file first.');if(!/\.bin$/i.test(file.name))return say('The firmware filename must end in .bin.');const data=new FormData();data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update');get('upload').disabled=true;get('progress').value=0;say('Opening the inactive firmware slot…');request.upload.onprogress=e=>{if(e.lengthComputable){const percent=Math.round(e.loaded*100/e.total);get('progress').value=percent;say(percent<100?'Uploading firmware… '+percent+'%':'Upload complete. Verifying firmware…')}};request.onload=()=>{if(request.status>=200&&request.status<300){get('progress').value=100;say('Firmware verified. Rebooting the controller…');wait()}else{get('upload').disabled=false;say(request.responseText||'Firmware update failed.')}};request.onerror=()=>{get('upload').disabled=false;say('Upload connection failed before installation completed.')};request.send(data)});info()})();</script></body></html>)AHREC";
+<body><main><div class="brand"><h1>Anderson Home</h1><div class="sub">Independent firmware recovery</div></div><section class="panel"><strong>Emergency APP-only Firmware Recovery</strong><div class="sub">This page does not depend on the profile chooser or the main controller interface.</div><div id="meta" class="meta sub">Checking controller firmware…</div><form id="form" method="post" action="/api/update?recovery=1" enctype="multipart/form-data"><div class="label">APP-only firmware BIN</div><input id="file" class="field" type="file" name="firmware" accept=".bin,application/octet-stream" required><button id="upload" class="btn" type="submit">Upload, Install &amp; Reboot</button></form><progress id="progress" max="100" value="0"></progress><div id="status" class="sub status" aria-live="polite">Choose only the APP_ONLY.bin release file. Recovery uploads disable PIN protection but preserve all other saved settings.</div><div class="sub"><a href="/">Return to user chooser</a></div></section></main>
+<script>(function(){let before='';const get=id=>document.getElementById(id),say=message=>get('status').textContent=message;async function info(){try{const response=await fetch('/api/firmware?recovery='+Date.now(),{cache:'no-store'});if(!response.ok)throw 0;const firmware=await response.json();before=firmware.runningPartition||before;get('meta').innerHTML='<strong>Running:</strong> '+(firmware.runningPartition||'—')+(firmware.version?' • '+firmware.version:'')+'<br>Update slot: '+(firmware.nextPartition||'—')}catch(error){get('meta').textContent='Firmware details unavailable; the upload form remains ready.'}}function wait(){let tries=0;say('Controller is rebooting. Waiting for it to return…');const poll=async()=>{tries++;try{const response=await fetch('/api/firmware?recovery='+Date.now(),{cache:'no-store'});if(response.ok){const firmware=await response.json();if(!before||firmware.runningPartition!==before||tries>=8){before=firmware.runningPartition||before;say('Recovery completed. PIN protection is off and the controller is back online.');get('upload').disabled=false;info();return}}}catch(error){}if(tries<45)setTimeout(poll,1000);else{say('Upload finished, but reconnect timed out. Reopen this page after Wi-Fi reconnects.');get('upload').disabled=false}};setTimeout(poll,2800)}get('form').addEventListener('submit',event=>{event.preventDefault();const file=get('file').files&&get('file').files[0];if(!file)return say('Choose an APP-only .bin firmware file first.');if(!/\.bin$/i.test(file.name))return say('The firmware filename must end in .bin.');const data=new FormData();data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');get('upload').disabled=true;get('progress').value=0;say('Opening the inactive firmware slot…');request.upload.onprogress=e=>{if(e.lengthComputable){const percent=Math.round(e.loaded*100/e.total);get('progress').value=percent;say(percent<100?'Uploading firmware… '+percent+'%':'Upload complete. Verifying firmware…')}};request.onload=()=>{if(request.status>=200&&request.status<300){get('progress').value=100;say('Firmware verified. Disabling PIN protection and rebooting…');wait()}else{get('upload').disabled=false;say(request.responseText||'Firmware update failed.')}};request.onerror=()=>{get('upload').disabled=false;say('Upload connection failed before installation completed.')};request.send(data)});info()})();</script></body></html>)AHREC";
 
 
 struct EventOverrideCfg {
@@ -177,13 +211,29 @@ void setupMdns(){
   if(MDNS.begin("anderson-home")){MDNS.setInstanceName("Anderson Home");MDNS.addService("http","tcp",80);}
 }
 void setupRoutes(){
+  const char* collectedHeaders[]={AUTH_HEADER};server.collectHeaders(collectedHeaders,1);
   server.on("/",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)WEB_UI_GZ,WEB_UI_GZ_LEN);});
   server.on("/recovery",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("X-Content-Type-Options","nosniff");server.send_P(200,"text/html",RECOVERY_UI);});
-  server.on("/api/state",HTTP_GET,[]{sendJson(stateJson());});
-  server.on("/api/resume",HTTP_POST,[]{manualOverride=false;power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
+  server.on("/api/auth/status",HTTP_GET,[]{sendJson(pinAuthStatusJson());});
+  server.on("/api/auth/unlock",HTTP_POST,[]{
+    JsonDocument d;if(!body(d))return;String profile=d["profile"]|String("");profile.toLowerCase();String pin=d["pin"]|String("");uint8_t role=profile=="jason"?ROLE_ADMIN:(profile=="shirley"?ROLE_USER:ROLE_NONE);
+    if(role==ROLE_NONE){server.send(400,"application/json","{\"ok\":false,\"error\":\"Choose Shirley or Jason\"}");return;}
+    if(!pinProtectionEnabled){JsonDocument out;out["ok"]=true;out["pinEnabled"]=false;out["role"]=role==ROLE_ADMIN?"admin":"user";out["name"]=role==ROLE_ADMIN?"Jason":"Shirley";String json;serializeJson(out,json);sendJson(json);return;}
+    uint32_t retry=pinRetryAfter();if(retry){JsonDocument out;out["ok"]=false;out["error"]=String("Too many incorrect PIN attempts. Try again in ")+String(retry)+" seconds.";out["retryAfter"]=retry;String json;serializeJson(out,json);sendJson(json,429);return;}
+    if(!verifyProfilePin(profile,pin,role)){notePinFailure();server.sendHeader("Cache-Control","no-store");server.send(401,"application/json","{\"ok\":false,\"error\":\"Incorrect four-digit PIN\"}");return;}
+    clearPinFailures();JsonDocument out;out["ok"]=true;out["pinEnabled"]=true;out["token"]=issueAuthSession(role);out["role"]=role==ROLE_ADMIN?"admin":"user";out["name"]=role==ROLE_ADMIN?"Jason":"Shirley";out["expiresIn"]=AUTH_SESSION_TTL_MS/1000;String json;serializeJson(out,json);sendJson(json);
+  });
+  server.on("/api/auth/logout",HTTP_POST,[]{revokeAuthSession(server.header(AUTH_HEADER));server.sendHeader("Cache-Control","no-store");server.send(204);});
+  server.on("/api/auth/config",HTTP_POST,[]{
+    if(pinProtectionEnabled&&!requireAdmin())return;JsonDocument d;if(!body(d))return;bool enable=d["enabled"]|true;
+    if(!enable){if(!pinAuthConfigured()){server.send(409,"application/json","{\"ok\":false,\"error\":\"No profile PINs have been configured\"}");return;}if(!disablePinProtection()){server.send(500,"application/json","{\"ok\":false,\"error\":\"PIN protection could not be disabled\"}");return;}sendJson("{\"ok\":true,\"pinEnabled\":false}");return;}
+    String shirleyPin=d["shirleyPin"]|String(""),jasonPin=d["jasonPin"]|String("");if(!fourDigitPin(shirleyPin)||!fourDigitPin(jasonPin)){server.send(400,"application/json","{\"ok\":false,\"error\":\"Both PINs must contain exactly four digits\"}");return;}if(shirleyPin==jasonPin){server.send(400,"application/json","{\"ok\":false,\"error\":\"Shirley and Jason must use different PINs\"}");return;}if(!configureProfilePins(shirleyPin,jasonPin)){server.send(500,"application/json","{\"ok\":false,\"error\":\"PINs could not be saved and verified\"}");return;}JsonDocument out;out["ok"]=true;out["pinEnabled"]=true;out["token"]=issueAuthSession(ROLE_ADMIN);String json;serializeJson(out,json);sendJson(json);
+  });
+  server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
+  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
 
   server.on("/api/control",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;manualOverride=true;
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;manualOverride=true;
     if(!d["power"].isNull())power=d["power"].as<bool>();
     if(!d["brightness"].isNull())brightness=constrain(d["brightness"].as<int>(),1,100);
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
@@ -194,19 +244,19 @@ void setupRoutes(){
   });
 
   server.on("/api/events",HTTP_GET,[]{
-    int year=server.arg("year").toInt(),month=server.arg("month").toInt();if(year<2020)year=2026;if(month<1||month>12)month=1;
+    if(!requireUser())return;int year=server.arg("year").toInt(),month=server.arg("month").toInt();if(year<2020)year=2026;if(month<1||month>12)month=1;
     JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();int monthly=0;
     for(size_t i=0;i<EVENT_COUNT;i++){if(!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<64?eventOverrides[i].valid:false;e["speed"]=(i<64&&eventOverrides[i].valid)?eventOverrides[i].speed:1;e["enabled"]=i<64?((s.enabledMask>>i)&1ULL):true;e["favorite"]=i<64?((s.favoriteMask>>i)&1ULL):false;JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
     d["overlap"]=monthly>1?String(monthly)+" month-long events enabled — overlap rule applies.":(monthly==1?"1 month-long event enabled.":"No month-long awareness themes enabled.");
     String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/favorites",HTTP_GET,[]{
-    JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();
+    if(!requireUser())return;JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();
     for(size_t i=0;i<EVENT_COUNT&&i<64;i++){if(!((s.favoriteMask>>i)&1ULL))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:1;JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));}
     String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/event",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=64){server.send(404,"text/plain","Unknown event");return;}auto&s=store.get();
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=64){server.send(404,"text/plain","Unknown event");return;}auto&s=store.get();
     if(!d["enabled"].isNull()){if(d["enabled"].as<bool>())s.enabledMask|=(1ULL<<i);else s.enabledMask&=~(1ULL<<i);}
     if(!d["favorite"].isNull()){if(d["favorite"].as<bool>())s.favoriteMask|=(1ULL<<i);else s.favoriteMask&=~(1ULL<<i);}
     if(d["reset"]|false){clearEventOverride(i);}
@@ -214,11 +264,11 @@ void setupRoutes(){
     store.saveAll();writeMasterConfig();evaluateSchedule(true);sendJson(stateJson());
   });
   server.on("/api/events/bulk",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;int y=d["year"]|2026,m=d["month"]|1;bool en=d["enabled"]|false;auto&s=store.get();for(size_t i=0;i<EVENT_COUNT&&i<64;i++)if(eventOccursInMonth(i,y,m)){if(en)s.enabledMask|=(1ULL<<i);else s.enabledMask&=~(1ULL<<i);}store.saveAll();writeMasterConfig();server.send(204);
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;int y=d["year"]|2026,m=d["month"]|1;bool en=d["enabled"]|false;auto&s=store.get();for(size_t i=0;i<EVENT_COUNT&&i<64;i++)if(eventOccursInMonth(i,y,m)){if(en)s.enabledMask|=(1ULL<<i);else s.enabledMask&=~(1ULL<<i);}store.saveAll();writeMasterConfig();server.send(204);
   });
 
   server.on("/api/settings",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;auto&s=store.get();
+    if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;bool adminChange=!d["overlap"].isNull()||!d["on"].isNull()||!d["off"].isNull()||!d["lead"].isNull()||!d["trail"].isNull()||!d["tz"].isNull()||!d["bleProtocol"].isNull();if(role<ROLE_ADMIN&&adminChange){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can change controller settings\"}");return;}auto&s=store.get();
     if(!d["overlap"].isNull()){String v=d["overlap"].as<String>();s.overlap=v=="split"?1:(v=="combine"?2:0);}
     if(!d["on"].isNull())s.onMinutes=parseTime(d["on"].as<String>(),s.onMinutes);if(!d["off"].isNull())s.offMinutes=parseTime(d["off"].as<String>(),s.offMinutes);
     if(!d["lead"].isNull())s.leadDays=constrain(d["lead"].as<int>(),0,14);if(!d["trail"].isNull())s.trailDays=constrain(d["trail"].as<int>(),0,7);
@@ -228,12 +278,12 @@ void setupRoutes(){
   });
 
   server.on("/api/colors",HTTP_GET,[]{
-    Preferences p;p.begin("anderson-colors",true);String raw=p.getString("saved","[]");p.end();
+    if(!requireUser())return;Preferences p;p.begin("anderson-colors",true);String raw=p.getString("saved","[]");p.end();
     JsonDocument list;if(deserializeJson(list,raw))list.to<JsonArray>();JsonDocument d;JsonArray out=d["colors"].to<JsonArray>();
     for(JsonVariant v:list.as<JsonArray>())out.add(v.as<String>());String json;serializeJson(d,json);sendJson(json);
   });
   server.on("/api/colors",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;String col=d["color"].as<String>();col.trim();if(!col.startsWith("#"))col="#"+col;col.toUpperCase();
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;String col=d["color"].as<String>();col.trim();if(!col.startsWith("#"))col="#"+col;col.toUpperCase();
     if(col.length()!=7){server.send(400,"text/plain","Color must be #RRGGBB");return;}bool remove=d["remove"]|false;
     Preferences p;p.begin("anderson-colors",false);String raw=p.getString("saved","[]");JsonDocument list;if(deserializeJson(list,raw))list.to<JsonArray>();JsonArray arr=list.as<JsonArray>();
     int found=-1;for(int i=0;i<(int)arr.size();i++){String x=arr[i].as<String>();x.toUpperCase();if(x==col){found=i;break;}}
@@ -255,23 +305,24 @@ void setupRoutes(){
     if(!requireUser())return;if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}int year=server.arg("year").toInt(),month=server.arg("month").toInt();String raw=scheduleStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonDocument d;JsonArray out=d["items"].to<JsonArray>();for(JsonObject o:list.as<JsonArray>()){bool annual=o["annual"]|true;int oy=o["year"]|0,om=o["month"]|0;if(month>=1&&month<=12&&om!=month)continue;if(!annual&&year>=2020&&oy!=year)continue;JsonObject z=out.add<JsonObject>();z["id"]=o["id"];z["presetId"]=o["presetId"];z["year"]=oy;z["month"]=om;z["day"]=o["day"]|0;z["annual"]=annual;z["enabled"]=o["enabled"]|true;Theme t;uint8_t br=100,sp=1;String n;if(loadPresetTheme(o["presetId"].as<String>(),t,br,sp,&n)){z["name"]=n;z["effect"]=effectName(t.effect);z["brightness"]=br;z["speed"]=sp;JsonArray c=z["colors"].to<JsonArray>();for(uint8_t i=0;i<t.colorCount;i++)c.add(colorHex(t.colors[i]));}}String json;serializeJson(d,json);sendJson(json);
   });
   server.on("/api/custom-schedules",HTTP_POST,[]{
-    if(!requireAdmin())return;if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();String savedId=id;bool removing=(d["remove"]|false)&&id.length();bool toggling=id.length()&&!d["enabled"].isNull();String presetId=d["presetId"].as<String>();
-    if(!removing&&!toggling){Theme t;uint8_t br=100,sp=1;if(!loadPresetTheme(presetId,t,br,sp)){server.send(404,"text/plain","Custom light not found");return;}int month=d["month"]|0,day=d["day"]|0,year=d["year"]|0;if(month<1||month>12||day<1||day>31){server.send(400,"text/plain","Choose a valid schedule date");return;}}
+    if(!requireUser())return;uint8_t role=requestRole();if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();String savedId=id;bool removing=(d["remove"]|false)&&id.length();bool toggling=id.length()&&!d["enabled"].isNull();String presetId=d["presetId"].as<String>();
+    if(!removing&&!toggling){if(role<ROLE_ADMIN){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can create custom schedules\"}");return;}Theme t;uint8_t br=100,sp=1;if(!loadPresetTheme(presetId,t,br,sp)){server.send(404,"text/plain","Custom light not found");return;}int month=d["month"]|0,day=d["day"]|0,year=d["year"]|0;if(month<1||month>12||day<1||day>31){server.send(400,"text/plain","Choose a valid schedule date");return;}}
     String raw=scheduleStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonArray arr=list.as<JsonArray>();if(removing){for(int i=(int)arr.size()-1;i>=0;i--)if(arr[i]["id"].as<String>()==id)arr.remove(i);}else if(toggling){bool found=false;for(JsonObject o:arr)if(o["id"].as<String>()==id){o["enabled"]=d["enabled"].as<bool>();found=true;break;}if(!found){server.send(404,"text/plain","Schedule entry not found");return;}}else{int month=d["month"]|0,day=d["day"]|0,year=d["year"]|0;uint32_t seq=nextStoredId(arr,'s');savedId=String("s")+String(seq);JsonObject o=arr.add<JsonObject>();o["id"]=savedId;o["presetId"]=presetId;o["month"]=month;o["day"]=day;o["year"]=year;o["annual"]=d["annual"]|true;o["enabled"]=true;}
     while(arr.size()>32)arr.remove(0);String out;serializeJson(list,out);if(out.length()>3800){server.send(507,"text/plain","Schedule storage is full");return;}if(!customFileWrite("/custom_schedules.json",out)){server.send(500,"text/plain","Schedule file write failed");return;}if(!writeMasterConfig()){server.send(500,"text/plain","Schedule saved but configuration backup failed");return;}JsonDocument ack;ack["ok"]=true;ack["id"]=savedId;ack["count"]=(uint32_t)arr.size();ack["fileBytes"]=(uint32_t)scheduleStoreRaw().length();ack["backend"]="NVS";String ackJson;serializeJson(ack,ackJson);sendJson(ackJson);customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;
   });
-  server.on("/api/storage",HTTP_GET,[]{JsonDocument d;String lights=presetStoreRaw(),schedules=scheduleStoreRaw();d["ready"]=customFsReady;d["backend"]="NVS";d["customLightsBytes"]=(uint32_t)lights.length();d["scheduleBytes"]=(uint32_t)schedules.length();String out;serializeJson(d,out);sendJson(out);});
-  server.on("/api/config",HTTP_GET,[]{JsonDocument d;d["backend"]="NVS";JsonDocument l;if(!deserializeJson(l,presetStoreRaw())&&l.is<JsonArray>())d["customLights"].set(l.as<JsonArray>());else d["customLights"].to<JsonArray>();JsonDocument c;if(!deserializeJson(c,scheduleStoreRaw())&&c.is<JsonArray>())d["customSchedules"].set(c.as<JsonArray>());else d["customSchedules"].to<JsonArray>();String out;serializeJson(d,out);sendJson(out);});
+  server.on("/api/storage",HTTP_GET,[]{if(!requireAdmin())return;JsonDocument d;String lights=presetStoreRaw(),schedules=scheduleStoreRaw();d["ready"]=customFsReady;d["backend"]="NVS";d["customLightsBytes"]=(uint32_t)lights.length();d["scheduleBytes"]=(uint32_t)schedules.length();String out;serializeJson(d,out);sendJson(out);});
+  server.on("/api/config",HTTP_GET,[]{if(!requireAdmin())return;JsonDocument d;d["backend"]="NVS";JsonDocument l;if(!deserializeJson(l,presetStoreRaw())&&l.is<JsonArray>())d["customLights"].set(l.as<JsonArray>());else d["customLights"].to<JsonArray>();JsonDocument c;if(!deserializeJson(c,scheduleStoreRaw())&&c.is<JsonArray>())d["customSchedules"].set(c.as<JsonArray>());else d["customSchedules"].to<JsonArray>();String out;serializeJson(d,out);sendJson(out);});
 
   server.on("/api/firmware",HTTP_GET,[]{sendJson(firmwareJson());});
+  // Intentionally public: this is the lockout-safe APP-only recovery path.
   server.on("/api/update",HTTP_POST,[]{
     if(!otaUploadAllowed){server.send(403,"text/plain",otaUploadError.length()?otaUploadError:"Firmware upload was not accepted");return;}
     if(!otaUploadOk){server.send(500,"text/plain",otaUploadError.length()?otaUploadError:"Firmware update failed");return;}
-    JsonDocument d;d["ok"]=true;d["message"]="Firmware verified. NanoC6 will reboot automatically into the new firmware.";String out;serializeJson(d,out);sendJson(out);otaAutoRebootPending=true;otaAutoRebootAt=millis()+1400;
+    if(otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()){server.send(500,"text/plain","Firmware was verified, but PIN recovery could not be saved. Retry recovery before rebooting.");return;}JsonDocument d;d["ok"]=true;d["recovery"]=otaRecoveryRequest;d["pinEnabled"]=pinProtectionEnabled;d["message"]=otaRecoveryRequest?"Firmware verified and PIN protection disabled. NanoC6 will reboot automatically.":"Firmware verified. NanoC6 will reboot automatically into the new firmware.";String out;serializeJson(d,out);sendJson(out);otaAutoRebootPending=true;otaAutoRebootAt=millis()+1400;
   },[]{
     HTTPUpload& u=server.upload();
     if(u.status==UPLOAD_FILE_START){
-      otaUploadAllowed=true;otaUploadOk=false;otaUploadError="";String fn=u.filename;fn.toLowerCase();
+      otaUploadAllowed=true;otaUploadOk=false;otaRecoveryRequest=server.hasArg("recovery")&&server.arg("recovery")=="1";otaUploadError="";String fn=u.filename;fn.toLowerCase();
       if(!fn.endsWith(".bin")){otaUploadAllowed=false;otaUploadError="Select an app-only .bin firmware file";return;}
       if(!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){otaUploadAllowed=false;otaUploadError=String("Unable to open OTA slot. Error ")+String(Update.getError());return;}
     }else if(u.status==UPLOAD_FILE_WRITE){
@@ -280,39 +331,39 @@ void setupRoutes(){
       if(otaUploadAllowed&&!otaUploadError.length()){otaUploadOk=Update.end(true);if(!otaUploadOk)otaUploadError=String("Firmware validation failed. Error ")+String(Update.getError());}
     }else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();otaUploadOk=false;otaUploadError="Firmware upload aborted";}
   });
-  server.on("/api/reboot",HTTP_POST,[]{sendJson("{\"ok\":true,\"message\":\"Rebooting NanoC6\"}");otaAutoRebootPending=true;otaAutoRebootAt=millis()+700;});
+  server.on("/api/reboot",HTTP_POST,[]{if(!requireAdmin())return;sendJson("{\"ok\":true,\"message\":\"Rebooting NanoC6\"}");otaAutoRebootPending=true;otaAutoRebootAt=millis()+700;});
   server.on("/api/rollback",HTTP_POST,[]{
-    const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* other=esp_ota_get_next_update_partition(running);
+    if(!requireAdmin())return;const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* other=esp_ota_get_next_update_partition(running);
     if(!otaPartitionValid(other)){server.send(404,"text/plain","No valid previous firmware is available in the other OTA slot");return;}
     if(esp_ota_set_boot_partition(other)!=ESP_OK){server.send(500,"text/plain","Could not select the previous firmware slot");return;}
     sendJson("{\"ok\":true,\"message\":\"Previous firmware selected. Press Reboot NanoC6.\"}");
   });
 
   server.on("/api/wifi/scan",HTTP_GET,[]{
-    if(setupAP) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.scanDelete();delay(150);int n=WiFi.scanNetworks(false,true,false,500);JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();if(n>0){for(int i=0;i<n;i++){String ssid=WiFi.SSID(i);if(!ssid.length())continue;bool duplicate=false;for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}if(duplicate)continue;JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);}}WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);
+    if(!requireAdmin())return;if(setupAP) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.scanDelete();delay(150);int n=WiFi.scanNetworks(false,true,false,500);JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();if(n>0){for(int i=0;i<n;i++){String ssid=WiFi.SSID(i);if(!ssid.length())continue;bool duplicate=false;for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}if(duplicate)continue;JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);}}WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/wifi",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;String ssid=d["ssid"].as<String>(),pass=d["password"].as<String>();if(!ssid.length()){server.send(400,"text/plain","SSID required");return;}store.saveWiFi(ssid,pass);writeMasterConfig();sendJson("{\"ok\":true}");delay(300);ESP.restart();
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String ssid=d["ssid"].as<String>(),pass=d["password"].as<String>();if(!ssid.length()){server.send(400,"text/plain","SSID required");return;}store.saveWiFi(ssid,pass);writeMasterConfig();sendJson("{\"ok\":true}");delay(300);ESP.restart();
   });
 
   server.on("/api/ble/scan",HTTP_GET,[]{
-    auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);
+    if(!requireAdmin())return;auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/ble/select",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);if(ok){store.saveAll();writeMasterConfig();ble.setTarget(0);applyRunning(true);}sendJson(stateJson(),ok?200:500);
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);if(ok){store.saveAll();writeMasterConfig();ble.setTarget(0);applyRunning(true);}sendJson(stateJson(),ok?200:500);
   });
   server.on("/api/ble/remove",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}ble.removeController(slot);store.saveAll();writeMasterConfig();ble.setTarget(0);sendJson(stateJson());
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}ble.removeController(slot);store.saveAll();writeMasterConfig();ble.setTarget(0);sendJson(stateJson());
   });
   server.on("/api/ble/target",HTTP_POST,[]{
-    JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;ble.setTarget(t);applyRunning(true);sendJson(stateJson());
+    if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;if(role<ROLE_ADMIN&&t!=0){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can select individual controllers\"}");return;}ble.setTarget(t);applyRunning(true);sendJson(stateJson());
   });
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
 void setup(){
   Serial.begin(115200);delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
-  store.begin();customFsReady=storageSelfTest();if(customFsReady)migrateLegacyCustomStorage();else Serial.println("Anderson NVS persistent storage self-test failed");loadEventOverrides();scheduler=new Scheduler(&store.get());connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady)migrateLegacyCustomStorage();else Serial.println("Anderson NVS persistent storage self-test failed");loadEventOverrides();scheduler=new Scheduler(&store.get());connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFF1C7;runningTheme.colorCount=1;
   setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
