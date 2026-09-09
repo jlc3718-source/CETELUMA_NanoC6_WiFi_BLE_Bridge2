@@ -47,11 +47,14 @@ subprocess.check_call([sys.executable, str(here / 'auto_ota_reboot.py'), str(roo
 # Persisted scheduler settings must be returned by /api/state and backed up to master config.
 s = main.read_text()
 state_anchor = 'd["scheduleWindow"]="Scheduled "+fmtTime(s.onMinutes)+" – "+fmtTime(s.offMinutes);'
-if 'd["settings"]' not in s:
+state_settings_marker = 'JsonObject cfg=d["settings"].to<JsonObject>();'
+if state_settings_marker not in s:
     if state_anchor not in s:
         raise SystemExit('scheduleWindow state anchor missing')
-    add = state_anchor + 'JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);cfg["lead"]=s.leadDays;cfg["trail"]=s.trailDays;cfg["overlap"]=s.overlap;cfg["tz"]=s.tz;cfg["scheduler"]=s.schedulerEnabled;'
+    add = state_anchor + state_settings_marker + 'cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);cfg["lead"]=s.leadDays;cfg["trail"]=s.trailDays;cfg["overlap"]=s.overlap;cfg["tz"]=s.tz;cfg["scheduler"]=s.schedulerEnabled;'
     s = s.replace(state_anchor, add, 1)
+if state_anchor + state_settings_marker not in s:
+    raise SystemExit('/api/state scheduler settings injection missing')
 
 start = s.find('server.on("/api/settings",HTTP_POST')
 if start < 0:

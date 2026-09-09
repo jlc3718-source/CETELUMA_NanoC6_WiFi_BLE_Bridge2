@@ -104,6 +104,7 @@ jobs:
           grep -q '/api/update' "$FW/src/main.cpp"
           grep -q 'customScheduleRefreshPending' "$FW/src/main.cpp"
           grep -q 'ANDERSON_FIRMWARE_VERSION' "$FW/src/main.cpp"
+          grep -Fq 'JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);' "$FW/src/main.cpp"
           grep -q 'ANDERSON_SETTINGS_UI_LIVE_SYNC' "$FW/include/WebUI.h"
           grep -q 'ANDERSON_BLUE_BACKGROUND' "$FW/include/WebUI.h"
           grep -q 'ANDERSON_REMOVE_LIGHTS_TAB' "$FW/include/WebUI.h"
