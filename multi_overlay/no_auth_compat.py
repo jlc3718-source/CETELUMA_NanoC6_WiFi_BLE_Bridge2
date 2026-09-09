@@ -39,4 +39,4 @@ subprocess.check_call([sys.executable,str(here/'settings_time_persistence_fix.py
 subprocess.check_call([sys.executable,str(here/'storage_hard_fix.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'red_background.py'),str(web)])
 subprocess.check_call([sys.executable,str(here/'version_display.py'),str(root)])
-print('Applied verified persistence, BLE restore, OTA reboot, settings persistence, red UI, and firmware revision display')
+print('Applied verified persistence, BLE restore, OTA reboot, settings persistence, blue UI, and firmware revision display')
