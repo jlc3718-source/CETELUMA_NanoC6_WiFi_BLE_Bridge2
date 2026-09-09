@@ -8,7 +8,7 @@ web=root/'include/WebUI.h'
 # -----------------------------------------------------------------------------
 # Firmware authentication fix
 # Keep the opaque token/cookie system, but also remember the authenticated client
-# IP address.  Android WebView/browser cookie or localStorage behavior can then no
+# IP address. Android WebView/browser cookie or localStorage behavior can then no
 # longer kick a successfully authenticated client back to the login screen.
 # -----------------------------------------------------------------------------
 s=main.read_text()
@@ -45,10 +45,11 @@ s=s.replace(old,new,1)
 main.write_text(s)
 
 # -----------------------------------------------------------------------------
-# Web UI fix
-# Do not reload after login.  After the server accepts the PIN, ask /api/session
-# again and let the normal role code populate the UI.  The server-side IP session
-# makes this independent of WebView cookie/localStorage quirks.
+# Web UI authentication fix
+# The old initAuth() treated ANY failure while loading Home/Events/colors/etc. as
+# an authentication failure. That is why a valid PIN briefly showed Home and then
+# returned to the sign-in screen. Authentication is now decided only by
+# /api/session. Data refresh failures are isolated and can never log the user out.
 # -----------------------------------------------------------------------------
 s=web.read_text()
 
@@ -71,16 +72,26 @@ if old not in s: raise SystemExit('ahShowLogin anchor missing')
 s=s.replace(old,new,1)
 
 old="""const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ahLoginUser,pin}),cache:'no-store'});if(!r.ok){const t=await r.text();throw new Error(t||('HTTP '+r.status))}location.reload()"""
-new="""const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ahLoginUser,pin}),cache:'no-store'});if(!r.ok){const t=await r.text();throw new Error(t||('HTTP '+r.status))}const q=await r.json();ahLoginAccepted=true;try{if(q.token)localStorage.setItem('ahSessionToken',q.token)}catch(e){}document.getElementById('loginOverlay').style.display='none';if(typeof initAuth==='function'){await initAuth()}else{setTimeout(()=>location.reload(),250)}"""
+new="""const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:ahLoginUser,pin}),cache:'no-store'});if(!r.ok){const t=await r.text();throw new Error(t||('HTTP '+r.status))}const q=await r.json();ahLoginAccepted=true;try{if(q.token)localStorage.setItem('ahSessionToken',q.token)}catch(e){}if(typeof applyRole==='function')applyRole({signedIn:true,role:q.role,name:q.name});document.getElementById('loginOverlay').style.display='none';if(typeof refreshAfterLogin==='function')refreshAfterLogin().catch(()=>{})"""
 if old not in s: raise SystemExit('PIN login success anchor missing')
 s=s.replace(old,new,1)
+
+old_refresh="""async function refreshAfterLogin(){const tasks=[loadState(),loadEvents(),typeof loadCustomPresets==='function'?loadCustomPresets():Promise.resolve(),typeof loadCustomSchedules==='function'?loadCustomSchedules():Promise.resolve()];if(currentRole==='admin'){if(typeof loadSavedColors==='function')tasks.push(loadSavedColors());if(typeof loadFirmwareInfo==='function')tasks.push(loadFirmwareInfo())}else if(typeof loadSavedColors==='function')tasks.push(loadSavedColors());await Promise.all(tasks)}"""
+new_refresh="""async function refreshAfterLogin(){const tasks=[];const add=fn=>{try{tasks.push(Promise.resolve().then(fn))}catch(e){}};add(()=>loadState());add(()=>loadEvents());if(typeof loadCustomPresets==='function')add(()=>loadCustomPresets());if(typeof loadCustomSchedules==='function')add(()=>loadCustomSchedules());if(typeof loadSavedColors==='function')add(()=>loadSavedColors());if(currentRole==='admin'&&typeof loadFirmwareInfo==='function')add(()=>loadFirmwareInfo());await Promise.allSettled(tasks)}"""
+if old_refresh not in s: raise SystemExit('refreshAfterLogin anchor missing')
+s=s.replace(old_refresh,new_refresh,1)
+
+old_init="""async function initAuth(){try{const sess=await api('/api/session');if(sess.signedIn){applyRole(sess);$('loginOverlay').style.display='none';await refreshAfterLogin();return}}catch(e){}if(typeof ahShowLogin==='function')ahShowLogin();else $('loginOverlay').style.display='flex'}"""
+new_init="""async function initAuth(){let sess=null;try{sess=await api('/api/session')}catch(e){sess=null}if(sess&&sess.signedIn){ahLoginAccepted=true;applyRole(sess);$('loginOverlay').style.display='none';refreshAfterLogin().catch(()=>{});return true}if(ahLoginAccepted)return true;if(typeof ahShowLogin==='function')ahShowLogin();else $('loginOverlay').style.display='flex';return false}"""
+if old_init not in s: raise SystemExit('initAuth anchor missing')
+s=s.replace(old_init,new_init,1)
 
 old="$('logoutUser').addEventListener('click',async()=>{try{await post('/api/logout',{})}catch(e){}location.reload()});"
 new="$('logoutUser').addEventListener('click',async()=>{try{await post('/api/logout',{})}catch(e){}try{localStorage.removeItem('ahSessionToken')}catch(e){}ahLoginAccepted=false;location.reload()});"
 if old not in s: raise SystemExit('logout UI anchor missing')
 s=s.replace(old,new,1)
 
-# Firmware upload uses XMLHttpRequest rather than fetch.  Token is optional now,
+# Firmware upload uses XMLHttpRequest rather than fetch. Token is optional now,
 # but keep forwarding it when available.
 old="x.open('POST','/api/update');$('uploadFirmware').disabled=true;"
 new="let ahTok='';try{ahTok=localStorage.getItem('ahSessionToken')||''}catch(e){}x.open('POST','/api/update'+(ahTok?('?ahsess='+encodeURIComponent(ahTok)):''));if(ahTok)x.setRequestHeader('X-Anderson-Session',ahTok);$('uploadFirmware').disabled=true;"
@@ -88,4 +99,4 @@ if old not in s: raise SystemExit('OTA XHR anchor missing')
 s=s.replace(old,new,1)
 
 web.write_text(s)
-print('Added server-side IP session fallback and robust no-reload PIN login')
+print('Fixed login loop: auth result is now independent of post-login data refresh failures')
