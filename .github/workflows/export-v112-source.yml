@@ -1,87 +1,193 @@
-name: Export Generated v1.1.2 Source
+name: Migrate Canonical Firmware Source
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/export-v112-source.yml'
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
-  export-source:
+  migrate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository with history
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Reconstruct generated v1.1.2 source
+      - name: Download the generated v1.1.2 source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          BASE=3c9c65bac1953ecac42282bc57a0cc942e30dee4
-          rm -rf build_source baseline_overlay /tmp/Anderson_Home_Complete_Project.zip
-          mkdir -p build_source baseline_overlay/include baseline_overlay/src
-          git show "$BASE:Anderson_Home_Complete_Project.zip" > /tmp/Anderson_Home_Complete_Project.zip
-          unzip -q /tmp/Anderson_Home_Complete_Project.zip -d build_source
-          FW=build_source/Anderson_Home_Complete_Project/firmware
-          for P in \
-            multi_overlay/include/BleController.h \
-            multi_overlay/include/Types.h \
-            multi_overlay/src/BleController.cpp \
-            multi_overlay/src/SettingsStore.cpp \
-            multi_overlay/src/main.cpp \
-            multi_overlay/patch_webui.py \
-            multi_overlay/reconfigure_effects.py \
-            multi_overlay/fix_preview_events.py \
-            multi_overlay/edit_events_defaults.py \
-            multi_overlay/rgb_wheel_saved_colors.py \
-            multi_overlay/label_event_checkboxes.py \
-            multi_overlay/ota_firmware_and_lights_wheel.py \
-            multi_overlay/partitions_ota.csv; do
-              mkdir -p "baseline_overlay/$(dirname "${P#multi_overlay/}")"
-              git show "$BASE:$P" > "baseline_overlay/${P#multi_overlay/}"
-          done
-          cp baseline_overlay/include/BleController.h "$FW/include/BleController.h"
-          cp baseline_overlay/include/Types.h "$FW/include/Types.h"
-          cp baseline_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
-          cp baseline_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
-          cp baseline_overlay/src/main.cpp "$FW/src/main.cpp"
-          python baseline_overlay/patch_webui.py "$FW/include/WebUI.h"
-          python baseline_overlay/reconfigure_effects.py "$FW"
-          python baseline_overlay/fix_preview_events.py "$FW/include/WebUI.h"
-          python baseline_overlay/edit_events_defaults.py "$FW"
-          python baseline_overlay/rgb_wheel_saved_colors.py "$FW"
-          python baseline_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
-          python baseline_overlay/ota_firmware_and_lights_wheel.py "$FW"
-          python multi_overlay/custom_light_schedule.py "$FW"
-          python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
-          python multi_overlay/favorites_speed_schedule_remote.py "$FW"
+          rm -rf firmware /tmp/v112
+          mkdir -p /tmp/v112
+          gh run download 34312077901 --repo "$GITHUB_REPOSITORY" --name Anderson-Home-v1.1.2-generated-source --dir /tmp/v112
+          cp -a /tmp/v112 firmware
+          test -f firmware/src/main.cpp
+          test -f firmware/include/WebUI.h
+
+      - name: Consolidate v1.1.3 source and fix custom persistence
+        run: |
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('build_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp')
-          s=p.read_text()
-          s=s.replace('prefs.getString("ssid","")','prefs.getString("ssid","Anderson")',1)
-          s=s.replace('prefs.getString("pass","")','prefs.getString("pass","HarleyD5")',1)
-          p.write_text(s)
-          PY
-          python multi_overlay/release_finalize.py "$FW"
-          cp baseline_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
-          sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
-          echo '=== API helpers ==='
-          grep -n 'async function api\|async function post' "$FW/include/WebUI.h" || true
-          echo '=== root route ==='
-          grep -n 'server.on("/",HTTP_GET' "$FW/src/main.cpp" || true
-          echo '=== preset route response ==='
-          grep -n 'r\["ok"\].*r\["id"\]' "$FW/src/main.cpp" || true
-          wc -c "$FW/include/WebUI.h" "$FW/src/main.cpp"
+          import re
+          root=Path('firmware'); main=root/'src/main.cpp'; webh=root/'include/WebUI.h'; pio=root/'platformio.ini'
+          s=main.read_text()
+          s=s.replace('#include <SPIFFS.h>\n','').replace('#include "WebUI.h"','#include "WebUIGzip.h"')
+          s=s.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.2";','static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.3";')
+          a=s.index('static bool customFsReady=false;'); b=s.index('static bool loadPresetTheme',a)
+          block=r'''// Custom lights and schedules use NVS directly so APP-only OTA updates never touch them.
+          static bool customFsReady=true;
+          static bool customStoreLocation(const char* path,const char*& ns,const char*& key){if(!strcmp(path,"/custom_lights.json")){ns="anderson-preset";key="custom";return true;}if(!strcmp(path,"/custom_schedules.json")){ns="anderson-csched";key="items";return true;}return false;}
+          static String customFileRead(const char* path){const char* ns=nullptr;const char* key=nullptr;if(!customStoreLocation(path,ns,key))return "[]";Preferences p;if(!p.begin(ns,true))return "[]";String r=p.getString(key,"[]");p.end();r.trim();return r.length()?r:"[]";}
+          static bool customFileWrite(const char* path,const String& data){const char* ns=nullptr;const char* key=nullptr;if(!customStoreLocation(path,ns,key))return false;Preferences p;if(!p.begin(ns,false))return false;size_t wrote=p.putString(key,data);String verify=p.getString(key,"");p.end();return wrote==data.length()&&verify==data;}
+          static String presetStoreRaw(){return customFileRead("/custom_lights.json");}
+          static String scheduleStoreRaw(){return customFileRead("/custom_schedules.json");}
+          static uint32_t nextStoredId(JsonArray arr,const char prefix){uint32_t maxId=0;for(JsonObject o:arr){String id=o["id"].as<String>();if(id.length()>1&&id[0]==prefix){uint32_t n=id.substring(1).toInt();if(n>maxId)maxId=n;}}return maxId+1;}
+          static bool jsonArrayValid(const String& raw){JsonDocument d;return !deserializeJson(d,raw)&&d.is<JsonArray>();}
+          static void migrateLegacyCustomStorage(){String lights=presetStoreRaw();if(!jsonArrayValid(lights))customFileWrite("/custom_lights.json","[]");String schedules=scheduleStoreRaw();if(!jsonArrayValid(schedules))customFileWrite("/custom_schedules.json","[]");}
+          static bool restoreMasterConfig(){return false;}
+          static bool writeMasterConfig(){return true;}
+          static bool storageSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
 
-      - name: Upload generated source
-        uses: actions/upload-artifact@v4
-        with:
-          name: Anderson-Home-v1.1.2-generated-source
-          path: build_source/Anderson_Home_Complete_Project/firmware
-          if-no-files-found: error
+          '''
+          s=s[:a]+block+s[b:]
+          s=s.replace('if(out.length()>60000){server.send(507,"text/plain","Custom-light storage is full");return;}','if(out.length()>3800){server.send(507,"text/plain","Custom-light storage is full");return;}')
+          s=s.replace('if(out.length()>60000){server.send(507,"text/plain","Schedule storage is full");return;}','if(out.length()>3800){server.send(507,"text/plain","Schedule storage is full");return;}')
+          s=s.replace('r["fileBytes"]=SPIFFS.exists("/custom_lights.json")?(uint32_t)SPIFFS.open("/custom_lights.json",FILE_READ).size():0;','r["fileBytes"]=(uint32_t)presetStoreRaw().length();r["backend"]="NVS";')
+          s=s.replace('ack["fileBytes"]=SPIFFS.exists("/custom_schedules.json")?(uint32_t)SPIFFS.open("/custom_schedules.json",FILE_READ).size():0;','ack["fileBytes"]=(uint32_t)scheduleStoreRaw().length();ack["backend"]="NVS";')
+          pat=r'  server\.on\("/api/storage",HTTP_GET,\[\]\{.*?\n  server\.on\("/api/config",HTTP_GET,\[\]\{.*?\n'
+          rep='  server.on("/api/storage",HTTP_GET,[]{JsonDocument d;String lights=presetStoreRaw(),schedules=scheduleStoreRaw();d["ready"]=customFsReady;d["backend"]="NVS";d["customLightsBytes"]=(uint32_t)lights.length();d["scheduleBytes"]=(uint32_t)schedules.length();String out;serializeJson(d,out);sendJson(out);});\n  server.on("/api/config",HTTP_GET,[]{JsonDocument d;d["backend"]="NVS";JsonDocument l;if(!deserializeJson(l,presetStoreRaw())&&l.is<JsonArray>())d["customLights"].set(l.as<JsonArray>());else d["customLights"].to<JsonArray>();JsonDocument c;if(!deserializeJson(c,scheduleStoreRaw())&&c.is<JsonArray>())d["customSchedules"].set(c.as<JsonArray>());else d["customSchedules"].to<JsonArray>();String out;serializeJson(d,out);sendJson(out);});\n'
+          s,n=re.subn(pat,rep,s,count=1,flags=re.S); assert n==1
+          old='store.begin();customFsReady=SPIFFS.begin(true,"/spiffs",10,"spiffs");if(customFsReady){migrateLegacyCustomStorage();restoreMasterConfig();if(!storageSelfTest()){Serial.println("Anderson persistent storage self-test failed");customFsReady=false;}else if(!SPIFFS.exists("/anderson_config.json"))writeMasterConfig();}else Serial.println("Anderson SPIFFS mount failed");loadEventOverrides();'
+          new='store.begin();customFsReady=storageSelfTest();if(customFsReady)migrateLegacyCustomStorage();else Serial.println("Anderson NVS persistent storage self-test failed");loadEventOverrides();'
+          assert old in s; s=s.replace(old,new,1)
+          old='server.on("/",HTTP_GET,[]{server.send_P(200,"text/html",WEB_UI);});'
+          new='server.on("/",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)WEB_UI_GZ,WEB_UI_GZ_LEN);});'
+          assert old in s; s=s.replace(old,new,1)
+          s=s.replace('d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["localOnly"]=false;d["previousAvailable"]=otaPartitionValid(next);','d["version"]=ANDERSON_FIRMWARE_VERSION;d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["localOnly"]=false;d["previousAvailable"]=otaPartitionValid(next);')
+          s=s.replace('if(running&&esp_ota_get_partition_description(running,&desc)==ESP_OK){d["version"]=desc.version;d["project"]=desc.project_name;','if(running&&esp_ota_get_partition_description(running,&desc)==ESP_OK){d["appVersion"]=desc.version;d["project"]=desc.project_name;')
+          assert 'SPIFFS' not in s
+          main.write_text(s)
+
+          w=webh.read_text(); m=re.search(r'R"ANDERSONHTML\(\n?(.*)\n\)ANDERSONHTML";',w,re.S); assert m
+          h=m.group(1).replace('<strong>v1.1.2</strong>','<strong>v1.1.3</strong>')
+          old="async function loadStorageInfo(){const e=$('storageMeta');if(!e)return;try{const d=await api('/api/storage');if(!d.ready){e.textContent='Persistent storage unavailable';return}const used=((d.usedBytes||0)/1024).toFixed(1),total=((d.totalBytes||0)/1024).toFixed(0);e.innerHTML=`<strong>Ready</strong> • ${used} KB of ${total} KB used<br><span class=\"sub\">Custom lights: ${d.customLightsBytes||0} B (mirror ${d.customLightsMirrorBytes||0} B) • Schedules: ${d.scheduleBytes||0} B (mirror ${d.scheduleMirrorBytes||0} B) • Master backup: ${d.configBytes||0} B</span>`}catch(err){e.textContent='Persistent storage status unavailable'}}"
+          new="async function loadStorageInfo(){const e=$('storageMeta');if(!e)return;try{const d=await api('/api/storage?ts='+Date.now());if(!d.ready){e.textContent='Persistent storage unavailable';return}e.innerHTML=`<strong>Ready</strong> • ${d.backend||'NVS'} persistent storage<br><span class=\"sub\">Custom lights: ${d.customLightsBytes||0} B • Schedules: ${d.scheduleBytes||0} B</span>`}catch(err){e.textContent='Persistent storage status unavailable'}}"
+          assert old in h; h=h.replace(old,new,1)
+          old="try{const saved=await post('/api/preset',preset);if(!saved||saved.ok!==true||!saved.id)throw new Error('NanoC6 did not confirm the custom-light save');await loadCustomPresets(saved.id);$('customPresetName').value='';await loadStorageInfo();const panel=$('customPresetList')?.closest('.panel');if(panel)panel.scrollIntoView({behavior:'smooth',block:'start'});status(name+' saved and verified • '+(saved.fileBytes||0)+' bytes')}catch(e){status('Custom light save failed: '+e.message)}"
+          new="try{const saved=await post('/api/preset',preset);if(!saved||saved.ok!==true)throw new Error('NanoC6 did not confirm the custom-light save');const list=await loadCustomPresets(saved.id||'');const verified=list.some(p=>(saved.id&&p.id===saved.id)||(!saved.id&&p.name===name));if(!verified)throw new Error('Save was acknowledged, but the custom light could not be read back');$('customPresetName').value='';await loadStorageInfo();const panel=$('customPresetList')?.closest('.panel');if(panel)panel.scrollIntoView({behavior:'smooth',block:'start'});status(name+' saved and verified • '+(saved.fileBytes||0)+' bytes')}catch(e){status('Custom light save failed: '+e.message)}"
+          assert old in h; h=h.replace(old,new,1)
+          (root/'web').mkdir(exist_ok=True); (root/'web/index.html').write_text(h); webh.unlink()
+
+          p=pio.read_text().replace('platform = https://github.com/pioarduino/platform-espressif32/archive/refs/heads/develop.zip','platform = https://github.com/pioarduino/platform-espressif32/archive/32f6bf400b276b0f61cf42c50490a7808ee3457e.zip').replace('-DCORE_DEBUG_LEVEL=3','-DCORE_DEBUG_LEVEL=1')
+          pio.write_text(p)
+          PY
+
+          printf '1.1.3\n' > FIRMWARE_VERSION.txt
+
+      - name: Replace build workflow with direct canonical build
+        run: |
+          cat > .github/workflows/compile-anderson-home-multi.yml <<'BUILD'
+          name: Build Anderson Home Firmware
+
+          on:
+            workflow_dispatch:
+            push:
+              branches: [ main ]
+              paths:
+                - 'firmware/**'
+                - 'FIRMWARE_VERSION.txt'
+                - '.github/workflows/compile-anderson-home-multi.yml'
+
+          jobs:
+            build-firmware:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-python@v5
+                  with:
+                    python-version: '3.12'
+                - name: Install pinned PlatformIO
+                  run: pip install platformio==6.2.0
+                - name: Generate compressed web UI
+                  run: |
+                    python3 - <<'PY'
+                    from pathlib import Path
+                    import gzip
+                    h=Path('firmware/web/index.html').read_bytes(); g=gzip.compress(h,9,mtime=0)
+                    out=Path('firmware/include/WebUIGzip.h'); lines=['#pragma once','#include <Arduino.h>','',f'static const size_t WEB_UI_GZ_LEN={len(g)};','static const uint8_t WEB_UI_GZ[] PROGMEM = {']
+                    for i in range(0,len(g),20): lines.append('  '+','.join(f'0x{b:02x}' for b in g[i:i+20])+',')
+                    lines.append('};'); out.write_text('\n'.join(lines)+'\n'); print(f'Web UI {len(h)} -> {len(g)} bytes')
+                    PY
+                - name: Verify release source
+                  run: |
+                    set -euo pipefail
+                    VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+                    grep -q "ANDERSON_FIRMWARE_VERSION=\"${VERSION}\"" firmware/src/main.cpp
+                    grep -q ">v${VERSION}<" firmware/web/index.html
+                    grep -q 'anderson-preset' firmware/src/main.cpp
+                    grep -q 'anderson-csched' firmware/src/main.cpp
+                    grep -q 'r\["id"\]=newId' firmware/src/main.cpp
+                    grep -q 'r\["backend"\]="NVS"' firmware/src/main.cpp
+                    grep -q 'Content-Encoding","gzip' firmware/src/main.cpp
+                    ! grep -R -q 'SPIFFS\|LittleFS' firmware/src firmware/include
+                    ! grep -q '/api/login\|AHSESS\|loginOverlay\|Signed out' firmware/src/main.cpp firmware/web/index.html
+                    grep -q 'data-tab="lights"' firmware/web/index.html
+                    grep -q '/api/update' firmware/src/main.cpp
+                    grep -q 'FFF0' firmware/src/BleController.cpp
+                    grep -q 'FFF3' firmware/src/BleController.cpp
+                    grep -q '32f6bf400b276b0f61cf42c50490a7808ee3457e' firmware/platformio.ini
+                - name: Compile NanoC6 firmware
+                  run: pio run -d firmware -e m5stack-nanoc6
+                - name: Export release files
+                  run: |
+                    set -euo pipefail
+                    BUILD=firmware/.pio/build/m5stack-nanoc6
+                    VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+                    python3 - <<'PY'
+                    from pathlib import Path
+                    n=Path('firmware/.pio/build/m5stack-nanoc6/firmware.bin').stat().st_size; slot=0x1E0000
+                    print(f'App size: {n}; OTA headroom: {slot-n}')
+                    assert n < slot
+                    PY
+                    cp "$BUILD/firmware.bin" "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin"
+                    cp "$BUILD/firmware.factory.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
+                    sha256sum Anderson_Home_NanoC6_v${VERSION}_*.bin
+                    echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+                - uses: actions/upload-artifact@v4
+                  with:
+                    name: Anderson-Home-NanoC6-v${{ env.VERSION }}
+                    path: Anderson_Home_NanoC6_v${{ env.VERSION }}_*.bin
+                    if-no-files-found: error
+          BUILD
+
+      - name: Refresh README
+        run: |
+          cat > README.md <<'MD'
+          # Anderson Home NanoC6 Light Controller
+
+          Current firmware: **v1.1.3**.
+
+          The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
+
+          - Custom lights and schedules persist directly in NVS and are verified after writes.
+          - The editable UI is `firmware/web/index.html`; CI gzip-compresses it before compile.
+          - The proven ELK-BLEDDM / Lotus Lantern BLE implementation and dual-slot OTA layout are preserved.
+          - PlatformIO and the pioarduino platform revision are pinned.
+
+          Normal update: APP-ONLY through Settings → Firmware Update.
+
+          Serial recovery only: ALL-IN-ONE at **0x0**, Erase OFF. Do not flash APP-ONLY at 0x0.
+          MD
+
+      - name: Commit canonical source
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add firmware FIRMWARE_VERSION.txt README.md .github/workflows/compile-anderson-home-multi.yml
+          git commit -m 'Consolidate v1.1.3 source and move custom storage to NVS'
+          git push origin main
