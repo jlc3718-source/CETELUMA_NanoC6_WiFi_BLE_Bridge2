@@ -24,6 +24,18 @@ jobs:
       - name: Install pinned PlatformIO
         run: pip install platformio==6.2.0
 
+      - name: Restore PlatformIO dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-v1-
+
       - name: Generate compressed web UI
         run: |
           python3 - <<'PY'
