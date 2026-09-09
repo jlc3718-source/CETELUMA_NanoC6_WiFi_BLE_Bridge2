@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 
 root=Path(sys.argv[1])
@@ -20,4 +21,9 @@ if "let currentRole='admin'" not in s:
     first+=len('<script>')
     s=s[:first]+"\nlet currentRole='admin',currentUser='Jason';\n"+s[first:]
 web.write_text(s)
-print('Applied open full-control compatibility without authentication')
+
+# Final persistence and OTA transforms run after the legacy compatibility patches.
+here=Path(__file__).resolve().parent
+subprocess.check_call([sys.executable,str(here/'spiffs_custom_storage.py'),str(root)])
+subprocess.check_call([sys.executable,str(here/'auto_ota_reboot.py'),str(root)])
+print('Applied open full-control compatibility, SPIFFS storage, and automatic OTA reboot')
