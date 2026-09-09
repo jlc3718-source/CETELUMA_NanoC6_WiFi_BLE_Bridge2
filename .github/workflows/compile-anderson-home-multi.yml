@@ -8,6 +8,12 @@ on:
       - 'firmware/**'
       - 'FIRMWARE_VERSION.txt'
       - '.github/workflows/compile-anderson-home-multi.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'firmware/**'
+      - 'FIRMWARE_VERSION.txt'
+      - '.github/workflows/compile-anderson-home-multi.yml'
 
 jobs:
   build-firmware:
@@ -68,6 +74,14 @@ jobs:
           grep -q 'server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate")' firmware/src/main.cpp
           ! grep -R -q 'SPIFFS\|LittleFS' firmware/src firmware/include
           ! grep -q '/api/login\|AHSESS\|loginOverlay\|Signed out' firmware/src/main.cpp firmware/web/index.html
+          grep -q 'id="profileGate"' firmware/web/index.html
+          grep -q 'data-profile="shirley"' firmware/web/index.html
+          grep -q 'data-profile="jason"' firmware/web/index.html
+          grep -q 'ANDERSON_LOCKOUT_SAFE_PROFILE_GATE' firmware/web/index.html
+          grep -q 'Emergency APP-only Firmware Recovery' firmware/web/index.html firmware/src/main.cpp
+          grep -q 'href="/recovery"' firmware/web/index.html
+          grep -Fq 'server.on("/recovery",HTTP_GET' firmware/src/main.cpp
+          grep -q "let currentRole='none',currentUser=''" firmware/web/index.html
           grep -q 'data-tab="lights"' firmware/web/index.html
           grep -q 'id="customPresetList"' firmware/web/index.html
           ! grep -q 'id="presetList"' firmware/web/index.html
@@ -77,6 +91,20 @@ jobs:
           grep -q 'FFF0' firmware/src/BleController.cpp
           grep -q 'FFF3' firmware/src/BleController.cpp
           grep -q '32f6bf400b276b0f61cf42c50490a7808ee3457e' firmware/platformio.ini
+
+      - name: Check web UI JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('firmware/web/index.html').read_text()
+          scripts=re.findall(r'<script>(.*?)</script>',html,flags=re.S|re.I)
+          if len(scripts)<3:
+              raise SystemExit(f'Expected at least 3 inline scripts; found {len(scripts)}')
+          Path('/tmp/anderson-web-ui.js').write_text('\n'.join(scripts))
+          print(f'Checking {len(scripts)} inline scripts')
+          PY
+          node --check /tmp/anderson-web-ui.js
 
       - name: Compile NanoC6 firmware
         run: pio run -d firmware -e m5stack-nanoc6
