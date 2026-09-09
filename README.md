@@ -1,10 +1,11 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v1.1.4**.
+Current firmware: **v1.1.5**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 
 - Custom lights and schedules persist directly in NVS and are verified after writes.
+- A no-password Shirley/Jason profile chooser limits the visible tabs, with lockout-safe APP-only recovery available before profile selection.
 - The editable UI is `firmware/web/index.html`; CI gzip-compresses it before compile.
 - The proven ELK-BLEDDM / Lotus Lantern BLE implementation and dual-slot OTA layout are preserved.
 - PlatformIO and the pioarduino platform revision are pinned.

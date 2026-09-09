@@ -8,7 +8,7 @@
 <style>
 :root{--bg:#0b0e13;--panel:#151a22;--card:#10151c;--line:#2a3340;--text:#f4f7fb;--muted:#9aa6b5;--accent:#27aaff;--accentbg:#18334a;--good:#38d486;--warn:#ffb020}
 *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#090c11,#111722);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-.wrap{max-width:720px;margin:0 auto;padding:14px 12px 30px}.header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.wrap{max-width:720px;margin:0 auto;padding:14px 12px 30px}.header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}.headerActions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}.profilePill{font-size:12px;color:#dbeafe;background:#142a45;border:1px solid #2f5f91;padding:6px 9px;border-radius:999px;white-space:nowrap}.switchProfile{min-height:30px;padding:5px 9px;border-radius:999px;font-size:12px}
 h1{font-size:22px;margin:0}.sub,.muted{color:var(--muted)}.sub{font-size:12px}.badge{font-size:12px;color:var(--good);background:#0b2a1a;border:1px solid #1f6742;padding:6px 9px;border-radius:999px;white-space:nowrap}
 .badge.offline{color:#ffcb6b;background:#2c210b;border-color:#654d1d}.nav{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:12px}
 button,select,input{font:inherit}.tab,.btn,.field{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:12px;min-height:44px;padding:9px 10px}
@@ -38,7 +38,11 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}input[typ
 
 .scheduleOverlay{position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:16px}.scheduleOverlay.open{display:flex}.scheduleCard{width:min(92vw,390px);background:#141b24;border:1px solid #334155;border-radius:18px;padding:18px}.customPresetActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
 
+.profileGate{position:fixed;inset:0;z-index:30000;overflow:auto;padding:max(22px,env(safe-area-inset-top)) 14px max(28px,env(safe-area-inset-bottom));background:linear-gradient(155deg,#061934 0%,#0b438d 52%,#04152d 100%)}.profileGate[hidden]{display:none}.profileShell{width:min(100%,560px);margin:0 auto}.profileBrand{text-align:center;margin:8px 0 20px}.profileBrand h1{font-size:28px}.profileChoices{display:grid;grid-template-columns:1fr 1fr;gap:12px}.profileChoice{min-height:126px;border:1px solid #3a618c;border-radius:18px;padding:16px;background:linear-gradient(180deg,#17263a,#101923);color:var(--text);cursor:pointer;text-align:left;box-shadow:0 12px 30px rgba(0,0,0,.2)}.profileChoice:active{transform:translateY(1px)}.profileChoice:hover,.profileChoice:focus-visible{border-color:#55baff;outline:2px solid rgba(39,170,255,.3)}.profileAvatar{display:grid;place-items:center;width:48px;height:48px;margin-bottom:11px;border-radius:50%;background:linear-gradient(180deg,#33b4ff,#158cdf);font-size:22px;font-weight:800}.profileName{display:block;font-size:20px;font-weight:800}.profileAccess{display:block;margin-top:3px;color:#aebbd0;font-size:13px}.recoveryPanel{margin-top:18px;padding:16px;border:1px solid #49566a;border-radius:18px;background:rgba(11,17,25,.92);box-shadow:0 12px 34px rgba(0,0,0,.22)}.recoveryPanel h2{font-size:18px;margin:0 0 4px}.recoveryPanel progress{width:100%;height:14px;margin-top:10px}.recoveryLink{color:#7dc9ff}.recoveryNote{font-size:12px;line-height:1.45;color:#aeb8c5;margin-top:9px}.profileLockedMessage{margin-top:8px;text-align:center;color:#b6c3d4;font-size:12px}.profile-locked .wrap,.profile-locked .rgbPickerOverlay,.profile-locked .scheduleOverlay{display:none!important}body[data-profile="shirley"] .nav{grid-template-columns:repeat(2,1fr)}
+
 body{background:linear-gradient(155deg,#041a38 0%,#0a3f88 48%,#03142b 100%)!important;background-attachment:fixed!important;}
+
+@media(max-width:520px){.profileChoices{grid-template-columns:1fr}.profileChoice{min-height:104px}.header{flex-direction:column}.headerActions{justify-content:flex-start}.profileBrand h1{font-size:25px}}
 </style>
 
 <style>
@@ -46,11 +50,78 @@ body{background:linear-gradient(155deg,#041a38 0%,#0a3f88 48%,#03142b 100%)!impo
 html,body{background:#0a3f88!important;background-image:linear-gradient(160deg,#0f5fc4 0%,#0a3f88 48%,#03142b 100%)!important;background-attachment:fixed!important;}
 </style>
 </head>
-<body>
+<body class="profile-locked">
+<main id="profileGate" class="profileGate" aria-label="Choose an Anderson Home user">
+  <div class="profileShell">
+    <div class="profileBrand"><h1>Anderson Home</h1><div class="sub">Choose who is using the controller</div></div>
+    <div class="profileChoices">
+      <button class="profileChoice" type="button" data-profile="shirley"><span class="profileAvatar">S</span><span class="profileName">Shirley</span><span class="profileAccess">Home &amp; Events</span></button>
+      <button class="profileChoice" type="button" data-profile="jason"><span class="profileAvatar">J</span><span class="profileName">Jason</span><span class="profileAccess">All controls</span></button>
+    </div>
+
+    <section class="recoveryPanel" aria-labelledby="recoveryTitle">
+      <h2 id="recoveryTitle">Emergency APP-only Firmware Recovery</h2>
+      <div class="sub">This updater works here before a user is chosen and keeps you on this screen.</div>
+      <div id="recoveryFwMeta" class="card small" style="margin-top:10px">Checking controller firmware…</div>
+      <form id="recoveryFirmwareForm" method="post" action="/api/update" enctype="multipart/form-data">
+        <div class="label">APP-only firmware BIN</div>
+        <input id="recoveryFirmwareFile" name="firmware" class="field" type="file" accept=".bin,application/octet-stream" required>
+        <button id="recoveryUploadFirmware" class="btn primary" type="submit" style="width:100%;margin-top:9px">Upload, Install &amp; Reboot</button>
+      </form>
+      <progress id="recoveryFwProgress" max="100" value="0"></progress>
+      <div id="recoveryFwStatus" class="recoveryNote" aria-live="polite">Choose only the APP_ONLY.bin release file. The controller writes it to the inactive firmware slot.</div>
+      <div class="recoveryNote">If the main interface ever fails to load, open the independent <a class="recoveryLink" href="/recovery">recovery page</a>.</div>
+    </section>
+    <div class="profileLockedMessage">No password is required. Anyone who can reach this controller can choose either profile or use firmware recovery.</div>
+  </div>
+</main>
+
+<script>
+/* ANDERSON_LOCKOUT_SAFE_PROFILE_GATE */
+(function(){
+  let recoveryBeforePartition='';
+  const byId=id=>document.getElementById(id);
+  function recoveryStatus(message){const el=byId('recoveryFwStatus');if(el)el.textContent=message}
+  async function loadRecoveryInfo(){
+    const meta=byId('recoveryFwMeta');
+    try{const response=await fetch('/api/firmware?gate='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('offline');const firmware=await response.json();recoveryBeforePartition=firmware.runningPartition||recoveryBeforePartition;const size=firmware.slotSize?(firmware.slotSize/1048576).toFixed(2)+' MB':'unknown';meta.innerHTML='<strong>Running:</strong> '+(firmware.runningPartition||'—')+(firmware.version?' • '+firmware.version:'')+'<br><span class="sub">Available update slot: '+(firmware.nextPartition||'—')+' • '+size+' maximum</span>'}
+    catch(error){if(meta)meta.textContent='Controller firmware details are unavailable, but recovery upload is still ready.'}
+  }
+  function waitForRecoveryReturn(){
+    let tries=0;
+    recoveryStatus('Controller is rebooting. Waiting for it to return…');
+    const poll=async()=>{tries++;try{const response=await fetch('/api/firmware?gate='+Date.now(),{cache:'no-store'});if(response.ok){const firmware=await response.json();if(!recoveryBeforePartition||firmware.runningPartition!==recoveryBeforePartition||tries>=8){recoveryBeforePartition=firmware.runningPartition||recoveryBeforePartition;recoveryStatus('Firmware recovery completed. The controller is back online; choose a user above when ready.');byId('recoveryUploadFirmware').disabled=false;loadRecoveryInfo();return}}}catch(error){}if(tries<45){if(tries===8)recoveryStatus('Still waiting for the controller to reconnect to Wi-Fi…');setTimeout(poll,1000)}else{recoveryStatus('The upload finished, but reconnect timed out. Reopen this page after the controller reconnects.');byId('recoveryUploadFirmware').disabled=false}};
+    setTimeout(poll,2800);
+  }
+  function uploadRecovery(event){
+    event.preventDefault();
+    const input=byId('recoveryFirmwareFile'),file=input&&input.files&&input.files[0],button=byId('recoveryUploadFirmware'),progress=byId('recoveryFwProgress');
+    if(!file){recoveryStatus('Choose an APP-only .bin firmware file first.');return}
+    if(!/\.bin$/i.test(file.name)){recoveryStatus('The firmware filename must end in .bin.');return}
+    const data=new FormData();data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update');button.disabled=true;progress.value=0;recoveryStatus('Opening the inactive firmware slot…');
+    request.upload.onprogress=e=>{if(e.lengthComputable){const percent=Math.round(e.loaded*100/e.total);progress.value=percent;recoveryStatus(percent<100?'Uploading firmware… '+percent+'%':'Upload complete. Verifying the firmware image…')}};
+    request.onload=()=>{if(request.status>=200&&request.status<300){progress.value=100;recoveryStatus('Firmware verified. Rebooting the controller…');waitForRecoveryReturn()}else{button.disabled=false;recoveryStatus(request.responseText||'Firmware update failed.')}};
+    request.onerror=()=>{button.disabled=false;recoveryStatus('The upload connection failed before installation completed.')};request.send(data);
+  }
+  function chooseProfile(profile){
+    const shirley=profile==='shirley',name=shirley?'Shirley':'Jason',allowed=shirley?['home','events']:['home','lights','events','wifi','settings'];
+    document.querySelectorAll('.tab').forEach(tab=>{tab.hidden=!allowed.includes(tab.dataset.tab);tab.classList.toggle('active',tab.dataset.tab==='home')});
+    document.querySelectorAll('.page').forEach(page=>page.classList.toggle('active',page.dataset.page==='home'));
+    document.body.dataset.profile=profile;document.body.classList.remove('profile-locked');byId('profileGate').hidden=true;byId('activeProfile').textContent=name;byId('activeProfile').hidden=false;byId('switchProfile').hidden=false;
+    window.andersonProfile={id:profile,name};window.dispatchEvent(new CustomEvent('anderson-profile-selected',{detail:window.andersonProfile}));
+  }
+  function showProfileGate(){
+    window.andersonProfile=null;document.body.classList.add('profile-locked');document.body.removeAttribute('data-profile');byId('profileGate').hidden=false;byId('activeProfile').hidden=true;byId('switchProfile').hidden=true;document.querySelectorAll('.rgbPickerOverlay,.scheduleOverlay').forEach(el=>el.classList.remove('open'));window.dispatchEvent(new Event('anderson-profile-cleared'));
+  }
+  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-profile]').forEach(button=>button.addEventListener('click',()=>chooseProfile(button.dataset.profile)));byId('switchProfile').addEventListener('click',showProfileGate);byId('recoveryFirmwareForm').addEventListener('submit',uploadRecovery);loadRecoveryInfo()});
+  window.addEventListener('pageshow',event=>{if(event.persisted)showProfileGate()});
+})();
+</script>
+
 <div class="wrap">
   <div class="header">
     <div><h1>Anderson Home</h1><div class="sub">NanoC6 Light Controller</div></div>
-    <div id="connectionBadge" class="badge offline">● Preview</div>
+    <div class="headerActions"><span id="activeProfile" class="profilePill" hidden></span><button id="switchProfile" class="btn switchProfile" type="button" hidden>Switch User</button><div id="connectionBadge" class="badge offline">● Preview</div></div>
   </div>
 
   <div class="nav" role="tablist">
@@ -168,7 +239,7 @@ html,body{background:#0a3f88!important;background-image:linear-gradient(160deg,#
       <div class="grid2" style="margin-top:10px"><button id="rebootNano" class="btn">Reboot NanoC6</button><button id="rollbackFirmware" class="btn">Boot Previous Firmware</button></div>
     </div>
 
-        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v1.1.4</strong></div></div>
+        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v1.1.5</strong></div></div>
 
 <div class="panel"><strong>Persistent Configuration</strong><div class="sub">Custom lights, schedules, controller identities and a master settings backup are stored outside the firmware slots and automatically reloaded after updates/reboots.</div><div id="storageMeta" class="card small" style="margin-top:10px">Checking persistent storage…</div></div>
 
@@ -194,12 +265,14 @@ html,body{background:#0a3f88!important;background-image:linear-gradient(160deg,#
 
 <div id="scheduleOverlay" class="scheduleOverlay"><div class="scheduleCard"><strong>Add Custom Light to Schedule</strong><div id="schedulePresetName" class="sub" style="margin-top:4px"></div><div class="label">Date</div><input id="customScheduleDate" type="date" class="field"><label class="row" style="margin-top:12px"><input id="customScheduleAnnual" type="checkbox" checked><span class="small">Repeat every year</span></label><div class="grid2" style="margin-top:12px"><button id="cancelCustomSchedule" class="btn">Cancel</button><button id="saveCustomSchedule" class="btn primary">Add to Schedule</button></div></div></div>
 <script>
-let currentRole='admin',currentUser='Jason';
+let currentRole='none',currentUser='';
 
 const API_MODE = location.protocol==='http:' || location.protocol==='https:';
 const $=id=>document.getElementById(id); const status=m=>$('statusMsg').textContent=m;
 async function api(path, opts={}){if(!API_MODE) throw new Error('preview'); const r=await fetch(path,opts); if(!r.ok) throw new Error(await r.text()||r.statusText); const t=await r.text(); return t?JSON.parse(t):{}}
 async function post(path,obj){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)})}
+window.addEventListener('anderson-profile-selected',event=>{currentRole='admin';currentUser=event.detail?.name||'';loadState();loadEvents();loadCustomSchedules();loadSavedColors();if(event.detail?.id==='jason'){loadCustomPresets();loadStorageInfo();loadFirmwareInfo()}});
+window.addEventListener('anderson-profile-cleared',()=>{currentRole='none';currentUser=''});
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();loadStorageInfo();}if(btn.dataset.tab==='events'){loadEvents();loadCustomSchedules();}}));
 
 const leds=[],rows=$('ledRows');{const row=document.createElement('div');row.className='ledgrid';for(let i=0;i<20;i++){const d=document.createElement('div');d.className='led';row.appendChild(d);leds.push(d)}rows.appendChild(row)}
@@ -359,7 +432,7 @@ function renderSavedColors(){fillSavedColors($('savedColorGrid'),false);fillSave
 async function loadSavedColors(){try{if(API_MODE){const r=await fetch('/api/colors',{cache:'no-store'}),d=await r.json();savedColors=d.colors||[]}else savedColors=JSON.parse(localStorage.getItem('andersonSavedColors')||'[]')}catch(e){savedColors=[]}renderSavedColors()}
 async function saveCurrentColor(){const c=pickerHex();if(API_MODE){const r=await post('/api/colors',{color:c});savedColors=r.colors||savedColors}else{if(!savedColors.includes(c))savedColors.push(c);savedColors=savedColors.slice(-32);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors();status(c+' saved to Favorite Colors.')}
 async function removeSavedColor(c){if(API_MODE){const r=await post('/api/colors',{color:c,remove:true});savedColors=r.colors||[]}else{savedColors=savedColors.filter(x=>x!==c);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors()}
-function bindRgbPicker(){const w=$('rgbWheel');let drag=false;w.addEventListener('pointerdown',e=>{drag=true;w.setPointerCapture(e.pointerId);wheelPoint(e)});w.addEventListener('pointermove',e=>{if(drag)wheelPoint(e)});w.addEventListener('pointerup',()=>drag=false);$('rgbValue').addEventListener('input',e=>{pickerV=(+e.target.value)/100;renderPicker()});['rgbR','rgbG','rgbB'].forEach(id=>$(id).addEventListener('change',()=>setPickerHex(rgbHex($('rgbR').value,$('rgbG').value,$('rgbB').value))));$('rgbHex').addEventListener('change',e=>setPickerHex(e.target.value));$('rgbSave').addEventListener('click',saveCurrentColor);$('rgbClose').addEventListener('click',()=>$('rgbPickerOverlay').classList.remove('open'));$('rgbPickerOverlay').addEventListener('click',e=>{if(e.target===$('rgbPickerOverlay'))$('rgbPickerOverlay').classList.remove('open')});loadSavedColors()}
+function bindRgbPicker(){const w=$('rgbWheel');let drag=false;w.addEventListener('pointerdown',e=>{drag=true;w.setPointerCapture(e.pointerId);wheelPoint(e)});w.addEventListener('pointermove',e=>{if(drag)wheelPoint(e)});w.addEventListener('pointerup',()=>drag=false);$('rgbValue').addEventListener('input',e=>{pickerV=(+e.target.value)/100;renderPicker()});['rgbR','rgbG','rgbB'].forEach(id=>$(id).addEventListener('change',()=>setPickerHex(rgbHex($('rgbR').value,$('rgbG').value,$('rgbB').value))));$('rgbHex').addEventListener('change',e=>setPickerHex(e.target.value));$('rgbSave').addEventListener('click',saveCurrentColor);$('rgbClose').addEventListener('click',()=>$('rgbPickerOverlay').classList.remove('open'));$('rgbPickerOverlay').addEventListener('click',e=>{if(e.target===$('rgbPickerOverlay'))$('rgbPickerOverlay').classList.remove('open')})}
 
 function editEventInline(ev,row){
   const old=row.querySelector('.eventEditor');if(old){old.remove();return}
@@ -410,7 +483,6 @@ function openCustomSchedule(p){schedulePresetId=p.id;$('schedulePresetName').tex
 $('cancelCustomSchedule').addEventListener('click',()=>$('scheduleOverlay').classList.remove('open'));
 $('saveCustomSchedule').addEventListener('click',async()=>{const v=$('customScheduleDate').value;if(!v)return status('Choose a schedule date.');const [y,m,d]=v.split('-').map(Number);try{const ack=await post('/api/custom-schedules',{presetId:schedulePresetId,year:y,month:m,day:d,annual:$('customScheduleAnnual').checked});if(!ack||!ack.ok)throw new Error('NanoC6 did not confirm the schedule save');$('scheduleOverlay').classList.remove('open');$('monthSelect').value=m;$('yearSelect').value=y;await loadCustomSchedules();status('Custom light added to the automatic schedule.')}catch(e){status('Schedule save failed: '+e.message)}});
 async function loadCustomSchedules(){const box=$('customScheduleList');if(!box||currentRole==='none')return;try{const q=`?year=${$('yearSelect').value}&month=${$('monthSelect').value}`;const d=await api('/api/custom-schedules'+q);box.innerHTML='';const a=d.items||[];if(!a.length){box.innerHTML='<div class="sub">No custom lights scheduled this month.</div>';return}a.forEach(x=>{const row=document.createElement('div');row.className='card';row.innerHTML=`<div class="small"><strong>${x.name||'Custom Light'}</strong></div><div class="sub">${monthNames[(x.month||1)-1]} ${x.day}${x.annual?' • repeats yearly':' • '+x.year} • ${x.effect||''}</div><div class="chips">${(x.colors||[]).map(c=>`<span class="chip" style="background:${c}"></span>`).join('')}</div>`;const actions=document.createElement('div');actions.className='customPresetActions';const pv=document.createElement('button');pv.className='btn';pv.textContent='Preview';pv.onclick=()=>manual({name:x.name,colors:x.colors,effect:x.effect,brightness:x.brightness||100,speed:x.speed||1});actions.appendChild(pv);if(currentRole==='admin'){const lab=document.createElement('label');lab.className='row small';const en=document.createElement('input');en.type='checkbox';en.checked=x.enabled!==false;en.onchange=()=>post('/api/custom-schedules',{id:x.id,enabled:en.checked}).then(loadCustomSchedules);lab.append(en,document.createTextNode('Enabled'));const del=document.createElement('button');del.className='btn';del.textContent='Delete';del.onclick=()=>post('/api/custom-schedules',{id:x.id,remove:true}).then(loadCustomSchedules);actions.append(lab,del)}row.appendChild(actions);box.appendChild(row)})}catch(e){box.innerHTML='<div class="sub">Custom schedule unavailable.</div>'}}
-setTimeout(()=>loadCustomPresets(),180);
 
 
 
@@ -420,9 +492,7 @@ function stageFirmware(){const file=$('firmwareFile').files&&$('firmwareFile').f
 $('uploadFirmware').addEventListener('click',stageFirmware);
 $('rebootNano').addEventListener('click',async()=>{if(!confirm('Reboot the NanoC6 now?'))return;$('fwStatus').textContent='Rebooting NanoC6…';try{await post('/api/reboot',{})}catch(e){}setTimeout(()=>{loadState();loadFirmwareInfo()},6500)});
 $('rollbackFirmware').addEventListener('click',async()=>{if(!confirm('Select the previous firmware slot for the next reboot?'))return;try{await post('/api/rollback',{});$('fwStatus').textContent='Previous firmware selected. Press Reboot NanoC6 to boot it.';status('Previous firmware selected for next boot.')}catch(e){$('fwStatus').textContent='Rollback selection failed: '+e.message}});
-setTimeout(loadFirmwareInfo,100);
-
-loadState();loadEvents();setInterval(()=>{if(API_MODE)loadState()},15000);
+setInterval(()=>{if(API_MODE&&currentRole!=='none')loadState()},15000);
 setTimeout(bindRgbPicker,0);
 
 function ensureExtraControls(){
@@ -433,7 +503,6 @@ setTimeout(ensureExtraControls,0);
 
 
 async function loadStorageInfo(){const e=$('storageMeta');if(!e)return;try{const d=await api('/api/storage?ts='+Date.now());if(!d.ready){e.textContent='Persistent storage unavailable';return}e.innerHTML=`<strong>Ready</strong> • ${d.backend||'NVS'} persistent storage<br><span class="sub">Custom lights: ${d.customLightsBytes||0} B • Schedules: ${d.scheduleBytes||0} B</span>`}catch(err){e.textContent='Persistent storage status unavailable'}}
-setTimeout(loadStorageInfo,250);
 
 </script>
 
@@ -455,6 +524,7 @@ setTimeout(loadStorageInfo,250);
     if(win&&st.scheduleWindow)win.textContent=st.scheduleWindow;
   }
   async function refreshSettingsUI(){
+    if(currentUser!=='Jason')return;
     try{const st=await api('/api/state?ts='+Date.now());syncScheduleFields(st);if(typeof applyState==='function')applyState(st);}catch(e){}
   }
   document.addEventListener('click',function(ev){
