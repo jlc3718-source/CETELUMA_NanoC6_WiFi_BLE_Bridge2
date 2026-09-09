@@ -55,6 +55,9 @@ jobs:
           ! grep -R -q 'SPIFFS\|LittleFS' firmware/src firmware/include
           ! grep -q '/api/login\|AHSESS\|loginOverlay\|Signed out' firmware/src/main.cpp firmware/web/index.html
           grep -q 'data-tab="lights"' firmware/web/index.html
+          grep -q 'id="customPresetList"' firmware/web/index.html
+          ! grep -q 'id="presetList"' firmware/web/index.html
+          ! grep -q '^const presets=' firmware/web/index.html
           grep -q 'Save was acknowledged, but the custom light could not be read back' firmware/web/index.html
           grep -q '/api/update' firmware/src/main.cpp
           grep -q 'FFF0' firmware/src/BleController.cpp
