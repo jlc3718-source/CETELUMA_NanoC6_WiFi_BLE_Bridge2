@@ -24,6 +24,19 @@ web.write_text(s)
 
 here=Path(__file__).resolve().parent
 subprocess.check_call([sys.executable,str(here/'littlefs_master_storage.py'),str(root)])
+
+# The LittleFS schedule route defers scheduler refresh after the HTTP response.
+# Ensure its state variables remain declared even when legacy route blocks are replaced.
+s=main.read_text()
+if 'static bool customScheduleRefreshPending' not in s:
+    a='static bool timeValid(){return time(nullptr)>1700000000;}\n'
+    decl='static bool customScheduleRefreshPending=false;\nstatic uint32_t customScheduleRefreshAt=0;\n'
+    if a not in s: raise SystemExit('timeValid anchor missing for schedule refresh state')
+    s=s.replace(a,a+decl,1)
+main.write_text(s)
+
 subprocess.check_call([sys.executable,str(here/'auto_ota_reboot.py'),str(root)])
 subprocess.check_call([sys.executable,str(here/'legacy_guardrail_compat.py'),str(root)])
-print('Applied open full-control compatibility, LittleFS master persistence, BLE restore, blue UI, and automatic OTA reboot')
+# Theme must be applied after all other UI transforms so nothing changes it back to blue.
+subprocess.check_call([sys.executable,str(here/'red_background.py'),str(web)])
+print('Applied open full-control compatibility, persistent storage, BLE restore, automatic OTA reboot, schedule refresh fix, and red UI')
