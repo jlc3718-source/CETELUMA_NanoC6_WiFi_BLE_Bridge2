@@ -1,0 +1,87 @@
+name: Export Generated v1.1.2 Source
+
+on:
+  push:
+    paths:
+      - '.github/workflows/export-v112-source.yml'
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reconstruct generated v1.1.2 source
+        run: |
+          set -euo pipefail
+          BASE=3c9c65bac1953ecac42282bc57a0cc942e30dee4
+          rm -rf build_source baseline_overlay /tmp/Anderson_Home_Complete_Project.zip
+          mkdir -p build_source baseline_overlay/include baseline_overlay/src
+          git show "$BASE:Anderson_Home_Complete_Project.zip" > /tmp/Anderson_Home_Complete_Project.zip
+          unzip -q /tmp/Anderson_Home_Complete_Project.zip -d build_source
+          FW=build_source/Anderson_Home_Complete_Project/firmware
+          for P in \
+            multi_overlay/include/BleController.h \
+            multi_overlay/include/Types.h \
+            multi_overlay/src/BleController.cpp \
+            multi_overlay/src/SettingsStore.cpp \
+            multi_overlay/src/main.cpp \
+            multi_overlay/patch_webui.py \
+            multi_overlay/reconfigure_effects.py \
+            multi_overlay/fix_preview_events.py \
+            multi_overlay/edit_events_defaults.py \
+            multi_overlay/rgb_wheel_saved_colors.py \
+            multi_overlay/label_event_checkboxes.py \
+            multi_overlay/ota_firmware_and_lights_wheel.py \
+            multi_overlay/partitions_ota.csv; do
+              mkdir -p "baseline_overlay/$(dirname "${P#multi_overlay/}")"
+              git show "$BASE:$P" > "baseline_overlay/${P#multi_overlay/}"
+          done
+          cp baseline_overlay/include/BleController.h "$FW/include/BleController.h"
+          cp baseline_overlay/include/Types.h "$FW/include/Types.h"
+          cp baseline_overlay/src/BleController.cpp "$FW/src/BleController.cpp"
+          cp baseline_overlay/src/SettingsStore.cpp "$FW/src/SettingsStore.cpp"
+          cp baseline_overlay/src/main.cpp "$FW/src/main.cpp"
+          python baseline_overlay/patch_webui.py "$FW/include/WebUI.h"
+          python baseline_overlay/reconfigure_effects.py "$FW"
+          python baseline_overlay/fix_preview_events.py "$FW/include/WebUI.h"
+          python baseline_overlay/edit_events_defaults.py "$FW"
+          python baseline_overlay/rgb_wheel_saved_colors.py "$FW"
+          python baseline_overlay/label_event_checkboxes.py "$FW/include/WebUI.h"
+          python baseline_overlay/ota_firmware_and_lights_wheel.py "$FW"
+          python multi_overlay/custom_light_schedule.py "$FW"
+          python multi_overlay/ui_custom_lights.py "$FW/include/WebUI.h"
+          python multi_overlay/favorites_speed_schedule_remote.py "$FW"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('build_source/Anderson_Home_Complete_Project/firmware/src/SettingsStore.cpp')
+          s=p.read_text()
+          s=s.replace('prefs.getString("ssid","")','prefs.getString("ssid","Anderson")',1)
+          s=s.replace('prefs.getString("pass","")','prefs.getString("pass","HarleyD5")',1)
+          p.write_text(s)
+          PY
+          python multi_overlay/release_finalize.py "$FW"
+          cp baseline_overlay/partitions_ota.csv "$FW/partitions_ota.csv"
+          sed -i 's/board_build.partitions = default.csv/board_build.partitions = partitions_ota.csv/' "$FW/platformio.ini"
+          echo '=== API helpers ==='
+          grep -n 'async function api\|async function post' "$FW/include/WebUI.h" || true
+          echo '=== root route ==='
+          grep -n 'server.on("/",HTTP_GET' "$FW/src/main.cpp" || true
+          echo '=== preset route response ==='
+          grep -n 'r\["ok"\].*r\["id"\]' "$FW/src/main.cpp" || true
+          wc -c "$FW/include/WebUI.h" "$FW/src/main.cpp"
+
+      - name: Upload generated source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-v1.1.2-generated-source
+          path: build_source/Anderson_Home_Complete_Project/firmware
+          if-no-files-found: error
