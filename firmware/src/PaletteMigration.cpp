@@ -5,7 +5,8 @@
 #include <FS.h>
 #include <SPIFFS.h>
 
-static constexpr uint8_t PALETTE_MIGRATION_REVISION=1;
+static constexpr uint8_t BACKUP_FORMAT_VERSION=1;
+static constexpr uint8_t PALETTE_MIGRATION_REVISION=2;
 static constexpr uint8_t STATE_PENDING=0;
 static constexpr uint8_t STATE_APPLIED=1;
 static constexpr uint8_t STATE_RESTORED=2;
@@ -35,7 +36,7 @@ static uint32_t backupChecksum(JsonDocument& d){
 }
 static String readFile(const char* path){File f=SPIFFS.open(path,"r");if(!f)return "";String s=f.readString();f.close();return s;}
 static bool parseBackup(const String& raw,JsonDocument& d){
-  if(!raw.length()||deserializeJson(d,raw)||!d.is<JsonObject>())return false;if((d["version"]|0)!=PALETTE_MIGRATION_REVISION)return false;if(!d["presets"].is<String>()||!d["favoriteColors"].is<String>()||!d["events"].is<JsonObject>())return false;return (d["checksum"]|0u)==backupChecksum(d);
+  if(!raw.length()||deserializeJson(d,raw)||!d.is<JsonObject>())return false;if((d["version"]|0)!=BACKUP_FORMAT_VERSION)return false;if(!d["presets"].is<String>()||!d["favoriteColors"].is<String>()||!d["events"].is<JsonObject>())return false;return (d["checksum"]|0u)==backupChecksum(d);
 }
 static bool loadBackup(JsonDocument& d){if(!SPIFFS.begin(false))return false;return parseBackup(readFile(BACKUP_PATH),d);}
 
@@ -45,7 +46,7 @@ static bool createBackup(){
   if(SPIFFS.exists(BACKUP_TMP)){
     String tmp=readFile(BACKUP_TMP);JsonDocument recovered;if(parseBackup(tmp,recovered)){if(SPIFFS.rename(BACKUP_TMP,BACKUP_PATH)){JsonDocument verify;return parseBackup(readFile(BACKUP_PATH),verify);}}SPIFFS.remove(BACKUP_TMP);
   }
-  JsonDocument d;d["version"]=PALETTE_MIGRATION_REVISION;d["sourceFirmware"]="2.0.0a";d["provisionalCorrection"]=true;
+  JsonDocument d;d["version"]=BACKUP_FORMAT_VERSION;d["sourceFirmware"]="2.0.0a";d["provisionalCorrection"]=true;
   d["presets"]=readPrefString("anderson-preset","custom","[]");d["favoriteColors"]=readPrefString("anderson-colors","saved","[]");JsonObject events=d["events"].to<JsonObject>();
   for(size_t i=0;i<64;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
   d["checksum"]=backupChecksum(d);String payload;serializeJson(d,payload);
@@ -81,8 +82,14 @@ static bool restoreFromBackup(){
 }
 
 bool runPaletteColorMigration(){
-  uint8_t state=migrationState();if(migrationRevision()>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
+  uint8_t state=migrationState(),revision=migrationRevision();
+  if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
   if(state==STATE_RESTORE_PENDING)return restoreFromBackup();if(state==STATE_APPLY_PENDING)return applyFromBackup();
+  // Preserve an intentional v1 restore while advancing the migration policy marker.
+  if(revision>0&&state==STATE_RESTORED)return setMigrationState(STATE_RESTORED,true);
+  // Re-derive an already-applied v1 migration from the verified original backup.
+  // Never feed already-corrected NVS values through the correction a second time.
+  if(revision>0&&state==STATE_APPLIED){JsonDocument backup;if(!loadBackup(backup))return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}
   if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();
 }
 bool restoreOriginalPaletteColors(){if(!createBackup())return false;if(!setMigrationState(STATE_RESTORE_PENDING,false))return false;return restoreFromBackup();}
