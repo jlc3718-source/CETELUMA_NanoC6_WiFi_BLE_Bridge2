@@ -22,12 +22,23 @@ jobs:
           ref: codex/anderson-green-background
           fetch-depth: 0
 
-      - name: Apply green background and bump firmware once
+      - name: Apply or clean up green background change
         shell: bash
         run: |
           set -euo pipefail
+
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+
           if grep -q 'ANDERSON_GREEN_BACKGROUND' firmware/web/index.html; then
-            echo 'Green background already applied; nothing to do.'
+            if [ -f firmware/.green-build-trigger ]; then
+              git rm firmware/.green-build-trigger
+              git rm .github/workflows/apply-green-background-once.yml
+              git commit -m 'Remove temporary green background build helper'
+              git push origin HEAD:codex/anderson-green-background
+            else
+              echo 'Green background already applied; nothing to do.'
+            fi
             exit 0
           fi
 
@@ -64,8 +75,6 @@ jobs:
           python tools/release.py bump
           python tools/release.py prepare
 
-          git config user.name 'jlc3718-source'
-          git config user.email 'jlc3718@gmail.com'
           git add firmware/web/index.html firmware/src/main.cpp FIRMWARE_VERSION.txt README.md
           git commit -m 'Change Anderson web interface background to green'
           git push origin HEAD:codex/anderson-green-background
