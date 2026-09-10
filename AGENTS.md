@@ -7,9 +7,9 @@ The canonical source is `firmware/`; the Android app displays its web UI.
 
 The user requests minimal time from a change request to a finished BIN and
 authorizes routine edits, commits, build branches, builds, artifact downloads,
-and merging verified changes without repeated confirmation. Make reasonable
-implementation choices. Deliver the finished APP-only binary; do not stop after
-starting a build.
+publishing, signed OTA-channel advancement, and merging verified changes without
+repeated confirmation. Make reasonable implementation choices. Deliver the finished
+APP-only binary; do not stop after starting a build.
 
 1. Start from the latest `main` source. Reuse the current handoff and this file,
    and read only files relevant to the requested change. Put the requested change
@@ -24,26 +24,33 @@ starting a build.
    version, SHA-256/digest, embedded UI/source provenance, and OTA-slot fit.
 5. As soon as that exact branch build succeeds, download and give the user the
    verified APP-only BIN immediately. Do not wait for an identical `main` rebuild.
-6. Retain exactly two Anderson firmware-build generations in GitHub Actions: the
+6. Unless the user explicitly says the build is test-only or must not be deployed,
+   automatically publish every newly verified firmware BIN as the newest stable
+   Anderson GitHub Release and then advance the signed `ota/latest.json` manifest to
+   that exact release. Do not wait for a separate request to publish it. Verify the
+   public release asset exists and matches the exact version, byte size, SHA-256, and
+   build commit before signing or advancing the OTA manifest.
+7. Retain exactly two Anderson firmware-build generations in GitHub Actions: the
    current successful firmware build plus the immediately previous successful
    firmware build. Delete all older completed workflow runs; their associated
    artifacts are deleted with them.
-7. Retain exactly two stable Anderson GitHub Releases and BIN assets: the newest
+8. Retain exactly two stable Anderson GitHub Releases and BIN assets: the newest
    signed release plus one previous backup release. After a newer stable Anderson
    release is published, automatically delete older Anderson releases/assets while
    leaving Git tags/source history intact. The NanoC6 OTA slots likewise retain
    current firmware plus the immediately previous firmware.
-8. Merge the verified change into `main` as part of the same task. If the merge
+9. Merge the verified change into `main` as part of the same task. If the merge
    changes firmware source, compiler inputs, generated UI inputs, dependencies, or
    other build inputs relative to the verified branch revision, rebuild and verify
    the resulting revision. Otherwise do not repeat an identical build.
-9. Save the BIN as a user deliverable and provide the Settings → Firmware Update
-   instruction unless remote installation is explicitly part of the requested task.
-   Keep completion brief.
+10. Save the BIN as a user deliverable. Normal finished firmware is already published
+    for automatic OTA installation; mention the manual Settings → Firmware Update path
+    only as a recovery/fallback option. Keep completion brief.
 
 Skip optional checks after the changed behavior, successful compile, correct
-artifact, and OTA fit have been established. Do not promise a fixed turnaround;
-change complexity and the GitHub runner queue vary.
+artifact, OTA fit, stable release publication, and signed OTA-channel advancement
+have been established. Do not promise a fixed turnaround; change complexity and the
+GitHub runner queue vary.
 
 ## Preserve these unless the user requests a change
 
@@ -52,6 +59,8 @@ change complexity and the GitHub runner queue vary.
 - Saved NVS key names and formats, events, colors, names, and effects.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
+- The Android APK is frozen; do not modify or rebuild it unless the user explicitly
+  reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
 
 ## Remote OTA behavior
 
