@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v1.1.9**.
+Current firmware: **v1.1.10**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 
@@ -11,6 +11,7 @@ The repository now builds directly from the canonical `firmware/` source tree. T
 - The independent APP-only recovery page accepts Jason's PIN without depending on the main profile interface and disables PIN protection after successful recovery.
 - The editable UI is `firmware/web/index.html`; CI gzip-compresses it before compile.
 - Software-effect speed levels use exact 2000/1000/500/250/100 ms logical intervals from Very Slow through Very Fast.
+- Solid / Static is a true non-animated software effect and can be applied to the currently running theme from Home.
 - The proven ELK-BLEDDM / Lotus Lantern BLE implementation and dual-slot OTA layout are preserved.
 - PlatformIO and the pioarduino platform revision are pinned.
 

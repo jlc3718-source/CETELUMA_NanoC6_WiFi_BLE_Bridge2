@@ -112,6 +112,12 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
   // receives color/brightness frames, so it cannot clamp the maximum interval used here.
   uint32_t interval=softwareEffectIntervalMs(speedLevel);
 
+  // Solid / Static: hold the theme's first color continuously with no animation.
+  if(t.effect==Effect::Solid){
+    if(force||changed)setColor(t.colors[0]);
+    return;
+  }
+
   // Jump: discrete color-to-color changes. One color intentionally behaves as a steady color.
   if(t.effect==Effect::Jump){
     if(count==1){if(force||changed)setColor(t.colors[0]);return;}

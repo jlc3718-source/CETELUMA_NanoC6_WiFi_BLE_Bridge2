@@ -103,6 +103,12 @@ jobs:
           grep -q 'id="homeCustomLightList"' firmware/web/index.html
           grep -q 'ANDERSON_HOME_CUSTOM_LIGHTS' firmware/src/main.cpp
           grep -Fq 'o["enabled"]=true;o["favorite"]=false' firmware/src/main.cpp
+          grep -q 'id="homeEffect"' firmware/web/index.html
+          grep -Fq '<option value="Solid">Solid / Static</option>' firmware/web/index.html
+          grep -Fq "manual({effect:e.target.value})" firmware/web/index.html
+          grep -Fq 'enum class Effect : uint8_t { Jump, Breath, Strobe, Gradient, Solid };' firmware/include/Types.h
+          grep -Fq 'if (s=="Solid" || s=="Static") return Effect::Solid;' firmware/include/Types.h
+          grep -Fq 'if(t.effect==Effect::Solid)' firmware/src/BleController.cpp
           grep -Fq 'loadPresetTheme(o["presetId"].as<String>(),q,qb,qs,nullptr,true)' firmware/src/main.cpp
           grep -q 'data-tab="lights"' firmware/web/index.html
           grep -q 'id="customPresetList"' firmware/web/index.html
