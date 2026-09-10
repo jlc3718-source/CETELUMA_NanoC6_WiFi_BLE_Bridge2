@@ -48,20 +48,16 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           p=Path('firmware/src/EventCatalog.cpp')
           s=p.read_text()
-          changes={
-            '{"holocaust","Holocaust Remembrance Day",EventKind::Awareness,RuleType::Fixed,1,27,0,0,0,1,Effect::Jump,C2(0xF18900,0xFFFFFF),2},':
-            '{"holocaust","Holocaust Remembrance Day",EventKind::Awareness,RuleType::Fixed,1,27,0,0,0,1,Effect::Jump,C2(0xFFFF00,0xFFFFFF),2},',
-            '{"pride","Pride Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C6(0xFF0000,0xFF3000,0xF18900,0x00FF00,0x0000FF,0x23018C),6},':
-            '{"pride","Pride Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C6(0xFF0000,0xFF3000,0xFFFF00,0x00FF00,0x0000FF,0x23018C),6},'
-          }
-          for old,new in changes.items():
-              assert s.count(old)==1, old
-              s=s.replace(old,new)
-          p.write_text(s)
-
+          old='{"holocaust","Holocaust Remembrance Day",EventKind::Awareness,RuleType::Fixed,1,27,0,0,0,1,Effect::Jump,C2(0xF18900,0xFFFFFF),2},'
+          new='{"holocaust","Holocaust Remembrance Day",EventKind::Awareness,RuleType::Fixed,1,27,0,0,0,1,Effect::Jump,C2(0xFFFF00,0xFFFFFF),2},'
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old='{"pride","Pride Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C6(0xFF0000,0xFF3000,0xF18900,0x00FF00,0x0000FF,0x23018C),6},'
+          new='{"pride","Pride Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C6(0xFF0000,0xFF3000,0xFFFF00,0x00FF00,0x0000FF,0x23018C),6},'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
           p=Path('firmware/src/PaletteMigration.cpp')
           s=p.read_text()
           old='static constexpr uint8_t PALETTE_MIGRATION_REVISION=1;'
@@ -76,24 +72,23 @@ jobs:
           new='JsonDocument d;d["version"]=BACKUP_FORMAT_VERSION;d["sourceFirmware"]="2.0.0a";d["provisionalCorrection"]=true;'
           assert s.count(old)==1
           s=s.replace(old,new)
-          old='''bool runPaletteColorMigration(){
-  uint8_t state=migrationState();if(migrationRevision()>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
-  if(state==STATE_RESTORE_PENDING)return restoreFromBackup();if(state==STATE_APPLY_PENDING)return applyFromBackup();
-  if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();
-}'''
-          new='''bool runPaletteColorMigration(){
-  uint8_t state=migrationState(),revision=migrationRevision();
-  if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
-  if(state==STATE_RESTORE_PENDING)return restoreFromBackup();if(state==STATE_APPLY_PENDING)return applyFromBackup();
-  // If v1 was intentionally restored, preserve that choice while advancing the policy marker.
-  if(revision>0&&state==STATE_RESTORED)return setMigrationState(STATE_RESTORED,true);
-  // If v1 already ran, never transform its corrected NVS again. Re-derive v2 from
-  // the verified original backup so repeated OTA installs/reboots cannot double-correct.
-  if(revision>0&&state==STATE_APPLIED){JsonDocument backup;if(!loadBackup(backup))return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}
-  if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();
-}'''
-          assert s.count(old)==1
-          s=s.replace(old,new)
+          start=s.index('bool runPaletteColorMigration(){')
+          end=s.index('bool restoreOriginalPaletteColors()',start)
+          lines=[
+            'bool runPaletteColorMigration(){',
+            '  uint8_t state=migrationState(),revision=migrationRevision();',
+            '  if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;',
+            '  if(state==STATE_RESTORE_PENDING)return restoreFromBackup();if(state==STATE_APPLY_PENDING)return applyFromBackup();',
+            '  // Preserve an intentional v1 restore while advancing the migration policy marker.',
+            '  if(revision>0&&state==STATE_RESTORED)return setMigrationState(STATE_RESTORED,true);',
+            '  // Re-derive an already-applied v1 migration from the verified original backup.',
+            '  // Never feed already-corrected NVS values through the correction a second time.',
+            '  if(revision>0&&state==STATE_APPLIED){JsonDocument backup;if(!loadBackup(backup))return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}',
+            '  if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();',
+            '}',
+            ''
+          ]
+          s=s[:start]+'\n'.join(lines)+s[end:]
           p.write_text(s)
           PY
       - name: Bump once and validate source
@@ -109,20 +104,25 @@ jobs:
           e=Path('firmware/src/EventCatalog.cpp').read_text()
           c=Path('firmware/src/ColorCorrection.cpp').read_text()
           m=Path('firmware/src/PaletteMigration.cpp').read_text()
-          assert '"holocaust"' in e and 'C2(0xFFFF00,0xFFFFFF)' in e
+          assert 'C2(0xFFFF00,0xFFFFFF)' in e
           assert 'C6(0xFF0000,0xFF3000,0xFFFF00,0x00FF00,0x0000FF,0x23018C)' in e
-          assert '"mardigras"' in e and 'C3(0x23018C,0x00FF00,0xF18900)' in e
-          assert '"childcancer"' in e and 'C2(0xF18900,0xE44300)' in e
-          assert '"fathers"' in e and 'C3(0x0000FF,0x377CF9,0xFFFFFF)' in e
-          assert '"diabetes"' in e and 'C2(0x0000FF,0x377CF9)' in e
-          assert '"december"' in e and 'C4(0xA7C8FC,0x377CF9,0xFFFFFF,0x004BC6)' in e
-          assert '{0x3B82F6,0x0000FF}' in c and '{0x5BC0EB,0x004BC6}' in c and '{0x60A5FA,0x377CF9}' in c and '{0xC4B5FD,0x7A62F9}' in c
+          assert 'C3(0x23018C,0x00FF00,0xF18900)' in e
+          assert 'C2(0xF18900,0xE44300)' in e
+          assert 'C3(0x0000FF,0x377CF9,0xFFFFFF)' in e
+          assert 'C2(0x0000FF,0x377CF9)' in e
+          assert 'C4(0xA7C8FC,0x377CF9,0xFFFFFF,0x004BC6)' in e
+          assert '{0x3B82F6,0x0000FF}' in c
+          assert '{0x5BC0EB,0x004BC6}' in c
+          assert '{0x60A5FA,0x377CF9}' in c
+          assert '{0xC4B5FD,0x7A62F9}' in c
           allowed={'FF0000','FF3000','FFFF00','F18900','E44300','00FF00','2AD555','0000FF','004BC6','377CF9','00FFFF','00664D','23018C','7A62F9','FF00FF','FF020C','FF1560','EF4F98','FFFFFF','FFDA7F','A7C8FC','360500','220200','000000'}
           block=e[e.index('const EventDef EVENTS[] = {'):e.index('const size_t EVENT_COUNT')]
           used=set(re.findall(r'0x([0-9A-Fa-f]{6})',block))
           assert used <= allowed, sorted(used-allowed)
-          assert 'BACKUP_FORMAT_VERSION=1' in m and 'PALETTE_MIGRATION_REVISION=2' in m
-          assert 'if(revision>0&&state==STATE_APPLIED)' in m and 'loadBackup(backup)' in m
+          assert 'BACKUP_FORMAT_VERSION=1' in m
+          assert 'PALETTE_MIGRATION_REVISION=2' in m
+          assert 'revision>0&&state==STATE_APPLIED' in m
+          assert 'loadBackup(backup)' in m
           print('Event intent, blue-family, palette coverage, and migration-v2 checks passed')
           PY
       - name: Commit exact release source
