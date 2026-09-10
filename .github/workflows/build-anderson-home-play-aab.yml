@@ -1,40 +1,32 @@
 name: Build Anderson Home Play AAB Icon Update
-
 on:
   push:
     branches: [ anderson-android-icon-release ]
   workflow_dispatch:
-
 jobs:
   build-android-aab:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
+        with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-      - name: Extract project
+        with: {gradle-version: '8.11.1'}
+      - name: Extract and configure
         run: |
           rm -rf build_source && mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
-      - name: Configure Android release
-        working-directory: build_source/Anderson_Home_Complete_Project/android
-        run: |
+          cd build_source/Anderson_Home_Complete_Project/android
           printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' > gradle.properties
           python - <<'PY'
           from pathlib import Path
           import re
           p=Path('app/build.gradle.kts'); s=p.read_text()
-          s=re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "com.jlc3718.anderson"', s)
-          s=re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 2', s)
-          s=re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.1"', s)
+          s=re.sub(r'applicationId\s*=\s*"[^"]+"','applicationId = "com.jlc3718.anderson"',s)
+          s=re.sub(r'versionCode\s*=\s*\d+','versionCode = 2',s)
+          s=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "1.0.1"',s)
           if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
-              needle='    buildFeatures { viewBinding = false }\n'
-              s=s.replace(needle, needle+'    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = "17" }\n',1)
+              n='    buildFeatures { viewBinding = false }\n'; s=s.replace(n,n+'    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = "17" }\n',1)
           p.write_text(s)
           m=Path('app/src/main/AndroidManifest.xml'); x=m.read_text()
           if 'android:icon=' in x: x=re.sub(r'android:icon="[^"]+"','android:icon="@drawable/anderson_launcher"',x)
@@ -45,7 +37,46 @@ jobs:
           PY
           mkdir -p app/src/main/res/drawable-nodpi
           cp ../../../anderson_launcher.jpg app/src/main/res/drawable-nodpi/anderson_launcher.jpg
-          cat app/build.gradle.kts
+          cat > app/src/main/java/com/andersonhome/controller/MainActivity.kt <<'KOTLIN'
+          package com.andersonhome.controller
+          import android.app.Activity
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Bundle
+          import android.webkit.ValueCallback
+          import android.webkit.WebChromeClient
+          import android.webkit.WebSettings
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          class MainActivity : Activity() {
+              private lateinit var web: WebView
+              private var chooser: ValueCallback<Array<Uri>>? = null
+              private val requestCode = 3718
+              private val target = "http://anderson101.tplinkdns.com/"
+              override fun onCreate(state: Bundle?) {
+                  super.onCreate(state)
+                  web = WebView(this)
+                  setContentView(web)
+                  web.settings.javaScriptEnabled = true
+                  web.settings.domStorageEnabled = true
+                  web.settings.cacheMode = WebSettings.LOAD_DEFAULT
+                  web.settings.allowFileAccess = true
+                  web.webViewClient = WebViewClient()
+                  web.webChromeClient = object : WebChromeClient() {
+                      override fun onShowFileChooser(v: WebView?, cb: ValueCallback<Array<Uri>>?, p: FileChooserParams?): Boolean {
+                          chooser?.onReceiveValue(null); chooser = cb
+                          return try { startActivityForResult(p?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply { type="*/*" }, requestCode); true } catch (_: Exception) { chooser=null; false }
+                      }
+                  }
+                  if (state == null) web.loadUrl(target) else web.restoreState(state)
+              }
+              override fun onSaveInstanceState(out: Bundle) { web.saveState(out); super.onSaveInstanceState(out) }
+              override fun onActivityResult(r: Int, c: Int, d: Intent?) {
+                  if (r == requestCode) { chooser?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(c,d)); chooser=null } else super.onActivityResult(r,c,d)
+              }
+              @Deprecated("Deprecated in Java") override fun onBackPressed() { if (web.canGoBack()) web.goBack() else super.onBackPressed() }
+          }
+          KOTLIN
       - name: Build release AAB
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: gradle --no-daemon bundleRelease
