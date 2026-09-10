@@ -24,11 +24,13 @@ starting a build.
    version, SHA-256/digest, embedded UI/source provenance, and OTA-slot fit.
 5. As soon as that exact branch build succeeds, download and give the user the
    verified APP-only BIN immediately. Do not wait for an identical `main` rebuild.
-6. Merge the verified change into `main` as part of the same task. If the merge
+6. After a successful firmware build, remove all older completed GitHub Actions
+   workflow runs in this repository while keeping the successful current run.
+7. Merge the verified change into `main` as part of the same task. If the merge
    changes firmware source, compiler inputs, generated UI inputs, dependencies, or
    other build inputs relative to the verified branch revision, rebuild and verify
    the resulting revision. Otherwise do not repeat an identical build.
-7. Save the BIN as a user deliverable and provide the Settings → Firmware Update
+8. Save the BIN as a user deliverable and provide the Settings → Firmware Update
    instruction unless remote installation is explicitly part of the requested task.
    Keep completion brief.
 
