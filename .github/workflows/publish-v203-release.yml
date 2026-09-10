@@ -1,0 +1,33 @@
+name: Publish canonical Anderson v2.0.3 release
+on:
+  push:
+    branches: ['codex/publish-anderson-v2-0-3-release']
+    paths: ['.github/workflows/publish-v203-release.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact canonical main artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 34431371664 --repo "$GITHUB_REPOSITORY" -n Anderson-Home-NanoC6-v2.0.3 -D /tmp/v203
+          test -f /tmp/v203/and_2.0.3.bin
+          test -f /tmp/v203/release.json
+          test "$(jq -r .version /tmp/v203/release.json)" = "2.0.3"
+          test "$(jq -r .commit /tmp/v203/release.json)" = "ac492ac9fa7d3ee3296571019e5e674d273d8f0d"
+          test "$(stat -c%s /tmp/v203/and_2.0.3.bin)" = "1788624"
+          test "$(sha256sum /tmp/v203/and_2.0.3.bin | awk '{print $1}')" = "6c67ccb0d7d8e49737077f9849491cce7a8e4f04c645f7e194862b30890f8e2f"
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=anderson-v2.0.3
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target ac492ac9fa7d3ee3296571019e5e674d273d8f0d --title "Anderson Home v2.0.3" --notes "Transitional signed remote-update discovery release. Automatic remote download/install remains disabled."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" /tmp/v203/and_2.0.3.bin /tmp/v203/release.json --clobber
