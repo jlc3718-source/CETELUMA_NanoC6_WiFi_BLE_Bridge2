@@ -1,0 +1,5 @@
+firmware/.pio/
+firmware/include/WebUIGzip.h
+.pio-build-cache/
+release/
+__pycache__/

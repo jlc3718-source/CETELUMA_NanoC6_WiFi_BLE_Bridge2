@@ -2,34 +2,43 @@ name: Build Anderson Home Firmware
 
 on:
   workflow_dispatch:
+    inputs:
+      full_image:
+        description: Include a full serial-recovery image
+        type: boolean
+        default: false
   push:
-    branches: [ main ]
-    paths:
-      - 'firmware/**'
-      - 'FIRMWARE_VERSION.txt'
-      - '.github/workflows/compile-anderson-home-multi.yml'
+    branches: [main, 'codex/**']
+    paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt', '.github/workflows/compile-anderson-home-multi.yml']
   pull_request:
-    branches: [ main ]
-    paths:
-      - 'firmware/**'
-      - 'FIRMWARE_VERSION.txt'
-      - '.github/workflows/compile-anderson-home-multi.yml'
+    branches: [main]
+    paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt', '.github/workflows/compile-anderson-home-multi.yml']
+
+# A newer revision replaces an unfinished build of the same branch.
+concurrency:
+  group: anderson-firmware-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build-firmware:
-    runs-on: ubuntu-latest
+    # Our branches build on push; retain PR builds for contributions from forks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Install pinned PlatformIO
-        run: pip install platformio==6.2.0
-
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Install build tool
+        run: python -m pip install -q -r tools/requirements-build.txt
       - name: Restore PlatformIO dependencies
         uses: actions/cache@v4
         with:
@@ -41,119 +50,36 @@ jobs:
           key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
           restore-keys: |
             ${{ runner.os }}-pio-v1-
-
-      - name: Generate compressed web UI
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import gzip
-          html=Path('firmware/web/index.html').read_bytes()
-          gz=gzip.compress(html,compresslevel=9,mtime=0)
-          out=Path('firmware/include/WebUIGzip.h')
-          lines=['#pragma once','#include <Arduino.h>','',f'static const size_t WEB_UI_GZ_LEN={len(gz)};','static const uint8_t WEB_UI_GZ[] PROGMEM = {']
-          for i in range(0,len(gz),20):
-              lines.append('  '+','.join(f'0x{b:02x}' for b in gz[i:i+20])+',')
-          lines.append('};')
-          out.write_text('\n'.join(lines)+'\n')
-          print(f'Web UI: {len(html)} bytes -> {len(gz)} bytes gzip; saved {len(html)-len(gz)} bytes')
-          PY
-
-      - name: Verify release source
-        run: |
-          set -euo pipefail
-          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
-          grep -q "ANDERSON_FIRMWARE_VERSION=\"${VERSION}\"" firmware/src/main.cpp
-          grep -q ">v${VERSION}<" firmware/web/index.html
-          grep -q 'anderson-preset' firmware/src/main.cpp
-          grep -q 'anderson-csched' firmware/src/main.cpp
-          grep -q 'r\["id"\]=newId' firmware/src/main.cpp
-          grep -q 'r\["backend"\]="NVS"' firmware/src/main.cpp
-          grep -Fq 'String deleteId=d["deleteId"] | ""' firmware/src/main.cpp
-          ! grep -Fq 'd["deleteId"].as<String>()' firmware/src/main.cpp
-          grep -q 'server.sendHeader("Content-Encoding","gzip")' firmware/src/main.cpp
-          grep -q 'server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate")' firmware/src/main.cpp
-          ! grep -R -q 'SPIFFS\|LittleFS' firmware/src firmware/include
-          ! grep -q '/api/login\|AHSESS\|loginOverlay\|Signed out' firmware/src/main.cpp firmware/web/index.html
-          grep -q 'id="profileGate"' firmware/web/index.html
-          grep -q 'data-profile="shirley"' firmware/web/index.html
-          grep -q 'data-profile="jason"' firmware/web/index.html
-          grep -q 'ANDERSON_LOCKOUT_SAFE_PROFILE_GATE' firmware/web/index.html
-          grep -q 'Emergency APP-only Firmware Recovery' firmware/web/index.html firmware/src/main.cpp
-          grep -q 'href="/recovery"' firmware/web/index.html
-          grep -Fq 'server.on("/recovery",HTTP_GET' firmware/src/main.cpp
-          grep -q "let currentRole='none',currentUser=''" firmware/web/index.html
-          grep -q 'ANDERSON_FOUR_DIGIT_PIN_AUTH' firmware/src/main.cpp
-          grep -Fq 'server.on("/api/auth/unlock",HTTP_POST' firmware/src/main.cpp
-          grep -Fq 'server.on("/api/auth/config",HTTP_POST' firmware/src/main.cpp
-          grep -q 'X-Anderson-Session' firmware/src/main.cpp firmware/web/index.html
-          grep -q 'mbedtls_sha256' firmware/src/main.cpp
-          grep -q 'pin.length()!=4' firmware/src/main.cpp
-          grep -q 'id="profilePinForm"' firmware/web/index.html
-          grep -q 'id="shirleyPinConfirm"' firmware/web/index.html
-          grep -q 'id="jasonPinConfirm"' firmware/web/index.html
-          grep -Fq 'action="/api/update?recovery=1"' firmware/web/index.html firmware/src/main.cpp
-          grep -q 'otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()' firmware/src/main.cpp
-          grep -q 'Intentionally public: this is the lockout-safe APP-only recovery path' firmware/src/main.cpp
-          grep -q 'data-tab="lights"' firmware/web/index.html
-          grep -q 'id="customPresetList"' firmware/web/index.html
-          ! grep -q 'id="presetList"' firmware/web/index.html
-          ! grep -q '^const presets=' firmware/web/index.html
-          grep -q 'Save was acknowledged, but the custom light could not be read back' firmware/web/index.html
-          grep -q '/api/update' firmware/src/main.cpp
-          grep -q 'FFF0' firmware/src/BleController.cpp
-          grep -q 'FFF3' firmware/src/BleController.cpp
-          grep -q '32f6bf400b276b0f61cf42c50490a7808ee3457e' firmware/platformio.ini
-          python3 - <<'PY'
-          from pathlib import Path
-          source=Path('firmware/src/main.cpp').read_text()
-          update=source.split('server.on("/api/update",HTTP_POST',1)[1].split('server.on("/api/reboot",HTTP_POST',1)[0]
-          if 'requireUser()' in update or 'requireAdmin()' in update:
-              raise SystemExit('Emergency firmware update must remain outside PIN authentication')
-          PY
-
-      - name: Check web UI JavaScript syntax
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          html=Path('firmware/web/index.html').read_text()
-          scripts=re.findall(r'<script>(.*?)</script>',html,flags=re.S|re.I)
-          if len(scripts)<3:
-              raise SystemExit(f'Expected at least 3 inline scripts; found {len(scripts)}')
-          Path('/tmp/anderson-web-ui.js').write_text('\n'.join(scripts))
-          print(f'Checking {len(scripts)} inline scripts')
-          PY
-          node --check /tmp/anderson-web-ui.js
-
+      - name: Restore compiled objects
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: .pio-build-cache
+          key: ${{ runner.os }}-anderson-objects-v1-${{ hashFiles('firmware/platformio.ini') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-anderson-objects-v1-${{ hashFiles('firmware/platformio.ini') }}-
+      - name: Prepare release
+        run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
-        run: pio run -d firmware -e m5stack-nanoc6
-
-      - name: Verify OTA capacity and export release files
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package verified firmware
+        env:
+          FULL_IMAGE: ${{ inputs.full_image }}
         run: |
-          set -euo pipefail
-          BUILD="firmware/.pio/build/m5stack-nanoc6"
-          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
-          test -s "$BUILD/firmware.factory.bin"
-          test -s "$BUILD/firmware.bin"
-          python3 - <<'PY'
-          from pathlib import Path
-          app=Path('firmware/.pio/build/m5stack-nanoc6/firmware.bin').stat().st_size
-          slot=0x1E0000
-          print(f'App size: {app} bytes; OTA slot: {slot} bytes; headroom: {slot-app} bytes')
-          if app >= slot:
-              raise SystemExit('Firmware does not fit in OTA slot')
-          PY
-          cp "$BUILD/firmware.bin" "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin"
-          cp "$BUILD/firmware.factory.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
-          sha256sum "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
-          ls -lh "Anderson_Home_NanoC6_v${VERSION}_APP_ONLY.bin" "Anderson_Home_NanoC6_v${VERSION}_ALL_IN_ONE.bin"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
+          if [ "$FULL_IMAGE" = true ]; then
+            python tools/release.py package --full
+          else
+            python tools/release.py package
+          fi
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: Anderson-Home-NanoC6-v${{ env.VERSION }}
-          path: |
-            Anderson_Home_NanoC6_v${{ env.VERSION }}_APP_ONLY.bin
-            Anderson_Home_NanoC6_v${{ env.VERSION }}_ALL_IN_ONE.bin
+          path: release/*
           if-no-files-found: error
+      - name: Save compiled objects for the next revision
+        if: steps.objects.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .pio-build-cache
+          key: ${{ steps.objects.outputs.cache-primary-key }}
