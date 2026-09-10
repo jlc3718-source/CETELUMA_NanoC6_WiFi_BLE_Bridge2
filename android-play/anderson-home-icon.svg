@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1536" viewBox="0 0 1536 1536">
+  <rect width="1536" height="1536" fill="#000"/>
+  <g fill="none" stroke-linecap="round" stroke-width="20">
+    <path d="M350 735 A430 430 0 0 1 1186 735" stroke="#ff2b21"/>
+    <path d="M385 735 A395 395 0 0 1 1151 735" stroke="#ff9518"/>
+    <path d="M420 735 A360 360 0 0 1 1116 735" stroke="#ffe11c"/>
+    <path d="M455 735 A325 325 0 0 1 1081 735" stroke="#55e347"/>
+    <path d="M490 735 A290 290 0 0 1 1046 735" stroke="#1ed8ff"/>
+    <path d="M525 735 A255 255 0 0 1 1011 735" stroke="#2879ff"/>
+    <path d="M560 735 A220 220 0 0 1 976 735" stroke="#a845ff"/>
+  </g>
+  <g fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M370 928 L768 650 L1166 928"/>
+    <path d="M448 876 V1118 H1088 V876"/>
+    <path d="M705 1118 V932 H831 V1118"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="382" cy="920" r="10"/><circle cx="407" cy="903" r="10"/><circle cx="432" cy="886" r="10"/><circle cx="457" cy="869" r="10"/><circle cx="482" cy="852" r="10"/><circle cx="507" cy="835" r="10"/><circle cx="532" cy="818" r="10"/><circle cx="557" cy="801" r="10"/><circle cx="582" cy="784" r="10"/><circle cx="607" cy="767" r="10"/><circle cx="632" cy="750" r="10"/><circle cx="657" cy="733" r="10"/><circle cx="682" cy="716" r="10"/><circle cx="707" cy="699" r="10"/><circle cx="732" cy="682" r="10"/><circle cx="757" cy="665" r="10"/><circle cx="782" cy="682" r="10"/><circle cx="807" cy="699" r="10"/><circle cx="832" cy="716" r="10"/><circle cx="857" cy="733" r="10"/><circle cx="882" cy="750" r="10"/><circle cx="907" cy="767" r="10"/><circle cx="932" cy="784" r="10"/><circle cx="957" cy="801" r="10"/><circle cx="982" cy="818" r="10"/><circle cx="1007" cy="835" r="10"/><circle cx="1032" cy="852" r="10"/><circle cx="1057" cy="869" r="10"/><circle cx="1082" cy="886" r="10"/><circle cx="1107" cy="903" r="10"/><circle cx="1132" cy="920" r="10"/>
+  </g>
+  <text x="768" y="1230" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="120" letter-spacing="7">ANDERSON</text>
+  <text x="768" y="1335" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="76" letter-spacing="18">HOME</text>
+</svg>
