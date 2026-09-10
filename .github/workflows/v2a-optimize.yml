@@ -1,0 +1,114 @@
+name: Build Anderson Home v2.0.0a size optimization
+
+on:
+  push:
+    branches: ['codex/anderson-v2a-size-opt']
+
+permissions:
+  contents: write
+
+jobs:
+  optimize-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Apply v2.0.0a focused optimizations
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          w=Path('.')
+          (w/'FIRMWARE_VERSION.txt').write_text('2.0.0a\n')
+          p=w/'firmware/platformio.ini'; t=p.read_text().replace('-DCORE_DEBUG_LEVEL=1','-DCORE_DEBUG_LEVEL=0'); p.write_text(t)
+          p=w/'firmware/include/BleController.h'; t=p.read_text()
+          for a,b in [
+            ('  bool selectAndConnect(const String& address,uint8_t protocol);','  bool selectAndConnect(const String& address);'),
+            ('  void disconnect();\n',''),('  void setSpeed(uint8_t pct);\n',''),('  void setMode(uint8_t mode);\n',''),
+            ('    uint8_t protocol=0;\n',''),('  uint8_t detectProtocol(const String& n) const;\n',''),('  String protocolLabel(uint8_t p) const;\n',''),
+            ('  bool connectSlot(uint8_t slot,const String& address,uint8_t protocol,const String& advertisedName="");','  bool connectSlot(uint8_t slot,const String& address,const String& advertisedName="");')]: t=t.replace(a,b)
+          p.write_text(t)
+          p=w/'firmware/src/BleController.cpp'; old=p.read_text()
+          start=old.index('String BleController::protocolLabel'); begin=old.index('void BleController::begin', start); old=old[:start]+old[begin:]
+          old=old.replace('connectSlot(0,cfg->bleAddress,cfg->bleProtocol,cfg->bleName)','connectSlot(0,cfg->bleAddress,cfg->bleName)').replace('connectSlot(1,cfg->bleAddress2,cfg->bleProtocol2,cfg->bleName2)','connectSlot(1,cfg->bleAddress2,cfg->bleName2)')
+          pat=re.compile(r'String BleController::protocolName\(\) const\{.*?\}\nBleSlotInfo BleController::slotInfo\(uint8_t i\) const\{.*?\}\n', re.S)
+          old,n=pat.subn('String BleController::protocolName() const{return "ELK-BLEDDM / Lotus Lantern";}\nBleSlotInfo BleController::slotInfo(uint8_t i) const{BleSlotInfo x;if(i>1)return x;x.name=slots[i].name;x.address=slots[i].address;x.protocol="ELK-BLEDDM / Lotus Lantern";x.connected=slotConnected(i);return x;}\n',old,count=1); assert n==1
+          s=old.index('bool BleController::connectSlot'); e=old.index('void BleController::saveSlots',s)
+          newblock='''bool BleController::connectSlot(uint8_t i,const String& addr,const String& advertisedName){if(i>1)return false;\n#ifdef MOCK_BLE\n  slots[i].address=addr;slots[i].name=advertisedName.length()?advertisedName:(i?"ELK-BLEDDM 06":"ELK-BLEDDM AB");activeValid=false;return true;\n#else\n  disconnectSlot(i);\n  auto tryConnect=[&](uint8_t addressType)->bool{NimBLEAddress a(std::string(addr.c_str()),addressType);slots[i].client=NimBLEDevice::createClient();if(!slots[i].client->connect(a)){NimBLEDevice::deleteClient(slots[i].client);slots[i].client=nullptr;return false;}return true;};\n  if(!tryConnect(BLE_ADDR_PUBLIC)&&!tryConnect(BLE_ADDR_RANDOM))return false;\n  NimBLERemoteService* svc=slots[i].client->getService("FFF0");\n  NimBLERemoteCharacteristic* chr=svc?svc->getCharacteristic("FFF3"):nullptr;\n  if(!chr){svc=slots[i].client->getService("FFE5");if(svc)chr=svc->getCharacteristic("FFE9");}\n  if(!svc||!chr){disconnectSlot(i);return false;}\n  slots[i].chr=chr;slots[i].address=addr;slots[i].name=advertisedName.length()?advertisedName:addr;activeValid=false;return true;\n#endif\n}\n\nbool BleController::selectAndConnect(const String& addr){String advertisedName;\n#ifndef MOCK_BLE\n  NimBLEScanResults cached=NimBLEDevice::getScan()->getResults();for(int i=0;i<cached.getCount();i++){const NimBLEAdvertisedDevice* d=cached.getDevice(i);String a=d->getAddress().toString().c_str();if(a.equalsIgnoreCase(addr)){advertisedName=d->getName().c_str();break;}}\n#else\n  advertisedName=addr=="MOCK-B"?"ELK-BLEDDM 06":"ELK-BLEDDM AB";\n#endif\n  int slot=-1;for(int i=0;i<2;i++)if(slots[i].address.equalsIgnoreCase(addr))slot=i;for(int i=0;i<2&&slot<0;i++)if(!slots[i].address.length())slot=i;if(slot<0)slot=1;\n  bool ok=connectSlot(slot,addr,advertisedName);if(ok){saveSlots();activeValid=false;}return ok;\n}\n\n'''
+          old=old[:s]+newblock+old[e:]
+          old=re.sub(r'void BleController::saveSlots\(\)\{.*?\}\n','void BleController::saveSlots(){if(!cfg)return;cfg->bleAddress=slots[0].address;cfg->bleProtocol=slots[0].address.length()?4:0;cfg->bleName=slots[0].name;cfg->bleAddress2=slots[1].address;cfg->bleProtocol2=slots[1].address.length()?4:0;cfg->bleName2=slots[1].name;}\n',old,count=1,flags=re.S)
+          old=old.replace('void BleController::disconnect(){disconnectSlot(0);disconnectSlot(1);}\n','').replace('slots[i].protocol=0;','').replace('return slots[i].chr->writeValue(data,len,slots[i].protocol==4?false:true);','return slots[i].chr->writeValue(data,len,false);')
+          s=old.index('void BleController::setPower'); e=old.index('void BleController::applyTheme',s)
+          cmds='''void BleController::setPower(bool on){for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i))continue;uint8_t f[9]={0x7E,0x04,0x04,(uint8_t)(on?0xF0:0x00),0x00,(uint8_t)(on?0x01:0x00),0xFF,0x00,0xEF};writeSlot(i,f,9);}}\nvoid BleController::setColor(uint32_t c){uint8_t R=r8(c),G=g8(c),B=b8(c);for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i))continue;uint8_t f[9]={0x7E,0x07,0x05,0x03,R,G,B,0x10,0xEF};writeSlot(i,f,9);}}\nvoid BleController::setBrightness(uint8_t B){B=constrain(B,0,100);for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i))continue;uint8_t f[9]={0x7E,0x04,0x01,B,0x00,0x00,0x00,0x00,0xEF};writeSlot(i,f,9);}}\n\n'''
+          old=old[:s]+cmds+old[e:]
+          old=old.replace('  uint8_t sp=map(constrain(speedLevel,1,5),1,5,20,95);\n','').replace('setPower(true);setBrightness(bright);setSpeed(sp);lastEffect=0;','setPower(true);setBrightness(bright);lastEffect=0;')
+          p.write_text(old)
+          p=w/'firmware/src/main.cpp'; t=p.read_text().replace('ANDERSON_FIRMWARE_VERSION="2.0.0"','ANDERSON_FIRMWARE_VERSION="2.0.0a"')
+          t=t.replace('||!d["bleProtocol"].isNull()','').replace('    if(!d["bleProtocol"].isNull())s.bleProtocol=constrain(d["bleProtocol"].as<int>(),0,4);if(!d["scheduler"].isNull())s.schedulerEnabled=d["scheduler"].as<bool>();','    if(!d["scheduler"].isNull())s.schedulerEnabled=d["scheduler"].as<bool>();')
+          t=t.replace('String addr=d["address"].as<String>();uint8_t p=d["protocol"]|0;bool ok=ble.selectAndConnect(addr,p);','String addr=d["address"].as<String>();bool ok=ble.selectAndConnect(addr);')
+          t=t.replace(';setupAP=true;Serial.printf("Setup AP: http://%s\\n",WiFi.softAPIP().toString().c_str());',';setupAP=true;').replace(';Serial.printf("Connecting to %s",s.ssid.c_str());',';').replace('{delay(250);Serial.print(".");}','{delay(250);}')
+          t=t.replace('if(WiFi.status()==WL_CONNECTED){Serial.printf("\\nWi-Fi: %s\\n",WiFi.localIP().toString().c_str());setupAP=false;','if(WiFi.status()==WL_CONNECTED){setupAP=false;').replace('else{Serial.println("\\nWi-Fi failed; starting recovery AP");startAP();}','else{startAP();}')
+          t=t.replace('Serial.begin(115200);delay(500);','delay(500);').replace('if(customFsReady){migrateLegacyCustomStorage();if(!migrateV2HomeFavorites())Serial.println("Anderson v2.0 Home favorites migration pending");}else Serial.println("Anderson NVS persistent storage self-test failed");','if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();}')
+          p.write_text(t)
+          p=w/'firmware/web/index.html'; t=p.read_text().replace('<strong>v2.0.0</strong>','<strong>v2.0.0a</strong>')
+          t=t.replace('      <div class="label">Protocol</div><select id="bleProtocol" class="field"><option value="0">Auto detect</option><option value="1">LEDBLE (7E…EF)</option><option value="2">RGBIC/SPI (7B…BF)</option><option value="3">RGBIC/SPI shifted</option><option value="4">ELK-BLEDDM / Lotus Lantern</option></select>\n','').replace(',bleProtocol:+$(\'bleProtocol\').value','').replace("post('/api/ble/select',{address:d.address,protocol:+$('bleProtocol').value})","post('/api/ble/select',{address:d.address})")
+          p.write_text(t)
+          p=w/'tools/release.py'; t=p.read_text().replace("if not re.fullmatch(r'\\d+\\.\\d+\\.\\d+', value):","if not re.fullmatch(r'\\d+\\.\\d+\\.\\d+[a-z]?', value):").replace("major, minor, patch = map(int, old.split('.'))","m = re.fullmatch(r'(\\d+)\\.(\\d+)\\.(\\d+)[a-z]?', old)\n    major, minor, patch = map(int, m.groups())")
+          p.write_text(t)
+          p=w/'README.md'; t=p.read_text().replace('Current firmware: **v2.0.0**.','Current firmware: **v2.0.0a**.')
+          needle='- v2.0 resets the Home favorites baseline once on upgrade so every built-in Holiday is favorited and Awareness/Seasonal/custom-show favorites are cleared; favorites remain user-editable afterward.\n'
+          t=t.replace(needle,needle+'- v2.0.0a trims production-only debug/diagnostic code and legacy non-ELK BLE command families while preserving the Anderson ELK/Lotus Lantern control path and saved-data keys.\n'); p.write_text(t)
+          cpp=(w/'firmware/src/BleController.cpp').read_text(); main=(w/'firmware/src/main.cpp').read_text(); ui=(w/'firmware/web/index.html').read_text()
+          assert 'LEDBLE' not in cpp and 'RGBIC B' not in cpp and 'FFE0' not in cpp and 'FFE1' not in cpp
+          assert 'setSpeed(' not in cpp and 'setMode(' not in cpp and 'detectProtocol' not in cpp
+          assert all(x in cpp for x in ('FFF0','FFF3','FFE5','FFE9','0x7E,0x04,0x04','0x7E,0x07,0x05,0x03','0x7E,0x04,0x01'))
+          assert 'CORE_DEBUG_LEVEL=0' in (w/'firmware/platformio.ini').read_text() and 'Serial.' not in main and 'bleProtocol' not in ui and 'ANDERSON_FIRMWARE_VERSION="2.0.0a"' in main
+          PY
+          python tools/release.py check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/v2a-optimize.yml
+          git add FIRMWARE_VERSION.txt README.md firmware tools/release.py
+          git commit -m 'Anderson Home v2.0.0a: focused size optimization [skip ci]'
+      - name: Install build tool
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Restore PlatformIO dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-v1-
+      - name: Restore compiled objects
+        uses: actions/cache/restore@v4
+        with:
+          path: .pio-build-cache
+          key: ${{ runner.os }}-anderson-objects-v1-${{ hashFiles('firmware/platformio.ini') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-anderson-objects-v1-${{ hashFiles('firmware/platformio.ini') }}-
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package verified firmware
+        run: python tools/release.py package
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-NanoC6-v${{ env.VERSION }}
+          path: release/*
+          if-no-files-found: error
