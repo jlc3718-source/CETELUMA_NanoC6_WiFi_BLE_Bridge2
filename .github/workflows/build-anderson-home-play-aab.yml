@@ -1,0 +1,63 @@
+name: Build Anderson Home Play AAB Icon Update
+
+on:
+  push:
+    branches: [ anderson-android-icon-release ]
+  workflow_dispatch:
+
+jobs:
+  build-android-aab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Extract project
+        run: |
+          rm -rf build_source
+          mkdir build_source
+          unzip -q Anderson_Home_Complete_Project.zip -d build_source
+          test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
+      - name: Configure Android release
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: |
+          printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' > gradle.properties
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('app/build.gradle.kts')
+          s=p.read_text()
+          s=re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 2', s)
+          s=re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.1"', s)
+          if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
+              needle='    buildFeatures { viewBinding = false }\n'
+              repl=needle+'    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = "17" }\n'
+              s=s.replace(needle,repl,1)
+          p.write_text(s)
+          m=Path('app/src/main/AndroidManifest.xml')
+          x=m.read_text()
+          x=re.sub(r'android:icon="[^"]+"', 'android:icon="@drawable/anderson_launcher"', x)
+          x=re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@drawable/anderson_launcher"', x)
+          m.write_text(x)
+          PY
+          mkdir -p app/src/main/res/drawable-nodpi
+          cp ../../../anderson_launcher.jpg app/src/main/res/drawable-nodpi/anderson_launcher.jpg
+          cat app/build.gradle.kts
+          grep -n 'icon\|roundIcon' app/src/main/AndroidManifest.xml
+      - name: Build release AAB
+        working-directory: build_source/Anderson_Home_Complete_Project/android
+        run: gradle --no-daemon bundleRelease
+      - name: Collect AAB
+        run: |
+          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/bundle/release/app-release.aab Anderson-Home-1.0.1-unsigned.aab
+          ls -lh Anderson-Home-1.0.1-unsigned.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-1.0.1-Play-AAB
+          path: Anderson-Home-1.0.1-unsigned.aab
+          if-no-files-found: error
