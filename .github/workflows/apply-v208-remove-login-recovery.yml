@@ -1,0 +1,92 @@
+name: Apply Anderson v2.0.8 login cleanup
+
+on:
+  push:
+    branches: ['codex/remove-login-recovery-v2-0-8']
+    paths: ['.github/workflows/apply-v208-remove-login-recovery.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/remove-login-recovery-v2-0-8
+      - name: Remove recovery uploader from login screen and bump firmware
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          web_path = Path('firmware/web/index.html')
+          s = web_path.read_text()
+
+          # Remove only the emergency firmware recovery UI from the profile/login gate.
+          s, n = re.subn(
+              r'\n\s*<section class="recoveryPanel" aria-labelledby="recoveryTitle">.*?</section>\n\s*<div class="profileLockedMessage">.*?</div>',
+              '', s, count=1, flags=re.S)
+          assert n == 1, 'login recovery section not found exactly once'
+
+          s = s.replace(
+              "  let recoveryBeforePartition='',pinProtectionEnabled=false,kellyPinReady=false,pendingProfile='';",
+              "  let pinProtectionEnabled=false,kellyPinReady=false,pendingProfile='';")
+
+          # Remove login-screen-only recovery JavaScript while leaving firmware recovery backend/routes intact.
+          s, n = re.subn(
+              r"  function recoveryStatus\(message\).*?(?=  async function loadPinStatus\(note=''\)\{)",
+              '', s, count=1, flags=re.S)
+          assert n == 1, 'recovery gate JavaScript block not found exactly once'
+
+          s = s.replace(
+              "PIN status could not be checked. You can retry a PIN or use firmware recovery.",
+              "PIN status could not be checked. You can retry the PIN.")
+          s = s.replace("    byId('recoveryPinWrap').hidden=!pinProtectionEnabled;\n", '')
+
+          old_dom = "  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-profile]').forEach(button=>button.addEventListener('click',()=>requestProfile(button.dataset.profile)));['profilePin','recoveryPin'].forEach(id=>byId(id).addEventListener('input',event=>event.target.value=event.target.value.replace(/\\D/g,'').slice(0,4)));byId('profilePinForm').addEventListener('submit',submitProfilePin);byId('cancelProfilePin').addEventListener('click',()=>{pendingProfile='';byId('profilePinForm').hidden=true});byId('switchProfile').addEventListener('click',()=>showProfileGate());byId('recoveryFirmwareForm').addEventListener('submit',uploadRecovery);window.addEventListener('anderson-auth-required',()=>showProfileGate('Your session ended. Enter the profile PIN again.',false));loadPinStatus();loadRecoveryInfo()});"
+          new_dom = "  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-profile]').forEach(button=>button.addEventListener('click',()=>requestProfile(button.dataset.profile)));byId('profilePin').addEventListener('input',event=>event.target.value=event.target.value.replace(/\\D/g,'').slice(0,4));byId('profilePinForm').addEventListener('submit',submitProfilePin);byId('cancelProfilePin').addEventListener('click',()=>{pendingProfile='';byId('profilePinForm').hidden=true});byId('switchProfile').addEventListener('click',()=>showProfileGate());window.addEventListener('anderson-auth-required',()=>showProfileGate('Your session ended. Enter the profile PIN again.',false));loadPinStatus()});"
+          assert old_dom in s, 'DOMContentLoaded recovery binding not found'
+          s = s.replace(old_dom, new_dom, 1)
+
+          assert '<strong>v2.0.7</strong>' in s
+          s = s.replace('<strong>v2.0.7</strong>', '<strong>v2.0.8</strong>', 1)
+          assert 'Emergency APP-only Firmware Recovery' not in s
+          assert 'recoveryFirmwareForm' not in s
+          assert 'recoveryPinWrap' not in s
+          web_path.write_text(s)
+
+          version = Path('FIRMWARE_VERSION.txt')
+          assert version.read_text().strip() == '2.0.7'
+          version.write_text('2.0.8\n')
+
+          main = Path('firmware/src/main.cpp')
+          m = main.read_text()
+          old = 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.7";'
+          new = 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.8";'
+          assert old in m
+          main.write_text(m.replace(old, new, 1))
+
+          readme = Path('README.md')
+          r = readme.read_text()
+          assert 'Current firmware: **v2.0.7**.' in r
+          readme.write_text(r.replace('Current firmware: **v2.0.7**.', 'Current firmware: **v2.0.8**.', 1))
+
+          agents = Path('AGENTS.md')
+          a = agents.read_text()
+          note = '- The profile/login chooser must not show the emergency APP-only firmware recovery uploader; keep firmware recovery available through the existing backend/manual recovery paths only.\n'
+          if note not in a:
+              anchor = '- The Android APK is frozen; do not modify or rebuild it unless the user explicitly\n  reverses that instruction. Normal Anderson changes belong in the firmware/web UI.\n'
+              assert anchor in a
+              a = a.replace(anchor, anchor + note, 1)
+              agents.write_text(a)
+          PY
+
+          rm .github/workflows/apply-v208-remove-login-recovery.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Anderson Home v2.0.8: remove login recovery panel'
+          git push origin HEAD:codex/remove-login-recovery-v2-0-8
