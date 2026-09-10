@@ -10,7 +10,7 @@
 
 const EventDef EVENTS[] = {
 {"newyear","New Year's Day",EventKind::Holiday,RuleType::Fixed,1,1,0,0,0,1,Effect::Strobe,C3(0xF18900,0xFFFFFF,0x004BC6),3},
-{"holocaust","Holocaust Remembrance Day",EventKind::Awareness,RuleType::Fixed,1,27,0,0,0,1,Effect::Jump,C2(0xF18900,0xFFFFFF),2},
+{"holocaust","Holocaust Remembrance Day",EventKind::Awareness,RuleType::Fixed,1,27,0,0,0,1,Effect::Jump,C2(0xFFFF00,0xFFFFFF),2},
 {"mlk","Martin Luther King Jr. Day",EventKind::Holiday,RuleType::NthWeekday,1,0,1,3,0,1,Effect::Gradient,C3(0xFF0000,0xFFFFFF,0x0000FF),3},
 {"heart","American Heart Month",EventKind::Awareness,RuleType::Month,2,0,0,0,0,1,Effect::Breath,C2(0xFF0000,0xFF020C),2},
 {"wearred","National Wear Red Day",EventKind::Awareness,RuleType::NthWeekday,2,0,5,1,0,1,Effect::Breath,C2(0xFF0000,0xFF0000),2},
@@ -26,7 +26,7 @@ const EventDef EVENTS[] = {
 {"mental","Mental Health Awareness Month",EventKind::Awareness,RuleType::Month,5,0,0,0,0,1,Effect::Gradient,C2(0x00FF00,0x2AD555),2},
 {"mothers","Mother's Day",EventKind::Holiday,RuleType::NthWeekday,5,0,0,2,0,1,Effect::Gradient,C3(0xFF1560,0xEF4F98,0xFFFFFF),3},
 {"memorial","Memorial Day",EventKind::Holiday,RuleType::LastWeekday,5,0,1,0,0,1,Effect::Jump,C3(0xFF0000,0xFFFFFF,0x0000FF),3},
-{"pride","Pride Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C6(0xFF0000,0xFF3000,0xF18900,0x00FF00,0x0000FF,0x23018C),6},
+{"pride","Pride Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C6(0xFF0000,0xFF3000,0xFFFF00,0x00FF00,0x0000FF,0x23018C),6},
 {"alz","Alzheimer's & Brain Awareness Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Breath,C2(0x23018C,0x23018C),2},
 {"ptsd","PTSD Awareness Month",EventKind::Awareness,RuleType::Month,6,0,0,0,0,1,Effect::Gradient,C2(0x00664D,0x004BC6),2},
 {"flag","Flag Day",EventKind::Holiday,RuleType::Fixed,6,14,0,0,0,1,Effect::Jump,C3(0xFF0000,0xFFFFFF,0x0000FF),3},
