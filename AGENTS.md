@@ -46,6 +46,21 @@ change complexity and the GitHub runner queue vary.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
 
+## Remote OTA behavior
+
+- v2.0.6 and later periodically check the signed `ota/latest.json` channel after
+  startup and every 15 minutes while Wi-Fi is available.
+- A newer release is installed automatically only after the existing ECDSA manifest
+  verification, version/URL/size checks, exact streamed SHA-256 verification, and
+  successful write to the inactive OTA slot. Downgrades remain blocked.
+- Keep the manual `Check for Remote Update`, `Install Verified Remote Update`, and
+  local APP-only upload controls as recovery/fallback paths unless explicitly changed.
+- Publish the exact verified branch artifact before advancing the signed OTA manifest;
+  never advertise a BIN in `latest.json` before that release asset exists.
+- Built-in event palettes are editable through saved per-event overrides. The UI must
+  allow visible removal as well as addition of colors while keeping at least one color;
+  preserve event identity, ordering, schedules, and unrelated event settings.
+
 ## Source map
 
 - `firmware/web/index.html`: interface, previews, controls, profile UI.
