@@ -80,6 +80,7 @@ jobs:
           git rm .github/workflows/v2a-optimize.yml
           git add FIRMWARE_VERSION.txt README.md firmware tools/release.py
           git commit -m 'Anderson Home v2.0.0a: focused size optimization [skip ci]'
+          git push origin HEAD:codex/anderson-v2a-size-opt
       - name: Install build tool
         run: python -m pip install -q -r tools/requirements-build.txt
       - name: Restore PlatformIO dependencies
