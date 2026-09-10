@@ -19,23 +19,19 @@ class BleController {
   String address() const;
   String protocolName() const;
   std::vector<BleFound> scan(uint32_t ms=2500);
-  bool selectAndConnect(const String& address,uint8_t protocol);
+  bool selectAndConnect(const String& address);
   bool removeController(uint8_t slot);
   void setTarget(uint8_t target); // 0=all, 1=slot A, 2=slot B
   uint8_t getTarget() const { return target; }
   BleSlotInfo slotInfo(uint8_t slot) const;
-  void disconnect();
   void setPower(bool on);
   void setBrightness(uint8_t pct);
-  void setSpeed(uint8_t pct);
   void setColor(uint32_t rgb);
-  void setMode(uint8_t mode);
   void applyTheme(const Theme& theme,uint8_t brightness,uint8_t speedLevel,uint32_t nowMs,bool force=false);
  private:
   struct Slot {
     String name;
     String address;
-    uint8_t protocol=0;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
     NimBLERemoteCharacteristic* chr=nullptr;
@@ -47,9 +43,7 @@ class BleController {
   Theme activeTheme;
   uint8_t activeBrightness=0,activeSpeed=0;
   bool activeValid=false;
-  uint8_t detectProtocol(const String& n) const;
-  String protocolLabel(uint8_t p) const;
-  bool connectSlot(uint8_t slot,const String& address,uint8_t protocol,const String& advertisedName="");
+  bool connectSlot(uint8_t slot,const String& address,const String& advertisedName="");
   void disconnectSlot(uint8_t slot);
   bool slotConnected(uint8_t slot) const;
   bool slotTargeted(uint8_t slot) const;

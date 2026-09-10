@@ -29,14 +29,15 @@ def git(*args):
 
 def version():
     value = (ROOT / 'FIRMWARE_VERSION.txt').read_text().strip()
-    if not re.fullmatch(r'\d+\.\d+\.\d+', value):
+    if not re.fullmatch(r'\d+\.\d+\.\d+[a-z]?', value):
         raise ValueError('Invalid FIRMWARE_VERSION.txt')
     return value
 
 
 def bump():
     old = version()
-    major, minor, patch = map(int, old.split('.'))
+    m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)[a-z]?', old)
+    major, minor, patch = map(int, m.groups())
     new = f'{major}.{minor}.{patch + 1}'
     replacements = [(MAIN, f'VERSION="{old}"', f'VERSION="{new}"'),
                     (UI, f'>v{old}<', f'>v{new}<'),
