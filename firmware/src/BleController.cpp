@@ -2,7 +2,6 @@
 #include <math.h>
 
 static uint8_t r8(uint32_t c){return (c>>16)&0xFF;} static uint8_t g8(uint32_t c){return (c>>8)&0xFF;} static uint8_t b8(uint32_t c){return c&0xFF;}
-static uint32_t hsv(float h,float s,float v){h=fmodf(h,360.0f);if(h<0)h+=360.0f;float c=v*s,x=c*(1.0f-fabsf(fmodf(h/60.0f,2.0f)-1.0f)),m=v-c,r=0,g=0,b=0;if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}return ((uint32_t)((r+m)*255)<<16)|((uint32_t)((g+m)*255)<<8)|(uint32_t)((b+m)*255);}
 static uint32_t softwareEffectIntervalMs(uint8_t speedLevel){
   static constexpr uint32_t intervalsMs[5]={2000,1000,500,250,100};
   return intervalsMs[constrain(speedLevel,1,5)-1];
@@ -36,7 +35,7 @@ String BleController::name() const{if(slotConnected(0)&&slotConnected(1))return 
 String BleController::address() const{if(slotConnected(0)&&slotConnected(1))return "MULTI";if(slotConnected(0))return slots[0].address;if(slotConnected(1))return slots[1].address;return "";}
 String BleController::protocolName() const{if(slots[0].address.length()&&slots[1].address.length()){if(slots[0].protocol==slots[1].protocol)return protocolLabel(slots[0].protocol);return "Mixed";}if(slots[0].address.length())return protocolLabel(slots[0].protocol);if(slots[1].address.length())return protocolLabel(slots[1].protocol);return "Auto";}
 BleSlotInfo BleController::slotInfo(uint8_t i) const{BleSlotInfo x;if(i>1)return x;x.name=slots[i].name;x.address=slots[i].address;x.protocol=protocolLabel(slots[i].protocol);x.connected=slotConnected(i);return x;}
-void BleController::setTarget(uint8_t t){target=t<=2?t:0;activeValid=false;}
+void BleController::setTarget(uint8_t t){t=t<=2?t:0;if(target==t)return;target=t;activeValid=false;}
 bool BleController::slotTargeted(uint8_t i) const{return target==0 || target==i+1;}
 
 std::vector<BleFound> BleController::scan(uint32_t ms){std::vector<BleFound> out;
@@ -51,7 +50,7 @@ std::vector<BleFound> BleController::scan(uint32_t ms){std::vector<BleFound> out
 
 bool BleController::connectSlot(uint8_t i,const String& addr,uint8_t p,const String& advertisedName){if(i>1)return false;
 #ifdef MOCK_BLE
-  slots[i].address=addr;slots[i].name=advertisedName.length()?advertisedName:(i?"ELK-BLEDDM 06":"ELK-BLEDDM AB");slots[i].protocol=p?p:4;return true;
+  slots[i].address=addr;slots[i].name=advertisedName.length()?advertisedName:(i?"ELK-BLEDDM 06":"ELK-BLEDDM AB");slots[i].protocol=p?p:4;activeValid=false;return true;
 #else
   disconnectSlot(i);
   uint8_t selected=p;if(selected==0 && advertisedName.length())selected=detectProtocol(advertisedName);
@@ -61,7 +60,7 @@ bool BleController::connectSlot(uint8_t i,const String& addr,uint8_t p,const Str
   if(selected==4){svc=slots[i].client->getService("FFF0");if(svc)chr=svc->getCharacteristic("FFF3");if(!chr){svc=slots[i].client->getService("FFE5");if(svc)chr=svc->getCharacteristic("FFE9");}}
   else {svc=slots[i].client->getService("FFE0");if(svc)chr=svc->getCharacteristic("FFE1");}
   if(!svc||!chr){disconnectSlot(i);return false;}
-  slots[i].chr=chr;slots[i].address=addr;slots[i].protocol=selected?selected:1;slots[i].name=advertisedName.length()?advertisedName:addr;return true;
+  slots[i].chr=chr;slots[i].address=addr;slots[i].protocol=selected?selected:1;slots[i].name=advertisedName.length()?advertisedName:addr;activeValid=false;return true;
 #endif
 }
 
@@ -99,13 +98,12 @@ void BleController::setBrightness(uint8_t B){B=constrain(B,0,100);for(uint8_t i=
 void BleController::setSpeed(uint8_t S){S=constrain(S,0,100);for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i)||slots[i].protocol==4)continue;uint8_t p=slots[i].protocol,f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x02,S,0x00,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x02,S,0x00,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x02,S,0x00,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeSlot(i,f,9);}}
 void BleController::setMode(uint8_t M){for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i)||slots[i].protocol==4)continue;uint8_t p=slots[i].protocol,f[9];if(p==1){uint8_t x[9]={0x7E,0xFF,0x03,M,0x03,0xFF,0xFF,0xFF,0xEF};memcpy(f,x,9);}else if(p==2){uint8_t x[9]={0x7B,0xFF,0x03,M,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}else{uint8_t x[9]={0x7B,0x03,M,0xFF,0xFF,0xFF,0xFF,0xFF,0xBF};memcpy(f,x,9);}writeSlot(i,f,9);}}
 
-bool BleController::targetUsesSoftwareEffects() const{return true;}
-
 void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,uint32_t nowMs,bool force){
   uint8_t sp=map(constrain(speedLevel,1,5),1,5,20,95);
-  bool changed=!activeValid||activeTheme.name!=t.name||activeTheme.effect!=t.effect||activeTheme.colorCount!=t.colorCount;
+  bool changed=!activeValid||activeTheme.name!=t.name||activeTheme.effect!=t.effect||activeTheme.colorCount!=t.colorCount||activeBrightness!=bright||activeSpeed!=speedLevel;
+  if(!changed)for(uint8_t i=0;i<t.colorCount&&i<8;i++)if(activeTheme.colors[i]!=t.colors[i]){changed=true;break;}
   if(force||changed){
-    activeTheme=t;activeValid=true;setPower(true);setBrightness(bright);setSpeed(sp);lastEffect=0;
+    activeTheme=t;activeBrightness=bright;activeSpeed=speedLevel;activeValid=true;setPower(true);setBrightness(bright);setSpeed(sp);lastEffect=0;
   }
   uint8_t count=max((uint8_t)1,t.colorCount);
   // One logical interval is shared by every software-generated effect. The controller only

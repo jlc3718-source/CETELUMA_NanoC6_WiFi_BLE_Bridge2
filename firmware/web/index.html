@@ -280,9 +280,9 @@ html,body{background:#0a3f88!important;background-image:linear-gradient(160deg,#
       <div class="grid2" style="margin-top:10px"><button id="rebootNano" class="btn">Reboot NanoC6</button><button id="rollbackFirmware" class="btn">Boot Previous Firmware</button></div>
     </div>
 
-        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v1.1.10</strong></div></div>
+        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v1.1.11</strong></div></div>
 
-<div class="panel"><strong>Persistent Configuration</strong><div class="sub">Custom lights, schedules, controller identities and a master settings backup are stored outside the firmware slots and automatically reloaded after updates/reboots.</div><div id="storageMeta" class="card small" style="margin-top:10px">Checking persistent storage…</div></div>
+<div class="panel"><strong>Persistent Configuration</strong><div class="sub">Custom lights, schedules and controller settings are stored outside the firmware slots and automatically reloaded after updates/reboots.</div><div id="storageMeta" class="card small" style="margin-top:10px">Checking persistent storage…</div></div>
 
     <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Seasonal theme</div><div>7. Normal preset</div></div></div>
   </section>
@@ -314,7 +314,7 @@ async function api(path,opts={}){if(!API_MODE)throw new Error('preview');const h
 async function post(path,obj){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)})}
 window.addEventListener('anderson-profile-selected',event=>{currentRole=event.detail?.role||'none';currentUser=event.detail?.name||'';loadState();loadEvents();loadCustomSchedules();loadHomeCustomLights();loadSavedColors();if(event.detail?.id==='jason'){loadCustomPresets();loadStorageInfo();loadFirmwareInfo();loadPinSettings()}});
 window.addEventListener('anderson-profile-cleared',()=>{currentRole='none';currentUser=''});
-document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='home')loadHomeCustomLights();if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();loadStorageInfo();}if(btn.dataset.tab==='events'){loadEvents();loadCustomSchedules();}if(btn.dataset.tab==='settings')loadPinSettings();}));
+document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='home')loadHomeCustomLights();if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();loadStorageInfo();}if(btn.dataset.tab==='events'){loadEvents();loadCustomSchedules();}if(btn.dataset.tab==='settings'){loadState();loadPinSettings();}}));
 
 const leds=[],rows=$('ledRows');{const row=document.createElement('div');row.className='ledgrid';for(let i=0;i<20;i++){const d=document.createElement('div');d.className='led';row.appendChild(d);leds.push(d)}rows.appendChild(row)}
 const houseLeds=[],houseGroup=$('houseLeds'),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82],[285,92],[285,106],[285,120],[285,134],[270,145],[250,145],[230,145],[210,145],[190,145],[170,145],[150,145],[130,145],[110,145],[90,145],[75,134],[75,118],[75,102],[75,88]];
@@ -325,7 +325,21 @@ let running={name:'Warm White',colors:['#fff1c7'],effect:'Jump'},preview={...run
 function speedInterval(level){return [0,2000,1000,500,250,100][+level]||500}
 function blendHex(a,b,f){const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)],A=rgb(a),B=rgb(b);return `rgb(${Math.round(A[0]+(B[0]-A[0])*f)},${Math.round(A[1]+(B[1]-A[1])*f)},${Math.round(A[2]+(B[2]-A[2])*f)})`}
 function paint(state,i,br,total){const colors=state.colors&&state.colors.length?state.colors:['#25a7ff'],e=state.effect||'Jump',n=colors.length,frame=Math.floor(tick),phase=((tick%8)+8)%8/8;let c=colors[0],a=br,sc=1;if(!power)return{c:'#2a313b',a:.35,s:1};if(e==='Solid'){c=colors[0]}else if(e==='Jump'){c=colors[frame%n]}else if(e==='Strobe'){const half=Math.floor(tick*2),on=(half&1)===1;c=on?colors[Math.floor(half/2)%n]:'#000000';a=on?br:.05;sc=on?1.08:.92}else{const pos=phase*n,idx=Math.floor(pos)%n,j=(idx+1)%n,f=pos-Math.floor(pos),mixed=blendHex(colors[idx],colors[j],f);if(e==='Breath'){const wave=.10+.90*(.5-.5*Math.cos(phase*2*Math.PI));c=n>1?mixed:colors[0];a=br*wave}else if(e==='Gradient'){c=mixed}}return{c,a,s:sc}}
-function animate(ts){tick=ts/speedInterval(speed);const br=brightness/100;leds.forEach((el,i)=>{const x=paint(preview,i,br,leds.length);el.style.background=x.c;el.style.opacity=Math.max(.08,x.a);el.style.boxShadow=power?`0 0 ${Math.round(4+12*x.a)}px ${x.c}`:'none';el.style.transform=`scale(${x.s})`});houseLeds.forEach((el,i)=>{const x=paint(running,i,br,houseLeds.length);el.setAttribute('fill',x.c);el.setAttribute('opacity',Math.max(.12,x.a));el.style.filter=power?`drop-shadow(0 0 ${Math.round(2+7*x.a)}px ${x.c})`:'none'});requestAnimationFrame(animate)}requestAnimationFrame(animate);
+const previewPages={home:document.querySelector('[data-page="home"]'),lights:document.querySelector('[data-page="lights"]')};
+let previousStripPaint='',previousHousePaint='';
+function animate(ts){
+  requestAnimationFrame(animate);
+  if(document.hidden||currentRole==='none')return;
+  tick=ts/speedInterval(speed);const br=brightness/100;
+  if(previewPages.lights.classList.contains('active')){
+    const x=paint(preview,0,br,leds.length),key=JSON.stringify([x,power]);
+    if(key!==previousStripPaint){previousStripPaint=key;const glow=power?`0 0 ${Math.round(4+12*x.a)}px ${x.c}`:'none';leds.forEach(el=>{el.style.background=x.c;el.style.opacity=Math.max(.08,x.a);el.style.boxShadow=glow;el.style.transform=`scale(${x.s})`})}
+  }
+  if(previewPages.home.classList.contains('active')){
+    const x=paint(running,0,br,houseLeds.length),key=JSON.stringify([x,power]);
+    if(key!==previousHousePaint){previousHousePaint=key;const glow=power?`drop-shadow(0 0 ${Math.round(2+7*x.a)}px ${x.c})`:'none';houseLeds.forEach(el=>{el.setAttribute('fill',x.c);el.setAttribute('opacity',Math.max(.12,x.a));el.style.filter=glow})}
+  }
+}requestAnimationFrame(animate);
 
 function setRunning(name,colors,effect){
   running={name,colors:[...colors],effect};
@@ -349,8 +363,8 @@ async function manual(obj){try{const s=await post('/api/control',obj);applyState
 let builderColors=['#25a7ff'];
 
 function setBuilderColors(colors, send=false){
-  builderColors=(colors && colors.length ? colors.slice(0,8) : ['#25a7ff']);
-  renderColorBuilder();
+  const next=colors&&colors.length?colors.slice(0,8):['#25a7ff'];
+  if(next.length!==builderColors.length||next.some((c,i)=>c!==builderColors[i])){builderColors=next;renderColorBuilder();}
   if(send) sendBuilderLook();
 }
 
@@ -438,7 +452,12 @@ renderColorBuilder();$('effectSelect').addEventListener('change',e=>manual({name
 $('masterPower').addEventListener('change',e=>manual({power:e.target.checked}));$('brightness').addEventListener('input',e=>{brightness=+e.target.value;$('brightVal').textContent=e.target.value+'%';$('homeBrightness').value=e.target.value;$('homeBrightVal').textContent=e.target.value+'%'});$('brightness').addEventListener('change',e=>manual({brightness:+e.target.value}));
 $('homeBrightness').addEventListener('input',e=>{brightness=+e.target.value;$('homeBrightVal').textContent=e.target.value+'%';$('brightness').value=e.target.value;$('brightVal').textContent=e.target.value+'%'});$('homeBrightness').addEventListener('change',e=>manual({brightness:+e.target.value}));
 $('homeEffect').addEventListener('change',e=>manual({effect:e.target.value}));
-let speedSyncTimer=null;$('speed').addEventListener('input',e=>{$('speedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][+e.target.value-1];speed=+e.target.value;if($('homeSpeed')){$('homeSpeed').value=speed;$('homeSpeedVal').textContent=$('speedVal').textContent}if($('eventsSpeed')){$('eventsSpeed').value=speed;$('eventsSpeedVal').textContent=$('speedVal').textContent}clearTimeout(speedSyncTimer);speedSyncTimer=setTimeout(()=>manual({speed}),160)});$('speed').addEventListener('change',e=>{clearTimeout(speedSyncTimer);manual({speed:+e.target.value})});
+let speedSyncTimer=null,pendingSpeed=null;
+const speedNames=['Very Slow','Slow','Normal','Fast','Very Fast'];
+function syncSpeedControls(level){speed=+level;['speed','homeSpeed','eventsSpeed'].forEach(id=>{if($(id))$(id).value=speed;const label=$(id==='speed'?'speedVal':id+'Val');if(label)label.textContent=speedNames[speed-1]||'Normal'})}
+function sendPendingSpeed(){clearTimeout(speedSyncTimer);if(pendingSpeed===null)return;const value=pendingSpeed;pendingSpeed=null;manual({speed:value})}
+function bindSpeedControl(id){const control=$(id);control.addEventListener('input',()=>{syncSpeedControls(control.value);pendingSpeed=speed;clearTimeout(speedSyncTimer);speedSyncTimer=setTimeout(sendPendingSpeed,160)});control.addEventListener('change',sendPendingSpeed)}
+bindSpeedControl('speed');
 
 
 const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];const now=new Date();monthNames.forEach((m,i)=>{const o=new Option(m,i+1);if(i===now.getMonth())o.selected=true;$('monthSelect').add(o)});for(let y=now.getFullYear();y<=now.getFullYear()+10;y++)$('yearSelect').add(new Option(y,y));$('monthSelect').addEventListener('change',()=>{loadEvents();loadCustomSchedules()});$('yearSelect').addEventListener('change',()=>{loadEvents();loadCustomSchedules()});
@@ -505,9 +524,14 @@ function customLightSummary(p){const main=document.createElement('div'),title=do
 async function customLightPreference(id,change){try{await post('/api/preset',{id,...change});const refresh=[loadHomeCustomLights(),loadFavorites()];if(currentRole==='admin')refresh.push(loadCustomPresets());await Promise.all(refresh);status('Custom event preference saved.')}catch(e){status('Custom event preference failed: '+e.message);await loadHomeCustomLights()}}
 async function loadHomeCustomLights(){const box=$('homeCustomLightList');if(!box||currentRole==='none')return;try{const d=await api('/api/presets?home='+Date.now()),items=Array.isArray(d.presets)?d.presets:[];box.innerHTML='';if(!items.length){box.innerHTML='<div class="sub">No custom events saved yet. Jason can create one in the Lights tab.</div>';return}items.forEach(p=>{const row=document.createElement('div');row.className='card event';row.dataset.presetId=p.id||'';const checks=document.createElement('div');checks.className='eventchecks';const en=document.createElement('input'),fav=document.createElement('input');en.type='checkbox';en.checked=p.enabled!==false;fav.type='checkbox';fav.checked=p.favorite===true;const enLabel=document.createElement('label'),favLabel=document.createElement('label');enLabel.className='row small';favLabel.className='row small';enLabel.append(en,document.createTextNode('Enabled'));favLabel.append(fav,document.createTextNode('Favorites'));checks.append(enLabel,favLabel);const actions=document.createElement('div'),previewButton=document.createElement('button');actions.className='customPresetActions';previewButton.className='btn previewEvent';previewButton.textContent='Preview';previewButton.onclick=()=>manual({name:p.name,colors:p.colors,effect:p.effect,brightness:p.brightness||100,speed:p.speed||1});actions.appendChild(previewButton);en.onchange=()=>customLightPreference(p.id,{enabled:en.checked});fav.onchange=()=>customLightPreference(p.id,{favorite:fav.checked});row.append(checks,customLightSummary(p),actions);box.appendChild(row)})}catch(e){box.innerHTML='<div class="sub">Unable to load custom events: '+e.message+'</div>'}}
 
-function applyState(s){if(!s)return;/* ANDERSON_SETTINGS_TIME_SYNC */if(s.settings){const ts=document.querySelectorAll('input[type="time"]');let onEl=document.getElementById('onTime')||document.getElementById('lightsOn')||document.getElementById('scheduleOn');let offEl=document.getElementById('offTime')||document.getElementById('lightsOff')||document.getElementById('scheduleOff');if(!onEl&&ts.length>0)onEl=ts[0];if(!offEl&&ts.length>1)offEl=ts[1];if(onEl&&s.settings.on)onEl.value=s.settings.on;if(offEl&&s.settings.off)offEl.value=s.settings.off;}power=s.power??power;brightness=s.brightness??brightness;speed=s.speed??speed;$('masterPower').checked=power;$('brightness').value=brightness;$('homeBrightness').value=brightness;$('brightVal').textContent=brightness+'%';$('homeBrightVal').textContent=brightness+'%';$('speed').value=speed;$('speedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1]||'Normal';if($('homeSpeed')){$('homeSpeed').value=speed;$('homeSpeedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1]||'Normal'}if($('eventsSpeed')){$('eventsSpeed').value=speed;$('eventsSpeedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1]||'Normal'}if(s.running)setRunning(s.running.name,s.running.colors,s.running.effect);$('scheduleWindow').textContent=s.scheduleWindow||$('scheduleWindow').textContent;$('nextEvent').textContent=s.nextEvent||'—';if(s.wifi){$('currentSsid').textContent=s.wifi.ssid||'Not connected';$('wifiMeta').textContent=`Signal: ${s.wifi.rssi??'—'} dBm • IP: ${s.wifi.ip||'—'}`}
+function applyState(s){if(!s)return;/* ANDERSON_SETTINGS_TIME_SYNC */if(s.settings){const ts=document.querySelectorAll('input[type="time"]');let onEl=document.getElementById('onTime')||document.getElementById('lightsOn')||document.getElementById('scheduleOn');let offEl=document.getElementById('offTime')||document.getElementById('lightsOff')||document.getElementById('scheduleOff');if(!onEl&&ts.length>0)onEl=ts[0];if(!offEl&&ts.length>1)offEl=ts[1];if(onEl&&s.settings.on)onEl.value=s.settings.on;if(offEl&&s.settings.off)offEl.value=s.settings.off;}power=s.power??power;brightness=s.brightness??brightness;speed=s.speed??speed;$('masterPower').checked=power;$('brightness').value=brightness;$('homeBrightness').value=brightness;$('brightVal').textContent=brightness+'%';$('homeBrightVal').textContent=brightness+'%';syncSpeedControls(speed);if(s.running)setRunning(s.running.name,s.running.colors,s.running.effect);$('scheduleWindow').textContent=s.scheduleWindow||$('scheduleWindow').textContent;$('nextEvent').textContent=s.nextEvent||'—';if(s.wifi){$('currentSsid').textContent=s.wifi.ssid||'Not connected';$('wifiMeta').textContent=`Signal: ${s.wifi.rssi??'—'} dBm • IP: ${s.wifi.ip||'—'}`}
 const bc=s.ble?.connectedCount||0;$('bleStatus').textContent=bc?`Connected: ${bc} controller${bc===1?'':'s'}`:'Not connected';$('bleMeta').textContent=`Protocol: ${s.ble?.protocol||'Auto'} • Manual target: ${['All','A','B'][s.ble?.target||0]}`;const sc=$('selectedControllers');sc.innerHTML='';(s.ble?.controllers||[]).forEach(c=>{const r=document.createElement('div');r.className='card bleDevice';r.innerHTML=`<div><div class="small"><strong>${c.slot===0?'A':'B'} • ${c.name||c.address}</strong></div><div class="sub">${c.connected?'Connected':'Saved / reconnecting'} • ${c.address}</div></div>`;const x=document.createElement('button');x.className='btn';x.textContent='Remove';x.onclick=()=>post('/api/ble/remove',{slot:c.slot}).then(loadState);r.appendChild(x);sc.appendChild(r)});['targetAll','targetA','targetB'].forEach((id,i)=>$(id).classList.toggle('primary',(s.ble?.target||0)===i));}
-async function loadState(){try{const s=await api('/api/state');$('connectionBadge').textContent='● Connected';$('connectionBadge').classList.remove('offline');applyState(s);loadFavorites()}catch(e){$('connectionBadge').textContent='● Preview';$('connectionBadge').classList.add('offline');setRunning('Suicide Prevention Awareness Month',['#14b8a6','#7e22ce'],'Gradient');$('nextEvent').textContent='988 Day • September 8';loadFavorites()}}
+let stateRequest=null;
+function loadState(){
+  if(stateRequest)return stateRequest;
+  stateRequest=(async()=>{try{const s=await api('/api/state');$('connectionBadge').textContent='● Connected';$('connectionBadge').classList.remove('offline');applyState(s);loadFavorites()}catch(e){$('connectionBadge').textContent=API_MODE?'● Offline':'● Preview';$('connectionBadge').classList.add('offline');if(!API_MODE){setRunning('Suicide Prevention Awareness Month',['#14b8a6','#7e22ce'],'Gradient');$('nextEvent').textContent='988 Day • September 8';loadFavorites()}}})().finally(()=>{stateRequest=null});
+  return stateRequest;
+}
 $('resumeSchedule').addEventListener('click',()=>post('/api/resume',{}).then(s=>{applyState(s);status('Automatic schedule resumed.')}).catch(()=>status('Preview mode — schedule resumed.')));
 
 function overlapHelp(){const v=$('overlapMode').value;$('overlapHelp').textContent=v==='rotate'?'Each enabled monthly event gets a full night, then the next one runs the following night.':v==='split'?'The scheduled night is divided evenly among enabled month-long events.':'Colors from all enabled month-long events are combined into one theme.'}$('overlapMode').addEventListener('change',overlapHelp);overlapHelp();
@@ -545,12 +569,15 @@ function stageFirmware(){const file=$('firmwareFile').files&&$('firmwareFile').f
 $('uploadFirmware').addEventListener('click',stageFirmware);
 $('rebootNano').addEventListener('click',async()=>{if(!confirm('Reboot the NanoC6 now?'))return;$('fwStatus').textContent='Rebooting NanoC6…';try{await post('/api/reboot',{})}catch(e){}setTimeout(()=>{loadState();loadFirmwareInfo()},6500)});
 $('rollbackFirmware').addEventListener('click',async()=>{if(!confirm('Select the previous firmware slot for the next reboot?'))return;try{await post('/api/rollback',{});$('fwStatus').textContent='Previous firmware selected. Press Reboot NanoC6 to boot it.';status('Previous firmware selected for next boot.')}catch(e){$('fwStatus').textContent='Rollback selection failed: '+e.message}});
-setInterval(()=>{if(API_MODE&&currentRole!=='none')loadState()},15000);
+function refreshVisibleState(){if(API_MODE&&currentRole!=='none'&&!document.hidden&&!$('uploadFirmware').disabled)loadState()}
+setInterval(refreshVisibleState,15000);
+document.addEventListener('visibilitychange',refreshVisibleState);
+window.addEventListener('pageshow',refreshVisibleState);
 setTimeout(bindRgbPicker,0);
 
 function ensureExtraControls(){
-  const hb=$('homeBrightness');if(hb&&!$('homeSpeed')){const wrap=document.createElement('div');wrap.id='homeSpeedBlock';wrap.innerHTML='<div class="label">Effect Speed <span id="homeSpeedVal" class="muted">Very Slow</span></div><input id="homeSpeed" type="range" min="1" max="5" value="1"><div class="label">Favorite Colors</div><div id="homeFavoriteColorGrid" class="savedColorGrid"></div>';($('homeEffectHelp')||$('homeEffect')||hb).insertAdjacentElement('afterend',wrap);const hs=$('homeSpeed');hs.value=speed;$('homeSpeedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1];let ht=null;hs.addEventListener('input',e=>{speed=+e.target.value;$('homeSpeedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1];$('speed').value=speed;$('speedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1];clearTimeout(ht);ht=setTimeout(()=>manual({speed}),160)});hs.addEventListener('change',()=>{clearTimeout(ht);manual({speed})});renderHomeFavoriteGrid()}
-  const list=$('eventList');if(list&&!$('eventsSpeed')){const wrap=document.createElement('div');wrap.id='eventsSpeedBlock';wrap.className='card';wrap.style.marginTop='10px';wrap.innerHTML='<div class="label" style="margin-top:0">Event Preview Speed <span id="eventsSpeedVal" class="muted">Very Slow</span></div><input id="eventsSpeed" type="range" min="1" max="5" value="1"><div class="sub">This changes preview speed immediately. Each event can also save its own speed with Edit.</div>';list.parentNode.insertBefore(wrap,list);const es=$('eventsSpeed');es.value=speed;$('eventsSpeedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1];let et=null;es.addEventListener('input',e=>{speed=+e.target.value;$('eventsSpeedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1];$('speed').value=speed;$('speedVal').textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][speed-1];if($('homeSpeed')){$('homeSpeed').value=speed;$('homeSpeedVal').textContent=$('eventsSpeedVal').textContent}clearTimeout(et);et=setTimeout(()=>manual({speed}),160)});es.addEventListener('change',()=>{clearTimeout(et);manual({speed})})}
+  const hb=$('homeBrightness');if(hb&&!$('homeSpeed')){const wrap=document.createElement('div');wrap.id='homeSpeedBlock';wrap.innerHTML='<div class="label">Effect Speed <span id="homeSpeedVal" class="muted">Very Slow</span></div><input id="homeSpeed" type="range" min="1" max="5" value="1"><div class="label">Favorite Colors</div><div id="homeFavoriteColorGrid" class="savedColorGrid"></div>';($('homeEffectHelp')||$('homeEffect')||hb).insertAdjacentElement('afterend',wrap);syncSpeedControls(speed);bindSpeedControl('homeSpeed');renderHomeFavoriteGrid()}
+  const list=$('eventList');if(list&&!$('eventsSpeed')){const wrap=document.createElement('div');wrap.id='eventsSpeedBlock';wrap.className='card';wrap.style.marginTop='10px';wrap.innerHTML='<div class="label" style="margin-top:0">Event Preview Speed <span id="eventsSpeedVal" class="muted">Very Slow</span></div><input id="eventsSpeed" type="range" min="1" max="5" value="1"><div class="sub">This changes preview speed immediately. Each event can also save its own speed with Edit.</div>';list.parentNode.insertBefore(wrap,list);syncSpeedControls(speed);bindSpeedControl('eventsSpeed')}
 }
 setTimeout(ensureExtraControls,0);
 
@@ -559,41 +586,5 @@ async function loadStorageInfo(){const e=$('storageMeta');if(!e)return;try{const
 
 </script>
 
-<script>
-/* ANDERSON_SETTINGS_UI_LIVE_SYNC */
-(function(){
-  function settingsRoot(){return document.querySelector('#settings,section[data-page="settings"],.page[data-page="settings"]')||document;}
-  function syncScheduleFields(st){
-    if(!st||!st.settings)return;
-    const root=settingsRoot();
-    const times=[...root.querySelectorAll('input[type="time"]')];
-    let onEl=root.querySelector('#onTime,#lightsOn,#scheduleOn,[name="onTime"],[name="on"]');
-    let offEl=root.querySelector('#offTime,#lightsOff,#scheduleOff,[name="offTime"],[name="off"]');
-    if(!onEl&&times.length>0)onEl=times[0];
-    if(!offEl&&times.length>1)offEl=times[1];
-    if(onEl&&st.settings.on)onEl.value=st.settings.on;
-    if(offEl&&st.settings.off)offEl.value=st.settings.off;
-    const win=document.getElementById('scheduleWindow');
-    if(win&&st.scheduleWindow)win.textContent=st.scheduleWindow;
-  }
-  async function refreshSettingsUI(){
-    if(currentUser!=='Jason')return;
-    try{const st=await api('/api/state?ts='+Date.now());syncScheduleFields(st);if(typeof applyState==='function')applyState(st);}catch(e){}
-  }
-  document.addEventListener('click',function(ev){
-    const el=ev.target&&ev.target.closest?ev.target.closest('button,a,[role="tab"]'):null;
-    if(!el)return;
-    const txt=(el.textContent||'').trim().toLowerCase();
-    const tab=(el.getAttribute('data-tab')||'').toLowerCase();
-    if(tab==='settings'||txt==='settings')setTimeout(refreshSettingsUI,80);
-    const root=settingsRoot();
-    if(root.contains(el)&&txt.includes('save')){setTimeout(refreshSettingsUI,250);setTimeout(refreshSettingsUI,900);}
-  },true);
-  window.addEventListener('pageshow',()=>setTimeout(refreshSettingsUI,100));
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(refreshSettingsUI,100)});
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(refreshSettingsUI,150));
-  else setTimeout(refreshSettingsUI,150);
-})();
-</script>
 
 </body></html>

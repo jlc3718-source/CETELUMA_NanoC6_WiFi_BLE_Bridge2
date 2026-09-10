@@ -45,6 +45,7 @@ class BleController {
   uint8_t target=0;
   uint32_t lastWrite=0,lastEffect=0;
   Theme activeTheme;
+  uint8_t activeBrightness=0,activeSpeed=0;
   bool activeValid=false;
   uint8_t detectProtocol(const String& n) const;
   String protocolLabel(uint8_t p) const;
@@ -54,5 +55,4 @@ class BleController {
   bool slotTargeted(uint8_t slot) const;
   bool writeSlot(uint8_t slot,const uint8_t* data,size_t len);
   void saveSlots();
-  bool targetUsesSoftwareEffects() const;
 };

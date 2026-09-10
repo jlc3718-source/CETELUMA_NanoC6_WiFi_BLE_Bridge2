@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v1.1.10**.
+Current firmware: **v1.1.11**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 
@@ -14,6 +14,16 @@ The repository now builds directly from the canonical `firmware/` source tree. T
 - Solid / Static is a true non-animated software effect and can be applied to the currently running theme from Home.
 - The proven ELK-BLEDDM / Lotus Lantern BLE implementation and dual-slot OTA layout are preserved.
 - PlatformIO and the pioarduino platform revision are pinned.
+
+Development: `python tools/release.py bump`, edit the requested feature, then
+`python tools/release.py prepare`. Push a `codex/` branch to build automatically.
+CI caches dependencies and compiled objects and exports `and_<version>.bin` with
+an exact-commit/checksum manifest. Same-repository PRs do not duplicate push builds.
+Manual workflow dispatch can include a full serial-recovery image when needed.
+
+The interface shares its speed-control code, skips unchanged/hidden animation
+updates, and combines overlapping state requests. Storage uses NVS directly;
+obsolete master-backup shims are removed.
 
 Normal update: APP-ONLY through Settings → Firmware Update.
 
