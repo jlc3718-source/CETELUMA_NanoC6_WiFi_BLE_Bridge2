@@ -29,6 +29,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Install SVG renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq imagemagick
       - name: Recover historical Android project
         run: |
           git show b7766540a87ed880f5921fe2a9c2cb0d802334e2:Anderson_Home_Complete_Project.zip > /tmp/Anderson_Home_Complete_Project.zip
@@ -41,7 +45,7 @@ jobs:
           APP=/tmp/anderson_android/Anderson_Home_Complete_Project/android/app
           RES="$APP/src/main/res"
           mkdir -p "$RES/drawable-nodpi" "$RES/drawable"
-          convert android-play/anderson-home-icon.svg -resize 512x512 "$RES/drawable-nodpi/anderson_home_icon.png"
+          convert -background black android-play/anderson-home-icon.svg -resize 512x512 "$RES/drawable-nodpi/anderson_home_icon.png"
           cat > "$RES/drawable/ic_launcher.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/anderson_home_icon" android:gravity="fill" />
