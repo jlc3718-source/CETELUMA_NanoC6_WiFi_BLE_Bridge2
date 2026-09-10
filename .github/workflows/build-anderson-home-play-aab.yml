@@ -32,6 +32,8 @@ jobs:
           import re
           p=Path('app/build.gradle.kts')
           s=p.read_text()
+          s=re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "com.jlc3718.anderson"', s)
+          s=re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "com.jlc3718.anderson"', s)
           s=re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 2', s)
           s=re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.1"', s)
           if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
@@ -41,14 +43,20 @@ jobs:
           p.write_text(s)
           m=Path('app/src/main/AndroidManifest.xml')
           x=m.read_text()
-          x=re.sub(r'android:icon="[^"]+"', 'android:icon="@drawable/anderson_launcher"', x)
-          x=re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@drawable/anderson_launcher"', x)
+          if 'android:icon=' in x:
+              x=re.sub(r'android:icon="[^"]+"', 'android:icon="@drawable/anderson_launcher"', x)
+          else:
+              x=x.replace('<application', '<application android:icon="@drawable/anderson_launcher"', 1)
+          if 'android:roundIcon=' in x:
+              x=re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@drawable/anderson_launcher"', x)
+          else:
+              x=x.replace('<application', '<application android:roundIcon="@drawable/anderson_launcher"', 1)
           m.write_text(x)
           PY
           mkdir -p app/src/main/res/drawable-nodpi
           cp ../../../anderson_launcher.jpg app/src/main/res/drawable-nodpi/anderson_launcher.jpg
           cat app/build.gradle.kts
-          grep -n 'icon\|roundIcon' app/src/main/AndroidManifest.xml
+          cat app/src/main/AndroidManifest.xml
       - name: Build release AAB
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: gradle --no-daemon bundleRelease
