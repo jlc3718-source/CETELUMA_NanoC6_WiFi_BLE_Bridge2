@@ -1,0 +1,43 @@
+name: Publish Anderson v2.0.10 OTA release
+
+on:
+  push:
+    branches: ['codex/publish-anderson-v2-0-10-release']
+    paths: ['.github/workflows/publish-v2010-release.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact verified branch artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 34520381824 --repo "$GITHUB_REPOSITORY" -n Anderson-Home-NanoC6-v2.0.10 -D /tmp/v2010
+          test -f /tmp/v2010/and_2.0.10.bin
+          test -f /tmp/v2010/release.json
+          test "$(jq -r .version /tmp/v2010/release.json)" = "2.0.10"
+          test "$(jq -r .commit /tmp/v2010/release.json)" = "a179c51ab57b29a00be20b06d3c5732328f1c3b5"
+          test "$(jq -r .ota_slot_bytes /tmp/v2010/release.json)" = "1966080"
+          test "$(stat -c%s /tmp/v2010/and_2.0.10.bin)" = "1792576"
+          test "$(sha256sum /tmp/v2010/and_2.0.10.bin | awk '{print $1}')" = "3becea86fc68e9f65a2859117b3083d3f3bb66992af2ed90f52ba99d05125eee"
+      - name: Publish stable OTA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=anderson-v2.0.10
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target a179c51ab57b29a00be20b06d3c5732328f1c3b5 --title "Anderson Home v2.0.10" --notes "Removes the third user profile from the profile chooser, PIN configuration, authentication/storage paths, and active project documentation. Existing Shirley and Jason PIN records are migrated to the two-profile schema on boot. Android APK unchanged."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" /tmp/v2010/and_2.0.10.bin /tmp/v2010/release.json --clobber
+      - name: Retain current release plus one backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEAN_RELEASES: '1'
+        run: bash .github/scripts/anderson-retention.sh
