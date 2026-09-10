@@ -40,7 +40,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.8";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.9";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -413,14 +413,33 @@ void setupRoutes(){
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
+// ANDERSON_DAILY_MAINTENANCE_REBOOT: reboot once each local calendar day during the 18:00 minute.
+static int32_t dailyRebootDateKey=0;
+static uint32_t dailyRebootLastCheck=0;
+static void loadDailyRebootMarker(){
+  Preferences p;if(!p.begin("anderson-maint",true))return;dailyRebootDateKey=p.getInt("rebootDate",0);p.end();
+}
+static void checkDailyMaintenanceReboot(){
+  if((uint32_t)(millis()-dailyRebootLastCheck)<1000UL)return;dailyRebootLastCheck=millis();
+  if(!timeValid()||otaAutoRebootPending)return;
+  time_t now=time(nullptr);tm local{};localtime_r(&now,&local);
+  if(local.tm_hour!=18||local.tm_min!=0)return;
+  int32_t dateKey=(local.tm_year+1900)*10000+(local.tm_mon+1)*100+local.tm_mday;
+  if(dailyRebootDateKey==dateKey)return;
+  Preferences p;if(!p.begin("anderson-maint",false))return;size_t wrote=p.putInt("rebootDate",dateKey);int32_t verify=p.getInt("rebootDate",0);p.end();
+  if(wrote!=sizeof(int32_t)||verify!=dateKey)return;
+  dailyRebootDateKey=dateKey;delay(100);ESP.restart();
+}
+
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
-  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadDailyRebootMarker();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFDA7F;runningTheme.colorCount=1;
   setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   server.handleClient();ble.loop();
+  checkDailyMaintenanceReboot();
   if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
