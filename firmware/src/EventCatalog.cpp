@@ -1,5 +1,4 @@
 #include "EventCatalog.h"
-#include <math.h>
 
 #define C1(a) {a,0,0,0,0,0}
 #define C2(a,b) {a,b,0,0,0,0}

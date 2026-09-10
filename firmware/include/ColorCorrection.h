@@ -2,7 +2,6 @@
 #include <Arduino.h>
 
 struct AndersonColorPaletteEntry {
-  const char* name;
   uint32_t reference;
   uint32_t output;
 };

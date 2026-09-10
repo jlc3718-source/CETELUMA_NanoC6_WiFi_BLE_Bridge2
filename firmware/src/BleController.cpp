@@ -1,4 +1,5 @@
 #include "BleController.h"
+#include <algorithm>
 #include <math.h>
 
 static uint8_t r8(uint32_t c){return (c>>16)&0xFF;} static uint8_t g8(uint32_t c){return (c>>8)&0xFF;} static uint8_t b8(uint32_t c){return c&0xFF;}
@@ -10,8 +11,8 @@ static uint32_t softwareEffectIntervalMs(uint8_t speedLevel){
 void BleController::begin(AppSettings* settings){
   cfg=settings;
 #ifdef MOCK_BLE
-  slots[0].name="ELK-BLEDDM AB";slots[0].address="MOCK-A";slots[0].protocol=4;
-  slots[1].name="ELK-BLEDDM 06";slots[1].address="MOCK-B";slots[1].protocol=4;
+  slots[0].name="ELK-BLEDDM AB";slots[0].address="MOCK-A";
+  slots[1].name="ELK-BLEDDM 06";slots[1].address="MOCK-B";
 #else
   NimBLEDevice::init("AndersonHome-Bridge");NimBLEDevice::setPower(3);
   if(cfg->bleAddress.length()) connectSlot(0,cfg->bleAddress,cfg->bleName);

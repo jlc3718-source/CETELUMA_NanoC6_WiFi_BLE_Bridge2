@@ -40,7 +40,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.10";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.11";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -62,7 +62,6 @@ static String pinDigest(const String& profile,const String& pin,const String& sa
 static bool constantTimeEqual(const String& a,const String& b){if(a.length()!=b.length())return false;uint8_t diff=0;for(size_t i=0;i<a.length();i++)diff|=(uint8_t)(a[i]^b[i]);return diff==0;}
 static bool pinRecordConfigured(const String& salt,const String& hash){return salt.length()==32&&hash.length()==64;}
 static bool basePinAuthConfigured(){return pinRecordConfigured(shirleyPinSalt,shirleyPinHash)&&pinRecordConfigured(jasonPinSalt,jasonPinHash);}
-static bool pinAuthConfigured(){return basePinAuthConfigured();}
 static uint8_t profileRole(const String& profile){return profile=="jason"?ROLE_ADMIN:(profile=="shirley"?ROLE_USER:ROLE_NONE);}
 static const char* profileDisplayName(const String& profile){if(profile=="shirley")return "Shirley";if(profile=="jason")return "Jason";return "";}
 static void clearAuthSessions(){for(auto&s:authSessions){s.token="";s.profile="";s.role=ROLE_NONE;s.lastSeen=0;}}
@@ -83,7 +82,7 @@ static uint32_t pinRetryAfter(){syncPinAttemptClient();int32_t remaining=(int32_
 static void notePinFailure(){syncPinAttemptClient();if(++pinFailureCount>=5){pinFailureCount=0;pinBlockedUntil=millis()+60000UL;}}
 static void clearPinFailures(){syncPinAttemptClient();pinFailureCount=0;pinBlockedUntil=0;}
 static bool verifyProfilePin(const String& profile,const String& pin,uint8_t& role){role=profileRole(profile);if(role==ROLE_NONE||!fourDigitPin(pin))return false;const String& salt=profile=="jason"?jasonPinSalt:shirleyPinSalt;const String& expected=profile=="jason"?jasonPinHash:shirleyPinHash;return constantTimeEqual(pinDigest(profile,pin,salt),expected);}
-static String pinAuthStatusJson(){JsonDocument d;String token=server.header(AUTH_HEADER);uint8_t role=pinProtectionEnabled?sessionRoleForToken(token,false):ROLE_NONE;String profile=role!=ROLE_NONE?sessionProfileForToken(token):String("");d["pinEnabled"]=pinProtectionEnabled;d["configured"]=pinAuthConfigured();d["pinLength"]=4;d["authenticated"]=role!=ROLE_NONE;if(role!=ROLE_NONE){d["role"]=role==ROLE_ADMIN?"admin":"user";d["name"]=profileDisplayName(profile);}String out;serializeJson(d,out);return out;}
+static String pinAuthStatusJson(){JsonDocument d;String token=server.header(AUTH_HEADER);uint8_t role=pinProtectionEnabled?sessionRoleForToken(token,false):ROLE_NONE;String profile=role!=ROLE_NONE?sessionProfileForToken(token):String("");d["pinEnabled"]=pinProtectionEnabled;d["configured"]=basePinAuthConfigured();d["pinLength"]=4;d["authenticated"]=role!=ROLE_NONE;if(role!=ROLE_NONE){d["role"]=role==ROLE_ADMIN?"admin":"user";d["name"]=profileDisplayName(profile);}String out;serializeJson(d,out);return out;}
 
 // Custom lights and schedules use NVS directly so APP-only OTA updates never touch them.
 static bool customFsReady=true;
@@ -158,7 +157,7 @@ static bool otaPartitionValid(const esp_partition_t* p){
 }
 static String firmwareJson(){
   JsonDocument d;const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* next=esp_ota_get_next_update_partition(running);
-  d["version"]=ANDERSON_FIRMWARE_VERSION;d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["localOnly"]=false;d["previousAvailable"]=otaPartitionValid(next);
+  d["version"]=ANDERSON_FIRMWARE_VERSION;d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["previousAvailable"]=otaPartitionValid(next);
   esp_app_desc_t desc{};if(running&&esp_ota_get_partition_description(running,&desc)==ESP_OK){d["appVersion"]=desc.version;d["project"]=desc.project_name;d["buildDate"]=desc.date;d["buildTime"]=desc.time;}
   String out;serializeJson(d,out);return out;
 }
@@ -348,7 +347,6 @@ void setupRoutes(){
     while(arr.size()>32)arr.remove(0);String out;serializeJson(list,out);if(out.length()>3800){server.send(507,"text/plain","Schedule storage is full");return;}if(!customFileWrite("/custom_schedules.json",out)){server.send(500,"text/plain","Schedule file write failed");return;}JsonDocument ack;ack["ok"]=true;ack["id"]=savedId;ack["count"]=(uint32_t)arr.size();ack["fileBytes"]=(uint32_t)scheduleStoreRaw().length();ack["backend"]="NVS";String ackJson;serializeJson(ack,ackJson);sendJson(ackJson);customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;
   });
   server.on("/api/storage",HTTP_GET,[]{if(!requireAdmin())return;JsonDocument d;String lights=presetStoreRaw(),schedules=scheduleStoreRaw();d["ready"]=customFsReady;d["backend"]="NVS";d["customLightsBytes"]=(uint32_t)lights.length();d["scheduleBytes"]=(uint32_t)schedules.length();String out;serializeJson(d,out);sendJson(out);});
-  server.on("/api/config",HTTP_GET,[]{if(!requireAdmin())return;JsonDocument d;d["backend"]="NVS";JsonDocument l;if(!deserializeJson(l,presetStoreRaw())&&l.is<JsonArray>())d["customLights"].set(l.as<JsonArray>());else d["customLights"].to<JsonArray>();JsonDocument c;if(!deserializeJson(c,scheduleStoreRaw())&&c.is<JsonArray>())d["customSchedules"].set(c.as<JsonArray>());else d["customSchedules"].to<JsonArray>();String out;serializeJson(d,out);sendJson(out);});
 
   server.on("/api/palette-migration",HTTP_GET,[]{if(!requireAdmin())return;sendJson(paletteColorMigrationStatusJson());});
   server.on("/api/palette-migration",HTTP_POST,[]{
