@@ -22,9 +22,11 @@ jobs:
           from pathlib import Path
           import re
           p=Path('app/build.gradle.kts'); s=p.read_text()
+          s=re.sub(r'compileSdk\s*=\s*\d+','compileSdk = 36',s)
           s=re.sub(r'applicationId\s*=\s*"[^"]+"','applicationId = "com.jlc3718.anderson"',s)
-          s=re.sub(r'versionCode\s*=\s*\d+','versionCode = 3',s)
-          s=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "1.0.2"',s)
+          s=re.sub(r'targetSdk\s*=\s*\d+','targetSdk = 36',s)
+          s=re.sub(r'versionCode\s*=\s*\d+','versionCode = 4',s)
+          s=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "1.0.3"',s)
           if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
               n='    buildFeatures { viewBinding = false }\n'; s=s.replace(n,n+'    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = "17" }\n',1)
           p.write_text(s)
@@ -81,9 +83,9 @@ jobs:
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: gradle --no-daemon bundleRelease
       - name: Collect AAB
-        run: cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/bundle/release/app-release.aab Anderson-Home-1.0.2-unsigned.aab
+        run: cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/bundle/release/app-release.aab Anderson-Home-1.0.3-unsigned.aab
       - uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-1.0.2-Play-AAB
-          path: Anderson-Home-1.0.2-unsigned.aab
+          name: Anderson-Home-1.0.3-Play-AAB
+          path: Anderson-Home-1.0.3-unsigned.aab
           if-no-files-found: error
