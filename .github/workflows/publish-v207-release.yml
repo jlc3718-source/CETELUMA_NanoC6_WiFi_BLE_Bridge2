@@ -1,0 +1,40 @@
+name: Publish Anderson v2.0.7 OTA release
+on:
+  push:
+    branches: ['codex/publish-anderson-v2-0-7-release']
+    paths: ['.github/workflows/publish-v207-release.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact verified branch artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 34447327516 --repo "$GITHUB_REPOSITORY" -n Anderson-Home-NanoC6-v2.0.7 -D /tmp/v207
+          test -f /tmp/v207/and_2.0.7.bin
+          test -f /tmp/v207/release.json
+          test "$(jq -r .version /tmp/v207/release.json)" = "2.0.7"
+          test "$(jq -r .commit /tmp/v207/release.json)" = "b4c1709c22474786e9d0131dedc244b477bc251a"
+          test "$(jq -r .ota_slot_bytes /tmp/v207/release.json)" = "1966080"
+          test "$(stat -c%s /tmp/v207/and_2.0.7.bin)" = "1794800"
+          test "$(sha256sum /tmp/v207/and_2.0.7.bin | awk '{print $1}')" = "f1ee7df56408831451ef4b4a16daf8e7e6ec72473c17b028213b607f1a161862"
+      - name: Publish stable OTA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=anderson-v2.0.7
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target b4c1709c22474786e9d0131dedc244b477bc251a --title "Anderson Home v2.0.7" --notes "Green Anderson Home firmware-served web interface background. Android APK unchanged."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" /tmp/v207/and_2.0.7.bin /tmp/v207/release.json --clobber
+      - name: Retain current release plus one backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEAN_RELEASES: '1'
+        run: bash .github/scripts/anderson-retention.sh
