@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include <vector>
 
 // Append new effects so the numeric values of existing saved/built-in effects never shift.
 enum class Effect : uint8_t { Jump, Breath, Strobe, Gradient, Solid };
