@@ -61,6 +61,7 @@ GitHub runner queue vary.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly
   reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
+- The profile/login chooser must not show the emergency APP-only firmware recovery uploader; keep firmware recovery available through the existing backend/manual recovery paths only.
 
 ## Remote OTA behavior
 
