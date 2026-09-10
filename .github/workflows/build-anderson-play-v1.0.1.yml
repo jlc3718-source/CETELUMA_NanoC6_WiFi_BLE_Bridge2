@@ -1,0 +1,74 @@
+name: Build Anderson Home Play AAB v1.0.1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android-play/**'
+      - '.github/workflows/build-anderson-play-v1.0.1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Recover historical Android project
+        run: |
+          git show b7766540a87ed880f5921fe2a9c2cb0d802334e2:Anderson_Home_Complete_Project.zip > /tmp/Anderson_Home_Complete_Project.zip
+          rm -rf /tmp/anderson_android
+          mkdir -p /tmp/anderson_android
+          unzip -q /tmp/Anderson_Home_Complete_Project.zip -d /tmp/anderson_android
+          test -f /tmp/anderson_android/Anderson_Home_Complete_Project/android/settings.gradle.kts
+      - name: Apply launcher icon and Play revision
+        run: |
+          APP=/tmp/anderson_android/Anderson_Home_Complete_Project/android/app
+          RES="$APP/src/main/res"
+          mkdir -p "$RES/drawable-nodpi" "$RES/drawable"
+          convert android-play/anderson-home-icon.svg -resize 512x512 "$RES/drawable-nodpi/anderson_home_icon.png"
+          cat > "$RES/drawable/ic_launcher.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/anderson_home_icon" android:gravity="fill" />
+          EOF
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('/tmp/anderson_android/Anderson_Home_Complete_Project/android/app/build.gradle.kts')
+          s = p.read_text()
+          s, n1 = re.subn(r'versionCode\s*=\s*\d+', 'versionCode = 2', s, count=1)
+          s, n2 = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.1"', s, count=1)
+          if not n1 or not n2:
+              raise SystemExit('Could not patch Android versionCode/versionName')
+          p.write_text(s)
+          PY
+          printf '%s\n' 'android.useAndroidX=true' 'android.enableJetifier=true' 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' > /tmp/anderson_android/Anderson_Home_Complete_Project/android/gradle.properties
+      - name: Build release app bundle
+        working-directory: /tmp/anderson_android/Anderson_Home_Complete_Project/android
+        run: gradle --no-daemon bundleRelease
+      - name: Collect AAB
+        run: |
+          cp /tmp/anderson_android/Anderson_Home_Complete_Project/android/app/build/outputs/bundle/release/app-release.aab Anderson-Home-1.0.1-unsigned.aab
+          ls -lh Anderson-Home-1.0.1-unsigned.aab
+      - name: Upload unsigned AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-Play-v1.0.1-unsigned
+          path: Anderson-Home-1.0.1-unsigned.aab
+          if-no-files-found: error
+          retention-days: 7
