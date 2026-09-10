@@ -1,0 +1,43 @@
+name: Publish Anderson v2.0.9 OTA release
+
+on:
+  push:
+    branches: ['codex/publish-anderson-v2-0-9-release']
+    paths: ['.github/workflows/publish-v209-release.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact verified branch artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 34496134344 --repo "$GITHUB_REPOSITORY" -n Anderson-Home-NanoC6-v2.0.9 -D /tmp/v209
+          test -f /tmp/v209/and_2.0.9.bin
+          test -f /tmp/v209/release.json
+          test "$(jq -r .version /tmp/v209/release.json)" = "2.0.9"
+          test "$(jq -r .commit /tmp/v209/release.json)" = "ae3553e6ead7ebdafe628305116487ae232e93ce"
+          test "$(jq -r .ota_slot_bytes /tmp/v209/release.json)" = "1966080"
+          test "$(stat -c%s /tmp/v209/and_2.0.9.bin)" = "1794064"
+          test "$(sha256sum /tmp/v209/and_2.0.9.bin | awk '{print $1}')" = "f88b5137e7a84f8e3763caf0766a38a1cf868a5d8f4e34b12a497f8cefa0877f"
+      - name: Publish stable OTA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=anderson-v2.0.9
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target ae3553e6ead7ebdafe628305116487ae232e93ce --title "Anderson Home v2.0.9" --notes "Adds a once-per-day maintenance reboot at 6:00 PM using the configured Anderson local time zone and DST. The reboot date is persisted before restart to prevent repeated reboot loops. Android APK unchanged."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" /tmp/v209/and_2.0.9.bin /tmp/v209/release.json --clobber
+      - name: Retain current release plus one backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEAN_RELEASES: '1'
+        run: bash .github/scripts/anderson-retention.sh
