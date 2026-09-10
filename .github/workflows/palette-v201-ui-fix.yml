@@ -1,0 +1,65 @@
+name: Finalize Anderson Home v2.0.1 named color outputs
+
+on:
+  push:
+    branches: ['codex/anderson-v2-0-1-color-correction']
+
+permissions:
+  contents: write
+
+jobs:
+  patch-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Normalize named color inputs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/web/index.html')
+          s=p.read_text()
+          old="const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name]));\nfunction displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||c}\nfunction displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}"
+          new="const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name])),REFERENCE_LED=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.reference,x.output]));\nconst EXPLICIT_LED={'#FF3B30':'#FF0000','#EF4444':'#FF0000','#DC2626':'#FF0000','#EF233C':'#FF0000','#FF1744':'#FF0000','#E11D48':'#FF0000','#FF7A00':'#FF3000','#F97316':'#FF3000','#FF6B35':'#FF3000','#34C759':'#00FF00','#16A34A':'#00FF00','#0A84FF':'#0000FF','#3B82F6':'#0000FF'};\nfunction normalizeLedColor(c){const k=normHex(c);return REFERENCE_LED[k]||EXPLICIT_LED[k]||k}\nfunction displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||c}\nfunction displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}"
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old="const suggestions=['#FFFFFF','#ff3b30','#34c759','#0a84ff','#23018C','#ff9500','#F18900'];"
+          new="const suggestions=['#FFFFFF','#FF0000','#00FF00','#0000FF','#23018C','#FF3000','#F18900'];"
+          assert s.count(old)==1;s=s.replace(old,new)
+          old="const quick=['#FFDA7F','#FFFFFF','#ff3b30','#ff9500','#F18900','#34c759','#32d7d5','#0a84ff','#23018C','#FF1560','#ff6b35','#004BC6'];"
+          new="const quick=['#FFDA7F','#FFFFFF','#FF0000','#FF3000','#F18900','#00FF00','#00FFFF','#0000FF','#23018C','#FF1560','#E44300','#004BC6'];"
+          assert s.count(old)==1;s=s.replace(old,new)
+          old="let builderWheelTimer=null;function setChipColor(chip,h){if(!chip)return;h=normHex(h);chip.dataset.color=h;"
+          new="let builderWheelTimer=null;function setChipColor(chip,h){if(!chip)return;h=normalizeLedColor(h);chip.dataset.color=h;"
+          assert s.count(old)==1;s=s.replace(old,new)
+          old="async function saveCurrentColor(){const c=pickerHex();"
+          new="async function saveCurrentColor(){const c=normalizeLedColor(pickerHex());"
+          assert s.count(old)==1;s=s.replace(old,new)
+          # Existing output -> picker shows the intended reference; setChipColor maps exact reference back to output.
+          old="function openRgbWheel(chip){activeColorChip=chip;setPickerHex(chip?.dataset.color||'#FFFFFF');"
+          new="function openRgbWheel(chip){activeColorChip=chip;setPickerHex(displayColor(chip?.dataset.color||'#FFFFFF'));"
+          assert s.count(old)==1;s=s.replace(old,new)
+          p.write_text(s)
+          PY
+          python tools/release.py prepare
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('firmware/web/index.html').read_text()
+          assert "const quick=['#FFDA7F','#FFFFFF','#FF0000','#FF3000','#F18900','#00FF00','#00FFFF','#0000FF','#23018C','#FF1560','#E44300','#004BC6'];" in s
+          assert "normalizeLedColor(pickerHex())" in s
+          assert "h=normalizeLedColor(h);chip.dataset.color=h" in s
+          assert "setPickerHex(displayColor(chip?.dataset.color||'#FFFFFF'))" in s
+          assert s.count("function normalizeLedColor") == 1
+          print('Named UI color-output consistency checks passed')
+          PY
+      - name: Commit final UI correction
+        shell: bash
+        run: |
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git rm .github/workflows/palette-v201-ui-fix.yml
+          git add -A
+          git commit -m 'Normalize named UI colors to provisional LED outputs'
+          git push origin HEAD:codex/anderson-v2-0-1-color-correction
