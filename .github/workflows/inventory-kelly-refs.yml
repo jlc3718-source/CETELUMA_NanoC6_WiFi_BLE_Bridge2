@@ -1,0 +1,16 @@
+name: Inventory Kelly references
+on:
+  push:
+    branches: ['codex/remove-kelly-v2-0-10']
+    paths: ['.github/workflows/inventory-kelly-refs.yml']
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: List Kelly references
+        run: |
+          echo '=== Kelly references in current source ==='
+          grep -RniI --exclude-dir=.git --exclude='inventory-kelly-refs.yml' 'kelly' firmware AGENTS.md README.md || true
