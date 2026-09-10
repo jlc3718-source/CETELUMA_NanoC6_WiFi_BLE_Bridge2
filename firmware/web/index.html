@@ -67,59 +67,19 @@ html,body{background:#0b6b2e!important;background-image:linear-gradient(160deg,#
       <div id="profilePinError" class="pinError" aria-live="polite"></div>
       <div class="grid2"><button id="cancelProfilePin" class="btn" type="button">Cancel</button><button id="submitProfilePin" class="btn primary" type="submit">Continue</button></div>
     </form>
-
-    <section class="recoveryPanel" aria-labelledby="recoveryTitle">
-      <h2 id="recoveryTitle">Emergency APP-only Firmware Recovery</h2>
-      <div class="sub">This updater works here before a user is chosen and keeps you on this screen.</div>
-      <div id="recoveryFwMeta" class="card small" style="margin-top:10px">Checking controller firmware…</div>
-      <form id="recoveryFirmwareForm" method="post" action="/api/update?recovery=1" enctype="multipart/form-data">
-        <div id="recoveryPinWrap" hidden><div class="label">Jason’s four-digit PIN</div><input id="recoveryPin" name="recoveryPin" class="field pinDigits" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" aria-label="Jason recovery PIN"><div class="recoveryNote">This is checked directly by the recovery service, without opening the main interface.</div></div>
-        <div class="label">APP-only firmware BIN</div>
-        <input id="recoveryFirmwareFile" name="firmware" class="field" type="file" accept=".bin,application/octet-stream" required>
-        <button id="recoveryUploadFirmware" class="btn primary" type="submit" style="width:100%;margin-top:9px">Upload, Install &amp; Reboot</button>
-      </form>
-      <progress id="recoveryFwProgress" max="100" value="0"></progress>
-      <div id="recoveryFwStatus" class="recoveryNote" aria-live="polite">Choose only the APP_ONLY.bin release file. When PIN protection is on, recovery requires Jason’s PIN. A successful recovery disables PIN protection but preserves all other saved settings.</div>
-    </section>
-    <div class="profileLockedMessage">Independent firmware recovery remains available with Jason’s PIN even if the main interface cannot open.</div>
   </div>
 </main>
 
 <script>
 /* ANDERSON_LOCKOUT_SAFE_PROFILE_GATE */
 (function(){
-  let recoveryBeforePartition='',pinProtectionEnabled=false,kellyPinReady=false,pendingProfile='';
+  let pinProtectionEnabled=false,kellyPinReady=false,pendingProfile='';
   window.andersonAuthToken='';
   const byId=id=>document.getElementById(id);
-  function recoveryStatus(message){const el=byId('recoveryFwStatus');if(el)el.textContent=message}
-  async function loadRecoveryInfo(){
-    const meta=byId('recoveryFwMeta');
-    try{const response=await fetch('/api/firmware?gate='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('offline');const firmware=await response.json();recoveryBeforePartition=firmware.runningPartition||recoveryBeforePartition;const size=firmware.slotSize?(firmware.slotSize/1048576).toFixed(2)+' MB':'unknown';meta.innerHTML='<strong>Running:</strong> '+(firmware.runningPartition||'—')+(firmware.version?' • '+firmware.version:'')+'<br><span class="sub">Available update slot: '+(firmware.nextPartition||'—')+' • '+size+' maximum</span>'}
-    catch(error){if(meta)meta.textContent='Controller firmware details are unavailable, but recovery upload is still ready.'}
-  }
-  function waitForRecoveryReturn(){
-    let tries=0;
-    recoveryStatus('Controller is rebooting. Waiting for it to return…');
-    const poll=async()=>{tries++;try{const response=await fetch('/api/firmware?gate='+Date.now(),{cache:'no-store'});if(response.ok){const firmware=await response.json();if(!recoveryBeforePartition||firmware.runningPartition!==recoveryBeforePartition||tries>=8){recoveryBeforePartition=firmware.runningPartition||recoveryBeforePartition;recoveryStatus('Firmware recovery completed. PIN protection is off and the controller is back online.');byId('recoveryUploadFirmware').disabled=false;loadPinStatus();loadRecoveryInfo();return}}}catch(error){}if(tries<45){if(tries===8)recoveryStatus('Still waiting for the controller to reconnect to Wi-Fi…');setTimeout(poll,1000)}else{recoveryStatus('The upload finished, but reconnect timed out. Reopen this page after the controller reconnects.');byId('recoveryUploadFirmware').disabled=false}};
-    setTimeout(poll,2800);
-  }
-  function uploadRecovery(event){
-    event.preventDefault();
-    const input=byId('recoveryFirmwareFile'),file=input&&input.files&&input.files[0],button=byId('recoveryUploadFirmware'),progress=byId('recoveryFwProgress'),pin=byId('recoveryPin').value;
-    if(!file){recoveryStatus('Choose an APP-only .bin firmware file first.');return}
-    if(!/\.bin$/i.test(file.name)){recoveryStatus('The firmware filename must end in .bin.');return}
-    if(pinProtectionEnabled&&!/^\d{4}$/.test(pin)){recoveryStatus('Enter Jason’s four-digit PIN for firmware recovery.');byId('recoveryPin').focus();return}
-    const data=new FormData();if(pin)data.append('recoveryPin',pin);data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');button.disabled=true;progress.value=0;recoveryStatus('Opening the inactive firmware slot…');
-    if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);
-    request.upload.onprogress=e=>{if(e.lengthComputable){const percent=Math.round(e.loaded*100/e.total);progress.value=percent;recoveryStatus(percent<100?'Uploading firmware… '+percent+'%':'Upload complete. Verifying the firmware image…')}};
-    request.onload=()=>{if(request.status>=200&&request.status<300){progress.value=100;recoveryStatus('Firmware verified. Rebooting the controller…');waitForRecoveryReturn()}else{button.disabled=false;recoveryStatus(request.responseText||'Firmware update failed.')}};
-    request.onerror=()=>{button.disabled=false;recoveryStatus('The upload connection failed before installation completed.')};request.send(data);
-  }
   async function loadPinStatus(note=''){
     const status=byId('profileGateStatus');document.querySelectorAll('.profileChoice').forEach(button=>button.disabled=true);
     try{const response=await fetch('/api/auth/status?gate='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('unavailable');const data=await response.json();pinProtectionEnabled=data.pinEnabled===true;kellyPinReady=data.kellyConfigured===true;status.textContent=note||(pinProtectionEnabled&&!kellyPinReady?'PIN protection is on. Jason must add Kelly’s PIN in Settings.':(pinProtectionEnabled?'Four-digit PIN protection is on.':'PIN protection is off. Jason can configure it in Settings.'));}
-    catch(error){pinProtectionEnabled=location.protocol!=='file:';kellyPinReady=true;status.textContent=note||(pinProtectionEnabled?'PIN status could not be checked. You can retry a PIN or use firmware recovery.':'Preview mode — PIN protection is simulated as off.');}
-    byId('recoveryPinWrap').hidden=!pinProtectionEnabled;
+    catch(error){pinProtectionEnabled=location.protocol!=='file:';kellyPinReady=true;status.textContent=note||(pinProtectionEnabled?'PIN status could not be checked. You can retry the PIN.':'Preview mode — PIN protection is simulated as off.');}
     document.querySelectorAll('.profileChoice').forEach(button=>button.disabled=button.dataset.profile==='kelly'&&pinProtectionEnabled&&!kellyPinReady);
   }
   function showPinPrompt(profile){pendingProfile=profile;const name=profile==='shirley'?'Shirley':(profile==='kelly'?'Kelly':'Jason');byId('profilePinTitle').textContent='Enter '+name+'’s four-digit PIN';byId('profilePin').value='';byId('profilePinError').textContent='';byId('profilePinForm').hidden=false;setTimeout(()=>byId('profilePin').focus(),0)}
@@ -140,7 +100,7 @@ html,body{background:#0b6b2e!important;background-image:linear-gradient(160deg,#
   function showProfileGate(note='',logout=true){
     const token=window.andersonAuthToken||'';if(logout&&token)fetch('/api/auth/logout',{method:'POST',headers:{'X-Anderson-Session':token}}).catch(()=>{});window.andersonAuthToken='';window.andersonProfile=null;pendingProfile='';document.body.classList.add('profile-locked');document.body.removeAttribute('data-profile');byId('profileGate').hidden=false;byId('profilePinForm').hidden=true;byId('activeProfile').hidden=true;byId('switchProfile').hidden=true;document.querySelectorAll('.rgbPickerOverlay,.scheduleOverlay').forEach(el=>el.classList.remove('open'));window.dispatchEvent(new Event('anderson-profile-cleared'));loadPinStatus(note);
   }
-  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-profile]').forEach(button=>button.addEventListener('click',()=>requestProfile(button.dataset.profile)));['profilePin','recoveryPin'].forEach(id=>byId(id).addEventListener('input',event=>event.target.value=event.target.value.replace(/\D/g,'').slice(0,4)));byId('profilePinForm').addEventListener('submit',submitProfilePin);byId('cancelProfilePin').addEventListener('click',()=>{pendingProfile='';byId('profilePinForm').hidden=true});byId('switchProfile').addEventListener('click',()=>showProfileGate());byId('recoveryFirmwareForm').addEventListener('submit',uploadRecovery);window.addEventListener('anderson-auth-required',()=>showProfileGate('Your session ended. Enter the profile PIN again.',false));loadPinStatus();loadRecoveryInfo()});
+  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-profile]').forEach(button=>button.addEventListener('click',()=>requestProfile(button.dataset.profile)));byId('profilePin').addEventListener('input',event=>event.target.value=event.target.value.replace(/\D/g,'').slice(0,4));byId('profilePinForm').addEventListener('submit',submitProfilePin);byId('cancelProfilePin').addEventListener('click',()=>{pendingProfile='';byId('profilePinForm').hidden=true});byId('switchProfile').addEventListener('click',()=>showProfileGate());window.addEventListener('anderson-auth-required',()=>showProfileGate('Your session ended. Enter the profile PIN again.',false));loadPinStatus()});
   window.addEventListener('pageshow',event=>{if(event.persisted)showProfileGate()});
 })();
 </script>
@@ -282,7 +242,7 @@ html,body{background:#0b6b2e!important;background-image:linear-gradient(160deg,#
       <div class="grid2" style="margin-top:10px"><button id="rebootNano" class="btn">Reboot NanoC6</button><button id="rollbackFirmware" class="btn">Boot Previous Firmware</button></div>
     </div>
 
-        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v2.0.7</strong></div></div>
+        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v2.0.8</strong></div></div>
 
 <div class="panel"><strong>Persistent Configuration</strong><div class="sub">Custom lights, schedules and controller settings are stored outside the firmware slots and automatically reloaded after updates/reboots.</div><div id="storageMeta" class="card small" style="margin-top:10px">Checking persistent storage…</div></div>
 
