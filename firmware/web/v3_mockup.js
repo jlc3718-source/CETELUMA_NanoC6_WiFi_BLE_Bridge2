@@ -1,305 +1,139 @@
 /* ANDERSON_V3_REFERENCE_LAYOUT_RUNTIME
-   Re-composes the existing functional controls without changing their IDs or API bindings. */
+   Compose supplied artwork with real controls, preserving IDs and API bindings. */
 (() => {
   'use strict';
-
-  const q = (s, root=document) => root.querySelector(s);
-  const qa = (s, root=document) => [...root.querySelectorAll(s)];
-
-  function clickTab(name) {
-    const tab = q(`.tab[data-tab="${name}"]`);
-    if (!tab || tab.hidden) return;
-    tab.click();
-    setTimeout(() => window.scrollTo({top:0, behavior:'smooth'}), 0);
+  const q = (s, root = document) => root.querySelector(s);
+  const qa = (s, root = document) => [...root.querySelectorAll(s)];
+  const byId = id => document.getElementById(id);
+  const paths = {
+    home: '<path d="m3 10 9-7 9 7v11h-7v-7h-4v7H3z"/>',
+    effects: '<path d="m14 3 7 7-10 10-7 1 1-7zM12 5l7 7M3 3v4M1 5h4"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+    settings: '<path d="m9 3 1-2h4l1 2 2 1 2-.2 2 3-1 2v3l1 2-2 3-2-.2-2 1-1 3h-4l-1-3-2-1-2 .2-2-3 1-2V9L3 7l2-3 2 .2z"/><circle cx="12" cy="10.5" r="3"/>',
+    power: '<path d="M12 2v9M6 5a9 9 0 1 0 12 0"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/>',
+    heart: '<path d="M20 4c-3-2-6-1-8 2-2-3-5-4-8-2-6 5 2 12 8 16 6-4 14-11 8-16Z"/>',
+    user: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
+    wifi: '<path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/>',
+    arrow: '<path d="m9 5 7 7-7 7"/>', plus: '<path d="M12 4v16M4 12h16"/>',
+    spark: '<path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/>'
+  };
+  const icon = name => `<svg class="v3Icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.spark}</svg>`;
+  function el(tag, cls, html = '') { const n = document.createElement(tag); n.className = cls; n.innerHTML = html; return n; }
+  function canOpen(target) { const tab = q(`.tab[data-tab="${target}"]`); return !!window.andersonProfile && !!tab && !tab.hidden; }
+  function openPage(target, anchor) {
+    if (!canOpen(target)) return;
+    q(`.tab[data-tab="${target}"]`).click();
+    if (anchor) byId(anchor)?.scrollIntoView({behavior:'smooth', block:'start'});
+    else window.scrollTo({top:0, behavior:'smooth'});
   }
-
-  function makeNavButton(icon, label, target, cls='') {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = cls;
-    b.dataset.target = target;
-    b.innerHTML = `<span class="v3NavIcon" aria-hidden="true">${icon}</span><span>${label}</span>`;
-    b.addEventListener('click', () => clickTab(target));
-    return b;
+  function routeButton(cls, target, html, anchor) {
+    const b = el('button', cls, html); b.type = 'button'; b.dataset.target = target;
+    b.addEventListener('click', () => openPage(target, anchor)); return b;
   }
-
-  function buildHeader() {
-    const actions = q('.headerActions');
-    if (!actions || q('.v3MenuButton')) return;
-
-    const activeProfile = document.getElementById('activeProfile');
-    const switchProfile = document.getElementById('switchProfile');
-    const badge = document.getElementById('connectionBadge');
-
-    const menu = document.createElement('button');
-    menu.type = 'button';
-    menu.className = 'v3MenuButton';
-    menu.setAttribute('aria-label', 'Open navigation');
-    menu.setAttribute('aria-expanded', 'false');
-    menu.innerHTML = '&#9776;';
-
-    const right = document.createElement('div');
-    right.className = 'v3HeaderRight';
-
-    const meta = document.createElement('div');
-    meta.className = 'v3HomeMeta';
-    const name = document.createElement('div');
-    name.className = 'v3HomeName';
-    name.textContent = 'My Home';
-    meta.appendChild(name);
-    if (badge) meta.appendChild(badge);
-
-    if (activeProfile) {
-      activeProfile.classList.add('v3ProfileNameHidden');
-      activeProfile.setAttribute('aria-hidden', 'true');
-    }
-
-    right.appendChild(meta);
-    if (switchProfile) {
-      switchProfile.title = 'Switch Anderson Home user';
-      switchProfile.setAttribute('aria-label', 'Switch Anderson Home user');
-      right.appendChild(switchProfile);
-    }
-
-    actions.textContent = '';
-    actions.append(menu, right);
-
-    const drawer = document.createElement('div');
-    drawer.className = 'v3Drawer';
-    drawer.setAttribute('aria-label', 'Anderson Home navigation');
-    [
-      ['⌂','Home','home'],
-      ['✦','Lights & Effects','lights'],
-      ['◷','Events & Schedules','events'],
-      ['⌁','Wi-Fi','wifi'],
-      ['⚙','Settings','settings']
-    ].forEach(([icon,label,target]) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.dataset.target = target;
-      b.innerHTML = `<span aria-hidden="true" style="display:inline-block;width:30px">${icon}</span>${label}`;
-      b.addEventListener('click', () => {
-        drawer.classList.remove('open');
-        menu.setAttribute('aria-expanded','false');
-        clickTab(target);
-      });
-      drawer.appendChild(b);
-    });
-    document.body.appendChild(drawer);
-
-    menu.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const open = drawer.classList.toggle('open');
-      menu.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-    document.addEventListener('click', (e) => {
-      if (!drawer.contains(e.target) && e.target !== menu) {
-        drawer.classList.remove('open');
-        menu.setAttribute('aria-expanded','false');
-      }
+  function syncPage() {
+    const page = q('.page.active')?.dataset.page || 'home';
+    document.body.dataset.page = page;
+    qa('.v3BottomNav .tab').forEach(tab => {
+      const active = tab.dataset.tab === page || (page === 'wifi' && tab.dataset.tab === 'settings');
+      tab.classList.toggle('active', active);
+      if (active) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
     });
   }
-
-  function buildBottomNav() {
-    if (q('.v3BottomNav')) return;
-    const nav = document.createElement('nav');
-    nav.className = 'v3BottomNav';
-    nav.setAttribute('aria-label','Primary navigation');
-    nav.append(
-      makeNavButton('⌂','Home','home'),
-      makeNavButton('✦','Effects','lights'),
-      makeNavButton('◷','Schedules','events'),
-      makeNavButton('⚙','Settings','settings')
-    );
+  function navigation() {
+    const nav = q('.nav');
+    nav.className = 'nav v3BottomNav'; nav.setAttribute('role', 'navigation'); nav.setAttribute('aria-label', 'Primary navigation');
+    const defs = {home:['home','Home'], lights:['effects','Effects'], events:['clock','Schedules'], wifi:['wifi','Wi-Fi'], settings:['settings','Settings']};
+    qa('.tab', nav).forEach(tab => {
+      const [symbol, label] = defs[tab.dataset.tab]; tab.innerHTML = icon(symbol) + `<span>${label}</span>`;
+      tab.addEventListener('click', syncPage);
+    });
     document.body.appendChild(nav);
-
-    qa('.tab').forEach(tab => tab.addEventListener('click', () => {
-      qa('.v3BottomNav button').forEach(b => b.classList.toggle('active', b.dataset.target === tab.dataset.tab));
-    }));
-    const home = q('.v3BottomNav button[data-target="home"]');
-    if (home) home.classList.add('active');
-  }
-
-  function syncRoleNavigation() {
-    qa('.v3BottomNav button,.v3Drawer button').forEach(b => {
-      const original = q(`.tab[data-tab="${b.dataset.target}"]`);
-      b.hidden = !original || original.hidden;
-    });
-    qa('.v3HomeTile').forEach(b => {
-      const original = q(`.tab[data-tab="${b.dataset.target}"]`);
-      b.hidden = !original || original.hidden;
+    const actions = q('.headerActions'), meta = el('div','v3HomeMeta','<span class="v3HomeName">My Home</span>');
+    meta.appendChild(byId('connectionBadge'));
+    const profile = byId('activeProfile'); profile.className = 'v3ProfileName';
+    const switcher = byId('switchProfile'); switcher.innerHTML = icon('user'); switcher.setAttribute('aria-label','Switch user'); switcher.title = 'Switch user';
+    actions.replaceChildren(meta, profile, switcher);
+    q('.andersonBrand').classList.add('v3SubBrand');
+    const wifi = routeButton('v3SettingsLink','wifi',`${icon('wifi')}<span><strong>Wi-Fi</strong><small>Network & connection</small></span>${icon('arrow')}`);
+    q('.page[data-page="settings"]').prepend(wifi);
+    byId('bleStatus').closest('.panel').id = 'v3Controllers';
+    qa('.page:not([data-page="home"])').forEach(page => {
+      const titles = {lights:['Make it yours','Effects & colors'],events:['Every occasion, illuminated','Your schedules'],settings:['Your home, your way','Settings'],wifi:['Keep your home connected','Wi-Fi']};
+      const [sub,title] = titles[page.dataset.page]; page.prepend(el('div','v3PageTitle',`<span>${sub}</span><h2>${title}</h2>`));
     });
   }
-
-  function wrapBrightness(panel) {
-    const input = document.getElementById('homeBrightness');
-    if (!panel || !input || input.closest('.v3BrightnessBlock')) return;
-    const label = input.previousElementSibling;
-    const block = document.createElement('div');
-    block.className = 'v3BrightnessBlock';
-    if (label && label.classList.contains('label')) block.appendChild(label);
-    block.appendChild(input);
-    const master = q('.v3MasterRow', panel);
-    if (master) master.insertAdjacentElement('afterend', block);
-    else panel.prepend(block);
-  }
-
-  function buildFeatureGrid(panel) {
-    if (!panel || q('.v3FeatureGrid', panel)) return;
-
-    const effect = document.getElementById('homeEffect');
-    const help = document.getElementById('homeEffectHelp');
-    if (!effect || !help) return;
-    const label = effect.previousElementSibling;
-
-    const effectCard = document.createElement('div');
-    effectCard.className = 'v3EffectCard';
-    const effectKicker = document.createElement('div');
-    effectKicker.className = 'v3CardKicker';
-    effectKicker.textContent = 'Current Effect';
-    effectCard.appendChild(effectKicker);
-    if (label && label.classList.contains('label')) label.remove();
-    effectCard.append(effect, help);
-
-    const scheduleCard = document.createElement('div');
-    scheduleCard.className = 'v3ScheduleCard';
-    const scheduleKicker = document.createElement('div');
-    scheduleKicker.className = 'v3CardKicker';
-    scheduleKicker.textContent = 'Schedule';
-    scheduleCard.appendChild(scheduleKicker);
-
-    const nowTheme = document.getElementById('nowTheme');
-    const scheduleWindow = document.getElementById('scheduleWindow');
-    const resume = document.getElementById('resumeSchedule');
-    if (nowTheme) scheduleCard.appendChild(nowTheme);
-    if (scheduleWindow) scheduleCard.appendChild(scheduleWindow);
-    if (resume) {
-      resume.textContent = 'Resume Schedule';
-      scheduleCard.appendChild(resume);
-    }
-
-    const grid = document.createElement('div');
-    grid.className = 'v3FeatureGrid';
-    grid.append(effectCard, scheduleCard);
-
-    const bright = q('.v3BrightnessBlock', panel);
-    if (bright) bright.insertAdjacentElement('afterend', grid);
-    else panel.appendChild(grid);
-  }
-
-  function buildHomeTiles(panel) {
-    if (!panel || q('.v3HomeTiles', panel)) return;
-    const tiles = document.createElement('div');
-    tiles.className = 'v3HomeTiles';
-    const defs = [
-      ['⌂','Zones','Control by area','lights'],
-      ['✦','Effects','Pre-made & custom','lights'],
-      ['◷','Schedules','Automate your lights','events'],
-      ['⚙','Settings','System & preferences','settings']
-    ];
-    defs.forEach(([icon,name,sub,target]) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'v3HomeTile';
-      b.dataset.target = target;
-      b.innerHTML = `<span class="v3TileIcon" aria-hidden="true">${icon}</span><span class="v3TileName">${name}</span><span class="v3TileSub">${sub}</span>`;
-      b.addEventListener('click', () => clickTab(target));
-      tiles.appendChild(b);
-    });
-    panel.appendChild(tiles);
-  }
-
-  function enhanceHome() {
-    const home = q('.page[data-page="home"]');
-    if (!home) return;
-    const hero = q('.andersonHero', home);
-    if (hero) {
-      hero.setAttribute('aria-label','Anderson Home illuminated house and landscape');
-      hero.removeAttribute('role');
-    }
-
-    const panel = q(':scope > .panel', home);
-    if (!panel) return;
-
-    const row = q(':scope > .row.between', panel);
-    if (row) {
-      row.classList.add('v3MasterRow');
-      const title = row.firstElementChild;
-      if (title) {
-        title.classList.add('v3MasterTitle');
-        const strong = q('strong', title);
-        const sub = q('.sub', title);
-        if (strong) strong.textContent = 'All Lights';
-        if (sub) sub.textContent = 'Control your entire home';
-      }
-      const buttons = row.lastElementChild;
-      if (buttons) buttons.classList.add('v3PowerButtons');
-      const on = document.getElementById('homePowerOn');
-      const off = document.getElementById('homePowerOff');
-      if (on) on.textContent = 'ON';
-      if (off) off.textContent = 'OFF';
-    }
-
-    wrapBrightness(panel);
-    buildFeatureGrid(panel);
-    buildHomeTiles(panel);
-
-    const speed = document.getElementById('homeSpeedBlock');
-    const feature = q('.v3FeatureGrid', panel);
-    if (speed && feature && speed.parentElement !== panel) {
-      feature.insertAdjacentElement('afterend', speed);
-    } else if (speed && feature && speed.previousElementSibling !== feature) {
-      feature.insertAdjacentElement('afterend', speed);
-    }
-    if (speed) {
-      const firstLabel = q('.label', speed);
-      if (firstLabel && !firstLabel.dataset.v3Done) {
-        firstLabel.dataset.v3Done = '1';
-        firstLabel.childNodes[0].textContent = 'Animation Speed ';
+  function composeHome() {
+    ensureExtraControls();
+    const home = q('.page[data-page="home"]'), panel = q(':scope > .panel',home);
+    q('.andersonHero',home).classList.add('v3Scene');
+    q('.andersonHero',home).setAttribute('aria-label','Anderson Home rainbow roof logo above the illuminated house');
+    panel.classList.add('v3Dashboard');
+    const master = q(':scope > .row',panel); master.classList.add('v3MasterRow');
+    const title = master.firstElementChild; title.className = 'v3MasterTitle';
+    title.innerHTML = '<span class="v3Eyebrow">HOME LIGHTS <i></i></span><h2>All Lights</h2><span class="sub">Your whole home</span>';
+    master.lastElementChild.className = 'v3PowerButtons';
+    ['On','Off'].forEach(v => { const b=byId('homePower'+v); b.innerHTML=icon('power')+`<span>${v.toUpperCase()}</span>`; b.setAttribute('aria-label','Turn all lights '+v.toLowerCase()); });
+    const bright = el('div','v3BrightnessBlock'), slider=byId('homeBrightness'), label=slider.previousElementSibling;
+    label.firstElementChild.insertAdjacentHTML('afterbegin',icon('sun')); slider.setAttribute('aria-label','Home brightness');
+    bright.append(label,slider); panel.appendChild(bright);
+    const effect=byId('homeEffect'), effectLabel=effect.previousElementSibling;
+    if(effectLabel?.classList.contains('label')) effectLabel.remove(); effect.setAttribute('aria-label','Current effect');
+    const features=el('div','v3FeatureGrid'), fx=el('div','v3EffectCard',`<div class="v3CardKicker">${icon('spark')}<span>Current Effect</span></div><div class="v3EffectArt" aria-hidden="true"></div>`);
+    const help=byId('homeEffectHelp');help.textContent='Use your current colors.';fx.append(effect,help);
+    const schedule=el('div','v3ScheduleCard');
+    schedule.append(routeButton('v3CardKicker','events',`${icon('clock')}<span>Schedule</span>${icon('arrow')}`));
+    const oldRunning = byId('nowTheme').closest('.panel');
+    schedule.append(byId('nowTheme'),byId('scheduleWindow'),byId('resumeSchedule'));
+    features.append(fx,schedule); panel.appendChild(features);
+    const favorites=el('div','v3Favorites'), grid=byId('homeFavoriteColorGrid'); grid.previousElementSibling.remove();
+    const heading=el('div','v3FavoriteHeading',`<span>${icon('heart')}<strong id="v3ColorHeading">Favorite Colors</strong></span>`);
+    const edit=el('button','v3TextButton',`Edit ${icon('arrow')}`); edit.type='button';edit.setAttribute('aria-label','Edit favorite colors');
+    const openColors=()=> { const chip=el('button',''); chip.dataset.color='#004BC6'; openRgbWheel(chip); };
+    edit.addEventListener('click',openColors); heading.append(edit);
+    const paletteRow=el('div','v3PaletteRow'), plus=el('button','v3AddColor',icon('plus')); plus.type='button';plus.setAttribute('aria-label','Add a favorite color');plus.addEventListener('click',openColors);
+    paletteRow.append(grid,plus);favorites.append(heading,paletteRow);panel.appendChild(favorites);
+    const speed=byId('homeSpeedBlock'), speedLabel=q('.label',speed);
+    const detail=el('details','v3Speed'), summary=el('summary','',`<span>Animation speed</span>`);
+    summary.appendChild(byId('homeSpeedVal'));speedLabel.remove();detail.append(summary,speed);panel.appendChild(detail);
+    byId('homeSpeed').setAttribute('aria-label','Animation speed');
+    panel.appendChild(el('div','v3HomeTiles'));
+    const live=el('details','v3Live panel'), liveSummary=el('summary','',`${icon('home')}<span>Live light preview</span>`);
+    live.append(liveSummary,q('.housePreview',oldRunning)); oldRunning.replaceWith(live);
+    const next=byId('nextEvent').closest('.card');next.classList.add('v3Next');next.prepend(el('span','v3NextIcon',icon('clock')));
+    const favoritesPanel=byId('favoriteGrid').closest('.panel'); favoritesPanel.classList.add('v3SavedScenes');q('strong',favoritesPanel).textContent='Favorite scenes';
+    const custom=byId('homeCustomLightList').closest('.panel');custom.classList.add('v3SavedScenes');q('strong',custom).textContent='Your custom shows';q('.sub',custom).textContent='Saved lighting, ready to play.';
+    function colorsChanged() {
+      const swatches=qa('.savedSwatch',grid);byId('v3ColorHeading').textContent=swatches.length?'Favorite Colors':'Quick Colors';
+      if(!swatches.length && !q('.v3QuickColor',grid)) {
+        grid.replaceChildren();
+        ['#FF0000','#FF3000','#FFFF00','#00FF00','#00FFFF','#0000FF','#23018C','#FF00FF'].forEach(c=>{
+          const b=el('button','v3QuickColor');b.type='button';b.style.background=displayColor(c);b.style.color=displayColor(c);b.setAttribute('aria-label','Use '+(LED_COLOR_NAME[c]||c));
+          b.addEventListener('click',()=>manual({name:LED_COLOR_NAME[c]||'Color',colors:[c],effect:'Solid',brightness,speed:1}));grid.appendChild(b);
+        });
       }
     }
-
-    const custom = q('#homeCustomLightList')?.closest('.panel');
-    if (custom) {
-      const strong = q(':scope > strong', custom);
-      const sub = q(':scope > .sub', custom);
-      if (strong) strong.textContent = 'My Custom Lighting';
-      if (sub) sub.textContent = 'Saved scenes and custom lighting shows.';
-    }
-    syncRoleNavigation();
+    new MutationObserver(colorsChanged).observe(grid,{childList:true}); colorsChanged();
+    const syncPower=()=>{ const on=byId('homePowerOn').classList.contains('primary');panel.dataset.power=on?'on':'off';byId('homePowerOn').setAttribute('aria-pressed',String(on));byId('homePowerOff').setAttribute('aria-pressed',String(!on)); };
+    new MutationObserver(syncPower).observe(byId('homePowerOn'),{attributes:true,attributeFilter:['class']});syncPower();
+    const syncEffect=()=>{byId('homeEffectHelp').textContent=byId('homeEffect').value==='Solid'?'Holds the first color steady.':'Use your current colors.';};
+    byId('homeEffect').addEventListener('change',syncEffect);new MutationObserver(syncEffect).observe(byId('nowTheme'),{childList:true});
   }
-
-  function markPages() {
-    const titles = {
-      lights:'LIGHTS • EFFECTS • CREATE',
-      events:'EVENTS • SCHEDULES',
-      wifi:'NETWORK • CONTROLLER',
-      settings:'SYSTEM • PREFERENCES'
-    };
-    Object.entries(titles).forEach(([page,title]) => {
-      const el = q(`.page[data-page="${page}"]`);
-      if (el) el.dataset.v3Title = title;
+  function syncRole() {
+    q('.v3BottomNav').hidden=!window.andersonProfile;
+    const admin=window.andersonProfile?.role==='admin' && window.andersonProfile?.id==='jason';
+    const tiles=q('.v3HomeTiles'); tiles.replaceChildren();tiles.hidden=!admin;
+    if(admin) [ ['home','Zones','By controller','settings','v3Controllers'],['effects','Effects','Make it yours','lights'],['clock','Schedules','Your calendar','events'],['settings','Settings','Your home','settings'] ].forEach(([symbol,label,sub,target,anchor])=>{
+      if(canOpen(target))tiles.append(routeButton('v3HomeTile',target,`${icon(symbol)}<strong>${label}</strong><small>${sub}</small>${icon('arrow')}`,anchor));
     });
+    byId('switchProfile').setAttribute('aria-label',window.andersonProfile ? `Switch user, currently ${window.andersonProfile.name}`:'Switch user'); syncPage();
   }
-
-  function init() {
-    buildHeader();
-    buildBottomNav();
-    markPages();
-    enhanceHome();
-    setTimeout(enhanceHome, 40);
-    setTimeout(enhanceHome, 220);
-    syncRoleNavigation();
-
-    window.addEventListener('anderson-profile-selected', () => {
-      setTimeout(() => {
-        syncRoleNavigation();
-        enhanceHome();
-      }, 0);
-    });
-    window.addEventListener('anderson-profile-cleared', syncRoleNavigation);
+  function profiles() {
+    const brand=q('.profileBrand');brand.classList.add('v3Scene'); brand.setAttribute('role','img');brand.setAttribute('aria-label','Anderson Home illuminated house and rainbow roof logo');
+    brand.after(el('div','v3Welcome','<span class="v3Eyebrow">LIGHTS · CONTROL · CREATE</span><h2>Welcome home.</h2><p>Choose your profile</p>'));
+    qa('.profileChoice').forEach(b=>b.insertAdjacentHTML('beforeend',icon('arrow')));
+    const pin=byId('profilePinForm');new MutationObserver(()=>{ if(!pin.hidden)pin.scrollIntoView({behavior:'smooth',block:'nearest'}); }).observe(pin,{attributes:true,attributeFilter:['hidden']});
   }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  function init() { navigation();composeHome();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();

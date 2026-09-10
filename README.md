@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v3.0.2**.
+Current firmware: **v3.0.3**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 
@@ -11,7 +11,8 @@ The repository now builds directly from the canonical `firmware/` source tree. T
 - Optional, independent four-digit Shirley/Jason PINs are verified by the NanoC6 with role-limited API sessions; Shirley receives Home/Events access while Jason retains all controls.
 - Routine firmware uploads require Jason's active session when PIN protection is enabled.
 - The independent APP-only recovery page accepts Jason's PIN without depending on the main profile interface and disables PIN protection after successful recovery.
-- The editable UI is `firmware/web/index.html`; CI gzip-compresses it before compile.
+- The interface combines `firmware/web/index.html`, `v3_mockup.css`, `v3_mockup.js`, and the embedded reference artwork; CI composes and compresses the exact page before compilation.
+- v3.0.3 recomposes the reference house/logo artwork, blue glass dashboard, profile chooser, effect/schedule cards, favorite colors, and bottom navigation. Shirley sees Home and Schedules only; Jason reaches Wi-Fi through Settings.
 - Software-effect speed levels use exact 2000/1000/500/250/100 ms logical intervals from Very Slow through Very Fast.
 - Solid / Static is a true non-animated software effect and can be applied to the currently running theme from Home.
 - The proven ELK-BLEDDM / Lotus Lantern BLE implementation and dual-slot OTA layout are preserved.

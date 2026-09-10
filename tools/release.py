@@ -17,7 +17,6 @@ from html.parser import HTMLParser
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'firmware/web/index.html'
 V3_CSS = ROOT / 'firmware/web/v3_mockup.css'
-V3_LUXURY_CSS = ROOT / 'firmware/web/v3_luxury_blue.css'
 V3_JS = ROOT / 'firmware/web/v3_mockup.js'
 V3_HERO_B64 = ROOT / 'firmware/web/v3_hero.b64'
 MAIN = ROOT / 'firmware/src/main.cpp'
@@ -82,14 +81,10 @@ def render_ui():
     if count != 1:
         raise ValueError('Expected one firmware revision marker in firmware/web/index.html')
 
-    if not V3_CSS.exists() or not V3_LUXURY_CSS.exists() or not V3_JS.exists() or not V3_HERO_B64.exists():
+    if not V3_CSS.exists() or not V3_JS.exists() or not V3_HERO_B64.exists():
         raise ValueError('Anderson v3 reference layout assets are missing')
 
     hero_b64 = ''.join(V3_HERO_B64.read_text().split())
-    # The first checked-in hero transfer picked up one extra character at a 4,000-byte
-    # transport boundary. Normalize that exact known sequence before validation so the
-    # shipped bytes remain the original user-approved WebP.
-    hero_b64 = hero_b64.replace('xbcrcfFl2uU', 'xbcrcFl2uU', 1)
     if not re.fullmatch(r'[A-Za-z0-9+/=]+', hero_b64):
         raise ValueError('Anderson v3 hero asset is not valid base64')
     try:
@@ -99,15 +94,9 @@ def render_ui():
     if not (hero_bytes.startswith(b'RIFF') and hero_bytes[8:12] == b'WEBP'):
         raise ValueError('Anderson v3 hero asset is not a WebP image')
     css = V3_CSS.read_text().replace('__V3_HERO_DATA_URI__', 'data:image/webp;base64,' + hero_b64)
-    css += '\n' + V3_LUXURY_CSS.read_text()
     if '__V3_HERO_DATA_URI__' in css:
         raise ValueError('Anderson v3 hero placeholder was not resolved')
     js = V3_JS.read_text()
-    header_anchor = "    right.appendChild(meta);\n    if (switchProfile) {"
-    header_fixed = "    right.appendChild(meta);\n    if (activeProfile) right.appendChild(activeProfile);\n    if (switchProfile) {"
-    if header_anchor not in js:
-        raise ValueError('Anderson v3 header composition anchor is missing')
-    js = js.replace(header_anchor, header_fixed, 1)
     style_tag = '\n<style id="anderson-v3-reference-layout">\n' + css + '\n</style>\n'
     script_tag = '\n<script id="anderson-v3-reference-layout-runtime">\n' + js + '\n</script>\n'
 
