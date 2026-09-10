@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-// Signed remote-update discovery and manually-triggered verified OTA install.
+// v2.0.4: signed discovery plus manually-triggered verified remote OTA install.
 String remoteUpdateStatusJson(const char* currentVersion);
 String remoteUpdateCheckJson(const char* currentVersion);
 String remoteUpdateInstallJson(const char* currentVersion);
