@@ -1,0 +1,22 @@
+name: Anderson v3.0.1 Retention Cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/anderson-v3.0.1-cleanup.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce Anderson current-plus-one retention
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEAN_RELEASES: '1'
+        run: bash .github/scripts/anderson-retention.sh
