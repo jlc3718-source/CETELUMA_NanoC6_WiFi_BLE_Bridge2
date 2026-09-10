@@ -8,7 +8,7 @@ bool Scheduler::inRunWindow(const tm& l) const{
   if(a==b)return true;if(a<b)return m>=a&&m<b;return m>=a||m<b;
 }
 Theme Scheduler::resolve(const tm& l){
-  Theme normal;normal.name="Warm White";normal.effect=Effect::Jump;normal.colors[0]=0xFFF1C7;normal.colorCount=1;
+  Theme normal;normal.name="Warm White";normal.effect=Effect::Jump;normal.colors[0]=0xFFDA7F;normal.colorCount=1;
   if(!cfg->schedulerEnabled)return normal;
   std::vector<size_t> exact,window,monthly,seasonal;
   for(size_t i=0;i<EVENT_COUNT;i++){if(!enabled(i))continue;const auto&e=EVENTS[i];if(eventActiveOn(i,l)){if(e.rule==RuleType::Month){if(e.kind==EventKind::Seasonal)seasonal.push_back(i);else monthly.push_back(i);}else exact.push_back(i);}else if(eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays))window.push_back(i);}
