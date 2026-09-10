@@ -38,7 +38,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="1.1.11";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.0";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -94,6 +94,43 @@ static String scheduleStoreRaw(){return customFileRead("/custom_schedules.json")
 static uint32_t nextStoredId(JsonArray arr,const char prefix){uint32_t maxId=0;for(JsonObject o:arr){String id=o["id"].as<String>();if(id.length()>1&&id[0]==prefix){uint32_t n=id.substring(1).toInt();if(n>maxId)maxId=n;}}return maxId+1;}
 static bool jsonArrayValid(const String& raw){JsonDocument d;return !deserializeJson(d,raw)&&d.is<JsonArray>();}
 static void migrateLegacyCustomStorage(){String lights=presetStoreRaw();if(!jsonArrayValid(lights))customFileWrite("/custom_lights.json","[]");String schedules=scheduleStoreRaw();if(!jsonArrayValid(schedules))customFileWrite("/custom_schedules.json","[]");}
+
+// v2.0 Home favorite baseline: all built-in holidays, and only holidays.
+// Apply once to existing NVS so an OTA upgrade changes the live device rather than
+// merely changing fresh-install defaults. After migration, favorites remain user-editable.
+static uint64_t holidayFavoriteMask(){
+  uint64_t mask=0;
+  for(size_t i=0;i<EVENT_COUNT&&i<64;i++)if(EVENTS[i].kind==EventKind::Holiday)mask|=(1ULL<<i);
+  return mask;
+}
+static bool migrateV2HomeFavorites(){
+  Preferences marker;
+  if(!marker.begin("anderson",true))return false;
+  uint8_t revision=marker.getUChar("homefavrev",0);
+  marker.end();
+  if(revision>=2)return true;
+
+  // Clear custom-show favorites once so Home starts with holiday favorites only.
+  JsonDocument presets;
+  if(deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;
+  bool customChanged=false;
+  for(JsonObject p:presets.as<JsonArray>()){
+    if(p["favorite"]|false){p["favorite"]=false;customChanged=true;}
+  }
+  if(customChanged){String out;serializeJson(presets,out);if(!customFileWrite("/custom_lights.json",out))return false;}
+
+  const uint64_t favorites=holidayFavoriteMask();
+  Preferences prefs;
+  if(!prefs.begin("anderson",false))return false;
+  prefs.putULong64("favorite",favorites);
+  bool favoriteOk=prefs.getULong64("favorite",0)==favorites;
+  if(favoriteOk)prefs.putUChar("homefavrev",2);
+  bool markerOk=favoriteOk&&prefs.getUChar("homefavrev",0)>=2;
+  prefs.end();
+  if(!markerOk)return false;
+  store.get().favoriteMask=favorites;
+  return true;
+}
 static bool storageSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
 
 static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){
@@ -365,7 +402,7 @@ void setupRoutes(){
 
 void setup(){
   Serial.begin(115200);delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
-  store.begin();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady)migrateLegacyCustomStorage();else Serial.println("Anderson NVS persistent storage self-test failed");loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();if(!migrateV2HomeFavorites())Serial.println("Anderson v2.0 Home favorites migration pending");}else Serial.println("Anderson NVS persistent storage self-test failed");loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFF1C7;runningTheme.colorCount=1;
   setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
