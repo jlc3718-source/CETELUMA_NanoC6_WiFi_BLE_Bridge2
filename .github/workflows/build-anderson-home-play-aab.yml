@@ -19,10 +19,8 @@ jobs:
           gradle-version: '8.11.1'
       - name: Extract project
         run: |
-          rm -rf build_source
-          mkdir build_source
+          rm -rf build_source && mkdir build_source
           unzip -q Anderson_Home_Complete_Project.zip -d build_source
-          test -f build_source/Anderson_Home_Complete_Project/android/settings.gradle.kts
       - name: Configure Android release
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: |
@@ -30,40 +28,29 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-          p=Path('app/build.gradle.kts')
-          s=p.read_text()
-          s=re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "com.jlc3718.anderson"', s)
+          p=Path('app/build.gradle.kts'); s=p.read_text()
           s=re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "com.jlc3718.anderson"', s)
           s=re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 2', s)
           s=re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.0.1"', s)
           if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
               needle='    buildFeatures { viewBinding = false }\n'
-              repl=needle+'    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = "17" }\n'
-              s=s.replace(needle,repl,1)
+              s=s.replace(needle, needle+'    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = "17" }\n',1)
           p.write_text(s)
-          m=Path('app/src/main/AndroidManifest.xml')
-          x=m.read_text()
-          if 'android:icon=' in x:
-              x=re.sub(r'android:icon="[^"]+"', 'android:icon="@drawable/anderson_launcher"', x)
-          else:
-              x=x.replace('<application', '<application android:icon="@drawable/anderson_launcher"', 1)
-          if 'android:roundIcon=' in x:
-              x=re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@drawable/anderson_launcher"', x)
-          else:
-              x=x.replace('<application', '<application android:roundIcon="@drawable/anderson_launcher"', 1)
+          m=Path('app/src/main/AndroidManifest.xml'); x=m.read_text()
+          if 'android:icon=' in x: x=re.sub(r'android:icon="[^"]+"','android:icon="@drawable/anderson_launcher"',x)
+          else: x=x.replace('<application','<application android:icon="@drawable/anderson_launcher"',1)
+          if 'android:roundIcon=' in x: x=re.sub(r'android:roundIcon="[^"]+"','android:roundIcon="@drawable/anderson_launcher"',x)
+          else: x=x.replace('<application','<application android:roundIcon="@drawable/anderson_launcher"',1)
           m.write_text(x)
           PY
           mkdir -p app/src/main/res/drawable-nodpi
           cp ../../../anderson_launcher.jpg app/src/main/res/drawable-nodpi/anderson_launcher.jpg
           cat app/build.gradle.kts
-          cat app/src/main/AndroidManifest.xml
       - name: Build release AAB
         working-directory: build_source/Anderson_Home_Complete_Project/android
         run: gradle --no-daemon bundleRelease
       - name: Collect AAB
-        run: |
-          cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/bundle/release/app-release.aab Anderson-Home-1.0.1-unsigned.aab
-          ls -lh Anderson-Home-1.0.1-unsigned.aab
+        run: cp build_source/Anderson_Home_Complete_Project/android/app/build/outputs/bundle/release/app-release.aab Anderson-Home-1.0.1-unsigned.aab
       - uses: actions/upload-artifact@v4
         with:
           name: Anderson-Home-1.0.1-Play-AAB
