@@ -1,0 +1,84 @@
+name: Prepare Anderson Home v2.0.6
+on:
+  push:
+    branches: ['codex/anderson-v2-0-6-auto-ota-ui']
+    paths: ['.github/workflows/v206-bootstrap.yml']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply v2.0.6 automatic OTA and UI fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/src/RemoteUpdate.cpp')
+          s=p.read_text()
+          s=s.replace('static constexpr const char* OTA_NVS="anderson-ota";','static constexpr const char* OTA_NVS="anderson-ota";\nstatic constexpr uint32_t OTA_AUTO_FIRST_CHECK_MS=60UL*1000UL;\nstatic constexpr uint32_t OTA_AUTO_INTERVAL_MS=15UL*60UL*1000UL;')
+          s=s.replace('static bool rebootRequested=false;\nstatic String lastInstallMessage;','static bool rebootRequested=false;\nstatic String lastInstallMessage;\nstatic bool autoTimerStarted=false;\nstatic uint32_t autoNextCheckAt=0;')
+          s=s.replace('d["updateAvailable"]=last.updateAvailable;d["autoInstall"]=false;d["downloadEnabled"]=true;', 'd["updateAvailable"]=last.updateAvailable;d["autoInstall"]=true;d["autoCheckMinutes"]=OTA_AUTO_INTERVAL_MS/60000UL;d["downloadEnabled"]=true;')
+          old='String remoteUpdateInstallJson(const char*current){rebootRequested=false;if(!fetchVerifiedManifest(current))return statusJson(current);if(!last.updateAvailable){last.ok=false;last.message="No newer signed Anderson firmware is available to install";return statusJson(current);}downloadAndStage();return statusJson(current);}\nbool remoteUpdateConsumeRebootRequest(){bool r=rebootRequested;rebootRequested=false;return r;}'
+          new='String remoteUpdateInstallJson(const char*current){rebootRequested=false;if(!fetchVerifiedManifest(current))return statusJson(current);if(!last.updateAvailable){last.ok=false;last.message="No newer signed Anderson firmware is available to install";return statusJson(current);}downloadAndStage();return statusJson(current);}\n\nvoid remoteUpdateAutoLoop(const char*current){\n  if(rebootRequested||last.installing)return;\n  uint32_t now=millis();\n  if(!autoTimerStarted){autoTimerStarted=true;autoNextCheckAt=now+OTA_AUTO_FIRST_CHECK_MS;return;}\n  if((int32_t)(now-autoNextCheckAt)<0)return;\n  autoNextCheckAt=now+OTA_AUTO_INTERVAL_MS;\n  if(WiFi.status()!=WL_CONNECTED){autoNextCheckAt=now+60000UL;return;}\n  if(!fetchVerifiedManifest(current))return;\n  if(last.updateAvailable)downloadAndStage();\n}\n\nbool remoteUpdateConsumeRebootRequest(){bool r=rebootRequested;rebootRequested=false;return r;}'
+          if old not in s: raise SystemExit('RemoteUpdate.cpp install tail anchor not found')
+          s=s.replace(old,new)
+          p.write_text(s)
+          p=Path('firmware/src/main.cpp')
+          s=p.read_text()
+          old='void loop(){\n  server.handleClient();ble.loop();\n  if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}'
+          new='void loop(){\n  server.handleClient();ble.loop();\n  if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}\n  if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}'
+          if old not in s: raise SystemExit('main.cpp loop anchor not found')
+          s=s.replace(old,new)
+          p.write_text(s)
+          p=Path('firmware/web/index.html')
+          s=p.read_text()
+          old='<label class="row"><input id="masterPower" type="checkbox" checked><span class="small">On</span></label>'
+          new='<div class="row"><button id="homePowerOn" class="btn primary" type="button">On</button><button id="homePowerOff" class="btn" type="button">Off</button></div>'
+          if old not in s: raise SystemExit('Home power checkbox anchor not found')
+          s=s.replace(old,new)
+          old="$('masterPower').addEventListener('change',e=>manual({power:e.target.checked}));$('brightness')"
+          new="$('homePowerOn').addEventListener('click',()=>manual({power:true}));$('homePowerOff').addEventListener('click',()=>manual({power:false}));$('brightness')"
+          if old not in s: raise SystemExit('Home power listener anchor not found')
+          s=s.replace(old,new)
+          old="power=s.power??power;brightness=s.brightness??brightness;speed=s.speed??speed;$('masterPower').checked=power;$('brightness').value=brightness;"
+          new="power=s.power??power;brightness=s.brightness??brightness;speed=s.speed??speed;$('homePowerOn').classList.toggle('primary',power);$('homePowerOff').classList.toggle('primary',!power);$('brightness').value=brightness;"
+          if old not in s: raise SystemExit('Home power state anchor not found')
+          s=s.replace(old,new)
+          old="function addColor(v='#FFFFFF'){if(colors.children.length>=8)return;const inp=document.createElement('button');inp.type='button';inp.className='colorChip';setChipColor(inp,v);inp.onclick=()=>openRgbWheel(inp);inp.addEventListener('contextmenu',e=>{e.preventDefault();if(colors.children.length>1)inp.remove()});colors.appendChild(inp)}"
+          new="function addColor(v='#FFFFFF'){if(colors.children.length>=8)return;const slot=document.createElement('div');slot.className='row';slot.style.gap='4px';const inp=document.createElement('button');inp.type='button';inp.className='colorChip';setChipColor(inp,v);inp.onclick=()=>openRgbWheel(inp);const remove=document.createElement('button');remove.type='button';remove.className='btn danger';remove.textContent='×';remove.title='Remove this event color';remove.setAttribute('aria-label','Remove this event color');remove.onclick=()=>{if(colors.children.length<=1){status('An event must keep at least one color.');return}slot.remove()};slot.append(inp,remove);colors.appendChild(slot)}"
+          if old not in s: raise SystemExit('Event addColor anchor not found')
+          s=s.replace(old,new)
+          old='<div id="remoteFwStatus" class="sub" style="margin-top:6px">Remote updates are signature-checked before download and SHA-256 verified before the inactive OTA slot is selected.</div>'
+          new='<div id="remoteFwStatus" class="sub" style="margin-top:6px">Automatic signed updates are enabled. The NanoC6 checks every 15 minutes, verifies the signature and SHA-256, installs to the inactive OTA slot, then reboots. Manual Check/Install remain available as fallback.</div>'
+          if old not in s: raise SystemExit('Remote status copy anchor not found')
+          s=s.replace(old,new)
+          p.write_text(s)
+          PY
+          python tools/release.py bump
+          test "$(cat FIRMWARE_VERSION.txt)" = "2.0.6"
+          python tools/release.py prepare
+          python - <<'PY'
+          from pathlib import Path
+          r=Path('firmware/src/RemoteUpdate.cpp').read_text(); m=Path('firmware/src/main.cpp').read_text(); w=Path('firmware/web/index.html').read_text()
+          assert 'OTA_AUTO_INTERVAL_MS=15UL*60UL*1000UL' in r
+          assert 'd["autoInstall"]=true' in r
+          assert 'void remoteUpdateAutoLoop(const char*current)' in r
+          assert 'remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION)' in m
+          assert 'id="masterPower"' not in w and 'homePowerOn' in w and 'homePowerOff' in w
+          assert "remove.title='Remove this event color'" in w
+          assert 'An event must keep at least one color.' in w
+          assert 'Automatic signed updates are enabled.' in w
+          PY
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add FIRMWARE_VERSION.txt README.md firmware/src/RemoteUpdate.cpp firmware/src/main.cpp firmware/web/index.html
+          git commit -m 'Anderson Home v2.0.6 automatic OTA and UI fixes'
+          git push
