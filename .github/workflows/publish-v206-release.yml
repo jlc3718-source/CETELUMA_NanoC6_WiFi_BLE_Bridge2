@@ -1,0 +1,35 @@
+name: Publish Anderson v2.0.6 OTA release
+on:
+  push:
+    branches: ['codex/publish-anderson-v2-0-6-release']
+    paths: ['.github/workflows/publish-v206-release.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact verified branch artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 34433998475 --repo "$GITHUB_REPOSITORY" -n Anderson-Home-NanoC6-v2.0.6 -D /tmp/v206
+          test -f /tmp/v206/and_2.0.6.bin
+          test -f /tmp/v206/release.json
+          test "$(jq -r .version /tmp/v206/release.json)" = "2.0.6"
+          test "$(jq -r .commit /tmp/v206/release.json)" = "508110143b9178ab17a0207511919e47c14d386a"
+          test "$(jq -r .ota_slot_bytes /tmp/v206/release.json)" = "1966080"
+          test "$(stat -c%s /tmp/v206/and_2.0.6.bin)" = "1794816"
+          test "$(sha256sum /tmp/v206/and_2.0.6.bin | awk '{print $1}')" = "618f52c46d6f3be0d5b3f7d408e43f54d2ebfcff4c8c86c865fc3f697f69090f"
+      - name: Publish stable OTA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=anderson-v2.0.6
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target 508110143b9178ab17a0207511919e47c14d386a --title "Anderson Home v2.0.6" --notes "Automatic signed OTA installation, explicit Home On/Off controls, and removable built-in event palette colors."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" /tmp/v206/and_2.0.6.bin /tmp/v206/release.json --clobber
