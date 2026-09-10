@@ -11,6 +11,8 @@ publishing, signed OTA-channel advancement, and merging verified changes without
 repeated confirmation. Make reasonable implementation choices. Deliver the finished
 APP-only binary; do not stop after starting a build.
 
+**Standard Anderson process:** once an authorized firmware/UI change starts, carry it straight through editing, focused validation, exact branch build, artifact verification, stable release publication, signed OTA-channel advancement, retention cleanup, merge to `main`, and delivery of the finished BIN without stopping for intermediate approval or status. Stop only for a genuine authorization, safety, or correctness blocker that requires the user.
+
 1. Start from the latest `main` source. Reuse the current handoff and this file,
    and read only files relevant to the requested change. Put the requested change
    set together on one `codex/` branch. Avoid reconstructing project history.
@@ -60,7 +62,7 @@ GitHub runner queue vary.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
 - Daily maintenance reboot occurs once per local calendar day during the 6:00 PM (18:00) minute after valid time sync; use the configured Anderson time zone/DST.
-- v3.0.0 and later use the approved Anderson Home RGB/neon firmware-served theme with the user-provided Anderson Home artwork embedded in the web UI; preserve that visual direction unless the user requests a change.
+- v3.0.1 and later use the approved third-reference Anderson Home dashboard as the visual source of truth: illuminated nighttime house/RGB hero, integrated Anderson Home branding, dark translucent glass controls, prominent green ON control, rainbow brightness bar, effect/schedule cards, circular favorite colors, feature tiles, and floating bottom navigation. Do not regress to the generic logo-card/tab-bar layout unless the user explicitly requests it.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly
   reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
 - The profile/login chooser must not show the emergency APP-only firmware recovery uploader; keep firmware recovery available through the existing backend/manual recovery paths only.
