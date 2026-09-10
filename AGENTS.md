@@ -60,6 +60,7 @@ GitHub runner queue vary.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
 - Daily maintenance reboot occurs once per local calendar day during the 6:00 PM (18:00) minute after valid time sync; use the configured Anderson time zone/DST.
+- v3.0.0 and later use the approved Anderson Home RGB/neon firmware-served theme with the user-provided Anderson Home artwork embedded in the web UI; preserve that visual direction unless the user requests a change.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly
   reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
 - The profile/login chooser must not show the emergency APP-only firmware recovery uploader; keep firmware recovery available through the existing backend/manual recovery paths only.
