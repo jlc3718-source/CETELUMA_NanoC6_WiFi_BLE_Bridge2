@@ -6,29 +6,31 @@ The canonical source is `firmware/`; the Android app displays its web UI.
 ## Fast delivery
 
 The user requests minimal time from a change request to a finished BIN and
-authorizes routine edits, commits, build branches, builds, and downloads without
-repeated confirmation. Make reasonable implementation choices. Deliver the
-finished APP-only binary; do not stop after starting a build.
+authorizes routine edits, commits, build branches, builds, artifact downloads,
+and merging verified changes without repeated confirmation. Make reasonable
+implementation choices. Deliver the finished APP-only binary; do not stop after
+starting a build.
 
-1. Reuse the checkout. Fetch `main` once; if resuming an unfinished branch, retain
-   that branch and check its relationship to `main`. Read only files relevant to
-   the requested change. Avoid rediscovering this project through chat/file searches.
-2. Edit, then run `python tools/release.py bump` once per new firmware revision.
-3. Run `python tools/release.py prepare`. It checks versions, JavaScript, HTML IDs,
-   and OTA layout and generates the compressed UI. Add focused behavior checks only
-   for changed logic. Avoid repeated broad reviews or browser work for simple edits.
-4. Commit all related edits together to a `codex/` branch. Its push starts the build;
-   a PR is not needed just to trigger compilation. Prefer GitHub Actions over a cold
-   local PlatformIO setup. The local `payload --base COMMIT` command emits a GitHub
-   create-tree payload if only the connected GitHub tools have write access.
-5. Follow the run for the exact submitted commit. Once it succeeds, obtain its
-   artifact URL and digest. Use `tools/release.py download --url URL --digest DIGEST
-   --commit SHA --output DIR`. The ZIP includes the APP-only image and a manifest.
-   For this public repo, nightly.link can resolve the GitHub suite/artifact URL
-   without browser sign-in; verify the digest returned by GitHub.
-6. Save the BIN as a user deliverable and provide its link with the APP-only
-   Settings → Firmware Update instruction. The user performs device installation
-   unless separately requested. Keep the completion brief.
+1. Start from the latest `main` source. Reuse the current handoff and this file,
+   and read only files relevant to the requested change. Put the requested change
+   set together on one `codex/` branch. Avoid reconstructing project history.
+2. Keep changes focused. Run `python tools/release.py bump` once unless the user
+   supplied a version, then `python tools/release.py prepare` plus focused checks
+   for the changed behavior. Do not add unrelated refactors or dependency changes.
+3. Push the exact change branch once the focused checks pass. Its push starts the
+   cached GitHub Actions firmware build. Avoid duplicate builds and do not clear a
+   working dependency/object cache.
+4. Follow the build for the exact submitted revision. Verify the artifact manifest,
+   version, SHA-256/digest, embedded UI/source provenance, and OTA-slot fit.
+5. As soon as that exact branch build succeeds, download and give the user the
+   verified APP-only BIN immediately. Do not wait for an identical `main` rebuild.
+6. Merge the verified change into `main` as part of the same task. If the merge
+   changes firmware source, compiler inputs, generated UI inputs, dependencies, or
+   other build inputs relative to the verified branch revision, rebuild and verify
+   the resulting revision. Otherwise do not repeat an identical build.
+7. Save the BIN as a user deliverable and provide the Settings → Firmware Update
+   instruction unless remote installation is explicitly part of the requested task.
+   Keep completion brief.
 
 Skip optional checks after the changed behavior, successful compile, correct
 artifact, and OTA fit have been established. Do not promise a fixed turnaround;
@@ -46,6 +48,7 @@ change complexity and the GitHub runner queue vary.
 
 - `firmware/web/index.html`: interface, previews, controls, profile UI.
 - `firmware/src/main.cpp`: API routes, auth, NVS custom data, OTA, main loop.
+- `firmware/src/RemoteUpdate.cpp`: signed remote-update discovery/download/install.
 - `firmware/src/BleController.cpp`: dual-controller BLE and software effects.
 - `firmware/src/Scheduler.cpp`, `EventCatalog.cpp`: timing/event resolution.
 - `firmware/src/SettingsStore.cpp`: persistent device settings.
