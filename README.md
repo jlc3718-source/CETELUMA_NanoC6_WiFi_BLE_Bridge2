@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v2.0.9**.
+Current firmware: **v2.0.10**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 
@@ -8,7 +8,7 @@ The repository now builds directly from the canonical `firmware/` source tree. T
 - Saved custom lighting shows appear on Home with Preview, Enabled, and Favorite controls; disabling a show pauses its automatic calendar runs without deleting it.
 - v2.0 resets the Home favorites baseline once on upgrade so every built-in Holiday is favorited and Awareness/Seasonal/custom-show favorites are cleared; favorites remain user-editable afterward.
 - v2.0.0a trims production-only debug/diagnostic code and legacy non-ELK BLE command families while preserving the Anderson ELK/Lotus Lantern control path and saved-data keys.
-- Optional, independent four-digit Shirley/Kelly/Jason PINs are verified by the NanoC6 with role-limited API sessions; Shirley and Kelly receive Home/Events access while Jason retains all controls.
+- Optional, independent four-digit Shirley/Jason PINs are verified by the NanoC6 with role-limited API sessions; Shirley receives Home/Events access while Jason retains all controls.
 - Routine firmware uploads require Jason's active session when PIN protection is enabled.
 - The independent APP-only recovery page accepts Jason's PIN without depending on the main profile interface and disables PIN protection after successful recovery.
 - The editable UI is `firmware/web/index.html`; CI gzip-compresses it before compile.

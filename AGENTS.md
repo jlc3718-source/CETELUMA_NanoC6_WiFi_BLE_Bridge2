@@ -55,7 +55,7 @@ GitHub runner queue vary.
 ## Preserve these unless the user requests a change
 
 - Existing Wi-Fi defaults/connection behavior, BLE frames/GATT, and partition map.
-- Shirley/Kelly/Jason independent PINs, access rules, and protected recovery.
+- Shirley/Jason independent PINs, access rules, and protected recovery.
 - Saved NVS key names and formats, events, colors, names, and effects.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
