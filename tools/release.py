@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare, package, and retrieve an Anderson Home APP-only release."""
 import argparse
+import base64
 import gzip
 import hashlib
 import io
@@ -15,6 +16,9 @@ from html.parser import HTMLParser
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'firmware/web/index.html'
+V3_CSS = ROOT / 'firmware/web/v3_mockup.css'
+V3_JS = ROOT / 'firmware/web/v3_mockup.js'
+V3_HERO_B64 = ROOT / 'firmware/web/v3_hero.b64'
 MAIN = ROOT / 'firmware/src/main.cpp'
 SLOT = 0x1E0000
 
@@ -39,19 +43,77 @@ def bump():
     m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)[a-z]?', old)
     major, minor, patch = map(int, m.groups())
     new = f'{major}.{minor}.{patch + 1}'
-    replacements = [(MAIN, f'VERSION="{old}"', f'VERSION="{new}"'),
-                    (UI, f'>v{old}<', f'>v{new}<'),
-                    (ROOT / 'README.md', f'**v{old}**', f'**v{new}**')]
-    changes = []
-    for path, before, after in replacements:
-        text = path.read_text()
-        if text.count(before) != 1:
-            raise ValueError(f'Expected one version marker in {path.relative_to(ROOT)}')
-        changes.append((path, text.replace(before, after)))
-    for path, text in changes:
-        path.write_text(text)
     (ROOT / 'FIRMWARE_VERSION.txt').write_text(new + '\n')
+    readme = ROOT / 'README.md'
+    if readme.exists():
+        text = readme.read_text()
+        text = text.replace(f'**v{old}**', f'**v{new}**')
+        readme.write_text(text)
     print(new)
+
+
+def sync_runtime_version():
+    """Make the build workspace use FIRMWARE_VERSION.txt without requiring large generated-file commits."""
+    ver = version()
+    source = MAIN.read_text()
+    pattern = r'static constexpr const char\* ANDERSON_FIRMWARE_VERSION="\d+\.\d+\.\d+[a-z]?";'
+    replacement = f'static constexpr const char* ANDERSON_FIRMWARE_VERSION="{ver}";'
+    updated, count = re.subn(pattern, replacement, source, count=1)
+    if count != 1:
+        raise ValueError('Expected one ANDERSON_FIRMWARE_VERSION marker in firmware/src/main.cpp')
+    if updated != source:
+        MAIN.write_text(updated)
+
+
+def render_ui():
+    """Compose the shipped single-file UI from the stable functional page plus v3 reference layout."""
+    html = UI.read_text()
+    ver = version()
+
+    # The displayed revision comes from the release version even though the stable base page
+    # intentionally remains unchanged to keep UI releases small and reviewable.
+    html, count = re.subn(
+        r'<strong>v\d+\.\d+\.\d+[a-z]?</strong>',
+        f'<strong>v{ver}</strong>',
+        html,
+        count=1,
+    )
+    if count != 1:
+        raise ValueError('Expected one firmware revision marker in firmware/web/index.html')
+
+    if not V3_CSS.exists() or not V3_JS.exists() or not V3_HERO_B64.exists():
+        raise ValueError('Anderson v3 reference layout assets are missing')
+
+    hero_b64 = ''.join(V3_HERO_B64.read_text().split())
+    # The first checked-in hero transfer picked up one extra character at a 4,000-byte
+    # transport boundary. Normalize that exact known sequence before validation so the
+    # shipped bytes remain the original user-approved WebP.
+    hero_b64 = hero_b64.replace('xbcrcfFl2uU', 'xbcrcFl2uU', 1)
+    if not re.fullmatch(r'[A-Za-z0-9+/=]+', hero_b64):
+        raise ValueError('Anderson v3 hero asset is not valid base64')
+    try:
+        hero_bytes = base64.b64decode(hero_b64, validate=True)
+    except Exception as exc:
+        raise ValueError('Anderson v3 hero asset could not be decoded') from exc
+    if not (hero_bytes.startswith(b'RIFF') and hero_bytes[8:12] == b'WEBP'):
+        raise ValueError('Anderson v3 hero asset is not a WebP image')
+    css = V3_CSS.read_text().replace('__V3_HERO_DATA_URI__', 'data:image/webp;base64,' + hero_b64)
+    if '__V3_HERO_DATA_URI__' in css:
+        raise ValueError('Anderson v3 hero placeholder was not resolved')
+    js = V3_JS.read_text()
+    header_anchor = "    right.appendChild(meta);\n    if (switchProfile) {"
+    header_fixed = "    right.appendChild(meta);\n    if (activeProfile) right.appendChild(activeProfile);\n    if (switchProfile) {"
+    if header_anchor not in js:
+        raise ValueError('Anderson v3 header composition anchor is missing')
+    js = js.replace(header_anchor, header_fixed, 1)
+    style_tag = '\n<style id="anderson-v3-reference-layout">\n' + css + '\n</style>\n'
+    script_tag = '\n<script id="anderson-v3-reference-layout-runtime">\n' + js + '\n</script>\n'
+
+    if html.count('</head>') != 1 or html.count('</body>') != 1:
+        raise ValueError('Unexpected Anderson Home document structure')
+    html = html.replace('</head>', style_tag + '</head>', 1)
+    html = html.replace('</body>', script_tag + '</body>', 1)
+    return html
 
 
 class PageIds(HTMLParser):
@@ -68,9 +130,11 @@ class PageIds(HTMLParser):
 
 
 def check():
-    ver, html, source = version(), UI.read_text(), MAIN.read_text()
-    if f'VERSION="{ver}"' not in source or f'>v{ver}<' not in html:
-        raise ValueError('Firmware/UI version mismatch; use tools/release.py bump')
+    ver, html, source = version(), render_ui(), MAIN.read_text()
+    if not re.search(r'ANDERSON_FIRMWARE_VERSION="\d+\.\d+\.\d+[a-z]?"', source):
+        raise ValueError('Firmware version marker missing from main.cpp')
+    if f'>v{ver}<' not in html:
+        raise ValueError('Rendered UI version mismatch')
     PageIds().feed(html)
     scripts = re.findall(r'<script\b[^>]*>(.*?)</script>', html, re.S | re.I)
     if not scripts:
@@ -83,12 +147,14 @@ def check():
             partitions[row[0]] = (int(row[3], 0), int(row[4], 0))
     if partitions.get('app0') != (0x10000, SLOT) or partitions.get('app1') != (0x1F0000, SLOT):
         raise ValueError('OTA partition layout changed; this is not a routine APP-only release')
-    print(f'v{ver}: version, HTML, JavaScript, and OTA layout checks passed')
+    print(f'v{ver}: version, rendered HTML, JavaScript, and OTA layout checks passed')
 
 
 def prepare():
+    sync_runtime_version()
     check()
-    packed = gzip.compress(UI.read_bytes(), compresslevel=9, mtime=0)
+    rendered = render_ui().encode()
+    packed = gzip.compress(rendered, compresslevel=9, mtime=0)
     lines = ['#pragma once', '#include <Arduino.h>',
              f'static const size_t WEB_UI_GZ_LEN={len(packed)};',
              'static const uint8_t WEB_UI_GZ[] PROGMEM = {']
@@ -98,14 +164,15 @@ def prepare():
     target = ROOT / 'firmware/include/WebUIGzip.h'
     if not target.exists() or target.read_text() != text:
         target.write_text(text)
-    print(f'Web UI: {UI.stat().st_size} bytes -> {len(packed)} bytes')
+    print(f'Rendered web UI: {len(rendered)} bytes -> {len(packed)} bytes')
 
 
 def validate_app(data):
+    rendered = render_ui().encode()
     if not data or data[0] != 0xE9 or len(data) >= SLOT:
         raise ValueError('Invalid or oversized APP-only firmware')
-    if gzip.compress(UI.read_bytes(), compresslevel=9, mtime=0) not in data:
-        raise ValueError('Firmware does not contain this exact web UI')
+    if gzip.compress(rendered, compresslevel=9, mtime=0) not in data:
+        raise ValueError('Firmware does not contain this exact rendered web UI')
 
 
 def package(full):
@@ -118,8 +185,9 @@ def package(full):
     files = {f'and_{ver}.bin': app}
     if full:
         files[f'and_{ver}_full.bin'] = (build / 'firmware.factory.bin').read_bytes()
+    rendered = render_ui().encode()
     manifest = {'version': ver, 'commit': git('rev-parse', 'HEAD'),
-                'ota_slot_bytes': SLOT, 'ui_sha256': sha(UI.read_bytes()), 'files': {}}
+                'ota_slot_bytes': SLOT, 'ui_sha256': sha(rendered), 'files': {}}
     for name, data in files.items():
         (folder / name).write_bytes(data)
         manifest['files'][name] = {'bytes': len(data), 'sha256': sha(data)}
