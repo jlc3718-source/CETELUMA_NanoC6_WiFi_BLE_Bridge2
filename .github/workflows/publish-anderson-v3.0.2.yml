@@ -1,0 +1,64 @@
+name: Publish Anderson Home v3.0.2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-anderson-v3.0.2.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACT_ID: '10176630980'
+      ARTIFACT_ZIP_SHA256: 'df8f1b9034a456c5a84c9214058dceec81db810173735df72694c5029c1a45a8'
+      TARGET_COMMIT: '9b9db048eed1c04af4b374a948c50508030a2dd5'
+      BIN_SHA256: '67f9585b043014f0b8085309da2058d1cfa694154b1876adb5ab299b0e2f0655'
+      BIN_BYTES: '1826192'
+      TAG: 'anderson-v3.0.2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact verified branch artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > /tmp/anderson.zip
+          echo "${ARTIFACT_ZIP_SHA256}  /tmp/anderson.zip" | sha256sum -c -
+          mkdir -p /tmp/anderson
+          unzip -q /tmp/anderson.zip -d /tmp/anderson
+      - name: Verify exact firmware and provenance
+        run: |
+          test "$(stat -c %s /tmp/anderson/and_3.0.2.bin)" = "${BIN_BYTES}"
+          echo "${BIN_SHA256}  /tmp/anderson/and_3.0.2.bin" | sha256sum -c -
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          m=json.loads(Path('/tmp/anderson/release.json').read_text())
+          assert m['version']=='3.0.2'
+          assert m['commit']==os.environ['TARGET_COMMIT']
+          f=m['files']['and_3.0.2.bin']
+          assert f['bytes']==int(os.environ['BIN_BYTES'])
+          assert f['sha256']==os.environ['BIN_SHA256']
+          assert int(m['ota_slot_bytes'])==0x1E0000
+          PY
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -z "$(gh release view "${TAG}" --json tagName --jq .tagName 2>/dev/null || true)"
+          gh release create "${TAG}" \
+            /tmp/anderson/and_3.0.2.bin \
+            /tmp/anderson/release.json \
+            --target "${TARGET_COMMIT}" \
+            --title 'Anderson Home v3.0.2' \
+            --notes 'Blue-forward luxury refinement of the approved Anderson Home dashboard: deep navy glass, electric blue/cyan controls, indigo/magenta accents, richer depth and edge lighting, with controller behavior, profiles/PINs, Wi-Fi, BLE, effects, schedules, saved settings, recovery, and OTA behavior preserved.' \
+            --latest
+      - name: Retain newest release plus one backup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEAN_RELEASES: '1'
+        run: bash .github/scripts/anderson-retention.sh
