@@ -1,0 +1,147 @@
+name: Prepare Anderson Home v2.0.1 palette correction
+
+on:
+  push:
+    branches: ['codex/anderson-v2-0-1-color-correction']
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply scoped lighting palette changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import math,re
+
+          root=Path('.')
+          palette=[
+          ('Red','FF0000','FF0000'),('Orange','FF9500','FF3000'),('Yellow','FFFF00','FFFF00'),('Gold','FACC15','F18900'),('Amber','F59E0B','E44300'),
+          ('Green','22C55E','00FF00'),('Mint / light green','86EFAC','2AD555'),('Blue','2563EB','0000FF'),('Sky blue','0EA5E9','004BC6'),('Light blue','93C5FD','377CF9'),
+          ('Cyan','32D7D5','00FFFF'),('Teal','14B8A6','00664D'),('Purple','7E22CE','23018C'),('Lavender','C4B5FD','7A62F9'),('Magenta','FF00FF','FF00FF'),
+          ('Rose','FF2D55','FF020C'),('Pink','FF69B4','FF1560'),('Light pink','F9A8D4','EF4F98'),('White','FFFFFF','FFFFFF'),('Warm white','FFF1C7','FFDA7F'),
+          ('Icy white','DBEAFE','A7C8FC'),('Brown','92400E','360500'),('Dark brown','7C2D12','220200'),('Black / unlit','000000','000000')]
+          explicit={}
+          for x in ['FF3B30','EF4444','DC2626','EF233C','FF1744','E11D48']: explicit[x]='FF0000'
+          for x in ['FF9500','FF7A00','F97316','FF6B35']: explicit[x]='FF3000'
+          for x in ['34C759','22C55E','16A34A']: explicit[x]='00FF00'
+          for x in ['0A84FF','2563EB','3B82F6']: explicit[x]='0000FF'
+          for x in ['FF0000','00FF00','0000FF','FFFF00','00FFFF','FF00FF','FFFFFF','000000']: explicit[x]=x
+          # Historical near-ties resolved toward the recognizable source family/lightness.
+          explicit.update({'A855F7':'23018C','BF5AF2':'23018C','2DD4BF':'00664D','60A5FA':'377CF9'})
+
+          def rgb(h): return tuple(int(h[i:i+2],16)/255 for i in (0,2,4))
+          def lab(h):
+              a=[]
+              for c in rgb(h): a.append(c/12.92 if c<=.04045 else ((c+.055)/1.055)**2.4)
+              r,g,b=a;x=(r*.4124564+g*.3575761+b*.1804375)/.95047;y=r*.2126729+g*.7151522+b*.072175;z=(r*.0193339+g*.119192+b*.9503041)/1.08883
+              d=6/29
+              f=lambda t:t**(1/3) if t>d**3 else t/(3*d*d)+4/29
+              fx,fy,fz=f(x),f(y),f(z);return 116*fy-16,500*(fx-fy),200*(fy-fz)
+          def de(a,b):
+              L1,a1,b1=a;L2,a2,b2=b;C1=math.hypot(a1,b1);C2=math.hypot(a2,b2);cb=(C1+C2)/2;G=.5*(1-math.sqrt(cb**7/(cb**7+25**7))) if cb else 0
+              ap1=(1+G)*a1;ap2=(1+G)*a2;cp1=math.hypot(ap1,b1);cp2=math.hypot(ap2,b2)
+              hp=lambda x,y:0 if x==0 and y==0 else math.degrees(math.atan2(y,x))%360
+              h1,h2=hp(ap1,b1),hp(ap2,b2);dL=L2-L1;dC=cp2-cp1;dh=h2-h1
+              dhp=0 if cp1*cp2==0 else (dh if abs(dh)<=180 else dh-360 if dh>180 else dh+360);dH=2*math.sqrt(cp1*cp2)*math.sin(math.radians(dhp/2));lb=(L1+L2)/2;cpb=(cp1+cp2)/2
+              hb=h1+h2 if cp1*cp2==0 else (h1+h2)/2 if abs(h1-h2)<=180 else (h1+h2+360)/2 if h1+h2<360 else (h1+h2-360)/2
+              T=1-.17*math.cos(math.radians(hb-30))+.24*math.cos(math.radians(2*hb))+.32*math.cos(math.radians(3*hb+6))-.20*math.cos(math.radians(4*hb-63));dt=30*math.exp(-((hb-275)/25)**2);rc=2*math.sqrt(cpb**7/(cpb**7+25**7)) if cpb else 0
+              sl=1+.015*(lb-50)**2/math.sqrt(20+(lb-50)**2);sc=1+.045*cpb;sh=1+.015*cpb*T;rt=-math.sin(math.radians(2*dt))*rc
+              ql,qc,qh=dL/sl,dC/sc,dH/sh;return math.sqrt(ql*ql+qc*qc+qh*qh+rt*qc*qh)
+          labs={name:lab(ref) for name,ref,out in palette}
+          def mapped(h):
+              h=h.upper()
+              if h in explicit:return explicit[h]
+              src=lab(h);name=min(palette,key=lambda x:de(src,labs[x[0]]))[0]
+              return next(out for n,ref,out in palette if n==name)
+
+          event_path=root/'firmware/src/EventCatalog.cpp';event=event_path.read_text();a=event.index('const EventDef EVENTS[] = {');b=event.index('const size_t EVENT_COUNT',a);block=event[a:b]
+          original_event_colors=set(re.findall(r'0x([0-9A-Fa-f]{6})',block))
+          block=re.sub(r'0x([0-9A-Fa-f]{6})',lambda m:'0x'+mapped(m.group(1)),block)
+          event=event[:a]+block+event[b:];event_path.write_text(event)
+          allowed={out for _,_,out in palette};final_event_colors=set(re.findall(r'0x([0-9A-Fa-f]{6})',block));assert final_event_colors<=allowed,(final_event_colors-allowed)
+
+          scheduler_path=root/'firmware/src/Scheduler.cpp';scheduler=scheduler_path.read_text().replace('0xFFF1C7','0xFFDA7F');scheduler_path.write_text(scheduler)
+          main_path=root/'firmware/src/main.cpp';main=main_path.read_text();main=main.replace('#include "Scheduler.h"','#include "Scheduler.h"\n#include "PaletteMigration.h"')
+          main=main.replace('0xFFF1C7','0xFFDA7F')
+          anchor='if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();}loadEventOverrides();'
+          assert main.count(anchor)==1
+          main=main.replace(anchor,'if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();')
+          route_anchor='  server.on("/api/firmware",HTTP_GET,[]{sendJson(firmwareJson());});'
+          assert main.count(route_anchor)==1
+          routes='''  server.on("/api/palette-migration",HTTP_GET,[]{if(!requireAdmin())return;sendJson(paletteColorMigrationStatusJson());});\n  server.on("/api/palette-migration",HTTP_POST,[]{\n    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String action=d["action"]|String("");bool ok=false;if(action=="restore")ok=restoreOriginalPaletteColors();else if(action=="apply")ok=reapplyCorrectedPaletteColors();else{server.send(400,"application/json","{\\"ok\\":false,\\"error\\":\\"Use action restore or apply\\"}");return;}if(!ok){server.send(500,"application/json","{\\"ok\\":false,\\"error\\":\\"Palette migration operation failed verification\\"}");return;}sendJson(paletteColorMigrationStatusJson());delay(250);ESP.restart();\n  });\n\n'''
+          main=main.replace(route_anchor,routes+route_anchor);main_path.write_text(main)
+
+          web_path=root/'firmware/web/index.html';web=web_path.read_text()
+          known=set(original_event_colors)|{'25A7FF','BF5AF2','FFD60A','00B4D8','FF2D92','FFF1C7'}
+          def map_script(match):
+              s=match.group(1)
+              def repl(m):
+                  h=m.group(1).upper();return '#'+mapped(h) if h in known else m.group(0)
+              return '<script>'+re.sub(r'#([0-9A-Fa-f]{6})',repl,s)+'</script>'
+          web=re.sub(r'<script>(.*?)</script>',map_script,web,flags=re.S)
+          js_palette='''const NAMED_COLOR_PALETTE=[\n  {name:'Red',reference:'#FF0000',output:'#FF0000'},{name:'Orange',reference:'#FF9500',output:'#FF3000'},{name:'Yellow',reference:'#FFFF00',output:'#FFFF00'},{name:'Gold',reference:'#FACC15',output:'#F18900'},{name:'Amber',reference:'#F59E0B',output:'#E44300'},\n  {name:'Green',reference:'#22C55E',output:'#00FF00'},{name:'Mint / light green',reference:'#86EFAC',output:'#2AD555'},{name:'Blue',reference:'#2563EB',output:'#0000FF'},{name:'Sky blue',reference:'#0EA5E9',output:'#004BC6'},{name:'Light blue',reference:'#93C5FD',output:'#377CF9'},\n  {name:'Cyan',reference:'#32D7D5',output:'#00FFFF'},{name:'Teal',reference:'#14B8A6',output:'#00664D'},{name:'Purple',reference:'#7E22CE',output:'#23018C'},{name:'Lavender',reference:'#C4B5FD',output:'#7A62F9'},{name:'Magenta',reference:'#FF00FF',output:'#FF00FF'},\n  {name:'Rose',reference:'#FF2D55',output:'#FF020C'},{name:'Pink',reference:'#FF69B4',output:'#FF1560'},{name:'Light pink',reference:'#F9A8D4',output:'#EF4F98'},{name:'White',reference:'#FFFFFF',output:'#FFFFFF'},{name:'Warm white',reference:'#FFF1C7',output:'#FFDA7F'},\n  {name:'Icy white',reference:'#DBEAFE',output:'#A7C8FC'},{name:'Brown',reference:'#92400E',output:'#360500'},{name:'Dark brown',reference:'#7C2D12',output:'#220200'},{name:'Black / unlit',reference:'#000000',output:'#000000'}\n];\nconst LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name]));\nfunction displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||c}\nfunction displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}\n'''
+          power_anchor='let power=true,brightness=100,speed=1,tick=0;'
+          assert web.count(power_anchor)==1
+          web=web.replace(power_anchor,js_palette+'\n'+power_anchor)
+          old="function paint(state,i,br,total){const colors=state.colors&&state.colors.length?state.colors:['#004BC6'],e=state.effect||'Jump'"
+          new="function paint(state,i,br,total){const rawColors=state.colors&&state.colors.length?state.colors:['#004BC6'],colors=rawColors.map(displayColor),e=state.effect||'Jump'"
+          assert web.count(old)==1
+          web=web.replace(old,new)
+          oldchip="chip.dataset.color=h;chip.style.background=h;chip.title=h+' — tap to edit';"
+          assert web.count(oldchip)==1
+          web=web.replace(oldchip,"chip.dataset.color=h;chip.style.background=displayColor(h);chip.title=displayLabel(h)+' — tap to edit';")
+          web=web.replace('b.style.background=c;','b.style.background=displayColor(c);')
+          web=web.replace('chip.style.background=color;','chip.style.background=displayColor(color);')
+          web=web.replace("b.title='Add '+c;","b.title='Add '+displayLabel(c);")
+          web=web.replace("b.title='Use '+c;","b.title='Use '+displayLabel(c);")
+          web=web.replace("b.title=(forLights?'Add ':'Use ')+c;","b.title=(forLights?'Add ':'Use ')+displayLabel(c);")
+          web_path.write_text(web)
+
+          # Focused static coverage checks before the normal release checks.
+          assert 'runPaletteColorMigration();}loadEventOverrides();' in main
+          assert main.count('server.on("/api/palette-migration"')==2
+          assert '0xFFF1C7' not in main and '0xFFF1C7' not in scheduler
+          assert "let running={name:'Warm White',colors:['#FFDA7F']" in web
+          assert "let builderColors=['#004BC6'];" in web
+          assert 'colors=rawColors.map(displayColor)' in web
+          assert len(re.findall(r"\{name:'[^']+',reference:'#[0-9A-F]{6}',output:'#[0-9A-F]{6}'\}",js_palette))==24
+          print('Built-in source palette entries:',len(re.findall(r'0x[0-9A-F]{6}',block)))
+          print('Unique pre-correction built-in colors:',len(original_event_colors))
+          print('Unique corrected built-in outputs:',len(final_event_colors))
+          PY
+
+          python tools/release.py bump
+          python tools/release.py prepare
+
+          # Migration invariants: exact backup precedes state transition; corrected writes derive from backup.
+          python - <<'PY'
+          from pathlib import Path
+          m=Path('firmware/src/PaletteMigration.cpp').read_text()
+          c=Path('firmware/src/ColorCorrection.cpp').read_text()
+          assert 'BACKUP_PATH="/palette-v1-backup.json"' in m
+          assert 'if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();' in m
+          assert 'transformPresetJson(backup["presets"].as<String>()' in m
+          assert 'transformFavoriteJson(backup["favoriteColors"].as<String>()' in m
+          assert 'writeEvents(backup["events"].as<JsonObject>(),true)' in m
+          assert 'STATE_RESTORE_PENDING' in m and 'STATE_APPLY_PENDING' in m
+          assert 'deltaE2000' in c and 'DIRECT_MAP' in c
+          print('Palette migration backup/resume/double-conversion checks passed')
+          PY
+
+      - name: Commit prepared source
+        shell: bash
+        run: |
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git rm .github/workflows/palette-v201-bootstrap.yml
+          git add -A
+          git commit -m 'Anderson Home v2.0.1 provisional LED color correction'
+          git push origin HEAD:codex/anderson-v2-0-1-color-correction
