@@ -1,70 +1,55 @@
 name: Apply Anderson v2.0.9 daily reboot
+
 on:
   push:
-    branches: [codex/daily-1800-reboot-v2-0-9]
-    paths: [.github/workflows/apply-v209-daily-reboot.yml]
+    branches: ['codex/daily-1800-reboot-v2-0-9']
+    paths: ['.github/workflows/apply-v209-daily-reboot.yml']
+
 permissions:
   contents: write
+
 jobs:
   apply:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           ref: codex/daily-1800-reboot-v2-0-9
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-      - name: Apply daily 6 PM reboot and bump firmware
-        shell: bash
+      - name: Add daily 6 PM maintenance reboot and bump firmware
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('firmware/src/main.cpp')
-          s=p.read_text()
-          anchor='void setup(){\n'
-          assert s.count(anchor)==1
-          block=r'''// ANDERSON_DAILY_MAINTENANCE_REBOOT: reboot once each local calendar day during the 18:00 minute.
-static int32_t dailyRebootDateKey=0;
-static uint32_t dailyRebootLastCheck=0;
-static void loadDailyRebootMarker(){
-  Preferences p;if(!p.begin("anderson-maint",true))return;dailyRebootDateKey=p.getInt("rebootDate",0);p.end();
-}
-static void checkDailyMaintenanceReboot(){
-  if((uint32_t)(millis()-dailyRebootLastCheck)<1000UL)return;dailyRebootLastCheck=millis();
-  if(!timeValid()||otaAutoRebootPending)return;
-  time_t now=time(nullptr);tm local{};localtime_r(&now,&local);
-  if(local.tm_hour!=18||local.tm_min!=0)return;
-  int32_t dateKey=(local.tm_year+1900)*10000+(local.tm_mon+1)*100+local.tm_mday;
-  if(dailyRebootDateKey==dateKey)return;
-  Preferences p;if(!p.begin("anderson-maint",false))return;size_t wrote=p.putInt("rebootDate",dateKey);int32_t verify=p.getInt("rebootDate",0);p.end();
-  if(wrote!=sizeof(int32_t)||verify!=dateKey)return;
-  dailyRebootDateKey=dateKey;delay(100);ESP.restart();
-}
 
-'''
-          s=s.replace(anchor,block+anchor)
-          setup_old='  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();'
-          setup_new='  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadDailyRebootMarker();loadPinAuthConfig();'
-          assert s.count(setup_old)==1
-          s=s.replace(setup_old,setup_new)
-          loop_old='void loop(){\n  server.handleClient();ble.loop();\n  if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);'
-          loop_new='void loop(){\n  server.handleClient();ble.loop();\n  checkDailyMaintenanceReboot();\n  if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);'
-          assert s.count(loop_old)==1
-          s=s.replace(loop_old,loop_new)
-          p.write_text(s)
+          main = Path('firmware/src/main.cpp')
+          s = main.read_text()
+          anchor = 'void setup(){\n'
+          assert s.count(anchor) == 1
+          block = '''// ANDERSON_DAILY_MAINTENANCE_REBOOT: reboot once each local calendar day during the 18:00 minute.\nstatic int32_t dailyRebootDateKey=0;\nstatic uint32_t dailyRebootLastCheck=0;\nstatic void loadDailyRebootMarker(){\n  Preferences p;if(!p.begin("anderson-maint",true))return;dailyRebootDateKey=p.getInt("rebootDate",0);p.end();\n}\nstatic void checkDailyMaintenanceReboot(){\n  if((uint32_t)(millis()-dailyRebootLastCheck)<1000UL)return;dailyRebootLastCheck=millis();\n  if(!timeValid()||otaAutoRebootPending)return;\n  time_t now=time(nullptr);tm local{};localtime_r(&now,&local);\n  if(local.tm_hour!=18||local.tm_min!=0)return;\n  int32_t dateKey=(local.tm_year+1900)*10000+(local.tm_mon+1)*100+local.tm_mday;\n  if(dailyRebootDateKey==dateKey)return;\n  Preferences p;if(!p.begin("anderson-maint",false))return;size_t wrote=p.putInt("rebootDate",dateKey);int32_t verify=p.getInt("rebootDate",0);p.end();\n  if(wrote!=sizeof(int32_t)||verify!=dateKey)return;\n  dailyRebootDateKey=dateKey;delay(100);ESP.restart();\n}\n\n'''
+          s = s.replace(anchor, block + anchor, 1)
+          old = '  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();'
+          new = '  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadDailyRebootMarker();loadPinAuthConfig();'
+          assert s.count(old) == 1
+          s = s.replace(old, new, 1)
+          old = 'void loop(){\n  server.handleClient();ble.loop();\n  if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);'
+          new = 'void loop(){\n  server.handleClient();ble.loop();\n  checkDailyMaintenanceReboot();\n  if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);'
+          assert s.count(old) == 1
+          s = s.replace(old, new, 1)
+          main.write_text(s)
 
-          a=Path('AGENTS.md')
-          t=a.read_text()
-          marker='- Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.\n'
-          assert t.count(marker)==1
-          t=t.replace(marker,marker+'- Daily maintenance reboot occurs once per local calendar day during the 6:00 PM (18:00) minute after valid time sync; use the configured Anderson time zone/DST.\n')
-          a.write_text(t)
+          agents = Path('AGENTS.md')
+          a = agents.read_text()
+          marker = '- Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.\n'
+          assert a.count(marker) == 1
+          a = a.replace(marker, marker + '- Daily maintenance reboot occurs once per local calendar day during the 6:00 PM (18:00) minute after valid time sync; use the configured Anderson time zone/DST.\n', 1)
+          agents.write_text(a)
           PY
+
           python tools/release.py bump
           python tools/release.py prepare
+          rm .github/workflows/apply-v209-daily-reboot.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add firmware/src/main.cpp firmware/web/index.html FIRMWARE_VERSION.txt README.md AGENTS.md
+          git add -A
+          git diff --cached --check
           git commit -m 'Anderson Home v2.0.9: reboot daily at 6 PM'
           git push origin HEAD:codex/daily-1800-reboot-v2-0-9
