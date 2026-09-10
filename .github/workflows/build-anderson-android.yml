@@ -1,4 +1,4 @@
-name: Build Anderson Android APK
+name: Build Anderson Android
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  build-apk:
+  build-android:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -33,14 +33,15 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Build unsigned release APK
-        run: gradle -p android-app :app:assembleRelease --no-daemon --stacktrace
+      - name: Build unsigned release APK and AAB
+        run: gradle -p android-app :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
 
-      - name: Package APK and official signing tools
+      - name: Package Android outputs and signing tools
         run: |
           set -euo pipefail
           mkdir -p android-artifact/sign-tools/lib
           cp android-app/app/build/outputs/apk/release/app-release-unsigned.apk android-artifact/Anderson-Home-1.0.0-unsigned.apk
+          cp android-app/app/build/outputs/bundle/release/app-release.aab android-artifact/Anderson-Home-1.0.0-unsigned.aab
           cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" android-artifact/sign-tools/apksigner
           cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" android-artifact/sign-tools/lib/apksigner.jar
           cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" android-artifact/sign-tools/zipalign
