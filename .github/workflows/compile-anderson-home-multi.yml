@@ -86,20 +86,9 @@ jobs:
         with:
           path: .pio-build-cache
           key: ${{ steps.objects.outputs.cache-primary-key }}
-      - name: Remove old completed workflow runs
+      - name: Retain current build plus one backup
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          # Keep the successful run that produced the current artifact. Remove every
-          # older completed run in the repository, regardless of workflow/conclusion.
-          while true; do
-            RUN_IDS="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
-              --jq ".workflow_runs[] | select(.id != $GITHUB_RUN_ID and .status == \"completed\") | .id")"
-            [ -n "$RUN_IDS" ] || break
-            while read -r RUN_ID; do
-              [ -n "$RUN_ID" ] || continue
-              gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
-            done <<< "$RUN_IDS"
-          done
+          CLEAN_RELEASES: '0'
+        run: bash .github/scripts/anderson-retention.sh
