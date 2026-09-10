@@ -1,0 +1,96 @@
+name: Apply Anderson v3.0.0 theme
+on:
+  push:
+    branches: [codex/anderson-v3-theme]
+    paths: [.github/workflows/apply-v300-theme.yml]
+permissions:
+  contents: write
+jobs:
+  theme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/anderson-v3-theme
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply v3 neon theme
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          old='2.0.11'
+          new='3.0.0'
+          ui=Path('firmware/web/index.html')
+          s=ui.read_text()
+          logo=base64.b64encode(Path('firmware/web/.v3-logo-temp.webp').read_bytes()).decode()
+
+          old_bg='''<style>\n/* ANDERSON_GREEN_BACKGROUND */\nhtml,body{background:#0b6b2e!important;background-image:linear-gradient(160deg,#18a64a 0%,#0b6b2e 48%,#03190c 100%)!important;background-attachment:fixed!important;}\n</style>'''
+          if old_bg not in s:
+              raise SystemExit('old green theme block not found')
+          s=s.replace(old_bg,'',1)
+          s=s.replace('<meta name="theme-color" content="#0b0e13">','<meta name="theme-color" content="#06111d">',1)
+
+          theme=f'''<style>
+/* ANDERSON_V3_NEON_THEME */
+:root{{--panel:rgba(8,23,37,.82);--card:rgba(6,18,30,.78);--line:rgba(76,177,224,.35);--text:#f7fbff;--muted:#a8b8c9;--accent:#29d8ff;--accentbg:rgba(14,67,94,.72);--good:#44ff96;--anderson-logo:url("data:image/webp;base64,{logo}");}}
+html,body{{min-height:100%;background:#020812!important;background-image:radial-gradient(circle at 14% 8%,rgba(0,213,255,.16),transparent 27%),radial-gradient(circle at 86% 14%,rgba(255,0,214,.13),transparent 25%),radial-gradient(circle at 50% 100%,rgba(0,255,128,.09),transparent 36%),linear-gradient(160deg,#020812 0%,#06111d 47%,#02060d 100%)!important;background-attachment:fixed!important}}
+body:before{{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background:linear-gradient(90deg,rgba(0,224,255,.05),transparent 24%,transparent 75%,rgba(255,0,214,.045));box-shadow:inset 0 0 120px rgba(0,0,0,.9)}}
+.wrap{{max-width:760px;padding-top:16px}}
+.header{{padding:12px 13px;border:1px solid rgba(79,199,238,.34);border-radius:19px;background:linear-gradient(145deg,rgba(9,26,42,.93),rgba(4,13,23,.84));box-shadow:0 12px 34px rgba(0,0,0,.34),0 0 22px rgba(0,201,255,.07)}}
+.andersonBrand{{display:flex;align-items:center;gap:11px}}.andersonLogoMark{{display:block;flex:0 0 auto;width:68px;height:68px;border-radius:16px;background-image:var(--anderson-logo);background-size:cover;background-position:center;box-shadow:0 0 18px rgba(0,224,255,.22),0 0 24px rgba(255,0,214,.12)}}.andersonBrand h1{{font-size:22px;letter-spacing:.02em}}
+.nav{{position:sticky;top:6px;z-index:50;padding:7px;border:1px solid rgba(79,199,238,.22);border-radius:16px;background:rgba(3,12,22,.88);backdrop-filter:blur(12px);box-shadow:0 10px 28px rgba(0,0,0,.28)}}
+.tab,.btn,.field{{background:linear-gradient(180deg,rgba(15,35,52,.94),rgba(6,18,30,.94));border-color:rgba(91,178,216,.32);box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}}.tab.active{{border-color:#31d8ff;background:linear-gradient(135deg,rgba(0,184,255,.21),rgba(164,0,255,.18));box-shadow:0 0 14px rgba(0,215,255,.18),inset 0 0 18px rgba(255,0,214,.05)}}
+.panel{{background:linear-gradient(150deg,rgba(8,26,41,.91),rgba(4,15,26,.86));border-color:rgba(77,193,232,.34);box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 24px rgba(0,213,255,.045);backdrop-filter:blur(10px)}}.card{{background:linear-gradient(145deg,rgba(8,24,38,.92),rgba(5,15,25,.88));border-color:rgba(79,169,207,.28)}}
+.btn.primary{{background:linear-gradient(135deg,#00c66b,#19e882 46%,#18b9ff);border-color:#52ff9c;color:#02130b;text-shadow:0 1px 0 rgba(255,255,255,.18);box-shadow:0 0 18px rgba(29,255,137,.23),inset 0 1px 0 rgba(255,255,255,.3)}}.badge{{box-shadow:0 0 14px rgba(68,255,150,.16)}}
+input[type=checkbox],input[type=range]{{accent-color:#2cff8a}}
+.housePreview{{background:radial-gradient(circle at 50% 32%,rgba(32,225,255,.14),transparent 34%),linear-gradient(180deg,rgba(5,18,31,.95),rgba(2,8,15,.96));border-color:rgba(76,197,236,.35);box-shadow:inset 0 0 34px rgba(0,0,0,.36)}}
+.profileGate{{background:#020812;background-image:radial-gradient(circle at 18% 12%,rgba(0,223,255,.18),transparent 26%),radial-gradient(circle at 82% 14%,rgba(255,0,213,.13),transparent 24%),linear-gradient(160deg,#020812,#071522 55%,#02070d)}}.profileShell{{max-width:680px}}.profileBrand{{padding:16px 12px 20px;border-radius:22px;background:rgba(4,14,25,.54);border:1px solid rgba(68,194,235,.24);box-shadow:0 16px 44px rgba(0,0,0,.32)}}.profileBrand .andersonLogoMark{{width:min(58vw,250px);height:min(58vw,250px);margin:0 auto 14px;border-radius:28px}}.profileChoice,.pinPanel{{background:linear-gradient(145deg,rgba(9,29,45,.96),rgba(4,14,25,.94));border-color:rgba(76,192,231,.36);box-shadow:0 12px 32px rgba(0,0,0,.32)}}
+.andersonHero{{height:205px;margin:11px 0 14px;border:1px solid rgba(87,207,239,.3);border-radius:22px;background-image:radial-gradient(circle at center,rgba(0,228,255,.11),transparent 56%),var(--anderson-logo);background-size:auto,190px 190px;background-repeat:no-repeat;background-position:center;box-shadow:0 16px 42px rgba(0,0,0,.36),inset 0 0 50px rgba(0,0,0,.42);position:relative;overflow:hidden}}.andersonHero:after{{content:"LIGHTS  •  CONTROL  •  CREATE";position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:10px;letter-spacing:.28em;color:#d8f8ff;text-shadow:0 0 10px #00cfff}}
+.rgbPickerCard,.scheduleCard{{background:linear-gradient(145deg,#0a1a29,#06101c);border-color:rgba(74,194,233,.42)}}
+@media(max-width:520px){{.andersonLogoMark{{width:58px;height:58px;border-radius:14px}}.andersonBrand h1{{font-size:20px}}.andersonHero{{height:180px;background-size:auto,165px 165px}}.header{{padding:10px}}}}
+</style>'''
+          s=s.replace('</head>',theme+'\n</head>',1)
+
+          a='<div class="profileBrand"><h1>Anderson Home</h1><div class="sub">Choose who is using the controller</div></div>'
+          b='<div class="profileBrand"><span class="andersonLogoMark" aria-hidden="true"></span><h1>Anderson Home</h1><div class="sub">Choose who is using the controller</div></div>'
+          if a not in s: raise SystemExit('profile brand marker not found')
+          s=s.replace(a,b,1)
+
+          a='<div><h1>Anderson Home</h1><div class="sub">NanoC6 Light Controller</div></div>'
+          b='<div class="andersonBrand"><span class="andersonLogoMark" aria-hidden="true"></span><div><h1>Anderson Home</h1><div class="sub">Lights • Control • Create</div></div></div>'
+          if a not in s: raise SystemExit('header marker not found')
+          s=s.replace(a,b,1)
+
+          marker='<section class="page active" data-page="home">'
+          if marker not in s: raise SystemExit('home marker not found')
+          s=s.replace(marker,marker+'\n    <div class="andersonHero" role="img" aria-label="Anderson Home multicolor house-light logo"></div>',1)
+
+          if f'>v{old}<' not in s: raise SystemExit('UI version marker not found')
+          s=s.replace(f'>v{old}<',f'>v{new}<',1)
+          ui.write_text(s)
+
+          main=Path('firmware/src/main.cpp')
+          t=main.read_text(); needle=f'VERSION="{old}"'
+          if needle not in t: raise SystemExit('main version marker not found')
+          main.write_text(t.replace(needle,f'VERSION="{new}"',1))
+
+          Path('FIRMWARE_VERSION.txt').write_text(new+'\n')
+          readme=Path('README.md'); r=readme.read_text()
+          if f'**v{old}**' not in r: raise SystemExit('README version marker not found')
+          readme.write_text(r.replace(f'**v{old}**',f'**v{new}**',1))
+          Path('firmware/web/.v3-logo-temp.webp').unlink()
+          PY
+          python tools/release.py prepare
+          git diff --check
+      - name: Commit themed v3 source
+        shell: bash
+        run: |
+          git config user.name "jlc3718-source"
+          git config user.email "jlc3718@gmail.com"
+          git add -A FIRMWARE_VERSION.txt README.md firmware
+          git commit -m "Anderson Home v3.0.0 neon theme"
+          git push origin HEAD:codex/anderson-v3-theme
