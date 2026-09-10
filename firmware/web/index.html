@@ -279,7 +279,7 @@ html,body{background:#0a3f88!important;background-image:linear-gradient(160deg,#
       <div class="grid2" style="margin-top:10px"><button id="rebootNano" class="btn">Reboot NanoC6</button><button id="rollbackFirmware" class="btn">Boot Previous Firmware</button></div>
     </div>
 
-        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v2.0.0a</strong></div></div>
+        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v2.0.1</strong></div></div>
 
 <div class="panel"><strong>Persistent Configuration</strong><div class="sub">Custom lights, schedules and controller settings are stored outside the firmware slots and automatically reloaded after updates/reboots.</div><div id="storageMeta" class="card small" style="margin-top:10px">Checking persistent storage…</div></div>
 
@@ -319,11 +319,22 @@ const leds=[],rows=$('ledRows');{const row=document.createElement('div');row.cla
 const houseLeds=[],houseGroup=$('houseLeds'),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82],[285,92],[285,106],[285,120],[285,134],[270,145],[250,145],[230,145],[210,145],[190,145],[170,145],[150,145],[130,145],[110,145],[90,145],[75,134],[75,118],[75,102],[75,88]];
 pts.forEach(([x,y])=>{const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r','5');c.setAttribute('class','houseLed');houseGroup.appendChild(c);houseLeds.push(c)});
 
+const NAMED_COLOR_PALETTE=[
+  {name:'Red',reference:'#FF0000',output:'#FF0000'},{name:'Orange',reference:'#FF9500',output:'#FF3000'},{name:'Yellow',reference:'#FFFF00',output:'#FFFF00'},{name:'Gold',reference:'#FACC15',output:'#F18900'},{name:'Amber',reference:'#F59E0B',output:'#E44300'},
+  {name:'Green',reference:'#22C55E',output:'#00FF00'},{name:'Mint / light green',reference:'#86EFAC',output:'#2AD555'},{name:'Blue',reference:'#2563EB',output:'#0000FF'},{name:'Sky blue',reference:'#0EA5E9',output:'#004BC6'},{name:'Light blue',reference:'#93C5FD',output:'#377CF9'},
+  {name:'Cyan',reference:'#32D7D5',output:'#00FFFF'},{name:'Teal',reference:'#14B8A6',output:'#00664D'},{name:'Purple',reference:'#7E22CE',output:'#23018C'},{name:'Lavender',reference:'#C4B5FD',output:'#7A62F9'},{name:'Magenta',reference:'#FF00FF',output:'#FF00FF'},
+  {name:'Rose',reference:'#FF2D55',output:'#FF020C'},{name:'Pink',reference:'#FF69B4',output:'#FF1560'},{name:'Light pink',reference:'#F9A8D4',output:'#EF4F98'},{name:'White',reference:'#FFFFFF',output:'#FFFFFF'},{name:'Warm white',reference:'#FFF1C7',output:'#FFDA7F'},
+  {name:'Icy white',reference:'#DBEAFE',output:'#A7C8FC'},{name:'Brown',reference:'#92400E',output:'#360500'},{name:'Dark brown',reference:'#7C2D12',output:'#220200'},{name:'Black / unlit',reference:'#000000',output:'#000000'}
+];
+const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name]));
+function displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||c}
+function displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}
+
 let power=true,brightness=100,speed=1,tick=0;
-let running={name:'Warm White',colors:['#fff1c7'],effect:'Jump'},preview={...running,colors:[...running.colors]};
+let running={name:'Warm White',colors:['#FFDA7F'],effect:'Jump'},preview={...running,colors:[...running.colors]};
 function speedInterval(level){return [0,2000,1000,500,250,100][+level]||500}
 function blendHex(a,b,f){const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)],A=rgb(a),B=rgb(b);return `rgb(${Math.round(A[0]+(B[0]-A[0])*f)},${Math.round(A[1]+(B[1]-A[1])*f)},${Math.round(A[2]+(B[2]-A[2])*f)})`}
-function paint(state,i,br,total){const colors=state.colors&&state.colors.length?state.colors:['#25a7ff'],e=state.effect||'Jump',n=colors.length,frame=Math.floor(tick),phase=((tick%8)+8)%8/8;let c=colors[0],a=br,sc=1;if(!power)return{c:'#2a313b',a:.35,s:1};if(e==='Solid'){c=colors[0]}else if(e==='Jump'){c=colors[frame%n]}else if(e==='Strobe'){const half=Math.floor(tick*2),on=(half&1)===1;c=on?colors[Math.floor(half/2)%n]:'#000000';a=on?br:.05;sc=on?1.08:.92}else{const pos=phase*n,idx=Math.floor(pos)%n,j=(idx+1)%n,f=pos-Math.floor(pos),mixed=blendHex(colors[idx],colors[j],f);if(e==='Breath'){const wave=.10+.90*(.5-.5*Math.cos(phase*2*Math.PI));c=n>1?mixed:colors[0];a=br*wave}else if(e==='Gradient'){c=mixed}}return{c,a,s:sc}}
+function paint(state,i,br,total){const rawColors=state.colors&&state.colors.length?state.colors:['#004BC6'],colors=rawColors.map(displayColor),e=state.effect||'Jump',n=colors.length,frame=Math.floor(tick),phase=((tick%8)+8)%8/8;let c=colors[0],a=br,sc=1;if(!power)return{c:'#2a313b',a:.35,s:1};if(e==='Solid'){c=colors[0]}else if(e==='Jump'){c=colors[frame%n]}else if(e==='Strobe'){const half=Math.floor(tick*2),on=(half&1)===1;c=on?colors[Math.floor(half/2)%n]:'#000000';a=on?br:.05;sc=on?1.08:.92}else{const pos=phase*n,idx=Math.floor(pos)%n,j=(idx+1)%n,f=pos-Math.floor(pos),mixed=blendHex(colors[idx],colors[j],f);if(e==='Breath'){const wave=.10+.90*(.5-.5*Math.cos(phase*2*Math.PI));c=n>1?mixed:colors[0];a=br*wave}else if(e==='Gradient'){c=mixed}}return{c,a,s:sc}}
 const previewPages={home:document.querySelector('[data-page="home"]'),lights:document.querySelector('[data-page="lights"]')};
 let previousStripPaint='',previousHousePaint='';
 function animate(ts){
@@ -359,10 +370,10 @@ function setPreview(name,colors,effect){
 }
 async function manual(obj){try{const s=await post('/api/control',obj);applyState(s);status('Manual override active.')}catch(e){if(!API_MODE){if(obj.power!==undefined)power=obj.power;if(obj.brightness!==undefined)brightness=obj.brightness;if(obj.speed!==undefined)speed=obj.speed;if(obj.colors||obj.effect||obj.name)setRunning(obj.name||running.name||'Manual',obj.colors||running.colors,obj.effect||running.effect||'Jump');status('Preview mode — control simulated.')}else status('Control failed: '+e.message)}}
 
-let builderColors=['#25a7ff'];
+let builderColors=['#004BC6'];
 
 function setBuilderColors(colors, send=false){
-  const next=colors&&colors.length?colors.slice(0,8):['#25a7ff'];
+  const next=colors&&colors.length?colors.slice(0,8):['#004BC6'];
   if(next.length!==builderColors.length||next.some((c,i)=>c!==builderColors[i])){builderColors=next;renderColorBuilder();}
   if(send) sendBuilderLook();
 }
@@ -376,7 +387,7 @@ function renderColorBuilder(){
 
     const picker=document.createElement('button');
     picker.type='button';picker.className='colorChip';picker.style.width='48px';picker.style.height='44px';
-    setChipColor(picker,/^#[0-9a-f]{6}$/i.test(color)?color:'#25a7ff');picker.dataset.builderIndex=index;
+    setChipColor(picker,/^#[0-9a-f]{6}$/i.test(color)?color:'#004BC6');picker.dataset.builderIndex=index;
     picker.setAttribute('aria-label','Color '+(index+1));picker.title='Color '+(index+1)+' — tap for RGB wheel';
     picker.addEventListener('click',()=>openRgbWheel(picker));
 
@@ -424,22 +435,22 @@ function sendBuilderLook(){
 
 $('addColor').addEventListener('click',()=>{
   if(builderColors.length>=8)return;
-  const suggestions=['#ffffff','#ff3b30','#34c759','#0a84ff','#bf5af2','#ff9500','#ffd60a'];
+  const suggestions=['#FFFFFF','#ff3b30','#34c759','#0a84ff','#23018C','#ff9500','#F18900'];
   builderColors.push(suggestions[(builderColors.length-1)%suggestions.length]);
   renderColorBuilder();
   sendBuilderLook();
 });
-$('clearColors').addEventListener('click',()=>setBuilderColors([builderColors[0]||'#25a7ff'],true));
+$('clearColors').addEventListener('click',()=>setBuilderColors([builderColors[0]||'#004BC6'],true));
 
-const quick=['#fff1c7','#ffffff','#ff3b30','#ff9500','#ffd60a','#34c759','#32d7d5','#0a84ff','#bf5af2','#ff2d92','#ff6b35','#00b4d8'];
+const quick=['#FFDA7F','#FFFFFF','#ff3b30','#ff9500','#F18900','#34c759','#32d7d5','#0a84ff','#23018C','#FF1560','#ff6b35','#004BC6'];
 quick.forEach(c=>{
   const b=document.createElement('button');
   b.className='swatch';
-  b.style.background=c;
+  b.style.background=displayColor(c);
   b.type='button';
-  b.title='Add '+c;
+  b.title='Add '+displayLabel(c);
   b.addEventListener('click',()=>{
-    if(builderColors.length===1 && builderColors[0]==='#25a7ff') builderColors[0]=c;
+    if(builderColors.length===1 && builderColors[0]==='#004BC6') builderColors[0]=c;
     else if(builderColors.length<8) builderColors.push(c);
     else builderColors[builderColors.length-1]=c;
     renderColorBuilder();
@@ -463,12 +474,12 @@ const monthNames=['January','February','March','April','May','June','July','Augu
 
 const demoEvents={
 9:[
-{id:'labor',name:'Labor Day',when:'1st Monday in September',kind:'holiday',colors:['#ef4444','#ffffff','#2563eb'],effect:'Jump',enabled:true,favorite:false},
-{id:'childcancer',name:'Childhood Cancer Awareness Month',when:'All September',kind:'awareness',colors:['#facc15','#f59e0b'],effect:'Strobe',enabled:true,favorite:false},
-{id:'suicide',name:'Suicide Prevention Awareness Month',when:'All September',kind:'awareness',colors:['#14b8a6','#7e22ce'],effect:'Gradient',enabled:true,favorite:true},
-{id:'988',name:'988 Day',when:'Sep 8',kind:'awareness',colors:['#14b8a6','#7e22ce','#ffffff'],effect:'Breath',enabled:true,favorite:true},
-{id:'wspd',name:'World Suicide Prevention Day',when:'Sep 10',kind:'awareness',colors:['#14b8a6','#7e22ce'],effect:'Gradient',enabled:true,favorite:false},
-{id:'patriot',name:'Patriot Day / 9-11 Remembrance',when:'Sep 11',kind:'holiday',colors:['#ef4444','#ffffff','#2563eb'],effect:'Jump',enabled:true,favorite:true}
+{id:'labor',name:'Labor Day',when:'1st Monday in September',kind:'holiday',colors:['#FF0000','#FFFFFF','#0000FF'],effect:'Jump',enabled:true,favorite:false},
+{id:'childcancer',name:'Childhood Cancer Awareness Month',when:'All September',kind:'awareness',colors:['#F18900','#E44300'],effect:'Strobe',enabled:true,favorite:false},
+{id:'suicide',name:'Suicide Prevention Awareness Month',when:'All September',kind:'awareness',colors:['#00664D','#23018C'],effect:'Gradient',enabled:true,favorite:true},
+{id:'988',name:'988 Day',when:'Sep 8',kind:'awareness',colors:['#00664D','#23018C','#FFFFFF'],effect:'Breath',enabled:true,favorite:true},
+{id:'wspd',name:'World Suicide Prevention Day',when:'Sep 10',kind:'awareness',colors:['#00664D','#23018C'],effect:'Gradient',enabled:true,favorite:false},
+{id:'patriot',name:'Patriot Day / 9-11 Remembrance',when:'Sep 11',kind:'holiday',colors:['#FF0000','#FFFFFF','#0000FF'],effect:'Jump',enabled:true,favorite:true}
 ]};
 
 async function loadEvents(){let data;try{data=await api(`/api/events?year=${$('yearSelect').value}&month=${$('monthSelect').value}`)}catch(e){data={events:demoEvents[+$('monthSelect').value]||[],overlap:'Preview mode'};}renderEvents(data.events||[]);$('overlapInfo').textContent=data.overlap||'No overlapping month-long events.'}
@@ -481,14 +492,14 @@ function rgbHex(r,g,b){return'#'+[r,g,b].map(v=>clamp255(v).toString(16).padStar
 function rgbHsv(r,g,b){r/=255;g/=255;b/=255;let mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn,h=0;if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360}return[h,mx?d/mx:0,mx]}
 function hsvRgb(h,s,v){let c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c,r=0,g=0,b=0;if(h<60){r=c;g=x}else if(h<120){r=x;g=c}else if(h<180){g=c;b=x}else if(h<240){g=x;b=c}else if(h<300){r=x;b=c}else{r=c;b=x}return[(r+m)*255,(g+m)*255,(b+m)*255]}
 function pickerHex(){const q=hsvRgb(pickerH,pickerS,pickerV);return rgbHex(q[0],q[1],q[2])}
-let builderWheelTimer=null;function setChipColor(chip,h){if(!chip)return;h=normHex(h);chip.dataset.color=h;chip.style.background=h;chip.title=h+' — tap to edit';if(chip.dataset.builderIndex!==undefined){const i=+chip.dataset.builderIndex;if(Number.isInteger(i)&&i>=0&&i<builderColors.length){builderColors[i]=h;preview={name:builderColors.length>1?'Custom Multi-Color':'Custom Color',colors:[...builderColors],effect:$('effectSelect').value};clearTimeout(builderWheelTimer);builderWheelTimer=setTimeout(sendBuilderLook,160);}}}
+let builderWheelTimer=null;function setChipColor(chip,h){if(!chip)return;h=normHex(h);chip.dataset.color=h;chip.style.background=displayColor(h);chip.title=displayLabel(h)+' — tap to edit';if(chip.dataset.builderIndex!==undefined){const i=+chip.dataset.builderIndex;if(Number.isInteger(i)&&i>=0&&i<builderColors.length){builderColors[i]=h;preview={name:builderColors.length>1?'Custom Multi-Color':'Custom Color',colors:[...builderColors],effect:$('effectSelect').value};clearTimeout(builderWheelTimer);builderWheelTimer=setTimeout(sendBuilderLook,160);}}}
 function renderPicker(){const h=pickerHex(),q=hexRgb(h),w=$('rgbWheel'),rad=w.clientWidth/2,ang=(pickerH-90)*Math.PI/180,rr=pickerS*rad*.92;$('rgbWheelMarker').style.left=(rad+Math.cos(ang)*rr)+'px';$('rgbWheelMarker').style.top=(rad+Math.sin(ang)*rr)+'px';$('rgbValue').value=Math.round(pickerV*100);$('rgbR').value=q[0];$('rgbG').value=q[1];$('rgbB').value=q[2];$('rgbHex').value=h;$('rgbPreview').style.background=h;setChipColor(activeColorChip,h)}
 function setPickerHex(h){const q=hexRgb(h),v=rgbHsv(q[0],q[1],q[2]);pickerH=v[0];pickerS=v[1];pickerV=v[2];renderPicker()}
 function openRgbWheel(chip){activeColorChip=chip;setPickerHex(chip?.dataset.color||'#FFFFFF');$('rgbPickerOverlay').classList.add('open');renderSavedColors()}
 function wheelPoint(e){const w=$('rgbWheel'),r=w.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,dist=Math.sqrt(dx*dx+dy*dy),rad=r.width/2;pickerS=Math.min(1,dist/(rad*.92));pickerH=(Math.atan2(dy,dx)*180/Math.PI+90+360)%360;renderPicker()}
-function renderEventFavoriteGrid(g,addColor){if(!g)return;g.innerHTML='';if(!savedColors.length){g.innerHTML='<span class="sub">No favorite colors saved yet.</span>';return}savedColors.forEach(c=>{const b=document.createElement('button');b.type='button';b.className='savedSwatch';b.style.background=c;b.title='Add '+c;b.onclick=()=>addColor(c);g.appendChild(b)})}
-function renderHomeFavoriteGrid(){const g=$('homeFavoriteColorGrid');if(!g)return;g.innerHTML='';if(!savedColors.length){g.innerHTML='<span class="sub">No favorite colors saved yet.</span>';return}savedColors.forEach(c=>{const b=document.createElement('button');b.type='button';b.className='savedSwatch';b.style.background=c;b.title='Use '+c;b.onclick=()=>manual({name:'Favorite '+c,colors:[c],effect:'Jump',brightness,speed});g.appendChild(b)})}
-function fillSavedColors(g,forLights){if(!g)return;g.innerHTML='';if(!savedColors.length){const t=document.createElement('span');t.className='sub';t.textContent='No favorite colors saved yet.';g.appendChild(t);return}savedColors.forEach(c=>{const b=document.createElement('button');b.className='savedSwatch';b.style.background=c;b.title=(forLights?'Add ':'Use ')+c;b.onclick=()=>{if(forLights){if(builderColors.length===1&&builderColors[0]==='#25a7ff')builderColors[0]=c;else if(builderColors.length<8)builderColors.push(c);else builderColors[builderColors.length-1]=c;renderColorBuilder();sendBuilderLook()}else setPickerHex(c)};const x=document.createElement('button');x.className='x';x.textContent='×';x.title='Delete saved color';x.onclick=e=>{e.stopPropagation();removeSavedColor(c)};b.appendChild(x);g.appendChild(b)})}
+function renderEventFavoriteGrid(g,addColor){if(!g)return;g.innerHTML='';if(!savedColors.length){g.innerHTML='<span class="sub">No favorite colors saved yet.</span>';return}savedColors.forEach(c=>{const b=document.createElement('button');b.type='button';b.className='savedSwatch';b.style.background=displayColor(c);b.title='Add '+displayLabel(c);b.onclick=()=>addColor(c);g.appendChild(b)})}
+function renderHomeFavoriteGrid(){const g=$('homeFavoriteColorGrid');if(!g)return;g.innerHTML='';if(!savedColors.length){g.innerHTML='<span class="sub">No favorite colors saved yet.</span>';return}savedColors.forEach(c=>{const b=document.createElement('button');b.type='button';b.className='savedSwatch';b.style.background=displayColor(c);b.title='Use '+displayLabel(c);b.onclick=()=>manual({name:'Favorite '+c,colors:[c],effect:'Jump',brightness,speed});g.appendChild(b)})}
+function fillSavedColors(g,forLights){if(!g)return;g.innerHTML='';if(!savedColors.length){const t=document.createElement('span');t.className='sub';t.textContent='No favorite colors saved yet.';g.appendChild(t);return}savedColors.forEach(c=>{const b=document.createElement('button');b.className='savedSwatch';b.style.background=displayColor(c);b.title=(forLights?'Add ':'Use ')+displayLabel(c);b.onclick=()=>{if(forLights){if(builderColors.length===1&&builderColors[0]==='#004BC6')builderColors[0]=c;else if(builderColors.length<8)builderColors.push(c);else builderColors[builderColors.length-1]=c;renderColorBuilder();sendBuilderLook()}else setPickerHex(c)};const x=document.createElement('button');x.className='x';x.textContent='×';x.title='Delete saved color';x.onclick=e=>{e.stopPropagation();removeSavedColor(c)};b.appendChild(x);g.appendChild(b)})}
 function renderSavedColors(){fillSavedColors($('savedColorGrid'),false);fillSavedColors($('lightSavedColorGrid'),true);renderHomeFavoriteGrid();document.querySelectorAll('.eventFavoriteGrid').forEach(g=>{const box=g.closest('.eventEditor'),colors=box?.querySelector('.row.wraprow');if(colors)renderEventFavoriteGrid(g,c=>{if(colors.children.length>=8)return;const b=document.createElement('button');b.type='button';b.className='colorChip';setChipColor(b,c);b.onclick=()=>openRgbWheel(b);colors.appendChild(b)})})}
 async function loadSavedColors(){try{if(API_MODE){const d=await api('/api/colors',{cache:'no-store'});savedColors=d.colors||[]}else savedColors=JSON.parse(localStorage.getItem('andersonSavedColors')||'[]')}catch(e){savedColors=[]}renderSavedColors()}
 async function saveCurrentColor(){const c=pickerHex();if(API_MODE){const r=await post('/api/colors',{color:c});savedColors=r.colors||savedColors}else{if(!savedColors.includes(c))savedColors.push(c);savedColors=savedColors.slice(-32);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors();status(c+' saved to Favorite Colors.')}
@@ -504,8 +515,8 @@ function editEventInline(ev,row){
   const speedLab=document.createElement('div');speedLab.className='label';speedLab.textContent='Speed';const evSpeed=document.createElement('input');evSpeed.type='range';evSpeed.min='1';evSpeed.max='5';evSpeed.value=ev.speed||1;const evSpeedVal=document.createElement('div');evSpeedVal.className='sub';const showEvSpeed=()=>evSpeedVal.textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][+evSpeed.value-1];evSpeed.addEventListener('input',showEvSpeed);showEvSpeed();
   const colorsLab=document.createElement('div');colorsLab.className='label';colorsLab.textContent='Colors — tap a color to open the RGB wheel; saved colors are available inside the wheel';
   const colors=document.createElement('div');colors.className='row wraprow';const eventFavLab=document.createElement('div');eventFavLab.className='label';eventFavLab.textContent='Favorite Colors';const eventFav=document.createElement('div');eventFav.className='savedColorGrid eventFavoriteGrid';
-  function addColor(v='#ffffff'){if(colors.children.length>=8)return;const inp=document.createElement('button');inp.type='button';inp.className='colorChip';setChipColor(inp,v);inp.onclick=()=>openRgbWheel(inp);inp.addEventListener('contextmenu',e=>{e.preventDefault();if(colors.children.length>1)inp.remove()});colors.appendChild(inp)}
-  (ev.colors||['#ffffff']).forEach(addColor);
+  function addColor(v='#FFFFFF'){if(colors.children.length>=8)return;const inp=document.createElement('button');inp.type='button';inp.className='colorChip';setChipColor(inp,v);inp.onclick=()=>openRgbWheel(inp);inp.addEventListener('contextmenu',e=>{e.preventDefault();if(colors.children.length>1)inp.remove()});colors.appendChild(inp)}
+  (ev.colors||['#FFFFFF']).forEach(addColor);
   const controls=document.createElement('div');controls.className='row wraprow';controls.style.marginTop='10px';
   const add=document.createElement('button');add.className='btn';add.textContent='Add Color';add.onclick=()=>addColor();
   const save=document.createElement('button');save.className='btn primary';save.textContent='Save Event';save.onclick=async()=>{const vals=[...colors.querySelectorAll('.colorChip')].map(x=>x.dataset.color);await eventChange(ev.id,{effect:effect.value,speed:+evSpeed.value,colors:vals});status(ev.name+' updated directly. Future scheduled runs will use these settings.')};
@@ -519,7 +530,7 @@ $('clearMonth').addEventListener('click',()=>post('/api/events/bulk',{year:+$('y
 
 async function loadFavorites(){let favs=[];try{favs=(await api('/api/favorites')).events||[]}catch(e){favs=(demoEvents[9]||[]).filter(x=>x.favorite)}const grid=$('favoriteGrid');grid.innerHTML='';if(!favs.length){grid.innerHTML='<div class="emptyFav" style="grid-column:1/-1">No favorites selected. Use a Favorites checkbox below or on the Events tab.</div>';return}favs.forEach(ev=>{const b=document.createElement('button');b.className='btn';b.textContent=ev.name;b.addEventListener('click',()=>manual({name:ev.name,colors:ev.colors,effect:ev.effect,brightness:ev.brightness||100,speed:ev.speed||1}));grid.appendChild(b)})}
 
-function customLightSummary(p){const main=document.createElement('div'),title=document.createElement('div'),strong=document.createElement('strong'),meta=document.createElement('div'),chips=document.createElement('div');title.className='small';strong.textContent=p.name||'Custom Light';title.appendChild(strong);if(p.favorite===true){const tag=document.createElement('span');tag.className='tag';tag.textContent='Favorite';tag.style.marginLeft='5px';title.appendChild(tag)}if(p.enabled===false){const tag=document.createElement('span');tag.className='tag';tag.textContent='Disabled';tag.style.marginLeft='5px';title.appendChild(tag)}meta.className='sub';meta.textContent=`${p.effect||'Jump'} • ${p.brightness||100}% • ${['','Very Slow','Slow','Normal','Fast','Very Fast'][p.speed||1]||'Very Slow'}`;chips.className='chips';(Array.isArray(p.colors)?p.colors:[]).forEach(color=>{const chip=document.createElement('span');chip.className='chip';chip.style.background=color;chips.appendChild(chip)});main.append(title,meta,chips);return main}
+function customLightSummary(p){const main=document.createElement('div'),title=document.createElement('div'),strong=document.createElement('strong'),meta=document.createElement('div'),chips=document.createElement('div');title.className='small';strong.textContent=p.name||'Custom Light';title.appendChild(strong);if(p.favorite===true){const tag=document.createElement('span');tag.className='tag';tag.textContent='Favorite';tag.style.marginLeft='5px';title.appendChild(tag)}if(p.enabled===false){const tag=document.createElement('span');tag.className='tag';tag.textContent='Disabled';tag.style.marginLeft='5px';title.appendChild(tag)}meta.className='sub';meta.textContent=`${p.effect||'Jump'} • ${p.brightness||100}% • ${['','Very Slow','Slow','Normal','Fast','Very Fast'][p.speed||1]||'Very Slow'}`;chips.className='chips';(Array.isArray(p.colors)?p.colors:[]).forEach(color=>{const chip=document.createElement('span');chip.className='chip';chip.style.background=displayColor(color);chips.appendChild(chip)});main.append(title,meta,chips);return main}
 async function customLightPreference(id,change){try{await post('/api/preset',{id,...change});const refresh=[loadHomeCustomLights(),loadFavorites()];if(currentRole==='admin')refresh.push(loadCustomPresets());await Promise.all(refresh);status('Custom event preference saved.')}catch(e){status('Custom event preference failed: '+e.message);await loadHomeCustomLights()}}
 async function loadHomeCustomLights(){const box=$('homeCustomLightList');if(!box||currentRole==='none')return;try{const d=await api('/api/presets?home='+Date.now()),items=Array.isArray(d.presets)?d.presets:[];box.innerHTML='';if(!items.length){box.innerHTML='<div class="sub">No custom events saved yet. Jason can create one in the Lights tab.</div>';return}items.forEach(p=>{const row=document.createElement('div');row.className='card event';row.dataset.presetId=p.id||'';const checks=document.createElement('div');checks.className='eventchecks';const en=document.createElement('input'),fav=document.createElement('input');en.type='checkbox';en.checked=p.enabled!==false;fav.type='checkbox';fav.checked=p.favorite===true;const enLabel=document.createElement('label'),favLabel=document.createElement('label');enLabel.className='row small';favLabel.className='row small';enLabel.append(en,document.createTextNode('Enabled'));favLabel.append(fav,document.createTextNode('Favorites'));checks.append(enLabel,favLabel);const actions=document.createElement('div'),previewButton=document.createElement('button');actions.className='customPresetActions';previewButton.className='btn previewEvent';previewButton.textContent='Preview';previewButton.onclick=()=>manual({name:p.name,colors:p.colors,effect:p.effect,brightness:p.brightness||100,speed:p.speed||1});actions.appendChild(previewButton);en.onchange=()=>customLightPreference(p.id,{enabled:en.checked});fav.onchange=()=>customLightPreference(p.id,{favorite:fav.checked});row.append(checks,customLightSummary(p),actions);box.appendChild(row)})}catch(e){box.innerHTML='<div class="sub">Unable to load custom events: '+e.message+'</div>'}}
 
@@ -528,7 +539,7 @@ const bc=s.ble?.connectedCount||0;$('bleStatus').textContent=bc?`Connected: ${bc
 let stateRequest=null;
 function loadState(){
   if(stateRequest)return stateRequest;
-  stateRequest=(async()=>{try{const s=await api('/api/state');$('connectionBadge').textContent='● Connected';$('connectionBadge').classList.remove('offline');applyState(s);loadFavorites()}catch(e){$('connectionBadge').textContent=API_MODE?'● Offline':'● Preview';$('connectionBadge').classList.add('offline');if(!API_MODE){setRunning('Suicide Prevention Awareness Month',['#14b8a6','#7e22ce'],'Gradient');$('nextEvent').textContent='988 Day • September 8';loadFavorites()}}})().finally(()=>{stateRequest=null});
+  stateRequest=(async()=>{try{const s=await api('/api/state');$('connectionBadge').textContent='● Connected';$('connectionBadge').classList.remove('offline');applyState(s);loadFavorites()}catch(e){$('connectionBadge').textContent=API_MODE?'● Offline':'● Preview';$('connectionBadge').classList.add('offline');if(!API_MODE){setRunning('Suicide Prevention Awareness Month',['#00664D','#23018C'],'Gradient');$('nextEvent').textContent='988 Day • September 8';loadFavorites()}}})().finally(()=>{stateRequest=null});
   return stateRequest;
 }
 $('resumeSchedule').addEventListener('click',()=>post('/api/resume',{}).then(s=>{applyState(s);status('Automatic schedule resumed.')}).catch(()=>status('Preview mode — schedule resumed.')));
@@ -547,7 +558,7 @@ $('scanWifi').addEventListener('click',async()=>{status('Scanning Wi-Fi…');try
 $('saveWifi').addEventListener('click',async()=>{const ssid=$('wifiNetwork').value,p=$('wifiPassword').value;if(!ssid)return status('Select a network first.');try{await post('/api/wifi',{ssid,password:p});status('Wi-Fi saved. The NanoC6 is reconnecting…')}catch(e){status(API_MODE?'Wi-Fi save failed.':'Preview mode.')}});
 $('scanBle').addEventListener('click',async()=>{status('Scanning Bluetooth…');try{const r=await api('/api/ble/scan');const box=$('bleList');box.innerHTML='';(r.devices||[]).forEach(d=>{const row=document.createElement('div');row.className='card bleDevice';row.innerHTML=`<div><div class="small"><strong>${d.name||'BLE controller'}</strong></div><div class="sub">${d.address} • ${d.rssi} dBm</div></div>`;const b=document.createElement('button');b.className='btn';b.textContent='Add / Use';b.addEventListener('click',()=>post('/api/ble/select',{address:d.address}).then(loadState));row.appendChild(b);box.appendChild(row)});status(`${(r.devices||[]).length} controllers found.`)}catch(e){status(API_MODE?'Bluetooth scan failed.':'Preview mode — BLE scanning requires the NanoC6.')}});
 $('targetAll').addEventListener('click',()=>post('/api/ble/target',{target:0}).then(loadState));$('targetA').addEventListener('click',()=>post('/api/ble/target',{target:1}).then(loadState));$('targetB').addEventListener('click',()=>post('/api/ble/target',{target:2}).then(loadState));
-$('testRed').addEventListener('click',()=>manual({name:'BLE Test Red',colors:['#ff0000'],effect:'Jump'}));$('testRainbow').textContent='Test Gradient';$('testRainbow').addEventListener('click',()=>manual({name:'BLE Test Gradient',colors:['#25a7ff','#7e22ce','#ffffff'],effect:'Gradient'}));
+$('testRed').addEventListener('click',()=>manual({name:'BLE Test Red',colors:['#ff0000'],effect:'Jump'}));$('testRainbow').textContent='Test Gradient';$('testRainbow').addEventListener('click',()=>manual({name:'BLE Test Gradient',colors:['#004BC6','#23018C','#FFFFFF'],effect:'Gradient'}));
 $('savePreset').addEventListener('click',async()=>{
   const name=$('customPresetName').value.trim();if(!name)return status('Give this custom light a unique name first.');const preset={name,colors:[...builderColors],effect:$('effectSelect').value,brightness,speed};
   status('Saving '+name+'…');

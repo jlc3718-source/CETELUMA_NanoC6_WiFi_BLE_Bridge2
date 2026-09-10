@@ -17,6 +17,7 @@
 #include "SettingsStore.h"
 #include "BleController.h"
 #include "Scheduler.h"
+#include "PaletteMigration.h"
 
 static constexpr int BLUE_LED=7;
 static constexpr int USER_BUTTON=9;
@@ -38,7 +39,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.0a";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="2.0.1";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -138,7 +139,7 @@ static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,St
   for(JsonObject o:list.as<JsonArray>()){
     if(o["id"].as<String>()!=id)continue;if(activeOnly&&!(o["enabled"]|true))return false;t.name=o["name"].as<String>();if(outName)*outName=t.name;t.effect=effectFromString(o["effect"].as<String>());t.colorCount=0;
     for(JsonVariant v:o["colors"].as<JsonArray>()){if(t.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())t.colors[t.colorCount++]=strtoul(cs.c_str(),nullptr,16);}
-    if(!t.colorCount){t.colors[0]=0xFFF1C7;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;
+    if(!t.colorCount){t.colors[0]=0xFFDA7F;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;
   }return false;
 }
 static bool resolveCustomSchedule(const tm& l,Theme& t,uint8_t& br,uint8_t& sp){
@@ -272,7 +273,7 @@ void setupRoutes(){
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
     if(!d["name"].isNull())runningTheme.name=d["name"].as<String>();
     if(!d["effect"].isNull())runningTheme.effect=effectFromString(d["effect"].as<String>());
-    if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=strtoul(s.c_str(),nullptr,16);}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xFFF1C7;runningTheme.colorCount=1;}}
+    if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=strtoul(s.c_str(),nullptr,16);}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xFFDA7F;runningTheme.colorCount=1;}}
     applyRunning(true);sendJson(stateJson());
   });
 
@@ -294,7 +295,7 @@ void setupRoutes(){
     if(!d["enabled"].isNull()){if(d["enabled"].as<bool>())s.enabledMask|=(1ULL<<i);else s.enabledMask&=~(1ULL<<i);}
     if(!d["favorite"].isNull()){if(d["favorite"].as<bool>())s.favoriteMask|=(1ULL<<i);else s.favoriteMask&=~(1ULL<<i);}
     if(d["reset"]|false){clearEventOverride(i);}
-    else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:1;if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,5);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){et.colors[0]=0xFFF1C7;et.colorCount=1;}}saveEventOverride(i,et,esp);}
+    else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:1;if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,5);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){et.colors[0]=0xFFDA7F;et.colorCount=1;}}saveEventOverride(i,et,esp);}
     store.saveAll();evaluateSchedule(true);sendJson(stateJson());
   });
   server.on("/api/events/bulk",HTTP_POST,[]{
@@ -350,6 +351,11 @@ void setupRoutes(){
   server.on("/api/storage",HTTP_GET,[]{if(!requireAdmin())return;JsonDocument d;String lights=presetStoreRaw(),schedules=scheduleStoreRaw();d["ready"]=customFsReady;d["backend"]="NVS";d["customLightsBytes"]=(uint32_t)lights.length();d["scheduleBytes"]=(uint32_t)schedules.length();String out;serializeJson(d,out);sendJson(out);});
   server.on("/api/config",HTTP_GET,[]{if(!requireAdmin())return;JsonDocument d;d["backend"]="NVS";JsonDocument l;if(!deserializeJson(l,presetStoreRaw())&&l.is<JsonArray>())d["customLights"].set(l.as<JsonArray>());else d["customLights"].to<JsonArray>();JsonDocument c;if(!deserializeJson(c,scheduleStoreRaw())&&c.is<JsonArray>())d["customSchedules"].set(c.as<JsonArray>());else d["customSchedules"].to<JsonArray>();String out;serializeJson(d,out);sendJson(out);});
 
+  server.on("/api/palette-migration",HTTP_GET,[]{if(!requireAdmin())return;sendJson(paletteColorMigrationStatusJson());});
+  server.on("/api/palette-migration",HTTP_POST,[]{
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String action=d["action"]|String("");bool ok=false;if(action=="restore")ok=restoreOriginalPaletteColors();else if(action=="apply")ok=reapplyCorrectedPaletteColors();else{server.send(400,"application/json","{\"ok\":false,\"error\":\"Use action restore or apply\"}");return;}if(!ok){server.send(500,"application/json","{\"ok\":false,\"error\":\"Palette migration operation failed verification\"}");return;}sendJson(paletteColorMigrationStatusJson());delay(250);ESP.restart();
+  });
+
   server.on("/api/firmware",HTTP_GET,[]{sendJson(firmwareJson());});
   // ANDERSON_PROTECTED_OTA: routine uploads require Jason's session; independent recovery verifies Jason's PIN directly.
   server.on("/api/update",HTTP_POST,[]{
@@ -402,8 +408,8 @@ void setupRoutes(){
 
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
-  store.begin();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
-  runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFF1C7;runningTheme.colorCount=1;
+  store.begin();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFDA7F;runningTheme.colorCount=1;
   setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
