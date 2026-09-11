@@ -1,4 +1,4 @@
-# Anderson network/daily-reboot regression gate.
+# Anderson network/maintenance-reboot regression gate (v3.0.15 schedule coverage).
 from pathlib import Path
 import re
 import subprocess
