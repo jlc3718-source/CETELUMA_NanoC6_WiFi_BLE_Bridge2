@@ -1,0 +1,59 @@
+name: Build Silverado Stream Browser
+
+on:
+  push:
+    branches:
+      - 'codex/silverado-stream-browser-*'
+    paths:
+      - 'silverado-browser/**'
+      - '.github/workflows/build-silverado-stream-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Build release AAB and APK
+        working-directory: silverado-browser
+        run: gradle --no-daemon --stacktrace :app:bundleRelease :app:assembleRelease
+
+      - name: Record checksums
+        shell: bash
+        run: |
+          mkdir -p silverado-browser/output
+          cp silverado-browser/app/build/outputs/bundle/release/app-release.aab silverado-browser/output/SilveradoStreamBrowser-AAOS-arm64-v1.0.2-unsigned.aab
+          cp silverado-browser/app/build/outputs/apk/release/app-release-unsigned.apk silverado-browser/output/SilveradoStreamBrowser-AAOS-arm64-v1.0.2-unsigned.apk
+          cd silverado-browser/output
+          sha256sum *.aab *.apk > SHA256SUMS.txt
+
+      - name: Upload exact build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SilveradoStreamBrowser-AAOS-v1.0.2-${{ github.sha }}
+          path: silverado-browser/output/*
+          if-no-files-found: error
+          retention-days: 14
