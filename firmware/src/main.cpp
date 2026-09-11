@@ -40,6 +40,9 @@ static uint32_t lastWiFiRetry=0,wifiOfflineSince=0;
 static bool wifiOfflineTimerStarted=false;
 static constexpr uint32_t WIFI_RETRY_INTERVAL_MS=30UL*1000UL;
 static constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;
+static constexpr uint16_t DAILY_REBOOT_MINUTE=15U*60U;
+static bool dailyRebootClockInitialized=false;
+static int32_t dailyRebootHandledDay=-1;
 bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false;int otaUploadResponseCode=403;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
@@ -47,7 +50,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -462,6 +465,24 @@ void setupRoutes(){
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
+static bool dailyScheduledRebootDue(int32_t dayKey,uint16_t minute){
+  if(!dailyRebootClockInitialized){
+    dailyRebootClockInitialized=true;
+    dailyRebootHandledDay=minute>=DAILY_REBOOT_MINUTE?dayKey:dayKey-1;
+    return false;
+  }
+  if(minute<DAILY_REBOOT_MINUTE||dailyRebootHandledDay==dayKey)return false;
+  dailyRebootHandledDay=dayKey;
+  return true;
+}
+static void checkDailyScheduledReboot(){
+  if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;
+  time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;
+  int32_t dayKey=(int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;
+  uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);
+  if(!dailyScheduledRebootDue(dayKey,minute))return;
+  delay(40);ESP.restart();
+}
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
@@ -471,7 +492,7 @@ void setup(){
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
   server.handleClient();ble.loop();
-  maintainWiFiConnection();
+  maintainWiFiConnection();checkDailyScheduledReboot();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
