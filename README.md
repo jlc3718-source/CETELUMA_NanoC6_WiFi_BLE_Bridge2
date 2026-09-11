@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v3.0.4**.
+Current firmware: **v3.0.5**.
 
 The repository now builds directly from the canonical `firmware/` source tree. The old sequential overlay pipeline is retired.
 
@@ -12,6 +12,7 @@ The repository now builds directly from the canonical `firmware/` source tree. T
 - Routine firmware uploads require Jason's active session when PIN protection is enabled.
 - The independent APP-only recovery page accepts Jason's PIN without depending on the main profile interface and disables PIN protection after successful recovery.
 - The interface combines `firmware/web/index.html`, `v3_mockup.css`, `v3_mockup.js`, and the embedded reference artwork; CI composes and compresses the exact page before compilation.
+- v3.0.5 replaces plain effect dropdown presentation with animated mini-preview buttons for Jump, Breath, Strobe, Gradient, and Solid / Static. Preview animation timing is fixed around the Normal 500 ms effect reference and does not alter the selected live-effect speed.
 - v3.0.4 places the live animated house beside Current Effect, moves Schedule into a full-width glass panel below, and removes the larger lower preview. The animation continues to use the running theme, power, brightness, and speed.
 - v3.0.3 recomposes the reference house/logo artwork, blue glass dashboard, profile chooser, effect/schedule cards, favorite colors, and bottom navigation. Shirley sees Home and Schedules only; Jason reaches Wi-Fi through Settings.
 - Software-effect speed levels use exact 2000/1000/500/250/100 ms logical intervals from Very Slow through Very Fast.
