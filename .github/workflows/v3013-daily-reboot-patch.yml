@@ -1,0 +1,90 @@
+name: Apply v3.0.13 daily 3 PM reboot
+
+on:
+  push:
+    branches: [codex/v3.0.13-daily-1500-reboot]
+    paths: [.github/workflows/v3013-daily-reboot-patch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/v3.0.13-daily-1500-reboot
+      - name: Patch production source and regression gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main = Path('firmware/src/main.cpp')
+          s = main.read_text()
+          anchor = 'static constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;\n'
+          insert = '''static constexpr uint16_t DAILY_REBOOT_MINUTE=15U*60U;\nstatic bool dailyRebootClockInitialized=false;\nstatic int32_t dailyRebootHandledDay=-1;\n'''
+          if 'DAILY_REBOOT_MINUTE' not in s:
+              if anchor not in s:
+                  raise SystemExit('daily reboot constant anchor not found')
+              s = s.replace(anchor, anchor + insert, 1)
+
+          s = s.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";',
+                        'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";', 1)
+
+          marker = 'void setupRoutes(){\n'
+          daily = '''static bool dailyScheduledRebootDue(int32_t dayKey,uint16_t minute){\n  if(!dailyRebootClockInitialized){\n    dailyRebootClockInitialized=true;\n    dailyRebootHandledDay=minute>=DAILY_REBOOT_MINUTE?dayKey:dayKey-1;\n    return false;\n  }\n  if(minute<DAILY_REBOOT_MINUTE||dailyRebootHandledDay==dayKey)return false;\n  dailyRebootHandledDay=dayKey;\n  return true;\n}\nstatic void checkDailyScheduledReboot(){\n  if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;\n  time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;\n  int32_t dayKey=(int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;\n  uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);\n  if(!dailyScheduledRebootDue(dayKey,minute))return;\n  delay(40);ESP.restart();\n}\n'''
+          if 'static void checkDailyScheduledReboot(){' not in s:
+              if marker not in s:
+                  raise SystemExit('setupRoutes marker not found')
+              s = s.replace(marker, daily + marker, 1)
+
+          loop_old = '  maintainWiFiConnection();\n  if(!otaAutoRebootPending&&!Update.isRunning())'
+          loop_new = '  maintainWiFiConnection();checkDailyScheduledReboot();\n  if(!otaAutoRebootPending&&!Update.isRunning())'
+          if loop_new not in s:
+              if loop_old not in s:
+                  raise SystemExit('main loop anchor not found')
+              s = s.replace(loop_old, loop_new, 1)
+          main.write_text(s)
+
+          Path('FIRMWARE_VERSION.txt').write_text('3.0.13\n')
+
+          test = Path('tools/test_maintenance.py')
+          t = test.read_text()
+          t = t.replace('# Production build trigger: v3.0.12 exact candidate.\n# Anderson v3.0.12 network-recovery regression gate.',
+                        '# Production build trigger: v3.0.13 exact candidate.\n# Anderson v3.0.13 network/daily-reboot regression gate.', 1)
+          daily_test = r'''\n# Test the exact pure daily-reboot state machine from production source.\ndaily_logic=source[source.index('static constexpr uint16_t DAILY_REBOOT_MINUTE='):source.index('static void checkDailyScheduledReboot(){')]\ndaily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setupRoutes(){')]\nmain_loop=source[source.index('void loop(){'):]\nassert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check\nassert 'checkDailyScheduledReboot();' in main_loop\ndaily_stubs=r'''\n#include <cstdint>\n#include <cassert>\n#include <iostream>\n'''\ndaily_tests=r'''\nint main(){\n dailyRebootClockInitialized=false;dailyRebootHandledDay=-1;\n assert(!dailyScheduledRebootDue(1000,899));assert(dailyRebootHandledDay==999);\n assert(dailyScheduledRebootDue(1000,900));assert(dailyRebootHandledDay==1000);\n assert(!dailyScheduledRebootDue(1000,901));\n assert(!dailyScheduledRebootDue(1001,899));assert(dailyRebootHandledDay==1000);\n assert(dailyScheduledRebootDue(1001,900));assert(dailyRebootHandledDay==1001);\n dailyRebootClockInitialized=false;dailyRebootHandledDay=-1;\n assert(!dailyScheduledRebootDue(2000,901));assert(dailyRebootHandledDay==2000);\n assert(!dailyScheduledRebootDue(2000,1000));\n assert(!dailyScheduledRebootDue(2001,899));\n assert(dailyScheduledRebootDue(2001,900));\n std::cout<<"PASS: daily 15:00 local reboot state machine, once-per-day behavior, and no immediate post-boot re-fire\\n";\n}\n'''\nwith tempfile.TemporaryDirectory() as directory:\n    p=Path(directory)/'daily_reboot.cpp'\n    p.write_text(daily_stubs+daily_logic+daily_tests)\n    subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',str(p.with_suffix(''))],check=True)\n    subprocess.run([str(p.with_suffix(''))],check=True)\n\n'''
+          marker = '# Test the actual automatic-update loop and monitor countdown with simulated time.\n'
+          if '# Test the exact pure daily-reboot state machine' not in t:
+              if marker not in t:
+                  raise SystemExit('test insertion marker not found')
+              t = t.replace(marker, daily_test + marker, 1)
+          test.write_text(t)
+
+          readme = Path('README.md')
+          r = readme.read_text().replace('Current firmware: **v3.0.12**.', 'Current firmware: **v3.0.13**.', 1)
+          old = '- While disconnected with saved credentials, retry Wi-Fi every 30 seconds. If the controller remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Successful recovery cancels the watchdog, closes the setup AP, and renews time sync/mDNS. There is no unconditional maintenance reboot.'
+          new = '- Reboot once each day at **3:00 PM local controller time** when the clock is valid; the schedule initializes safely after boot so it cannot immediately re-fire in a reboot loop, and it defers during firmware-update/reboot activity. There is no unconditional uptime-based maintenance reboot. While disconnected with saved credentials, retry Wi-Fi every 30 seconds; after 10 continuous offline minutes, reboot as a last-resort recovery. Successful recovery cancels that watchdog, closes the setup AP, and renews time sync/mDNS.'
+          if old not in r:
+              raise SystemExit('README timing bullet not found')
+          readme.write_text(r.replace(old, new, 1))
+
+          agents = Path('AGENTS.md')
+          a = agents.read_text()
+          old = '- Do not use an unconditional maintenance reboot. While saved Wi-Fi credentials exist and the controller is disconnected, retry the saved network every 30 seconds; if it remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Reset the offline watchdog immediately after reconnection.'
+          new = '- Do not use an unconditional uptime-based maintenance reboot. Reboot once daily at **15:00 local controller time** when the clock is valid. The daily schedule must fire at most once per local calendar day, initialize after boot without immediately re-firing when startup occurs after 15:00, and defer while firmware update/reboot activity is active. While saved Wi-Fi credentials exist and the controller is disconnected, retry the saved network every 30 seconds; if it remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Reset the offline watchdog immediately after reconnection.'
+          if old not in a:
+              raise SystemExit('AGENTS timing bullet not found')
+          agents.write_text(a.replace(old, new, 1))
+          PY
+          python tools/test_maintenance.py
+      - name: Commit exact v3.0.13 candidate
+        shell: bash
+        run: |
+          git config user.name jlc3718-source
+          git config user.email jlc3718@gmail.com
+          git rm .github/workflows/v3013-daily-reboot-patch.yml
+          git add firmware/src/main.cpp tools/test_maintenance.py FIRMWARE_VERSION.txt README.md AGENTS.md
+          git commit -m "Add daily 3 PM reboot for v3.0.13"
+          git push origin HEAD:codex/v3.0.13-daily-1500-reboot
