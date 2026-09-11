@@ -122,6 +122,50 @@
     byId('homeEffect').addEventListener('change',syncEffect);new MutationObserver(syncEffect).observe(byId('nowTheme'),{childList:true});
     new MutationObserver(syncLive).observe(byId('homeBrightVal'),{childList:true});
   }
+  function effectPreviews() {
+    const values=['Jump','Breath','Strobe','Gradient','Solid'];
+    const labels={Jump:'Jump',Breath:'Breath',Strobe:'Strobe',Gradient:'Gradient',Solid:'Solid'};
+    const hints={Jump:'Snaps between colors',Breath:'Gently fades in and out',Strobe:'Flashes on and off',Gradient:'Flows through the palette',Solid:'Holds one color steady'};
+    if(!byId('v3EffectPreviewStyle')) {
+      const style=document.createElement('style');style.id='v3EffectPreviewStyle';style.textContent=`
+.v3EffectNative{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;clip-path:inset(50%)!important}
+.v3EffectPicker{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin:9px 0 4px;min-width:0}
+.v3EffectButton{min-width:0;min-height:66px;padding:7px 5px 6px;border:1px solid #79bde644;border-radius:12px;background:linear-gradient(155deg,#122943d9,#071426f2);color:#dceeff;box-shadow:inset 0 1px 0 #eaf8ff14,0 4px 12px #0003;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:border-color .18s,background .18s,box-shadow .18s,transform .12s}
+.v3EffectButton:active{transform:scale(.97)}.v3EffectButton[aria-pressed="true"]{border-color:#79e9ff;background:radial-gradient(ellipse at 50% 0,#35cfff38,transparent 72%),linear-gradient(145deg,#164c78e8,#08213bea);box-shadow:inset 0 1px 0 #e8fbff38,0 0 0 1px #22cfff33,0 0 16px #08a9ff28}
+.v3EffectMini{width:100%;max-width:66px;min-height:20px;display:grid;grid-template-columns:repeat(5,1fr);align-items:center;gap:3px;padding:5px 6px;border-radius:99px;background:#020914c9;border:1px solid #8fdfff26;overflow:hidden}
+.v3EffectMini i{display:block;width:100%;aspect-ratio:1;border-radius:50%;background:#42d8ff;box-shadow:0 0 6px currentColor;color:#42d8ff}
+.v3EffectName{font-size:10px;font-weight:720;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i{animation:v3FxJump 2000ms steps(1,end) infinite}
+.v3EffectButton[data-effect="Breath"] .v3EffectMini i{animation:v3FxBreath 2000ms ease-in-out infinite;background:#45d9ff;color:#45d9ff}
+.v3EffectButton[data-effect="Strobe"] .v3EffectMini i{animation:v3FxStrobe 1000ms steps(1,end) infinite;background:#f3fbff;color:#f3fbff}
+.v3EffectButton[data-effect="Gradient"] .v3EffectMini i{animation:v3FxGradient 2500ms linear infinite}.v3EffectButton[data-effect="Gradient"] .v3EffectMini i:nth-child(1){animation-delay:0ms}.v3EffectButton[data-effect="Gradient"] .v3EffectMini i:nth-child(2){animation-delay:-500ms}.v3EffectButton[data-effect="Gradient"] .v3EffectMini i:nth-child(3){animation-delay:-1000ms}.v3EffectButton[data-effect="Gradient"] .v3EffectMini i:nth-child(4){animation-delay:-1500ms}.v3EffectButton[data-effect="Gradient"] .v3EffectMini i:nth-child(5){animation-delay:-2000ms}
+.v3EffectButton[data-effect="Solid"] .v3EffectMini i{background:#45d9ff;color:#45d9ff}
+@keyframes v3FxJump{0%,24.9%{background:#42d8ff;color:#42d8ff}25%,49.9%{background:#ff4ebd;color:#ff4ebd}50%,74.9%{background:#ffd24a;color:#ffd24a}75%,100%{background:#7cff74;color:#7cff74}}
+@keyframes v3FxBreath{0%,100%{opacity:.22;filter:brightness(.65)}50%{opacity:1;filter:brightness(1.35)}}
+@keyframes v3FxStrobe{0%,49.9%{opacity:1}50%,100%{opacity:.08}}
+@keyframes v3FxGradient{0%{background:#42d8ff;color:#42d8ff}20%{background:#7cff74;color:#7cff74}40%{background:#ffd24a;color:#ffd24a}60%{background:#ff4ebd;color:#ff4ebd}80%{background:#7c72ff;color:#7c72ff}100%{background:#42d8ff;color:#42d8ff}}
+.v3EffectCard .v3EffectPicker{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:7px}.v3EffectCard .v3EffectButton{min-height:54px;padding:5px 4px;gap:4px}.v3EffectCard .v3EffectButton:last-child{grid-column:1/-1}.v3EffectCard .v3EffectMini{max-width:58px;min-height:18px;padding:4px 5px}.v3EffectCard .v3EffectName{font-size:9px}
+@media(max-width:520px){.page:not([data-page="home"]) .v3EffectPicker{grid-template-columns:repeat(3,minmax(0,1fr))}.page:not([data-page="home"]) .v3EffectButton{min-height:62px}}
+@media(prefers-reduced-motion:reduce){.v3EffectMini i{animation:none!important}.v3EffectButton{transition:none}}
+`;document.head.appendChild(style);
+    }
+    const sync=select=>{
+      const picker=select.nextElementSibling?.classList.contains('v3EffectPicker')?select.nextElementSibling:null;if(!picker)return;
+      qa('.v3EffectButton',picker).forEach(b=>{const active=b.dataset.effect===select.value;b.setAttribute('aria-pressed',String(active));b.classList.toggle('active',active)});
+    };
+    const enhance=select=>{
+      if(!(select instanceof HTMLSelectElement)||select.dataset.v3EffectPreview==='1')return;
+      const options=[...select.options].map(o=>o.value);if(!values.every(v=>options.includes(v)))return;
+      select.dataset.v3EffectPreview='1';select.classList.add('v3EffectNative');select.tabIndex=-1;select.setAttribute('aria-hidden','true');
+      const picker=el('div','v3EffectPicker');picker.setAttribute('role','group');picker.setAttribute('aria-label',select.getAttribute('aria-label')||'Effect type');
+      values.forEach(value=>{const b=el('button','v3EffectButton',`<span class="v3EffectMini" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="v3EffectName">${labels[value]}</span>`);b.type='button';b.dataset.effect=value;b.title=hints[value];b.setAttribute('aria-label',`${value==='Solid'?'Solid / Static':value}: ${hints[value]}`);b.addEventListener('click',()=>{if(select.value===value){sync(select);return}select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));sync(select)});picker.appendChild(b)});
+      select.insertAdjacentElement('afterend',picker);select.addEventListener('change',()=>sync(select));sync(select);
+    };
+    const scan=root=>{if(root instanceof HTMLSelectElement)enhance(root);qa('select',root instanceof Element?root:document).forEach(enhance)};
+    scan(document);
+    new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node instanceof Element)scan(node)}))).observe(document.body,{childList:true,subtree:true});
+    setInterval(()=>qa('select[data-v3-effect-preview="1"]').forEach(sync),350);
+  }
   function syncRole() {
     q('.v3BottomNav').hidden=!window.andersonProfile;
     const admin=window.andersonProfile?.role==='admin' && window.andersonProfile?.id==='jason';
@@ -137,6 +181,6 @@
     qa('.profileChoice').forEach(b=>b.insertAdjacentHTML('beforeend',icon('arrow')));
     const pin=byId('profilePinForm');new MutationObserver(()=>{ if(!pin.hidden)pin.scrollIntoView({behavior:'smooth',block:'nearest'}); }).observe(pin,{attributes:true,attributeFilter:['hidden']});
   }
-  function init() { navigation();composeHome();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }
+  function init() { navigation();composeHome();effectPreviews();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
