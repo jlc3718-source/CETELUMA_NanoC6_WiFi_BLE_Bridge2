@@ -24,7 +24,7 @@ jobs:
           main = Path('firmware/src/main.cpp')
           s = main.read_text()
           anchor = 'static constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;\n'
-          insert = '''static constexpr uint16_t DAILY_REBOOT_MINUTE=15U*60U;\nstatic bool dailyRebootClockInitialized=false;\nstatic int32_t dailyRebootHandledDay=-1;\n'''
+          insert = 'static constexpr uint16_t DAILY_REBOOT_MINUTE=15U*60U;\nstatic bool dailyRebootClockInitialized=false;\nstatic int32_t dailyRebootHandledDay=-1;\n'
           if 'DAILY_REBOOT_MINUTE' not in s:
               if anchor not in s:
                   raise SystemExit('daily reboot constant anchor not found')
@@ -32,11 +32,10 @@ jobs:
 
           if 'ANDERSON_FIRMWARE_VERSION="3.0.12"' not in s:
               raise SystemExit('expected v3.0.12 runtime version not found')
-          s = s.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";',
-                        'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";', 1)
+          s = s.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";', 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";', 1)
 
           marker = 'void setupRoutes(){\n'
-          daily = '''static bool dailyScheduledRebootDue(int32_t dayKey,uint16_t minute){\n  if(!dailyRebootClockInitialized){\n    dailyRebootClockInitialized=true;\n    dailyRebootHandledDay=minute>=DAILY_REBOOT_MINUTE?dayKey:dayKey-1;\n    return false;\n  }\n  if(minute<DAILY_REBOOT_MINUTE||dailyRebootHandledDay==dayKey)return false;\n  dailyRebootHandledDay=dayKey;\n  return true;\n}\nstatic void checkDailyScheduledReboot(){\n  if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;\n  time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;\n  int32_t dayKey=(int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;\n  uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);\n  if(!dailyScheduledRebootDue(dayKey,minute))return;\n  delay(40);ESP.restart();\n}\n'''
+          daily = 'static bool dailyScheduledRebootDue(int32_t dayKey,uint16_t minute){\n  if(!dailyRebootClockInitialized){\n    dailyRebootClockInitialized=true;\n    dailyRebootHandledDay=minute>=DAILY_REBOOT_MINUTE?dayKey:dayKey-1;\n    return false;\n  }\n  if(minute<DAILY_REBOOT_MINUTE||dailyRebootHandledDay==dayKey)return false;\n  dailyRebootHandledDay=dayKey;\n  return true;\n}\nstatic void checkDailyScheduledReboot(){\n  if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;\n  time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;\n  int32_t dayKey=(int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;\n  uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);\n  if(!dailyScheduledRebootDue(dayKey,minute))return;\n  delay(40);ESP.restart();\n}\n'
           if 'static void checkDailyScheduledReboot(){' not in s:
               if marker not in s:
                   raise SystemExit('setupRoutes marker not found')
@@ -59,37 +58,32 @@ jobs:
           if old_header not in t:
               raise SystemExit('test header not found')
           t = t.replace(old_header, new_header, 1)
-          daily_test = """
-# Validate the production daily-reboot wiring and state-machine semantics.
-daily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setupRoutes(){')]
-main_loop=source[source.index('void loop(){'):]
-assert 'DAILY_REBOOT_MINUTE=15U*60U' in source
-assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check
-assert 'localtime_r(&now,&local)' in daily_check
-assert 'checkDailyScheduledReboot();' in main_loop
-
-def daily_due(state, day, minute):
-    initialized, handled = state
-    if not initialized:
-        return (True, day if minute >= 900 else day-1), False
-    if minute < 900 or handled == day:
-        return (initialized, handled), False
-    return (initialized, day), True
-
-state=(False,-1)
-state,due=daily_due(state,1000,899);assert not due and state==(True,999)
-state,due=daily_due(state,1000,900);assert due and state==(True,1000)
-state,due=daily_due(state,1000,901);assert not due
-state,due=daily_due(state,1001,899);assert not due
-state,due=daily_due(state,1001,900);assert due and state==(True,1001)
-state=(False,-1)
-state,due=daily_due(state,2000,901);assert not due and state==(True,2000)
-state,due=daily_due(state,2000,1000);assert not due
-state,due=daily_due(state,2001,899);assert not due
-state,due=daily_due(state,2001,900);assert due
-print('PASS: daily 15:00 local reboot state machine, once-per-day behavior, OTA deferral wiring, and no immediate post-boot re-fire')
-
-"""
+          daily_test = ("\n# Validate the production daily-reboot wiring and state-machine semantics.\n"
+                        "daily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setupRoutes(){')]\n"
+                        "main_loop=source[source.index('void loop(){'):]\n"
+                        "assert 'DAILY_REBOOT_MINUTE=15U*60U' in source\n"
+                        "assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check\n"
+                        "assert 'localtime_r(&now,&local)' in daily_check\n"
+                        "assert 'checkDailyScheduledReboot();' in main_loop\n\n"
+                        "def daily_due(state, day, minute):\n"
+                        "    initialized, handled = state\n"
+                        "    if not initialized:\n"
+                        "        return (True, day if minute >= 900 else day-1), False\n"
+                        "    if minute < 900 or handled == day:\n"
+                        "        return (initialized, handled), False\n"
+                        "    return (initialized, day), True\n\n"
+                        "state=(False,-1)\n"
+                        "state,due=daily_due(state,1000,899);assert not due and state==(True,999)\n"
+                        "state,due=daily_due(state,1000,900);assert due and state==(True,1000)\n"
+                        "state,due=daily_due(state,1000,901);assert not due\n"
+                        "state,due=daily_due(state,1001,899);assert not due\n"
+                        "state,due=daily_due(state,1001,900);assert due and state==(True,1001)\n"
+                        "state=(False,-1)\n"
+                        "state,due=daily_due(state,2000,901);assert not due and state==(True,2000)\n"
+                        "state,due=daily_due(state,2000,1000);assert not due\n"
+                        "state,due=daily_due(state,2001,899);assert not due\n"
+                        "state,due=daily_due(state,2001,900);assert due\n"
+                        "print('PASS: daily 15:00 local reboot state machine, once-per-day behavior, OTA deferral wiring, and no immediate post-boot re-fire')\n\n")
           marker = '# Test the actual automatic-update loop and monitor countdown with simulated time.\n'
           if '# Validate the production daily-reboot wiring' not in t:
               if marker not in t:
