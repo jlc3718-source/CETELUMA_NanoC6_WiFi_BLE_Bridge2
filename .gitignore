@@ -1,5 +1,6 @@
 firmware/.pio/
 firmware/include/WebUIGzip.h
+tools/node_modules/
 .pio-build-cache/
 release/
 __pycache__/

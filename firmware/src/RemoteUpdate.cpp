@@ -14,7 +14,7 @@ static constexpr const char* OTA_RELEASE_PREFIX="https://github.com/jlc3718-sour
 static constexpr size_t OTA_SLOT_BYTES=0x1E0000;
 static constexpr const char* OTA_NVS="anderson-ota";
 static constexpr uint32_t OTA_AUTO_FIRST_CHECK_MS=60UL*1000UL;
-static constexpr uint32_t OTA_AUTO_INTERVAL_MS=6UL*60UL*60UL*1000UL;
+static constexpr uint32_t OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL;
 static constexpr const char OTA_PUBLIC_KEY[]=R"KEY(-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3Dw/xqxEPbvkJQAcMeZxBAxwujxN
 kuGHPepzClPYMrJ4h5r8iNlyUFpJZcPI/FXe8+atedYKpIZZB5XlOj964Q==

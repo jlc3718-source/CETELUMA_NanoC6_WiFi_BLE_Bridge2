@@ -35,7 +35,8 @@ Theme runningTheme;
 uint32_t buttonDown=0,lastScheduleCheck=0;
 static uint64_t cpuWindowStartUs=0,cpuBusyUs=0;
 static uint8_t cpuLoadPct=0;
-bool setupAP=false;
+bool setupAP=false,wifiWasConnected=false;
+static uint32_t lastWiFiRetry=0;
 bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false;int otaUploadResponseCode=403;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
@@ -43,7 +44,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.4";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.11";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -174,12 +175,7 @@ static String systemJson(){
   String out;serializeJson(d,out);return out;
 }
 
-// Kept separate from the main UI so a tab/profile JavaScript problem cannot block OTA recovery.
-static const char RECOVERY_UI[] PROGMEM=R"AHREC(<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0a3f88"><title>Anderson Home Firmware Recovery</title>
-<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:24px 14px;background:linear-gradient(155deg,#061934,#0b438d 52%,#04152d);color:#f4f7fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}main{width:min(100%,540px);margin:0 auto}.brand{text-align:center;margin:8px 0 20px}h1{font-size:26px;margin:0}.sub{font-size:13px;line-height:1.45;color:#aeb8c5}.panel{padding:18px;border:1px solid #49566a;border-radius:18px;background:#101720;box-shadow:0 18px 46px #0005}.meta{margin:12px 0;padding:11px;border:1px solid #2a3a4c;border-radius:12px;background:#0c1219}.label{font-size:13px;margin:12px 0 6px}.field,.btn{width:100%;min-height:46px;padding:10px;border:1px solid #34465a;border-radius:12px;background:#0e151e;color:#f4f7fb;font:inherit}.pin{text-align:center;font-size:22px;font-weight:800;letter-spacing:.4em;padding-left:.4em}#pinWrap[hidden]{display:none}.btn{margin-top:10px;cursor:pointer;background:linear-gradient(#27aaff,#148de1);border-color:#3bb2ff;font-weight:750}.btn:disabled{opacity:.55}progress{width:100%;height:14px;margin-top:11px}a{color:#7dc9ff}.status{min-height:42px;margin-top:8px}</style></head>
-<body><main><div class="brand"><h1>Anderson Home</h1><div class="sub">Independent firmware recovery</div></div><section class="panel"><strong>Emergency APP-only Firmware Recovery</strong><div class="sub">This page does not depend on the profile chooser, its session, or the main controller interface.</div><div id="meta" class="meta sub">Checking controller firmware…</div><form id="form" method="post" action="/api/update?recovery=1" enctype="multipart/form-data"><div class="label">APP-only firmware BIN</div><input id="file" class="field" type="file" name="firmware" accept=".bin,application/octet-stream" required><div id="pinWrap"><div class="label">Jason’s four-digit PIN</div><input id="pin" class="field pin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off"><div class="sub">Required when PIN protection is on. It is verified directly by the recovery service.</div></div><button id="upload" class="btn" type="submit">Upload, Install &amp; Reboot</button></form><progress id="progress" max="100" value="0"></progress><div id="status" class="sub status" aria-live="polite">Choose only the APP_ONLY.bin release file. A successful recovery disables PIN protection but preserves all other saved settings.</div><div class="sub"><a href="/">Return to user chooser</a></div></section></main>
-<script>(function(){let before='',pinRequired=false;const get=id=>document.getElementById(id),say=message=>get('status').textContent=message;async function info(){try{const response=await fetch('/api/firmware?recovery='+Date.now(),{cache:'no-store'});if(!response.ok)throw 0;const firmware=await response.json();before=firmware.runningPartition||before;get('meta').innerHTML='<strong>Running:</strong> '+(firmware.runningPartition||'—')+(firmware.version?' • '+firmware.version:'')+'<br>Update slot: '+(firmware.nextPartition||'—')}catch(error){get('meta').textContent='Firmware details unavailable; the upload form remains ready.'}try{const response=await fetch('/api/auth/status?recovery='+Date.now(),{cache:'no-store'});if(!response.ok)throw 0;const auth=await response.json();pinRequired=auth.pinEnabled===true;get('pinWrap').hidden=!pinRequired}catch(error){get('pinWrap').hidden=false}}function wait(){let tries=0;say('Controller is rebooting. Waiting for it to return…');const poll=async()=>{tries++;try{const response=await fetch('/api/firmware?recovery='+Date.now(),{cache:'no-store'});if(response.ok){const firmware=await response.json();if(!before||firmware.runningPartition!==before||tries>=8){before=firmware.runningPartition||before;say('Recovery completed. PIN protection is off and the controller is back online.');get('pin').value='';get('upload').disabled=false;info();return}}}catch(error){}if(tries<45)setTimeout(poll,1000);else{say('Upload finished, but reconnect timed out. Reopen this page after Wi-Fi reconnects.');get('upload').disabled=false}};setTimeout(poll,2800)}get('pin').addEventListener('input',event=>event.target.value=event.target.value.replace(/\D/g,'').slice(0,4));get('form').addEventListener('submit',event=>{event.preventDefault();const file=get('file').files&&get('file').files[0],pin=get('pin').value;if(!file)return say('Choose an APP-only .bin firmware file first.');if(!/\.bin$/i.test(file.name))return say('The firmware filename must end in .bin.');if((pinRequired||pin.length)&&!/^\d{4}$/.test(pin))return say('Enter Jason’s four-digit PIN.');const data=new FormData();data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);get('upload').disabled=true;get('progress').value=0;say('Verifying recovery access and opening the inactive firmware slot…');request.upload.onprogress=e=>{if(e.lengthComputable){const percent=Math.round(e.loaded*100/e.total);get('progress').value=percent;say(percent<100?'Uploading firmware… '+percent+'%':'Upload complete. Verifying firmware…')}};request.onload=()=>{if(request.status>=200&&request.status<300){get('progress').value=100;say('Firmware verified. Disabling PIN protection and rebooting…');wait()}else{get('upload').disabled=false;say(request.responseText||'Firmware update failed.')}};request.onerror=()=>{get('upload').disabled=false;say('Upload connection failed before installation completed.')};request.send(data)});info()})();</script></body></html>)AHREC";
+// The independent recovery page is compressed separately by tools/release.py.
 
 
 struct EventOverrideCfg {
@@ -245,19 +241,37 @@ void startAP(){
   WiFi.mode(WIFI_AP_STA);WiFi.softAP("AndersonHome-Setup","andersonhome");setupAP=true;
 }
 void connectWiFi(){
-  auto&s=store.get();WiFi.mode(WIFI_STA);WiFi.setSleep(false);
+  auto&s=store.get();WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(true);
   if(!s.ssid.length()){startAP();return;}WiFi.begin(s.ssid.c_str(),s.password.c_str());
   uint32_t start=millis();while(WiFi.status()!=WL_CONNECTED && millis()-start<18000){delay(250);}
-  if(WiFi.status()==WL_CONNECTED){setupAP=false;configTzTime(s.tz.c_str(),"pool.ntp.org","time.nist.gov");}
+  if(WiFi.status()==WL_CONNECTED){wifiWasConnected=true;setupAP=false;configTzTime(s.tz.c_str(),"pool.ntp.org","time.nist.gov");}
   else{startAP();}
+  lastWiFiRetry=millis();
 }
 void setupMdns(){
   if(MDNS.begin("anderson-home")){MDNS.setInstanceName("Anderson Home");MDNS.addService("http","tcp",80);}
 }
+// Recover the saved network after router downtime, including startup fallback AP mode.
+static void maintainWiFiConnection(){
+  if(Update.isRunning()||otaAutoRebootPending)return;
+  if(WiFi.status()==WL_CONNECTED){
+    if(setupAP&&WiFi.mode(WIFI_STA))setupAP=false;
+    if(!wifiWasConnected){
+      configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");
+      MDNS.end();setupMdns();
+    }
+    wifiWasConnected=true;return;
+  }
+  wifiWasConnected=false;
+  if(WiFi.scanComplete()==WIFI_SCAN_RUNNING)return;
+  if(store.get().ssid.length()&&(uint32_t)(millis()-lastWiFiRetry)>=30UL*60UL*1000UL){
+    lastWiFiRetry=millis();WiFi.reconnect();
+  }
+}
 void setupRoutes(){
   const char* collectedHeaders[]={AUTH_HEADER,RECOVERY_PIN_HEADER};server.collectHeaders(collectedHeaders,2);
   server.on("/",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)WEB_UI_GZ,WEB_UI_GZ_LEN);});
-  server.on("/recovery",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("X-Content-Type-Options","nosniff");server.send_P(200,"text/html",RECOVERY_UI);});
+  server.on("/recovery",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("X-Content-Type-Options","nosniff");server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)RECOVERY_UI_GZ,RECOVERY_UI_GZ_LEN);});
   server.on("/api/auth/status",HTTP_GET,[]{sendJson(pinAuthStatusJson());});
   server.on("/api/auth/unlock",HTTP_POST,[]{
     JsonDocument d;if(!body(d))return;String profile=d["profile"]|String("");profile.toLowerCase();String pin=d["pin"]|String("");uint8_t role=profileRole(profile);
@@ -439,35 +453,26 @@ void setupRoutes(){
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
-// ANDERSON_DAILY_MAINTENANCE_REBOOT: reboot once each local calendar day during the 18:00 minute.
-static int32_t dailyRebootDateKey=0;
-static uint32_t dailyRebootLastCheck=0;
-static void loadDailyRebootMarker(){
-  Preferences p;if(!p.begin("anderson-maint",true))return;dailyRebootDateKey=p.getInt("rebootDate",0);p.end();
-}
-static void checkDailyMaintenanceReboot(){
-  if((uint32_t)(millis()-dailyRebootLastCheck)<1000UL)return;dailyRebootLastCheck=millis();
-  if(!timeValid()||otaAutoRebootPending)return;
-  time_t now=time(nullptr);tm local{};localtime_r(&now,&local);
-  if(local.tm_hour!=18||local.tm_min!=0)return;
-  int32_t dateKey=(local.tm_year+1900)*10000+(local.tm_mon+1)*100+local.tm_mday;
-  if(dailyRebootDateKey==dateKey)return;
-  Preferences p;if(!p.begin("anderson-maint",false))return;size_t wrote=p.putInt("rebootDate",dateKey);int32_t verify=p.getInt("rebootDate",0);p.end();
-  if(wrote!=sizeof(int32_t)||verify!=dateKey)return;
-  dailyRebootDateKey=dateKey;delay(100);ESP.restart();
+// An uptime timer works without Wi-Fi/NTP and does not write periodic markers to flash.
+static constexpr uint32_t MAINTENANCE_REBOOT_INTERVAL_MS=4UL*60UL*60UL*1000UL;
+static uint32_t maintenanceRebootStartedAt=0;
+static void checkMaintenanceReboot(){
+  if((uint32_t)(millis()-maintenanceRebootStartedAt)<MAINTENANCE_REBOOT_INTERVAL_MS)return;
+  if(Update.isRunning()||otaAutoRebootPending)return;
+  delay(40);ESP.restart();
 }
 
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
-  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadDailyRebootMarker();loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFDA7F;runningTheme.colorCount=1;
-  setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
+  setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);maintenanceRebootStartedAt=millis();
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
   server.handleClient();ble.loop();
-  checkDailyMaintenanceReboot();
-  if(!otaAutoRebootPending){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
+  checkMaintenanceReboot();maintainWiFiConnection();
+  if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
   if(millis()-lastScheduleCheck>15000){lastScheduleCheck=millis();evaluateSchedule();}

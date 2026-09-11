@@ -34,8 +34,8 @@ APP-only binary; do not stop after starting a build.
    build commit before signing or advancing the OTA manifest.
 7. Retain exactly two Anderson firmware-build generations in GitHub Actions: the
    current successful firmware build plus the immediately previous successful
-   firmware build. Delete all older completed workflow runs; their associated
-   artifacts are deleted with them.
+   firmware build. Delete older completed production firmware/release workflow runs; their associated
+   artifacts are deleted with them. Keep separate Android and test workflow artifacts.
 8. Retain exactly two stable Anderson GitHub Releases and BIN assets: the newest
    signed release plus one previous backup release. After a newer stable Anderson
    release is published, automatically delete older Anderson releases/assets while
@@ -61,7 +61,8 @@ GitHub runner queue vary.
 - Saved NVS key names and formats, events, colors, names, and effects.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
-- Daily maintenance reboot occurs once per local calendar day during the 6:00 PM (18:00) minute after valid time sync; use the configured Anderson time zone/DST.
+- Maintenance reboot occurs after every 4 hours of uptime, independently of Wi-Fi/NTP; defer it while a firmware upload or another scheduled reboot is pending. This replaces the old daily 18:00 reboot.
+- While disconnected, retry the saved Wi-Fi network every 30 minutes; stop fallback AP mode and renew NTP/mDNS after reconnection. Preserve saved credentials.
 - v3.0.1 and later use the approved third-reference Anderson Home dashboard as the visual source of truth: illuminated nighttime house/RGB hero, integrated Anderson Home branding, dark translucent glass controls, prominent green ON control, rainbow brightness bar, effect/schedule cards, circular favorite colors, feature tiles, and floating bottom navigation. Do not regress to the generic logo-card/tab-bar layout unless the user explicitly requests it.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly
   reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
@@ -70,7 +71,7 @@ GitHub runner queue vary.
 ## Remote OTA behavior
 
 - v2.0.6 and later periodically check the signed `ota/latest.json` channel after
-  startup and every 15 minutes while Wi-Fi is available.
+  startup and every hour while Wi-Fi is available.
 - A newer release is installed automatically only after the existing ECDSA manifest
   verification, version/URL/size checks, exact streamed SHA-256 verification, and
   successful write to the inactive OTA slot. Downgrades remain blocked.

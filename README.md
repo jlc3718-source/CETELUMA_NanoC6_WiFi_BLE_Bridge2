@@ -1,18 +1,18 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v3.0.10**.
+Current firmware: **v3.0.11**.
 
-Canonical production source is `firmware/`. The Android app is a frozen web shell; normal Anderson changes belong in firmware/web or firmware controller source.
+Canonical source: `firmware/`. The frozen Android app displays its web UI.
 
-Production guarantees retained:
-- NVS-backed settings, custom lights, schedules, event overrides, colors, and Shirley/Jason PIN profiles.
-- Proven ELK/Lotus Lantern BLE control and dual-slot APP-only OTA layout.
-- Signed remote OTA plus manual APP-only recovery/update paths.
-- Approved v3 blue glass dashboard and embedded house artwork.
+- NVS settings, schedules, colors, Shirley/Jason PINs, BLE control, signed OTA, and the dual-slot partition map are preserved.
+- The approved dashboard, system monitor, brightness slider, asynchronous Wi-Fi scan, and independent firmware recovery remain available.
+- While disconnected, retry saved Wi-Fi every 30 minutes; successful recovery closes the setup AP and renews time sync/mDNS. Restart after 4 hours of uptime, deferring during firmware updates. A restart ends PIN sessions and returns manual lighting to the saved schedule.
+- Signed OTA checks start one minute after boot and repeat hourly. The system monitor displays the remaining time.
+- Build-only JS/CSS minification and Zopfli gzip (500 iterations, unlimited block splitting) compress both embedded pages. Obsolete branding and demo event fallbacks are removed. Editable source, artwork, and size-focused compiler flags are retained.
 
-v3.0.6 is a size-optimization release. It keeps the existing source/API/UI behavior and enables size-focused release compiler/linker options without changing the partition map or saved-data formats.
+Build dependencies: `python -m pip install -r tools/requirements-build.txt` and `npm ci --prefix tools --no-audit --no-fund`.
 
-Release path: update `FIRMWARE_VERSION.txt`, run `python tools/release.py prepare`, then push one `codex/` change branch. CI builds and verifies `and_<version>.bin`; `AGENTS.md` contains the authoritative continuation/release procedure and preserved-behavior requirements.
+Release path: `python tools/release.py bump`, `python tools/release.py prepare`, `python tools/test_maintenance.py`, then push one `codex/` branch. CI produces `and_<version>.bin` plus exact-commit, checksum, and embedded-page provenance. `AGENTS.md` defines release/OTA verification and retention.
 
-Normal update: automatic signed OTA or Settings → Firmware Update with the APP-only BIN.
+Normal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
 Serial recovery only: full image at **0x0**, Erase OFF. Never flash APP-only at 0x0.

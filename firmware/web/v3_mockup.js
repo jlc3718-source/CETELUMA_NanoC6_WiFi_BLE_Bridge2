@@ -54,7 +54,6 @@
     const profile = byId('activeProfile'); profile.className = 'v3ProfileName';
     const switcher = byId('switchProfile'); switcher.innerHTML = icon('user'); switcher.setAttribute('aria-label','Switch user'); switcher.title = 'Switch user';
     actions.replaceChildren(meta, profile, switcher);
-    q('.andersonBrand').classList.add('v3SubBrand');
     const wifi = routeButton('v3SettingsLink','wifi',`${icon('wifi')}<span><strong>Wi-Fi</strong><small>Network & connection</small></span>${icon('arrow')}`);
     q('.page[data-page="settings"]').prepend(wifi);
     byId('bleStatus').closest('.panel').id = 'v3Controllers';

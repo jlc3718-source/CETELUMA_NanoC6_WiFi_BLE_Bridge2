@@ -1,0 +1,9 @@
+{
+  "name": "anderson-web-build",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build-only minifier for the embedded Anderson web interface",
+  "dependencies": {
+    "terser": "5.44.0"
+  }
+}

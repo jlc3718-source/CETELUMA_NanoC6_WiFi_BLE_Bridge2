@@ -13,12 +13,17 @@ import subprocess
 import urllib.request
 import zipfile
 from html.parser import HTMLParser
+from functools import lru_cache
+
+import rcssmin
+import zopfli.gzip
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'firmware/web/index.html'
 V3_CSS = ROOT / 'firmware/web/v3_mockup.css'
 V3_JS = ROOT / 'firmware/web/v3_mockup.js'
 V3_HERO_B64 = ROOT / 'firmware/web/v3_hero.b64'
+RECOVERY_UI = ROOT / 'firmware/web/recovery.html'
 MAIN = ROOT / 'firmware/src/main.cpp'
 SLOT = 0x1E0000
 
@@ -104,7 +109,44 @@ def render_ui():
         raise ValueError('Unexpected Anderson Home document structure')
     html = html.replace('</head>', style_tag + '</head>', 1)
     html = html.replace('</body>', script_tag + '</body>', 1)
-    return html
+    return minify_html(html)
+
+
+@lru_cache(maxsize=4)
+def minify_html(html):
+    """Minify embedded code only; preserve document text, IDs, and whitespace layout."""
+    pattern = r'(<(script|style)\b[^>]*>)(.*?)(</\2\s*>)'
+    blocks = list(re.finditer(pattern, html, re.S | re.I))
+    scripts = [m[3] for m in blocks if m[2].lower() == 'script']
+    result = subprocess.run(
+        ['node', str(ROOT / 'tools/minify_web.js')],
+        input=json.dumps(scripts), text=True, check=True, capture_output=True,
+    )
+    minimized = json.loads(result.stdout)
+    if len(minimized) != len(scripts):
+        raise ValueError('Web minifier returned an unexpected script count')
+    javascript = iter(minimized)
+
+    def replace(match):
+        body = (next(javascript) if match[2].lower() == 'script'
+                else rcssmin.cssmin(match[3], keep_bang_comments=True))
+        return match[1] + body + match[4]
+
+    return re.sub(pattern, replace, html, flags=re.S | re.I)
+
+
+def rendered_pages():
+    return {'WEB_UI': render_ui().encode(),
+            'RECOVERY_UI': minify_html(RECOVERY_UI.read_text()).encode()}
+
+
+@lru_cache(maxsize=4)
+def compress_page(rendered):
+    """High-effort standard gzip; decompression stays in the existing browser."""
+    packed = zopfli.gzip.compress(rendered, numiterations=500, blocksplittingmax=0)
+    if gzip.decompress(packed) != rendered:
+        raise ValueError('Compressed web page failed its lossless round-trip check')
+    return packed
 
 
 class PageIds(HTMLParser):
@@ -126,11 +168,13 @@ def check():
         raise ValueError('Firmware version marker missing from main.cpp')
     if f'>v{ver}<' not in html:
         raise ValueError('Rendered UI version mismatch')
-    PageIds().feed(html)
-    scripts = re.findall(r'<script\b[^>]*>(.*?)</script>', html, re.S | re.I)
-    if not scripts:
-        raise ValueError('Web UI has no scripts')
-    subprocess.run(['node', '--check'], input='\n'.join(scripts), text=True, check=True)
+    for name, page in rendered_pages().items():
+        page = page.decode()
+        PageIds().feed(page)
+        scripts = re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.S | re.I)
+        if not scripts:
+            raise ValueError(f'{name} has no scripts')
+        subprocess.run(['node', '--check'], input='\n'.join(scripts), text=True, check=True)
     partitions = {}
     for line in (ROOT / 'firmware/partitions_ota.csv').read_text().splitlines():
         if line.strip() and not line.lstrip().startswith('#'):
@@ -144,26 +188,27 @@ def check():
 def prepare():
     sync_runtime_version()
     check()
-    rendered = render_ui().encode()
-    packed = gzip.compress(rendered, compresslevel=9, mtime=0)
-    lines = ['#pragma once', '#include <Arduino.h>',
-             f'static const size_t WEB_UI_GZ_LEN={len(packed)};',
-             'static const uint8_t WEB_UI_GZ[] PROGMEM = {']
-    lines += ['  ' + ','.join(f'0x{b:02x}' for b in packed[i:i+20]) + ','
-              for i in range(0, len(packed), 20)]
-    text = '\n'.join(lines + ['};', ''])
+    lines = ['#pragma once', '#include <Arduino.h>']
+    for name, rendered in rendered_pages().items():
+        packed = compress_page(rendered)
+        lines += [f'static const size_t {name}_GZ_LEN={len(packed)};',
+                  f'static const uint8_t {name}_GZ[] PROGMEM = {{']
+        lines += ['  ' + ','.join(f'0x{b:02x}' for b in packed[i:i+20]) + ','
+                  for i in range(0, len(packed), 20)]
+        lines += ['};']
+        print(f'{name}: {len(rendered)} bytes -> {len(packed)} bytes (Zopfli gzip, 500 iterations)')
+    text = '\n'.join(lines + [''])
     target = ROOT / 'firmware/include/WebUIGzip.h'
     if not target.exists() or target.read_text() != text:
         target.write_text(text)
-    print(f'Rendered web UI: {len(rendered)} bytes -> {len(packed)} bytes')
 
 
 def validate_app(data):
-    rendered = render_ui().encode()
     if not data or data[0] != 0xE9 or len(data) >= SLOT:
         raise ValueError('Invalid or oversized APP-only firmware')
-    if gzip.compress(rendered, compresslevel=9, mtime=0) not in data:
-        raise ValueError('Firmware does not contain this exact rendered web UI')
+    for name, rendered in rendered_pages().items():
+        if compress_page(rendered) not in data:
+            raise ValueError(f'Firmware does not contain the exact rendered {name}')
 
 
 def package(full):
@@ -179,6 +224,13 @@ def package(full):
     rendered = render_ui().encode()
     manifest = {'version': ver, 'commit': git('rev-parse', 'HEAD'),
                 'ota_slot_bytes': SLOT, 'ui_sha256': sha(rendered), 'files': {}}
+    manifest['web_assets'] = {
+        name: {'bytes': len(page), 'sha256': sha(page),
+               'gzip_bytes': len(compress_page(page)),
+               'gzip_sha256': sha(compress_page(page))}
+        for name, page in rendered_pages().items()
+    }
+    manifest['web_compression'] = 'zopfli-0.2.3.post1-gzip-500-unlimited-blocks'
     for name, data in files.items():
         (folder / name).write_bytes(data)
         manifest['files'][name] = {'bytes': len(data), 'sha256': sha(data)}
