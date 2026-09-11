@@ -1,6 +1,4 @@
-# Production build trigger: v3.0.13 exact candidate.
-# Exact production build trigger after daily-reboot validation.
-# Anderson v3.0.13 network/daily-reboot regression gate.
+# Anderson network/daily-reboot regression gate.
 from pathlib import Path
 import re
 import subprocess
@@ -9,6 +7,7 @@ source=(Path(__file__).resolve().parents[1]/'firmware/src/main.cpp').read_text()
 wifi=source[source.index('static void maintainWiFiConnection(){'):source.index('void setupRoutes(){')]
 stubs=r'''
 #include <cstdint>
+#include <atomic>
 #include <string>
 #include <cassert>
 #include <iostream>
@@ -16,12 +15,15 @@ uint32_t tick=0; uint32_t millis(){return tick;} void delay(int){}
 struct {int count=0;void restart(){++count;}} ESP;
 struct {bool busy=false;bool isRunning(){return busy;}} Update;
 constexpr int WL_CONNECTED=3,WIFI_STA=1,WIFI_SCAN_RUNNING=-1;
-struct {int state=0,retries=0,modes=0,scan=-2;int scanComplete(){return scan;}int status(){return state;}bool reconnect(){++retries;return true;}bool mode(int v){assert(v==WIFI_STA);++modes;return true;}} WiFi;
+struct {int state=0,retries=0,modes=0,scan=-2;int scanComplete(){return scan;}uint32_t ip=0x0101A8C0;uint32_t localIP(){return ip;}int status(){return state;}bool reconnect(){++retries;return true;}bool mode(int v){assert(v==WIFI_STA);++modes;return true;}} WiFi;
 struct Config{std::string ssid="test",tz="test";};struct {Config cfg;Config& get(){return cfg;}} store;
 struct {int stops=0;void end(){++stops;}} MDNS;
 int timeSyncs=0,mdnsStarts=0;void configTzTime(const char*,const char*,const char*){++timeSyncs;}void setupMdns(){++mdnsStarts;}
 bool otaAutoRebootPending=false,setupAP=false,wifiWasConnected=false;
 uint32_t lastWiFiRetry=0,wifiOfflineSince=0;bool wifiOfflineTimerStarted=false;
+bool networkServerStarted=true;uint32_t lastStationIp=0,networkServiceRestarts=0;
+std::atomic<bool> networkServiceRefreshPending{false};
+struct {int closes=0,starts=0,clientCloses=0;struct Client{int* counter;void stop(){++*counter;}};Client client(){return {&clientCloses};}void stop(){++closes;}void begin(){++starts;}} server;
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS=30UL*1000UL;
 constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;
 '''
@@ -37,7 +39,16 @@ int main(){
  tick=600000;maintainWiFiConnection();assert(ESP.count==1);
  ESP.count=0;WiFi.state=WL_CONNECTED;setupAP=true;maintainWiFiConnection();
  assert(!wifiOfflineTimerStarted&&!setupAP&&wifiWasConnected&&WiFi.modes==1&&timeSyncs==1&&mdnsStarts==1&&MDNS.stops==1);
- maintainWiFiConnection();assert(timeSyncs==1&&mdnsStarts==1);
+ maintainWiFiConnection();assert(timeSyncs==1&&mdnsStarts==1&&server.starts==1&&server.closes==1&&server.clientCloses==1);
+ // A brief dropout/reconnect between loop calls is retained by the event flag.
+ networkServiceRefreshPending=true;maintainWiFiConnection();assert(server.starts==2&&timeSyncs==2&&!networkServiceRefreshPending);
+ maintainWiFiConnection();assert(server.starts==2);
+ // DHCP IP change and fallback AP recovery both recreate the listener.
+ ++WiFi.ip;maintainWiFiConnection();assert(server.starts==3&&lastStationIp==WiFi.ip);
+ networkServiceRefreshPending=true;Update.busy=true;maintainWiFiConnection();assert(server.starts==3&&networkServiceRefreshPending);
+ Update.busy=false;maintainWiFiConnection();assert(server.starts==4&&!networkServiceRefreshPending);
+ WiFi.ip=0;maintainWiFiConnection();assert(wifiOfflineTimerStarted);
+ WiFi.ip=0x0101A8C0;maintainWiFiConnection();assert(!wifiOfflineTimerStarted);
  WiFi.state=0;tick=700000;lastWiFiRetry=tick;maintainWiFiConnection();assert(wifiOfflineTimerStarted&&wifiOfflineSince==tick&&ESP.count==0);
  tick=729999;maintainWiFiConnection();int before=WiFi.retries;assert(ESP.count==0);
  tick=730000;maintainWiFiConnection();assert(WiFi.retries==before+1&&ESP.count==0);
@@ -132,3 +143,6 @@ with tempfile.TemporaryDirectory() as directory:
     p.write_text(remote_stubs+constants+countdown+auto_loop+remote_tests)
     subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',str(p.with_suffix(''))],check=True)
     subprocess.run([str(p.with_suffix(''))],check=True)
+
+# Focused failure regressions for the v3.0.14 connection recovery changes.
+subprocess.run(['python',str(Path(__file__).with_name('test_connection_recovery.py'))],check=True)

@@ -9,14 +9,24 @@ static uint32_t softwareEffectIntervalMs(uint8_t speedLevel){
 }
 
 void BleController::begin(AppSettings* settings){
-  cfg=settings;
+  cfg=settings;startedAt=millis();
 #ifdef MOCK_BLE
   slots[0].name="ELK-BLEDDM AB";slots[0].address="MOCK-A";
   slots[1].name="ELK-BLEDDM 06";slots[1].address="MOCK-B";
 #else
   NimBLEDevice::init("AndersonHome-Bridge");NimBLEDevice::setPower(3);
-  if(cfg->bleAddress.length()) connectSlot(0,cfg->bleAddress,cfg->bleName);
-  if(cfg->bleAddress2.length()) connectSlot(1,cfg->bleAddress2,cfg->bleName2);
+  slots[0].address=cfg->bleAddress;slots[0].name=cfg->bleName;
+  slots[1].address=cfg->bleAddress2;slots[1].name=cfg->bleName2;
+  connectRequests=xQueueCreate(1,sizeof(ConnectRequest));
+  connectResults=xQueueCreate(1,sizeof(ConnectResult));
+  if(connectRequests&&connectResults){
+    if(xTaskCreate(connectionWorker,"anderson-ble",4096,this,1,&connectTask)!=pdPASS)connectTask=nullptr;
+  }
+  if(!connectTask){
+    if(connectRequests)vQueueDelete(connectRequests);
+    if(connectResults)vQueueDelete(connectResults);
+    connectRequests=nullptr;connectResults=nullptr;
+  }
 #endif
 }
 
@@ -46,20 +56,43 @@ std::vector<BleFound> BleController::scan(uint32_t ms){std::vector<BleFound> out
 #endif
 }
 
-bool BleController::connectSlot(uint8_t i,const String& addr,const String& advertisedName){if(i>1)return false;
+bool BleController::connecting() const{
 #ifdef MOCK_BLE
-  slots[i].address=addr;slots[i].name=advertisedName.length()?advertisedName:(i?"ELK-BLEDDM 06":"ELK-BLEDDM AB");activeValid=false;return true;
+  return false;
 #else
-  disconnectSlot(i);
-  auto tryConnect=[&](uint8_t addressType)->bool{NimBLEAddress a(std::string(addr.c_str()),addressType);slots[i].client=NimBLEDevice::createClient();if(!slots[i].client->connect(a)){NimBLEDevice::deleteClient(slots[i].client);slots[i].client=nullptr;return false;}return true;};
-  if(!tryConnect(BLE_ADDR_PUBLIC)&&!tryConnect(BLE_ADDR_RANDOM))return false;
-  NimBLERemoteService* svc=slots[i].client->getService("FFF0");
-  NimBLERemoteCharacteristic* chr=svc?svc->getCharacteristic("FFF3"):nullptr;
-  if(!chr){svc=slots[i].client->getService("FFE5");if(svc)chr=svc->getCharacteristic("FFE9");}
-  if(!svc||!chr){disconnectSlot(i);return false;}
-  slots[i].chr=chr;slots[i].address=addr;slots[i].name=advertisedName.length()?advertisedName:addr;activeValid=false;return true;
+  return connectPending;
 #endif
 }
+
+#ifndef MOCK_BLE
+// The worker owns a new client until its result is handed back to loop(). It
+// never touches slots, settings, themes or a client already used for light output.
+void BleController::connectionWorker(void* context){
+  auto* self=static_cast<BleController*>(context);ConnectRequest request{};
+  for(;;){
+    if(xQueueReceive(self->connectRequests,&request,portMAX_DELAY)!=pdTRUE)continue;
+    ConnectResult result{nullptr,nullptr};
+    for(uint8_t type:{BLE_ADDR_PUBLIC,BLE_ADDR_RANDOM}){
+      auto* client=NimBLEDevice::createClient();if(!client)break;
+      client->setConnectTimeout(3000);client->setConnectRetries(0);
+      if(!client->connect(NimBLEAddress(std::string(request.address),type))){NimBLEDevice::deleteClient(client);continue;}
+      auto* svc=client->getService("FFF0");auto* chr=svc?svc->getCharacteristic("FFF3"):nullptr;
+      if(!chr){svc=client->getService("FFE5");if(svc)chr=svc->getCharacteristic("FFE9");}
+      if(chr&&client->isConnected()){result={client,chr};break;}
+      NimBLEDevice::deleteClient(client);
+    }
+    xQueueSend(self->connectResults,&result,portMAX_DELAY);
+  }
+}
+
+bool BleController::requestConnection(uint8_t i){
+  if(i>1||connectPending||!connectTask||slots[i].address.length()!=17)return false;
+  ConnectRequest request{};slots[i].address.toCharArray(request.address,sizeof(request.address));
+  disconnectSlot(i);pendingSlot=i;pendingGeneration=slots[i].generation;
+  connectPending=xQueueSend(connectRequests,&request,0)==pdTRUE;
+  return connectPending;
+}
+#endif
 
 bool BleController::selectAndConnect(const String& addr){String advertisedName;
 #ifndef MOCK_BLE
@@ -68,7 +101,18 @@ bool BleController::selectAndConnect(const String& addr){String advertisedName;
   advertisedName=addr=="MOCK-B"?"ELK-BLEDDM 06":"ELK-BLEDDM AB";
 #endif
   int slot=-1;for(int i=0;i<2;i++)if(slots[i].address.equalsIgnoreCase(addr))slot=i;for(int i=0;i<2&&slot<0;i++)if(!slots[i].address.length())slot=i;if(slot<0)slot=1;
-  bool ok=connectSlot(slot,addr,advertisedName);if(ok){saveSlots();activeValid=false;}return ok;
+#ifndef MOCK_BLE
+  if(addr.length()!=17)return false;
+  if(!connectTask)return false;
+  if(NimBLEAddress(std::string(addr.c_str()),BLE_ADDR_PUBLIC).isNull())return false;
+#endif
+  disconnectSlot(slot);++slots[slot].generation;
+  slots[slot].address=addr;slots[slot].name=advertisedName.length()?advertisedName:addr;
+  slots[slot].nextConnectAt=millis();saveSlots();activeValid=false;
+#ifdef MOCK_BLE
+  connectionChanged=true;
+#endif
+  return true;
 }
 
 void BleController::saveSlots(){if(!cfg)return;cfg->bleAddress=slots[0].address;cfg->bleProtocol=slots[0].address.length()?4:0;cfg->bleName=slots[0].name;cfg->bleAddress2=slots[1].address;cfg->bleProtocol2=slots[1].address.length()?4:0;cfg->bleName2=slots[1].name;}
@@ -77,9 +121,12 @@ void BleController::disconnectSlot(uint8_t i){if(i>1)return;
   slots[i].chr=nullptr;if(slots[i].client){if(slots[i].client->isConnected())slots[i].client->disconnect();NimBLEDevice::deleteClient(slots[i].client);slots[i].client=nullptr;}
 #endif
 }
-bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}
+bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);++slots[i].generation;slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}
 
-bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i))return false;if(millis()-lastWrite<18)delay(18-(millis()-lastWrite));lastWrite=millis();
+bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i))return false;
+  const uint32_t elapsed=(uint32_t)(millis()-lastWrite);
+  if(elapsed<18UL)delay(18UL-elapsed);
+  lastWrite=millis();
 #ifdef MOCK_BLE
   Serial.printf("[MOCK BLE %u] ",i);for(size_t j=0;j<len;j++)Serial.printf("%02X ",data[j]);Serial.println();return true;
 #else
@@ -163,7 +210,25 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
 
 void BleController::loop(){
 #ifndef MOCK_BLE
-  static uint32_t retry=0;static uint32_t started=millis();uint32_t interval=(millis()-started<60000UL)?5000UL:30000UL;if(millis()-retry<interval)return;retry=millis();
-  if(cfg){if(cfg->bleAddress.length()&&!slotConnected(0))connectSlot(0,cfg->bleAddress,cfg->bleName);if(cfg->bleAddress2.length()&&!slotConnected(1))connectSlot(1,cfg->bleAddress2,cfg->bleName2);}
+  if(!connectTask)return;
+  ConnectResult result{};
+  if(connectPending&&xQueueReceive(connectResults,&result,0)==pdTRUE){
+    auto& slot=slots[pendingSlot];connectPending=false;
+    if(slot.generation==pendingGeneration&&result.client){
+      slot.client=result.client;slot.chr=result.chr;activeValid=false;connectionChanged=true;
+    }else if(result.client)NimBLEDevice::deleteClient(result.client);
+    if(slot.generation==pendingGeneration){
+      uint32_t now=millis();slot.nextConnectAt=now+((uint32_t)(now-startedAt)<60000UL?5000UL:30000UL);
+    }
+  }
+  uint32_t now=millis();
+  for(uint8_t i=0;i<2;i++)if(slotConnected(i))slots[i].nextConnectAt=now;
+  if(connectPending)return;
+  for(uint8_t i=0;i<2;i++){
+    if(slots[i].address.length()&&!slotConnected(i)&&(int32_t)(now-slots[i].nextConnectAt)>=0){
+      if(requestConnection(i))return;
+      slots[i].nextConnectAt=now+30000UL;
+    }
+  }
 #endif
 }

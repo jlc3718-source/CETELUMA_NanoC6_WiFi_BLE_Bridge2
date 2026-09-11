@@ -12,6 +12,7 @@
 #include <esp_timer.h>
 #include <mbedtls/sha256.h>
 #include <time.h>
+#include <atomic>
 #include "WebUIGzip.h"
 #include "Types.h"
 #include "EventCatalog.h"
@@ -20,6 +21,7 @@
 #include "Scheduler.h"
 #include "PaletteMigration.h"
 #include "RemoteUpdate.h"
+#include "LoopWatchdog.h"
 
 static constexpr int BLUE_LED=7;
 static constexpr int USER_BUTTON=9;
@@ -36,6 +38,10 @@ uint32_t buttonDown=0,lastScheduleCheck=0;
 static uint64_t cpuWindowStartUs=0,cpuBusyUs=0;
 static uint8_t cpuLoadPct=0;
 bool setupAP=false,wifiWasConnected=false;
+static bool networkServerStarted=false,loopWatchdogActive=false;
+static uint32_t lastStationIp=0,networkServiceRestarts=0;
+static std::atomic<bool> networkServiceRefreshPending{false};
+static std::atomic<uint32_t> wifiDisconnectCount{0},wifiLastDisconnectReason{0};
 static uint32_t lastWiFiRetry=0,wifiOfflineSince=0;
 static bool wifiOfflineTimerStarted=false;
 static constexpr uint32_t WIFI_RETRY_INTERVAL_MS=30UL*1000UL;
@@ -50,7 +56,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.14";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -165,9 +171,23 @@ static bool removeSchedulesForPreset(const String& presetId){
 static bool otaPartitionValid(const esp_partition_t* p){
   if(!p)return false;esp_app_desc_t desc{};return esp_ota_get_partition_description(p,&desc)==ESP_OK;
 }
+static const char* resetReasonName(){
+  switch(esp_reset_reason()){
+    case ESP_RST_POWERON:return "Power on";
+    case ESP_RST_SW:return "Software reboot";
+    case ESP_RST_TASK_WDT:return "Application watchdog";
+    case ESP_RST_INT_WDT:return "Interrupt watchdog";
+    case ESP_RST_WDT:return "System watchdog";
+    case ESP_RST_PANIC:return "Software exception";
+    case ESP_RST_BROWNOUT:return "Low supply voltage";
+    case ESP_RST_DEEPSLEEP:return "Deep sleep wake";
+    default:return "Other reset";
+  }
+}
 static String firmwareJson(){
   JsonDocument d;const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* next=esp_ota_get_next_update_partition(running);
   d["version"]=ANDERSON_FIRMWARE_VERSION;d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["previousAvailable"]=otaPartitionValid(next);
+  d["uptimeMs"]=(uint32_t)millis();d["resetReason"]=resetReasonName();d["loopWatchdog"]=loopWatchdogActive;
   esp_app_desc_t desc{};if(running&&esp_ota_get_partition_description(running,&desc)==ESP_OK){d["appVersion"]=desc.version;d["project"]=desc.project_name;d["buildDate"]=desc.date;d["buildTime"]=desc.time;}
   String out;serializeJson(d,out);return out;
 }
@@ -175,6 +195,7 @@ static String firmwareJson(){
 static String systemJson(){
   JsonDocument d;const bool wifiConnected=WiFi.status()==WL_CONNECTED;const esp_partition_t* running=esp_ota_get_running_partition();const uint32_t slotBytes=running?(uint32_t)running->size:0;const uint32_t appBytes=(uint32_t)ESP.getSketchSize();
   d["version"]=ANDERSON_FIRMWARE_VERSION;d["cpuLoad"]=cpuLoadPct;d["cpuMhz"]=(uint32_t)getCpuFrequencyMhz();d["uptimeMs"]=(uint32_t)millis();
+  d["resetReason"]=resetReasonName();d["loopWatchdog"]=loopWatchdogActive;d["wifiDisconnects"]=wifiDisconnectCount.load();d["wifiLastReason"]=wifiLastDisconnectReason.load();d["networkRestarts"]=networkServiceRestarts;
   d["heapTotal"]=(uint32_t)ESP.getHeapSize();d["heapFree"]=(uint32_t)ESP.getFreeHeap();d["heapMin"]=(uint32_t)ESP.getMinFreeHeap();d["heapLargest"]=(uint32_t)ESP.getMaxAllocHeap();
   d["wifiConnected"]=wifiConnected;d["rssi"]=wifiConnected?WiFi.RSSI():0;d["ssid"]=wifiConnected?WiFi.SSID():String("");d["ip"]=wifiConnected?WiFi.localIP().toString():WiFi.softAPIP().toString();
   d["bleConnected"]=ble.connected();d["bleCount"]=ble.connectedCount();d["appBytes"]=appBytes;d["slotBytes"]=slotBytes;d["appFreeBytes"]=slotBytes>appBytes?slotBytes-appBytes:0;
@@ -257,18 +278,31 @@ void connectWiFi(){
 void setupMdns(){
   if(MDNS.begin("anderson-home")){MDNS.setInstanceName("Anderson Home");MDNS.addService("http","tcp",80);}
 }
+static void onWiFiEvent(arduino_event_id_t event,arduino_event_info_t info){
+  // Event callbacks run on another task. Only publish flags here; service and
+  // socket changes stay on the application task, outside request/upload handling.
+  if(event==ARDUINO_EVENT_WIFI_STA_DISCONNECTED){
+    wifiLastDisconnectReason.store(info.wifi_sta_disconnected.reason);
+    wifiDisconnectCount.fetch_add(1);networkServiceRefreshPending.store(true);
+  }else if(event==ARDUINO_EVENT_WIFI_STA_GOT_IP||event==ARDUINO_EVENT_WIFI_STA_LOST_IP){
+    networkServiceRefreshPending.store(true);
+  }
+}
 // Recover the saved network after router downtime, including startup fallback AP mode.
 static void maintainWiFiConnection(){
   if(Update.isRunning()||otaAutoRebootPending)return;
   uint32_t now=millis();
-  if(WiFi.status()==WL_CONNECTED){
+  uint32_t currentIp=(uint32_t)WiFi.localIP();
+  if(WiFi.status()==WL_CONNECTED&&currentIp!=0){
     wifiOfflineTimerStarted=false;
     if(setupAP&&WiFi.mode(WIFI_STA))setupAP=false;
-    if(!wifiWasConnected){
+    const bool refresh=networkServiceRefreshPending.exchange(false);
+    if(!wifiWasConnected||refresh||currentIp!=lastStationIp){
+      if(networkServerStarted){server.client().stop();server.stop();server.begin();++networkServiceRestarts;}
       configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");
       MDNS.end();setupMdns();
     }
-    wifiWasConnected=true;return;
+    lastStationIp=currentIp;wifiWasConnected=true;return;
   }
   wifiWasConnected=false;
   if(!store.get().ssid.length()){wifiOfflineTimerStarted=false;return;}
@@ -405,6 +439,7 @@ void setupRoutes(){
     if(otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()){server.send(500,"text/plain","Firmware was verified, but PIN recovery could not be saved. Retry recovery before rebooting.");return;}JsonDocument d;d["ok"]=true;d["recovery"]=otaRecoveryRequest;d["pinEnabled"]=pinProtectionEnabled;d["message"]=otaRecoveryRequest?"Firmware verified and PIN protection disabled. NanoC6 will reboot automatically.":"Firmware verified. NanoC6 will reboot automatically into the new firmware.";String out;serializeJson(d,out);sendJson(out);otaAutoRebootPending=true;otaAutoRebootAt=millis()+1400;
   },[]{
     HTTPUpload& u=server.upload();
+    feedControllerWatchdog();
     if(u.status==UPLOAD_FILE_START){
       otaUploadAllowed=true;otaUploadOk=false;otaUploadResponseCode=403;otaRecoveryRequest=server.hasArg("recovery")&&server.arg("recovery")=="1";otaUploadError="";
       if(otaRecoveryRequest&&pinProtectionEnabled){uint32_t retry=pinRetryAfter();if(retry){otaUploadAllowed=false;otaUploadResponseCode=429;otaUploadError=String("Too many incorrect PIN attempts. Try again in ")+String(retry)+" seconds.";return;}String recoveryPin=server.header(RECOVERY_PIN_HEADER);if(!recoveryPin.length()&&server.hasArg("recoveryPin"))recoveryPin=server.arg("recoveryPin");uint8_t recoveryRole=ROLE_NONE;if(!verifyProfilePin("jason",recoveryPin,recoveryRole)){notePinFailure();otaUploadAllowed=false;otaUploadResponseCode=401;otaUploadError="Jason's four-digit PIN is required for emergency firmware recovery";return;}clearPinFailures();}
@@ -451,7 +486,7 @@ void setupRoutes(){
   });
 
   server.on("/api/ble/scan",HTTP_GET,[]{
-    if(!requireAdmin())return;auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);
+    if(!requireAdmin())return;if(ble.connecting()){server.send(409,"text/plain","Bluetooth connection in progress. Try scanning again shortly.");return;}auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/ble/select",HTTP_POST,[]{
     if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();bool ok=ble.selectAndConnect(addr);if(ok){store.saveAll();ble.setTarget(0);applyRunning(true);}sendJson(stateJson(),ok?200:500);
@@ -485,13 +520,15 @@ static void checkDailyScheduledReboot(){
 }
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
+  loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
   store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFDA7F;runningTheme.colorCount=1;
-  setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
+  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
   server.handleClient();ble.loop();
+  if(ble.consumeConnectionChange())applyRunning(true);
   maintainWiFiConnection();checkDailyScheduledReboot();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
