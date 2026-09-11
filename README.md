@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v3.0.8**.
+Current firmware: **v3.0.9**.
 
 Canonical production source is `firmware/`. The Android app is a frozen web shell; normal Anderson changes belong in firmware/web or firmware controller source.
 
