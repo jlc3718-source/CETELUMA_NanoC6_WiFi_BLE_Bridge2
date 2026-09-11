@@ -36,7 +36,7 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Generate upload signing key
+      - name: Generate ephemeral signing key
         working-directory: silverado-aaos
         shell: bash
         run: |
@@ -51,20 +51,12 @@ jobs:
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname 'CN=Silverado AAOS, OU=Personal, O=JLC3718, L=Randolph, ST=NY, C=US'
+            -dname 'CN=Silverado AAOS Build, OU=Ephemeral, O=JLC3718, L=Randolph, ST=NY, C=US'
           echo "KEYSTORE_PATH=${GITHUB_WORKSPACE}/silverado-aaos/upload-keystore.jks" >> "$GITHUB_ENV"
           echo "KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
           echo "KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
           echo "KEY_ALIAS=upload" >> "$GITHUB_ENV"
           mkdir -p dist
-          {
-            echo 'Silverado AAOS upload key'
-            echo 'Package: com.jlc3718.silveradochromium'
-            echo 'Alias: upload'
-            echo "Password: $PASS"
-            echo 'Keep this file and upload-keystore.jks together for future Play uploads.'
-          } > dist/SIGNING_INFO.txt
-          cp upload-keystore.jks dist/upload-keystore.jks
 
       - name: Build signed AAB and APK
         working-directory: silverado-aaos
@@ -77,7 +69,8 @@ jobs:
           set -euo pipefail
           cp app/build/outputs/bundle/release/app-release.aab dist/SilveradoChromium-AAOS-arm64-v1.0.0.aab
           cp app/build/outputs/apk/release/app-release.apk dist/SilveradoChromium-AAOS-arm64-v1.0.0.apk
-          (cd dist && sha256sum *.aab *.apk upload-keystore.jks > SHA256SUMS.txt)
+          (cd dist && sha256sum *.aab *.apk > SHA256SUMS.txt)
+          rm -f upload-keystore.jks
           ls -lh dist
 
       - name: Upload finished build
