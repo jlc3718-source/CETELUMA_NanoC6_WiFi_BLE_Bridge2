@@ -1,4 +1,4 @@
-package com.jlc3718.silveradochromium;
+package com.jlc3718.silveradostreambrowser;
 
 import android.app.Activity;
 import android.graphics.Color;
