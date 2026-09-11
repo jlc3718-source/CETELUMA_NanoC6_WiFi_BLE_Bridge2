@@ -1,5 +1,5 @@
 {
   "schema": 1,
-  "payload": "version=3.0.8\nbytes=1834608\nsha256=1a2cd3bef62b9f3c2243cc3e710007576ff15d7ebcbb1f7c6b4ad5bcc4d6c45a\ncommit=86aa158c78f3085b0aefd8117181ad5831766810\nurl=https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v3.0.8/and_3.0.8.bin\n",
-  "signature": "MEUCIFVCEpfMOBzYWoT/QRVX+7ohD3A16lU0b+xixN2CtO+5AiEA7btcA8Tu/a3yp3FbI5ZRx9KqxhhyRAjqtjlOhuaPxFc="
+  "payload": "version=3.0.9\nbytes=1834992\nsha256=6c9636aacc3928adeae97194f16045ca853e32321eb5965bf8ce75467c3a0331\ncommit=72ac84a0a7b22cdf1d3ff40d0e0ed11d63b8af6a\nurl=https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v3.0.9/and_3.0.9.bin\n",
+  "signature": "MEUCIQCHsKVig7taxabRBixICKRICJiF9iPJ9Wj0OiM0YHWwcQIgOCt523W4/V9Uw8f7tyNxcCUoCovLacYFv+s5LqEcgtw="
 }
