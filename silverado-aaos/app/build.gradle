@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.jlc3718.silveradochromium'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.jlc3718.silveradochromium'
+        minSdk 29
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    signingConfigs {
+        release {
+            def storePath = System.getenv('KEYSTORE_PATH')
+            def storePass = System.getenv('KEYSTORE_PASSWORD')
+            def keyAliasValue = System.getenv('KEY_ALIAS')
+            def keyPass = System.getenv('KEY_PASSWORD')
+            if (storePath && storePass && keyAliasValue && keyPass) {
+                storeFile file(storePath)
+                storePassword storePass
+                keyAlias keyAliasValue
+                keyPassword keyPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (System.getenv('KEYSTORE_PATH')) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+}
+
+dependencies {
+    implementation 'org.mozilla.geckoview:geckoview:157.0.20260910085851'
+}
