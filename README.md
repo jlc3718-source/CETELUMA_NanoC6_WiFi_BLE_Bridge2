@@ -1,12 +1,12 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v3.0.11**.
+Current firmware: **v3.0.12**.
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
 
 - NVS settings, schedules, colors, Shirley/Jason PINs, BLE control, signed OTA, and the dual-slot partition map are preserved.
 - The approved dashboard, system monitor, brightness slider, asynchronous Wi-Fi scan, and independent firmware recovery remain available.
-- While disconnected, retry saved Wi-Fi every 30 minutes; successful recovery closes the setup AP and renews time sync/mDNS. Restart after 1 hour of uptime, deferring during firmware updates. A restart ends PIN sessions and returns manual lighting to the saved schedule.
+- While disconnected with saved credentials, retry Wi-Fi every 30 seconds. If the controller remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Successful recovery cancels the watchdog, closes the setup AP, and renews time sync/mDNS. There is no unconditional maintenance reboot.
 - Signed OTA checks start one minute after boot and repeat hourly. The system monitor displays the remaining time.
 - Build-only JS/CSS minification and Zopfli gzip (500 iterations, unlimited block splitting) compress both embedded pages. Obsolete branding and demo event fallbacks are removed. Editable source, artwork, and size-focused compiler flags are retained.
 

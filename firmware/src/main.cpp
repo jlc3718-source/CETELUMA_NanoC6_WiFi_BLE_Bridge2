@@ -36,7 +36,10 @@ uint32_t buttonDown=0,lastScheduleCheck=0;
 static uint64_t cpuWindowStartUs=0,cpuBusyUs=0;
 static uint8_t cpuLoadPct=0;
 bool setupAP=false,wifiWasConnected=false;
-static uint32_t lastWiFiRetry=0;
+static uint32_t lastWiFiRetry=0,wifiOfflineSince=0;
+static bool wifiOfflineTimerStarted=false;
+static constexpr uint32_t WIFI_RETRY_INTERVAL_MS=30UL*1000UL;
+static constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;
 bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false;int otaUploadResponseCode=403;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
@@ -44,7 +47,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.11";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -254,7 +257,9 @@ void setupMdns(){
 // Recover the saved network after router downtime, including startup fallback AP mode.
 static void maintainWiFiConnection(){
   if(Update.isRunning()||otaAutoRebootPending)return;
+  uint32_t now=millis();
   if(WiFi.status()==WL_CONNECTED){
+    wifiOfflineTimerStarted=false;
     if(setupAP&&WiFi.mode(WIFI_STA))setupAP=false;
     if(!wifiWasConnected){
       configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");
@@ -263,9 +268,13 @@ static void maintainWiFiConnection(){
     wifiWasConnected=true;return;
   }
   wifiWasConnected=false;
-  if(WiFi.scanComplete()==WIFI_SCAN_RUNNING)return;
-  if(store.get().ssid.length()&&(uint32_t)(millis()-lastWiFiRetry)>=30UL*60UL*1000UL){
-    lastWiFiRetry=millis();WiFi.reconnect();
+  if(!store.get().ssid.length()){wifiOfflineTimerStarted=false;return;}
+  if(!wifiOfflineTimerStarted){wifiOfflineTimerStarted=true;wifiOfflineSince=now;}
+  if(WiFi.scanComplete()!=WIFI_SCAN_RUNNING&&(uint32_t)(now-lastWiFiRetry)>=WIFI_RETRY_INTERVAL_MS){
+    lastWiFiRetry=now;WiFi.reconnect();
+  }
+  if((uint32_t)(now-wifiOfflineSince)>=WIFI_OFFLINE_REBOOT_MS){
+    delay(40);ESP.restart();
   }
 }
 void setupRoutes(){
@@ -453,25 +462,16 @@ void setupRoutes(){
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
-// An uptime timer works without Wi-Fi/NTP and does not write periodic markers to flash.
-static constexpr uint32_t MAINTENANCE_REBOOT_INTERVAL_MS=60UL*60UL*1000UL;
-static uint32_t maintenanceRebootStartedAt=0;
-static void checkMaintenanceReboot(){
-  if((uint32_t)(millis()-maintenanceRebootStartedAt)<MAINTENANCE_REBOOT_INTERVAL_MS)return;
-  if(Update.isRunning()||otaAutoRebootPending)return;
-  delay(40);ESP.restart();
-}
-
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Warm White";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFDA7F;runningTheme.colorCount=1;
-  setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);maintenanceRebootStartedAt=millis();
+  setupRoutes();server.begin();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
   server.handleClient();ble.loop();
-  checkMaintenanceReboot();maintainWiFiConnection();
+  maintainWiFiConnection();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}

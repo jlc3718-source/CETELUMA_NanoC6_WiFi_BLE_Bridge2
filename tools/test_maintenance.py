@@ -1,12 +1,10 @@
-# Anderson v3.0.11 final production timing/network regression gate.
+# Anderson v3.0.12 network-recovery regression gate.
 from pathlib import Path
 import re
 import subprocess
 import tempfile
 source=(Path(__file__).resolve().parents[1]/'firmware/src/main.cpp').read_text()
-# Compile the actual production routines against controllable hardware stand-ins.
 wifi=source[source.index('static void maintainWiFiConnection(){'):source.index('void setupRoutes(){')]
-hour=source[source.index('static constexpr uint32_t MAINTENANCE_REBOOT_INTERVAL_MS='):source.index('\nvoid setup(){')]
 stubs=r'''
 #include <cstdint>
 #include <string>
@@ -20,38 +18,42 @@ struct {int state=0,retries=0,modes=0,scan=-2;int scanComplete(){return scan;}in
 struct Config{std::string ssid="test",tz="test";};struct {Config cfg;Config& get(){return cfg;}} store;
 struct {int stops=0;void end(){++stops;}} MDNS;
 int timeSyncs=0,mdnsStarts=0;void configTzTime(const char*,const char*,const char*){++timeSyncs;}void setupMdns(){++mdnsStarts;}
-bool otaAutoRebootPending=false,setupAP=false,wifiWasConnected=false;uint32_t lastWiFiRetry=0;
+bool otaAutoRebootPending=false,setupAP=false,wifiWasConnected=false;
+uint32_t lastWiFiRetry=0,wifiOfflineSince=0;bool wifiOfflineTimerStarted=false;
+constexpr uint32_t WIFI_RETRY_INTERVAL_MS=30UL*1000UL;
+constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;
 '''
 tests=r'''
 int main(){
- maintenanceRebootStartedAt=1000;tick=3600999;checkMaintenanceReboot();assert(ESP.count==0);
- tick=3601000;checkMaintenanceReboot();assert(ESP.count==1);
- ESP.count=0;Update.busy=true;tick=3700000;checkMaintenanceReboot();assert(ESP.count==0);
- Update.busy=false;otaAutoRebootPending=true;checkMaintenanceReboot();assert(ESP.count==0);
- otaAutoRebootPending=false;checkMaintenanceReboot();assert(ESP.count==1);
- ESP.count=0;maintenanceRebootStartedAt=UINT32_MAX-1000;tick=3598998;checkMaintenanceReboot();assert(ESP.count==0);
- tick=3598999;checkMaintenanceReboot();assert(ESP.count==1);
- tick=1799999;maintainWiFiConnection();assert(WiFi.retries==0);
- tick=1800000;maintainWiFiConnection();assert(WiFi.retries==1);
- tick=3599999;maintainWiFiConnection();assert(WiFi.retries==1);
- tick=3600000;WiFi.scan=WIFI_SCAN_RUNNING;maintainWiFiConnection();assert(WiFi.retries==1);
+ tick=0;maintainWiFiConnection();assert(wifiOfflineTimerStarted&&wifiOfflineSince==0&&WiFi.retries==0&&ESP.count==0);
+ tick=29999;maintainWiFiConnection();assert(WiFi.retries==0&&ESP.count==0);
+ tick=30000;maintainWiFiConnection();assert(WiFi.retries==1&&ESP.count==0);
+ tick=59999;maintainWiFiConnection();assert(WiFi.retries==1);
+ tick=60000;WiFi.scan=WIFI_SCAN_RUNNING;maintainWiFiConnection();assert(WiFi.retries==1&&ESP.count==0);
  WiFi.scan=-2;maintainWiFiConnection();assert(WiFi.retries==2);
- tick=5400000;store.cfg.ssid="";maintainWiFiConnection();assert(WiFi.retries==2);
- store.cfg.ssid="test";Update.busy=true;maintainWiFiConnection();assert(WiFi.retries==2);
- Update.busy=false;otaAutoRebootPending=true;maintainWiFiConnection();assert(WiFi.retries==2);
- otaAutoRebootPending=false;WiFi.state=WL_CONNECTED;setupAP=true;maintainWiFiConnection();
- assert(!setupAP&&wifiWasConnected&&WiFi.modes==1&&timeSyncs==1&&mdnsStarts==1&&MDNS.stops==1);
- maintainWiFiConnection();assert(timeSyncs==1&&mdnsStarts==1&&WiFi.retries==2);
- WiFi.state=0;maintainWiFiConnection();assert(!wifiWasConnected&&WiFi.retries==3);
- WiFi.state=WL_CONNECTED;maintainWiFiConnection();assert(timeSyncs==2&&mdnsStarts==2&&WiFi.modes==1);
- WiFi.state=0;lastWiFiRetry=UINT32_MAX-1000;tick=1798998;maintainWiFiConnection();assert(WiFi.retries==3);
- tick=1798999;maintainWiFiConnection();assert(WiFi.retries==4);
- std::cout<<"PASS: 1-hour boundaries, offline operation, OTA deferral, timer wraparound, retry cadence, no-credentials case, and fallback AP recovery\n";
+ tick=599999;maintainWiFiConnection();assert(ESP.count==0);
+ tick=600000;maintainWiFiConnection();assert(ESP.count==1);
+ ESP.count=0;WiFi.state=WL_CONNECTED;setupAP=true;maintainWiFiConnection();
+ assert(!wifiOfflineTimerStarted&&!setupAP&&wifiWasConnected&&WiFi.modes==1&&timeSyncs==1&&mdnsStarts==1&&MDNS.stops==1);
+ maintainWiFiConnection();assert(timeSyncs==1&&mdnsStarts==1);
+ WiFi.state=0;tick=700000;lastWiFiRetry=tick;maintainWiFiConnection();assert(wifiOfflineTimerStarted&&wifiOfflineSince==tick&&ESP.count==0);
+ tick=729999;maintainWiFiConnection();int before=WiFi.retries;assert(ESP.count==0);
+ tick=730000;maintainWiFiConnection();assert(WiFi.retries==before+1&&ESP.count==0);
+ store.cfg.ssid="";tick=800000;maintainWiFiConnection();assert(!wifiOfflineTimerStarted&&ESP.count==0);
+ store.cfg.ssid="test";Update.busy=true;tick=900000;maintainWiFiConnection();assert(!wifiOfflineTimerStarted&&ESP.count==0);
+ Update.busy=false;otaAutoRebootPending=true;maintainWiFiConnection();assert(!wifiOfflineTimerStarted&&ESP.count==0);
+ otaAutoRebootPending=false;lastWiFiRetry=UINT32_MAX-1000;wifiOfflineSince=UINT32_MAX-1000;wifiOfflineTimerStarted=true;WiFi.state=0;
+ int wrapRetries=WiFi.retries;tick=28998;maintainWiFiConnection();assert(WiFi.retries==wrapRetries&&ESP.count==0);
+ tick=28999;maintainWiFiConnection();assert(WiFi.retries==wrapRetries+1&&ESP.count==0);
+ lastWiFiRetry=tick;tick=598998;maintainWiFiConnection();assert(ESP.count==0);
+ tick=598999;maintainWiFiConnection();assert(ESP.count==1);
+ WiFi.state=WL_CONNECTED;maintainWiFiConnection();assert(!wifiOfflineTimerStarted);
+ std::cout<<"PASS: 30-second retry cadence, 10-minute continuous-offline watchdog, reconnection reset, no-credentials case, OTA deferral, fallback AP recovery, and timer wraparound\n";
 }
 '''
 with tempfile.TemporaryDirectory() as directory:
     p=Path(directory)/'maintenance.cpp'
-    p.write_text(stubs+wifi+hour+tests)
+    p.write_text(stubs+wifi+tests)
     subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',str(p.with_suffix(''))],check=True)
     subprocess.run([str(p.with_suffix(''))],check=True)
 

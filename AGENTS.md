@@ -61,8 +61,8 @@ GitHub runner queue vary.
 - Saved NVS key names and formats, events, colors, names, and effects.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
-- Maintenance reboot occurs after every 1 hour of uptime, independently of Wi-Fi/NTP; defer it while a firmware upload or another scheduled reboot is pending. This replaces the old daily 18:00 reboot.
-- While disconnected, retry the saved Wi-Fi network every 30 minutes; stop fallback AP mode and renew NTP/mDNS after reconnection. Preserve saved credentials.
+- Do not use an unconditional maintenance reboot. While saved Wi-Fi credentials exist and the controller is disconnected, retry the saved network every 30 seconds; if it remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Reset the offline watchdog immediately after reconnection.
+- Successful Wi-Fi recovery must stop fallback AP mode and renew NTP/mDNS. Preserve saved credentials. Do not reboot repeatedly when no credentials are configured.
 - v3.0.1 and later use the approved third-reference Anderson Home dashboard as the visual source of truth: illuminated nighttime house/RGB hero, integrated Anderson Home branding, dark translucent glass controls, prominent green ON control, rainbow brightness bar, effect/schedule cards, circular favorite colors, feature tiles, and floating bottom navigation. Do not regress to the generic logo-card/tab-bar layout unless the user explicitly requests it.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly
   reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
