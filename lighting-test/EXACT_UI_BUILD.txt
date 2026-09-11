@@ -1,0 +1,3 @@
+Lighting Test exact production UI build
+Source firmware commit: b525803805677232ace79511f5958a7c9f00c385
+Expected rendered UI SHA-256: f5796885961df0882a96302f4496343f1dc947ff85430ed026a69189ae832382
