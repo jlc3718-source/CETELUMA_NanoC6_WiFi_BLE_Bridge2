@@ -152,10 +152,26 @@ input[type=checkbox],input[type=range]{accent-color:#2cff8a}
         <button id="resumeSchedule" class="btn">Resume Schedule</button>
       </div>
       <div class="housePreview">
-        <svg viewBox="0 0 360 182" role="img" aria-label="Mini house showing the currently running light effect">
-          <path class="houseOutline" d="M55 82 L180 22 L305 82"/><path class="houseOutline" d="M75 79 L75 145 L285 145 L285 79"/>
-          <path class="houseDoor" d="M160 145 L160 105 L200 105 L200 145"/><rect x="95" y="100" width="38" height="26" rx="2" class="houseDoor"/><rect x="227" y="100" width="38" height="26" rx="2" class="houseDoor"/>
-          <g id="houseLeds"></g><text x="180" y="172" text-anchor="middle" fill="#9aa6b5" font-size="10">LIVE — CURRENTLY RUNNING</text>
+        <svg viewBox="0 0 360 188" role="img" aria-label="Mini house showing the currently running light effect">
+          <defs>
+            <linearGradient id="liveHouseWall" x2="0" y2="1"><stop stop-color="#284963"/><stop offset="1" stop-color="#0b192a"/></linearGradient>
+            <linearGradient id="liveHouseRoof" x2="0" y2="1"><stop stop-color="#3b627d"/><stop offset="1" stop-color="#10263e"/></linearGradient>
+            <linearGradient id="liveHouseGlass" x2="1" y2="1"><stop stop-color="#b5eaff" stop-opacity=".7"/><stop offset=".5" stop-color="#3c809e" stop-opacity=".45"/><stop offset="1" stop-color="#162c42"/></linearGradient>
+            <linearGradient id="liveHousePath" x2="0" y2="1"><stop stop-color="#46617c" stop-opacity=".5"/><stop offset="1" stop-color="#14263e" stop-opacity="0"/></linearGradient>
+          </defs>
+          <ellipse cx="180" cy="155" rx="133" ry="13" fill="#000a"/>
+          <path d="m166 143-37 45h103l-39-45z" fill="url(#liveHousePath)"/>
+          <path d="M75 80 180 28 285 80v65H75Z" fill="url(#liveHouseWall)" stroke="#6995b5" stroke-opacity=".5"/>
+          <path d="m47 85 133-69 133 69-13 7-120-59L60 92Z" fill="url(#liveHouseRoof)" stroke="#81aecb" stroke-opacity=".6"/>
+          <path d="M225 41V19h19v31" fill="#254259" stroke="#6d97b7" stroke-opacity=".4"/>
+          <path d="M87 96h186M87 117h186M87 135h186" stroke="#759ab4" stroke-opacity=".1"/>
+          <rect x="159" y="100" width="42" height="45" rx="2" fill="url(#liveHouseGlass)" stroke="#98c3d7" stroke-opacity=".6"/>
+          <rect x="96" y="98" width="38" height="29" rx="2" fill="url(#liveHouseGlass)" stroke="#a9d5e6" stroke-opacity=".6"/>
+          <rect x="226" y="98" width="38" height="29" rx="2" fill="url(#liveHouseGlass)" stroke="#a9d5e6" stroke-opacity=".6"/>
+          <path d="M115 98v29m130-29v29M96 113h38m92 0h38M180 100v45" stroke="#14293c" stroke-width="2"/>
+          <rect x="166" y="58" width="28" height="23" rx="2" fill="url(#liveHouseGlass)" stroke="#88bbd7" stroke-opacity=".5"/>
+          <path d="M180 58v23m-14-11h28M149 148h63" stroke="#53829d" stroke-width="2"/>
+          <g id="houseLeds"></g>
         </svg>
       </div>
     </div>
@@ -293,7 +309,7 @@ window.addEventListener('anderson-profile-cleared',()=>{currentRole='none'});
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{if(btn.hidden||currentRole==='none')return;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='home')loadHomeCustomLights();if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();loadStorageInfo();}if(btn.dataset.tab==='events'){loadEvents();loadCustomSchedules();}if(btn.dataset.tab==='settings'){loadState();loadPinSettings();}}));
 
 const leds=[],rows=$('ledRows');{const row=document.createElement('div');row.className='ledgrid';for(let i=0;i<20;i++){const d=document.createElement('div');d.className='led';row.appendChild(d);leds.push(d)}rows.appendChild(row)}
-const houseLeds=[],houseGroup=$('houseLeds'),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82],[285,92],[285,106],[285,120],[285,134],[270,145],[250,145],[230,145],[210,145],[190,145],[170,145],[150,145],[130,145],[110,145],[90,145],[75,134],[75,118],[75,102],[75,88]];
+const houseLeds=[],houseGroup=$('houseLeds'),houseScene=houseGroup.closest('.housePreview'),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82],[285,92],[285,106],[285,120],[285,134],[270,145],[250,145],[230,145],[210,145],[190,145],[170,145],[150,145],[130,145],[110,145],[90,145],[75,134],[75,118],[75,102],[75,88]];
 pts.forEach(([x,y])=>{const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r','5');c.setAttribute('class','houseLed');houseGroup.appendChild(c);houseLeds.push(c)});
 
 const NAMED_COLOR_PALETTE=[
@@ -326,7 +342,7 @@ function animate(ts){
   }
   if(previewPages.home.classList.contains('active')){
     const x=paint(running,0,br,houseLeds.length),key=JSON.stringify([x,power]);
-    if(key!==previousHousePaint){previousHousePaint=key;const glow=power?`drop-shadow(0 0 ${Math.round(2+7*x.a)}px ${x.c})`:'none';houseLeds.forEach(el=>{el.setAttribute('fill',x.c);el.setAttribute('opacity',Math.max(.12,x.a));el.style.filter=glow})}
+    if(key!==previousHousePaint){previousHousePaint=key;const glow=power?`drop-shadow(0 0 ${Math.round(2+7*x.a)}px ${x.c})`:'none';houseScene.style.setProperty('--v3-live-color',x.c);houseScene.style.setProperty('--v3-live-glow',power?Math.max(.02,x.a)*.48:0);houseLeds.forEach(el=>{el.setAttribute('fill',x.c);el.setAttribute('opacity',Math.max(.12,x.a));el.style.filter=glow})}
   }
 }requestAnimationFrame(animate);
 

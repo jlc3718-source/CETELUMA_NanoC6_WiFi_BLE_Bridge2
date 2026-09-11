@@ -85,7 +85,10 @@
     schedule.append(routeButton('v3CardKicker','events',`${icon('clock')}<span>Schedule</span>${icon('arrow')}`));
     const oldRunning = byId('nowTheme').closest('.panel');
     schedule.append(byId('nowTheme'),byId('scheduleWindow'),byId('resumeSchedule'));
-    features.append(fx,schedule); panel.appendChild(features);
+    const live=el('div','v3LiveCard',`<div class="v3CardKicker">${icon('home')}<span>Live lights</span><i class="v3LiveDot" aria-hidden="true"></i></div>`);
+    live.append(q('.housePreview',oldRunning),el('div','v3LiveCaption','<span id="v3LiveEffect">Current lights</span>'));
+    features.append(fx,live);panel.append(features,schedule);
+    oldRunning.remove();
     const favorites=el('div','v3Favorites'), grid=byId('homeFavoriteColorGrid'); grid.previousElementSibling.remove();
     const heading=el('div','v3FavoriteHeading',`<span>${icon('heart')}<strong id="v3ColorHeading">Favorite Colors</strong></span>`);
     const edit=el('button','v3TextButton',`Edit ${icon('arrow')}`); edit.type='button';edit.setAttribute('aria-label','Edit favorite colors');
@@ -98,8 +101,6 @@
     summary.appendChild(byId('homeSpeedVal'));speedLabel.remove();detail.append(summary,speed);panel.appendChild(detail);
     byId('homeSpeed').setAttribute('aria-label','Animation speed');
     panel.appendChild(el('div','v3HomeTiles'));
-    const live=el('details','v3Live panel'), liveSummary=el('summary','',`${icon('home')}<span>Live light preview</span>`);
-    live.append(liveSummary,q('.housePreview',oldRunning)); oldRunning.replaceWith(live);
     const next=byId('nextEvent').closest('.card');next.classList.add('v3Next');next.prepend(el('span','v3NextIcon',icon('clock')));
     const favoritesPanel=byId('favoriteGrid').closest('.panel'); favoritesPanel.classList.add('v3SavedScenes');q('strong',favoritesPanel).textContent='Favorite scenes';
     const custom=byId('homeCustomLightList').closest('.panel');custom.classList.add('v3SavedScenes');q('strong',custom).textContent='Your custom shows';q('.sub',custom).textContent='Saved lighting, ready to play.';
@@ -114,10 +115,12 @@
       }
     }
     new MutationObserver(colorsChanged).observe(grid,{childList:true}); colorsChanged();
-    const syncPower=()=>{ const on=byId('homePowerOn').classList.contains('primary');panel.dataset.power=on?'on':'off';byId('homePowerOn').setAttribute('aria-pressed',String(on));byId('homePowerOff').setAttribute('aria-pressed',String(!on)); };
+    const syncLive=()=>{const on=byId('homePowerOn').classList.contains('primary'),effect=running.effect,label=on?`${effect==='Solid'?'Solid / Static':effect} · ${byId('homeBrightVal').textContent}`:'Lights off';byId('v3LiveEffect').textContent=label;live.dataset.power=on?'on':'off';q('svg',q('.housePreview',live)).setAttribute('aria-label',`Live house preview: ${label}`);};
+    const syncPower=()=>{ const on=byId('homePowerOn').classList.contains('primary');panel.dataset.power=on?'on':'off';byId('homePowerOn').setAttribute('aria-pressed',String(on));byId('homePowerOff').setAttribute('aria-pressed',String(!on));syncLive(); };
     new MutationObserver(syncPower).observe(byId('homePowerOn'),{attributes:true,attributeFilter:['class']});syncPower();
-    const syncEffect=()=>{byId('homeEffectHelp').textContent=byId('homeEffect').value==='Solid'?'Holds the first color steady.':'Use your current colors.';};
+    const syncEffect=()=>{byId('homeEffectHelp').textContent=byId('homeEffect').value==='Solid'?'Holds the first color steady.':'Use your current colors.';syncLive();};
     byId('homeEffect').addEventListener('change',syncEffect);new MutationObserver(syncEffect).observe(byId('nowTheme'),{childList:true});
+    new MutationObserver(syncLive).observe(byId('homeBrightVal'),{childList:true});
   }
   function syncRole() {
     q('.v3BottomNav').hidden=!window.andersonProfile;
