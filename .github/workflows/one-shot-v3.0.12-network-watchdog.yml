@@ -26,7 +26,7 @@ jobs:
           python tools/release.py bump
           python - <<'PY'
           from pathlib import Path
-          import re
+          import re, textwrap
 
           root=Path('.')
           main=root/'firmware/src/main.cpp'
@@ -87,13 +87,12 @@ jobs:
           marker='# Test the actual automatic-update loop and monitor countdown with simulated time.\n'
           assert marker in prior
           remote=prior.split(marker,1)[1]
-          prefix=r'''# Anderson v3.0.12 network-recovery regression gate.
+          prefix=textwrap.dedent(r"""# Anderson v3.0.12 network-recovery regression gate.
           from pathlib import Path
           import re
           import subprocess
           import tempfile
           source=(Path(__file__).resolve().parents[1]/'firmware/src/main.cpp').read_text()
-          # Compile the actual production Wi-Fi recovery routine against controllable hardware stand-ins.
           wifi=source[source.index('static void maintainWiFiConnection(){'):source.index('void setupRoutes(){')]
           stubs=r'''
           #include <cstdint>
@@ -147,10 +146,7 @@ jobs:
               subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',str(p.with_suffix(''))],check=True)
               subprocess.run([str(p.with_suffix(''))],check=True)
 
-          '''
-          # Remove indentation introduced by this workflow's Python heredoc source.
-          import textwrap
-          prefix=textwrap.dedent(prefix)
+          """)
           test.write_text(prefix+marker+remote)
           PY
       - name: Run focused timing regression tests
