@@ -400,7 +400,25 @@ void setupRoutes(){
   });
 
   server.on("/api/wifi/scan",HTTP_GET,[]{
-    if(!requireAdmin())return;if(setupAP) WiFi.mode(WIFI_AP_STA); else WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.scanDelete();delay(150);int n=WiFi.scanNetworks(false,true,false,500);JsonDocument d;JsonArray a=d["networks"].to<JsonArray>();if(n>0){for(int i=0;i<n;i++){String ssid=WiFi.SSID(i);if(!ssid.length())continue;bool duplicate=false;for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}if(duplicate)continue;JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);}}WiFi.scanDelete();String out;serializeJson(d,out);sendJson(out);
+    if(!requireAdmin())return;
+    static uint32_t scanStartedAt=0;
+    int n=WiFi.scanComplete();
+    if(n==WIFI_SCAN_RUNNING){
+      if(scanStartedAt&&(uint32_t)(millis()-scanStartedAt)>20000UL){WiFi.scanDelete();scanStartedAt=0;server.send(504,"application/json","{\"ok\":false,\"error\":\"Wi-Fi scan timed out; retry the scan\"}");return;}
+      JsonDocument d;d["scanning"]=true;d["elapsedMs"]=scanStartedAt?(uint32_t)(millis()-scanStartedAt):0;String out;serializeJson(d,out);sendJson(out,202);return;
+    }
+    if(n>=0){
+      JsonDocument d;d["scanning"]=false;JsonArray a=d["networks"].to<JsonArray>();
+      for(int i=0;i<n;i++){String ssid=WiFi.SSID(i);if(!ssid.length())continue;bool duplicate=false;for(JsonObject x:a){if(x["ssid"].as<String>()==ssid){duplicate=true;break;}}if(duplicate)continue;JsonObject x=a.add<JsonObject>();x["ssid"]=ssid;x["rssi"]=WiFi.RSSI(i);}
+      WiFi.scanDelete();scanStartedAt=0;String out;serializeJson(d,out);sendJson(out);return;
+    }
+    // Do not reset an already-connected STA just to scan. In setup mode keep the
+    // SoftAP alive, then run the radio scan asynchronously so WebServer stays responsive.
+    if(setupAP)WiFi.mode(WIFI_AP_STA);else if(WiFi.status()!=WL_CONNECTED)WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);WiFi.scanDelete();delay(10);
+    int started=WiFi.scanNetworks(true,true,false,300);
+    if(started==WIFI_SCAN_FAILED){scanStartedAt=0;server.send(500,"application/json","{\"ok\":false,\"error\":\"NanoC6 could not start the Wi-Fi scan\"}");return;}
+    scanStartedAt=millis();JsonDocument d;d["scanning"]=true;d["started"]=true;String out;serializeJson(d,out);sendJson(out,202);
   });
   server.on("/api/wifi",HTTP_POST,[]{
     if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String ssid=d["ssid"].as<String>(),pass=d["password"].as<String>();if(!ssid.length()){server.send(400,"text/plain","SSID required");return;}store.saveWiFi(ssid,pass);sendJson("{\"ok\":true}");delay(300);ESP.restart();
