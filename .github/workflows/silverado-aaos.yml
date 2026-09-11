@@ -1,0 +1,89 @@
+name: Build Silverado AAOS Browser
+
+on:
+  push:
+    branches:
+      - build/silverado-aaos
+    paths:
+      - 'silverado-aaos/**'
+      - '.github/workflows/silverado-aaos.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Generate upload signing key
+        working-directory: silverado-aaos
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 20)"
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -v \
+            -keystore upload-keystore.jks \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias upload \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname 'CN=Silverado AAOS, OU=Personal, O=JLC3718, L=Randolph, ST=NY, C=US'
+          echo "KEYSTORE_PATH=${GITHUB_WORKSPACE}/silverado-aaos/upload-keystore.jks" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=upload" >> "$GITHUB_ENV"
+          mkdir -p dist
+          {
+            echo 'Silverado AAOS upload key'
+            echo 'Package: com.jlc3718.silveradochromium'
+            echo 'Alias: upload'
+            echo "Password: $PASS"
+            echo 'Keep this file and upload-keystore.jks together for future Play uploads.'
+          } > dist/SIGNING_INFO.txt
+          cp upload-keystore.jks dist/upload-keystore.jks
+
+      - name: Build signed AAB and APK
+        working-directory: silverado-aaos
+        run: gradle --no-daemon --stacktrace clean bundleRelease assembleRelease
+
+      - name: Collect outputs
+        working-directory: silverado-aaos
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp app/build/outputs/bundle/release/app-release.aab dist/SilveradoChromium-AAOS-arm64-v1.0.0.aab
+          cp app/build/outputs/apk/release/app-release.apk dist/SilveradoChromium-AAOS-arm64-v1.0.0.apk
+          (cd dist && sha256sum *.aab *.apk upload-keystore.jks > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Upload finished build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SilveradoChromium-AAOS-v1.0.0
+          path: silverado-aaos/dist/*
+          if-no-files-found: error
+          retention-days: 30
