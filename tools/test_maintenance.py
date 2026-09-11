@@ -1,4 +1,5 @@
 # Production build trigger: v3.0.13 exact candidate.
+# Exact production build trigger after daily-reboot validation.
 # Anderson v3.0.13 network/daily-reboot regression gate.
 from pathlib import Path
 import re
