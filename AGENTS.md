@@ -61,7 +61,7 @@ GitHub runner queue vary.
 - Saved NVS key names and formats, events, colors, names, and effects.
 - Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
-- Maintenance reboot occurs after every 4 hours of uptime, independently of Wi-Fi/NTP; defer it while a firmware upload or another scheduled reboot is pending. This replaces the old daily 18:00 reboot.
+- Maintenance reboot occurs after every 1 hour of uptime, independently of Wi-Fi/NTP; defer it while a firmware upload or another scheduled reboot is pending. This replaces the old daily 18:00 reboot.
 - While disconnected, retry the saved Wi-Fi network every 30 minutes; stop fallback AP mode and renew NTP/mDNS after reconnection. Preserve saved credentials.
 - v3.0.1 and later use the approved third-reference Anderson Home dashboard as the visual source of truth: illuminated nighttime house/RGB hero, integrated Anderson Home branding, dark translucent glass controls, prominent green ON control, rainbow brightness bar, effect/schedule cards, circular favorite colors, feature tiles, and floating bottom navigation. Do not regress to the generic logo-card/tab-bar layout unless the user explicitly requests it.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly

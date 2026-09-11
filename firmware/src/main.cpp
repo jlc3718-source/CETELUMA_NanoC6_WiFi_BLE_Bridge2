@@ -454,7 +454,7 @@ void setupRoutes(){
 }
 
 // An uptime timer works without Wi-Fi/NTP and does not write periodic markers to flash.
-static constexpr uint32_t MAINTENANCE_REBOOT_INTERVAL_MS=4UL*60UL*60UL*1000UL;
+static constexpr uint32_t MAINTENANCE_REBOOT_INTERVAL_MS=60UL*60UL*1000UL;
 static uint32_t maintenanceRebootStartedAt=0;
 static void checkMaintenanceReboot(){
   if((uint32_t)(millis()-maintenanceRebootStartedAt)<MAINTENANCE_REBOOT_INTERVAL_MS)return;

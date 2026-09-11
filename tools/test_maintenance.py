@@ -23,13 +23,13 @@ bool otaAutoRebootPending=false,setupAP=false,wifiWasConnected=false;uint32_t la
 '''
 tests=r'''
 int main(){
- maintenanceRebootStartedAt=1000;tick=14400999;checkMaintenanceReboot();assert(ESP.count==0);
- tick=14401000;checkMaintenanceReboot();assert(ESP.count==1);
- ESP.count=0;Update.busy=true;tick=14500000;checkMaintenanceReboot();assert(ESP.count==0);
+ maintenanceRebootStartedAt=1000;tick=3600999;checkMaintenanceReboot();assert(ESP.count==0);
+ tick=3601000;checkMaintenanceReboot();assert(ESP.count==1);
+ ESP.count=0;Update.busy=true;tick=3700000;checkMaintenanceReboot();assert(ESP.count==0);
  Update.busy=false;otaAutoRebootPending=true;checkMaintenanceReboot();assert(ESP.count==0);
  otaAutoRebootPending=false;checkMaintenanceReboot();assert(ESP.count==1);
- ESP.count=0;maintenanceRebootStartedAt=UINT32_MAX-1000;tick=14398998;checkMaintenanceReboot();assert(ESP.count==0);
- tick=14398999;checkMaintenanceReboot();assert(ESP.count==1);
+ ESP.count=0;maintenanceRebootStartedAt=UINT32_MAX-1000;tick=3598998;checkMaintenanceReboot();assert(ESP.count==0);
+ tick=3598999;checkMaintenanceReboot();assert(ESP.count==1);
  tick=1799999;maintainWiFiConnection();assert(WiFi.retries==0);
  tick=1800000;maintainWiFiConnection();assert(WiFi.retries==1);
  tick=3599999;maintainWiFiConnection();assert(WiFi.retries==1);
@@ -45,7 +45,7 @@ int main(){
  WiFi.state=WL_CONNECTED;maintainWiFiConnection();assert(timeSyncs==2&&mdnsStarts==2&&WiFi.modes==1);
  WiFi.state=0;lastWiFiRetry=UINT32_MAX-1000;tick=1798998;maintainWiFiConnection();assert(WiFi.retries==3);
  tick=1798999;maintainWiFiConnection();assert(WiFi.retries==4);
- std::cout<<"PASS: 4-hour boundaries, offline operation, OTA deferral, timer wraparound, retry cadence, no-credentials case, and fallback AP recovery\n";
+ std::cout<<"PASS: 1-hour boundaries, offline operation, OTA deferral, timer wraparound, retry cadence, no-credentials case, and fallback AP recovery\n";
 }
 '''
 with tempfile.TemporaryDirectory() as directory:
