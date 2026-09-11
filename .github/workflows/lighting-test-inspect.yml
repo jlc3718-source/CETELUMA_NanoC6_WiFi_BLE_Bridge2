@@ -1,0 +1,32 @@
+name: Inspect Lighting Test Android Base
+
+on:
+  pull_request:
+    branches: [ automation/lighting-test-runner ]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recover historical Android source
+        run: |
+          git show b7766540a87ed880f5921fe2a9c2cb0d802334e2:Anderson_Home_Complete_Project.zip > /tmp/Anderson_Home_Complete_Project.zip
+          rm -rf /tmp/anderson_android
+          mkdir -p /tmp/anderson_android
+          unzip -q /tmp/Anderson_Home_Complete_Project.zip -d /tmp/anderson_android
+          test -f /tmp/anderson_android/Anderson_Home_Complete_Project/android/settings.gradle.kts
+          cd /tmp/anderson_android/Anderson_Home_Complete_Project
+          zip -qr "$GITHUB_WORKSPACE/lighting-test-android-base.zip" android
+      - name: Upload Android source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighting-test-android-base
+          path: lighting-test-android-base.zip
+          if-no-files-found: error
+          retention-days: 1
