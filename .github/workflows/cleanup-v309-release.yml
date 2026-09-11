@@ -1,0 +1,19 @@
+name: Cleanup Anderson v3.0.9 Releases
+
+on:
+  pull_request:
+    branches: [automation/release-cleanup-runner]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'codex/release-cleanup-v309'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Remove obsolete v3.0.7 release only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api --method DELETE /repos/$GH_REPO/releases/386755528
