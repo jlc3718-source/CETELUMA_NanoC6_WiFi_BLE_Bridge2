@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    namespace 'com.jlc3718.silveradochromium'
+    namespace 'com.jlc3718.silveradostreambrowser'
     compileSdk 36
 
     defaultConfig {
-        applicationId 'com.jlc3718.silveradochromium'
+        applicationId 'com.jlc3718.silveradostreambrowser'
         minSdk 29
         targetSdk 36
-        versionCode 2
-        versionName '1.0.1'
+        versionCode 1
+        versionName '1.0.0'
         ndk {
             abiFilters 'arm64-v8a'
         }
