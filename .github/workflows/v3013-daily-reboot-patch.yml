@@ -34,12 +34,12 @@ jobs:
               raise SystemExit('expected v3.0.12 runtime version not found')
           s = s.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";', 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";', 1)
 
-          marker = 'void setupRoutes(){\n'
+          marker = '\nvoid setup(){\n'
           daily = 'static bool dailyScheduledRebootDue(int32_t dayKey,uint16_t minute){\n  if(!dailyRebootClockInitialized){\n    dailyRebootClockInitialized=true;\n    dailyRebootHandledDay=minute>=DAILY_REBOOT_MINUTE?dayKey:dayKey-1;\n    return false;\n  }\n  if(minute<DAILY_REBOOT_MINUTE||dailyRebootHandledDay==dayKey)return false;\n  dailyRebootHandledDay=dayKey;\n  return true;\n}\nstatic void checkDailyScheduledReboot(){\n  if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;\n  time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;\n  int32_t dayKey=(int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;\n  uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);\n  if(!dailyScheduledRebootDue(dayKey,minute))return;\n  delay(40);ESP.restart();\n}\n'
           if 'static void checkDailyScheduledReboot(){' not in s:
               if marker not in s:
-                  raise SystemExit('setupRoutes marker not found')
-              s = s.replace(marker, daily + marker, 1)
+                  raise SystemExit('setup marker not found')
+              s = s.replace(marker, '\n' + daily + 'void setup(){\n', 1)
 
           loop_old = '  maintainWiFiConnection();\n  if(!otaAutoRebootPending&&!Update.isRunning())'
           loop_new = '  maintainWiFiConnection();checkDailyScheduledReboot();\n  if(!otaAutoRebootPending&&!Update.isRunning())'
@@ -59,7 +59,7 @@ jobs:
               raise SystemExit('test header not found')
           t = t.replace(old_header, new_header, 1)
           daily_test = ("\n# Validate the production daily-reboot wiring and state-machine semantics.\n"
-                        "daily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setupRoutes(){')]\n"
+                        "daily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setup(){')]\n"
                         "main_loop=source[source.index('void loop(){'):]\n"
                         "assert 'DAILY_REBOOT_MINUTE=15U*60U' in source\n"
                         "assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check\n"
