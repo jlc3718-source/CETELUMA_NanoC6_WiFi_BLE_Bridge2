@@ -1,0 +1,1 @@
+Build isolated v3.0.10a minimal APK companion firmware.
