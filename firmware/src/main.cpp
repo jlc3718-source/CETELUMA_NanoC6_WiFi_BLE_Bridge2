@@ -46,9 +46,10 @@ static uint32_t lastWiFiRetry=0,wifiOfflineSince=0;
 static bool wifiOfflineTimerStarted=false;
 static constexpr uint32_t WIFI_RETRY_INTERVAL_MS=30UL*1000UL;
 static constexpr uint32_t WIFI_OFFLINE_REBOOT_MS=10UL*60UL*1000UL;
-static constexpr uint16_t DAILY_REBOOT_MINUTE=15U*60U;
-static bool dailyRebootClockInitialized=false;
-static int32_t dailyRebootHandledDay=-1;
+static constexpr uint16_t MAINTENANCE_REBOOT_MINUTES[]={0U,6U*60U,12U*60U,18U*60U};
+static constexpr uint8_t MAINTENANCE_REBOOT_COUNT=sizeof(MAINTENANCE_REBOOT_MINUTES)/sizeof(MAINTENANCE_REBOOT_MINUTES[0]);
+static bool maintenanceRebootClockInitialized=false;
+static int32_t maintenanceRebootHandledSlot=-1;
 bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false;int otaUploadResponseCode=403;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
@@ -56,7 +57,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.14";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.15";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -192,6 +193,24 @@ static String firmwareJson(){
   String out;serializeJson(d,out);return out;
 }
 
+static uint8_t maintenanceRebootSlotForMinute(uint16_t minute){
+  uint8_t slot=0;for(uint8_t i=1;i<MAINTENANCE_REBOOT_COUNT;i++){if(minute<MAINTENANCE_REBOOT_MINUTES[i])break;slot=i;}return slot;
+}
+static int32_t maintenanceRebootDayKey(const tm& local){return (int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;}
+static String maintenanceRebootLabel(uint16_t minute){
+  uint8_t h=(uint8_t)(minute/60U),m=(uint8_t)(minute%60U);const bool pm=h>=12;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,m,pm?"PM":"AM");return String(b);
+}
+static bool nextMaintenanceReboot(time_t now,time_t& nextAt,uint32_t& secondsRemaining,uint16_t& nextMinute){
+  tm base{};if(!localtime_r(&now,&base))return false;
+  for(uint8_t dayOffset=0;dayOffset<2;dayOffset++)for(uint8_t i=0;i<MAINTENANCE_REBOOT_COUNT;i++){
+    tm candidate=base;candidate.tm_mday+=dayOffset;candidate.tm_hour=MAINTENANCE_REBOOT_MINUTES[i]/60U;candidate.tm_min=MAINTENANCE_REBOOT_MINUTES[i]%60U;candidate.tm_sec=0;candidate.tm_isdst=-1;
+    time_t when=mktime(&candidate);if(when<now)continue;
+    tm normalized{};if(!localtime_r(&when,&normalized))continue;int32_t key=maintenanceRebootDayKey(normalized)*MAINTENANCE_REBOOT_COUNT+i;
+    if(maintenanceRebootClockInitialized&&key<=maintenanceRebootHandledSlot)continue;
+    nextAt=when;secondsRemaining=when>now?(uint32_t)(when-now):0U;nextMinute=MAINTENANCE_REBOOT_MINUTES[i];return true;
+  }
+  return false;
+}
 static String systemJson(){
   JsonDocument d;const bool wifiConnected=WiFi.status()==WL_CONNECTED;const esp_partition_t* running=esp_ota_get_running_partition();const uint32_t slotBytes=running?(uint32_t)running->size:0;const uint32_t appBytes=(uint32_t)ESP.getSketchSize();
   d["version"]=ANDERSON_FIRMWARE_VERSION;d["cpuLoad"]=cpuLoadPct;d["cpuMhz"]=(uint32_t)getCpuFrequencyMhz();d["uptimeMs"]=(uint32_t)millis();
@@ -199,6 +218,9 @@ static String systemJson(){
   d["heapTotal"]=(uint32_t)ESP.getHeapSize();d["heapFree"]=(uint32_t)ESP.getFreeHeap();d["heapMin"]=(uint32_t)ESP.getMinFreeHeap();d["heapLargest"]=(uint32_t)ESP.getMaxAllocHeap();
   d["wifiConnected"]=wifiConnected;d["rssi"]=wifiConnected?WiFi.RSSI():0;d["ssid"]=wifiConnected?WiFi.SSID():String("");d["ip"]=wifiConnected?WiFi.localIP().toString():WiFi.softAPIP().toString();
   d["bleConnected"]=ble.connected();d["bleCount"]=ble.connectedCount();d["appBytes"]=appBytes;d["slotBytes"]=slotBytes;d["appFreeBytes"]=slotBytes>appBytes?slotBytes-appBytes:0;
+  d["rebootSchedule"]="12:00 AM • 6:00 AM • 12:00 PM • 6:00 PM";
+  if(timeValid()){time_t now=time(nullptr),nextAt=0;uint32_t remaining=0;uint16_t nextMinute=0;if(nextMaintenanceReboot(now,nextAt,remaining,nextMinute)){d["nextReboot"]=maintenanceRebootLabel(nextMinute);d["nextRebootEpoch"]=(int64_t)nextAt;d["nextRebootSeconds"]=remaining;}}
+  else d["nextReboot"]="Waiting for time sync";
   String out;serializeJson(d,out);return out;
 }
 
@@ -500,22 +522,17 @@ void setupRoutes(){
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
-static bool dailyScheduledRebootDue(int32_t dayKey,uint16_t minute){
-  if(!dailyRebootClockInitialized){
-    dailyRebootClockInitialized=true;
-    dailyRebootHandledDay=minute>=DAILY_REBOOT_MINUTE?dayKey:dayKey-1;
-    return false;
-  }
-  if(minute<DAILY_REBOOT_MINUTE||dailyRebootHandledDay==dayKey)return false;
-  dailyRebootHandledDay=dayKey;
-  return true;
+static bool scheduledMaintenanceRebootDue(int32_t dayKey,uint16_t minute){
+  const int32_t slotKey=dayKey*MAINTENANCE_REBOOT_COUNT+maintenanceRebootSlotForMinute(minute);
+  if(!maintenanceRebootClockInitialized){maintenanceRebootClockInitialized=true;maintenanceRebootHandledSlot=slotKey;return false;}
+  if(slotKey<=maintenanceRebootHandledSlot)return false;
+  maintenanceRebootHandledSlot=slotKey;return true;
 }
-static void checkDailyScheduledReboot(){
+static void checkScheduledMaintenanceReboot(){
   if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;
   time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;
-  int32_t dayKey=(int32_t)(local.tm_year+1900)*366+(int32_t)local.tm_yday;
-  uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);
-  if(!dailyScheduledRebootDue(dayKey,minute))return;
+  int32_t dayKey=maintenanceRebootDayKey(local);uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);
+  if(!scheduledMaintenanceRebootDue(dayKey,minute))return;
   delay(40);ESP.restart();
 }
 void setup(){
@@ -529,7 +546,7 @@ void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
   server.handleClient();ble.loop();
   if(ble.consumeConnectionChange())applyRunning(true);
-  maintainWiFiConnection();checkDailyScheduledReboot();
+  maintainWiFiConnection();checkScheduledMaintenanceReboot();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}

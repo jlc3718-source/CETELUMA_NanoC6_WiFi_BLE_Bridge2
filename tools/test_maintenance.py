@@ -71,34 +71,40 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run([str(p.with_suffix(''))],check=True)
 
 
-# Validate the production daily-reboot wiring and state-machine semantics.
-daily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setup(){')]
+# Validate the production four-times-daily maintenance reboot wiring and semantics.
 main_loop=source[source.index('void loop(){'):]
-assert 'DAILY_REBOOT_MINUTE=15U*60U' in source
-assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check
-assert 'localtime_r(&now,&local)' in daily_check
-assert 'checkDailyScheduledReboot();' in main_loop
+assert 'MAINTENANCE_REBOOT_MINUTES[]={0U,6U*60U,12U*60U,18U*60U}' in source
+maintenance_check=source[source.index('static void checkScheduledMaintenanceReboot(){'):source.index('void setup(){')]
+assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in maintenance_check
+assert 'checkScheduledMaintenanceReboot();' in main_loop
+assert 'nextRebootSeconds' in source and 'rebootSchedule' in source
 
-def daily_due(state, day, minute):
-    initialized, handled = state
+def reboot_slot(minute):
+    return 3 if minute>=1080 else 2 if minute>=720 else 1 if minute>=360 else 0
+
+def scheduled_due(state, day, minute):
+    initialized, handled=state
+    key=day*4+reboot_slot(minute)
     if not initialized:
-        return (True, day if minute >= 900 else day-1), False
-    if minute < 900 or handled == day:
-        return (initialized, handled), False
-    return (initialized, day), True
+        return (True,key),False
+    if key<=handled:
+        return state,False
+    return (True,key),True
 
 state=(False,-1)
-state,due=daily_due(state,1000,899);assert not due and state==(True,999)
-state,due=daily_due(state,1000,900);assert due and state==(True,1000)
-state,due=daily_due(state,1000,901);assert not due
-state,due=daily_due(state,1001,899);assert not due
-state,due=daily_due(state,1001,900);assert due and state==(True,1001)
+state,due=scheduled_due(state,1000,359);assert not due
+state,due=scheduled_due(state,1000,360);assert due
+state,due=scheduled_due(state,1000,719);assert not due
+state,due=scheduled_due(state,1000,720);assert due
+state,due=scheduled_due(state,1000,1080);assert due
+state,due=scheduled_due(state,1001,0);assert due
+state,due=scheduled_due(state,1001,359);assert not due
+state,due=scheduled_due(state,1001,360);assert due
 state=(False,-1)
-state,due=daily_due(state,2000,901);assert not due and state==(True,2000)
-state,due=daily_due(state,2000,1000);assert not due
-state,due=daily_due(state,2001,899);assert not due
-state,due=daily_due(state,2001,900);assert due
-print('PASS: daily 15:00 local reboot state machine, once-per-day behavior, OTA deferral wiring, and no immediate post-boot re-fire')
+state,due=scheduled_due(state,2000,800);assert not due and state==(True,2000*4+2)
+state,due=scheduled_due(state,2000,1079);assert not due
+state,due=scheduled_due(state,2000,1080);assert due
+print('PASS: 00:00/06:00/12:00/18:00 local reboot state machine, no post-boot refire, and monitor telemetry wiring')
 
 # Test the actual automatic-update loop and monitor countdown with simulated time.
 remote=(Path(__file__).resolve().parents[1]/'firmware/src/RemoteUpdate.cpp').read_text()
