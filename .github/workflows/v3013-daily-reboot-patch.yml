@@ -30,6 +30,8 @@ jobs:
                   raise SystemExit('daily reboot constant anchor not found')
               s = s.replace(anchor, anchor + insert, 1)
 
+          if 'ANDERSON_FIRMWARE_VERSION="3.0.12"' not in s:
+              raise SystemExit('expected v3.0.12 runtime version not found')
           s = s.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.12";',
                         'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.13";', 1)
 
@@ -52,18 +54,54 @@ jobs:
 
           test = Path('tools/test_maintenance.py')
           t = test.read_text()
-          t = t.replace('# Production build trigger: v3.0.12 exact candidate.\n# Anderson v3.0.12 network-recovery regression gate.',
-                        '# Production build trigger: v3.0.13 exact candidate.\n# Anderson v3.0.13 network/daily-reboot regression gate.', 1)
-          daily_test = r'''\n# Test the exact pure daily-reboot state machine from production source.\ndaily_logic=source[source.index('static constexpr uint16_t DAILY_REBOOT_MINUTE='):source.index('static void checkDailyScheduledReboot(){')]\ndaily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setupRoutes(){')]\nmain_loop=source[source.index('void loop(){'):]\nassert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check\nassert 'checkDailyScheduledReboot();' in main_loop\ndaily_stubs=r'''\n#include <cstdint>\n#include <cassert>\n#include <iostream>\n'''\ndaily_tests=r'''\nint main(){\n dailyRebootClockInitialized=false;dailyRebootHandledDay=-1;\n assert(!dailyScheduledRebootDue(1000,899));assert(dailyRebootHandledDay==999);\n assert(dailyScheduledRebootDue(1000,900));assert(dailyRebootHandledDay==1000);\n assert(!dailyScheduledRebootDue(1000,901));\n assert(!dailyScheduledRebootDue(1001,899));assert(dailyRebootHandledDay==1000);\n assert(dailyScheduledRebootDue(1001,900));assert(dailyRebootHandledDay==1001);\n dailyRebootClockInitialized=false;dailyRebootHandledDay=-1;\n assert(!dailyScheduledRebootDue(2000,901));assert(dailyRebootHandledDay==2000);\n assert(!dailyScheduledRebootDue(2000,1000));\n assert(!dailyScheduledRebootDue(2001,899));\n assert(dailyScheduledRebootDue(2001,900));\n std::cout<<"PASS: daily 15:00 local reboot state machine, once-per-day behavior, and no immediate post-boot re-fire\\n";\n}\n'''\nwith tempfile.TemporaryDirectory() as directory:\n    p=Path(directory)/'daily_reboot.cpp'\n    p.write_text(daily_stubs+daily_logic+daily_tests)\n    subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',str(p.with_suffix(''))],check=True)\n    subprocess.run([str(p.with_suffix(''))],check=True)\n\n'''
+          old_header = '# Production build trigger: v3.0.12 exact candidate.\n# Anderson v3.0.12 network-recovery regression gate.'
+          new_header = '# Production build trigger: v3.0.13 exact candidate.\n# Anderson v3.0.13 network/daily-reboot regression gate.'
+          if old_header not in t:
+              raise SystemExit('test header not found')
+          t = t.replace(old_header, new_header, 1)
+          daily_test = """
+# Validate the production daily-reboot wiring and state-machine semantics.
+daily_check=source[source.index('static void checkDailyScheduledReboot(){'):source.index('void setupRoutes(){')]
+main_loop=source[source.index('void loop(){'):]
+assert 'DAILY_REBOOT_MINUTE=15U*60U' in source
+assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in daily_check
+assert 'localtime_r(&now,&local)' in daily_check
+assert 'checkDailyScheduledReboot();' in main_loop
+
+def daily_due(state, day, minute):
+    initialized, handled = state
+    if not initialized:
+        return (True, day if minute >= 900 else day-1), False
+    if minute < 900 or handled == day:
+        return (initialized, handled), False
+    return (initialized, day), True
+
+state=(False,-1)
+state,due=daily_due(state,1000,899);assert not due and state==(True,999)
+state,due=daily_due(state,1000,900);assert due and state==(True,1000)
+state,due=daily_due(state,1000,901);assert not due
+state,due=daily_due(state,1001,899);assert not due
+state,due=daily_due(state,1001,900);assert due and state==(True,1001)
+state=(False,-1)
+state,due=daily_due(state,2000,901);assert not due and state==(True,2000)
+state,due=daily_due(state,2000,1000);assert not due
+state,due=daily_due(state,2001,899);assert not due
+state,due=daily_due(state,2001,900);assert due
+print('PASS: daily 15:00 local reboot state machine, once-per-day behavior, OTA deferral wiring, and no immediate post-boot re-fire')
+
+"""
           marker = '# Test the actual automatic-update loop and monitor countdown with simulated time.\n'
-          if '# Test the exact pure daily-reboot state machine' not in t:
+          if '# Validate the production daily-reboot wiring' not in t:
               if marker not in t:
                   raise SystemExit('test insertion marker not found')
               t = t.replace(marker, daily_test + marker, 1)
           test.write_text(t)
 
           readme = Path('README.md')
-          r = readme.read_text().replace('Current firmware: **v3.0.12**.', 'Current firmware: **v3.0.13**.', 1)
+          r = readme.read_text()
+          if 'Current firmware: **v3.0.12**.' not in r:
+              raise SystemExit('README version marker not found')
+          r = r.replace('Current firmware: **v3.0.12**.', 'Current firmware: **v3.0.13**.', 1)
           old = '- While disconnected with saved credentials, retry Wi-Fi every 30 seconds. If the controller remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Successful recovery cancels the watchdog, closes the setup AP, and renews time sync/mDNS. There is no unconditional maintenance reboot.'
           new = '- Reboot once each day at **3:00 PM local controller time** when the clock is valid; the schedule initializes safely after boot so it cannot immediately re-fire in a reboot loop, and it defers during firmware-update/reboot activity. There is no unconditional uptime-based maintenance reboot. While disconnected with saved credentials, retry Wi-Fi every 30 seconds; after 10 continuous offline minutes, reboot as a last-resort recovery. Successful recovery cancels that watchdog, closes the setup AP, and renews time sync/mDNS.'
           if old not in r:
