@@ -1,7 +1,8 @@
 #include "EventState.h"
 #include <Preferences.h>
 
-static constexpr const char* EVENT_STATE_NS = "anderson-evstate";
+static constexpr char EVENT_STATE_NS[] = "anderson-evst";
+static_assert(sizeof(EVENT_STATE_NS) - 1 <= 15, "NVS namespace must fit 15 characters");
 static constexpr uint8_t EVENT_STATE_REVISION = 1;
 static uint64_t enabledWords[EVENT_STATE_WORDS] = {UINT64_MAX,UINT64_MAX,UINT64_MAX,UINT64_MAX};
 static uint64_t favoriteWords[EVENT_STATE_WORDS] = {0,0,0,0};

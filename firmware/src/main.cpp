@@ -10,6 +10,7 @@
 #include <esp_random.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <nvs_flash.h>
 #include <mbedtls/sha256.h>
 #include <time.h>
 #include <atomic>
@@ -59,7 +60,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.24";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.25";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -114,24 +115,18 @@ static uint32_t nextStoredId(JsonArray arr,const char prefix){uint32_t maxId=0;f
 static bool jsonArrayValid(const String& raw){JsonDocument d;return !deserializeJson(d,raw)&&d.is<JsonArray>();}
 static void migrateLegacyCustomStorage(){String lights=presetStoreRaw();if(!jsonArrayValid(lights))customFileWrite("/custom_lights.json","[]");String schedules=scheduleStoreRaw();if(!jsonArrayValid(schedules))customFileWrite("/custom_schedules.json","[]");}
 
-// v3.0.20 master calendar migration: replace built-in event/favorite state once while
-// preserving Wi-Fi, BLE, PINs, custom lights, and custom schedules.
+// Complete the legacy calendar marker without resetting user data.
+// The compiled catalog, eventStateBegin(), and seedMasterSceneFavoritesV4() provide defaults.
 static bool writeMasterFavoriteColors(){
   JsonDocument d;JsonArray a=d.to<JsonArray>();
   a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");
   String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-colors",false))return false;size_t wrote=p.putString("saved",raw);bool ok=wrote==raw.length()&&p.getString("saved","")==raw;p.end();return ok;
 }
-static bool clearCustomPresetFavorites(){
-  JsonDocument presets;if(deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;bool changed=false;
-  for(JsonObject p:presets.as<JsonArray>())if(p["favorite"]|false){p["favorite"]=false;changed=true;}
-  if(!changed)return true;String out;serializeJson(presets,out);return customFileWrite("/custom_lights.json",out);
-}
 static bool migrateMasterCalendarV1(){
   Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=1)return true;
-  if(!clearCustomPresetFavorites()||!writeMasterFavoriteColors())return false;
-  Preferences ep;if(!ep.begin("anderson-event",false))return false;bool cleared=ep.clear();ep.end();if(!cleared)return false;
-  if(!eventStateResetAll())return false;
-  auto&s=store.get();s.enabledMask=UINT64_MAX;s.favoriteMask=0;s.leadDays=0;s.trailDays=0;s.overlap=0;store.saveAll();
+  // eventStateBegin() initializes the corrected event-state store before this call.
+  // A failed legacy migration must not erase subsequent event edits or custom favorites.
+  if(!writeMasterFavoriteColors())return false;
   if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",1);bool ok=marker.getUChar("calendarrev",0)==1;marker.end();return ok;
 }
 
@@ -178,7 +173,19 @@ static bool seedMasterSceneFavoritesV4(){
   if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",4);bool ok=marker.getUChar("calendarrev",0)==4;marker.end();return ok;
 }
 
-static bool storageSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
+static bool storageReadOnlyHealthCheck(){
+  Preferences p;if(!p.begin("anderson",true))return false;(void)p.getString("tz","");p.end();
+  return jsonArrayValid(presetStoreRaw())&&jsonArrayValid(scheduleStoreRaw());
+}
+static bool storageWriteSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
+static bool storageHealthCheck(){
+  const bool readOk=storageReadOnlyHealthCheck();String lastTested;Preferences marker;
+  if(marker.begin("anderson",true)){lastTested=marker.getString("storver","");marker.end();}
+  if(readOk&&lastTested==ANDERSON_FIRMWARE_VERSION)return true;
+  if(!storageWriteSelfTest())return false;
+  if(!marker.begin("anderson",false))return false;const String version=ANDERSON_FIRMWARE_VERSION;size_t wrote=marker.putString("storver",version);String verify=marker.getString("storver","");marker.end();
+  return wrote==version.length()&&verify==version;
+}
 
 static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){
   JsonDocument list;if(deserializeJson(list,presetStoreRaw()))return false;
@@ -248,6 +255,8 @@ static String systemJson(){
   d["heapTotal"]=(uint32_t)ESP.getHeapSize();d["heapFree"]=(uint32_t)ESP.getFreeHeap();d["heapMin"]=(uint32_t)ESP.getMinFreeHeap();d["heapLargest"]=(uint32_t)ESP.getMaxAllocHeap();
   d["wifiConnected"]=wifiConnected;d["rssi"]=wifiConnected?WiFi.RSSI():0;d["ssid"]=wifiConnected?WiFi.SSID():String("");d["ip"]=wifiConnected?WiFi.localIP().toString():WiFi.softAPIP().toString();
   d["bleConnected"]=ble.connected();d["bleCount"]=ble.connectedCount();d["appBytes"]=appBytes;d["slotBytes"]=slotBytes;d["appFreeBytes"]=slotBytes>appBytes?slotBytes-appBytes:0;
+  nvs_stats_t nvsStats{};if(nvs_get_stats(nullptr,&nvsStats)==ESP_OK){d["nvsUsedEntries"]=(uint32_t)nvsStats.used_entries;d["nvsFreeEntries"]=(uint32_t)nvsStats.free_entries;d["nvsTotalEntries"]=(uint32_t)nvsStats.total_entries;}
+  d["storageHealth"]=customFsReady?"OK":"Failed";d["storageWriteTestPolicy"]="Firmware upgrade or read failure";
   d["rebootSchedule"]="12:00 AM • 6:00 AM • 12:00 PM • 6:00 PM";
   if(timeValid()){time_t now=time(nullptr),nextAt=0;uint32_t remaining=0;uint16_t nextMinute=0;if(nextMaintenanceReboot(now,nextAt,remaining,nextMinute)){d["nextReboot"]=maintenanceRebootLabel(nextMinute);d["nextRebootEpoch"]=(int64_t)nextAt;d["nextRebootSeconds"]=remaining;}}
   else d["nextReboot"]="Waiting for time sync";
@@ -418,8 +427,12 @@ void setupRoutes(){
   });
   server.on("/api/event",HTTP_POST,[]{
     if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=(int)EVENT_COUNT||i>=(int)MAX_BUILTIN_EVENTS){server.send(404,"text/plain","Unknown event");return;}auto&s=store.get();
-    if(!d["enabled"].isNull())eventStateSetEnabled(i,d["enabled"].as<bool>());
-    if(!d["favorite"].isNull())eventStateSetFavorite(i,d["favorite"].as<bool>());
+    if(!d["enabled"].isNull()&&!eventStateSetEnabled(i,d["enabled"].as<bool>())){
+      server.send(500,"text/plain","Event enabled preference write failed");return;
+    }
+    if(!d["favorite"].isNull()&&!eventStateSetFavorite(i,d["favorite"].as<bool>())){
+      server.send(500,"text/plain","Event favorite preference write failed");return;
+    }
     if(d["reset"]|false){clearEventOverride(i);}
     else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:1;if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,5);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){et.colors[0]=0xFFFF44;et.colorCount=1;}}saveEventOverride(i,et,esp);}
     store.saveAll();evaluateSchedule(true);sendJson(stateJson());
@@ -569,7 +582,7 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
