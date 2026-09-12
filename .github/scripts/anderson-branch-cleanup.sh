@@ -5,7 +5,6 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 
 MAX_AGE_HOURS="${BRANCH_MAX_AGE_HOURS:-2}"
-DELETE_BRANCH="${DELETE_BRANCH:-}"
 CURRENT_BRANCH="${GITHUB_REF_NAME:-}"
 NOW_EPOCH="$(date -u +%s)"
 DELETED=0
@@ -21,7 +20,7 @@ is_protected_branch() {
 is_anderson_work_branch() {
   case "$1" in
     automation/*|cleanup/*|cleanup-staging*|staging/*|publish/*|work/*|diag/*) return 0 ;;
-    codex/v*|codex/anderson-*|codex/full-code-audit-*|codex/daily-*|codex/lighting-test-*|codex/remove-*|codex/release-cleanup-*|codex/system-monitor-*|codex/white-calibration-*) return 0 ;;
+    codex/v*|codex/anderson-*|codex/release-*|codex/full-code-audit-*|codex/daily-*|codex/lighting-test-*|codex/remove-*|codex/release-cleanup-*|codex/system-monitor-*|codex/white-calibration-*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -46,16 +45,9 @@ delete_ref() {
   DELETED=$((DELETED+1))
 }
 
-# The just-published release branch may be deleted immediately once main has been
-# fast-forwarded to its exact commit.
-if [[ -n "$DELETE_BRANCH" ]] && is_anderson_work_branch "$DELETE_BRANCH" && ! is_protected_branch "$DELETE_BRANCH"; then
-  delete_ref "$DELETE_BRANCH"
-fi
-
 mapfile -t BRANCHES < <(gh api --paginate "/repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name')
 for branch in "${BRANCHES[@]:-}"; do
   [[ -n "$branch" ]] || continue
-  [[ "$branch" == "$DELETE_BRANCH" ]] && continue
   is_protected_branch "$branch" && continue
   is_anderson_work_branch "$branch" || continue
   [[ "$branch" == "$CURRENT_BRANCH" ]] && continue
@@ -70,6 +62,7 @@ for branch in "${BRANCHES[@]:-}"; do
   if (( age_hours >= MAX_AGE_HOURS )); then
     delete_ref "$branch"
   else
+    echo "Keeping recent Anderson work branch (${age_hours}h < ${MAX_AGE_HOURS}h): $branch"
     KEPT=$((KEPT+1))
   fi
 done
