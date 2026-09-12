@@ -15,6 +15,13 @@ jobs:
           fetch-depth: 0
       - name: Apply audited fixes
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/v310_apply_audit_fixes.py');s=p.read_text()
+          s=s.replace("js=helper+r'''\\nconst assert=", 'js=helper+r"""\\nconst assert=', 1)
+          s=s.replace("process.exitCode=1});\\n'''\nsubprocess.run", 'process.exitCode=1});\\n"""\nsubprocess.run', 1)
+          p.write_text(s)
+          PY
           python tools/v310_apply_audit_fixes.py
           python -m py_compile tools/release.py tools/test_connection_recovery.py tools/test_maintenance.py tools/test_audit_fixes.py
           python tools/test_connection_recovery.py
