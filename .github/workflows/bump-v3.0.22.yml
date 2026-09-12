@@ -1,0 +1,29 @@
+name: Bump Anderson Home to v3.0.22
+
+on:
+  push:
+    branches:
+      - codex/v3.0.22-scene-favorites-final
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/v3.0.22-scene-favorites-final
+      - name: Apply monotonic version bump
+        run: python .github/scripts/bump_v3022.py
+      - name: Commit clean v3.0.22 source
+        run: |
+          rm -f .github/scripts/bump_v3022.py
+          rm -f .github/workflows/bump-v3.0.22.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Bump final Scene Favorites firmware to v3.0.22"
+          git push
