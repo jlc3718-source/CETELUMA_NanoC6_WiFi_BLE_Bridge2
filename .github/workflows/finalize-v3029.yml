@@ -1,0 +1,36 @@
+name: Finalize Anderson v3.0.29
+on:
+  push:
+    branches:
+      - staging/v3.0.29-expanded-palette
+    paths:
+      - tools/finalize_v3029.py
+      - .github/workflows/finalize-v3029.yml
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging/v3.0.29-expanded-palette
+      - name: Validate exact event colors and expand quick palette
+        run: python tools/finalize_v3029.py
+      - name: Validate web JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('firmware/web/index.html').read_text()
+          blocks=re.findall(r'<script[^>]*>(.*?)</script>',s,re.S)
+          Path('/tmp/anderson-web.js').write_text('\n'.join(blocks))
+          PY
+          node --check /tmp/anderson-web.js
+      - name: Commit final palette source
+        run: |
+          git config user.name jlc3718-source
+          git config user.email jlc3718@gmail.com
+          git add firmware/web/index.html
+          git diff --cached --quiet || git commit -m "Finalize 16-color master palette for v3.0.29"
+          git push origin HEAD:staging/v3.0.29-expanded-palette
