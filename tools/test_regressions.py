@@ -1,3 +1,4 @@
+# Release-pipeline recovery trigger; no firmware runtime behavior changes.
 from pathlib import Path
 import re
 
