@@ -39,6 +39,7 @@ struct AppSettings {
   uint8_t trailDays = 0;
   uint8_t overlap = 0;
   bool schedulerEnabled = true;
+  bool schedule2Enabled = true;
   uint64_t enabledMask = UINT64_MAX;
   uint64_t favoriteMask = 0;
   String bleAddress;

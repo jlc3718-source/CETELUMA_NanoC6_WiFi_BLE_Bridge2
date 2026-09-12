@@ -14,6 +14,7 @@ CLEAN_RELEASES="${CLEAN_RELEASES:-0}"
 
 is_kept_run() {
   local id="$1" keep
+  [[ "$id" == "$CURRENT_RUN_ID" ]] && return 0
   for keep in "${KEEP_RUN_IDS[@]:-}"; do
     [[ "$id" == "$keep" ]] && return 0
   done
@@ -40,11 +41,11 @@ else
   KEEP_RUN_IDS+=("${LATEST_BUILD_RUNS[@]:-}")
 fi
 
-# Remove older completed production firmware runs and completed release helpers.
-# Separate Android/test workflows are outside this production retention policy.
+# Remove older completed Anderson firmware runs and one-off firmware helper runs.
+# Keep unrelated Android/test/Pages workflows outside this firmware retention policy.
 mapfile -t COMPLETED_RUN_IDS < <(
   gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
-    --jq ".workflow_runs[] | select(.status == \"completed\" and (.name == \"$BUILD_WORKFLOW_NAME\" or .name == \"$LEGACY_BUILD_WORKFLOW_NAME\" or (.name | startswith(\"Publish Anderson Home\")))) | .id"
+    --jq ".workflow_runs[] | select(.status == \"completed\" and (.name == \"$BUILD_WORKFLOW_NAME\" or .name == \"$LEGACY_BUILD_WORKFLOW_NAME\" or (.name | startswith(\"Publish Anderson Home\")) or (.name | startswith(\"Patch Anderson Home\")) or (.name | startswith(\"Stage Anderson Home\")) or (.name | startswith(\"Cleanup Anderson\")) or .name == \"Anderson Retention\" or (.head_branch // \"\" | startswith(\"codex/v3.\")) or (.head_branch // \"\" | startswith(\"publish/v3.\")) or (.head_branch // \"\" | startswith(\"staging/v3.\")))) | .id"
 )
 for run_id in "${COMPLETED_RUN_IDS[@]:-}"; do
   [[ -n "$run_id" ]] || continue
