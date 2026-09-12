@@ -55,15 +55,12 @@ def cpp_wday(d: dt.date) -> int:
 def easter_date(year: int) -> dt.date:
     a=year%19; b=year//100; c=year%100; d=b//4; e=b%4; f=(b+8)//25; g=(b-f+1)//3
     h=(19*a+b-d-g+15)%30; i=c//4; k=c%4; l=(32+2*e+2*i-h-k)%7; m=(a+11*h+22*l)//451
-    month=(h+l-7*m+114)//31; day=((h+l-7*m+114)%31)+1
-    return dt.date(year, month, day)
+    return dt.date(year, (h+l-7*m+114)//31, ((h+l-7*m+114)%31)+1)
 
 
 def event_start(e: Event, year: int, special) -> dt.date | None:
-    if e.rule == 'Month':
-        return dt.date(year, e.month, 1)
-    if e.rule == 'Fixed':
-        return dt.date(year, e.month, e.day)
+    if e.rule == 'Month': return dt.date(year, e.month, 1)
+    if e.rule == 'Fixed': return dt.date(year, e.month, e.day)
     if e.rule == 'NthWeekday':
         first = dt.date(year, e.month, 1)
         day = 1 + ((e.weekday - cpp_wday(first) + 7) % 7) + 7 * (e.nth - 1)
@@ -73,19 +70,15 @@ def event_start(e: Event, year: int, special) -> dt.date | None:
         last = dt.date(year, e.month, day)
         day -= (cpp_wday(last) - e.weekday + 7) % 7
         return dt.date(year, e.month, day) + dt.timedelta(days=e.offset)
-    if e.rule == 'EasterOffset':
-        return easter_date(year) + dt.timedelta(days=e.offset)
-    if e.rule == 'MonthEnd':
-        return dt.date(year, e.month, calendar.monthrange(year, e.month)[1])
+    if e.rule == 'EasterOffset': return easter_date(year) + dt.timedelta(days=e.offset)
+    if e.rule == 'MonthEnd': return dt.date(year, e.month, calendar.monthrange(year, e.month)[1])
     if e.rule in ('YearTable', 'Hanukkah'):
-        key = ('evt202' if e.rule == 'Hanukkah' else e.id, year)
-        return special.get(key)
+        return special.get(('evt202' if e.rule == 'Hanukkah' else e.id, year))
     raise ValueError(e.rule)
 
 
 def active_on(e: Event, day: dt.date, special) -> bool:
-    if e.rule == 'Month':
-        return e.month == day.month
+    if e.rule == 'Month': return e.month == day.month
     for sy in (day.year - 1, day.year):
         start = event_start(e, sy, special)
         if start is not None and start <= day < start + dt.timedelta(days=max(1, e.duration)):
@@ -94,144 +87,106 @@ def active_on(e: Event, day: dt.date, special) -> bool:
 
 
 def window_on(e: Event, day: dt.date, special, lead=2, trail=0) -> bool:
-    if e.kind != 'Holiday' or e.rule == 'Month' or active_on(e, day, special):
-        return False
+    if e.kind != 'Holiday' or e.rule == 'Month' or active_on(e, day, special): return False
     for sy in (day.year - 1, day.year, day.year + 1):
         start = event_start(e, sy, special)
-        if start is None:
-            continue
-        duration = max(1, e.duration)
-        if start - dt.timedelta(days=lead) <= day < start + dt.timedelta(days=duration + trail):
-            return True
+        if start is None: continue
+        if start - dt.timedelta(days=lead) <= day < start + dt.timedelta(days=max(1, e.duration) + trail): return True
     return False
 
 
-def current_pick(events, day, special):
-    exact_holiday = exact_other = holiday_window = seasonal = None
-    monthly = []
-    for e in events:
-        active = active_on(e, day, special)
-        if active:
-            if e.kind == 'Seasonal':
-                if seasonal is None: seasonal = e
-                continue
-            if e.rule == 'Month':
-                monthly.append(e)
-                continue
-            if e.kind == 'Holiday':
-                if exact_holiday is None: exact_holiday = e
-            elif exact_other is None:
-                exact_other = e
-            continue
-        if window_on(e, day, special) and holiday_window is None:
-            holiday_window = e
+def current_pick(active, windows, day):
+    exact_holiday = next((e for e in active if e.rule != 'Month' and e.kind == 'Holiday'), None)
     if exact_holiday: return exact_holiday
+    exact_other = next((e for e in active if e.rule != 'Month' and e.kind != 'Seasonal'), None)
     if exact_other: return exact_other
-    if holiday_window: return holiday_window
+    if windows: return windows[0]
+    monthly = [e for e in active if e.rule == 'Month']
     if monthly:
         yday = day.timetuple().tm_yday - 1
         return monthly[(yday + day.year) % len(monthly)]
-    if seasonal: return seasonal
-    return None
-
-
-def higher_than_monthly(events, day, special):
-    # v3.1.6 policy: every dated event (holiday, awareness, or seasonal)
-    # shares the specific-event tier. Holiday lead/trail windows remain next.
-    for e in events:
-        if e.rule != 'Month' and active_on(e, day, special):
-            return True
-    return any(window_on(e, day, special) for e in events)
-
-
-def monthly_eligible_days(events, day, special):
-    days = []
-    for d in range(1, calendar.monthrange(day.year, day.month)[1] + 1):
-        probe = dt.date(day.year, day.month, d)
-        if not higher_than_monthly(events, probe, special):
-            days.append(probe)
-    return days
-
-
-def fair_coverage(events, day, special, overlap='rotate'):
-    # Return every event that is guaranteed some Schedule-1 exposure on this date.
-    specific = [e for e in events if e.rule != 'Month' and active_on(e, day, special)]
-    if specific:
-        return specific
-
-    windows = [e for e in events if window_on(e, day, special)]
-    if windows:
-        return windows
-
-    monthly = [e for e in events if e.rule == 'Month' and active_on(e, day, special)]
-    if not monthly:
-        return []
-    if overlap in ('split', 'combine'):
-        return monthly
-
-    eligible = monthly_eligible_days(events, day, special)
-    ordinal = eligible.index(day)
-    if len(eligible) >= len(monthly):
-        return [monthly[ordinal % len(monthly)]]
-
-    # There are fewer monthly-only nights than active month themes. Partition the
-    # active themes across those nights and time-slice each night's assigned group.
-    start = (ordinal * len(monthly)) // len(eligible)
-    end = ((ordinal + 1) * len(monthly)) // len(eligible)
-    return monthly[start:end]
+    return next((e for e in active if e.kind == 'Seasonal'), None)
 
 
 def summarize(events, active_years, selected, label):
     never = [e for e in events if active_years[e.id] and not selected[e.id]]
-    year_misses = []
+    misses = []
     for e in events:
         picked_years = {d.year for d in selected[e.id]}
-        for year in sorted(active_years[e.id] - picked_years):
-            year_misses.append((e, year))
+        misses.extend((e, y) for y in sorted(active_years[e.id] - picked_years))
     print(f"{label}: events never selected/covered = {len(never)}")
-    for e in never:
-        print(f"  NEVER {e.id} {e.name} [{e.kind}/{e.rule}]")
-    print(f"{label}: event-year occurrences with no run = {len(year_misses)}")
-    for e, year in year_misses[:250]:
-        print(f"  MISS {year} {e.id} {e.name}")
-    if len(year_misses) > 250:
-        print(f"  ... {len(year_misses)-250} more")
-    return len(never), len(year_misses)
+    for e in never: print(f"  NEVER {e.id} {e.name} [{e.kind}/{e.rule}]")
+    print(f"{label}: event-year occurrences with no run = {len(misses)}")
+    for e, year in misses[:250]: print(f"  MISS {year} {e.id} {e.name}")
+    if len(misses) > 250: print(f"  ... {len(misses)-250} more")
+    return len(never), len(misses)
 
 
 def audit(start_year=2026, end_year=2037):
     events, special = load_catalog()
-    active_years = {e.id: set() for e in events}
-    current = {e.id: [] for e in events}
-    fair = {e.id: [] for e in events}
-    empty_months = []
+    all_days = []
+    for year in range(start_year, end_year + 1):
+        d = dt.date(year, 1, 1)
+        while d.year == year:
+            all_days.append(d); d += dt.timedelta(days=1)
 
+    active_by_day = {}
+    windows_by_day = {}
+    active_years = {e.id: set() for e in events}
+    for day in all_days:
+        active = [e for e in events if active_on(e, day, special)]
+        active_by_day[day] = active
+        for e in active: active_years[e.id].add(day.year)
+        windows_by_day[day] = [e for e in events if window_on(e, day, special)]
+
+    eligible_by_month = {}
+    empty_months = []
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
-            probe = dt.date(year, month, 1)
-            month_events = [e for e in events if e.rule == 'Month' and e.month == month]
-            if month_events and not monthly_eligible_days(events, probe, special):
+            days = [dt.date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
+            eligible = [d for d in days if not any(e.rule != 'Month' for e in active_by_day[d]) and not windows_by_day[d]]
+            eligible_by_month[(year, month)] = eligible
+            if any(e.rule == 'Month' and e.month == month for e in events) and not eligible:
                 empty_months.append((year, month))
-        day = dt.date(year, 1, 1)
-        while day.year == year:
-            for e in events:
-                if active_on(e, day, special):
-                    active_years[e.id].add(year)
-            pick = current_pick(events, day, special)
-            if pick:
-                current[pick.id].append(day)
-            for e in fair_coverage(events, day, special):
-                fair[e.id].append(day)
-            day += dt.timedelta(days=1)
+
+    current = {e.id: [] for e in events}
+    fair = {e.id: [] for e in events}
+    max_specific = max_windows = max_monthly = 0
+    for day in all_days:
+        active = active_by_day[day]; windows = windows_by_day[day]
+        pick = current_pick(active, windows, day)
+        if pick: current[pick.id].append(day)
+
+        specific = [e for e in active if e.rule != 'Month']
+        monthly = [e for e in active if e.rule == 'Month']
+        max_specific = max(max_specific, len(specific)); max_windows = max(max_windows, len(windows)); max_monthly = max(max_monthly, len(monthly))
+        if specific:
+            covered = specific
+        elif windows:
+            covered = windows
+        elif monthly:
+            eligible = eligible_by_month[(day.year, day.month)]
+            ordinal = eligible.index(day)
+            if len(eligible) >= len(monthly):
+                covered = [monthly[ordinal % len(monthly)]]
+            else:
+                start = (ordinal * len(monthly)) // len(eligible)
+                end = ((ordinal + 1) * len(monthly)) // len(eligible)
+                covered = monthly[start:end]
+        else:
+            covered = []
+        for e in covered: fair[e.id].append(day)
 
     print(f"Parsed {len(events)} built-in events")
     print(f"Audit horizon: {start_year}-{end_year}")
     current_result = summarize(events, active_years, current, 'Current resolver')
     fair_result = summarize(events, active_years, fair, 'Planned fair resolver')
     print(f"Months with month-long events but zero monthly-tier nights: {len(empty_months)}")
-    for y, m in empty_months:
-        print(f"  BLOCKED {y}-{m:02d}")
-    return current_result, fair_result, empty_months
+    for y, m in empty_months: print(f"  BLOCKED {y}-{m:02d}")
+    print(f"Maximum simultaneous tiers: specific={max_specific}, holiday-window={max_windows}, monthly={max_monthly}")
+    tier_overflow = max(max_specific, max_windows, max_monthly) > 64
+    if tier_overflow: print('ERROR: active tier exceeds firmware fairness array capacity (64)')
+    return current_result, fair_result, empty_months, tier_overflow
 
 
 def main():
@@ -240,9 +195,7 @@ def main():
     ap.add_argument('--end-year', type=int, default=2037)
     ap.add_argument('--require-full', action='store_true')
     args = ap.parse_args()
-    _, fair, empty = audit(args.start_year, args.end_year)
-    if args.require_full and (fair[0] or fair[1] or empty):
-        raise SystemExit(1)
+    _, fair, empty, overflow = audit(args.start_year, args.end_year)
+    if args.require_full and (fair[0] or fair[1] or empty or overflow): raise SystemExit(1)
 
-if __name__ == '__main__':
-    main()
+if __name__ == '__main__': main()
