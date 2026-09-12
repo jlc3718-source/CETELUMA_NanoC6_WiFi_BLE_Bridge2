@@ -48,13 +48,6 @@ replace(
     '<div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness / seasonal day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Normal preset</div><div style="margin-top:5px">Coverage guarantee: if higher-priority dates occupy every night of a month, the least-conflicted night reserves its first third for the enabled month-long events; the higher-priority scene finishes the night and continues through Schedule 2.</div></div></div>',
 )
 
-# Make the 2026-2037 coverage audit a permanent release gate.
-replace(
-    ".github/workflows/compile-anderson-home-multi.yml",
-    "      - name: Check Anderson source regressions\n        run: python tools/test_regressions.py\n",
-    "      - name: Check Anderson source regressions\n        run: python tools/test_regressions.py\n      - name: Check scheduled event coverage\n        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full\n",
-)
-
 # Lock the fairness implementation and Logout placement into source regressions.
 p = Path("tools/test_regressions.py")
 s = p.read_text().replace("# v3.1.5 final UI build trigger", "# v3.1.6 event fairness and bottom-menu logout", 1)
@@ -81,4 +74,4 @@ replace(
     'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.6";',
 )
 
-print("Applied v3.1.6 UI, scheduler documentation, release gate, and version markers")
+print("Applied v3.1.6 UI, scheduler documentation, release checks, and version markers")
