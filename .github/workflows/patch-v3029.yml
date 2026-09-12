@@ -5,6 +5,7 @@ on:
       - staging/v3.0.29-expanded-palette
     paths:
       - tools/patch_v3029_expanded_palette.py
+      - tools/patch_v3029_expanded_palette_v2.py
       - .github/workflows/patch-v3029.yml
 permissions:
   contents: write
@@ -16,7 +17,7 @@ jobs:
         with:
           ref: staging/v3.0.29-expanded-palette
       - name: Apply exact 210-event palette patch
-        run: python tools/patch_v3029_expanded_palette.py
+        run: python tools/patch_v3029_expanded_palette_v2.py
       - name: Validate web JavaScript
         run: |
           python - <<'PY'
