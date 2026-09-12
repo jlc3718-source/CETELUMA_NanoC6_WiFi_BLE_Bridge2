@@ -21,7 +21,7 @@ def cpp_test(name, content):
 # controller-specific state tracking after the gap calculation; this focused test
 # intentionally stops before those unrelated members while preserving the timing code.
 write_full = ble[ble.index('bool BleController::writeSlot('):ble.index('void BleController::setPower(')]
-write = write_full[:write_full.index('  auto&d=')] + '  return true;\n}\n'
+write = write_full[:write_full.index('  auto&d=')] + '  (void)data;(void)len;return true;\n}\n'
 cpp_test('write_gap', r'''
 #include <cstdint>
 #include <cstddef>
