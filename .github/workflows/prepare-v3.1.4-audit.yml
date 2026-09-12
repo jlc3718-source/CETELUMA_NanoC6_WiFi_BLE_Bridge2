@@ -18,7 +18,18 @@ jobs:
           ref: codex/release-v3.1.4-audit
           fetch-depth: 0
       - name: Apply audited v3.1.4 changes
-        run: python .github/scripts/prepare_v314.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/scripts/prepare_v314.py')
+          s=p.read_text()
+          s=s.replace("replacement = r'''# Test", 'replacement = r"""# Test', 1)
+          old="\n'''\np.write_text(t[:start] + replacement + t[end:])"
+          new='\n"""\np.write_text(t[:start] + replacement + t[end:])'
+          if old not in s: raise SystemExit('outer fixture terminator not found')
+          p.write_text(s.replace(old,new,1))
+          PY
+          python .github/scripts/prepare_v314.py
       - name: Commit audited source
         run: |
           git config user.name github-actions[bot]
