@@ -88,7 +88,6 @@
     live.append(q('.housePreview',oldRunning),el('div','v3LiveCaption','<span id="v3LiveEffect">Current lights</span>'));
     features.append(fx,live);panel.append(features,schedule);
     oldRunning.remove();
-    panel.appendChild(el('div','v3HomeTiles'));
     const next=byId('nextEvent').closest('.card');next.classList.add('v3Next');next.prepend(el('span','v3NextIcon',icon('clock')));
     const favoritesPanel=byId('favoriteGrid').closest('.panel'); favoritesPanel.classList.add('v3SavedScenes');q('strong',favoritesPanel).textContent='Favorite scenes';
     const custom=byId('homeCustomLightList').closest('.panel');custom.classList.add('v3SavedScenes');q('strong',custom).textContent='Your custom shows';q('.sub',custom).textContent='Saved lighting, ready to play.';
@@ -143,13 +142,51 @@
     new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node instanceof Element)scan(node)}))).observe(document.body,{childList:true,subtree:true});
     setInterval(()=>qa('select[data-v3-effect-preview="1"]').forEach(sync),350);
   }
+  function settingsSubTabs() {
+    const page=q('.page[data-page="settings"]');
+    if(!page || byId('v3SettingsTabs'))return;
+    const title=q(':scope > .v3PageTitle',page);
+    const original=[...page.children].filter(node=>node!==title);
+    const defs=[['general','General'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];
+    const tabs=el('div','v3SettingsTabs');tabs.id='v3SettingsTabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Settings sections');
+    const panes=new Map(),buttons=new Map();
+    defs.forEach(([id,label])=>{
+      const button=el('button','v3SettingsTab',label);button.type='button';button.dataset.settingsTab=id;button.setAttribute('role','tab');button.setAttribute('aria-controls','v3SettingsPane-'+id);tabs.appendChild(button);buttons.set(id,button);
+      const pane=el('div','v3SettingsPane');pane.id='v3SettingsPane-'+id;pane.dataset.settingsPane=id;pane.setAttribute('role','tabpanel');panes.set(id,pane);
+    });
+    if(title)title.insertAdjacentElement('afterend',tabs);else page.prepend(tabs);
+    defs.forEach(([id])=>page.appendChild(panes.get(id)));
+    const category=node=>{
+      if(node.id==='systemMonitorPanel'||node.classList.contains('v3SettingsLink'))return 'general';
+      if(node.id==='liveColorTunerPanel')return 'lighting';
+      const heading=q(':scope > strong',node)?.textContent.trim()||'';
+      if(heading==='Overlap Behavior')return 'lighting';
+      if(heading==='Scheduling Rules'||heading==='Priority')return 'schedules';
+      if(heading==='Bluetooth Light Controllers')return 'controllers';
+      if(heading==='Profile PINs')return 'security';
+      if(heading==='Firmware Update'||heading==='Firmware Revision')return 'firmware';
+      return 'general';
+    };
+    original.forEach(node=>panes.get(category(node)).appendChild(node));
+    const activate=id=>{
+      defs.forEach(([key])=>{
+        const active=key===id,button=buttons.get(key),pane=panes.get(key);
+        button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;
+        pane.classList.toggle('active',active);pane.hidden=!active;
+      });
+    };
+    buttons.forEach((button,id)=>button.addEventListener('click',()=>activate(id)));
+    tabs.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const ids=defs.map(([id])=>id),current=ids.findIndex(id=>buttons.get(id)===document.activeElement);let next=current<0?0:current;
+      if(event.key==='ArrowRight')next=(next+1)%ids.length;else if(event.key==='ArrowLeft')next=(next-1+ids.length)%ids.length;else if(event.key==='Home')next=0;else next=ids.length-1;
+      activate(ids[next]);buttons.get(ids[next]).focus();
+    });
+    activate('general');
+  }
   function syncRole() {
     q('.v3BottomNav').hidden=!window.andersonProfile;
     const admin=window.andersonProfile?.role==='admin' && window.andersonProfile?.id==='jason';
-    const tiles=q('.v3HomeTiles'); tiles.replaceChildren();tiles.hidden=!admin;
-    if(admin) [ ['home','Zones','By controller','settings','v3Controllers'],['effects','Effects','Make it yours','lights'],['clock','Schedules','Your calendar','events'],['settings','Settings','Your home','settings'] ].forEach(([symbol,label,sub,target,anchor])=>{
-      if(canOpen(target))tiles.append(routeButton('v3HomeTile',target,`${icon(symbol)}<strong>${label}</strong><small>${sub}</small>${icon('arrow')}`,anchor));
-    });
     byId('switchProfile').setAttribute('aria-label',window.andersonProfile ? `Switch user, currently ${window.andersonProfile.name}`:'Switch user'); syncPage();
   }
   function profiles() {
@@ -158,6 +195,6 @@
     qa('.profileChoice').forEach(b=>b.insertAdjacentHTML('beforeend',icon('arrow')));
     const pin=byId('profilePinForm');new MutationObserver(()=>{ if(!pin.hidden)pin.scrollIntoView({behavior:'smooth',block:'nearest'}); }).observe(pin,{attributes:true,attributeFilter:['hidden']});
   }
-  function init() { navigation();composeHome();effectPreviews();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }
+  function init() { navigation();composeHome();effectPreviews();settingsSubTabs();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
