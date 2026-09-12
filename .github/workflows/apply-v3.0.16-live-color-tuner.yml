@@ -1,0 +1,46 @@
+name: Apply Anderson v3.0.16 Live Color Tuner
+
+on:
+  push:
+    branches: ['codex/v3.0.16-live-color-tuner']
+    paths:
+      - '.github/scripts/apply-v3.0.16-live-color-tuner.py'
+      - '.github/workflows/apply-v3.0.16-live-color-tuner.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/v3.0.16-live-color-tuner
+          fetch-depth: 0
+      - name: Apply focused source patch
+        run: python .github/scripts/apply-v3.0.16-live-color-tuner.py
+      - name: Validate live color tuner wiring
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/web/index.html').read_text()
+          required=['liveColorTunerPanel','liveColorWheel','liveColorCode','liveColorPreview','liveColorPreviewButton','bindLiveColorTuner','Live Color Tune']
+          missing=[x for x in required if x not in p]
+          assert not missing, missing
+          assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.0.16'
+          m=Path('firmware/src/main.cpp').read_text()
+          assert 'ANDERSON_FIRMWARE_VERSION="3.0.16"' in m
+          print('Focused tuner validation passed')
+          PY
+      - name: Remove temporary patch files
+        run: |
+          rm .github/scripts/apply-v3.0.16-live-color-tuner.py
+          rm .github/workflows/apply-v3.0.16-live-color-tuner.yml
+      - name: Commit production source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Add live RGB color tuner (v3.0.16)'
+          git push origin HEAD:codex/v3.0.16-live-color-tuner
