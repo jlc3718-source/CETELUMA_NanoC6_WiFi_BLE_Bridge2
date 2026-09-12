@@ -217,7 +217,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
 
   <section class="page" data-page="events">
     <div class="panel">
-      <div class="row between wraprow"><div><strong>Events This Month</strong><div class="sub">Enable schedules and mark Home favorites.</div></div><div class="row wraprow"><label class="row"><input id="eventsMaster" type="checkbox" checked><span class="small">Schedule 1</span></label><label class="row"><input id="schedule2Master" type="checkbox" checked><span class="small">Schedule 2</span></label></div></div>
+      <div class="row between wraprow"><div><strong>Events This Month</strong><div class="sub">Enable events and mark Home favorites.</div></div></div>
       <div class="monthHead"><select id="monthSelect" class="field"></select><select id="yearSelect" class="field"></select></div>
       <div class="monthActions"><button id="enableMonth" class="btn">✓ Enable All</button><button id="clearMonth" class="btn">Clear Month</button></div>
       <div id="overlapInfo" class="note"></div><div id="eventList" style="display:grid;gap:8px;margin-top:10px"></div>
@@ -267,7 +267,8 @@ async function controllerRequest(path,options={},timeoutMs=12000){
     </div>
     <div class="panel">
       <strong>Scheduling Rules</strong>
-      <div class="note"><strong>Schedule 1</strong> uses the ON and END times below. <strong>Schedule 2</strong> starts automatically at Schedule 1's END time, keeps the same scheduled scene at 30% brightness, and turns off at locally calculated civil dawn. Schedule 1 and Schedule 2 can be enabled or disabled independently.</div>
+      <div class="note"><strong>Schedule 1</strong> uses the ON and END times below. <strong>Schedule 2</strong> starts automatically at Schedule 1's END time, keeps the same scheduled scene at 30% brightness, and turns off at locally calculated civil dawn.</div>
+      <div class="grid2" style="margin-top:10px"><label class="card row between" style="cursor:pointer"><span><strong>Schedule 1</strong><br><span class="sub">Normal evening schedule</span></span><input id="eventsMaster" type="checkbox" checked aria-label="Enable Schedule 1"></label><label class="card row between" style="cursor:pointer"><span><strong>Schedule 2</strong><br><span class="sub">30% from Schedule 1 end until dawn</span></span><input id="schedule2Master" type="checkbox" checked aria-label="Enable Schedule 2"></label></div>
       <div class="grid2" style="margin-top:10px"><div><div class="label">Schedule 1 ON</div><input id="onTime" type="time" value="17:00" class="field"></div><div><div class="label">Schedule 1 END / Schedule 2 START</div><input id="offTime" type="time" value="23:00" class="field"></div></div>
       <div class="card small" style="margin-top:9px"><strong>Schedule 2:</strong> <span id="schedule2Summary">Starts at Schedule 1 end • 30% • ends at dawn</span></div>
       <div class="grid2"><div><div class="label">Holiday starts before</div><select id="leadDays" class="field"><option value="0">0 days</option><option value="1">1 day</option><option value="2" selected>2 days</option><option value="3">3 days</option><option value="5">5 days</option><option value="7">7 days</option></select></div><div><div class="label">Continues after</div><select id="trailDays" class="field"><option value="0" selected>0 days</option><option value="1">1 day</option><option value="2">2 days</option><option value="3">3 days</option></select></div></div>

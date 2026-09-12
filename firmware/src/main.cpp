@@ -59,7 +59,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.23";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.24";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -169,13 +169,13 @@ static constexpr MasterSceneFavorite MASTER_SCENE_FAVORITES[]={
 static constexpr size_t MASTER_SCENE_FAVORITE_COUNT=sizeof(MASTER_SCENE_FAVORITES)/sizeof(MASTER_SCENE_FAVORITES[0]);
 static_assert(MASTER_SCENE_FAVORITE_COUNT==28,"Scene Favorites must match the approved 28-scene list");
 
-static bool migrateSceneFavoritesV2(){
-  Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=3)return true;
-  if(!clearCustomPresetFavorites())return false;size_t indices[MASTER_SCENE_FAVORITE_COUNT];
+static bool seedMasterSceneFavoritesV4(){
+  Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=4)return true;
+  size_t indices[MASTER_SCENE_FAVORITE_COUNT];
   for(size_t n=0;n<MASTER_SCENE_FAVORITE_COUNT;n++){int idx=eventIndexById(MASTER_SCENE_FAVORITES[n].id);if(idx<0||idx>=(int)MAX_BUILTIN_EVENTS)return false;indices[n]=(size_t)idx;}
   if(!eventStateReplaceFavorites(indices,MASTER_SCENE_FAVORITE_COUNT))return false;
   auto& settings=store.get();settings.favoriteMask=0;store.saveAll();
-  if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",3);bool ok=marker.getUChar("calendarrev",0)==3;marker.end();return ok;
+  if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",4);bool ok=marker.getUChar("calendarrev",0)==4;marker.end();return ok;
 }
 
 static bool storageSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
@@ -569,7 +569,7 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();migrateSceneFavoritesV2();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
