@@ -95,3 +95,5 @@ GitHub runner queue vary.
 - `tools/release.py`, `.github/workflows/compile-anderson-home-multi.yml`: release path.
 - `.github/scripts/anderson-retention.sh`, `.github/workflows/anderson-retention.yml`:
   current-plus-one build/release retention policy.
+
+- v3.0.17 canonical calibrated event palette (exact LED RGB): Red #FF0000; Purple #23018C; Blue #05008A; Cyan #00BD4C; Pink #BF0005; Orange #FF2900; Yellow #FF6E00; Green #4DFF00. Built-in events, event overrides, custom saved lights, and schedules that reference those saved lights use these family codes. Existing Favorite Colors must remain untouched by palette migration. White, black, and intentional autumn browns remain distinct.
