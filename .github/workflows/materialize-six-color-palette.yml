@@ -1,0 +1,33 @@
+name: Materialize Anderson Six-Color Baseline
+
+on:
+  push:
+    branches:
+      - 'codex/anderson-six-color-baseline'
+    paths:
+      - '.github/scripts/apply_six_color_palette.py'
+      - '.github/workflows/materialize-six-color-palette.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact six-color baseline to canonical source
+        run: python .github/scripts/apply_six_color_palette.py
+      - name: Commit materialized firmware source
+        run: |
+          if git diff --quiet; then
+            echo 'Palette source already materialized.'
+            exit 0
+          fi
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add FIRMWARE_VERSION.txt README.md firmware/src/main.cpp firmware/src/EventCatalog.cpp firmware/src/ColorCorrection.cpp firmware/src/PaletteMigration.cpp firmware/web/index.html
+          git commit -m 'Normalize Anderson project to six calibrated colors'
+          git push origin HEAD:codex/anderson-six-color-baseline
