@@ -6,7 +6,7 @@
 #include <SPIFFS.h>
 
 static constexpr uint8_t BACKUP_FORMAT_VERSION=1;
-static constexpr uint8_t PALETTE_MIGRATION_REVISION=2;
+static constexpr uint8_t PALETTE_MIGRATION_REVISION=3;
 static constexpr uint8_t STATE_PENDING=0;
 static constexpr uint8_t STATE_APPLIED=1;
 static constexpr uint8_t STATE_RESTORED=2;
@@ -73,27 +73,33 @@ static bool writeEvents(JsonObject events,bool corrected){
   }
   p.end();return true;
 }
+static bool canonicalizeCurrentStoredPalette(){
+  String originalPresets=readPrefString("anderson-preset","custom","[]"),correctedPresets;
+  if(!transformPresetJson(originalPresets,correctedPresets))return false;
+  if(!writePrefStringVerified("anderson-preset","custom",correctedPresets))return false;
+  JsonDocument current;JsonObject events=current["events"].to<JsonObject>();
+  for(size_t i=0;i<64;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
+  if(!writeEvents(events,true))return false;
+  return setMigrationState(STATE_APPLIED,true);
+}
 static bool applyFromBackup(){
-  JsonDocument backup;if(!loadBackup(backup))return false;String presets,colors;if(!transformPresetJson(backup["presets"].as<String>(),presets)||!transformFavoriteJson(backup["favoriteColors"].as<String>(),colors))return false;
-  if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writePrefStringVerified("anderson-colors","saved",colors))return false;if(!writeEvents(backup["events"].as<JsonObject>(),true))return false;return setMigrationState(STATE_APPLIED,true);
+  JsonDocument backup;if(!loadBackup(backup))return false;String presets;if(!transformPresetJson(backup["presets"].as<String>(),presets))return false;
+  if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writeEvents(backup["events"].as<JsonObject>(),true))return false;return setMigrationState(STATE_APPLIED,true);
 }
 static bool restoreFromBackup(){
-  JsonDocument backup;if(!loadBackup(backup))return false;String presets=backup["presets"].as<String>(),colors=backup["favoriteColors"].as<String>();if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writePrefStringVerified("anderson-colors","saved",colors))return false;if(!writeEvents(backup["events"].as<JsonObject>(),false))return false;return setMigrationState(STATE_RESTORED,true);
+  JsonDocument backup;if(!loadBackup(backup))return false;String presets=backup["presets"].as<String>();if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writeEvents(backup["events"].as<JsonObject>(),false))return false;return setMigrationState(STATE_RESTORED,true);
 }
 
 bool runPaletteColorMigration(){
   uint8_t state=migrationState(),revision=migrationRevision();
   if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
-  if(state==STATE_RESTORE_PENDING)return restoreFromBackup();if(state==STATE_APPLY_PENDING)return applyFromBackup();
-  // Preserve an intentional v1 restore while advancing the migration policy marker.
-  if(revision>0&&state==STATE_RESTORED)return setMigrationState(STATE_RESTORED,true);
-  // Re-derive an already-applied v1 migration from the verified original backup.
-  // Never feed already-corrected NVS values through the correction a second time.
-  if(revision>0&&state==STATE_APPLIED){JsonDocument backup;if(!loadBackup(backup))return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}
-  if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();
+  // Automatic v3 migration always works from the CURRENT custom lights and event
+  // overrides. It never reads or writes Favorite Colors, regardless of prior revision.
+  if(!setMigrationState(STATE_APPLY_PENDING,false))return false;
+  return canonicalizeCurrentStoredPalette();
 }
 bool restoreOriginalPaletteColors(){if(!createBackup())return false;if(!setMigrationState(STATE_RESTORE_PENDING,false))return false;return restoreFromBackup();}
 bool reapplyCorrectedPaletteColors(){if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}
 String paletteColorMigrationStatusJson(){
-  bool mounted=SPIFFS.begin(false),backup=false;if(mounted){JsonDocument d;backup=parseBackup(readFile(BACKUP_PATH),d);}uint8_t state=migrationState();JsonDocument out;out["revision"]=migrationRevision();out["state"]=state;out["migrated"]=state==STATE_APPLIED;out["restored"]=state==STATE_RESTORED;out["backupAvailable"]=backup;out["backupPath"]=BACKUP_PATH;out["provisionalCorrection"]=true;out["physicallyCalibrated"]=false;String json;serializeJson(out,json);return json;
+  bool mounted=SPIFFS.begin(false),backup=false;if(mounted){JsonDocument d;backup=parseBackup(readFile(BACKUP_PATH),d);}uint8_t state=migrationState();JsonDocument out;out["revision"]=migrationRevision();out["state"]=state;out["migrated"]=state==STATE_APPLIED;out["restored"]=state==STATE_RESTORED;out["backupAvailable"]=backup;out["backupPath"]=BACKUP_PATH;out["provisionalCorrection"]=false;out["physicallyCalibrated"]=true;String json;serializeJson(out,json);return json;
 }

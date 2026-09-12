@@ -341,23 +341,23 @@ const houseLeds=[],houseGroup=$('houseLeds'),houseScene=houseGroup.closest('.hou
 pts.forEach(([x,y])=>{const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r','5');c.setAttribute('class','houseLed');houseGroup.appendChild(c);houseLeds.push(c)});
 
 const NAMED_COLOR_PALETTE=[
-  {name:'Red',reference:'#FF0000',output:'#FF0000'},{name:'Orange',reference:'#FF9500',output:'#FF3000'},{name:'Yellow',reference:'#FFFF00',output:'#FFFF00'},{name:'Gold',reference:'#FACC15',output:'#F18900'},{name:'Amber',reference:'#F59E0B',output:'#E44300'},
-  {name:'Green',reference:'#22C55E',output:'#00FF00'},{name:'Mint / light green',reference:'#86EFAC',output:'#2AD555'},{name:'Blue',reference:'#2563EB',output:'#0000FF'},{name:'Sky blue',reference:'#0EA5E9',output:'#004BC6'},{name:'Light blue',reference:'#93C5FD',output:'#377CF9'},
-  {name:'Cyan',reference:'#32D7D5',output:'#00FFFF'},{name:'Teal',reference:'#14B8A6',output:'#00664D'},{name:'Purple',reference:'#7E22CE',output:'#23018C'},{name:'Lavender',reference:'#C4B5FD',output:'#7A62F9'},{name:'Magenta',reference:'#FF00FF',output:'#FF00FF'},
-  {name:'Rose',reference:'#FF2D55',output:'#FF020C'},{name:'Pink',reference:'#FF69B4',output:'#FF1560'},{name:'Light pink',reference:'#F9A8D4',output:'#EF4F98'},{name:'White',reference:'#FFFFFF',output:'#FFFFFF'},{name:'Warm white',reference:'#FFF1C7',output:'#FFDA7F'},
-  {name:'Icy white',reference:'#DBEAFE',output:'#A7C8FC'},{name:'Brown',reference:'#92400E',output:'#360500'},{name:'Dark brown',reference:'#7C2D12',output:'#220200'},{name:'Black / unlit',reference:'#000000',output:'#000000'}
+  {name:'Red',reference:'#FF0000',output:'#FF0000'},{name:'Purple',reference:'#7E22CE',output:'#23018C'},{name:'Blue',reference:'#2563EB',output:'#05008A'},{name:'Cyan',reference:'#32D7D5',output:'#00BD4C'},
+  {name:'Pink',reference:'#FF69B4',output:'#BF0005'},{name:'Orange',reference:'#FF9500',output:'#FF2900'},{name:'Yellow',reference:'#FFFF00',output:'#FF6E00'},{name:'Green',reference:'#22C55E',output:'#4DFF00'},
+  {name:'White',reference:'#FFFFFF',output:'#FFFFFF'},{name:'Brown',reference:'#92400E',output:'#360500'},{name:'Dark brown',reference:'#7C2D12',output:'#220200'},{name:'Black / unlit',reference:'#000000',output:'#000000'}
 ];
-const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name])),REFERENCE_LED=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.reference,x.output]));
-const EXPLICIT_LED={'#FF3B30':'#FF0000','#EF4444':'#FF0000','#DC2626':'#FF0000','#EF233C':'#FF0000','#FF1744':'#FF0000','#E11D48':'#FF0000','#FF7A00':'#FF3000','#F97316':'#FF3000','#FF6B35':'#FF3000','#34C759':'#00FF00','#16A34A':'#00FF00','#0A84FF':'#0000FF','#3B82F6':'#0000FF'};
+const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name]));
+const REFERENCE_LED={'#FF0000':'#FF0000','#7E22CE':'#23018C','#C4B5FD':'#23018C','#2563EB':'#05008A','#0EA5E9':'#05008A','#93C5FD':'#05008A','#DBEAFE':'#05008A','#32D7D5':'#00BD4C','#14B8A6':'#00BD4C','#FF69B4':'#BF0005','#FF2D55':'#BF0005','#F9A8D4':'#BF0005','#FF00FF':'#BF0005','#FF9500':'#FF2900','#FFFF00':'#FF6E00','#FACC15':'#FF6E00','#F59E0B':'#FF6E00','#FFF1C7':'#FF6E00','#22C55E':'#4DFF00','#86EFAC':'#4DFF00','#FFFFFF':'#FFFFFF','#92400E':'#360500','#7C2D12':'#220200','#000000':'#000000'};
+const EXPLICIT_LED={'#FF3B30':'#FF0000','#EF4444':'#FF0000','#DC2626':'#FF0000','#EF233C':'#FF0000','#FF1744':'#FF0000','#E11D48':'#FF0000','#FF3000':'#FF2900','#FF7A00':'#FF2900','#F97316':'#FF2900','#FF6B35':'#FF2900','#F18900':'#FF6E00','#E44300':'#FF6E00','#FFDA7F':'#FF6E00','#00FF00':'#4DFF00','#2AD555':'#4DFF00','#34C759':'#4DFF00','#16A34A':'#4DFF00','#0000FF':'#05008A','#004BC6':'#05008A','#377CF9':'#05008A','#A7C8FC':'#05008A','#0A84FF':'#05008A','#3B82F6':'#05008A','#00FFFF':'#00BD4C','#00664D':'#00BD4C','#7A62F9':'#23018C','#FF020C':'#BF0005','#FF1560':'#BF0005','#EF4F98':'#BF0005','#FF00FF':'#BF0005'};
+const LEGACY_DISPLAY={'#FF3000':'#FF9500','#F18900':'#FACC15','#E44300':'#F59E0B','#FFFF00':'#FFFF00','#FFDA7F':'#FFF1C7','#00FF00':'#22C55E','#2AD555':'#86EFAC','#0000FF':'#2563EB','#004BC6':'#0EA5E9','#377CF9':'#93C5FD','#A7C8FC':'#DBEAFE','#00FFFF':'#32D7D5','#00664D':'#14B8A6','#7A62F9':'#C4B5FD','#FF00FF':'#FF00FF','#FF020C':'#FF2D55','#FF1560':'#FF69B4','#EF4F98':'#F9A8D4'};
 function normalizeLedColor(c){const k=normHex(c);return REFERENCE_LED[k]||EXPLICIT_LED[k]||k}
-function displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||c}
+function displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||LEGACY_DISPLAY[k]||c}
 function displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}
 
 let power=true,brightness=100,speed=1,tick=0;
 let running={name:'Warm White',colors:['#FFDA7F'],effect:'Jump'},preview={...running,colors:[...running.colors]};
 function speedInterval(level){return [0,2000,1000,500,250,100][+level]||500}
 function blendHex(a,b,f){const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)],A=rgb(a),B=rgb(b);return `rgb(${Math.round(A[0]+(B[0]-A[0])*f)},${Math.round(A[1]+(B[1]-A[1])*f)},${Math.round(A[2]+(B[2]-A[2])*f)})`}
-function paint(state,i,br,total){const rawColors=state.colors&&state.colors.length?state.colors:['#004BC6'],colors=rawColors.map(displayColor),e=state.effect||'Jump',n=colors.length,frame=Math.floor(tick),phase=((tick%8)+8)%8/8;let c=colors[0],a=br,sc=1;if(!power)return{c:'#2a313b',a:.35,s:1};if(e==='Solid'){c=colors[0]}else if(e==='Jump'){c=colors[frame%n]}else if(e==='Strobe'){const half=Math.floor(tick*2),on=(half&1)===1;c=on?colors[Math.floor(half/2)%n]:'#000000';a=on?br:.05;sc=on?1.08:.92}else{const pos=phase*n,idx=Math.floor(pos)%n,j=(idx+1)%n,f=pos-Math.floor(pos),mixed=blendHex(colors[idx],colors[j],f);if(e==='Breath'){const wave=.10+.90*(.5-.5*Math.cos(phase*2*Math.PI));c=n>1?mixed:colors[0];a=br*wave}else if(e==='Gradient'){c=mixed}}return{c,a,s:sc}}
+function paint(state,i,br,total){const rawColors=state.colors&&state.colors.length?state.colors:['#05008A'],colors=rawColors.map(displayColor),e=state.effect||'Jump',n=colors.length,frame=Math.floor(tick),phase=((tick%8)+8)%8/8;let c=colors[0],a=br,sc=1;if(!power)return{c:'#2a313b',a:.35,s:1};if(e==='Solid'){c=colors[0]}else if(e==='Jump'){c=colors[frame%n]}else if(e==='Strobe'){const half=Math.floor(tick*2),on=(half&1)===1;c=on?colors[Math.floor(half/2)%n]:'#000000';a=on?br:.05;sc=on?1.08:.92}else{const pos=phase*n,idx=Math.floor(pos)%n,j=(idx+1)%n,f=pos-Math.floor(pos),mixed=blendHex(colors[idx],colors[j],f);if(e==='Breath'){const wave=.10+.90*(.5-.5*Math.cos(phase*2*Math.PI));c=n>1?mixed:colors[0];a=br*wave}else if(e==='Gradient'){c=mixed}}return{c,a,s:sc}}
 const previewPages={home:document.querySelector('[data-page="home"]'),lights:document.querySelector('[data-page="lights"]')};
 let previousStripPaint='',previousHousePaint='';
 function animate(ts){
@@ -393,10 +393,10 @@ function setPreview(name,colors,effect){
 }
 async function manual(obj){try{const s=await post('/api/control',obj);applyState(s);status('Manual override active.')}catch(e){if(!API_MODE){if(obj.power!==undefined)power=obj.power;if(obj.brightness!==undefined)brightness=obj.brightness;if(obj.speed!==undefined)speed=obj.speed;if(obj.colors||obj.effect||obj.name)setRunning(obj.name||running.name||'Manual',obj.colors||running.colors,obj.effect||running.effect||'Jump');status('Preview mode — control simulated.')}else status('Control failed: '+e.message)}}
 
-let builderColors=['#004BC6'];
+let builderColors=['#05008A'];
 
 function setBuilderColors(colors, send=false){
-  const next=colors&&colors.length?colors.slice(0,8):['#004BC6'];
+  const next=colors&&colors.length?colors.slice(0,8):['#05008A'];
   if(next.length!==builderColors.length||next.some((c,i)=>c!==builderColors[i])){builderColors=next;renderColorBuilder();}
   if(send) sendBuilderLook();
 }
@@ -410,7 +410,7 @@ function renderColorBuilder(){
 
     const picker=document.createElement('button');
     picker.type='button';picker.className='colorChip';picker.style.width='48px';picker.style.height='44px';
-    setChipColor(picker,/^#[0-9a-f]{6}$/i.test(color)?color:'#004BC6');picker.dataset.builderIndex=index;
+    setChipColor(picker,/^#[0-9a-f]{6}$/i.test(color)?color:'#05008A');picker.dataset.builderIndex=index;
     picker.setAttribute('aria-label','Color '+(index+1));picker.title='Color '+(index+1)+' — tap for RGB wheel';
     picker.addEventListener('click',()=>openRgbWheel(picker));
 
@@ -458,14 +458,14 @@ function sendBuilderLook(){
 
 $('addColor').addEventListener('click',()=>{
   if(builderColors.length>=8)return;
-  const suggestions=['#FFFFFF','#FF0000','#00FF00','#0000FF','#23018C','#FF3000','#F18900'];
+  const suggestions=['#FFFFFF','#FF0000','#4DFF00','#05008A','#23018C','#FF2900','#FF6E00','#00BD4C','#BF0005'];
   builderColors.push(suggestions[(builderColors.length-1)%suggestions.length]);
   renderColorBuilder();
   sendBuilderLook();
 });
-$('clearColors').addEventListener('click',()=>setBuilderColors([builderColors[0]||'#004BC6'],true));
+$('clearColors').addEventListener('click',()=>setBuilderColors([builderColors[0]||'#05008A'],true));
 
-const quick=['#FFDA7F','#FFFFFF','#FF0000','#FF3000','#F18900','#00FF00','#00FFFF','#0000FF','#23018C','#FF1560','#E44300','#004BC6'];
+const quick=['#FF0000','#23018C','#05008A','#00BD4C','#BF0005','#FF2900','#FF6E00','#4DFF00','#FFFFFF'];
 quick.forEach(c=>{
   const b=document.createElement('button');
   b.className='swatch';
@@ -473,7 +473,7 @@ quick.forEach(c=>{
   b.type='button';
   b.title='Add '+displayLabel(c);
   b.addEventListener('click',()=>{
-    if(builderColors.length===1 && builderColors[0]==='#004BC6') builderColors[0]=c;
+    if(builderColors.length===1 && builderColors[0]==='#05008A') builderColors[0]=c;
     else if(builderColors.length<8) builderColors.push(c);
     else builderColors[builderColors.length-1]=c;
     renderColorBuilder();
@@ -512,10 +512,10 @@ function openRgbWheel(chip){activeColorChip=chip;setPickerHex(displayColor(chip?
 function wheelPoint(e){const w=$('rgbWheel'),r=w.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,dist=Math.sqrt(dx*dx+dy*dy),rad=r.width/2;pickerS=Math.min(1,dist/(rad*.92));pickerH=(Math.atan2(dy,dx)*180/Math.PI+90+360)%360;renderPicker()}
 function renderEventFavoriteGrid(g,addColor){if(!g)return;g.innerHTML='';if(!savedColors.length){g.innerHTML='<span class="sub">No favorite colors saved yet.</span>';return}savedColors.forEach(c=>{const b=document.createElement('button');b.type='button';b.className='savedSwatch';b.style.background=displayColor(c);b.title='Add '+displayLabel(c);b.onclick=()=>addColor(c);g.appendChild(b)})}
 function renderHomeFavoriteGrid(){const g=$('homeFavoriteColorGrid');if(!g)return;g.innerHTML='';if(!savedColors.length){g.innerHTML='<span class="sub">No favorite colors saved yet.</span>';return}savedColors.forEach(c=>{const b=document.createElement('button');b.type='button';b.className='savedSwatch';b.style.background=displayColor(c);b.style.color=displayColor(c);b.setAttribute('aria-label','Use '+displayLabel(c));b.title='Use '+displayLabel(c);b.onclick=()=>manual({name:'Favorite '+c,colors:[c],effect:'Jump',brightness,speed});g.appendChild(b)})}
-function fillSavedColors(g,forLights){if(!g)return;g.innerHTML='';if(!savedColors.length){const t=document.createElement('span');t.className='sub';t.textContent='No favorite colors saved yet.';g.appendChild(t);return}savedColors.forEach(c=>{const b=document.createElement('button');b.className='savedSwatch';b.style.background=displayColor(c);b.title=(forLights?'Add ':'Use ')+displayLabel(c);b.onclick=()=>{if(forLights){if(builderColors.length===1&&builderColors[0]==='#004BC6')builderColors[0]=c;else if(builderColors.length<8)builderColors.push(c);else builderColors[builderColors.length-1]=c;renderColorBuilder();sendBuilderLook()}else setPickerHex(c)};const x=document.createElement('button');x.className='x';x.textContent='×';x.title='Delete saved color';x.onclick=e=>{e.stopPropagation();removeSavedColor(c)};b.appendChild(x);g.appendChild(b)})}
+function fillSavedColors(g,forLights){if(!g)return;g.innerHTML='';if(!savedColors.length){const t=document.createElement('span');t.className='sub';t.textContent='No favorite colors saved yet.';g.appendChild(t);return}savedColors.forEach(c=>{const b=document.createElement('button');b.className='savedSwatch';b.style.background=displayColor(c);b.title=(forLights?'Add ':'Use ')+displayLabel(c);b.onclick=()=>{if(forLights){if(builderColors.length===1&&builderColors[0]==='#05008A')builderColors[0]=c;else if(builderColors.length<8)builderColors.push(c);else builderColors[builderColors.length-1]=c;renderColorBuilder();sendBuilderLook()}else setPickerHex(c)};const x=document.createElement('button');x.className='x';x.textContent='×';x.title='Delete saved color';x.onclick=e=>{e.stopPropagation();removeSavedColor(c)};b.appendChild(x);g.appendChild(b)})}
 function renderSavedColors(){fillSavedColors($('savedColorGrid'),false);fillSavedColors($('lightSavedColorGrid'),true);renderHomeFavoriteGrid();document.querySelectorAll('.eventFavoriteGrid').forEach(g=>{const box=g.closest('.eventEditor'),colors=box?.querySelector('.row.wraprow');if(colors)renderEventFavoriteGrid(g,c=>{if(colors.children.length>=8)return;const b=document.createElement('button');b.type='button';b.className='colorChip';setChipColor(b,c);b.onclick=()=>openRgbWheel(b);colors.appendChild(b)})})}
 async function loadSavedColors(){try{if(API_MODE){const d=await api('/api/colors',{cache:'no-store'});savedColors=d.colors||[]}else savedColors=JSON.parse(localStorage.getItem('andersonSavedColors')||'[]')}catch(e){savedColors=[]}renderSavedColors()}
-async function saveCurrentColor(){const c=normalizeLedColor(pickerHex());if(API_MODE){const r=await post('/api/colors',{color:c});savedColors=r.colors||savedColors}else{if(!savedColors.includes(c))savedColors.push(c);savedColors=savedColors.slice(-32);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors();status(c+' saved to Favorite Colors.')}
+async function saveCurrentColor(){const c=pickerHex();if(API_MODE){const r=await post('/api/colors',{color:c});savedColors=r.colors||savedColors}else{if(!savedColors.includes(c))savedColors.push(c);savedColors=savedColors.slice(-32);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors();status(c+' saved to Favorite Colors.')}
 async function removeSavedColor(c){if(API_MODE){const r=await post('/api/colors',{color:c,remove:true});savedColors=r.colors||[]}else{savedColors=savedColors.filter(x=>x!==c);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors()}
 function bindRgbPicker(){const w=$('rgbWheel');let drag=false;w.addEventListener('pointerdown',e=>{drag=true;w.setPointerCapture(e.pointerId);wheelPoint(e)});w.addEventListener('pointermove',e=>{if(drag)wheelPoint(e)});w.addEventListener('pointerup',()=>drag=false);$('rgbValue').addEventListener('input',e=>{pickerV=(+e.target.value)/100;renderPicker()});['rgbR','rgbG','rgbB'].forEach(id=>$(id).addEventListener('change',()=>setPickerHex(rgbHex($('rgbR').value,$('rgbG').value,$('rgbB').value))));$('rgbHex').addEventListener('change',e=>setPickerHex(e.target.value));$('rgbSave').addEventListener('click',saveCurrentColor);$('rgbClose').addEventListener('click',()=>$('rgbPickerOverlay').classList.remove('open'));$('rgbPickerOverlay').addEventListener('click',e=>{if(e.target===$('rgbPickerOverlay'))$('rgbPickerOverlay').classList.remove('open')})}
 
@@ -541,7 +541,7 @@ function editEventInline(ev,row){
   (ev.colors||['#FFFFFF']).forEach(addColor);
   const controls=document.createElement('div');controls.className='row wraprow';controls.style.marginTop='10px';
   const add=document.createElement('button');add.className='btn';add.textContent='Add Color';add.onclick=()=>addColor();
-  const save=document.createElement('button');save.className='btn primary';save.textContent='Save Event';save.onclick=async()=>{const vals=[...colors.querySelectorAll('.colorChip')].map(x=>x.dataset.color);await eventChange(ev.id,{effect:effect.value,speed:+evSpeed.value,colors:vals});status(ev.name+' updated directly. Future scheduled runs will use these settings.')};
+  const save=document.createElement('button');save.className='btn primary';save.textContent='Save Event';save.onclick=async()=>{const vals=[...colors.querySelectorAll('.colorChip')].map(x=>normalizeLedColor(x.dataset.color));await eventChange(ev.id,{effect:effect.value,speed:+evSpeed.value,colors:vals});status(ev.name+' updated directly. Future scheduled runs will use these settings.')};
   const reset=document.createElement('button');reset.className='btn';reset.textContent='Restore Default';reset.onclick=async()=>{await eventChange(ev.id,{reset:true});status(ev.name+' restored to its built-in default.')};
   controls.append(add,save,reset);box.append(title,lab,effect,speedLab,evSpeed,evSpeedVal,colorsLab,colors,eventFavLab,eventFav,controls);renderEventFavoriteGrid(eventFav,addColor);row.appendChild(box);
 }
@@ -580,9 +580,9 @@ $('scanWifi').addEventListener('click',async()=>{if(wifiScanBusy)return;const bt
 $('saveWifi').addEventListener('click',async()=>{const ssid=$('wifiNetwork').value,p=$('wifiPassword').value;if(!ssid)return status('Select a network first.');try{await post('/api/wifi',{ssid,password:p});status('Wi-Fi saved. The NanoC6 is reconnecting…')}catch(e){status(API_MODE?'Wi-Fi save failed.':'Preview mode.')}});
 $('scanBle').addEventListener('click',async()=>{status('Scanning Bluetooth…');try{const r=await api('/api/ble/scan');const box=$('bleList');box.innerHTML='';(r.devices||[]).forEach(d=>{const row=document.createElement('div');row.className='card bleDevice';row.innerHTML=`<div><div class="small"><strong>${d.name||'BLE controller'}</strong></div><div class="sub">${d.address} • ${d.rssi} dBm</div></div>`;const b=document.createElement('button');b.className='btn';b.textContent='Add / Use';b.addEventListener('click',()=>post('/api/ble/select',{address:d.address}).then(()=>{status('Controller saved. Connecting in the background…');loadState()}).catch(e=>status(e.message)));row.appendChild(b);box.appendChild(row)});status(`${(r.devices||[]).length} controllers found.`)}catch(e){status(API_MODE?'Bluetooth scan failed: '+e.message:'Preview mode — BLE scanning requires the NanoC6.')}});
 $('targetAll').addEventListener('click',()=>post('/api/ble/target',{target:0}).then(loadState));$('targetA').addEventListener('click',()=>post('/api/ble/target',{target:1}).then(loadState));$('targetB').addEventListener('click',()=>post('/api/ble/target',{target:2}).then(loadState));
-$('testRed').addEventListener('click',()=>manual({name:'BLE Test Red',colors:['#ff0000'],effect:'Jump'}));$('testRainbow').textContent='Test Gradient';$('testRainbow').addEventListener('click',()=>manual({name:'BLE Test Gradient',colors:['#004BC6','#23018C','#FFFFFF'],effect:'Gradient'}));
+$('testRed').addEventListener('click',()=>manual({name:'BLE Test Red',colors:['#ff0000'],effect:'Jump'}));$('testRainbow').textContent='Test Gradient';$('testRainbow').addEventListener('click',()=>manual({name:'BLE Test Gradient',colors:['#05008A','#23018C','#FFFFFF'],effect:'Gradient'}));
 $('savePreset').addEventListener('click',async()=>{
-  const name=$('customPresetName').value.trim();if(!name)return status('Give this custom light a unique name first.');const preset={name,colors:[...builderColors],effect:$('effectSelect').value,brightness,speed};
+  const name=$('customPresetName').value.trim();if(!name)return status('Give this custom light a unique name first.');const preset={name,colors:builderColors.map(normalizeLedColor),effect:$('effectSelect').value,brightness,speed};
   status('Saving '+name+'…');
   try{const saved=await post('/api/preset',preset);if(!saved||saved.ok!==true)throw new Error('NanoC6 did not confirm the custom-light save');const list=await loadCustomPresets(saved.id||'');const verified=list.some(p=>(saved.id&&p.id===saved.id)||(!saved.id&&p.name===name));if(!verified)throw new Error('Save was acknowledged, but the custom light could not be read back');$('customPresetName').value='';await Promise.all([loadHomeCustomLights(),loadFavorites()]);const panel=$('customPresetList')?.closest('.panel');if(panel)panel.scrollIntoView({behavior:'smooth',block:'start'});status(name+' saved and verified • '+(saved.fileBytes||0)+' bytes')}catch(e){status('Custom light save failed: '+e.message)}
 });

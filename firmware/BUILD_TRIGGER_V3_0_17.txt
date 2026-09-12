@@ -1,0 +1,1 @@
+Build Anderson Home v3.0.17 from the exact verified canonical-palette source revision.
