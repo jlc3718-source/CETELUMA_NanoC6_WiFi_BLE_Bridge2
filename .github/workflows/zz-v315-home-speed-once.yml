@@ -1,0 +1,50 @@
+name: Apply Anderson v3.1.5 Home Speed Once
+
+on:
+  push:
+    branches: ['codex/release-v3.1.5-ui-cleanup']
+    paths: ['.github/workflows/zz-v315-home-speed-once.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-v3.1.5-ui-cleanup
+          fetch-depth: 0
+      - name: Restore Home effect-speed control
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p=Path(path); text=p.read_text(); count=text.count(old)
+              if count!=1: raise SystemExit(f'{path}: expected one match, found {count}')
+              p.write_text(text.replace(old,new,1))
+
+          replace_once(
+              'firmware/web/v3_mockup.js',
+              "    bright.append(label,slider); panel.appendChild(bright);\n    const effect=byId('homeEffect'), effectLabel=effect.previousElementSibling;",
+              "    bright.append(label,slider);\n    const speedBlock=el('div','v3HomeSpeedBlock','<div class=\"label\">Effect Speed <span id=\"homeSpeedVal\" class=\"muted\">Normal</span></div><input id=\"homeSpeed\" type=\"range\" min=\"1\" max=\"5\" value=\"3\" aria-label=\"Home effect speed\">');\n    speedBlock.style.marginTop='12px'; bright.appendChild(speedBlock); panel.appendChild(bright); syncSpeedControls(speed); bindSpeedControl('homeSpeed');\n    const effect=byId('homeEffect'), effectLabel=effect.previousElementSibling;"
+          )
+
+          replace_once(
+              'tools/test_regressions.py',
+              "assert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web\nversion=t('FIRMWARE_VERSION.txt').strip();",
+              "assert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web\nassert 'id=\\\"homeSpeed\\\"' in mock and 'Effect Speed' in mock and \"bindSpeedControl('homeSpeed')\" in mock\nversion=t('FIRMWARE_VERSION.txt').strip();"
+          )
+
+          Path('.github/workflows/zz-v315-home-speed-once.yml').unlink()
+          PY
+      - name: Commit exact release source
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Restore Home effect speed control"
+          git push origin HEAD:refs/heads/codex/release-v3.1.5-ui-cleanup
