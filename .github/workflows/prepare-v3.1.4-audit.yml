@@ -27,7 +27,12 @@ jobs:
           old="\n'''\np.write_text(t[:start] + replacement + t[end:])"
           new='\n"""\np.write_text(t[:start] + replacement + t[end:])'
           if old not in s: raise SystemExit('outer fixture terminator not found')
-          p.write_text(s.replace(old,new,1))
+          s=s.replace(old,new,1)
+          start=s.index("wf = Path('.github/workflows/compile-anderson-home-multi.yml')")
+          end=s.index("# Proven-unused historical prose/version markers")
+          s=s[:start]+s[end:]
+          s=s.replace("Path('.github/workflows/prepare-v3.1.4-audit.yml').unlink()\n","")
+          p.write_text(s)
           PY
           python .github/scripts/prepare_v314.py
       - name: Commit audited source
