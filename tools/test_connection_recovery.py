@@ -47,8 +47,13 @@ int main(){
 }
 ''')
 
-request = ble[ble.index('bool BleController::requestConnection('):ble.index('\n#endif', ble.index('bool BleController::requestConnection('))]
+# Keep this harness limited to the asynchronous connection state machine. Response
+# characteristic discovery is independently exercised by the real firmware compile.
+request = ble[ble.index('bool BleController::requestConnection('):ble.index('void BleController::notifyCallback(')]
 loop = ble[ble.index('void BleController::loop(){'):]
+# The production source is size-compressed; split this statement in the synthetic
+# -Werror harness so a formatting-only misleading-indentation warning cannot mask behavior.
+loop = loop.replace('if(!connectTask)return;ConnectResult result{};', 'if(!connectTask)return;\n  ConnectResult result{};', 1)
 cpp_test('connection_queue', r'''
 #include <cstdint>
 #include <string>
