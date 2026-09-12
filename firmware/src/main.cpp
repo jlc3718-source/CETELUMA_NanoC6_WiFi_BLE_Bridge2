@@ -134,6 +134,50 @@ static bool migrateMasterCalendarV1(){
   auto&s=store.get();s.enabledMask=UINT64_MAX;s.favoriteMask=0;s.leadDays=0;s.trailDays=0;s.overlap=0;store.saveAll();
   if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",1);bool ok=marker.getUChar("calendarrev",0)==1;marker.end();return ok;
 }
+
+struct MasterSceneFavorite{const char* id;const char* label;};
+static constexpr MasterSceneFavorite MASTER_SCENE_FAVORITES[]={
+  {"evt006","New Year's Day"},
+  {"evt011","Martin Luther King Jr. Day"},
+  {"evt026","Presidents' Day"},
+  {"evt025","Valentine's Day"},
+  {"evt027","Mardi Gras"},
+  {"evt046","St. Patrick's Day"},
+  {"evt061","April Fools' Day"},
+  {"evt065","Easter"},
+  {"evt087","Mother's Day"},
+  {"evt095","Memorial Day"},
+  {"evt105","Flag Day"},
+  {"evt109","Father's Day"},
+  {"evt106","Juneteenth"},
+  {"evt118","Independence Day"},
+  {"evt144","Labor Day"},
+  {"evt135","Childhood Cancer Awareness Month"},
+  {"evt134","Suicide Prevention Awareness Month"},
+  {"evt145","988 Day"},
+  {"evt146","World Suicide Prevention Day"},
+  {"evt147","Patriot Day / 9-11 Remembrance"},
+  {"evt173","Indigenous Peoples' / Columbus Day"},
+  {"evt179","Halloween"},
+  {"evt193","Veterans Day"},
+  {"evt197","Thanksgiving"},
+  {"evt202","Hanukkah"},
+  {"evt208","Christmas Day"},
+  {"evt209","Kwanzaa"},
+  {"evt210","New Year's Eve"},
+};
+static constexpr size_t MASTER_SCENE_FAVORITE_COUNT=sizeof(MASTER_SCENE_FAVORITES)/sizeof(MASTER_SCENE_FAVORITES[0]);
+static_assert(MASTER_SCENE_FAVORITE_COUNT==28,"Scene Favorites must match the approved 28-scene list");
+
+static bool migrateSceneFavoritesV2(){
+  Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=2)return true;
+  if(!clearCustomPresetFavorites())return false;size_t indices[MASTER_SCENE_FAVORITE_COUNT];
+  for(size_t n=0;n<MASTER_SCENE_FAVORITE_COUNT;n++){int idx=eventIndexById(MASTER_SCENE_FAVORITES[n].id);if(idx<0||idx>=(int)MAX_BUILTIN_EVENTS)return false;indices[n]=(size_t)idx;}
+  if(!eventStateReplaceFavorites(indices,MASTER_SCENE_FAVORITE_COUNT))return false;
+  auto& settings=store.get();settings.favoriteMask=0;store.saveAll();
+  if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",2);bool ok=marker.getUChar("calendarrev",0)==2;marker.end();return ok;
+}
+
 static bool storageSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
 
 static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){
@@ -364,8 +408,10 @@ void setupRoutes(){
     String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/favorites",HTTP_GET,[]{
-    if(!requireUser())return;JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();
-    for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!((s.favoriteMask>>i)&1ULL))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));}
+    if(!requireUser())return;JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();bool added[MAX_BUILTIN_EVENTS]={false};
+    auto appendFavorite=[&](size_t i,const char* label){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=label?label:EVENTS[i].name;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));added[i]=true;};
+    for(const auto& fav:MASTER_SCENE_FAVORITES){int idx=eventIndexById(fav.id);if(idx>=0&&eventStateFavorite((size_t)idx))appendFavorite((size_t)idx,fav.label);}
+    for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eventStateFavorite(i)&&!added[i])appendFavorite(i,EVENTS[i].name);
     JsonDocument presets;if(!deserializeJson(presets,presetStoreRaw())&&presets.is<JsonArray>())for(JsonObject p:presets.as<JsonArray>()){if(!(p["favorite"]|false))continue;JsonObject e=arr.add<JsonObject>();e["id"]=p["id"];e["name"]=p["name"];e["effect"]=p["effect"]|String("Jump");e["brightness"]=constrain(p["brightness"]|100,1,100);e["speed"]=constrain(p["speed"]|1,1,5);e["enabled"]=p["enabled"]|true;e["custom"]=true;JsonArray c=e["colors"].to<JsonArray>();for(JsonVariant v:p["colors"].as<JsonArray>())c.add(v.as<String>());}
     String out;serializeJson(d,out);sendJson(out);
   });
@@ -521,7 +567,7 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();migrateSceneFavoritesV2();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }

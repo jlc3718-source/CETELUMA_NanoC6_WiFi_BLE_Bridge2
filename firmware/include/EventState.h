@@ -9,4 +9,5 @@ bool eventStateEnabled(size_t index);
 bool eventStateFavorite(size_t index);
 bool eventStateSetEnabled(size_t index, bool enabled);
 bool eventStateSetFavorite(size_t index, bool favorite);
+bool eventStateReplaceFavorites(const size_t* indices, size_t count);
 bool eventStateResetAll();
