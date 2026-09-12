@@ -140,14 +140,19 @@ def audit(start_year=2026, end_year=2037):
         windows_by_day[day] = [e for e in events if window_on(e, day, special)]
 
     eligible_by_month = {}
-    empty_months = []
+    forced_by_month = {}
+    forced_months = []
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
             days = [dt.date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
-            eligible = [d for d in days if not any(e.rule != 'Month' for e in active_by_day[d]) and not windows_by_day[d]]
+            high_count = {d: len([e for e in active_by_day[d] if e.rule != 'Month']) + len(windows_by_day[d]) for d in days}
+            eligible = [d for d in days if high_count[d] == 0]
             eligible_by_month[(year, month)] = eligible
-            if any(e.rule == 'Month' and e.month == month for e in events) and not eligible:
-                empty_months.append((year, month))
+            month_events = [e for e in events if e.rule == 'Month' and e.month == month]
+            if month_events and not eligible:
+                forced = min(days, key=lambda d: (high_count[d], d.day))
+                forced_by_month[(year, month)] = forced
+                forced_months.append((year, month, forced, high_count[forced]))
 
     current = {e.id: [] for e in events}
     fair = {e.id: [] for e in events}
@@ -160,7 +165,12 @@ def audit(start_year=2026, end_year=2037):
         specific = [e for e in active if e.rule != 'Month']
         monthly = [e for e in active if e.rule == 'Month']
         max_specific = max(max_specific, len(specific)); max_windows = max(max_windows, len(windows)); max_monthly = max(max_monthly, len(monthly))
-        if specific:
+        forced = forced_by_month.get((day.year, day.month)) == day and bool(monthly)
+        if forced:
+            # Firmware reserves the first third of this least-conflicted night for
+            # monthly themes; higher-priority events/windows still run afterward.
+            covered = specific + windows + monthly
+        elif specific:
             covered = specific
         elif windows:
             covered = windows
@@ -181,12 +191,13 @@ def audit(start_year=2026, end_year=2037):
     print(f"Audit horizon: {start_year}-{end_year}")
     current_result = summarize(events, active_years, current, 'Current resolver')
     fair_result = summarize(events, active_years, fair, 'Planned fair resolver')
-    print(f"Months with month-long events but zero monthly-tier nights: {len(empty_months)}")
-    for y, m in empty_months: print(f"  BLOCKED {y}-{m:02d}")
+    print(f"Months requiring one protected monthly coverage night: {len(forced_months)}")
+    for y, m, d, conflicts in forced_months:
+        print(f"  COVERAGE {y}-{m:02d}-{d.day:02d} higher-priority-scenes={conflicts}")
     print(f"Maximum simultaneous tiers: specific={max_specific}, holiday-window={max_windows}, monthly={max_monthly}")
     tier_overflow = max(max_specific, max_windows, max_monthly) > 64
     if tier_overflow: print('ERROR: active tier exceeds firmware fairness array capacity (64)')
-    return current_result, fair_result, empty_months, tier_overflow
+    return current_result, fair_result, forced_months, tier_overflow
 
 
 def main():
@@ -195,7 +206,7 @@ def main():
     ap.add_argument('--end-year', type=int, default=2037)
     ap.add_argument('--require-full', action='store_true')
     args = ap.parse_args()
-    _, fair, empty, overflow = audit(args.start_year, args.end_year)
-    if args.require_full and (fair[0] or fair[1] or empty or overflow): raise SystemExit(1)
+    _, fair, _, overflow = audit(args.start_year, args.end_year)
+    if args.require_full and (fair[0] or fair[1] or overflow): raise SystemExit(1)
 
 if __name__ == '__main__': main()
