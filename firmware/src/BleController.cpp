@@ -181,7 +181,11 @@ bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slot
   else if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01){d.requestedBrightnessKnown=true;d.requestedBrightness=data[3];d.brightnessConfirmed=false;d.lastCommand=String("Brightness ")+String(data[3])+"%";}
   else d.lastCommand="BLE frame";
 #ifdef MOCK_BLE
-  d.writeWithResponse=true;d.lastWriteOk=true;d.lastWriteAcknowledged=true;recordResponse(nullptr,data,len);return true;
+  d.writeWithResponse=true;d.lastWriteOk=true;d.lastWriteAcknowledged=true;d.lastRxHex=d.lastTxHex;d.lastResponseAt=millis();d.responseParsed=true;
+  if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x04)d.powerConfirmed=true;
+  else if(len>=7&&data[0]==0x7E&&data[1]==0x07&&data[2]==0x05&&data[3]==0x03)d.colorConfirmed=true;
+  else if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01)d.brightnessConfirmed=true;
+  return true;
 #else
   updateCharacteristicDiagnostics(i);const bool requestAck=slots[i].chr&&slots[i].chr->canWrite();bool ok=slots[i].chr->writeValue(data,len,requestAck);d.lastWriteOk=ok;d.lastWriteAcknowledged=ok&&requestAck;d.lastWriteQueued=ok&&!requestAck;return ok;
 #endif
