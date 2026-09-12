@@ -1,4 +1,4 @@
-# v3.1.6 production event fairness and bottom-menu logout
+# v3.1.10 production event fairness, OTA verification, and bottom-menu logout
 from pathlib import Path
 import re
 
@@ -18,7 +18,7 @@ assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in 
 assert 'server.on("/api/event-color-theme"' in main and 'eventColorsOriginal' in web and 'eventColorsModern' in web
 assert 'eventColorThemeGeneration' in main and 'colorGeneration' in main
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
-assert 'if(tries>=8)' not in web and 'otaExpectedPartition' in web
+assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web
 assert 'PinAttemptState pinAttempts[6]' in main
 assert 'store.clearWiFi()' in main and 'saveWiFi("","")' in t('firmware/src/SettingsStore.cpp')
 for row in ['{"evt028",2037,2,15}','{"evt030",2037,10,11}','{"evt047",2037,11,9}','{"evt096",2037,1,27}','{"evt177",2037,10,18}','{"evt192",2037,11,7}']: assert row in ev,row
@@ -27,9 +27,9 @@ assert 'anderson-cache-cleanup.sh' in retention and 'anderson-cache-cleanup.sh' 
 assert 'anderson-branch-cleanup.sh' in retention and 'anderson-branch-cleanup.sh' in publisher
 assert "BRANCH_MAX_AGE_HOURS: '2'" in retention and "BRANCH_MAX_AGE_HOURS: '2'" in publisher
 assert 'BRANCH_MAX_AGE_HOURS:-2' in branch_cleanup
-assert 'verify_ota_manifest.py' in publisher and 'remote-update/pending/$VERSION.json' in publisher
+assert 'verify_ota_manifest.py' in publisher and 'remote-update/pending/$VERSION.json' in publisher and 'remote-update/releases/$VERSION.json' in publisher
 assert "cp publish-input/latest.json ../anderson-ota/latest.json" in publisher
-assert "git add latest.json remote-update/latest.json remote-update/pending" in publisher
+assert 'git add latest.json remote-update' in publisher
 assert 'setInterval(()=>qa(\'select[data-v3-effect-preview="1"]\')' not in mock
 assert "const color=palette[Math.floor(now/360)%palette.length]" in mock
 assert "const phase=Math.floor(now/240),on=phase%2===0,color=palette[Math.floor(phase/2)%palette.length]" in mock
