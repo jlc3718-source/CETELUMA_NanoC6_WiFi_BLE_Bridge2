@@ -1,0 +1,29 @@
+name: Temporary Anderson v3.1.10 audited fixes
+on:
+  push:
+    branches: ['work/v3.1.10-audit-fixes']
+    paths: ['.github/workflows/tmp-v310-audit-fixes.yml']
+permissions:
+  contents: write
+jobs:
+  patch-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v3.1.10-audit-fixes
+          fetch-depth: 0
+      - name: Apply audited fixes
+        run: |
+          python tools/v310_apply_audit_fixes.py
+          python -m py_compile tools/release.py tools/test_connection_recovery.py tools/test_maintenance.py tools/test_audit_fixes.py
+          python tools/test_connection_recovery.py
+          python tools/test_audit_fixes.py
+      - name: Commit final source and remove temporary helper
+        run: |
+          git rm tools/v310_apply_audit_fixes.py .github/workflows/tmp-v310-audit-fixes.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Apply Anderson Home v3.1.10 audit fixes"
+          git push origin HEAD:work/v3.1.10-audit-fixes
