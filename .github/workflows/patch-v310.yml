@@ -8,6 +8,7 @@ on:
       - tools/patch_v310_web.py
       - tools/patch_v310_ci.py
       - tools/patch_v310_fixups.py
+      - tools/patch_v310_jsfix.py
       - .github/workflows/patch-v310.yml
 permissions:
   contents: write
@@ -32,6 +33,8 @@ jobs:
         run: python tools/patch_v310_ci.py
       - name: Apply final source safety fixups
         run: python tools/patch_v310_fixups.py
+      - name: Clean removed schedule-handler JavaScript
+        run: python tools/patch_v310_jsfix.py
       - name: Validate source regression gates
         run: |
           python tools/test_v310_regressions.py
