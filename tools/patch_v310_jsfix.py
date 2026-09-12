@@ -14,3 +14,4 @@ if bad not in s:
 s=s.replace(bad,good,1)
 p.write_text(s)
 print('v3.1.0 JavaScript cleanup applied')
+# Trigger source-repair workflow after commit-step permission fix.
