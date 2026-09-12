@@ -91,7 +91,7 @@
     const favorites=el('div','v3Favorites'), grid=byId('homeFavoriteColorGrid'); grid.previousElementSibling.remove();
     const heading=el('div','v3FavoriteHeading',`<span>${icon('heart')}<strong id="v3ColorHeading">Favorite Colors</strong></span>`);
     const edit=el('button','v3TextButton',`Edit ${icon('arrow')}`); edit.type='button';edit.setAttribute('aria-label','Edit favorite colors');
-    const openColors=()=> { const chip=el('button',''); chip.dataset.color='#004BC6'; openRgbWheel(chip); };
+    const openColors=()=> { const chip=el('button',''); chip.dataset.color='#0D00FF'; openRgbWheel(chip); };
     edit.addEventListener('click',openColors); heading.append(edit);
     const paletteRow=el('div','v3PaletteRow'), plus=el('button','v3AddColor',icon('plus')); plus.type='button';plus.setAttribute('aria-label','Add a favorite color');plus.addEventListener('click',openColors);
     paletteRow.append(grid,plus);favorites.append(heading,paletteRow);panel.appendChild(favorites);
@@ -107,7 +107,7 @@
       const swatches=qa('.savedSwatch',grid);byId('v3ColorHeading').textContent=swatches.length?'Favorite Colors':'Quick Colors';
       if(!swatches.length && !q('.v3QuickColor',grid)) {
         grid.replaceChildren();
-        ['#FF0000','#FF3000','#FFFF00','#00FF00','#00FFFF','#0000FF','#23018C','#FF00FF'].forEach(c=>{
+        ['#FF0000','#FF0D00','#FF0024','#FFFF44','#28FF00','#00BD4C','#0D00FF','#5B00E6','#FFFFFA'].forEach(c=>{
           const b=el('button','v3QuickColor');b.type='button';b.style.background=displayColor(c);b.style.color=displayColor(c);b.setAttribute('aria-label','Use '+(LED_COLOR_NAME[c]||c));
           b.addEventListener('click',()=>manual({name:LED_COLOR_NAME[c]||'Color',colors:[c],effect:'Solid',brightness,speed:1}));grid.appendChild(b);
         });
