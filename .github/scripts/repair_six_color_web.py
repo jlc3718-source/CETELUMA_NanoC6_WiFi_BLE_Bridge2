@@ -25,12 +25,13 @@ if old not in m:
 m=m.replace(old,new,1)
 main.write_text(m)
 
-# Static invariants for the requested baseline.
 required=['#FF0D00','#FF0024','#FFFF44','#28FF00','#0D00FF','#5B00E6']
 check=web.read_text()
 for color in required:
     if color not in check:
         raise SystemExit('missing baseline '+color)
-if "} ${r} • LED ${k}`:c}" in check:
-    raise SystemExit('malformed displayLabel tail remains')
+if bad in check:
+    raise SystemExit('malformed displayLabel function remains')
+if good not in check:
+    raise SystemExit('correct displayLabel function missing')
 print('Repaired six-color web palette and canonical favorite-save path')
