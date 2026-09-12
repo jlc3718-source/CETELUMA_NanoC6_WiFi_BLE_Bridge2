@@ -34,6 +34,10 @@ assert "const color=palette[Math.floor(now/360)%palette.length]" in mock
 assert "const phase=Math.floor(now/240),on=phase%2===0,color=palette[Math.floor(phase/2)%palette.length]" in mock
 assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
+assert 'v3HomeName">My Home' not in mock
+assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
+assert 'Basic Scheme v 3.0.28' in web and 'v3.0.28 event palette' not in web
+assert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web
 version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
 remote=t('firmware/src/RemoteUpdate.cpp')
 assert 'OTA_MANIFEST_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json"' in remote

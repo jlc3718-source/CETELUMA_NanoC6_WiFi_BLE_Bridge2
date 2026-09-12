@@ -49,11 +49,11 @@
       tab.addEventListener('click', syncPage);
     });
     document.body.appendChild(nav);
-    const actions = q('.headerActions'), meta = el('div','v3HomeMeta','<span class="v3HomeName">My Home</span>');
-    meta.appendChild(byId('connectionBadge'));
-    const profile = byId('activeProfile'); profile.className = 'v3ProfileName';
+    const actions = q('.headerActions'), badge = byId('connectionBadge'), profile = byId('activeProfile');
+    badge.style.display = 'none';
+    profile.className = 'v3ProfileName'; profile.style.display = 'none';
     const switcher = byId('switchProfile'); switcher.innerHTML = icon('user'); switcher.setAttribute('aria-label','Switch user'); switcher.title = 'Switch user';
-    actions.replaceChildren(meta, profile, switcher);
+    actions.replaceChildren(badge, profile, switcher);
     const wifi = routeButton('v3SettingsLink','wifi',`${icon('wifi')}<span><strong>Wi-Fi</strong><small>Network & connection</small></span>${icon('arrow')}`);
     q('.page[data-page="settings"]').prepend(wifi);
     byId('bleStatus').closest('.panel').id = 'v3Controllers';
