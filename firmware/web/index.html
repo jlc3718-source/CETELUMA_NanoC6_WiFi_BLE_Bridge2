@@ -485,14 +485,14 @@ function sendBuilderLook(){
 
 $('addColor').addEventListener('click',()=>{
   if(builderColors.length>=8)return;
-  const suggestions=['#FF0000','#FF0D00','#FF0024','#FFFF44','#28FF00','#00BD4C','#0D00FF','#5B00E6','#FFFFFA'];
+  const suggestions=[...MASTER_FAVORITE_COLORS];
   builderColors.push(suggestions[(builderColors.length-1)%suggestions.length]);
   renderColorBuilder();
   sendBuilderLook();
 });
 $('clearColors').addEventListener('click',()=>setBuilderColors([builderColors[0]||'#0D00FF'],true));
 
-const quick=['#FF0000','#FF0D00','#FF0024','#FFFF44','#28FF00','#00BD4C','#0D00FF','#5B00E6','#FFFFFA'];
+const quick=[...MASTER_FAVORITE_COLORS];
 quick.forEach(c=>{
   const b=document.createElement('button');
   b.className='swatch';
