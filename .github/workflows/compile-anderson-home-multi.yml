@@ -48,6 +48,8 @@ jobs:
         run: python tools/test_maintenance.py
       - name: Check Anderson source regressions
         run: python tools/test_regressions.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
       - name: Restore PlatformIO dependencies
         uses: actions/cache@v4
         with:
