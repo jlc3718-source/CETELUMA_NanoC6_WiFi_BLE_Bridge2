@@ -99,7 +99,7 @@
   function effectPreviews() {
     const values=['Jump','Breath','Strobe','Solid'];
     const labels={Jump:'Jump',Breath:'Breath',Strobe:'Strobe',Solid:'Solid'};
-    const hints={Jump:'Snaps between colors',Breath:'Gently fades in and out',Strobe:'Flashes on and off',Solid:'Holds one color steady'};
+    const hints={Jump:'Whole string steps from one color to the next',Breath:'Gently fades in and out',Strobe:'Color on, off, then the next color',Solid:'Holds one color steady'};
     const palette=['#42d8ff','#ff4ebd','#ffd24a','#7cff74','#7c72ff'];
     if(!byId('v3EffectPreviewStyle')) {
       const style=document.createElement('style');style.id='v3EffectPreviewStyle';style.textContent=`
@@ -119,14 +119,14 @@
       const effect=button.dataset.effect;
       dots.forEach((dot,i)=>{dot.style.background=palette[i];dot.style.color=palette[i];dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='none'});
       if(effect==='Jump'){
-        const active=Math.floor(now/360)%dots.length;
-        dots.forEach((dot,i)=>{const on=i===active;dot.style.opacity=on?'1':'.18';dot.style.transform=on?'scale(1.18)':'scale(.72)';dot.style.filter=on?'brightness(1.45)':'brightness(.65)'});
+        const color=palette[Math.floor(now/360)%palette.length];
+        dots.forEach(dot=>{dot.style.background=color;dot.style.color=color;dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='brightness(1.2)'});
       }else if(effect==='Breath'){
         const wave=.22+.78*((Math.sin(now/430)+1)/2);
         dots.forEach(dot=>{dot.style.background='#45d9ff';dot.style.color='#45d9ff';dot.style.opacity=String(wave);dot.style.transform=`scale(${.78+wave*.24})`;dot.style.filter=`brightness(${.65+wave*.7})`});
       }else if(effect==='Strobe'){
-        const on=Math.floor(now/240)%2===0;
-        dots.forEach(dot=>{dot.style.background='#f3fbff';dot.style.color='#f3fbff';dot.style.opacity=on?'1':'.07';dot.style.transform=on?'scale(1.12)':'scale(.78)';dot.style.filter=on?'brightness(1.6)':'brightness(.5)'});
+        const phase=Math.floor(now/240),on=phase%2===0,color=palette[Math.floor(phase/2)%palette.length];
+        dots.forEach(dot=>{dot.style.background=color;dot.style.color=color;dot.style.opacity=on?'1':'.04';dot.style.transform=on?'scale(1.08)':'scale(.82)';dot.style.filter=on?'brightness(1.45)':'brightness(.4)'});
       }else{
         dots.forEach(dot=>{dot.style.background='#45d9ff';dot.style.color='#45d9ff';dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='brightness(1.15)'});
       }
