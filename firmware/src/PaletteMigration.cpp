@@ -1,12 +1,13 @@
 #include "PaletteMigration.h"
 #include "ColorCorrection.h"
+#include "EventState.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <FS.h>
 #include <SPIFFS.h>
 
 static constexpr uint8_t BACKUP_FORMAT_VERSION=1;
-static constexpr uint8_t PALETTE_MIGRATION_REVISION=4;
+static constexpr uint8_t PALETTE_MIGRATION_REVISION=5;
 static constexpr uint8_t STATE_PENDING=0;
 static constexpr uint8_t STATE_APPLIED=1;
 static constexpr uint8_t STATE_RESTORED=2;
@@ -32,7 +33,7 @@ static String eventKey(size_t i){return String("e")+String((unsigned)i);}
 static uint32_t fnvAdd(uint32_t h,const String& s){for(size_t i=0;i<s.length();i++){h^=(uint8_t)s[i];h*=16777619u;}h^=0xFF;h*=16777619u;return h;}
 static uint32_t backupChecksum(JsonDocument& d){
   uint32_t h=2166136261u;h=fnvAdd(h,d["presets"]|String("[]"));h=fnvAdd(h,d["favoriteColors"]|String("[]"));
-  JsonObject events=d["events"].as<JsonObject>();for(size_t i=0;i<64;i++){String key=eventKey(i);if(events[key].isNull())continue;h=fnvAdd(h,key);h=fnvAdd(h,events[key].as<String>());}return h;
+  JsonObject events=d["events"].as<JsonObject>();for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){String key=eventKey(i);if(events[key].isNull())continue;h=fnvAdd(h,key);h=fnvAdd(h,events[key].as<String>());}return h;
 }
 static String readFile(const char* path){File f=SPIFFS.open(path,"r");if(!f)return "";String s=f.readString();f.close();return s;}
 static bool parseBackup(const String& raw,JsonDocument& d){
@@ -48,7 +49,7 @@ static bool createBackup(){
   }
   JsonDocument d;d["version"]=BACKUP_FORMAT_VERSION;d["sourceFirmware"]="2.0.0a";d["provisionalCorrection"]=true;
   d["presets"]=readPrefString("anderson-preset","custom","[]");d["favoriteColors"]=readPrefString("anderson-colors","saved","[]");JsonObject events=d["events"].to<JsonObject>();
-  for(size_t i=0;i<64;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
+  for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
   d["checksum"]=backupChecksum(d);String payload;serializeJson(d,payload);
   size_t freeBytes=SPIFFS.totalBytes()>SPIFFS.usedBytes()?SPIFFS.totalBytes()-SPIFFS.usedBytes():0;if(freeBytes<payload.length()+2048)return false;
   File f=SPIFFS.open(BACKUP_TMP,"w");if(!f)return false;size_t wrote=f.print(payload);f.flush();f.close();if(wrote!=payload.length()||readFile(BACKUP_TMP)!=payload){SPIFFS.remove(BACKUP_TMP);return false;}
@@ -60,7 +61,7 @@ static bool transformPresetJson(const String& original,String& corrected){
 }
 static bool transformFavoriteJson(const String& original,String& corrected){
   (void)original;JsonDocument d;JsonArray a=d.to<JsonArray>();
-  a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#0D00FF");a.add("#5B00E6");
+  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");
   serializeJson(d,corrected);return true;
 }
 static String transformEventRaw(const String& original){
@@ -69,7 +70,7 @@ static String transformEventRaw(const String& original){
 }
 static bool writeEvents(JsonObject events,bool corrected){
   Preferences p;if(!p.begin("anderson-event",false))return false;
-  for(size_t i=0;i<64;i++){
+  for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){
     String key=eventKey(i);if(events[key].isNull()){p.remove(key.c_str());if(p.isKey(key.c_str())){p.end();return false;}continue;}
     String value=events[key].as<String>();if(corrected)value=transformEventRaw(value);size_t wrote=p.putString(key.c_str(),value);if(wrote!=value.length()||p.getString(key.c_str(),"")!=value){p.end();return false;}
   }
@@ -83,7 +84,7 @@ static bool canonicalizeCurrentStoredPalette(){
   if(!transformFavoriteJson(originalFavorites,correctedFavorites))return false;
   if(!writePrefStringVerified("anderson-colors","saved",correctedFavorites))return false;
   JsonDocument current;JsonObject events=current["events"].to<JsonObject>();
-  for(size_t i=0;i<64;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
+  for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
   if(!writeEvents(events,true))return false;
   return setMigrationState(STATE_APPLIED,true);
 }
@@ -100,7 +101,7 @@ bool runPaletteColorMigration(){
   uint8_t state=migrationState(),revision=migrationRevision();
   if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
   // Automatic v4 migration normalizes CURRENT custom lights and event overrides,
-  // then resets Favorite Colors to the six approved user baselines.
+  // then resets Favorite Colors to the nine approved user baselines.
   if(!setMigrationState(STATE_APPLY_PENDING,false))return false;
   return canonicalizeCurrentStoredPalette();
 }

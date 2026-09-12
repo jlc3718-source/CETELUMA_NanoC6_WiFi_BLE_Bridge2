@@ -10,5 +10,4 @@ class Scheduler {
   String nextEventLabel(const tm& local) const;
  private:
   AppSettings* cfg;
-  bool enabled(size_t i) const {return i<64 ? ((cfg->enabledMask>>i)&1ULL) : true;}
 };

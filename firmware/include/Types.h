@@ -4,7 +4,7 @@
 // Append new effects so the numeric values of existing saved/built-in effects never shift.
 enum class Effect : uint8_t { Jump, Breath, Strobe, Gradient, Solid };
 enum class EventKind : uint8_t { Holiday, Awareness, Seasonal };
-enum class RuleType : uint8_t { Fixed, Month, NthWeekday, LastWeekday, EasterOffset, Hanukkah };
+enum class RuleType : uint8_t { Fixed, Month, NthWeekday, LastWeekday, EasterOffset, Hanukkah, MonthEnd, YearTable };
 
 struct Theme {
   String name = "Warm White";

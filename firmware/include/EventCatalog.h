@@ -13,3 +13,4 @@ bool eventWindowActiveOn(size_t index, const tm& local, uint8_t lead, uint8_t tr
 String eventWhen(size_t index, int year);
 Theme themeFromEvent(size_t index);
 time_t eventStartEpoch(size_t index, int year);
+uint8_t eventSpeed(size_t index);

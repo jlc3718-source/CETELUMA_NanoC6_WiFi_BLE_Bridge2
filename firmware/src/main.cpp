@@ -16,6 +16,7 @@
 #include "WebUIGzip.h"
 #include "Types.h"
 #include "EventCatalog.h"
+#include "EventState.h"
 #include "SettingsStore.h"
 #include "BleController.h"
 #include "Scheduler.h"
@@ -58,7 +59,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.18";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.20";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -113,41 +114,25 @@ static uint32_t nextStoredId(JsonArray arr,const char prefix){uint32_t maxId=0;f
 static bool jsonArrayValid(const String& raw){JsonDocument d;return !deserializeJson(d,raw)&&d.is<JsonArray>();}
 static void migrateLegacyCustomStorage(){String lights=presetStoreRaw();if(!jsonArrayValid(lights))customFileWrite("/custom_lights.json","[]");String schedules=scheduleStoreRaw();if(!jsonArrayValid(schedules))customFileWrite("/custom_schedules.json","[]");}
 
-// v2.0 Home favorite baseline: all built-in holidays, and only holidays.
-// Apply once to existing NVS so an OTA upgrade changes the live device rather than
-// merely changing fresh-install defaults. After migration, favorites remain user-editable.
-static uint64_t holidayFavoriteMask(){
-  uint64_t mask=0;
-  for(size_t i=0;i<EVENT_COUNT&&i<64;i++)if(EVENTS[i].kind==EventKind::Holiday)mask|=(1ULL<<i);
-  return mask;
+// v3.0.20 master calendar migration: replace built-in event/favorite state once while
+// preserving Wi-Fi, BLE, PINs, custom lights, and custom schedules.
+static bool writeMasterFavoriteColors(){
+  JsonDocument d;JsonArray a=d.to<JsonArray>();
+  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");
+  String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-colors",false))return false;size_t wrote=p.putString("saved",raw);bool ok=wrote==raw.length()&&p.getString("saved","")==raw;p.end();return ok;
 }
-static bool migrateV2HomeFavorites(){
-  Preferences marker;
-  if(!marker.begin("anderson",true))return false;
-  uint8_t revision=marker.getUChar("homefavrev",0);
-  marker.end();
-  if(revision>=2)return true;
-
-  // Clear custom-show favorites once so Home starts with holiday favorites only.
-  JsonDocument presets;
-  if(deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;
-  bool customChanged=false;
-  for(JsonObject p:presets.as<JsonArray>()){
-    if(p["favorite"]|false){p["favorite"]=false;customChanged=true;}
-  }
-  if(customChanged){String out;serializeJson(presets,out);if(!customFileWrite("/custom_lights.json",out))return false;}
-
-  const uint64_t favorites=holidayFavoriteMask();
-  Preferences prefs;
-  if(!prefs.begin("anderson",false))return false;
-  prefs.putULong64("favorite",favorites);
-  bool favoriteOk=prefs.getULong64("favorite",0)==favorites;
-  if(favoriteOk)prefs.putUChar("homefavrev",2);
-  bool markerOk=favoriteOk&&prefs.getUChar("homefavrev",0)>=2;
-  prefs.end();
-  if(!markerOk)return false;
-  store.get().favoriteMask=favorites;
-  return true;
+static bool clearCustomPresetFavorites(){
+  JsonDocument presets;if(deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;bool changed=false;
+  for(JsonObject p:presets.as<JsonArray>())if(p["favorite"]|false){p["favorite"]=false;changed=true;}
+  if(!changed)return true;String out;serializeJson(presets,out);return customFileWrite("/custom_lights.json",out);
+}
+static bool migrateMasterCalendarV1(){
+  Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=1)return true;
+  if(!clearCustomPresetFavorites()||!writeMasterFavoriteColors())return false;
+  Preferences ep;if(!ep.begin("anderson-event",false))return false;bool cleared=ep.clear();ep.end();if(!cleared)return false;
+  if(!eventStateResetAll())return false;
+  auto&s=store.get();s.enabledMask=UINT64_MAX;s.favoriteMask=0;s.leadDays=0;s.trailDays=0;s.overlap=0;store.saveAll();
+  if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",1);bool ok=marker.getUChar("calendarrev",0)==1;marker.end();return ok;
 }
 static bool storageSelfTest(){Preferences p;if(!p.begin("anderson-test",false))return false;const String t="ANDERSON_STORAGE_OK";size_t n=p.putString("rw",t);String r=p.getString("rw","");p.remove("rw");p.end();return n==t.length()&&r==t;}
 
@@ -235,12 +220,13 @@ struct EventOverrideCfg {
   uint8_t colorCount=0;
   uint8_t speed=1;
 };
-static EventOverrideCfg eventOverrides[64];
+static EventOverrideCfg eventOverrides[MAX_BUILTIN_EVENTS];
 
 static String eventOverrideKey(size_t i){return String("e")+String((unsigned)i);}
 static uint8_t scheduledEventSpeedHint=1;
 Theme applyEventOverrideByIndex(size_t i,const Theme& base){
-  Theme t=base;if(i>=64||!eventOverrides[i].valid){scheduledEventSpeedHint=1;return t;}
+  Theme t=base;scheduledEventSpeedHint=eventSpeed(i);
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;
   scheduledEventSpeedHint=constrain(eventOverrides[i].speed,1,5);t.effect=eventOverrides[i].effect;t.colorCount=eventOverrides[i].colorCount;
   for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=eventOverrides[i].colors[c];
   return t;
@@ -248,7 +234,7 @@ Theme applyEventOverrideByIndex(size_t i,const Theme& base){
 static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
 static void loadEventOverrides(){
   Preferences p;p.begin("anderson-event",true);
-  for(size_t i=0;i<EVENT_COUNT&&i<64;i++){
+  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
     String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;
     int sep=raw.indexOf(';');if(sep<1)continue;
     String head=raw.substring(0,sep);int bar=head.indexOf('|');EventOverrideCfg o;o.valid=true;
@@ -260,11 +246,11 @@ static void loadEventOverrides(){
   p.end();
 }
 static void saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){
-  if(i>=64)return;EventOverrideCfg&o=eventOverrides[i];o.valid=true;o.effect=t.effect;o.speed=constrain(sp,1,5);o.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<o.colorCount;c++)o.colors[c]=andersonCorrectColor(t.colors[c]);
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return;EventOverrideCfg&o=eventOverrides[i];o.valid=true;o.effect=t.effect;o.speed=constrain(sp,1,5);o.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<o.colorCount;c++)o.colors[c]=andersonCorrectColor(t.colors[c]);
   String raw=String(effectName(o.effect))+"|"+String(o.speed)+";";for(uint8_t c=0;c<o.colorCount;c++){if(c)raw+=",";raw+=colorHex(o.colors[c]);}
   Preferences p;p.begin("anderson-event",false);p.putString(eventOverrideKey(i).c_str(),raw);p.end();
 }
-static void clearEventOverride(size_t i){if(i>=64)return;eventOverrides[i]=EventOverrideCfg();Preferences p;p.begin("anderson-event",false);p.remove(eventOverrideKey(i).c_str());p.end();}
+static void clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return;eventOverrides[i]=EventOverrideCfg();Preferences p;p.begin("anderson-event",false);p.remove(eventOverrideKey(i).c_str());p.end();}
 
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
 String stateJson(){
@@ -373,26 +359,26 @@ void setupRoutes(){
   server.on("/api/events",HTTP_GET,[]{
     if(!requireUser())return;int year=server.arg("year").toInt(),month=server.arg("month").toInt();if(year<2020)year=2026;if(month<1||month>12)month=1;
     JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();int monthly=0;
-    for(size_t i=0;i<EVENT_COUNT;i++){if(!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<64?eventOverrides[i].valid:false;e["speed"]=(i<64&&eventOverrides[i].valid)?eventOverrides[i].speed:1;e["enabled"]=i<64?((s.enabledMask>>i)&1ULL):true;e["favorite"]=i<64?((s.favoriteMask>>i)&1ULL):false;JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
+    for(size_t i=0;i<EVENT_COUNT;i++){if(!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<MAX_BUILTIN_EVENTS?eventOverrides[i].valid:false;e["speed"]=(i<MAX_BUILTIN_EVENTS&&eventOverrides[i].valid)?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
     d["overlap"]=monthly>1?String(monthly)+" month-long events enabled — overlap rule applies.":(monthly==1?"1 month-long event enabled.":"No month-long awareness themes enabled.");
     String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/favorites",HTTP_GET,[]{
     if(!requireUser())return;JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();
-    for(size_t i=0;i<EVENT_COUNT&&i<64;i++){if(!((s.favoriteMask>>i)&1ULL))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:1;JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));}
+    for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!((s.favoriteMask>>i)&1ULL))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));}
     JsonDocument presets;if(!deserializeJson(presets,presetStoreRaw())&&presets.is<JsonArray>())for(JsonObject p:presets.as<JsonArray>()){if(!(p["favorite"]|false))continue;JsonObject e=arr.add<JsonObject>();e["id"]=p["id"];e["name"]=p["name"];e["effect"]=p["effect"]|String("Jump");e["brightness"]=constrain(p["brightness"]|100,1,100);e["speed"]=constrain(p["speed"]|1,1,5);e["enabled"]=p["enabled"]|true;e["custom"]=true;JsonArray c=e["colors"].to<JsonArray>();for(JsonVariant v:p["colors"].as<JsonArray>())c.add(v.as<String>());}
     String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/event",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=64){server.send(404,"text/plain","Unknown event");return;}auto&s=store.get();
-    if(!d["enabled"].isNull()){if(d["enabled"].as<bool>())s.enabledMask|=(1ULL<<i);else s.enabledMask&=~(1ULL<<i);}
-    if(!d["favorite"].isNull()){if(d["favorite"].as<bool>())s.favoriteMask|=(1ULL<<i);else s.favoriteMask&=~(1ULL<<i);}
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=(int)EVENT_COUNT||i>=(int)MAX_BUILTIN_EVENTS){server.send(404,"text/plain","Unknown event");return;}auto&s=store.get();
+    if(!d["enabled"].isNull())eventStateSetEnabled(i,d["enabled"].as<bool>());
+    if(!d["favorite"].isNull())eventStateSetFavorite(i,d["favorite"].as<bool>());
     if(d["reset"]|false){clearEventOverride(i);}
     else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:1;if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,5);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){et.colors[0]=0xFFFF44;et.colorCount=1;}}saveEventOverride(i,et,esp);}
     store.saveAll();evaluateSchedule(true);sendJson(stateJson());
   });
   server.on("/api/events/bulk",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;int y=d["year"]|2026,m=d["month"]|1;bool en=d["enabled"]|false;auto&s=store.get();for(size_t i=0;i<EVENT_COUNT&&i<64;i++)if(eventOccursInMonth(i,y,m)){if(en)s.enabledMask|=(1ULL<<i);else s.enabledMask&=~(1ULL<<i);}store.saveAll();server.send(204);
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;int y=d["year"]|2026,m=d["month"]|1;bool en=d["enabled"]|false;auto&s=store.get();for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eventOccursInMonth(i,y,m))eventStateSetEnabled(i,en);store.saveAll();server.send(204);
   });
 
   server.on("/api/settings",HTTP_POST,[]{
@@ -539,7 +525,7 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();migrateV2HomeFavorites();runPaletteColorMigration();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageSelfTest();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
