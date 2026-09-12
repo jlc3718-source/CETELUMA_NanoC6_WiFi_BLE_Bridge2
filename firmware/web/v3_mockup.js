@@ -109,14 +109,19 @@
 .v3EffectMini{width:100%;max-width:66px;min-height:20px;display:grid;grid-template-columns:repeat(5,1fr);align-items:center;gap:3px;padding:5px 6px;border-radius:99px;background:#020914c9;border:1px solid #8fdfff26;overflow:hidden}
 .v3EffectMini i{display:block;width:100%;aspect-ratio:1;border-radius:50%;background:#42d8ff;box-shadow:0 0 6px currentColor;color:#42d8ff}
 .v3EffectName{font-size:10px;font-weight:720;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i{animation:v3FxJump 2000ms steps(1,end) infinite}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i{animation:v3FxJump 1000ms steps(1,end) infinite}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(1){background:#42d8ff;color:#42d8ff;animation-delay:0ms}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(2){background:#ff4ebd;color:#ff4ebd;animation-delay:-200ms}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(3){background:#ffd24a;color:#ffd24a;animation-delay:-400ms}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(4){background:#7cff74;color:#7cff74;animation-delay:-600ms}
+.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(5){background:#7c72ff;color:#7c72ff;animation-delay:-800ms}
 .v3EffectButton[data-effect="Breath"] .v3EffectMini i{animation:v3FxBreath 2000ms ease-in-out infinite;background:#45d9ff;color:#45d9ff}
 .v3EffectButton[data-effect="Strobe"] .v3EffectMini i{animation:v3FxStrobe 1000ms steps(1,end) infinite;background:#f3fbff;color:#f3fbff}
-.v3EffectButton[data-effect="Solid"] .v3EffectMini i{background:#45d9ff;color:#45d9ff}
-@keyframes v3FxJump{0%,24.9%{background:#42d8ff;color:#42d8ff}25%,49.9%{background:#ff4ebd;color:#ff4ebd}50%,74.9%{background:#ffd24a;color:#ffd24a}75%,100%{background:#7cff74;color:#7cff74}}
+.v3EffectButton[data-effect="Solid"] .v3EffectMini i{background:#45d9ff;color:#45d9ff;opacity:1;transform:scale(1)}
+@keyframes v3FxJump{0%,19.9%{opacity:1;transform:scale(1.12)}20%,100%{opacity:.28;transform:scale(.76)}}
 @keyframes v3FxBreath{0%,100%{opacity:.22;filter:brightness(.65)}50%{opacity:1;filter:brightness(1.35)}}
-@keyframes v3FxStrobe{0%,49.9%{opacity:1}50%,100%{opacity:.08}}20%{background:#7cff74;color:#7cff74}40%{background:#ffd24a;color:#ffd24a}60%{background:#ff4ebd;color:#ff4ebd}80%{background:#7c72ff;color:#7c72ff}100%{background:#42d8ff;color:#42d8ff}}
-.v3EffectCard .v3EffectPicker{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:7px}.v3EffectCard .v3EffectButton{min-height:54px;padding:5px 4px;gap:4px}.v3EffectCard .v3EffectButton:last-child{grid-column:1/-1}.v3EffectCard .v3EffectMini{max-width:58px;min-height:18px;padding:4px 5px}.v3EffectCard .v3EffectName{font-size:9px}
+@keyframes v3FxStrobe{0%,44.9%{opacity:1;filter:brightness(1.4)}45%,100%{opacity:.08;filter:brightness(.55)}}
+.v3EffectCard .v3EffectPicker{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:7px}.v3EffectCard .v3EffectButton{min-height:56px;padding:5px 3px;gap:4px}.v3EffectCard .v3EffectMini{max-width:52px;min-height:18px;padding:4px}.v3EffectCard .v3EffectName{font-size:9px}
 @media(max-width:520px){.page:not([data-page="home"]) .v3EffectPicker{grid-template-columns:repeat(3,minmax(0,1fr))}.page:not([data-page="home"]) .v3EffectButton{min-height:62px}}
 @media(prefers-reduced-motion:reduce){.v3EffectMini i{animation:none!important}.v3EffectButton{transition:none}}
 `;document.head.appendChild(style);
