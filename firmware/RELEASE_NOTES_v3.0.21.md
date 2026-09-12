@@ -6,3 +6,4 @@
 - Changing the master Favorite Color palette requires a new firmware build.
 - Set the Home Scene Favorites default to the approved 28-scene list and preserve its exact display order.
 - Fix Home Scene Favorites to read the 256-event state store, so favorites above event #64 work correctly.
+- Scene Favorite labels match the approved Home display names, including Presidents' Day, Mardi Gras, Easter, and Indigenous Peoples' / Columbus Day.
