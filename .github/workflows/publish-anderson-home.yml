@@ -30,8 +30,8 @@ permissions:
 jobs:
   publish:
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'codex/release-')) ||
-      (github.event_name == 'workflow_dispatch' && startsWith(inputs.head_branch, 'codex/release-'))
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'codex/release-current') ||
+      (github.event_name == 'workflow_dispatch' && inputs.head_branch == 'codex/release-current')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -41,6 +41,26 @@ jobs:
       BUILD_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.build_run_id }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Validate trusted build run before candidate checkout
+        run: |
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > /tmp/run.json
+          python - <<'PY'
+          import json,os
+          r=json.load(open('/tmp/run.json'))
+          repo=os.environ['GITHUB_REPOSITORY']; sha=os.environ['HEAD_SHA']; branch=os.environ['HEAD_BRANCH']
+          assert r['name']=='Build Anderson Home Firmware'
+          assert r['conclusion']=='success'
+          assert r['head_repository']['full_name']==repo
+          assert r['head_sha']==sha and r['head_branch']==branch=='codex/release-current'
+          assert r['event'] in ('push','workflow_dispatch')
+          PY
+          git fetch origin "$HEAD_BRANCH" --quiet
+          test "$(git rev-parse "origin/$HEAD_BRANCH")" = "$HEAD_SHA"
+      - name: Checkout exact trusted candidate
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.HEAD_SHA }}
           fetch-depth: 0
@@ -59,78 +79,61 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import hashlib,json,os
-          root=Path('release-work'); version=os.environ['VERSION']; head=os.environ['HEAD_SHA']
-          manifest=json.loads((root/'release.json').read_text())
-          name=f'and_{version}.bin'; data=(root/name).read_bytes(); digest=hashlib.sha256(data).hexdigest()
-          assert manifest['version']==version
-          assert manifest['commit']==head
-          assert manifest['ota_slot_bytes']==0x1E0000
+          root=Path('release-work');version=os.environ['VERSION'];head=os.environ['HEAD_SHA'];manifest=json.loads((root/'release.json').read_text());name=f'and_{version}.bin';data=(root/name).read_bytes();digest=hashlib.sha256(data).hexdigest()
+          assert manifest['version']==version and manifest['commit']==head and manifest['ota_slot_bytes']==0x1E0000
           assert data and data[0]==0xE9 and len(data)<0x1E0000
-          assert manifest['files'][name]['bytes']==len(data)
-          assert manifest['files'][name]['sha256']==digest
-          with open(os.environ['GITHUB_ENV'],'a') as f:
-              f.write(f'OTA_BYTES={len(data)}\nOTA_SHA256={digest}\n')
+          assert manifest['files'][name]['bytes']==len(data) and manifest['files'][name]['sha256']==digest
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'OTA_BYTES={len(data)}\nOTA_SHA256={digest}\n')
           PY
-      - name: Wait for exact signed OTA manifest
+      - name: Resolve durable or pending signed OTA manifest
         run: |
-          mkdir -p publish-input
-          rm -f publish-input/latest.json
+          mkdir -p publish-input; rm -f publish-input/latest.json
           for attempt in $(seq 1 120); do
-            if gh api \
-              -H "Accept: application/vnd.github.raw+json" \
-              "/repos/$GITHUB_REPOSITORY/contents/remote-update/pending/$VERSION.json?ref=ota" \
-              > publish-input/latest.json 2>/dev/null; then
-              if [ -s publish-input/latest.json ]; then
-                break
-              fi
-            fi
-            rm -f publish-input/latest.json
+            for path in "remote-update/releases/$VERSION.json" "remote-update/pending/$VERSION.json"; do
+              if gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/$path?ref=ota" > publish-input/latest.json 2>/dev/null && [ -s publish-input/latest.json ]; then break 2; fi
+              rm -f publish-input/latest.json
+            done
             sleep 5
           done
           test -s publish-input/latest.json
-          python tools/verify_ota_manifest.py \
-            --manifest publish-input/latest.json \
-            --version "$VERSION" \
-            --bytes "$OTA_BYTES" \
-            --sha256 "$OTA_SHA256" \
-            --commit "$HEAD_SHA" \
-            --url "$OTA_URL"
-      - name: Publish or verify stable release
+          python tools/verify_ota_manifest.py --manifest publish-input/latest.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$HEAD_SHA" --url "$OTA_URL"
+      - name: Publish or verify immutable stable release
         run: |
           TAG="anderson-v$VERSION"
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json \
-              --target "$HEAD_SHA" --title "Anderson Home v$VERSION" \
-              --notes "Verified Anderson Home production release from commit $HEAD_SHA. APP-only OTA image and release manifest were produced by the successful firmware build."
+          if gh release view "$TAG" --json targetCommitish,isDraft,isPrerelease >/tmp/release.json 2>/dev/null; then
+            python - <<'PY'
+          import json,os
+          r=json.load(open('/tmp/release.json'));assert r['targetCommitish']==os.environ['HEAD_SHA'];assert not r['isDraft'] and not r['isPrerelease']
+          PY
+          else
+            gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json --target "$HEAD_SHA" --title "Anderson Home v$VERSION" --notes "Verified Anderson Home production release from commit $HEAD_SHA."
           fi
-          rm -rf public-check && mkdir public-check
-          gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --dir public-check
-          cmp "release-work/and_$VERSION.bin" "public-check/and_$VERSION.bin"
-          cmp release-work/release.json public-check/release.json
-      - name: Promote the preverified OTA manifest
-        run: |
-          git fetch origin ota --quiet
-          rm -rf ../anderson-ota
-          git worktree add -B ota-release ../anderson-ota origin/ota
-          mkdir -p ../anderson-ota/remote-update/pending
-          # Keep the controller's legacy/root manifest path authoritative. Mirror the
-          # same bytes under remote-update/latest.json for tooling/inspection.
-          cp publish-input/latest.json ../anderson-ota/latest.json
-          cp publish-input/latest.json ../anderson-ota/remote-update/latest.json
-          rm -f "../anderson-ota/remote-update/pending/$VERSION.json"
-          cd ../anderson-ota
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add latest.json remote-update/latest.json remote-update/pending
-          if ! git diff --cached --quiet; then
-            git commit -m "Publish signed Anderson Home v$VERSION OTA manifest"
-            git push origin HEAD:refs/heads/ota
-          fi
+          rm -rf public-check;mkdir public-check;gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --dir public-check
+          cmp "release-work/and_$VERSION.bin" "public-check/and_$VERSION.bin";cmp release-work/release.json public-check/release.json
       - name: Fast-forward production main
         run: |
           git fetch origin main --quiet
-          git merge-base --is-ancestor origin/main "$HEAD_SHA"
-          git push origin "$HEAD_SHA:refs/heads/main"
+          if [ "$(git rev-parse origin/main)" != "$HEAD_SHA" ]; then git merge-base --is-ancestor origin/main "$HEAD_SHA";git push origin "$HEAD_SHA:refs/heads/main"; fi
+      - name: Promote the signed OTA manifest
+        run: |
+          git fetch origin ota --quiet;rm -rf ../anderson-ota;git worktree add -B ota-release ../anderson-ota origin/ota
+          mkdir -p ../anderson-ota/remote-update/pending ../anderson-ota/remote-update/releases
+          if [ -s ../anderson-ota/latest.json ]; then
+            python - <<'PY'
+          import json,os,re
+          def v(x):
+            m=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)([a-z]?)',x);return (*map(int,m.groups()[:3]),m.group(4))
+          cur=json.load(open('../anderson-ota/latest.json'))['payload'].splitlines()[0].split('=',1)[1]
+          assert v(os.environ['VERSION'])>=v(cur),f'refusing OTA downgrade {cur} -> {os.environ["VERSION"]}'
+          PY
+          fi
+          cp publish-input/latest.json ../anderson-ota/latest.json;cp publish-input/latest.json ../anderson-ota/remote-update/latest.json;cp publish-input/latest.json "../anderson-ota/remote-update/releases/$VERSION.json";rm -f "../anderson-ota/remote-update/pending/$VERSION.json"
+          cd ../anderson-ota;git config user.name github-actions[bot];git config user.email 41898282+github-actions[bot]@users.noreply.github.com;git add latest.json remote-update
+          if ! git diff --cached --quiet;then git commit -m "Publish signed Anderson Home v$VERSION OTA manifest";git push origin HEAD:refs/heads/ota;fi
+      - name: Verify live OTA channel
+        run: |
+          gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > /tmp/live.json
+          cmp publish-input/latest.json /tmp/live.json
       - name: Production housekeeping
         continue-on-error: true
         env:
