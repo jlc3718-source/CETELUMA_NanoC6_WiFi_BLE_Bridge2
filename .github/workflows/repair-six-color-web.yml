@@ -36,3 +36,4 @@ jobs:
           git add firmware/web/index.html firmware/src/main.cpp
           git commit -m 'Repair six-color palette UI and canonical favorites'
           git push origin HEAD:codex/anderson-six-color-baseline
+# rerun after validation-guard correction
