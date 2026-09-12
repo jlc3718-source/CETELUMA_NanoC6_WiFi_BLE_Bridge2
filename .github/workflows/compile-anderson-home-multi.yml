@@ -90,14 +90,3 @@ jobs:
         with:
           path: .pio-build-cache
           key: ${{ steps.objects.outputs.cache-primary-key }}
-      - name: Retain current build plus one backup
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CLEAN_RELEASES: '0'
-        run: bash .github/scripts/anderson-retention.sh
-      - name: Clean stale Anderson build caches
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/anderson-cache-cleanup.sh

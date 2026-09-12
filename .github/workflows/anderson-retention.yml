@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '17 9 * * *'
-  release:
-    types: [published]
   # Run once when this policy is first merged or later revised on main.
   push:
     branches: [main]
     paths:
       - '.github/workflows/anderson-retention.yml'
       - '.github/scripts/anderson-retention.sh'
+      - '.github/scripts/anderson-cache-cleanup.sh'
+      - '.github/scripts/anderson-branch-cleanup.sh'
 
 concurrency:
   group: anderson-retention
@@ -24,13 +24,25 @@ permissions:
 jobs:
   cleanup:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
       - name: Keep current plus one backup
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           CLEAN_RELEASES: '1'
         run: bash .github/scripts/anderson-retention.sh
+      - name: Clean stale build caches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/anderson-cache-cleanup.sh
+      - name: Clean stale Anderson work branches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_MAX_AGE_HOURS: '48'
+        run: bash .github/scripts/anderson-branch-cleanup.sh

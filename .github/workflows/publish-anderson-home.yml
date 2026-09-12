@@ -1,0 +1,81 @@
+name: Publish Anderson Home Firmware
+
+on:
+  workflow_run:
+    workflows: ["Build Anderson Home Firmware"]
+    types: [completed]
+
+concurrency:
+  group: anderson-production-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'codex/release-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Resolve production version
+        run: |
+          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$ ]]
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          git fetch origin main --quiet
+          git merge-base --is-ancestor origin/main "$HEAD_SHA"
+      - name: Download exact successful build artifact
+        run: gh run download "$BUILD_RUN_ID" --name "Anderson-Home-NanoC6-v$VERSION" --dir release-work
+      - name: Verify artifact identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('release-work'); version=os.environ['VERSION']; head=os.environ['HEAD_SHA']
+          manifest=json.loads((root/'release.json').read_text())
+          name=f'and_{version}.bin'; data=(root/name).read_bytes()
+          assert manifest['version']==version
+          assert manifest['commit']==head
+          assert manifest['ota_slot_bytes']==0x1E0000
+          assert data and data[0]==0xE9 and len(data)<0x1E0000
+          assert manifest['files'][name]['bytes']==len(data)
+          assert manifest['files'][name]['sha256']==hashlib.sha256(data).hexdigest()
+          PY
+      - name: Publish or verify stable release
+        run: |
+          TAG="anderson-v$VERSION"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json \
+              --target "$HEAD_SHA" --title "Anderson Home v$VERSION" \
+              --notes "Verified Anderson Home production release from commit $HEAD_SHA. APP-only OTA image and release manifest were produced by the successful firmware build."
+          fi
+          rm -rf public-check && mkdir public-check
+          gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --dir public-check
+          cmp "release-work/and_$VERSION.bin" "public-check/and_$VERSION.bin"
+          cmp release-work/release.json public-check/release.json
+      - name: Fast-forward production main
+        run: |
+          git fetch origin main --quiet
+          git merge-base --is-ancestor origin/main "$HEAD_SHA"
+          git push origin "$HEAD_SHA:refs/heads/main"
+      - name: Production housekeeping
+        continue-on-error: true
+        env:
+          CLEAN_RELEASES: '1'
+          DELETE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          BRANCH_MAX_AGE_HOURS: '48'
+        run: |
+          bash .github/scripts/anderson-retention.sh
+          bash .github/scripts/anderson-cache-cleanup.sh
+          bash .github/scripts/anderson-branch-cleanup.sh
