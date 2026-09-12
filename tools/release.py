@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Prepare, package, and retrieve an Anderson Home APP-only release."""
 import argparse
-import base64
 import gzip
 import hashlib
 import io
@@ -22,7 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'firmware/web/index.html'
 V3_CSS = ROOT / 'firmware/web/v3_mockup.css'
 V3_JS = ROOT / 'firmware/web/v3_mockup.js'
-V3_HERO_B64 = ROOT / 'firmware/web/v3_hero.b64'
 RECOVERY_UI = ROOT / 'firmware/web/recovery.html'
 MAIN = ROOT / 'firmware/src/main.cpp'
 SLOT = 0x1E0000
@@ -86,21 +84,10 @@ def render_ui():
     if count != 1:
         raise ValueError('Expected one firmware revision marker in firmware/web/index.html')
 
-    if not V3_CSS.exists() or not V3_JS.exists() or not V3_HERO_B64.exists():
+    if not V3_CSS.exists() or not V3_JS.exists():
         raise ValueError('Anderson v3 reference layout assets are missing')
 
-    hero_b64 = ''.join(V3_HERO_B64.read_text().split())
-    if not re.fullmatch(r'[A-Za-z0-9+/=]+', hero_b64):
-        raise ValueError('Anderson v3 hero asset is not valid base64')
-    try:
-        hero_bytes = base64.b64decode(hero_b64, validate=True)
-    except Exception as exc:
-        raise ValueError('Anderson v3 hero asset could not be decoded') from exc
-    if not (hero_bytes.startswith(b'RIFF') and hero_bytes[8:12] == b'WEBP'):
-        raise ValueError('Anderson v3 hero asset is not a WebP image')
-    css = V3_CSS.read_text().replace('__V3_HERO_DATA_URI__', 'data:image/webp;base64,' + hero_b64)
-    if '__V3_HERO_DATA_URI__' in css:
-        raise ValueError('Anderson v3 hero placeholder was not resolved')
+    css = V3_CSS.read_text()
     js = V3_JS.read_text()
     style_tag = '\n<style id="anderson-v3-reference-layout">\n' + css + '\n</style>\n'
     script_tag = '\n<script id="anderson-v3-reference-layout-runtime">\n' + js + '\n</script>\n'

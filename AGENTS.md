@@ -59,11 +59,11 @@ GitHub runner queue vary.
 - Existing Wi-Fi defaults/connection behavior, BLE frames/GATT, and partition map.
 - Shirley/Jason independent PINs, access rules, and protected recovery.
 - Saved NVS key names and formats, events, colors, names, and effects.
-- Effect IDs `Jump=0, Breath=1, Strobe=2, Gradient=3, Solid=4`.
+- Supported user effects are Jump, Breath, Strobe, and Solid/Static. Legacy Gradient ID 3 may remain reserved for backward compatibility but must never be offered or assigned; legacy Gradient assignments migrate to Breath.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
 - Do not use an unconditional uptime-based maintenance reboot. Reboot at **00:00, 06:00, 12:00, and 18:00 local controller time** when the clock is valid. Each scheduled slot must fire at most once, initialize after boot/time-sync without immediately re-firing an already-passed slot, and defer while firmware update/reboot activity is active. System Monitor must show the next scheduled maintenance reboot and a live countdown. While saved Wi-Fi credentials exist and the controller is disconnected, retry the saved network every 30 seconds; if it remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Reset the offline watchdog immediately after reconnection.
 - Successful Wi-Fi recovery must stop fallback AP mode and renew NTP/mDNS. Preserve saved credentials. Do not reboot repeatedly when no credentials are configured.
-- v3.0.1 and later use the approved third-reference Anderson Home dashboard as the visual source of truth: illuminated nighttime house/RGB hero, integrated Anderson Home branding, dark translucent glass controls, prominent green ON control, rainbow brightness bar, effect/schedule cards, circular favorite colors, feature tiles, and floating bottom navigation. Do not regress to the generic logo-card/tab-bar layout unless the user explicitly requests it.
+- v3.0.1 and later use the approved third-reference Anderson Home dashboard as the visual source of truth: integrated Anderson Home branding, dark translucent glass controls, prominent ON/OFF controls, monochrome brightness bar, effect/schedule cards, square dimensional favorite-color tiles, feature tiles, and floating bottom navigation. Do not restore the retired v3 hero/rainbow sprite. Do not regress to the generic logo-card/tab-bar layout unless the user explicitly requests it.
 - Settings includes the v3.0.16 Live Color Tuning panel: an embedded RGB wheel with an exact live HEX/RGB readout, on-screen color preview, switchable live-to-lights updates, and an explicit Preview on Lights button. Tuning is temporary and must not silently save or rewrite event/theme colors.
 - The Android APK is frozen; do not modify or rebuild it unless the user explicitly
   reverses that instruction. Normal Anderson changes belong in the firmware/web UI.
@@ -83,7 +83,10 @@ GitHub runner queue vary.
 - Built-in event palettes are editable through saved per-event overrides. The UI must
   allow visible removal as well as addition of colors while keeping at least one color;
   preserve event identity, ordering, schedules, and unrelated event settings.
-- v3.0.21 and later Favorite Colors are the firmware-locked nine-color master palette in this exact order: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#FFFF44`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
+- Color buttons and tiles use recognizable browser-facing sRGB reference colors for their names while preserving the separate calibrated LED output codes. Quick Colors must show each color name.
+- Original Colors and Modern Colors each retain independent per-event overrides in NVS. Switching palettes must never discard the other palette's custom colors/effect/speed, and routine firmware upgrades must preserve both sets. Legacy single-slot overrides migrate non-destructively.
+- The Favorites page shows a checked Favorite control beside every favorite scene so it can be removed directly from Favorites.
+- v3.0.29 and later Favorite Colors are the firmware-locked 16-color master palette: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#FFFF44`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, Teal `#00B4B4`, Sky Blue `#0096FF`, Amber Gold `#FFA000`, Lavender `#B464FF`, Navy Blue `#001478`, Burgundy `#87002D`, Silver Gray `#A0A5AF`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
 
 ## Source map
 

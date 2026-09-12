@@ -65,8 +65,6 @@
   function composeHome() {
     ensureExtraControls();
     const home = q('.page[data-page="home"]'), panel = q(':scope > .panel',home);
-    q('.andersonHero',home).classList.add('v3Scene');
-    q('.andersonHero',home).setAttribute('aria-label','Anderson Home rainbow roof logo above the illuminated house');
     panel.classList.add('v3Dashboard');
     const master = q(':scope > .row',panel); master.classList.add('v3MasterRow');
     const title = master.firstElementChild; title.className = 'v3MasterTitle';
@@ -78,7 +76,7 @@
     bright.append(label,slider); panel.appendChild(bright);
     const effect=byId('homeEffect'), effectLabel=effect.previousElementSibling;
     if(effectLabel?.classList.contains('label')) effectLabel.remove(); effect.setAttribute('aria-label','Current effect');
-    const features=el('div','v3FeatureGrid'), fx=el('div','v3EffectCard',`<div class="v3CardKicker">${icon('spark')}<span>Current Effect</span></div><div class="v3EffectArt" aria-hidden="true"></div>`);
+    const features=el('div','v3FeatureGrid'), fx=el('div','v3EffectCard',`<div class="v3CardKicker">${icon('spark')}<span>Current Effect</span></div>`);
     const help=byId('homeEffectHelp');help.textContent='Use your current colors.';fx.append(effect,help);
     const schedule=el('div','v3ScheduleCard');
     schedule.append(routeButton('v3CardKicker','events',`${icon('clock')}<span>Schedule</span>${icon('arrow')}`));

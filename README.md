@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current firmware: **v3.1.0**.
+Current firmware: **v3.1.1**.
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
 

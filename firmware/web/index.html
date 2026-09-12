@@ -16,7 +16,7 @@ button,select,input{font:inherit}.tab,.btn,.field{border:1px solid var(--line);b
 .field{width:100%;font-size:16px}.page{display:none}.page.active{display:block}.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;margin:11px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:12px}
 .row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}.wraprow{flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}.grid3{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}.profilePinGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.label{font-size:13px;margin:11px 0 6px}
 input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}input[type=range]{width:100%;accent-color:var(--accent)}input[type=color]{width:100%;height:46px;border:0;background:transparent}
-.quick{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .colorBuilder{display:grid;gap:8px;margin-top:8px}
 .colorSlot{display:grid;grid-template-columns:48px 1fr auto auto;gap:8px;align-items:center}
 .colorSlot input[type=color]{width:48px;height:44px;padding:0}
@@ -61,12 +61,13 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;bac
 input[type=checkbox],input[type=range]{accent-color:#2cff8a}
 .housePreview{background:radial-gradient(circle at 50% 32%,rgba(32,225,255,.14),transparent 34%),linear-gradient(180deg,rgba(5,18,31,.95),rgba(2,8,15,.96));border-color:rgba(76,197,236,.35);box-shadow:inset 0 0 34px rgba(0,0,0,.36)}
 .profileGate{background:#020812;background-image:radial-gradient(circle at 18% 12%,rgba(0,223,255,.18),transparent 26%),radial-gradient(circle at 82% 14%,rgba(255,0,213,.13),transparent 24%),linear-gradient(160deg,#020812,#071522 55%,#02070d)}.profileShell{max-width:680px}.profileBrand{padding:16px 12px 20px;border-radius:22px;background:rgba(4,14,25,.54);border:1px solid rgba(68,194,235,.24);box-shadow:0 16px 44px rgba(0,0,0,.32)}.profileChoice,.pinPanel{background:linear-gradient(145deg,rgba(9,29,45,.96),rgba(4,14,25,.94));border-color:rgba(76,192,231,.36);box-shadow:0 12px 32px rgba(0,0,0,.32)}
-.andersonHero{height:205px;margin:11px 0 14px;border:1px solid rgba(87,207,239,.3);border-radius:22px;background-image:radial-gradient(circle at center,rgba(0,228,255,.11),transparent 56%),none;background-size:auto,190px 190px;background-repeat:no-repeat;background-position:center;box-shadow:0 16px 42px rgba(0,0,0,.36),inset 0 0 50px rgba(0,0,0,.42);position:relative;overflow:hidden}.andersonHero:after{content:"LIGHTS  •  CONTROL  •  CREATE";position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:10px;letter-spacing:.28em;color:#d8f8ff;text-shadow:0 0 10px #00cfff}
 .rgbPickerCard,.scheduleCard{background:linear-gradient(145deg,#0a1a29,#06101c);border-color:rgba(74,194,233,.42)}
-@media(max-width:520px){.andersonHero{height:180px;background-size:auto,165px 165px}.header{padding:10px}}
+@media(max-width:520px){.header{padding:10px}}
 </style>
 
 <style id="anderson-v310-controls">
+.quickColorTile{width:100%;aspect-ratio:1;min-height:0;font-size:12px;line-height:1.12;padding:7px 5px;text-wrap:balance;text-shadow:0 1px 2px rgba(0,0,0,.20)}
+@media(max-width:430px){#quickColors.quick{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.quickColorTile{font-size:10px;padding:5px 3px}}
 .swatch,.savedSwatch,.colorChip{border-radius:10px!important;border:1px solid rgba(151,224,255,.58)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.40),inset 0 -8px 14px rgba(0,0,0,.18),0 7px 16px rgba(0,0,0,.34),0 0 0 1px rgba(41,216,255,.10)!important;transition:transform .12s ease,box-shadow .16s ease,border-color .16s ease;position:relative;overflow:hidden}
 .swatch{aspect-ratio:1!important}.savedSwatch{aspect-ratio:1!important;min-height:0!important;padding:7px!important}.colorChip{width:48px!important;height:48px!important;aspect-ratio:1!important}
 .swatch:hover,.savedSwatch:hover,.colorChip:hover,.swatch:focus-visible,.savedSwatch:focus-visible,.colorChip:focus-visible{border-color:#8cecff!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.52),inset 0 -8px 14px rgba(0,0,0,.17),0 8px 20px rgba(0,0,0,.38),0 0 16px rgba(41,216,255,.34)!important;outline:none}
@@ -153,7 +154,6 @@ async function controllerRequest(path,options={},timeoutMs=12000){
   </div>
 
   <section class="page active" data-page="home">
-    <div class="andersonHero" role="img" aria-label="Anderson Home multicolor house-light logo"></div>
     <div class="panel">
       <div class="row between">
         <div><strong>Lights</strong><div class="sub">Master control</div></div>
@@ -369,24 +369,24 @@ pts.forEach(([x,y])=>{const c=document.createElementNS('http://www.w3.org/2000/s
 
 const NAMED_COLOR_PALETTE=[
   {name:'Red',reference:'#FF0000',output:'#FF0000'},
-  {name:'Orange',reference:'#FF0D00',output:'#FF0D00'},
-  {name:'Pink',reference:'#FF0024',output:'#FF0024'},
-  {name:'Yellow',reference:'#FFFF44',output:'#FFFF44'},
-  {name:'Green',reference:'#28FF00',output:'#28FF00'},
-  {name:'Cyan',reference:'#00BD4C',output:'#00BD4C'},
-  {name:'Blue',reference:'#0D00FF',output:'#0D00FF'},
-  {name:'Purple',reference:'#5B00E6',output:'#5B00E6'},
-  {name:'White',reference:'#FFFFFA',output:'#FFFFFA'},
-  {name:'Teal',reference:'#00B4B4',output:'#00B4B4'},
-  {name:'Sky Blue',reference:'#0096FF',output:'#0096FF'},
-  {name:'Amber Gold',reference:'#FFA000',output:'#FFA000'},
-  {name:'Lavender',reference:'#B464FF',output:'#B464FF'},
-  {name:'Navy Blue',reference:'#001478',output:'#001478'},
-  {name:'Burgundy',reference:'#87002D',output:'#87002D'},
-  {name:'Silver Gray',reference:'#A0A5AF',output:'#A0A5AF'}
+  {name:'Orange',reference:'#FFA500',output:'#FF0D00'},
+  {name:'Pink',reference:'#FFC0CB',output:'#FF0024'},
+  {name:'Yellow',reference:'#FFFF00',output:'#FFFF44'},
+  {name:'Green',reference:'#008000',output:'#28FF00'},
+  {name:'Cyan',reference:'#00FFFF',output:'#00BD4C'},
+  {name:'Blue',reference:'#0000FF',output:'#0D00FF'},
+  {name:'Purple',reference:'#800080',output:'#5B00E6'},
+  {name:'White',reference:'#FFFFFF',output:'#FFFFFA'},
+  {name:'Teal',reference:'#008080',output:'#00B4B4'},
+  {name:'Sky Blue',reference:'#87CEEB',output:'#0096FF'},
+  {name:'Amber Gold',reference:'#FFBF00',output:'#FFA000'},
+  {name:'Lavender',reference:'#E6E6FA',output:'#B464FF'},
+  {name:'Navy Blue',reference:'#000080',output:'#001478'},
+  {name:'Burgundy',reference:'#800020',output:'#87002D'},
+  {name:'Silver Gray',reference:'#C0C0C0',output:'#A0A5AF'}
 ];
 const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name]));
-const REFERENCE_LED={'#FF0000':'#FF0000','#FF0D00':'#FF0D00','#FF0024':'#FF0024','#FFFF44':'#FFFF44','#28FF00':'#28FF00','#00BD4C':'#00BD4C','#0D00FF':'#0D00FF','#5B00E6':'#5B00E6','#FFFFFA':'#FFFFFA','#FF9500':'#FF0D00','#FFFF00':'#FFFF44','#22C55E':'#28FF00','#00FFFF':'#00BD4C','#2563EB':'#0D00FF','#7E22CE':'#5B00E6','#FF69B4':'#FF0024','#FFFFFF':'#FFFFFA'};
+const REFERENCE_LED=Object.assign(Object.fromEntries(NAMED_COLOR_PALETTE.flatMap(x=>[[x.reference,x.output],[x.output,x.output]])),{'#FF9500':'#FF0D00','#22C55E':'#28FF00','#2563EB':'#0D00FF','#7E22CE':'#5B00E6','#FF69B4':'#FF0024'});
 const EXPLICIT_LED={'#FF3B30':'#FF0000','#EF4444':'#FF0000','#DC2626':'#FF0000','#EF233C':'#FF0000','#FF1744':'#FF0000','#E11D48':'#FF0000','#BF0005':'#FF0000','#FF020C':'#FF0000','#FF2900':'#FF0D00','#FF3000':'#FF0D00','#FF7A00':'#FF0D00','#F97316':'#FF0D00','#FF6B35':'#FF0D00','#FF6E00':'#FF0D00','#F18900':'#FF0D00','#E44300':'#FF0D00','#92400E':'#FF0D00','#360500':'#FF0D00','#220200':'#FF0D00','#FFDA7F':'#FFFF44','#FFF1C7':'#FFFF44','#FACC15':'#FFFF44','#F59E0B':'#FFFF44','#FFFFFF':'#FFFFFA','#4DFF00':'#28FF00','#00FF00':'#28FF00','#2AD555':'#28FF00','#34C759':'#28FF00','#16A34A':'#28FF00','#00BD4C':'#00BD4C','#00FFFF':'#00BD4C','#00664D':'#00BD4C','#14B8A6':'#00BD4C','#2DD4BF':'#00BD4C','#32D7D5':'#00BD4C','#05008A':'#0D00FF','#0000FF':'#0D00FF','#004BC6':'#0D00FF','#377CF9':'#0D00FF','#A7C8FC':'#0D00FF','#0A84FF':'#0D00FF','#3B82F6':'#0D00FF','#23018C':'#5B00E6','#7A62F9':'#5B00E6','#C4B5FD':'#5B00E6','#000000':'#5B00E6','#FF1560':'#FF0024','#EF4F98':'#FF0024','#FF00FF':'#FF0024','#FF2D55':'#FF0024','#F9A8D4':'#FF0024'};
 const LEGACY_DISPLAY={'#FF0000':'#FF0000','#FF2900':'#FF0D00','#FF6E00':'#FF0D00','#4DFF00':'#28FF00','#00BD4C':'#00BD4C','#05008A':'#0D00FF','#23018C':'#5B00E6','#BF0005':'#FF0000','#FFFFFF':'#FFFFFA','#360500':'#FF0D00','#220200':'#FF0D00','#000000':'#5B00E6'};
 function normalizeLedColor(c){const k=normHex(c);return REFERENCE_LED[k]||EXPLICIT_LED[k]||k}
@@ -512,9 +512,12 @@ $('clearColors').addEventListener('click',()=>setBuilderColors([builderColors[0]
 const quick=[...MASTER_FAVORITE_COLORS];
 quick.forEach(c=>{
   const b=document.createElement('button');
-  b.className='swatch';
+  b.className='savedSwatch quickColorTile';
   b.style.background=displayColor(c);
+  b.style.color=favoriteInk(c);
+  b.textContent=favoriteName(c);
   b.type='button';
+  b.setAttribute('aria-label','Add '+favoriteName(c));
   b.title='Add '+displayLabel(c);
   b.addEventListener('click',()=>{
     if(builderColors.length===1 && builderColors[0]==='#0D00FF') builderColors[0]=c;
@@ -597,7 +600,7 @@ async function loadEventColorTheme(){try{const d=await api('/api/event-color-the
 async function chooseEventColorTheme(theme){if(theme===currentEventColorTheme)return;const button=$(theme==='original'?'eventColorsOriginal':'eventColorsModern');if(button)button.disabled=true;try{const d=await post('/api/event-color-theme',{theme});renderEventColorTheme(d.theme);const gen=invalidateEventRequest();await Promise.all([loadEvents(gen),loadFavorites()]);status((d.name||'Event color theme')+' applied to all built-in events.')}catch(e){status('Event color theme change failed: '+e.message)}finally{if(button)button.disabled=false}}
 $('eventColorsOriginal').addEventListener('click',()=>chooseEventColorTheme('original'));$('eventColorsModern').addEventListener('click',()=>chooseEventColorTheme('modern'));
 
-async function loadFavorites(){let favs=[];try{favs=(await api('/api/favorites')).events||[]}catch(e){return}const grid=$('favoriteGrid');grid.innerHTML='';if(!favs.length){grid.innerHTML='<div class="emptyFav" style="grid-column:1/-1">No favorite scenes selected. Use a Favorites checkbox on the Schedules tab.</div>';return}favs.forEach(ev=>{const b=document.createElement('button');b.className='btn';b.textContent=ev.name;b.addEventListener('click',()=>manual({name:ev.name,colors:ev.colors,effect:ev.effect,brightness:ev.brightness||100,speed:ev.speed||1}));grid.appendChild(b)})}
+async function loadFavorites(){let favs=[];try{favs=(await api('/api/favorites')).events||[]}catch(e){return}const grid=$('favoriteGrid');grid.innerHTML='';if(!favs.length){grid.innerHTML='<div class="emptyFav" style="grid-column:1/-1">No favorite scenes selected. Use a Favorites checkbox on the Schedules tab.</div>';return}favs.forEach(ev=>{const item=document.createElement('div');item.className='card';const top=document.createElement('div');top.className='row between';const b=document.createElement('button');b.className='btn';b.style.flex='1';b.textContent=ev.name;b.addEventListener('click',()=>manual({name:ev.name,colors:ev.colors,effect:ev.effect,brightness:ev.brightness||100,speed:ev.speed||1}));const label=document.createElement('label');label.className='row small';label.style.whiteSpace='nowrap';const fav=document.createElement('input');fav.type='checkbox';fav.checked=true;fav.setAttribute('aria-label','Favorite '+ev.name);label.append(fav,document.createTextNode('Favorite'));fav.addEventListener('change',async()=>{if(fav.checked)return;fav.disabled=true;try{if(ev.custom)await post('/api/preset',{id:ev.id,favorite:false});else await post('/api/event',{id:ev.id,favorite:false});await Promise.all([loadFavorites(),loadEvents(),loadHomeCustomLights()]);status((ev.name||'Favorite')+' removed from Favorites.')}catch(e){fav.checked=true;fav.disabled=false;status('Favorite change failed: '+e.message)}});top.append(b,label);item.appendChild(top);grid.appendChild(item)})}
 
 function customLightSummary(p){const main=document.createElement('div'),title=document.createElement('div'),strong=document.createElement('strong'),meta=document.createElement('div'),chips=document.createElement('div');title.className='small';strong.textContent=p.name||'Custom Light';title.appendChild(strong);if(p.favorite===true){const tag=document.createElement('span');tag.className='tag';tag.textContent='Favorite';tag.style.marginLeft='5px';title.appendChild(tag)}if(p.enabled===false){const tag=document.createElement('span');tag.className='tag';tag.textContent='Disabled';tag.style.marginLeft='5px';title.appendChild(tag)}meta.className='sub';meta.textContent=`${p.effect||'Jump'} • ${p.brightness||100}% • ${['','Very Slow','Slow','Normal','Fast','Very Fast'][p.speed||1]||'Very Slow'}`;chips.className='chips';(Array.isArray(p.colors)?p.colors:[]).forEach(color=>{const chip=document.createElement('span');chip.className='chip';chip.style.background=displayColor(color);chips.appendChild(chip)});main.append(title,meta,chips);return main}
 async function customLightPreference(id,change){try{await post('/api/preset',{id,...change});const refresh=[loadHomeCustomLights(),loadFavorites()];if(currentRole==='admin')refresh.push(loadCustomPresets());await Promise.all(refresh);status('Custom event preference saved.')}catch(e){status('Custom event preference failed: '+e.message);await loadHomeCustomLights()}}
