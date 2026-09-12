@@ -18,8 +18,8 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           p=Path('tools/v310_apply_audit_fixes.py');s=p.read_text()
-          s=s.replace("js=helper+r'''\\nconst assert=", 'js=helper+r"""\\nconst assert=', 1)
-          s=s.replace("process.exitCode=1});\\n'''\nsubprocess.run", 'process.exitCode=1});\\n"""\nsubprocess.run', 1)
+          s=s.replace("js=helper+r'''\\nconst assert=", 'js=helper+"""\nconst assert=', 1)
+          s=s.replace("process.exitCode=1});\\n'''\nsubprocess.run", 'process.exitCode=1});\n"""\nsubprocess.run', 1)
           lines=s.splitlines()
           for i,line in enumerate(lines):
               if line.startswith('start=html.index("let otaBeforePartition'):
