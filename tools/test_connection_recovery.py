@@ -17,7 +17,11 @@ def cpp_test(name, content):
         subprocess.run([str(binary)], check=True)
 
 
-write = ble[ble.index('bool BleController::writeSlot('):ble.index('void BleController::setPower(')]
+# Compile the exact write-gap prefix from production. BLE diagnostics now adds
+# controller-specific state tracking after the gap calculation; this focused test
+# intentionally stops before those unrelated members while preserving the timing code.
+write_full = ble[ble.index('bool BleController::writeSlot('):ble.index('void BleController::setPower(')]
+write = write_full[:write_full.index('  auto&d=')] + '  return true;\n}\n'
 cpp_test('write_gap', r'''
 #include <cstdint>
 #include <cstddef>
@@ -28,7 +32,6 @@ cpp_test('write_gap', r'''
 uint32_t times[3],requestedDelay;unsigned clockRead=0;
 uint32_t millis(){return times[std::min(clockRead++,2U)];}
 void delay(uint32_t value){requestedDelay=value;}
-struct {template<typename... Args>void printf(const char*,Args...){}void println(){}} Serial;
 class BleController{public:uint32_t lastWrite=100;bool slotConnected(uint8_t){return true;}bool writeSlot(uint8_t,const uint8_t*,size_t);};
 ''' + write + r'''
 void check(uint32_t last,uint32_t before,uint32_t after,uint32_t expected){
@@ -55,8 +58,8 @@ cpp_test('connection_queue', r'''
 uint32_t tick=0;uint32_t millis(){return tick;}
 constexpr int pdTRUE=1;
 struct Text:std::string{using std::string::string;using std::string::operator=;void toCharArray(char* p,size_t n)const{assert(size()<n);std::strcpy(p,c_str());}};
-struct Client{bool alive=true;};struct Characteristic{};
-struct Request{char address[18];};struct Result{Client* client;Characteristic* chr;};
+struct Client{bool alive=true;};struct Characteristic{};struct BleSlotDiagnostics{};
+struct Request{char address[18];};struct Result{Client* client;Characteristic* chr;Characteristic* rx;};
 int requests=0,deleted=0;bool resultReady=false;Result nextResult{};
 bool xQueueSend(int,const Request*,uint32_t wait){assert(wait==0);++requests;return true;}
 bool xQueueReceive(int,Result* result,uint32_t wait){assert(wait==0);if(!resultReady)return false;*result=nextResult;resultReady=false;return true;}
@@ -64,12 +67,13 @@ struct NimBLEDevice{static void deleteClient(Client*){++deleted;}};
 class BleController{
 public:
  using ConnectRequest=Request;using ConnectResult=Result;
- struct Slot{Text address;uint32_t generation=0,nextConnectAt=0;Client* client=nullptr;Characteristic* chr=nullptr;}slots[2];
+ struct Slot{Text address;uint32_t generation=0,nextConnectAt=0;Client* client=nullptr;Characteristic* chr=nullptr;Characteristic* rx=nullptr;BleSlotDiagnostics diag;}slots[2];
  int connectTask=1,connectRequests=1,connectResults=2;
  bool connectPending=false,activeValid=true,connectionChanged=false;
  uint8_t pendingSlot=0;uint32_t pendingGeneration=0,startedAt=0;
  bool slotConnected(uint8_t i){return slots[i].client&&slots[i].client->alive&&slots[i].chr;}
- void disconnectSlot(uint8_t i){slots[i].client=nullptr;slots[i].chr=nullptr;}
+ void disconnectSlot(uint8_t i){slots[i].client=nullptr;slots[i].chr=nullptr;slots[i].rx=nullptr;}
+ void updateCharacteristicDiagnostics(uint8_t){}
  bool requestConnection(uint8_t);void loop();
 };
 ''' + request + loop + r'''
@@ -77,23 +81,23 @@ int main(){
  BleController b;b.slots[0].address="00:11:22:33:44:55";
  tick=1000;b.loop();assert(b.connectPending&&requests==1);
  tick=600000;b.loop();assert(tick==600000&&requests==1); // main loop never waits for worker
- resultReady=true;nextResult={nullptr,nullptr};b.loop();assert(!b.connectPending&&requests==1);
+ resultReady=true;nextResult={nullptr,nullptr,nullptr};b.loop();assert(!b.connectPending&&requests==1);
  tick=629999;b.loop();assert(requests==1);
  tick=630000;b.loop();assert(b.connectPending&&requests==2); // cooldown starts at completion
- Client client;Characteristic chr;nextResult={&client,&chr};resultReady=true;b.loop();
+ Client client;Characteristic chr;nextResult={&client,&chr,nullptr};resultReady=true;b.loop();
  assert(b.slotConnected(0)&&b.connectionChanged&&!b.activeValid);
  // Removing/replacing a selected device while it connects must discard its late result.
  b.slots[0].client=nullptr;tick=630001;b.loop();assert(b.connectPending&&requests==3);
- ++b.slots[0].generation;b.slots[0].address="";nextResult={&client,&chr};resultReady=true;b.loop();
+ ++b.slots[0].generation;b.slots[0].address="";nextResult={&client,&chr,nullptr};resultReady=true;b.loop();
  assert(!b.slotConnected(0)&&deleted==1&&!b.connectPending);
  // Two missing controllers are attempted serially, without starving either slot.
  b.slots[0].address="00:11:22:33:44:55";b.slots[1].address="00:11:22:33:44:66";
  b.slots[0].nextConnectAt=tick;b.loop();assert(b.pendingSlot==0&&requests==4);
- nextResult={nullptr,nullptr};resultReady=true;b.loop();assert(b.pendingSlot==1&&requests==5);
- nextResult={nullptr,nullptr};resultReady=true;b.loop();assert(!b.connectPending&&requests==5);
+ nextResult={nullptr,nullptr,nullptr};resultReady=true;b.loop();assert(b.pendingSlot==1&&requests==5);
+ nextResult={nullptr,nullptr,nullptr};resultReady=true;b.loop();assert(!b.connectPending&&requests==5);
  // Cooldown crosses the 32-bit millis rollover.
  tick=UINT32_MAX-1000;b.slots[0].nextConnectAt=tick;b.loop();assert(b.connectPending);
- nextResult={nullptr,nullptr};resultReady=true;b.loop();b.slots[1].address="";
+ nextResult={nullptr,nullptr,nullptr};resultReady=true;b.loop();b.slots[1].address="";
  int before=requests;tick=28998;b.loop();assert(requests==before);
  tick=28999;b.loop();assert(requests==before+1);
  std::cout<<"PASS: asynchronous BLE handoff, failed-device cooldown, cancellation, fairness, and rollover\n";
