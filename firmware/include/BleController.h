@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "Types.h"
-// ANDERSON_BLE_DIAGNOSTICS_V1
+// ANDERSON_BLE_DIAGNOSTICS_V2
 #ifndef MOCK_BLE
 #include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
@@ -26,7 +26,10 @@ struct BleSlotDiagnostics {
   bool lastWriteOk=false;
   bool lastWriteAcknowledged=false;
   bool lastWriteQueued=false;
-  bool responseParsed=false;
+  bool responseParsed=false; // legacy aggregate: last RX was a recognized light-state frame
+  bool notificationParsed=false;
+  bool notificationAfterCommand=false;
+  bool readbackParsed=false;
   bool requestedPowerKnown=false;
   bool requestedPower=false;
   bool requestedColorKnown=false;
@@ -37,12 +40,18 @@ struct BleSlotDiagnostics {
   bool colorConfirmed=false;
   bool brightnessConfirmed=false;
   uint32_t lastWriteAt=0;
-  uint32_t lastResponseAt=0;
+  uint32_t lastResponseAt=0; // legacy aggregate: latest notification or manual readback
+  uint32_t lastNotificationAt=0;
+  uint32_t lastReadbackAt=0;
   String writeCharacteristic;
   String responseCharacteristic;
   String lastCommand;
   String lastTxHex;
-  String lastRxHex;
+  String lastRxHex; // legacy aggregate: latest notification or manual readback
+  String lastNotificationHex;
+  String lastReadbackHex;
+  String notificationKind;
+  String readbackKind;
 };
 
 class BleController {
@@ -101,7 +110,7 @@ class BleController {
   static void notifyCallback(NimBLERemoteCharacteristic* chr,uint8_t* data,size_t length,bool isNotify);
   bool requestConnection(uint8_t slot);
   void updateCharacteristicDiagnostics(uint8_t slot);
-  void recordResponse(NimBLERemoteCharacteristic* chr,const uint8_t* data,size_t len);
+  void recordResponse(NimBLERemoteCharacteristic* chr,const uint8_t* data,size_t len,bool notification);
   void refreshReadback(uint8_t slot);
 #endif
   void disconnectSlot(uint8_t slot);
