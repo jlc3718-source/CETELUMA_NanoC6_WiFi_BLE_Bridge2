@@ -17,7 +17,7 @@ jobs:
   publish:
     if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'codex/release-')
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -33,6 +33,7 @@ jobs:
           VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$ ]]
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "OTA_URL=https://github.com/${GITHUB_REPOSITORY}/releases/download/anderson-v$VERSION/and_$VERSION.bin" >> "$GITHUB_ENV"
           git fetch origin main --quiet
           git merge-base --is-ancestor origin/main "$HEAD_SHA"
       - name: Download exact successful build artifact
@@ -44,14 +45,35 @@ jobs:
           import hashlib,json,os
           root=Path('release-work'); version=os.environ['VERSION']; head=os.environ['HEAD_SHA']
           manifest=json.loads((root/'release.json').read_text())
-          name=f'and_{version}.bin'; data=(root/name).read_bytes()
+          name=f'and_{version}.bin'; data=(root/name).read_bytes(); digest=hashlib.sha256(data).hexdigest()
           assert manifest['version']==version
           assert manifest['commit']==head
           assert manifest['ota_slot_bytes']==0x1E0000
           assert data and data[0]==0xE9 and len(data)<0x1E0000
           assert manifest['files'][name]['bytes']==len(data)
-          assert manifest['files'][name]['sha256']==hashlib.sha256(data).hexdigest()
+          assert manifest['files'][name]['sha256']==digest
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write(f'OTA_BYTES={len(data)}\nOTA_SHA256={digest}\n')
           PY
+      - name: Wait for exact signed OTA manifest
+        run: |
+          mkdir -p publish-input
+          for attempt in $(seq 1 120); do
+            encoded="$(gh api "/repos/$GITHUB_REPOSITORY/contents/remote-update/pending/$VERSION.json?ref=ota" --jq '.content' 2>/dev/null || true)"
+            if [ -n "$encoded" ]; then
+              printf '%s' "$encoded" | tr -d '\n' | base64 --decode > publish-input/latest.json
+              break
+            fi
+            sleep 5
+          done
+          test -s publish-input/latest.json
+          python tools/verify_ota_manifest.py \
+            --manifest publish-input/latest.json \
+            --version "$VERSION" \
+            --bytes "$OTA_BYTES" \
+            --sha256 "$OTA_SHA256" \
+            --commit "$HEAD_SHA" \
+            --url "$OTA_URL"
       - name: Publish or verify stable release
         run: |
           TAG="anderson-v$VERSION"
@@ -64,6 +86,22 @@ jobs:
           gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --dir public-check
           cmp "release-work/and_$VERSION.bin" "public-check/and_$VERSION.bin"
           cmp release-work/release.json public-check/release.json
+      - name: Promote the preverified OTA manifest
+        run: |
+          git fetch origin ota --quiet
+          rm -rf ../anderson-ota
+          git worktree add -B ota-release ../anderson-ota origin/ota
+          mkdir -p ../anderson-ota/remote-update/pending
+          cp publish-input/latest.json ../anderson-ota/remote-update/latest.json
+          rm -f "../anderson-ota/remote-update/pending/$VERSION.json"
+          cd ../anderson-ota
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add remote-update/latest.json remote-update/pending
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish signed Anderson Home v$VERSION OTA manifest"
+            git push origin HEAD:refs/heads/ota
+          fi
       - name: Fast-forward production main
         run: |
           git fetch origin main --quiet
