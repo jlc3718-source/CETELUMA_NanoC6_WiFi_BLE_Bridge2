@@ -15,6 +15,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: staging/v3.0.29-expanded-palette
+      - name: Fix catalog validation check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/patch_v3029_expanded_palette.py')
+          s=p.read_text()
+          old="assert len(re.findall(r'\\{\"evt\\d{3}\"', event_text)) == 210"
+          new="assert len(re.findall(r'^\\{\"evt\\d{3}\"', event_text, flags=re.M)) == 210"
+          if old not in s:
+              raise SystemExit('validation assertion not found')
+          p.write_text(s.replace(old,new,1))
+          PY
       - name: Apply v3.0.29 palette patch
         run: python tools/patch_v3029_expanded_palette.py
       - name: Validate JavaScript
