@@ -1,0 +1,96 @@
+name: Patch Anderson Home v3.0.26 UI
+on:
+  push:
+    branches: [codex/v3.0.26-favorites-search-ui]
+    paths: ['.github/workflows/patch-v3.0.26-ui.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply v3.0.26 UI changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def once(s, old, new, label):
+              if old not in s:
+                  raise SystemExit('missing marker: '+label)
+              return s.replace(old,new,1)
+
+          p=Path('firmware/web/index.html'); s=p.read_text()
+          s=once(s,'.nav{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:12px}', '.nav{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:12px}', 'base nav columns')
+          s=once(s,'body[data-profile="shirley"] .nav{grid-template-columns:repeat(2,1fr)}', 'body[data-profile="shirley"] .nav{grid-template-columns:repeat(3,1fr)}', 'shirley nav columns')
+          s=once(s,"const limited=profile!=='jason'||(role&&role!=='admin'),name=profile==='shirley'?'Shirley':'Jason',allowed=limited?['home','events']:['home','lights','events','wifi','settings'];", "const limited=profile!=='jason'||(role&&role!=='admin'),name=profile==='shirley'?'Shirley':'Jason',allowed=limited?['home','events','favorites']:['home','lights','events','favorites','wifi','settings'];", 'profile access')
+          s=once(s,'    <button class="tab" data-tab="events">Events</button>\n    <button class="tab" data-tab="wifi">Wi-Fi</button>', '    <button class="tab" data-tab="events">Schedules</button>\n    <button class="tab" data-tab="favorites">Favorites</button>\n    <button class="tab" data-tab="wifi">Wi-Fi</button>', 'favorites nav tab')
+
+          old_home='''    <div class="panel"><strong>Scene Favorites</strong><div class="sub">The approved built-in event scenes appear here in their fixed Home order; any custom scene favorites follow them.</div><div id="favoriteGrid" class="favoriteGrid"></div></div>\n    <div class="card"><strong class="small">Next scheduled event</strong><div id="nextEvent" class="sub" style="margin-top:4px">Loading…</div></div>\n    <div class="panel"><strong>My Custom Events</strong><div class="sub">Saved custom lighting shows. Preview one immediately, mark it as a Home favorite, or disable its automatic calendar runs.</div><div id="homeCustomLightList" class="presetList"><div class="sub">Loading custom events…</div></div></div>\n  </section>'''
+          new_home='''    <div class="card"><strong class="small">Next scheduled event</strong><div id="nextEvent" class="sub" style="margin-top:4px">Loading…</div></div>\n  </section>\n\n  <section class="page" data-page="favorites">\n    <div class="panel"><strong>Scene Favorites</strong><div class="sub">Your approved built-in favorite scenes. Tap one to run it immediately.</div><div id="favoriteGrid" class="favoriteGrid"></div></div>\n    <div class="panel"><strong>Custom Shows</strong><div class="sub">Saved custom lighting shows. Preview one immediately, mark it as a favorite, or enable/disable its automatic runs.</div><div id="homeCustomLightList" class="presetList"><div class="sub">Loading custom shows…</div></div></div>\n  </section>'''
+          s=once(s,old_home,new_home,'move favorites from home')
+
+          toggle_line='''      <div class="grid2" style="margin-top:10px"><label class="card row between" style="cursor:pointer"><span><strong>Schedule 1</strong><br><span class="sub">Normal evening schedule</span></span><input id="eventsSchedule1Toggle" type="checkbox" checked aria-label="Enable Schedule 1 from Schedules page"></label><label class="card row between" style="cursor:pointer"><span><strong>Schedule 2</strong><br><span class="sub">30% from Schedule 1 end until dawn</span></span><input id="eventsSchedule2Toggle" type="checkbox" checked aria-label="Enable Schedule 2 from Schedules page"></label></div>'''
+          search_ui='''\n      <div class="row" style="margin-top:10px"><input id="eventSearch" class="field" type="search" autocomplete="off" placeholder="Search all holidays & events" aria-label="Search all holidays and events"><button id="clearEventSearch" class="btn" type="button">Clear</button></div>\n      <div class="sub" style="margin-top:6px">Searches the full 210-event calendar for the selected year.</div>'''
+          s=once(s,toggle_line,toggle_line+search_ui,'holiday search UI')
+
+          listener_old="$('monthSelect').addEventListener('change',()=>{loadEvents();loadCustomSchedules()});$('yearSelect').addEventListener('change',()=>{loadEvents();loadCustomSchedules()});"
+          listener_new="$('monthSelect').addEventListener('change',()=>{loadEvents();loadCustomSchedules()});$('yearSelect').addEventListener('change',()=>{loadEvents();loadCustomSchedules()});let eventSearchTimer=null,eventSearchSeq=0;$('eventSearch').addEventListener('input',()=>{clearTimeout(eventSearchTimer);eventSearchTimer=setTimeout(loadEvents,180)});$('clearEventSearch').addEventListener('click',()=>{$('eventSearch').value='';eventSearchSeq++;loadEvents();$('eventSearch').focus()});"
+          s=once(s,listener_old,listener_new,'search listeners')
+
+          load_old="async function loadEvents(){let data;try{data=await api(`/api/events?year=${$('yearSelect').value}&month=${$('monthSelect').value}`)}catch(e){$('overlapInfo').textContent='Unable to load events. Reconnect and try again.';return}renderEvents(data.events||[]);$('overlapInfo').textContent=data.overlap||'No overlapping month-long events.'}"
+          load_new="""async function loadEvents(){const query=($('eventSearch')?.value||'').trim().toLowerCase();if(query)return searchAllEvents(query);let data;try{data=await api(`/api/events?year=${$('yearSelect').value}&month=${$('monthSelect').value}`)}catch(e){$('overlapInfo').textContent='Unable to load events. Reconnect and try again.';return}renderEvents(data.events||[]);$('overlapInfo').textContent=data.overlap||'No overlapping month-long events.'}\nasync function searchAllEvents(query){const seq=++eventSearchSeq,year=$('yearSelect').value;$('overlapInfo').textContent='Searching the full calendar…';try{const months=await Promise.all(Array.from({length:12},(_,i)=>api(`/api/events?year=${year}&month=${i+1}`)));if(seq!==eventSearchSeq)return;const seen=new Set(),matches=[];months.forEach(data=>(data.events||[]).forEach(ev=>{if(seen.has(ev.id))return;seen.add(ev.id);const hay=`${ev.name||''} ${ev.when||''} ${ev.kind||''}`.toLowerCase();if(hay.includes(query))matches.push(ev)}));renderEvents(matches);$('overlapInfo').textContent=matches.length?`${matches.length} result${matches.length===1?'':'s'} for “${$('eventSearch').value.trim()}” across ${year}. Clear search to return to the selected month.`:`No holiday or event matches “${$('eventSearch').value.trim()}” in ${year}.`;}catch(e){if(seq!==eventSearchSeq)return;$('overlapInfo').textContent='Unable to search the calendar. Reconnect and try again.';}}"""
+          s=once(s,load_old,load_new,'calendar search logic')
+
+          s=once(s,"grid.innerHTML='<div class=\"emptyFav\" style=\"grid-column:1/-1\">No favorites selected. Use a Favorites checkbox below or on the Events tab.</div>';", "grid.innerHTML='<div class=\"emptyFav\" style=\"grid-column:1/-1\">No favorite scenes selected. Use a Favorites checkbox on the Schedules tab.</div>';", 'favorite empty text')
+
+          old_extra="""function ensureExtraControls(){\n  const hb=$('homeBrightness');if(hb&&!$('homeSpeed')){const wrap=document.createElement('div');wrap.id='homeSpeedBlock';wrap.innerHTML='<div class=\"label\">Effect Speed <span id=\"homeSpeedVal\" class=\"muted\">Very Slow</span></div><input id=\"homeSpeed\" type=\"range\" min=\"1\" max=\"5\" value=\"1\"><div class=\"label\">Favorite Colors</div><div id=\"homeFavoriteColorGrid\" class=\"savedColorGrid\"></div>';($('homeEffectHelp')||$('homeEffect')||hb).insertAdjacentElement('afterend',wrap);syncSpeedControls(speed);bindSpeedControl('homeSpeed');renderHomeFavoriteGrid()}\n  const list=$('eventList');if(list&&!$('eventsSpeed')){const wrap=document.createElement('div');wrap.id='eventsSpeedBlock';wrap.className='card';wrap.style.marginTop='10px';wrap.innerHTML='<div class=\"label\" style=\"margin-top:0\">Event Preview Speed <span id=\"eventsSpeedVal\" class=\"muted\">Very Slow</span></div><input id=\"eventsSpeed\" type=\"range\" min=\"1\" max=\"5\" value=\"1\"><div class=\"sub\">This changes preview speed immediately. Each event can also save its own speed with Edit.</div>';list.parentNode.insertBefore(wrap,list);syncSpeedControls(speed);bindSpeedControl('eventsSpeed')}\n}"""
+          new_extra="""function ensureExtraControls(){\n  const list=$('eventList');if(list&&!$('eventsSpeed')){const wrap=document.createElement('div');wrap.id='eventsSpeedBlock';wrap.className='card';wrap.style.marginTop='10px';wrap.innerHTML='<div class=\"label\" style=\"margin-top:0\">Event Preview Speed <span id=\"eventsSpeedVal\" class=\"muted\">Very Slow</span></div><input id=\"eventsSpeed\" type=\"range\" min=\"1\" max=\"5\" value=\"1\"><div class=\"sub\">This changes preview speed immediately. Each event can also save its own speed with Edit.</div>';list.parentNode.insertBefore(wrap,list);syncSpeedControls(speed);bindSpeedControl('eventsSpeed')}\n}"""
+          s=once(s,old_extra,new_extra,'remove home speed and favorite colors')
+          p.write_text(s)
+
+          p=Path('firmware/web/v3_mockup.js'); s=p.read_text()
+          s=once(s,"const defs = {home:['home','Home'], lights:['effects','Effects'], events:['clock','Schedules'], wifi:['wifi','Wi-Fi'], settings:['settings','Settings']};", "const defs = {home:['home','Home'], lights:['effects','Effects'], events:['clock','Schedules'], favorites:['heart','Favorites'], wifi:['wifi','Wi-Fi'], settings:['settings','Settings']};", 'v3 favorites nav')
+          s=once(s,"const titles = {lights:['Make it yours','Effects & colors'],events:['Every occasion, illuminated','Your schedules'],settings:['Your home, your way','Settings'],wifi:['Keep your home connected','Wi-Fi']};", "const titles = {lights:['Make it yours','Effects & colors'],events:['Every occasion, illuminated','Your schedules'],favorites:['Saved just for you','Favorites'],settings:['Your home, your way','Settings'],wifi:['Keep your home connected','Wi-Fi']};", 'v3 favorites title')
+          s,n=re.subn(r"\n    const favorites=el\('div','v3Favorites'\), grid=byId\('homeFavoriteColorGrid'\);.*?panel\.appendChild\(favorites\);",'',s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('missing marker: v3 home favorite colors block')
+          s,n=re.subn(r"\n    const speed=byId\('homeSpeedBlock'\), speedLabel=q\('\.label',speed\);.*?byId\('homeSpeed'\)\.setAttribute\('aria-label','Animation speed'\);",'',s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('missing marker: v3 animation speed details')
+          s,n=re.subn(r"\n    function colorsChanged\(\) \{.*?new MutationObserver\(colorsChanged\)\.observe\(grid,\{childList:true\}\); colorsChanged\(\);",'',s,count=1,flags=re.S)
+          if n!=1: raise SystemExit('missing marker: v3 home colors observer')
+          p.write_text(s)
+
+          p=Path('firmware/web/v3_mockup.css'); s=p.read_text()
+          s=once(s,'width:min(440px,calc(100% - 46px));','width:min(520px,calc(100% - 32px));','bottom nav width')
+          s=once(s,'body[data-profile=shirley] .v3BottomNav{width:min(290px,calc(100% - 80px))}','body[data-profile=shirley] .v3BottomNav{width:min(360px,calc(100% - 48px))}','shirley bottom nav width')
+          s,n=re.subn(r"\n\.v3Speed\{.*?\.v3Speed summary::-webkit-details-marker\{display:none\}", '', s, count=1, flags=re.S)
+          if n!=1: raise SystemExit('missing marker: v3 speed css')
+          p.write_text(s)
+
+          p=Path('firmware/src/main.cpp'); s=p.read_text(); s=once(s,'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.25";','static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.26";','firmware version'); p.write_text(s)
+          Path('FIRMWARE_VERSION.txt').write_text('3.0.26\n')
+          Path('firmware/RELEASE_NOTES_v3.0.26.md').write_text('''# Anderson Home v3.0.26\n\n- Adds full-calendar holiday/event search on the Schedules page across all 210 built-in events for the selected year.\n- Adds a dedicated Favorites tab in the bottom navigation for both Jason and Shirley.\n- Moves Scene Favorites and Custom Shows from Home into the new Favorites tab.\n- Removes the Favorite Colors display from Home while keeping the locked master palette available in Effects, event editing, and the RGB picker.\n- Removes the expandable Home Animation Speed mini-menu; speed control remains available in Effects and event editing.\n- Preserves Shirley's existing restricted-access model while adding Home, Schedules, and Favorites access.\n- Preserves Schedule 1/2, event persistence, storage-health optimization, Wi-Fi/BLE/PINs, custom lights/schedules, partitions, and signed OTA trust.\n''')
+          PY
+      - name: Validate UI source
+        shell: bash
+        run: |
+          grep -q 'data-tab="favorites"' firmware/web/index.html
+          grep -q 'data-page="favorites"' firmware/web/index.html
+          grep -q 'id="eventSearch"' firmware/web/index.html
+          grep -q 'async function searchAllEvents' firmware/web/index.html
+          grep -q "allowed=limited?\['home','events','favorites'\]" firmware/web/index.html
+          ! grep -q 'id="homeFavoriteColorGrid"' firmware/web/index.html
+          ! grep -q 'id="homeSpeedBlock"' firmware/web/index.html
+          grep -q "favorites:\['heart','Favorites'\]" firmware/web/v3_mockup.js
+          grep -q '^3.0.26$' FIRMWARE_VERSION.txt
+          grep -q 'ANDERSON_FIRMWARE_VERSION="3.0.26"' firmware/src/main.cpp
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add firmware/web/index.html firmware/web/v3_mockup.js firmware/web/v3_mockup.css firmware/src/main.cpp FIRMWARE_VERSION.txt firmware/RELEASE_NOTES_v3.0.26.md
+          git commit -m 'Add Favorites tab and calendar search for v3.0.26'
+          git push origin HEAD:codex/v3.0.26-favorites-search-ui
