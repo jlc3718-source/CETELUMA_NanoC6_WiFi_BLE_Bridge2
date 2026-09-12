@@ -20,6 +20,7 @@ jobs:
           p=Path('tools/v310_apply_audit_fixes.py');s=p.read_text()
           s=s.replace("js=helper+r'''\\nconst assert=", 'js=helper+"""\nconst assert=', 1)
           s=s.replace("process.exitCode=1});\\n'''\nsubprocess.run", 'process.exitCode=1});\n"""\nsubprocess.run', 1)
+          s=s.replace("assert 'actions/runs/$BUILD_RUN_ID' in pub and 'head_repository.full_name' in pub","assert 'actions/runs/$BUILD_RUN_ID' in pub and 'head_repository' in pub and 'full_name' in pub",1)
           lines=s.splitlines()
           for i,line in enumerate(lines):
               if line.startswith('start=html.index("let otaBeforePartition'):
