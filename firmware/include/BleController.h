@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "Types.h"
+// ANDERSON_BLE_DIAGNOSTICS_V1
 #ifndef MOCK_BLE
 #include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
