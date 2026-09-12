@@ -1,0 +1,38 @@
+name: Repair Anderson Six-Color Web Palette
+
+on:
+  push:
+    branches:
+      - 'codex/anderson-six-color-baseline'
+    paths:
+      - '.github/scripts/repair_six_color_web.py'
+      - '.github/workflows/repair-six-color-web.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build validation dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Repair exact palette block and favorite canonicalization
+        run: python .github/scripts/repair_six_color_web.py
+      - name: Validate release rendering and JavaScript
+        run: python tools/release.py prepare
+      - name: Commit repaired canonical sources
+        run: |
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add firmware/web/index.html firmware/src/main.cpp
+          git commit -m 'Repair six-color palette UI and canonical favorites'
+          git push origin HEAD:codex/anderson-six-color-baseline
