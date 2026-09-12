@@ -13,6 +13,29 @@ static String bytesHex(const uint8_t* data,size_t len){
   for(size_t i=0;i<len;i++){if(i)out+=' ';out+=h[data[i]>>4];out+=h[data[i]&0x0F];}return out;
 }
 static String rgbHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsigned long)(c&0xFFFFFF));return String(b);}
+static String classifyResponse(BleSlotDiagnostics& d,const uint8_t* data,size_t len){
+  if(!data||!len)return "empty response";
+  if(len>=6&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x04){
+    bool on=data[3]==0xF0||data[5]==0x01;
+    if(d.requestedPowerKnown){bool match=on==d.requestedPower;d.powerConfirmed=match;if(d.lastCommandType=="power")d.lastCommandStateConfirmed=match;}
+    return "power state frame";
+  }
+  if(len>=7&&data[0]==0x7E&&data[1]==0x07&&data[2]==0x05&&data[3]==0x03){
+    uint32_t c=((uint32_t)data[4]<<16)|((uint32_t)data[5]<<8)|data[6];
+    if(d.requestedColorKnown){bool match=c==d.requestedColor;d.colorConfirmed=match;if(d.lastCommandType=="color")d.lastCommandStateConfirmed=match;}
+    return "color state frame";
+  }
+  if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01){
+    if(d.requestedBrightnessKnown){bool match=data[3]==d.requestedBrightness;d.brightnessConfirmed=match;if(d.lastCommandType=="brightness")d.lastCommandStateConfirmed=match;}
+    return "brightness state frame";
+  }
+  if(len>=3&&data[0]==0x7E&&data[2]==0x82)return "timer/schedule frame";
+  if(len>=3&&data[0]=='T'&&data[1]=='Y'&&data[2]=='-')return "device/info text";
+  bool printable=true,hasText=false;
+  for(size_t i=0;i<len;i++){if(data[i]==0)continue;hasText=true;if(data[i]<0x20||data[i]>0x7E){printable=false;break;}}
+  if(printable&&hasText)return "text/info response";
+  return "raw/unrecognized frame";
+}
 
 #ifndef MOCK_BLE
 BleController* BleController::callbackOwner=nullptr;
@@ -115,16 +138,16 @@ bool BleController::requestConnection(uint8_t i){
 }
 
 void BleController::notifyCallback(NimBLERemoteCharacteristic* chr,uint8_t* data,size_t length,bool){
-  if(callbackOwner)callbackOwner->recordResponse(chr,data,length);
+  if(callbackOwner)callbackOwner->recordResponse(chr,data,length,true);
 }
 
-void BleController::recordResponse(NimBLERemoteCharacteristic* chr,const uint8_t* data,size_t len){
+void BleController::recordResponse(NimBLERemoteCharacteristic* chr,const uint8_t* data,size_t len,bool notification){
   if(!data||!len)return;
   for(uint8_t i=0;i<2;i++){
-    auto&s=slots[i];if(chr!=s.rx&&chr!=s.chr)continue;auto&d=s.diag;d.lastRxHex=bytesHex(data,len);d.lastResponseAt=millis();d.responseParsed=false;
-    if(len>=6&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x04){d.responseParsed=true;bool on=data[3]==0xF0||data[5]==0x01;if(d.requestedPowerKnown)d.powerConfirmed=on==d.requestedPower;}
-    else if(len>=7&&data[0]==0x7E&&data[1]==0x07&&data[2]==0x05&&data[3]==0x03){d.responseParsed=true;uint32_t c=((uint32_t)data[4]<<16)|((uint32_t)data[5]<<8)|data[6];if(d.requestedColorKnown)d.colorConfirmed=c==d.requestedColor;}
-    else if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01){d.responseParsed=true;if(d.requestedBrightnessKnown)d.brightnessConfirmed=data[3]==d.requestedBrightness;}
+    auto&s=slots[i];if(chr!=s.rx&&chr!=s.chr)continue;auto&d=s.diag;uint32_t now=millis();String hex=bytesHex(data,len);String kind=classifyResponse(d,data,len);bool parsed=kind.endsWith("state frame");
+    if(notification){d.lastNotificationHex=hex;d.lastNotificationAt=now;d.notificationKind=kind;d.notificationParsed=parsed;d.notificationAfterCommand=d.lastWriteAt&&((uint32_t)(now-d.lastWriteAt)<=1500UL);}
+    else{d.lastReadbackHex=hex;d.lastReadbackAt=now;d.readbackKind=kind;d.readbackParsed=parsed;}
+    d.lastRxHex=hex;d.lastResponseAt=now;d.responseParsed=parsed;
     break;
   }
 }
@@ -139,7 +162,7 @@ void BleController::updateCharacteristicDiagnostics(uint8_t i){
 
 void BleController::refreshReadback(uint8_t i){
   if(i>1||!slotConnected(i))return;auto&r=slots[i].rx?slots[i].rx:slots[i].chr;if(!r||!r->canRead())return;
-  NimBLEAttValue value=r->readValue();if(value.size())recordResponse(r,value.data(),value.size());
+  NimBLEAttValue value=r->readValue();if(value.size())recordResponse(r,value.data(),value.size(),false);
 }
 #endif
 
@@ -175,17 +198,13 @@ bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSl
 
 bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i))return false;
   const uint32_t elapsed=(uint32_t)(millis()-lastWrite);if(elapsed<18UL)delay(18UL-elapsed);lastWrite=millis();
-  auto&d=slots[i].diag;d.connected=true;d.lastWriteAt=millis();d.lastTxHex=bytesHex(data,len);d.lastWriteOk=false;d.lastWriteAcknowledged=false;d.lastWriteQueued=false;
-  if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x04){d.lastCommand=data[3]==0xF0?"Power ON":"Power OFF";d.requestedPowerKnown=true;d.requestedPower=data[3]==0xF0;d.powerConfirmed=false;}
-  else if(len>=7&&data[0]==0x7E&&data[1]==0x07&&data[2]==0x05&&data[3]==0x03){d.requestedColorKnown=true;d.requestedColor=((uint32_t)data[4]<<16)|((uint32_t)data[5]<<8)|data[6];d.colorConfirmed=false;d.lastCommand=String("Color ")+rgbHex(d.requestedColor);}
-  else if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01){d.requestedBrightnessKnown=true;d.requestedBrightness=data[3];d.brightnessConfirmed=false;d.lastCommand=String("Brightness ")+String(data[3])+"%";}
-  else d.lastCommand="BLE frame";
+  auto&d=slots[i].diag;d.connected=true;d.lastWriteAt=millis();d.lastTxHex=bytesHex(data,len);d.lastWriteOk=false;d.lastWriteAcknowledged=false;d.lastWriteQueued=false;d.notificationAfterCommand=false;d.lastCommandStateConfirmed=false;
+  if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x04){d.lastCommandType="power";d.lastCommand=data[3]==0xF0?"Power ON":"Power OFF";d.requestedPowerKnown=true;d.requestedPower=data[3]==0xF0;d.powerConfirmed=false;}
+  else if(len>=7&&data[0]==0x7E&&data[1]==0x07&&data[2]==0x05&&data[3]==0x03){d.lastCommandType="color";d.requestedColorKnown=true;d.requestedColor=((uint32_t)data[4]<<16)|((uint32_t)data[5]<<8)|data[6];d.colorConfirmed=false;d.lastCommand=String("Color ")+rgbHex(d.requestedColor);}
+  else if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01){d.lastCommandType="brightness";d.requestedBrightnessKnown=true;d.requestedBrightness=data[3];d.brightnessConfirmed=false;d.lastCommand=String("Brightness ")+String(data[3])+"%";}
+  else{d.lastCommandType="frame";d.lastCommand="BLE frame";}
 #ifdef MOCK_BLE
-  d.writeWithResponse=true;d.lastWriteOk=true;d.lastWriteAcknowledged=true;d.lastRxHex=d.lastTxHex;d.lastResponseAt=millis();d.responseParsed=true;
-  if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x04)d.powerConfirmed=true;
-  else if(len>=7&&data[0]==0x7E&&data[1]==0x07&&data[2]==0x05&&data[3]==0x03)d.colorConfirmed=true;
-  else if(len>=4&&data[0]==0x7E&&data[1]==0x04&&data[2]==0x01)d.brightnessConfirmed=true;
-  return true;
+  d.writeWithResponse=true;d.lastWriteOk=true;d.lastWriteAcknowledged=true;String kind=classifyResponse(d,data,len);bool parsed=kind.endsWith("state frame");uint32_t now=millis();d.lastNotificationHex=d.lastTxHex;d.lastNotificationAt=now;d.notificationKind=kind;d.notificationParsed=parsed;d.notificationAfterCommand=true;d.lastReadbackHex=d.lastTxHex;d.lastReadbackAt=now;d.readbackKind=kind;d.readbackParsed=parsed;d.lastRxHex=d.lastTxHex;d.lastResponseAt=now;d.responseParsed=parsed;return true;
 #else
   updateCharacteristicDiagnostics(i);const bool requestAck=slots[i].chr&&slots[i].chr->canWrite();bool ok=slots[i].chr->writeValue(data,len,requestAck);d.lastWriteOk=ok;d.lastWriteAcknowledged=ok&&requestAck;d.lastWriteQueued=ok&&!requestAck;return ok;
 #endif
@@ -201,12 +220,26 @@ BleSlotDiagnostics BleController::slotDiagnostics(uint8_t i,bool refresh){BleSlo
 }
 
 String BleController::diagnosticsJson(bool refresh){
-  JsonDocument doc;doc["protocol"]="ELK-BLEDDM / Lotus Lantern";doc["target"]=target;doc["connectedCount"]=connectedCount();JsonArray arr=doc["controllers"].to<JsonArray>();uint32_t now=millis();
-  for(uint8_t i=0;i<2;i++){auto si=slotInfo(i);auto d=slotDiagnostics(i,refresh);JsonObject o=arr.add<JsonObject>();o["slot"]=i;o["label"]=i==0?"Controller A":"Controller B";o["name"]=si.name;o["address"]=si.address;o["connected"]=si.connected;
+  JsonDocument doc;doc["protocol"]="ELK-BLEDDM / Lotus Lantern";doc["target"]=target;doc["connectedCount"]=connectedCount();JsonArray arr=doc["controllers"].to<JsonArray>();
+  for(uint8_t i=0;i<2;i++){
+    auto si=slotInfo(i);auto d=slotDiagnostics(i,refresh);uint32_t now=millis();auto age=[now](uint32_t at)->uint32_t{return at?(uint32_t)(now-at):0;};
+    JsonObject o=arr.add<JsonObject>();o["slot"]=i;o["label"]=i==0?"Controller A":"Controller B";o["name"]=si.name;o["address"]=si.address;o["connected"]=si.connected;
     o["writeCharacteristic"]=d.writeCharacteristic;o["responseCharacteristic"]=d.responseCharacteristic;o["writeWithResponseSupported"]=d.writeWithResponse;o["writeWithoutResponseSupported"]=d.writeWithoutResponse;o["writeReadSupported"]=d.writeReadSupported;o["writeNotifySupported"]=d.writeNotifySupported;o["writeIndicateSupported"]=d.writeIndicateSupported;o["responseReadSupported"]=d.responseReadSupported;o["responseNotifySupported"]=d.responseNotifySupported;o["responseIndicateSupported"]=d.responseIndicateSupported;o["responseSubscribed"]=d.responseSubscribed;
-    o["lastCommand"]=d.lastCommand;o["lastTxHex"]=d.lastTxHex;o["lastRxHex"]=d.lastRxHex;o["lastWriteOk"]=d.lastWriteOk;o["lastWriteAcknowledged"]=d.lastWriteAcknowledged;o["lastWriteQueued"]=d.lastWriteQueued;o["responseParsed"]=d.responseParsed;o["powerConfirmed"]=d.powerConfirmed;o["colorConfirmed"]=d.colorConfirmed;o["brightnessConfirmed"]=d.brightnessConfirmed;o["lastWriteAgeMs"]=d.lastWriteAt?(uint32_t)(now-d.lastWriteAt):0;o["lastResponseAgeMs"]=d.lastResponseAt?(uint32_t)(now-d.lastResponseAt):0;
+    o["lastCommand"]=d.lastCommand;o["lastCommandType"]=d.lastCommandType;o["lastCommandStateConfirmed"]=d.lastCommandStateConfirmed;o["lastTxHex"]=d.lastTxHex;o["lastWriteOk"]=d.lastWriteOk;o["lastWriteAcknowledged"]=d.lastWriteAcknowledged;o["lastWriteQueued"]=d.lastWriteQueued;o["lastWriteAgeMs"]=age(d.lastWriteAt);
+    o["lastNotificationHex"]=d.lastNotificationHex;o["notificationKind"]=d.notificationKind;o["notificationParsed"]=d.notificationParsed;o["notificationAfterCommand"]=d.notificationAfterCommand;o["lastNotificationAgeMs"]=age(d.lastNotificationAt);
+    o["lastReadbackHex"]=d.lastReadbackHex;o["readbackKind"]=d.readbackKind;o["readbackParsed"]=d.readbackParsed;o["lastReadbackAgeMs"]=age(d.lastReadbackAt);
+    // Legacy aggregate fields remain for older diagnostic clients, but the v2 UI never conflates them.
+    o["lastRxHex"]=d.lastRxHex;o["responseParsed"]=d.responseParsed;o["lastResponseAgeMs"]=age(d.lastResponseAt);
+    o["powerConfirmed"]=d.powerConfirmed;o["colorConfirmed"]=d.colorConfirmed;o["brightnessConfirmed"]=d.brightnessConfirmed;
     if(d.requestedPowerKnown)o["requestedPower"]=d.requestedPower;if(d.requestedColorKnown)o["requestedColor"]=rgbHex(d.requestedColor);if(d.requestedBrightnessKnown)o["requestedBrightness"]=d.requestedBrightness;
-    String status="Idle";if(!si.connected)status=si.address.length()?"Saved / reconnecting":"Not configured";else if(d.powerConfirmed||d.colorConfirmed||d.brightnessConfirmed)status="Controller state confirmed";else if(d.lastWriteAcknowledged)status="GATT write acknowledged; state unverified";else if(d.lastWriteQueued)status="Sent without response; state unverified";else if(d.lastWriteAt&&!d.lastWriteOk)status="Last write failed";o["status"]=status;
+    String status="Idle";
+    if(!si.connected)status=si.address.length()?"Saved / reconnecting":"Not configured";
+    else if(d.lastCommandStateConfirmed)status="Latest command state confirmed";
+    else if(d.lastWriteAcknowledged&&d.notificationAfterCommand)status="Write acknowledged; controller replied after command, state unverified";
+    else if(d.lastWriteAcknowledged)status="GATT write acknowledged; state unverified";
+    else if(d.lastWriteQueued)status="Sent without response; state unverified";
+    else if(d.lastWriteAt&&!d.lastWriteOk)status="Last write failed";
+    o["status"]=status;
   }
   String out;serializeJson(doc,out);return out;
 }
