@@ -1,0 +1,29 @@
+name: Patch v3.0.21 Scene Favorites
+
+on:
+  push:
+    branches:
+      - codex/v3.0.21-locked-favorites
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/v3.0.21-locked-favorites
+      - name: Apply final Scene Favorites patch
+        run: python .github/scripts/patch_scene_favorites_v3021.py
+      - name: Commit clean production source
+        run: |
+          rm -f .github/scripts/patch_scene_favorites_v3021.py
+          rm -f .github/workflows/patch-scene-favorites-v3021.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Set v3.0.21 Scene Favorites and fix 210-event favorites API"
+          git push
