@@ -73,7 +73,9 @@
     ['On','Off'].forEach(v => { const b=byId('homePower'+v); b.innerHTML=icon('power')+`<span>${v.toUpperCase()}</span>`; b.setAttribute('aria-label','Turn all lights '+v.toLowerCase()); });
     const bright = el('div','v3BrightnessBlock'), slider=byId('homeBrightness'), label=slider.previousElementSibling;
     label.firstElementChild.insertAdjacentHTML('afterbegin',icon('sun')); slider.setAttribute('aria-label','Home brightness');
-    bright.append(label,slider); panel.appendChild(bright);
+    bright.append(label,slider);
+    const speedBlock=el('div','v3HomeSpeedBlock','<div class="label">Effect Speed <span id="homeSpeedVal" class="muted">Normal</span></div><input id="homeSpeed" type="range" min="1" max="5" value="3" aria-label="Home effect speed">');
+    speedBlock.style.marginTop='12px'; bright.appendChild(speedBlock); panel.appendChild(bright); syncSpeedControls(speed); bindSpeedControl('homeSpeed');
     const effect=byId('homeEffect'), effectLabel=effect.previousElementSibling;
     if(effectLabel?.classList.contains('label')) effectLabel.remove(); effect.setAttribute('aria-label','Current effect');
     const features=el('div','v3FeatureGrid'), fx=el('div','v3EffectCard',`<div class="v3CardKicker">${icon('spark')}<span>Current Effect</span></div>`);

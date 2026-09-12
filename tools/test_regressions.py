@@ -38,6 +38,7 @@ assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
 assert 'Basic Scheme v 3.0.28' in web and 'v3.0.28 event palette' not in web
 assert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web
+assert 'id=\"homeSpeed\"' in mock and 'Effect Speed' in mock and "bindSpeedControl('homeSpeed')" in mock
 version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
 remote=t('firmware/src/RemoteUpdate.cpp')
 assert 'OTA_MANIFEST_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json"' in remote
