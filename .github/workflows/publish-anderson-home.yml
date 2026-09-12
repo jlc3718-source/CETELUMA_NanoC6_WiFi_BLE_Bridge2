@@ -113,12 +113,15 @@ jobs:
           rm -rf ../anderson-ota
           git worktree add -B ota-release ../anderson-ota origin/ota
           mkdir -p ../anderson-ota/remote-update/pending
+          # Keep the controller's legacy/root manifest path authoritative. Mirror the
+          # same bytes under remote-update/latest.json for tooling/inspection.
+          cp publish-input/latest.json ../anderson-ota/latest.json
           cp publish-input/latest.json ../anderson-ota/remote-update/latest.json
           rm -f "../anderson-ota/remote-update/pending/$VERSION.json"
           cd ../anderson-ota
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add remote-update/latest.json remote-update/pending
+          git add latest.json remote-update/latest.json remote-update/pending
           if ! git diff --cached --quiet; then
             git commit -m "Publish signed Anderson Home v$VERSION OTA manifest"
             git push origin HEAD:refs/heads/ota
