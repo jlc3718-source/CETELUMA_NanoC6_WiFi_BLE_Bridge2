@@ -43,7 +43,7 @@
   function navigation() {
     const nav = q('.nav');
     nav.className = 'nav v3BottomNav'; nav.setAttribute('role', 'navigation'); nav.setAttribute('aria-label', 'Primary navigation');
-    const defs = {home:['home','Home'], lights:['effects','Effects'], events:['clock','Schedules'], wifi:['wifi','Wi-Fi'], settings:['settings','Settings']};
+    const defs = {home:['home','Home'], lights:['effects','Effects'], events:['clock','Schedules'], favorites:['heart','Favorites'], wifi:['wifi','Wi-Fi'], settings:['settings','Settings']};
     qa('.tab', nav).forEach(tab => {
       const [symbol, label] = defs[tab.dataset.tab]; tab.innerHTML = icon(symbol) + `<span>${label}</span>`;
       tab.addEventListener('click', syncPage);
@@ -58,7 +58,7 @@
     q('.page[data-page="settings"]').prepend(wifi);
     byId('bleStatus').closest('.panel').id = 'v3Controllers';
     qa('.page:not([data-page="home"])').forEach(page => {
-      const titles = {lights:['Make it yours','Effects & colors'],events:['Every occasion, illuminated','Your schedules'],settings:['Your home, your way','Settings'],wifi:['Keep your home connected','Wi-Fi']};
+      const titles = {lights:['Make it yours','Effects & colors'],events:['Every occasion, illuminated','Your schedules'],favorites:['Saved just for you','Favorites'],settings:['Your home, your way','Settings'],wifi:['Keep your home connected','Wi-Fi']};
       const [sub,title] = titles[page.dataset.page]; page.prepend(el('div','v3PageTitle',`<span>${sub}</span><h2>${title}</h2>`));
     });
   }
@@ -88,32 +88,10 @@
     live.append(q('.housePreview',oldRunning),el('div','v3LiveCaption','<span id="v3LiveEffect">Current lights</span>'));
     features.append(fx,live);panel.append(features,schedule);
     oldRunning.remove();
-    const favorites=el('div','v3Favorites'), grid=byId('homeFavoriteColorGrid'); grid.previousElementSibling.remove();
-    const heading=el('div','v3FavoriteHeading',`<span>${icon('heart')}<strong id="v3ColorHeading">Favorite Colors</strong></span>`);
-    const edit=el('button','v3TextButton',`Edit ${icon('arrow')}`); edit.type='button';edit.setAttribute('aria-label','Edit favorite colors');
-    const openColors=()=> { const chip=el('button',''); chip.dataset.color='#0D00FF'; openRgbWheel(chip); };
-    edit.addEventListener('click',openColors); heading.append(edit);
-    const paletteRow=el('div','v3PaletteRow'), plus=el('button','v3AddColor',icon('plus')); plus.type='button';plus.setAttribute('aria-label','Add a favorite color');plus.addEventListener('click',openColors);
-    paletteRow.append(grid,plus);favorites.append(heading,paletteRow);panel.appendChild(favorites);
-    const speed=byId('homeSpeedBlock'), speedLabel=q('.label',speed);
-    const detail=el('details','v3Speed'), summary=el('summary','',`<span>Animation speed</span>`);
-    summary.appendChild(byId('homeSpeedVal'));speedLabel.remove();detail.append(summary,speed);panel.appendChild(detail);
-    byId('homeSpeed').setAttribute('aria-label','Animation speed');
     panel.appendChild(el('div','v3HomeTiles'));
     const next=byId('nextEvent').closest('.card');next.classList.add('v3Next');next.prepend(el('span','v3NextIcon',icon('clock')));
     const favoritesPanel=byId('favoriteGrid').closest('.panel'); favoritesPanel.classList.add('v3SavedScenes');q('strong',favoritesPanel).textContent='Favorite scenes';
     const custom=byId('homeCustomLightList').closest('.panel');custom.classList.add('v3SavedScenes');q('strong',custom).textContent='Your custom shows';q('.sub',custom).textContent='Saved lighting, ready to play.';
-    function colorsChanged() {
-      const swatches=qa('.savedSwatch',grid);byId('v3ColorHeading').textContent=swatches.length?'Favorite Colors':'Quick Colors';
-      if(!swatches.length && !q('.v3QuickColor',grid)) {
-        grid.replaceChildren();
-        ['#FF0000','#FF0D00','#FF0024','#FFFF44','#28FF00','#00BD4C','#0D00FF','#5B00E6','#FFFFFA'].forEach(c=>{
-          const b=el('button','v3QuickColor');b.type='button';b.style.background=displayColor(c);b.style.color=displayColor(c);b.setAttribute('aria-label','Use '+(LED_COLOR_NAME[c]||c));
-          b.addEventListener('click',()=>manual({name:LED_COLOR_NAME[c]||'Color',colors:[c],effect:'Solid',brightness,speed:1}));grid.appendChild(b);
-        });
-      }
-    }
-    new MutationObserver(colorsChanged).observe(grid,{childList:true}); colorsChanged();
     const syncLive=()=>{const on=byId('homePowerOn').classList.contains('primary'),effect=running.effect,label=on?`${effect==='Solid'?'Solid / Static':effect} · ${byId('homeBrightVal').textContent}`:'Lights off';byId('v3LiveEffect').textContent=label;live.dataset.power=on?'on':'off';q('svg',q('.housePreview',live)).setAttribute('aria-label',`Live house preview: ${label}`);};
     const syncPower=()=>{ const on=byId('homePowerOn').classList.contains('primary');panel.dataset.power=on?'on':'off';byId('homePowerOn').setAttribute('aria-pressed',String(on));byId('homePowerOff').setAttribute('aria-pressed',String(!on));syncLive(); };
     new MutationObserver(syncPower).observe(byId('homePowerOn'),{attributes:true,attributeFilter:['class']});syncPower();
