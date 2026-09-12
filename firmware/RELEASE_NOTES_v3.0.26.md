@@ -7,3 +7,4 @@
 - Removes the expandable Home Animation Speed mini-menu; speed control remains available in Effects and event editing.
 - Preserves Shirley's existing restricted-access model while adding Home, Schedules, and Favorites access.
 - Preserves Schedule 1/2, event persistence, storage-health optimization, Wi-Fi/BLE/PINs, custom lights/schedules, partitions, and signed OTA trust.
+- Production build is generated from the clean source tree after temporary patch tooling is removed.
