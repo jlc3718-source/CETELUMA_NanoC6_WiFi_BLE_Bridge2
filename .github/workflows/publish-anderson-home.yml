@@ -4,6 +4,20 @@ on:
   workflow_run:
     workflows: ["Build Anderson Home Firmware"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Anderson firmware build run ID
+        required: true
+        type: string
+      head_sha:
+        description: Exact firmware source commit SHA from that build
+        required: true
+        type: string
+      head_branch:
+        description: Release branch used for that build
+        required: true
+        type: string
 
 concurrency:
   group: anderson-production-publish
@@ -15,18 +29,20 @@ permissions:
 
 jobs:
   publish:
-    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'codex/release-')
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'codex/release-')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.head_branch, 'codex/release-'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
+      HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.head_sha }}
+      HEAD_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || inputs.head_branch }}
+      BUILD_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.build_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ env.HEAD_SHA }}
           fetch-depth: 0
       - name: Resolve production version
         run: |
@@ -116,7 +132,7 @@ jobs:
         continue-on-error: true
         env:
           CLEAN_RELEASES: '1'
-          DELETE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DELETE_BRANCH: ${{ env.HEAD_BRANCH }}
           BRANCH_MAX_AGE_HOURS: '2'
         run: |
           bash .github/scripts/anderson-retention.sh
