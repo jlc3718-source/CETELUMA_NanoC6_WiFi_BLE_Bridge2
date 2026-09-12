@@ -36,6 +36,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}input[typ
 @media(max-width:430px){.nav{gap:5px}.tab{padding:8px 4px;font-size:11px}.grid2,.monthHead{grid-template-columns:1fr}.event{grid-template-columns:auto 1fr}.event .previewEvent{grid-column:2}.favoriteGrid{grid-template-columns:1fr 1fr}}
 
 .rgbPickerOverlay{position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px}.rgbPickerOverlay.open{display:flex}.rgbPickerCard{width:min(94vw,430px);max-height:92vh;overflow:auto;background:#141b24;border:1px solid #334155;border-radius:18px;padding:16px;box-shadow:0 24px 80px rgba(0,0,0,.55)}.rgbWheel{width:min(72vw,280px);height:min(72vw,280px);max-width:280px;max-height:280px;aspect-ratio:1;border-radius:50%;margin:10px auto 14px;position:relative;touch-action:none;background:radial-gradient(circle at center,#fff 0%,rgba(255,255,255,.92) 4%,rgba(255,255,255,0) 72%),conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);box-shadow:inset 0 0 0 2px rgba(255,255,255,.14),0 8px 25px rgba(0,0,0,.35)}.rgbWheelMarker{position:absolute;width:22px;height:22px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #111,0 2px 8px #000;transform:translate(-50%,-50%);pointer-events:none}.rgbReadout{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.rgbReadout label{font-size:11px;color:#94a3b8}.rgbReadout input,.rgbHex{width:100%;box-sizing:border-box;background:#0b1118;color:#fff;border:1px solid #334155;border-radius:9px;padding:9px}.savedColorGrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.savedSwatch{width:42px;height:42px;border-radius:11px;border:2px solid rgba(255,255,255,.35);position:relative;box-shadow:0 2px 8px rgba(0,0,0,.3)}.savedSwatch .x{position:absolute;right:-6px;top:-7px;width:18px;height:18px;border-radius:50%;border:0;background:#111827;color:#fff;font-size:12px;line-height:18px;padding:0}.colorChip{width:54px;height:44px;border-radius:10px;border:2px solid rgba(255,255,255,.35);box-shadow:0 2px 8px rgba(0,0,0,.25)}.pickerPreview{height:38px;border-radius:10px;border:1px solid #334155;margin:8px 0}
+.liveColorTuneWheel{width:min(68vw,260px);height:min(68vw,260px);max-width:260px;max-height:260px}.liveColorCode{text-align:center;font:800 clamp(22px,6vw,32px)/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.04em;color:#f8fbff;margin:4px 0 2px;user-select:all}.liveColorRgb{text-align:center}.liveColorPreview{height:54px;border-radius:13px;border:1px solid rgba(255,255,255,.22);margin:10px 0;box-shadow:inset 0 0 20px rgba(255,255,255,.06),0 0 22px rgba(41,216,255,.08)}
 
 .scheduleOverlay{position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:16px}.scheduleOverlay.open{display:flex}.scheduleCard{width:min(92vw,390px);background:#141b24;border:1px solid #334155;border-radius:18px;padding:18px}.customPresetActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
 
@@ -247,6 +248,17 @@ async function controllerRequest(path,options={},timeoutMs=12000){
         <div class="sysMetric"><span class="sysLabel">Next Reboot</span><strong id="sysReboot">—</strong><span id="sysRebootSub" class="sysSub">time remaining</span></div>
       </div>
       <div id="sysDetails" class="card sysDetails">Waiting for live telemetry…</div>
+    </div>
+    <div id="liveColorTunerPanel" class="panel">
+      <strong>Live Color Tuning</strong><div class="sub">Fine-tune an exact RGB output while watching the selected light controller respond. This preview does not save or alter event colors.</div>
+      <div id="liveColorWheel" class="rgbWheel liveColorTuneWheel"><div id="liveColorMarker" class="rgbWheelMarker"></div></div>
+      <div id="liveColorCode" class="liveColorCode">#FFFFFF</div>
+      <div id="liveColorRgb" class="sub liveColorRgb">RGB 255, 255, 255</div>
+      <div id="liveColorPreview" class="liveColorPreview" style="background:#FFFFFF"></div>
+      <div class="label row between"><span>RGB value</span><span id="liveColorValueText" class="muted">100%</span></div><input id="liveColorValue" type="range" min="0" max="100" value="100">
+      <label class="row" style="margin-top:12px"><input id="liveColorEnabled" type="checkbox" checked><span class="small">Live preview on lights while selecting</span></label>
+      <button id="liveColorPreviewButton" class="btn primary" type="button" style="width:100%;margin-top:10px">Preview on Lights</button>
+      <div class="sub" style="margin-top:7px">The HEX code above is the exact RGB code sent to the lights. Preview uses Solid / Static at the current light brightness. Use Resume Schedule when you are finished tuning.</div>
     </div>
     <div class="panel">
       <strong>Overlap Behavior</strong><div class="sub">When two month-long events overlap</div>
@@ -507,6 +519,15 @@ async function saveCurrentColor(){const c=normalizeLedColor(pickerHex());if(API_
 async function removeSavedColor(c){if(API_MODE){const r=await post('/api/colors',{color:c,remove:true});savedColors=r.colors||[]}else{savedColors=savedColors.filter(x=>x!==c);localStorage.setItem('andersonSavedColors',JSON.stringify(savedColors))}renderSavedColors()}
 function bindRgbPicker(){const w=$('rgbWheel');let drag=false;w.addEventListener('pointerdown',e=>{drag=true;w.setPointerCapture(e.pointerId);wheelPoint(e)});w.addEventListener('pointermove',e=>{if(drag)wheelPoint(e)});w.addEventListener('pointerup',()=>drag=false);$('rgbValue').addEventListener('input',e=>{pickerV=(+e.target.value)/100;renderPicker()});['rgbR','rgbG','rgbB'].forEach(id=>$(id).addEventListener('change',()=>setPickerHex(rgbHex($('rgbR').value,$('rgbG').value,$('rgbB').value))));$('rgbHex').addEventListener('change',e=>setPickerHex(e.target.value));$('rgbSave').addEventListener('click',saveCurrentColor);$('rgbClose').addEventListener('click',()=>$('rgbPickerOverlay').classList.remove('open'));$('rgbPickerOverlay').addEventListener('click',e=>{if(e.target===$('rgbPickerOverlay'))$('rgbPickerOverlay').classList.remove('open')})}
 
+
+let liveTuneH=0,liveTuneS=0,liveTuneV=1,liveTuneTimer=null,liveTuneSending=false,liveTuneQueued=false;
+function liveTuneHex(){const q=hsvRgb(liveTuneH,liveTuneS,liveTuneV);return rgbHex(q[0],q[1],q[2])}
+function renderLiveColorTune(sendLive=false){const h=liveTuneHex(),q=hexRgb(h),w=$('liveColorWheel');if(!w)return;const rad=w.clientWidth/2,ang=(liveTuneH-90)*Math.PI/180,rr=liveTuneS*rad*.92;$('liveColorMarker').style.left=(rad+Math.cos(ang)*rr)+'px';$('liveColorMarker').style.top=(rad+Math.sin(ang)*rr)+'px';$('liveColorCode').textContent=h;$('liveColorRgb').textContent=`RGB ${q[0]}, ${q[1]}, ${q[2]}`;$('liveColorPreview').style.background=h;$('liveColorValue').value=Math.round(liveTuneV*100);$('liveColorValueText').textContent=Math.round(liveTuneV*100)+'%';if(sendLive&&$('liveColorEnabled').checked)scheduleLiveColorTune()}
+function liveColorWheelPoint(e){const w=$('liveColorWheel'),r=w.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,dist=Math.sqrt(dx*dx+dy*dy),rad=r.width/2;liveTuneS=Math.min(1,dist/(rad*.92));liveTuneH=(Math.atan2(dy,dx)*180/Math.PI+90+360)%360;renderLiveColorTune(true)}
+function scheduleLiveColorTune(){clearTimeout(liveTuneTimer);liveTuneTimer=setTimeout(()=>sendLiveColorTune(false),120)}
+async function sendLiveColorTune(announce=true){clearTimeout(liveTuneTimer);const color=liveTuneHex();if(liveTuneSending){liveTuneQueued=true;return}liveTuneSending=true;try{if(API_MODE){await post('/api/control',{power:true,name:'Live Color Tune '+color,colors:[color],effect:'Solid',brightness});}else{power=true;running={name:'Live Color Tune '+color,colors:[color],effect:'Solid'};}if(announce)status('Previewing '+color+' on the selected light controller.')}catch(e){if(announce)status('Color preview failed: '+e.message)}finally{liveTuneSending=false;if(liveTuneQueued){liveTuneQueued=false;scheduleLiveColorTune()}}}
+function bindLiveColorTuner(){const w=$('liveColorWheel');if(!w)return;let drag=false;w.addEventListener('pointerdown',e=>{drag=true;w.setPointerCapture(e.pointerId);liveColorWheelPoint(e)});w.addEventListener('pointermove',e=>{if(drag)liveColorWheelPoint(e)});w.addEventListener('pointerup',()=>drag=false);w.addEventListener('pointercancel',()=>drag=false);$('liveColorValue').addEventListener('input',e=>{liveTuneV=(+e.target.value)/100;renderLiveColorTune(true)});$('liveColorPreviewButton').addEventListener('click',()=>sendLiveColorTune(true));$('liveColorEnabled').addEventListener('change',e=>{if(e.target.checked)sendLiveColorTune(false)});renderLiveColorTune(false)}
+
 function editEventInline(ev,row){
   const old=row.querySelector('.eventEditor');if(old){old.remove();return}
   const box=document.createElement('div');box.className='card eventEditor';box.style.gridColumn='1/-1';box.style.marginTop='8px';
@@ -589,7 +610,7 @@ function refreshVisibleState(){if(API_MODE&&currentRole!=='none'&&!document.hidd
 setInterval(refreshVisibleState,15000);
 document.addEventListener('visibilitychange',refreshVisibleState);
 window.addEventListener('pageshow',refreshVisibleState);
-setTimeout(bindRgbPicker,0);
+setTimeout(()=>{bindRgbPicker();bindLiveColorTuner()},0);
 
 function ensureExtraControls(){
   const hb=$('homeBrightness');if(hb&&!$('homeSpeed')){const wrap=document.createElement('div');wrap.id='homeSpeedBlock';wrap.innerHTML='<div class="label">Effect Speed <span id="homeSpeedVal" class="muted">Very Slow</span></div><input id="homeSpeed" type="range" min="1" max="5" value="1"><div class="label">Favorite Colors</div><div id="homeFavoriteColorGrid" class="savedColorGrid"></div>';($('homeEffectHelp')||$('homeEffect')||hb).insertAdjacentElement('afterend',wrap);syncSpeedControls(speed);bindSpeedControl('homeSpeed');renderHomeFavoriteGrid()}
