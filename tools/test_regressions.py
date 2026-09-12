@@ -1,4 +1,4 @@
-# v3.1.6 event fairness and bottom-menu logout
+# v3.1.6 production event fairness and bottom-menu logout
 from pathlib import Path
 import re
 
