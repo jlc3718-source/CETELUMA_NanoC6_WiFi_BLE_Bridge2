@@ -40,12 +40,12 @@ replace(
 replace(
     "firmware/web/index.html",
     "v==='rotate'?'Each enabled monthly event gets a full night, then the next one runs the following night.':v==='split'?'The scheduled night is divided evenly among enabled month-long events.':'Colors from all enabled month-long events are combined into one theme.'",
-    "v==='rotate'?'Each enabled monthly event gets a full available night in order. If higher-priority dates leave too few nights, only the remaining themes share those available nights so none are skipped.':v==='split'?'The scheduled night is divided evenly among enabled month-long events.':'Colors from all enabled month-long events are combined into one theme.'",
+    "v==='rotate'?'Each enabled monthly event gets a full available night in order. If a whole month is occupied by higher-priority dates, one least-conflicted night reserves its first third for monthly coverage so none are skipped.':v==='split'?'The scheduled night is divided evenly among enabled month-long events.':'Colors from all enabled month-long events are combined into one theme.'",
 )
 replace(
     "firmware/web/index.html",
     '<div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Seasonal theme</div><div>7. Normal preset</div></div></div>',
-    '<div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness / seasonal day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Normal preset</div></div></div>',
+    '<div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness / seasonal day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Normal preset</div><div style="margin-top:5px">Coverage guarantee: if higher-priority dates occupy every night of a month, the least-conflicted night reserves its first third for the enabled month-long events; the higher-priority scene finishes the night and continues through Schedule 2.</div></div></div>',
 )
 
 # Make the 2026-2037 coverage audit a permanent release gate.
@@ -62,9 +62,10 @@ anchor = "assert 'id=\\\"homeSpeed\\\"' in mock and 'Effect Speed' in mock and \
 addition = anchor + (
     "assert \"icon('logout') + '<span>Logout</span>'\" in mock and 'nav.appendChild(switcher)' in mock\n"
     "assert 'actions.replaceChildren(badge, profile, switcher)' not in mock and \"'Logout'\" in mock\n"
-    "assert 'Specific holiday / awareness / seasonal day' in web and '<div>6. Normal preset</div>' in web\n"
+    "assert 'Specific holiday / awareness / seasonal day' in web and 'Coverage guarantee:' in web and '<div>6. Normal preset</div>' in web\n"
     "assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_ACTIVE_TIER_EVENTS=64' in sched\n"
     "assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched\n"
+    "assert 'forcedMonthlyCoverage' in sched and 'first third of the least-conflicted' in sched\n"
     "assert 'if(specificCount)' in sched and 'if(holidayWindowCount)' in sched\n"
     "assert 'python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full' in build\n"
 )
