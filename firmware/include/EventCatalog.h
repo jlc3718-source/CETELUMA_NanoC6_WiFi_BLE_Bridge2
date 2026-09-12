@@ -3,7 +3,7 @@
 #include <time.h>
 #include "Types.h"
 
-// Anderson Home v3.0.20 master 210-event calendar interface.
+// Anderson Home v3.1.0 master 210-event recurring calendar interface.
 extern const EventDef EVENTS[];
 extern const size_t EVENT_COUNT;
 
