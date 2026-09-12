@@ -28,6 +28,10 @@ assert "BRANCH_MAX_AGE_HOURS: '2'" in retention and "BRANCH_MAX_AGE_HOURS: '2'" 
 assert 'BRANCH_MAX_AGE_HOURS:-2' in branch_cleanup
 assert 'verify_ota_manifest.py' in publisher and 'remote-update/pending/$VERSION.json' in publisher
 assert 'setInterval(()=>qa(\'select[data-v3-effect-preview="1"]\')' not in mock
+assert "const color=palette[Math.floor(now/360)%palette.length]" in mock
+assert "const phase=Math.floor(now/240),on=phase%2===0,color=palette[Math.floor(phase/2)%palette.length]" in mock
+assert "const active=Math.floor(now/360)%dots.length" not in mock
+assert "dot.style.background='#f3fbff'" not in mock
 version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
 remote=t('firmware/src/RemoteUpdate.cpp'); assert '?cb=' in remote and 'esp_random()' in remote and 'OTA_AUTO_RETRY_BASE_MS' in remote
 print('Anderson regression source checks passed')
