@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Publication gate: the prepared signed manifest must match the exact verified build artifact.
 import argparse, base64, json, subprocess, tempfile
 from pathlib import Path
 
