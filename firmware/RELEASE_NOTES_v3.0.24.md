@@ -6,3 +6,4 @@
 - Preserves all five manual speed selections while built-in presets remain no faster than Slow.
 - Preserves the 210-event calendar, locked 9-color master palette, Wi-Fi, BLE, PINs, custom lights/schedules, partitions, and signed OTA trust.
 - Production build is generated only after both fixes are present in the source revision.
+- Temporary patch tooling is removed before the final verified build.
