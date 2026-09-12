@@ -46,6 +46,8 @@ jobs:
         run: npm ci --prefix tools --no-audit --no-fund
       - name: Check maintenance, Wi-Fi recovery, and update timing
         run: python tools/test_maintenance.py
+      - name: Check Anderson source regressions
+        run: python tools/test_regressions.py
       - name: Restore PlatformIO dependencies
         uses: actions/cache@v4
         with:
