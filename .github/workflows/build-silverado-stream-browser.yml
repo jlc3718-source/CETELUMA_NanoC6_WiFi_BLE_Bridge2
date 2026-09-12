@@ -37,6 +37,24 @@ jobs:
       - name: Install Android 35 SDK
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
+      - name: Read and stamp release version
+        shell: bash
+        run: |
+          VERSION="$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" silverado-browser/app/build.gradle | head -1)"
+          test -n "$VERSION"
+          export VERSION
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os, pathlib, re
+          path = pathlib.Path('silverado-browser/app/src/main/java/com/jlc3718/silveradostreambrowser/MainActivity.java')
+          text = path.read_text()
+          version = os.environ['VERSION']
+          updated, count = re.subn(r'SILVERADO STREAM BROWSER v\d+\.\d+\.\d+', f'SILVERADO STREAM BROWSER v{version}', text, count=1)
+          if count != 1:
+              raise SystemExit('Expected exactly one diagnostics version marker')
+          path.write_text(updated)
+          PY
+
       - name: Build release AAB and APK
         working-directory: silverado-browser
         run: gradle --no-daemon --stacktrace :app:bundleRelease :app:assembleRelease
@@ -45,15 +63,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p silverado-browser/output
-          cp silverado-browser/app/build/outputs/bundle/release/app-release.aab silverado-browser/output/SilveradoStreamBrowser-AAOS-arm64-v1.0.2-unsigned.aab
-          cp silverado-browser/app/build/outputs/apk/release/app-release-unsigned.apk silverado-browser/output/SilveradoStreamBrowser-AAOS-arm64-v1.0.2-unsigned.apk
+          cp silverado-browser/app/build/outputs/bundle/release/app-release.aab "silverado-browser/output/SilveradoStreamBrowser-AAOS-arm64-v${VERSION}-unsigned.aab"
+          cp silverado-browser/app/build/outputs/apk/release/app-release-unsigned.apk "silverado-browser/output/SilveradoStreamBrowser-AAOS-arm64-v${VERSION}-unsigned.apk"
           cd silverado-browser/output
           sha256sum *.aab *.apk > SHA256SUMS.txt
 
       - name: Upload exact build
         uses: actions/upload-artifact@v4
         with:
-          name: SilveradoStreamBrowser-AAOS-v1.0.2-${{ github.sha }}
+          name: SilveradoStreamBrowser-AAOS-v${{ env.VERSION }}-${{ github.sha }}
           path: silverado-browser/output/*
           if-no-files-found: error
           retention-days: 14
