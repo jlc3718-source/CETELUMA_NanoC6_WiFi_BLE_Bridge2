@@ -43,9 +43,11 @@ fi
 
 # Remove older completed Anderson firmware runs and one-off firmware helper runs.
 # Keep unrelated Android/test/Pages workflows outside this firmware retention policy.
+# Helper naming intentionally accepts both "Anderson" and "Anderson Home" so new
+# patch/publish/cleanup helpers cannot accumulate history when their title changes.
 mapfile -t COMPLETED_RUN_IDS < <(
   gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
-    --jq ".workflow_runs[] | select(.status == \"completed\" and (.name == \"$BUILD_WORKFLOW_NAME\" or .name == \"$LEGACY_BUILD_WORKFLOW_NAME\" or (.name | startswith(\"Publish Anderson Home\")) or (.name | startswith(\"Patch Anderson Home\")) or (.name | startswith(\"Stage Anderson Home\")) or (.name | startswith(\"Cleanup Anderson\")) or .name == \"Anderson Retention\" or (.head_branch // \"\" | startswith(\"codex/v3.\")) or (.head_branch // \"\" | startswith(\"publish/v3.\")) or (.head_branch // \"\" | startswith(\"staging/v3.\")))) | .id"
+    --jq ".workflow_runs[] | select(.status == \"completed\" and (.name == \"$BUILD_WORKFLOW_NAME\" or .name == \"$LEGACY_BUILD_WORKFLOW_NAME\" or (.name | startswith(\"Publish Anderson\")) or (.name | startswith(\"Patch Anderson\")) or (.name | startswith(\"Stage Anderson\")) or (.name | startswith(\"Cleanup Anderson\")) or .name == \"Anderson Retention\" or (.head_branch // \"\" | startswith(\"codex/v3.\")) or (.head_branch // \"\" | startswith(\"publish/v3.\")) or (.head_branch // \"\" | startswith(\"staging/v3.\")) or (.head_branch // \"\" | startswith(\"cleanup/v3.\")))) | .id"
 )
 for run_id in "${COMPLETED_RUN_IDS[@]:-}"; do
   [[ -n "$run_id" ]] || continue
