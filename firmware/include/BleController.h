@@ -39,6 +39,7 @@ struct BleSlotDiagnostics {
   bool powerConfirmed=false;
   bool colorConfirmed=false;
   bool brightnessConfirmed=false;
+  bool lastCommandStateConfirmed=false;
   uint32_t lastWriteAt=0;
   uint32_t lastResponseAt=0; // legacy aggregate: latest notification or manual readback
   uint32_t lastNotificationAt=0;
@@ -46,6 +47,7 @@ struct BleSlotDiagnostics {
   String writeCharacteristic;
   String responseCharacteristic;
   String lastCommand;
+  String lastCommandType;
   String lastTxHex;
   String lastRxHex; // legacy aggregate: latest notification or manual readback
   String lastNotificationHex;
