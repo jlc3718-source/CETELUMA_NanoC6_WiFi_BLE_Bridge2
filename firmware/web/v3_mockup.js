@@ -147,7 +147,7 @@
     if(!page || byId('v3SettingsTabs'))return;
     const title=q(':scope > .v3PageTitle',page);
     const original=[...page.children].filter(node=>node!==title);
-    const defs=[['general','General'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];
+    const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];
     const tabs=el('div','v3SettingsTabs');tabs.id='v3SettingsTabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Settings sections');
     const panes=new Map(),buttons=new Map();
     defs.forEach(([id,label])=>{
@@ -157,7 +157,8 @@
     if(title)title.insertAdjacentElement('afterend',tabs);else page.prepend(tabs);
     defs.forEach(([id])=>page.appendChild(panes.get(id)));
     const category=node=>{
-      if(node.id==='systemMonitorPanel'||node.classList.contains('v3SettingsLink'))return 'general';
+      if(node.classList.contains('v3SettingsLink'))return 'wifi';
+      if(node.id==='systemMonitorPanel')return 'general';
       if(node.id==='liveColorTunerPanel')return 'lighting';
       const heading=q(':scope > strong',node)?.textContent.trim()||'';
       if(heading==='Overlap Behavior')return 'lighting';
