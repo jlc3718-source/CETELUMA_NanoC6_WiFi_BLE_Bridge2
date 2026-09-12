@@ -44,5 +44,5 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH_MAX_AGE_HOURS: '48'
+          BRANCH_MAX_AGE_HOURS: '2'
         run: bash .github/scripts/anderson-branch-cleanup.sh
