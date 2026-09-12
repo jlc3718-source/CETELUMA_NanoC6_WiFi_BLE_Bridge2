@@ -70,12 +70,21 @@ jobs:
 
       - name: Bump firmware version once
         run: |
-          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.1"
-          python tools/release.py bump
-          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.2"
+          python - <<'PY'
+          from pathlib import Path
+          version = Path('FIRMWARE_VERSION.txt')
+          if version.read_text().strip() != '3.1.1':
+              raise SystemExit('Expected v3.1.1 baseline')
+          version.write_text('3.1.2\n')
+          readme = Path('README.md')
+          text = readme.read_text()
+          text = text.replace('**v3.1.1**', '**v3.1.2**')
+          readme.write_text(text)
+          PY
 
       - name: Focused validation
         run: |
+          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.2"
           node --check firmware/web/v3_mockup.js
           grep -F 'grid-template-columns:repeat(4,minmax(0,1fr));gap:5px' firmware/web/v3_mockup.js
           grep -F '@keyframes v3FxStrobe{0%,44.9%' firmware/web/v3_mockup.js
