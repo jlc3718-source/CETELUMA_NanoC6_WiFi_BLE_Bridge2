@@ -16,12 +16,12 @@ jobs:
         run: |
           python3 tools/test_regressions.py
           python3 tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
-      - name: Remove one-time helpers and commit final source
+      - name: Commit validated source only
         run: |
-          git rm -f .github/workflows/zz-v316-event-audit-once.yml .github/workflows/zz-v316-apply-ui-release-once.yml tools/apply_v316_once.py
+          git rm -f tools/apply_v316_once.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add firmware tools FIRMWARE_VERSION.txt .github/workflows/compile-anderson-home-multi.yml
+          git add firmware tools FIRMWARE_VERSION.txt
           git commit -m 'Prepare Anderson Home v3.1.6 event fairness and logout'
           git push origin HEAD:codex/release-v3.1.6-event-fairness
-# Retry after protected monthly coverage audit refinement.
+# Workflow files are removed separately after this validated source commit.
