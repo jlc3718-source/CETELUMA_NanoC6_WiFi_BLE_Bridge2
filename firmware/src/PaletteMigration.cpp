@@ -7,7 +7,7 @@
 #include <SPIFFS.h>
 
 static constexpr uint8_t BACKUP_FORMAT_VERSION=1;
-static constexpr uint8_t PALETTE_MIGRATION_REVISION=5;
+static constexpr uint8_t PALETTE_MIGRATION_REVISION=6;
 static constexpr uint8_t STATE_PENDING=0;
 static constexpr uint8_t STATE_APPLIED=1;
 static constexpr uint8_t STATE_RESTORED=2;
@@ -61,7 +61,7 @@ static bool transformPresetJson(const String& original,String& corrected){
 }
 static bool transformFavoriteJson(const String& original,String& corrected){
   (void)original;JsonDocument d;JsonArray a=d.to<JsonArray>();
-  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");
+  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");a.add("#00B4B4");a.add("#0096FF");a.add("#FFA000");a.add("#B464FF");a.add("#001478");a.add("#87002D");a.add("#A0A5AF");
   serializeJson(d,corrected);return true;
 }
 static String transformEventRaw(const String& original){
@@ -101,7 +101,7 @@ bool runPaletteColorMigration(){
   uint8_t state=migrationState(),revision=migrationRevision();
   if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
   // Automatic v4 migration normalizes CURRENT custom lights and event overrides,
-  // then resets Favorite Colors to the nine approved user baselines.
+  // then resets Favorite Colors to the sixteen approved user baselines.
   if(!setMigrationState(STATE_APPLY_PENDING,false))return false;
   return canonicalizeCurrentStoredPalette();
 }

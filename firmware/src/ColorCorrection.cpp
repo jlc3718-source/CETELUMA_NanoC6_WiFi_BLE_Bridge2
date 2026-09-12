@@ -10,7 +10,14 @@ const AndersonColorPaletteEntry ANDERSON_COLOR_PALETTE[] = {
   {0x00BD4C,0x00BD4C}, // Cyan
   {0x0D00FF,0x0D00FF}, // Blue
   {0x5B00E6,0x5B00E6}, // Purple
-  {0xFFFFFA,0xFFFFFA}  // White
+  {0xFFFFFA,0xFFFFFA}, // White
+  {0x00B4B4,0x00B4B4}, // Teal
+  {0x0096FF,0x0096FF}, // Sky Blue
+  {0xFFA000,0xFFA000}, // Amber Gold
+  {0xB464FF,0xB464FF}, // Lavender
+  {0x001478,0x001478}, // Navy Blue
+  {0x87002D,0x87002D}, // Burgundy
+  {0xA0A5AF,0xA0A5AF}, // Silver Gray
 };
 const size_t ANDERSON_COLOR_PALETTE_COUNT=sizeof(ANDERSON_COLOR_PALETTE)/sizeof(ANDERSON_COLOR_PALETTE[0]);
 
@@ -22,9 +29,11 @@ struct DirectMap{uint32_t source,output;};
 // genuinely unknown saved colors. In particular, blue-family source colors can
 // never drift into Purple/Lavender simply because of a perceptual near-tie.
 static constexpr DirectMap DIRECT_MAP[] = {
-  // Nine approved outputs are idempotent.
+  // Sixteen approved outputs are idempotent.
   {0xFF0000,0xFF0000},{0xFF0D00,0xFF0D00},{0xFF0024,0xFF0024},{0xFFFF44,0xFFFF44},
   {0x28FF00,0x28FF00},{0x00BD4C,0x00BD4C},{0x0D00FF,0x0D00FF},{0x5B00E6,0x5B00E6},{0xFFFFFA,0xFFFFFA},
+  {0x00B4B4,0x00B4B4},{0x0096FF,0x0096FF},{0xFFA000,0xFFA000},{0xB464FF,0xB464FF},
+  {0x001478,0x001478},{0x87002D,0x87002D},{0xA0A5AF,0xA0A5AF},
   // Historical Anderson outputs retain their intended named family.
   {0xFF2900,0xFF0D00},{0xFF6E00,0xFF0D00},
   {0x4DFF00,0x28FF00},{0x05008A,0x0D00FF},{0x23018C,0x5B00E6},
