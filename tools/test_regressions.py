@@ -22,5 +22,5 @@ assert 'store.clearWiFi()' in main and 'saveWiFi("","")' in t('firmware/src/Sett
 for row in ['{"evt028",2037,2,15}','{"evt030",2037,10,11}','{"evt047",2037,11,9}','{"evt096",2037,1,27}','{"evt177",2037,10,18}','{"evt192",2037,11,7}']: assert row in ev,row
 assert 'anderson-cache-cleanup.sh' in workflow
 assert 'setInterval(()=>qa(\'select[data-v3-effect-preview="1"]\')' not in mock
-assert t('FIRMWARE_VERSION.txt').strip()=='3.1.0'
-print('v3.1.0 regression source checks passed')
+version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
+remote=t('firmware/src/RemoteUpdate.cpp'); assert '?cb=' in remote and 'esp_random()' in remote and 'OTA_AUTO_RETRY_BASE_MS' in remote; print('Anderson regression source checks passed')

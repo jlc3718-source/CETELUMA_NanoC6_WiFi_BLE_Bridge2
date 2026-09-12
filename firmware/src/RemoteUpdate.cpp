@@ -8,14 +8,17 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/sha256.h>
+#include <esp_system.h>
 #include "LoopWatchdog.h"
 
 static constexpr const char* OTA_MANIFEST_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json";
 static constexpr const char* OTA_RELEASE_PREFIX="https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v";
 static constexpr size_t OTA_SLOT_BYTES=0x1E0000;
 static constexpr const char* OTA_NVS="anderson-ota";
-static constexpr uint32_t OTA_AUTO_FIRST_CHECK_MS=60UL*1000UL;
-static constexpr uint32_t OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL;
+static constexpr uint32_t OTA_AUTO_FIRST_CHECK_MS=20UL*1000UL;
+static constexpr uint32_t OTA_AUTO_INTERVAL_MS=5UL*60UL*1000UL;
+static constexpr uint32_t OTA_AUTO_RETRY_BASE_MS=30UL*1000UL;
+static constexpr uint32_t OTA_AUTO_RETRY_MAX_MS=5UL*60UL*1000UL;
 static constexpr const char OTA_PUBLIC_KEY[]=R"KEY(-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3Dw/xqxEPbvkJQAcMeZxBAxwujxN
 kuGHPepzClPYMrJ4h5r8iNlyUFpJZcPI/FXe8+atedYKpIZZB5XlOj964Q==
@@ -34,11 +37,19 @@ static bool rebootRequested=false;
 static String lastInstallMessage;
 static bool autoTimerStarted=false;
 static uint32_t autoNextCheckAt=0;
+static uint8_t autoFailureCount=0;
 
 static uint32_t autoCheckSecondsRemaining(){
   if(!autoTimerStarted)return (OTA_AUTO_FIRST_CHECK_MS+999UL)/1000UL;
   int32_t remaining=(int32_t)(autoNextCheckAt-millis());
   return remaining>0?(uint32_t)(remaining+999)/1000UL:0UL;
+}
+static void scheduleAutoRetry(uint32_t now){
+  uint8_t shift=autoFailureCount<4?autoFailureCount:4;
+  uint32_t retry=OTA_AUTO_RETRY_BASE_MS<<shift;
+  if(retry>OTA_AUTO_RETRY_MAX_MS)retry=OTA_AUTO_RETRY_MAX_MS;
+  if(autoFailureCount<255)autoFailureCount++;
+  autoNextCheckAt=now+retry;
 }
 
 static bool allHex(const String&s,size_t n){if(s.length()!=n)return false;for(size_t i=0;i<s.length();i++){char c=s[i];if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')||(c>='A'&&c<='F')))return false;}return true;}
@@ -60,7 +71,7 @@ void remoteUpdateNoteBoot(const char*currentVersion){Preferences p;if(!p.begin(O
 
 static String statusJson(const char*current){JsonDocument d;d["checked"]=last.checked;d["ok"]=last.ok;d["signatureValid"]=last.signatureValid;d["currentVersion"]=current;d["updateAvailable"]=last.updateAvailable;d["autoInstall"]=true;d["autoCheckMinutes"]=OTA_AUTO_INTERVAL_MS/60000UL;d["autoCheckSecondsRemaining"]=autoCheckSecondsRemaining();d["downloadEnabled"]=true;d["installEnabled"]=true;d["installing"]=last.installing;d["installReady"]=last.installReady;d["manifestUrl"]=OTA_MANIFEST_URL;d["otaSlotBytes"]=OTA_SLOT_BYTES;d["httpStatus"]=last.httpStatus;d["message"]=last.message;if(last.availableVersion.length())d["availableVersion"]=last.availableVersion;if(last.bytes)d["bytes"]=(uint32_t)last.bytes;if(last.downloadedBytes)d["downloadedBytes"]=(uint32_t)last.downloadedBytes;if(last.sha256.length())d["sha256"]=last.sha256;if(last.commit.length())d["commit"]=last.commit;if(last.url.length())d["url"]=last.url;if(lastInstallMessage.length())d["lastInstallMessage"]=lastInstallMessage;String j;serializeJson(d,j);return j;}
 
-static bool fetchVerifiedManifest(const char*current){last=RemoteStatus();last.checked=true;if(WiFi.status()!=WL_CONNECTED){last.message="Wi-Fi is not connected";return false;}WiFiClientSecure client;client.setInsecure();client.setHandshakeTimeout(12);feedControllerWatchdog();HTTPClient http;http.setConnectTimeout(6000);http.setTimeout(8000);if(!http.begin(client,OTA_MANIFEST_URL)){last.message="Could not open the remote manifest URL";return false;}last.httpStatus=http.GET();if(last.httpStatus!=HTTP_CODE_OK){last.message=String("Manifest request failed (HTTP ")+String(last.httpStatus)+")";http.end();return false;}String body=http.getString();http.end();if(body.length()==0||body.length()>4096){last.message="Remote manifest size is invalid";return false;}JsonDocument d;if(deserializeJson(d,body)||!d.is<JsonObject>()||(d["schema"]|0)!=1){last.message="Remote manifest format is invalid";return false;}String payload=d["payload"]|String(""),sig=d["signature"]|String("");if(!payload.length()||!sig.length()){last.message="Remote manifest is missing its signed payload";return false;}last.signatureValid=verifySignature(payload,sig);if(!last.signatureValid){last.message="Remote manifest signature is invalid";return false;}if(!parsePayload(payload,last)){last.message="Signed manifest payload is invalid";return false;}int cmp=compareVersion(last.availableVersion,String(current));last.ok=true;last.updateAvailable=cmp>0;if(cmp>0)last.message=String("Verified update available: ")+last.availableVersion;else if(cmp==0)last.message=String("Signed manifest verified. Anderson Home ")+current+" is current.";else last.message=String("Signed manifest verified but advertises older firmware ")+last.availableVersion+"; downgrade is blocked.";return true;}
+static bool fetchVerifiedManifest(const char*current){last=RemoteStatus();last.checked=true;if(WiFi.status()!=WL_CONNECTED){last.message="Wi-Fi is not connected";return false;}WiFiClientSecure client;client.setInsecure();client.setHandshakeTimeout(12);feedControllerWatchdog();HTTPClient http;http.setConnectTimeout(6000);http.setTimeout(8000);String requestUrl=String(OTA_MANIFEST_URL)+"?cb="+String((uint32_t)esp_random(),HEX)+"-"+String((uint32_t)millis(),HEX);if(!http.begin(client,requestUrl)){last.message="Could not open the remote manifest URL";return false;}http.addHeader("Cache-Control","no-cache, no-store, max-age=0");http.addHeader("Pragma","no-cache");last.httpStatus=http.GET();if(last.httpStatus!=HTTP_CODE_OK){last.message=String("Manifest request failed (HTTP ")+String(last.httpStatus)+")";http.end();return false;}String body=http.getString();http.end();if(body.length()==0||body.length()>4096){last.message="Remote manifest size is invalid";return false;}JsonDocument d;if(deserializeJson(d,body)||!d.is<JsonObject>()||(d["schema"]|0)!=1){last.message="Remote manifest format is invalid";return false;}String payload=d["payload"]|String(""),sig=d["signature"]|String("");if(!payload.length()||!sig.length()){last.message="Remote manifest is missing its signed payload";return false;}last.signatureValid=verifySignature(payload,sig);if(!last.signatureValid){last.message="Remote manifest signature is invalid";return false;}if(!parsePayload(payload,last)){last.message="Signed manifest payload is invalid";return false;}int cmp=compareVersion(last.availableVersion,String(current));last.ok=true;last.updateAvailable=cmp>0;if(cmp>0)last.message=String("Verified update available: ")+last.availableVersion;else if(cmp==0)last.message=String("Signed manifest verified. Anderson Home ")+current+" is current.";else last.message=String("Signed manifest verified but advertises older firmware ")+last.availableVersion+"; downgrade is blocked.";return true;}
 
 String remoteUpdateStatusJson(const char*current){return statusJson(current);}
 String remoteUpdateCheckJson(const char*current){fetchVerifiedManifest(current);return statusJson(current);}
@@ -79,10 +90,11 @@ void remoteUpdateAutoLoop(const char*current){
   uint32_t now=millis();
   if(!autoTimerStarted){autoTimerStarted=true;autoNextCheckAt=now+OTA_AUTO_FIRST_CHECK_MS;return;}
   if((int32_t)(now-autoNextCheckAt)<0)return;
+  if(WiFi.status()!=WL_CONNECTED){scheduleAutoRetry(now);return;}
+  if(!fetchVerifiedManifest(current)){scheduleAutoRetry(now);return;}
+  autoFailureCount=0;
+  if(last.updateAvailable){if(!downloadAndStage())scheduleAutoRetry(now);else autoNextCheckAt=now+OTA_AUTO_INTERVAL_MS;return;}
   autoNextCheckAt=now+OTA_AUTO_INTERVAL_MS;
-  if(WiFi.status()!=WL_CONNECTED){autoNextCheckAt=now+60000UL;return;}
-  if(!fetchVerifiedManifest(current))return;
-  if(last.updateAvailable)downloadAndStage();
 }
 
 bool remoteUpdateConsumeRebootRequest(){bool r=rebootRequested;rebootRequested=false;return r;}

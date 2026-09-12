@@ -118,30 +118,30 @@ remote_stubs=r'''
 uint32_t tick=0;uint32_t millis(){return tick;}
 constexpr int WL_CONNECTED=3;
 struct {int state=WL_CONNECTED;int status(){return state;}} WiFi;
-bool rebootRequested=false,autoTimerStarted=false,manifestValid=true;
-uint32_t autoNextCheckAt=0;
+bool rebootRequested=false,autoTimerStarted=false,manifestValid=true,stageOk=true;
+uint32_t autoNextCheckAt=0;uint8_t autoFailureCount=0;
 struct {bool installing=false,updateAvailable=false;} last;
 int checks=0,installs=0;
 bool fetchVerifiedManifest(const char*){++checks;return manifestValid;}
-void downloadAndStage(){++installs;}
+bool downloadAndStage(){++installs;return stageOk;}
 '''
 remote_tests=r'''
 int main(){
- tick=0;assert(autoCheckSecondsRemaining()==60);remoteUpdateAutoLoop("test");
- tick=59999;remoteUpdateAutoLoop("test");assert(checks==0&&autoCheckSecondsRemaining()==1);
- tick=60000;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==3600);
- tick=3659999;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==1);
- tick=3660000;remoteUpdateAutoLoop("test");assert(checks==2&&autoCheckSecondsRemaining()==3600);
- tick=autoNextCheckAt;last.installing=true;remoteUpdateAutoLoop("test");assert(checks==2);
- last.installing=false;rebootRequested=true;remoteUpdateAutoLoop("test");assert(checks==2);
- rebootRequested=false;last.updateAvailable=true;manifestValid=false;remoteUpdateAutoLoop("test");assert(checks==3&&installs==0);
- manifestValid=true;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==4&&installs==1);
- last.updateAvailable=false;autoTimerStarted=false;checks=0;tick=UINT32_MAX-1000;remoteUpdateAutoLoop("test");
- tick=58998;remoteUpdateAutoLoop("test");assert(checks==0&&autoCheckSecondsRemaining()==1);
- tick=58999;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==3600);
- WiFi.state=0;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==60);
- WiFi.state=WL_CONNECTED;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==2&&autoCheckSecondsRemaining()==3600);
- std::cout<<"PASS: hourly update checks/countdown, initial check, offline retry, timer rollover, install deferral, and verified-manifest gate\n";
+ tick=0;assert(autoCheckSecondsRemaining()==20);remoteUpdateAutoLoop("test");
+ tick=19999;remoteUpdateAutoLoop("test");assert(checks==0&&autoCheckSecondsRemaining()==1);
+ tick=20000;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==300&&autoFailureCount==0);
+ manifestValid=false;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==2&&autoCheckSecondsRemaining()==30&&autoFailureCount==1);
+ tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==3&&autoCheckSecondsRemaining()==60&&autoFailureCount==2);
+ manifestValid=true;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==4&&autoCheckSecondsRemaining()==300&&autoFailureCount==0);
+ last.updateAvailable=true;stageOk=false;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==5&&installs==1&&autoCheckSecondsRemaining()==30&&autoFailureCount==1);
+ stageOk=true;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==6&&installs==2&&autoFailureCount==0);
+ last.updateAvailable=false;
+ WiFi.state=0;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==6&&autoCheckSecondsRemaining()==30&&autoFailureCount==1);
+ WiFi.state=WL_CONNECTED;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==7&&autoCheckSecondsRemaining()==300&&autoFailureCount==0);
+ autoTimerStarted=false;checks=0;tick=UINT32_MAX-1000;remoteUpdateAutoLoop("test");
+ tick=18998;remoteUpdateAutoLoop("test");assert(checks==0&&autoCheckSecondsRemaining()==1);
+ tick=18999;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==300);
+ std::cout<<"PASS: 20-second first OTA check, five-minute normal cadence, bounded failure retry, stage retry, offline retry, and timer rollover\n";
 }
 '''
 with tempfile.TemporaryDirectory() as directory:

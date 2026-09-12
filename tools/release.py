@@ -24,6 +24,7 @@ V3_JS = ROOT / 'firmware/web/v3_mockup.js'
 RECOVERY_UI = ROOT / 'firmware/web/recovery.html'
 MAIN = ROOT / 'firmware/src/main.cpp'
 SLOT = 0x1E0000
+ZOPFLI_ITERATIONS = 50
 
 
 def sha(data):
@@ -47,6 +48,11 @@ def bump():
     major, minor, patch = map(int, m.groups())
     new = f'{major}.{minor}.{patch + 1}'
     (ROOT / 'FIRMWARE_VERSION.txt').write_text(new + '\n')
+    source = MAIN.read_text()
+    source, count = re.subn(r'static constexpr const char\* ANDERSON_FIRMWARE_VERSION="\d+\.\d+\.\d+[a-z]?";', f'static constexpr const char* ANDERSON_FIRMWARE_VERSION="{new}";', source, count=1)
+    if count != 1:
+        raise ValueError('Expected one ANDERSON_FIRMWARE_VERSION marker in firmware/src/main.cpp')
+    MAIN.write_text(source)
     readme = ROOT / 'README.md'
     if readme.exists():
         text = readme.read_text()
@@ -55,17 +61,15 @@ def bump():
     print(new)
 
 
-def sync_runtime_version():
-    """Make the build workspace use FIRMWARE_VERSION.txt without requiring large generated-file commits."""
+def validate_runtime_version():
+    """Require committed source and FIRMWARE_VERSION.txt to describe the same image."""
     ver = version()
     source = MAIN.read_text()
-    pattern = r'static constexpr const char\* ANDERSON_FIRMWARE_VERSION="\d+\.\d+\.\d+[a-z]?";'
-    replacement = f'static constexpr const char* ANDERSON_FIRMWARE_VERSION="{ver}";'
-    updated, count = re.subn(pattern, replacement, source, count=1)
-    if count != 1:
+    match = re.search(r'static constexpr const char\* ANDERSON_FIRMWARE_VERSION="(\d+\.\d+\.\d+[a-z]?)";', source)
+    if not match:
         raise ValueError('Expected one ANDERSON_FIRMWARE_VERSION marker in firmware/src/main.cpp')
-    if updated != source:
-        MAIN.write_text(updated)
+    if match.group(1) != ver:
+        raise ValueError(f'Committed runtime version {match.group(1)} does not match FIRMWARE_VERSION.txt {ver}')
 
 
 def render_ui():
@@ -130,7 +134,7 @@ def rendered_pages():
 @lru_cache(maxsize=4)
 def compress_page(rendered):
     """High-effort standard gzip; decompression stays in the existing browser."""
-    packed = zopfli.gzip.compress(rendered, numiterations=500, blocksplittingmax=0)
+    packed = zopfli.gzip.compress(rendered, numiterations=ZOPFLI_ITERATIONS, blocksplittingmax=0)
     if gzip.decompress(packed) != rendered:
         raise ValueError('Compressed web page failed its lossless round-trip check')
     return packed
@@ -151,8 +155,11 @@ class PageIds(HTMLParser):
 
 def check():
     ver, html, source = version(), render_ui(), MAIN.read_text()
-    if not re.search(r'ANDERSON_FIRMWARE_VERSION="\d+\.\d+\.\d+[a-z]?"', source):
+    runtime = re.search(r'ANDERSON_FIRMWARE_VERSION="(\d+\.\d+\.\d+[a-z]?)"', source)
+    if not runtime:
         raise ValueError('Firmware version marker missing from main.cpp')
+    if runtime.group(1) != ver:
+        raise ValueError(f'Firmware source version {runtime.group(1)} does not match {ver}')
     if f'>v{ver}<' not in html:
         raise ValueError('Rendered UI version mismatch')
     for name, page in rendered_pages().items():
@@ -173,7 +180,7 @@ def check():
 
 
 def prepare():
-    sync_runtime_version()
+    validate_runtime_version()
     check()
     lines = ['#pragma once', '#include <Arduino.h>']
     for name, rendered in rendered_pages().items():
@@ -183,7 +190,7 @@ def prepare():
         lines += ['  ' + ','.join(f'0x{b:02x}' for b in packed[i:i+20]) + ','
                   for i in range(0, len(packed), 20)]
         lines += ['};']
-        print(f'{name}: {len(rendered)} bytes -> {len(packed)} bytes (Zopfli gzip, 500 iterations)')
+        print(f'{name}: {len(rendered)} bytes -> {len(packed)} bytes (Zopfli gzip, {ZOPFLI_ITERATIONS} iterations)')
     text = '\n'.join(lines + [''])
     target = ROOT / 'firmware/include/WebUIGzip.h'
     if not target.exists() or target.read_text() != text:
@@ -217,7 +224,7 @@ def package(full):
                'gzip_sha256': sha(compress_page(page))}
         for name, page in rendered_pages().items()
     }
-    manifest['web_compression'] = 'zopfli-0.2.3.post1-gzip-500-unlimited-blocks'
+    manifest['web_compression'] = f'zopfli-0.2.3.post1-gzip-{ZOPFLI_ITERATIONS}-unlimited-blocks'
     for name, data in files.items():
         (folder / name).write_bytes(data)
         manifest['files'][name] = {'bytes': len(data), 'sha256': sha(data)}
