@@ -1,0 +1,60 @@
+name: Patch v3.0.24
+on:
+  push:
+    branches: ['codex/v3.0.24-favorites-schedule-controls']
+    paths: ['.github/workflows/patch-v3.0.24.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply favorites and schedule controls fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/src/main.cpp')
+          s=p.read_text()
+          old='''static bool migrateSceneFavoritesV2(){\n  Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=3)return true;\n  if(!clearCustomPresetFavorites())return false;size_t indices[MASTER_SCENE_FAVORITE_COUNT];\n  for(size_t n=0;n<MASTER_SCENE_FAVORITE_COUNT;n++){int idx=eventIndexById(MASTER_SCENE_FAVORITES[n].id);if(idx<0||idx>=(int)MAX_BUILTIN_EVENTS)return false;indices[n]=(size_t)idx;}\n  if(!eventStateReplaceFavorites(indices,MASTER_SCENE_FAVORITE_COUNT))return false;\n  auto& settings=store.get();settings.favoriteMask=0;store.saveAll();\n  if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",3);bool ok=marker.getUChar("calendarrev",0)==3;marker.end();return ok;\n}\n'''
+          new='''static bool seedMasterSceneFavoritesV4(){\n  Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=4)return true;\n  size_t indices[MASTER_SCENE_FAVORITE_COUNT];\n  for(size_t n=0;n<MASTER_SCENE_FAVORITE_COUNT;n++){int idx=eventIndexById(MASTER_SCENE_FAVORITES[n].id);if(idx<0||idx>=(int)MAX_BUILTIN_EVENTS)return false;indices[n]=(size_t)idx;}\n  if(!eventStateReplaceFavorites(indices,MASTER_SCENE_FAVORITE_COUNT))return false;\n  auto& settings=store.get();settings.favoriteMask=0;store.saveAll();\n  if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",4);bool ok=marker.getUChar("calendarrev",0)==4;marker.end();return ok;\n}\n'''
+          assert old in s
+          s=s.replace(old,new)
+          old_setup='if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();migrateSceneFavoritesV2();}loadEventOverrides();'
+          new_setup='if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();'
+          assert old_setup in s
+          s=s.replace(old_setup,new_setup)
+          oldver='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.23";'
+          assert oldver in s
+          s=s.replace(oldver,'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.24";')
+          p.write_text(s)
+
+          p=Path('firmware/web/index.html')
+          s=p.read_text()
+          old='''<div class="row between wraprow"><div><strong>Events This Month</strong><div class="sub">Enable schedules and mark Home favorites.</div></div><div class="row wraprow"><label class="row"><input id="eventsMaster" type="checkbox" checked><span class="small">Schedule 1</span></label><label class="row"><input id="schedule2Master" type="checkbox" checked><span class="small">Schedule 2</span></label></div></div>'''
+          new='''<div class="row between wraprow"><div><strong>Events This Month</strong><div class="sub">Enable events and mark Home favorites.</div></div></div>'''
+          assert old in s
+          s=s.replace(old,new)
+          old2='''<div class="note"><strong>Schedule 1</strong> uses the ON and END times below. <strong>Schedule 2</strong> starts automatically at Schedule 1's END time, keeps the same scheduled scene at 30% brightness, and turns off at locally calculated civil dawn. Schedule 1 and Schedule 2 can be enabled or disabled independently.</div>'''
+          new2='''<div class="note"><strong>Schedule 1</strong> uses the ON and END times below. <strong>Schedule 2</strong> starts automatically at Schedule 1's END time, keeps the same scheduled scene at 30% brightness, and turns off at locally calculated civil dawn.</div>\n      <div class="grid2" style="margin-top:10px"><label class="card row between" style="cursor:pointer"><span><strong>Schedule 1</strong><br><span class="sub">Normal evening schedule</span></span><input id="eventsMaster" type="checkbox" checked aria-label="Enable Schedule 1"></label><label class="card row between" style="cursor:pointer"><span><strong>Schedule 2</strong><br><span class="sub">30% from Schedule 1 end until dawn</span></span><input id="schedule2Master" type="checkbox" checked aria-label="Enable Schedule 2"></label></div>'''
+          assert old2 in s
+          s=s.replace(old2,new2)
+          p.write_text(s)
+
+          Path('FIRMWARE_VERSION.txt').write_text('3.0.24\n')
+          r=Path('README.md');t=r.read_text();t=t.replace('v3.0.23','v3.0.24',1);r.write_text(t)
+          Path('firmware/RELEASE_NOTES_v3.0.24.md').write_text('''# Anderson Home v3.0.24\n\n- Repairs Home Scene Favorites by reseeding the approved 28-scene list directly in event-state storage on upgrade, independent of the custom-storage self-test.\n- Moves the independent Schedule 1 and Schedule 2 enable controls into the Scheduling Rules panel as prominent controls.\n- Schedule 2 remains 30% brightness from Schedule 1 END until local civil dawn.\n- Preserves all five manual speed selections while built-in presets remain no faster than Slow.\n- Preserves the 210-event calendar, locked 9-color master palette, Wi-Fi, BLE, PINs, custom lights/schedules, partitions, and signed OTA trust.\n''')
+          PY
+      - name: Verify patch
+        run: |
+          grep -q 'seedMasterSceneFavoritesV4' firmware/src/main.cpp
+          grep -q 'calendarrev",4' firmware/src/main.cpp
+          grep -q 'aria-label="Enable Schedule 2"' firmware/web/index.html
+          grep -q '^3.0.24$' FIRMWARE_VERSION.txt
+      - name: Commit patch
+        run: |
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add firmware/src/main.cpp firmware/web/index.html FIRMWARE_VERSION.txt README.md firmware/RELEASE_NOTES_v3.0.24.md
+          git commit -m 'Fix Home favorites and Schedule 2 controls for v3.0.24'
+          git push origin HEAD:codex/v3.0.24-favorites-schedule-controls
