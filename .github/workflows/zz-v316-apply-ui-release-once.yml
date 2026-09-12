@@ -24,3 +24,4 @@ jobs:
           git add firmware tools FIRMWARE_VERSION.txt .github/workflows/compile-anderson-home-multi.yml
           git commit -m 'Prepare Anderson Home v3.1.6 event fairness and logout'
           git push origin HEAD:codex/release-v3.1.6-event-fairness
+# Retry after protected monthly coverage audit refinement.
