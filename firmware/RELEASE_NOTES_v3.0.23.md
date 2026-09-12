@@ -8,3 +8,4 @@
 - All 210 built-in event preset speed defaults are Very Slow or Slow; no built-in preset ships faster than Slow. Manual/custom controls still allow all five speed levels.
 - Expands firmware GitHub Actions retention to remove old patch/stage/publish/cleanup runs while leaving unrelated workflows alone.
 - Preserves the 210-event calendar, locked 9-color master palette, Wi-Fi, BLE, PINs, custom lights/schedules, partitions, and signed OTA trust.
+- Build source includes the corrected Arduino-safe dawn calculation constant naming.
