@@ -93,13 +93,10 @@ static bool restoreFromBackup(){
 bool runPaletteColorMigration(){
   uint8_t state=migrationState(),revision=migrationRevision();
   if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
-  // v3+ canonicalizes the device's CURRENT custom/scheduled palette in place.
-  // Favorite Colors are deliberately excluded from this migration.
-  if(revision>=2){if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return canonicalizeCurrentStoredPalette();}
-  if(state==STATE_RESTORE_PENDING)return restoreFromBackup();if(state==STATE_APPLY_PENDING)return applyFromBackup();
-  if(revision>0&&state==STATE_RESTORED)return setMigrationState(STATE_RESTORED,true);
-  if(revision>0&&state==STATE_APPLIED){JsonDocument backup;if(!loadBackup(backup))return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}
-  if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();
+  // Automatic v3 migration always works from the CURRENT custom lights and event
+  // overrides. It never reads or writes Favorite Colors, regardless of prior revision.
+  if(!setMigrationState(STATE_APPLY_PENDING,false))return false;
+  return canonicalizeCurrentStoredPalette();
 }
 bool restoreOriginalPaletteColors(){if(!createBackup())return false;if(!setMigrationState(STATE_RESTORE_PENDING,false))return false;return restoreFromBackup();}
 bool reapplyCorrectedPaletteColors(){if(!createBackup())return false;if(!setMigrationState(STATE_APPLY_PENDING,false))return false;return applyFromBackup();}
