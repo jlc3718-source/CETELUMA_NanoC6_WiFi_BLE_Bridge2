@@ -141,7 +141,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
 
 <div class="wrap">
   <div class="header">
-    <div class="headerActions"><span id="activeProfile" class="profilePill" hidden></span><button id="switchProfile" class="btn switchProfile" type="button" hidden>Switch User</button><div id="connectionBadge" class="badge offline">● Preview</div></div>
+    <div class="headerActions"><span id="activeProfile" class="profilePill" hidden></span><button id="switchProfile" class="btn switchProfile" type="button" hidden>Logout</button><div id="connectionBadge" class="badge offline">● Preview</div></div>
   </div>
 
   <div class="nav" role="tablist">
@@ -331,7 +331,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
 
         <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v3.0.0</strong></div></div>
 
-    <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Seasonal theme</div><div>7. Normal preset</div></div></div>
+    <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness / seasonal day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Normal preset</div><div style="margin-top:5px">Coverage guarantee: if higher-priority dates occupy every night of a month, the least-conflicted night reserves its first third for the enabled month-long events; the higher-priority scene finishes the night and continues through Schedule 2.</div></div></div>
   </section>
 
   <div id="statusMsg" class="status" aria-live="polite"></div>
@@ -619,7 +619,7 @@ function loadState(){
 }
 $('resumeSchedule').addEventListener('click',()=>post('/api/resume',{}).then(s=>{applyState(s);status('Automatic schedule resumed.')}).catch(()=>status('Preview mode — schedule resumed.')));
 
-function overlapHelp(){const v=$('overlapMode').value;$('overlapHelp').textContent=v==='rotate'?'Each enabled monthly event gets a full night, then the next one runs the following night.':v==='split'?'The scheduled night is divided evenly among enabled month-long events.':'Colors from all enabled month-long events are combined into one theme.'}$('overlapMode').addEventListener('change',overlapHelp);overlapHelp();
+function overlapHelp(){const v=$('overlapMode').value;$('overlapHelp').textContent=v==='rotate'?'Each enabled monthly event gets a full available night in order. If a whole month is occupied by higher-priority dates, one least-conflicted night reserves its first third for monthly coverage so none are skipped.':v==='split'?'The scheduled night is divided evenly among enabled month-long events.':'Colors from all enabled month-long events are combined into one theme.'}$('overlapMode').addEventListener('change',overlapHelp);overlapHelp();
 $('saveSettings').addEventListener('click',async()=>{const snapshot={overlap:$('overlapMode').value,on:$('onTime').value,off:$('offTime').value,lead:$('leadDays').value,trail:$('trailDays').value,tz:$('tz').value};const o={overlap:snapshot.overlap,on:snapshot.on,off:snapshot.off,lead:+snapshot.lead,trail:+snapshot.trail,tz:snapshot.tz,scheduler:$('eventsMaster').checked,scheduler2:$('schedule2Master').checked};try{const saved=await post('/api/settings',o);const map={overlapMode:'overlap',onTime:'on',offTime:'off',leadDays:'lead',trailDays:'trail',tz:'tz'};Object.entries(map).forEach(([id,key])=>{if(String($(id).value)===String(snapshot[key]))settingsDirty.delete(id)});applyState(saved);status('Schedule 1 and Schedule 2 settings saved and confirmed by the NanoC6.')}catch(e){status(API_MODE?'Settings failed: '+e.message:'Preview mode — settings simulated.')}});
 $('eventsMaster').addEventListener('change',()=>post('/api/settings',{scheduler:$('eventsMaster').checked}).then(applyState).catch(e=>status('Schedule 1 change failed: '+e.message)));
 $('schedule2Master').addEventListener('change',()=>post('/api/settings',{scheduler2:$('schedule2Master').checked}).then(applyState).catch(e=>status('Schedule 2 change failed: '+e.message)));

@@ -1,4 +1,4 @@
-# v3.1.5 final UI build trigger
+# v3.1.6 event fairness and bottom-menu logout
 from pathlib import Path
 import re
 
@@ -40,6 +40,14 @@ assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none
 assert 'Basic Scheme v 3.0.28' in web and 'v3.0.28 event palette' not in web
 assert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web
 assert 'id=\"homeSpeed\"' in mock and 'Effect Speed' in mock and "bindSpeedControl('homeSpeed')" in mock
+assert "icon('logout') + '<span>Logout</span>'" in mock and 'nav.appendChild(switcher)' in mock
+assert 'actions.replaceChildren(badge, profile, switcher)' not in mock and "'Logout'" in mock
+assert 'Specific holiday / awareness / seasonal day' in web and 'Coverage guarantee:' in web and '<div>6. Normal preset</div>' in web
+assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_ACTIVE_TIER_EVENTS=64' in sched
+assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched
+assert 'forcedMonthlyCoverage' in sched and 'first third of the least-conflicted' in sched
+assert 'if(specificCount)' in sched and 'if(holidayWindowCount)' in sched
+assert 'python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full' in build
 version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
 remote=t('firmware/src/RemoteUpdate.cpp')
 assert 'OTA_MANIFEST_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json"' in remote

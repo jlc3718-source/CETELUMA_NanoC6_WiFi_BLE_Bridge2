@@ -14,6 +14,7 @@
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/>',
     heart: '<path d="M20 4c-3-2-6-1-8 2-2-3-5-4-8-2-6 5 2 12 8 16 6-4 14-11 8-16Z"/>',
     user: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
+    logout: '<path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>',
     wifi: '<path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/>',
     arrow: '<path d="m9 5 7 7-7 7"/>', plus: '<path d="M12 4v16M4 12h16"/>',
     spark: '<path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/>'
@@ -52,8 +53,8 @@
     const actions = q('.headerActions'), badge = byId('connectionBadge'), profile = byId('activeProfile');
     badge.style.display = 'none';
     profile.className = 'v3ProfileName'; profile.style.display = 'none';
-    const switcher = byId('switchProfile'); switcher.innerHTML = icon('user'); switcher.setAttribute('aria-label','Switch user'); switcher.title = 'Switch user';
-    actions.replaceChildren(badge, profile, switcher);
+    const switcher = byId('switchProfile'); switcher.className = 'tab v3LogoutTab'; switcher.innerHTML = icon('logout') + '<span>Logout</span>'; switcher.setAttribute('aria-label','Logout'); switcher.title = 'Logout';
+    actions.replaceChildren(badge, profile); nav.appendChild(switcher);
     const wifi = routeButton('v3SettingsLink','wifi',`${icon('wifi')}<span><strong>Wi-Fi</strong><small>Network & connection</small></span>${icon('arrow')}`);
     q('.page[data-page="settings"]').prepend(wifi);
     byId('bleStatus').closest('.panel').id = 'v3Controllers';
@@ -197,7 +198,7 @@
   function syncRole() {
     q('.v3BottomNav').hidden=!window.andersonProfile;
     const admin=window.andersonProfile?.role==='admin' && window.andersonProfile?.id==='jason';
-    byId('switchProfile').setAttribute('aria-label',window.andersonProfile ? `Switch user, currently ${window.andersonProfile.name}`:'Switch user'); syncPage();
+    byId('switchProfile').setAttribute('aria-label',window.andersonProfile ? `Logout ${window.andersonProfile.name}`:'Logout'); syncPage();
   }
   function profiles() {
     const brand=q('.profileBrand');brand.classList.add('v3Scene'); brand.setAttribute('role','img');brand.setAttribute('aria-label','Anderson Home illuminated house and rainbow roof logo');
