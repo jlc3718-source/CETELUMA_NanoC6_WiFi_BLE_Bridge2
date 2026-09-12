@@ -7,3 +7,4 @@
 - Runs the NVS write/read/delete self-test only after a firmware-version change or when the read-only check fails, then records the tested version.
 - Adds NVS used/free entry counts and storage-health policy fields to `/api/system`.
 - Preserves the 28 approved Scene Favorites, 210-event calendar, locked 9-color palette, independent Schedule 1/2 controls, all five manual speed choices, Wi-Fi, BLE, PINs, custom lights/schedules, partitions, and signed OTA trust.
+- Production build is generated from the clean source tree after temporary patch tooling is removed.
