@@ -1,0 +1,25 @@
+name: Patch Anderson v3.0.27
+on:
+  push:
+    branches:
+      - staging/v3.0.27-settings-tabs
+    paths:
+      - .github/workflows/patch-v3027.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging/v3.0.27-settings-tabs
+          fetch-depth: 0
+      - run: python tools/patch_v3027_settings_tabs.py
+      - run: node --check firmware/web/v3_mockup.js
+      - run: |
+          git config user.name jlc3718-source
+          git config user.email jlc3718@gmail.com
+          git add firmware/web/v3_mockup.js firmware/web/v3_mockup.css FIRMWARE_VERSION.txt README.md firmware/RELEASE_NOTES_v3.0.27.md
+          git commit -m "Add Settings sub-tabs and simplify Home for v3.0.27"
+          git push origin HEAD:staging/v3.0.27-settings-tabs
