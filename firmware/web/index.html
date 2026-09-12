@@ -350,7 +350,7 @@ const EXPLICIT_LED={'#FF3B30':'#FF0D00','#EF4444':'#FF0D00','#DC2626':'#FF0D00',
 const LEGACY_DISPLAY={'#FF0000':'#FF0D00','#FF2900':'#FF0D00','#FF6E00':'#FFFF44','#4DFF00':'#28FF00','#00BD4C':'#28FF00','#05008A':'#0D00FF','#23018C':'#5B00E6','#BF0005':'#FF0024','#FFFFFF':'#FFFF44','#360500':'#FF0D00','#220200':'#FF0D00','#000000':'#5B00E6'};
 function normalizeLedColor(c){const k=normHex(c);return REFERENCE_LED[k]||EXPLICIT_LED[k]||k}
 function displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||LEGACY_DISPLAY[k]||c}
-function displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c} ${r} • LED ${k}`:c}
+function displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}
 
 let power=true,brightness=100,speed=1,tick=0;
 let running={name:'Yellow',colors:['#FFFF44'],effect:'Jump'},preview={...running,colors:[...running.colors]};
@@ -536,8 +536,8 @@ function editEventInline(ev,row){
   const speedLab=document.createElement('div');speedLab.className='label';speedLab.textContent='Speed';const evSpeed=document.createElement('input');evSpeed.type='range';evSpeed.min='1';evSpeed.max='5';evSpeed.value=ev.speed||1;const evSpeedVal=document.createElement('div');evSpeedVal.className='sub';const showEvSpeed=()=>evSpeedVal.textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][+evSpeed.value-1];evSpeed.addEventListener('input',showEvSpeed);showEvSpeed();
   const colorsLab=document.createElement('div');colorsLab.className='label';colorsLab.textContent='Colors — tap a color to open the RGB wheel; saved colors are available inside the wheel';
   const colors=document.createElement('div');colors.className='row wraprow';const eventFavLab=document.createElement('div');eventFavLab.className='label';eventFavLab.textContent='Favorite Colors';const eventFav=document.createElement('div');eventFav.className='savedColorGrid eventFavoriteGrid';
-  function addColor(v='#FFFFFF'){if(colors.children.length>=8)return;const slot=document.createElement('div');slot.className='row';slot.style.gap='4px';const inp=document.createElement('button');inp.type='button';inp.className='colorChip';setChipColor(inp,v);inp.onclick=()=>openRgbWheel(inp);const remove=document.createElement('button');remove.type='button';remove.className='btn danger';remove.textContent='×';remove.title='Remove this event color';remove.setAttribute('aria-label','Remove this event color');remove.onclick=()=>{if(colors.children.length<=1){status('An event must keep at least one color.');return}slot.remove()};slot.append(inp,remove);colors.appendChild(slot)}
-  (ev.colors||['#FFFFFF']).forEach(addColor);
+  function addColor(v='#FFFF44'){if(colors.children.length>=8)return;const slot=document.createElement('div');slot.className='row';slot.style.gap='4px';const inp=document.createElement('button');inp.type='button';inp.className='colorChip';setChipColor(inp,v);inp.onclick=()=>openRgbWheel(inp);const remove=document.createElement('button');remove.type='button';remove.className='btn danger';remove.textContent='×';remove.title='Remove this event color';remove.setAttribute('aria-label','Remove this event color');remove.onclick=()=>{if(colors.children.length<=1){status('An event must keep at least one color.');return}slot.remove()};slot.append(inp,remove);colors.appendChild(slot)}
+  (ev.colors||['#FFFF44']).forEach(addColor);
   const controls=document.createElement('div');controls.className='row wraprow';controls.style.marginTop='10px';
   const add=document.createElement('button');add.className='btn';add.textContent='Add Color';add.onclick=()=>addColor();
   const save=document.createElement('button');save.className='btn primary';save.textContent='Save Event';save.onclick=async()=>{const vals=[...colors.querySelectorAll('.colorChip')].map(x=>normalizeLedColor(x.dataset.color));await eventChange(ev.id,{effect:effect.value,speed:+evSpeed.value,colors:vals});status(ev.name+' updated directly. Future scheduled runs will use these settings.')};
@@ -560,7 +560,7 @@ const bc=s.ble?.connectedCount||0;$('bleStatus').textContent=bc?`Connected: ${bc
 let stateRequest=null;
 function loadState(){
   if(stateRequest)return stateRequest;
-  stateRequest=(async()=>{try{const s=await api('/api/state');$('connectionBadge').textContent='● Connected';$('connectionBadge').classList.remove('offline');applyState(s);loadFavorites()}catch(e){$('connectionBadge').textContent=API_MODE?'● Offline':'● Preview';$('connectionBadge').classList.add('offline');if(!API_MODE){setRunning('Suicide Prevention Awareness Month',['#00664D','#23018C'],'Gradient');$('nextEvent').textContent='988 Day • September 8';loadFavorites()}}})().finally(()=>{stateRequest=null});
+  stateRequest=(async()=>{try{const s=await api('/api/state');$('connectionBadge').textContent='● Connected';$('connectionBadge').classList.remove('offline');applyState(s);loadFavorites()}catch(e){$('connectionBadge').textContent=API_MODE?'● Offline':'● Preview';$('connectionBadge').classList.add('offline');if(!API_MODE){setRunning('Suicide Prevention Awareness Month',['#28FF00','#5B00E6'],'Gradient');$('nextEvent').textContent='988 Day • September 8';loadFavorites()}}})().finally(()=>{stateRequest=null});
   return stateRequest;
 }
 $('resumeSchedule').addEventListener('click',()=>post('/api/resume',{}).then(s=>{applyState(s);status('Automatic schedule resumed.')}).catch(()=>status('Preview mode — schedule resumed.')));
