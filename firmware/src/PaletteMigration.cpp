@@ -6,7 +6,7 @@
 #include <SPIFFS.h>
 
 static constexpr uint8_t BACKUP_FORMAT_VERSION=1;
-static constexpr uint8_t PALETTE_MIGRATION_REVISION=3;
+static constexpr uint8_t PALETTE_MIGRATION_REVISION=4;
 static constexpr uint8_t STATE_PENDING=0;
 static constexpr uint8_t STATE_APPLIED=1;
 static constexpr uint8_t STATE_RESTORED=2;
@@ -59,7 +59,9 @@ static bool transformPresetJson(const String& original,String& corrected){
   JsonDocument d;if(deserializeJson(d,original)||!d.is<JsonArray>())return false;for(JsonObject preset:d.as<JsonArray>())if(preset["colors"].is<JsonArray>())for(JsonVariant color:preset["colors"].as<JsonArray>())color.set(andersonCorrectHex(color.as<String>()));serializeJson(d,corrected);return corrected.length()<=3800;
 }
 static bool transformFavoriteJson(const String& original,String& corrected){
-  JsonDocument d;if(deserializeJson(d,original)||!d.is<JsonArray>())return false;for(JsonVariant color:d.as<JsonArray>())color.set(andersonCorrectHex(color.as<String>()));serializeJson(d,corrected);return true;
+  (void)original;JsonDocument d;JsonArray a=d.to<JsonArray>();
+  a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#0D00FF");a.add("#5B00E6");
+  serializeJson(d,corrected);return true;
 }
 static String transformEventRaw(const String& original){
   int sep=original.indexOf(';');if(sep<0)return original;String out=original.substring(0,sep+1),list=original.substring(sep+1);int start=0;bool first=true;
@@ -77,6 +79,9 @@ static bool canonicalizeCurrentStoredPalette(){
   String originalPresets=readPrefString("anderson-preset","custom","[]"),correctedPresets;
   if(!transformPresetJson(originalPresets,correctedPresets))return false;
   if(!writePrefStringVerified("anderson-preset","custom",correctedPresets))return false;
+  String originalFavorites=readPrefString("anderson-colors","saved","[]"),correctedFavorites;
+  if(!transformFavoriteJson(originalFavorites,correctedFavorites))return false;
+  if(!writePrefStringVerified("anderson-colors","saved",correctedFavorites))return false;
   JsonDocument current;JsonObject events=current["events"].to<JsonObject>();
   for(size_t i=0;i<64;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
   if(!writeEvents(events,true))return false;
@@ -84,7 +89,8 @@ static bool canonicalizeCurrentStoredPalette(){
 }
 static bool applyFromBackup(){
   JsonDocument backup;if(!loadBackup(backup))return false;String presets;if(!transformPresetJson(backup["presets"].as<String>(),presets))return false;
-  if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writeEvents(backup["events"].as<JsonObject>(),true))return false;return setMigrationState(STATE_APPLIED,true);
+  if(!writePrefStringVerified("anderson-preset","custom",presets))return false;String favorites;if(!transformFavoriteJson(backup["favoriteColors"].as<String>(),favorites))return false;
+  if(!writePrefStringVerified("anderson-colors","saved",favorites))return false;if(!writeEvents(backup["events"].as<JsonObject>(),true))return false;return setMigrationState(STATE_APPLIED,true);
 }
 static bool restoreFromBackup(){
   JsonDocument backup;if(!loadBackup(backup))return false;String presets=backup["presets"].as<String>();if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writeEvents(backup["events"].as<JsonObject>(),false))return false;return setMigrationState(STATE_RESTORED,true);
@@ -93,8 +99,8 @@ static bool restoreFromBackup(){
 bool runPaletteColorMigration(){
   uint8_t state=migrationState(),revision=migrationRevision();
   if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
-  // Automatic v3 migration always works from the CURRENT custom lights and event
-  // overrides. It never reads or writes Favorite Colors, regardless of prior revision.
+  // Automatic v4 migration normalizes CURRENT custom lights and event overrides,
+  // then resets Favorite Colors to the six approved user baselines.
   if(!setMigrationState(STATE_APPLY_PENDING,false))return false;
   return canonicalizeCurrentStoredPalette();
 }
