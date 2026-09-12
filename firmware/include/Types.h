@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 // Append new effects so the numeric values of existing saved/built-in effects never shift.
-enum class Effect : uint8_t { Jump, Breath, Strobe, Gradient, Solid };
+enum class Effect : uint8_t { Jump=0, Breath=1, Strobe=2, Solid=4 };
 enum class EventKind : uint8_t { Holiday, Awareness, Seasonal };
 enum class RuleType : uint8_t { Fixed, Month, NthWeekday, LastWeekday, EasterOffset, Hanukkah, MonthEnd, YearTable };
 
@@ -56,7 +56,6 @@ inline const char* effectName(Effect e) {
     case Effect::Jump: return "Jump";
     case Effect::Breath: return "Breath";
     case Effect::Strobe: return "Strobe";
-    case Effect::Gradient: return "Gradient";
     case Effect::Solid: return "Solid";
   }
   return "Jump";
@@ -67,7 +66,7 @@ inline Effect effectFromString(const String& s) {
   // old presets/API calls cannot reintroduce retired effects.
   if (s=="Breath" || s=="Pulse") return Effect::Breath;
   if (s=="Strobe" || s=="Twinkle") return Effect::Strobe;
-  if (s=="Gradient" || s=="Fade" || s=="Rainbow" || s=="Fire" || s=="Water") return Effect::Gradient;
+  if (s=="Gradient" || s=="Fade" || s=="Rainbow" || s=="Fire" || s=="Water") return Effect::Breath;
   if (s=="Solid" || s=="Static") return Effect::Solid;
   // Jump remains the safe replacement for Chase/Meteor/Candy Cane and unknown names.
   return Effect::Jump;

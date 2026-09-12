@@ -178,34 +178,12 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
     return;
   }
 
-  // Breath and Gradient use interval-derived frames and an eight-interval fade cycle so neither
-  // effect can fall back to a separate fixed speed.
-  uint32_t frame=max((uint32_t)55,interval/5);
-  if(!force && nowMs-lastEffect<frame)return;
-  lastEffect=nowMs;
-  float cycleMs=(float)(interval*8UL);
-  float phase=fmodf((float)nowMs,cycleMs)/cycleMs;
-  int idx=(int)(phase*count)%count;
-  int nxt=(idx+1)%count;
-  float local=fmodf(phase*count,1.0f);
-  uint32_t a=t.colors[idx],z=t.colors[nxt];
-  uint8_t R=(uint8_t)(r8(a)+(r8(z)-r8(a))*local);
-  uint8_t G=(uint8_t)(g8(a)+(g8(z)-g8(a))*local);
-  uint8_t B=(uint8_t)(b8(a)+(b8(z)-b8(a))*local);
-  uint32_t color=((uint32_t)R<<16)|((uint32_t)G<<8)|B;
-
   if(t.effect==Effect::Breath){
-    // Switch/blend colors slowly while brightness rises and falls.
-    float wave=0.5f-0.5f*cosf(phase*2.0f*PI);
-    uint8_t level=(uint8_t)max(1.0f,bright*(0.10f+0.90f*wave));
-    setColor(count>1?color:t.colors[0]);
-    setBrightness(level);
-    return;
+    uint32_t frame=max((uint32_t)55,interval/5);if(!force && nowMs-lastEffect<frame)return;lastEffect=nowMs;
+    float cycleMs=(float)(interval*8UL),phase=fmodf((float)nowMs,cycleMs)/cycleMs;int idx=(int)(phase*count)%count,nxt=(idx+1)%count;float local=fmodf(phase*count,1.0f);
+    uint32_t a=t.colors[idx],z=t.colors[nxt];uint8_t R=(uint8_t)(r8(a)+(r8(z)-r8(a))*local),G=(uint8_t)(g8(a)+(g8(z)-g8(a))*local),B=(uint8_t)(b8(a)+(b8(z)-b8(a))*local);uint32_t color=((uint32_t)R<<16)|((uint32_t)G<<8)|B;
+    float wave=0.5f-0.5f*cosf(phase*2.0f*PI);uint8_t level=(uint8_t)max(1.0f,bright*(0.10f+0.90f*wave));setColor(count>1?color:t.colors[0]);setBrightness(level);return;
   }
-
-  // Gradient: continuously blend through the event/preset colors at the selected speed.
-  setColor(color);
-  if(force||changed)setBrightness(bright);
 }
 
 void BleController::loop(){

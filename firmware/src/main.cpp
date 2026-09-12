@@ -17,6 +17,7 @@
 #include "WebUIGzip.h"
 #include "Types.h"
 #include "EventCatalog.h"
+#include "EventColorThemes.h"
 #include "EventState.h"
 #include "SettingsStore.h"
 #include "BleController.h"
@@ -60,7 +61,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.26";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.0";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -73,7 +74,8 @@ struct AuthSession{String token;String profile;uint8_t role=ROLE_NONE;uint32_t l
 static AuthSession authSessions[4];
 static bool pinProtectionEnabled=false;
 static String shirleyPinSalt,shirleyPinHash,jasonPinSalt,jasonPinHash;
-static IPAddress pinAttemptIp;static bool pinAttemptIpSet=false;static uint8_t pinFailureCount=0;static uint32_t pinBlockedUntil=0;
+struct PinAttemptState{IPAddress ip;bool used=false;uint8_t failures=0;uint32_t blockedUntil=0;uint32_t lastSeen=0;};
+static PinAttemptState pinAttempts[6];
 
 static bool fourDigitPin(const String& pin){if(pin.length()!=4)return false;for(size_t i=0;i<4;i++)if(pin[i]<'0'||pin[i]>'9')return false;return true;}
 static String hexBytes(const uint8_t* data,size_t len){static const char h[]="0123456789abcdef";String out;out.reserve(len*2);for(size_t i=0;i<len;i++){out+=h[data[i]>>4];out+=h[data[i]&15];}return out;}
@@ -90,17 +92,17 @@ static void loadPinAuthConfig(){Preferences p;if(!p.begin("anderson-auth",true))
 static bool configureProfilePins(const String& shirleyPin,const String& jasonPin){if(!fourDigitPin(shirleyPin)||!fourDigitPin(jasonPin)||shirleyPin==jasonPin)return false;String ss=randomHex(16),js=randomHex(16),sh=pinDigest("shirley",shirleyPin,ss),jh=pinDigest("jason",jasonPin,js);if(sh.length()!=64||jh.length()!=64||!storePinAuthConfig(true,ss,sh,js,jh))return false;shirleyPinSalt=ss;shirleyPinHash=sh;jasonPinSalt=js;jasonPinHash=jh;pinProtectionEnabled=true;clearAuthSessions();return true;}
 static bool disablePinProtection(){if(!basePinAuthConfigured())return false;if(!storePinAuthConfig(false,shirleyPinSalt,shirleyPinHash,jasonPinSalt,jasonPinHash))return false;pinProtectionEnabled=false;clearAuthSessions();return true;}
 static uint8_t sessionRoleForToken(const String& token,bool touch=true){if(token.length()!=64)return ROLE_NONE;uint32_t now=millis();for(auto&s:authSessions){if(!s.token.length())continue;if((uint32_t)(now-s.lastSeen)>AUTH_SESSION_TTL_MS){s.token="";s.profile="";s.role=ROLE_NONE;continue;}if(constantTimeEqual(s.token,token)){if(touch)s.lastSeen=now;return s.role;}}return ROLE_NONE;}
-static String issueAuthSession(uint8_t role,const String& profile){uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;bool found=false;for(size_t i=0;i<4;i++){uint32_t age=(uint32_t)(now-authSessions[i].lastSeen);if(!authSessions[i].token.length()||age>AUTH_SESSION_TTL_MS){slot=i;found=true;break;}if(!found||age>oldestAge){oldestAge=age;slot=i;}}authSessions[slot].token=randomHex(32);authSessions[slot].profile=profile;authSessions[slot].role=role;authSessions[slot].lastSeen=now;return authSessions[slot].token;}
+static String issueAuthSession(uint8_t role,const String& profile){uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;for(size_t i=0;i<4;i++){uint32_t age=(uint32_t)(now-authSessions[i].lastSeen);if(!authSessions[i].token.length()||age>AUTH_SESSION_TTL_MS){slot=i;break;}if(i==0||age>oldestAge){oldestAge=age;slot=i;}}authSessions[slot].token=randomHex(32);authSessions[slot].profile=profile;authSessions[slot].role=role;authSessions[slot].lastSeen=now;return authSessions[slot].token;}
 static String sessionProfileForToken(const String& token){if(token.length()!=64)return "";for(auto&s:authSessions)if(s.token.length()&&constantTimeEqual(s.token,token))return s.profile;return "";}
 static void revokeAuthSession(const String& token){for(auto&s:authSessions)if(token.length()&&constantTimeEqual(s.token,token)){s.token="";s.profile="";s.role=ROLE_NONE;s.lastSeen=0;}}
 static uint8_t requestRole(){if(!pinProtectionEnabled)return ROLE_ADMIN;return sessionRoleForToken(server.header(AUTH_HEADER));}
 static bool requireRole(uint8_t needed){uint8_t role=requestRole();if(role>=needed)return true;server.sendHeader("Cache-Control","no-store");if(role==ROLE_NONE)server.send(401,"application/json","{\"ok\":false,\"error\":\"A valid profile PIN is required\"}");else server.send(403,"application/json","{\"ok\":false,\"error\":\"This profile cannot use that control\"}");return false;}
 static bool requireUser(){return requireRole(ROLE_USER);}
 static bool requireAdmin(){return requireRole(ROLE_ADMIN);}
-static void syncPinAttemptClient(){IPAddress ip=server.client().remoteIP();if(!pinAttemptIpSet||ip!=pinAttemptIp){pinAttemptIp=ip;pinAttemptIpSet=true;pinFailureCount=0;pinBlockedUntil=0;}}
-static uint32_t pinRetryAfter(){syncPinAttemptClient();int32_t remaining=(int32_t)(pinBlockedUntil-millis());return remaining>0?(uint32_t)(remaining+999)/1000:0;}
-static void notePinFailure(){syncPinAttemptClient();if(++pinFailureCount>=5){pinFailureCount=0;pinBlockedUntil=millis()+60000UL;}}
-static void clearPinFailures(){syncPinAttemptClient();pinFailureCount=0;pinBlockedUntil=0;}
+static PinAttemptState& currentPinAttempt(){IPAddress ip=server.client().remoteIP();uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;for(size_t i=0;i<6;i++){if(pinAttempts[i].used&&pinAttempts[i].ip==ip){pinAttempts[i].lastSeen=now;return pinAttempts[i];}if(!pinAttempts[i].used){slot=i;oldestAge=UINT32_MAX;break;}uint32_t age=(uint32_t)(now-pinAttempts[i].lastSeen);if(i==0||age>oldestAge){oldestAge=age;slot=i;}}PinAttemptState& a=pinAttempts[slot];a=PinAttemptState();a.used=true;a.ip=ip;a.lastSeen=now;return a;}
+static uint32_t pinRetryAfter(){auto&a=currentPinAttempt();int32_t remaining=(int32_t)(a.blockedUntil-millis());return remaining>0?(uint32_t)(remaining+999)/1000:0;}
+static void notePinFailure(){auto&a=currentPinAttempt();if(++a.failures>=5){a.failures=0;a.blockedUntil=millis()+60000UL;}}
+static void clearPinFailures(){auto&a=currentPinAttempt();a.failures=0;a.blockedUntil=0;}
 static bool verifyProfilePin(const String& profile,const String& pin,uint8_t& role){role=profileRole(profile);if(role==ROLE_NONE||!fourDigitPin(pin))return false;const String& salt=profile=="jason"?jasonPinSalt:shirleyPinSalt;const String& expected=profile=="jason"?jasonPinHash:shirleyPinHash;return constantTimeEqual(pinDigest(profile,pin,salt),expected);}
 static String pinAuthStatusJson(){JsonDocument d;String token=server.header(AUTH_HEADER);uint8_t role=pinProtectionEnabled?sessionRoleForToken(token,false):ROLE_NONE;String profile=role!=ROLE_NONE?sessionProfileForToken(token):String("");d["pinEnabled"]=pinProtectionEnabled;d["configured"]=basePinAuthConfigured();d["pinLength"]=4;d["authenticated"]=role!=ROLE_NONE;if(role!=ROLE_NONE){d["role"]=role==ROLE_ADMIN?"admin":"user";d["name"]=profileDisplayName(profile);}String out;serializeJson(d,out);return out;}
 
@@ -111,17 +113,13 @@ static String customFileRead(const char* path){const char* ns=nullptr;const char
 static bool customFileWrite(const char* path,const String& data){const char* ns=nullptr;const char* key=nullptr;if(!customStoreLocation(path,ns,key))return false;Preferences p;if(!p.begin(ns,false))return false;size_t wrote=p.putString(key,data);String verify=p.getString(key,"");p.end();return wrote==data.length()&&verify==data;}
 static String presetStoreRaw(){return customFileRead("/custom_lights.json");}
 static String scheduleStoreRaw(){return customFileRead("/custom_schedules.json");}
-static uint32_t nextStoredId(JsonArray arr,const char prefix){uint32_t maxId=0;for(JsonObject o:arr){String id=o["id"].as<String>();if(id.length()>1&&id[0]==prefix){uint32_t n=id.substring(1).toInt();if(n>maxId)maxId=n;}}return maxId+1;}
+static uint32_t nextStoredId(JsonArray arr,const char prefix){uint32_t maxId=0;for(JsonObject o:arr){String id=o["id"].as<String>();if(id.length()>1&&id[0]==prefix){uint32_t n=id.substring(1).toInt();if(n>maxId)maxId=n;}}Preferences p;if(!p.begin("anderson-ids",false))return 0;const char* key=prefix=='p'?"preset":"sched";uint32_t stored=p.getUInt(key,0),next=max(maxId,stored)+1;size_t wrote=p.putUInt(key,next);bool ok=wrote>0&&p.getUInt(key,0)==next;p.end();return ok?next:0;}
 static bool jsonArrayValid(const String& raw){JsonDocument d;return !deserializeJson(d,raw)&&d.is<JsonArray>();}
 static void migrateLegacyCustomStorage(){String lights=presetStoreRaw();if(!jsonArrayValid(lights))customFileWrite("/custom_lights.json","[]");String schedules=scheduleStoreRaw();if(!jsonArrayValid(schedules))customFileWrite("/custom_schedules.json","[]");}
 
 // Complete the legacy calendar marker without resetting user data.
 // The compiled catalog, eventStateBegin(), and seedMasterSceneFavoritesV4() provide defaults.
-static bool writeMasterFavoriteColors(){
-  JsonDocument d;JsonArray a=d.to<JsonArray>();
-  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");
-  String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-colors",false))return false;size_t wrote=p.putString("saved",raw);bool ok=wrote==raw.length()&&p.getString("saved","")==raw;p.end();return ok;
-}
+static bool writeMasterFavoriteColors(){JsonDocument d;JsonArray a=d.to<JsonArray>();for(size_t i=0;i<ANDERSON_COLOR_PALETTE_COUNT;i++)a.add(colorHex(ANDERSON_COLOR_PALETTE[i].output));String raw;serializeJson(d,raw);Preferences p;if(!p.begin("anderson-colors",false))return false;size_t wrote=p.putString("saved",raw);bool ok=wrote==raw.length()&&p.getString("saved","")==raw;p.end();return ok;}
 static bool migrateMasterCalendarV1(){
   Preferences marker;if(!marker.begin("anderson",true))return false;uint8_t rev=marker.getUChar("calendarrev",0);marker.end();if(rev>=1)return true;
   // eventStateBegin() initializes the corrected event-state store before this call.
@@ -169,7 +167,7 @@ static bool seedMasterSceneFavoritesV4(){
   size_t indices[MASTER_SCENE_FAVORITE_COUNT];
   for(size_t n=0;n<MASTER_SCENE_FAVORITE_COUNT;n++){int idx=eventIndexById(MASTER_SCENE_FAVORITES[n].id);if(idx<0||idx>=(int)MAX_BUILTIN_EVENTS)return false;indices[n]=(size_t)idx;}
   if(!eventStateReplaceFavorites(indices,MASTER_SCENE_FAVORITE_COUNT))return false;
-  auto& settings=store.get();settings.favoriteMask=0;store.saveAll();
+  auto& settings=store.get();settings.favoriteMask=0;if(!store.saveAll())return false;
   if(!marker.begin("anderson",false))return false;marker.putUChar("calendarrev",4);bool ok=marker.getUChar("calendarrev",0)==4;marker.end();return ok;
 }
 
@@ -187,24 +185,9 @@ static bool storageHealthCheck(){
   return wrote==version.length()&&verify==version;
 }
 
-static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){
-  JsonDocument list;if(deserializeJson(list,presetStoreRaw()))return false;
-  for(JsonObject o:list.as<JsonArray>()){
-    if(o["id"].as<String>()!=id)continue;if(activeOnly&&!(o["enabled"]|true))return false;t.name=o["name"].as<String>();if(outName)*outName=t.name;t.effect=effectFromString(o["effect"].as<String>());t.colorCount=0;
-    for(JsonVariant v:o["colors"].as<JsonArray>()){if(t.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())t.colors[t.colorCount++]=strtoul(cs.c_str(),nullptr,16);}
-    if(!t.colorCount){t.colors[0]=0xFFFF44;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;
-  }return false;
-}
-static bool resolveCustomSchedule(const tm& l,Theme& t,uint8_t& br,uint8_t& sp){
-  JsonDocument list;if(deserializeJson(list,scheduleStoreRaw()))return false;bool found=false;
-  for(JsonObject o:list.as<JsonArray>()){
-    if(!(o["enabled"]|true))continue;int m=o["month"]|0,d=o["day"]|0,y=o["year"]|0;bool annual=o["annual"]|true;
-    if(m!=l.tm_mon+1||d!=l.tm_mday)continue;if(!annual&&y!=l.tm_year+1900)continue;Theme q;uint8_t qb=100,qs=1;if(loadPresetTheme(o["presetId"].as<String>(),q,qb,qs,nullptr,true)){t=q;br=qb;sp=qs;found=true;}
-  }return found;
-}
-static bool removeSchedulesForPreset(const String& presetId){
-  String raw=scheduleStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonArray a=list.as<JsonArray>();for(int i=(int)a.size()-1;i>=0;i--)if(a[i]["presetId"].as<String>()==presetId)a.remove(i);String out;serializeJson(list,out);bool ok=customFileWrite("/custom_schedules.json",out);return ok;
-}
+static bool loadPresetThemeFromArray(JsonArray presets,const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){for(JsonObject o:presets){if(o["id"].as<String>()!=id)continue;if(activeOnly&&!(o["enabled"]|true))return false;t.name=o["name"].as<String>();if(outName)*outName=t.name;t.effect=effectFromString(o["effect"].as<String>());t.colorCount=0;for(JsonVariant v:o["colors"].as<JsonArray>()){if(t.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())t.colors[t.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!t.colorCount){t.colors[0]=0xFFFF44;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;}return false;}
+static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){JsonDocument list;if(deserializeJson(list,presetStoreRaw())||!list.is<JsonArray>())return false;return loadPresetThemeFromArray(list.as<JsonArray>(),id,t,br,sp,outName,activeOnly);}
+static bool resolveCustomSchedule(const tm& l,Theme& t,uint8_t& br,uint8_t& sp){JsonDocument schedules,presets;if(deserializeJson(schedules,scheduleStoreRaw())||!schedules.is<JsonArray>()||deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;bool found=false;for(JsonObject o:schedules.as<JsonArray>()){if(!(o["enabled"]|true))continue;int m=o["month"]|0,d=o["day"]|0,y=o["year"]|0;bool annual=o["annual"]|true;if(m!=l.tm_mon+1||d!=l.tm_mday||(!annual&&y!=l.tm_year+1900))continue;Theme q;uint8_t qb=100,qs=1;if(loadPresetThemeFromArray(presets.as<JsonArray>(),o["presetId"].as<String>(),q,qb,qs,nullptr,true)){t=q;br=qb;sp=qs;found=true;}}return found;}
 
 static bool otaPartitionValid(const esp_partition_t* p){
   if(!p)return false;esp_app_desc_t desc{};return esp_ota_get_partition_description(p,&desc)==ESP_OK;
@@ -266,44 +249,20 @@ static String systemJson(){
 // The independent recovery page is compressed separately by tools/release.py.
 
 
-struct EventOverrideCfg {
-  bool valid=false;
-  Effect effect=Effect::Jump;
-  uint32_t colors[8]={0};
-  uint8_t colorCount=0;
-  uint8_t speed=1;
-};
-static EventOverrideCfg eventOverrides[MAX_BUILTIN_EVENTS];
+static EventColorTheme activeEventColorTheme=EventColorTheme::Modern;
+static uint32_t eventColorThemeGeneration=1;
+static bool loadEventColorTheme(){Preferences p;if(!p.begin("anderson-evpal",true))return false;uint8_t t=p.getUChar("theme",1);uint32_t g=p.getUInt("gen",1);p.end();activeEventColorTheme=t==0?EventColorTheme::Original:EventColorTheme::Modern;eventColorThemeGeneration=max((uint32_t)1,g);return true;}
+static bool setEventColorTheme(EventColorTheme next){if(next==activeEventColorTheme)return true;uint32_t nextGen=eventColorThemeGeneration+1;if(nextGen==0)nextGen=1;Preferences p;if(!p.begin("anderson-evpal",false))return false;size_t wt=p.putUChar("theme",next==EventColorTheme::Original?0:1),wg=p.putUInt("gen",nextGen);bool ok=wt>0&&wg>0&&p.getUChar("theme",255)==(next==EventColorTheme::Original?0:1)&&p.getUInt("gen",0)==nextGen;p.end();if(!ok)return false;activeEventColorTheme=next;eventColorThemeGeneration=nextGen;return true;}
 
+struct EventOverrideCfg{bool valid=false;Effect effect=Effect::Jump;uint32_t colors[8]={0};uint8_t colorCount=0;uint8_t speed=1;uint32_t colorGeneration=1;};
+static EventOverrideCfg eventOverrides[MAX_BUILTIN_EVENTS];
 static String eventOverrideKey(size_t i){return String("e")+String((unsigned)i);}
 static uint8_t scheduledEventSpeedHint=1;
-Theme applyEventOverrideByIndex(size_t i,const Theme& base){
-  Theme t=base;scheduledEventSpeedHint=eventSpeed(i);
-  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;
-  scheduledEventSpeedHint=constrain(eventOverrides[i].speed,1,5);t.effect=eventOverrides[i].effect;t.colorCount=eventOverrides[i].colorCount;
-  for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=eventOverrides[i].colors[c];
-  return t;
-}
+Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;if(i<EVENT_COUNT&&activeEventColorTheme==EventColorTheme::Original)applyOriginalEventColors(i,t);scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,5);t.effect=o.effect;if(o.colorCount&&o.colorGeneration==eventColorThemeGeneration){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
 static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
-static void loadEventOverrides(){
-  Preferences p;p.begin("anderson-event",true);
-  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-    String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;
-    int sep=raw.indexOf(';');if(sep<1)continue;
-    String head=raw.substring(0,sep);int bar=head.indexOf('|');EventOverrideCfg o;o.valid=true;
-    if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,5);}else{o.effect=effectFromString(head);o.speed=1;}
-    String list=raw.substring(sep+1);int start=0;
-    while(start<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',start);String v=comma<0?list.substring(start):list.substring(start,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;start=comma+1;}
-    if(o.colorCount)eventOverrides[i]=o;
-  }
-  p.end();
-}
-static void saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){
-  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return;EventOverrideCfg&o=eventOverrides[i];o.valid=true;o.effect=t.effect;o.speed=constrain(sp,1,5);o.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<o.colorCount;c++)o.colors[c]=andersonCorrectColor(t.colors[c]);
-  String raw=String(effectName(o.effect))+"|"+String(o.speed)+";";for(uint8_t c=0;c<o.colorCount;c++){if(c)raw+=",";raw+=colorHex(o.colors[c]);}
-  Preferences p;p.begin("anderson-event",false);p.putString(eventOverrideKey(i).c_str(),raw);p.end();
-}
-static void clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return;eventOverrides[i]=EventOverrideCfg();Preferences p;p.begin("anderson-event",false);p.remove(eventOverrideKey(i).c_str());p.end();}
+static void loadEventOverrides(){Preferences p;if(!p.begin("anderson-event",true))return;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;int sep=raw.indexOf(';');if(sep<1)continue;String head=raw.substring(0,sep);EventOverrideCfg o;o.valid=true;o.colorGeneration=eventColorThemeGeneration;if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b1<0||b2<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1,b2).toInt(),1,5);o.colorGeneration=max((uint32_t)1,(uint32_t)head.substring(b2+1).toInt());}else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,5);}else{o.effect=effectFromString(head);o.speed=1;}}String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}eventOverrides[i]=o;}p.end();}
+static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next;next.valid=true;next.effect=t.effect;next.speed=constrain(sp,1,5);next.colorGeneration=eventColorThemeGeneration;next.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=andersonCorrectColor(t.colors[c]);String raw=String("v2|")+effectName(next.effect)+"|"+String(next.speed)+"|"+String(next.colorGeneration)+";";for(uint8_t c=0;c<next.colorCount;c++){if(c)raw+=",";raw+=colorHex(next.colors[c]);}Preferences p;if(!p.begin("anderson-event",false))return false;String key=eventOverrideKey(i);size_t wrote=p.putString(key.c_str(),raw);String verify=p.getString(key.c_str(),"");p.end();if(wrote!=raw.length()||verify!=raw)return false;eventOverrides[i]=next;return true;}
+static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i);Preferences p;if(!p.begin("anderson-event",false))return false;String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
 
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
 String stateJson(){
@@ -411,7 +370,7 @@ void setupRoutes(){
   });
 
   server.on("/api/events",HTTP_GET,[]{
-    if(!requireUser())return;int year=server.arg("year").toInt(),month=server.arg("month").toInt();if(year<2020)year=2026;if(month<1||month>12)month=1;
+    if(!requireUser())return;int year=server.arg("year").toInt(),month=server.arg("month").toInt();if(year<2020)year=2026;if(year>2037){server.send(400,"text/plain","Built-in variable-date calendar is supported through 2037");return;}if(month<1||month>12)month=1;
     JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();int monthly=0;
     for(size_t i=0;i<EVENT_COUNT;i++){if(!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<MAX_BUILTIN_EVENTS?eventOverrides[i].valid:false;e["speed"]=(i<MAX_BUILTIN_EVENTS&&eventOverrides[i].valid)?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
     d["overlap"]=monthly>1?String(monthly)+" month-long events enabled — overlap rule applies.":(monthly==1?"1 month-long event enabled.":"No month-long awareness themes enabled.");
@@ -425,42 +384,36 @@ void setupRoutes(){
     JsonDocument presets;if(!deserializeJson(presets,presetStoreRaw())&&presets.is<JsonArray>())for(JsonObject p:presets.as<JsonArray>()){if(!(p["favorite"]|false))continue;JsonObject e=arr.add<JsonObject>();e["id"]=p["id"];e["name"]=p["name"];e["effect"]=p["effect"]|String("Jump");e["brightness"]=constrain(p["brightness"]|100,1,100);e["speed"]=constrain(p["speed"]|1,1,5);e["enabled"]=p["enabled"]|true;e["custom"]=true;JsonArray c=e["colors"].to<JsonArray>();for(JsonVariant v:p["colors"].as<JsonArray>())c.add(v.as<String>());}
     String out;serializeJson(d,out);sendJson(out);
   });
+  server.on("/api/events/search",HTTP_GET,[]{if(!requireUser())return;int year=server.arg("year").toInt();String query=server.arg("q");query.trim();query.toLowerCase();if(year<2020||year>2037||!query.length()){server.send(400,"text/plain","Choose a supported year and search term");return;}JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();bool truncated=false;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){String when=eventWhen(i,year);if(when.startsWith("No scheduled"))continue;String hay=String(EVENTS[i].name)+" "+when+" "+kindName(EVENTS[i].kind);hay.toLowerCase();if(hay.indexOf(query)<0)continue;if(arr.size()>=96){truncated=true;break;}Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["when"]=when;e["kind"]=kindName(EVENTS[i].kind);e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);e["customized"]=eventOverrides[i].valid;JsonArray c=e["colors"].to<JsonArray>();for(uint8_t k=0;k<et.colorCount;k++)c.add(colorHex(et.colors[k]));}d["truncated"]=truncated;String out;serializeJson(d,out);sendJson(out);});
   server.on("/api/event",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=(int)EVENT_COUNT||i>=(int)MAX_BUILTIN_EVENTS){server.send(404,"text/plain","Unknown event");return;}auto&s=store.get();
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=(int)EVENT_COUNT||i>=(int)MAX_BUILTIN_EVENTS){server.send(404,"text/plain","Unknown event");return;}
     if(!d["enabled"].isNull()&&!eventStateSetEnabled(i,d["enabled"].as<bool>())){
       server.send(500,"text/plain","Event enabled preference write failed");return;
     }
     if(!d["favorite"].isNull()&&!eventStateSetFavorite(i,d["favorite"].as<bool>())){
       server.send(500,"text/plain","Event favorite preference write failed");return;
     }
-    if(d["reset"]|false){clearEventOverride(i);}
-    else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:1;if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,5);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){et.colors[0]=0xFFFF44;et.colorCount=1;}}saveEventOverride(i,et,esp);}
-    store.saveAll();evaluateSchedule(true);sendJson(stateJson());
-  });
-  server.on("/api/events/bulk",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;int y=d["year"]|2026,m=d["month"]|1;bool en=d["enabled"]|false;auto&s=store.get();for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eventOccursInMonth(i,y,m))eventStateSetEnabled(i,en);store.saveAll();server.send(204);
+    if(d["reset"]|false){if(!clearEventOverride(i)){server.send(500,"text/plain","Event override reset failed");return;}}
+    else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,5);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length()==6)et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){server.send(400,"text/plain","Event must contain at least one valid color");return;}}if(!saveEventOverride(i,et,esp)){server.send(500,"text/plain","Event override write failed");return;}}
+    evaluateSchedule(true);sendJson(stateJson());
   });
 
   server.on("/api/settings",HTTP_POST,[]{
-    if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;bool adminChange=!d["overlap"].isNull()||!d["on"].isNull()||!d["off"].isNull()||!d["lead"].isNull()||!d["trail"].isNull()||!d["tz"].isNull();if(role<ROLE_ADMIN&&adminChange){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can change controller settings\"}");return;}auto&s=store.get();
-    if(!d["overlap"].isNull()){String v=d["overlap"].as<String>();s.overlap=v=="split"?1:(v=="combine"?2:0);}
-    if(!d["on"].isNull())s.onMinutes=parseTime(d["on"].as<String>(),s.onMinutes);if(!d["off"].isNull())s.offMinutes=parseTime(d["off"].as<String>(),s.offMinutes);
-    if(!d["lead"].isNull())s.leadDays=constrain(d["lead"].as<int>(),0,14);if(!d["trail"].isNull())s.trailDays=constrain(d["trail"].as<int>(),0,7);
-    if(!d["tz"].isNull()){s.tz=d["tz"].as<String>();configTzTime(s.tz.c_str(),"pool.ntp.org","time.nist.gov");}
-    if(!d["scheduler"].isNull())s.schedulerEnabled=d["scheduler"].as<bool>();
-    if(!d["scheduler2"].isNull())s.schedule2Enabled=d["scheduler2"].as<bool>();
-    store.saveAll();sendJson(stateJson());
+    if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;bool adminChange=!d["overlap"].isNull()||!d["on"].isNull()||!d["off"].isNull()||!d["lead"].isNull()||!d["trail"].isNull()||!d["tz"].isNull();if(role<ROLE_ADMIN&&adminChange){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can change controller settings\"}");return;}AppSettings next=store.get();
+    if(!d["overlap"].isNull()){String v=d["overlap"].as<String>();next.overlap=v=="split"?1:(v=="combine"?2:0);}if(!d["on"].isNull())next.onMinutes=parseTime(d["on"].as<String>(),next.onMinutes);if(!d["off"].isNull())next.offMinutes=parseTime(d["off"].as<String>(),next.offMinutes);if(!d["lead"].isNull())next.leadDays=constrain(d["lead"].as<int>(),0,14);if(!d["trail"].isNull())next.trailDays=constrain(d["trail"].as<int>(),0,7);if(!d["tz"].isNull())next.tz=d["tz"].as<String>();if(!d["scheduler"].isNull())next.schedulerEnabled=d["scheduler"].as<bool>();if(!d["scheduler2"].isNull())next.schedule2Enabled=d["scheduler2"].as<bool>();
+    if(!store.saveSettings(next)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Schedule settings write failed; previous settings were retained\"}");return;}if(!d["tz"].isNull())configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");evaluateSchedule(true);sendJson(stateJson());
   });
 
   server.on("/api/colors",HTTP_GET,[]{
-    if(!requireUser())return;JsonDocument d;d["locked"]=true;d["requiresFirmware"]=true;JsonArray out=d["colors"].to<JsonArray>();
-    out.add("#FF0000");out.add("#FF0D00");out.add("#FF0024");out.add("#FFFF44");out.add("#28FF00");out.add("#00BD4C");out.add("#0D00FF");out.add("#5B00E6");out.add("#FFFFFA");
-    String json;serializeJson(d,json);sendJson(json);
+    if(!requireUser())return;JsonDocument d;d["locked"]=true;d["requiresFirmware"]=true;JsonArray out=d["colors"].to<JsonArray>();for(size_t i=0;i<ANDERSON_COLOR_PALETTE_COUNT;i++)out.add(colorHex(ANDERSON_COLOR_PALETTE[i].output));String json;serializeJson(d,json);sendJson(json);
   });
   server.on("/api/colors",HTTP_POST,[]{
     if(!requireUser())return;server.sendHeader("Cache-Control","no-store");
     server.send(423,"application/json","{\"ok\":false,\"locked\":true,\"error\":\"Master Favorite Colors are firmware-locked. Install a new firmware build to change them.\"}");
   });
+
+  server.on("/api/event-color-theme",HTTP_GET,[]{if(!requireUser())return;JsonDocument d;d["theme"]=activeEventColorTheme==EventColorTheme::Original?"original":"modern";d["name"]=eventColorThemeName(activeEventColorTheme);d["generation"]=eventColorThemeGeneration;String out;serializeJson(d,out);sendJson(out);});
+  server.on("/api/event-color-theme",HTTP_POST,[]{if(!requireUser())return;JsonDocument d;if(!body(d))return;String name=d["theme"]|String("");EventColorTheme next=name=="original"?EventColorTheme::Original:(name=="modern"?EventColorTheme::Modern:activeEventColorTheme);if(name!="original"&&name!="modern"){server.send(400,"text/plain","Choose original or modern colors");return;}if(!setEventColorTheme(next)){server.send(500,"text/plain","Event color theme write failed");return;}evaluateSchedule(true);JsonDocument out;out["ok"]=true;out["theme"]=name;out["name"]=eventColorThemeName(activeEventColorTheme);out["generation"]=eventColorThemeGeneration;String json;serializeJson(out,json);sendJson(json);});
 
   // ANDERSON_HOME_CUSTOM_LIGHTS: all profiles may preview and change Enabled/Favorite; only Jason may create or delete.
   server.on("/api/presets",HTTP_GET,[]{
@@ -470,19 +423,19 @@ void setupRoutes(){
     if(!requireUser())return;uint8_t role=requestRole();if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}JsonDocument d;if(!body(d))return;String id=d["id"] | "";String deleteId=d["deleteId"] | "";String name=d["name"] | "";name.trim();String raw=presetStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonArray arr=list.as<JsonArray>();bool preferenceUpdate=id.length()&&!deleteId.length()&&!name.length()&&(!d["enabled"].isNull()||!d["favorite"].isNull());
     if(preferenceUpdate){bool found=false;bool enabled=true,favorite=false;for(JsonObject o:arr)if(o["id"].as<String>()==id){if(!d["enabled"].isNull())o["enabled"]=d["enabled"].as<bool>();if(!d["favorite"].isNull())o["favorite"]=d["favorite"].as<bool>();enabled=o["enabled"]|true;favorite=o["favorite"]|false;found=true;break;}if(!found){server.send(404,"text/plain","Custom light not found");return;}String out;serializeJson(list,out);if(out.length()>3800){server.send(507,"text/plain","Custom-light storage is full");return;}if(!customFileWrite("/custom_lights.json",out)){server.send(500,"text/plain","Custom light preference write failed");return;}JsonDocument ack;ack["ok"]=true;ack["id"]=id;ack["enabled"]=enabled;ack["favorite"]=favorite;String json;serializeJson(ack,json);sendJson(json);customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;return;}
     if(role<ROLE_ADMIN){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can create or delete custom lights\"}");return;}
-    if(deleteId.length()){for(int i=(int)arr.size()-1;i>=0;i--)if(arr[i]["id"].as<String>()==deleteId)arr.remove(i);String out;serializeJson(list,out);if(!customFileWrite("/custom_lights.json",out)){server.send(500,"text/plain","Custom light file write failed");return;}removeSchedulesForPreset(deleteId);sendJson("{\"ok\":true}");customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;return;}
+    if(deleteId.length()){String oldPresets=raw,oldSchedules=scheduleStoreRaw();JsonDocument sched;if(deserializeJson(sched,oldSchedules)||!sched.is<JsonArray>())sched.to<JsonArray>();JsonArray sa=sched.as<JsonArray>();bool found=false;for(int i=(int)arr.size()-1;i>=0;i--)if(arr[i]["id"].as<String>()==deleteId){arr.remove(i);found=true;}if(!found){server.send(404,"text/plain","Custom light not found");return;}for(int i=(int)sa.size()-1;i>=0;i--)if(sa[i]["presetId"].as<String>()==deleteId)sa.remove(i);String newPresets,newSchedules;serializeJson(list,newPresets);serializeJson(sched,newSchedules);if(!customFileWrite("/custom_schedules.json",newSchedules)){server.send(500,"text/plain","Dependent schedule update failed; custom light was not deleted");return;}if(!customFileWrite("/custom_lights.json",newPresets)){bool rolledBack=customFileWrite("/custom_schedules.json",oldSchedules);server.send(500,"text/plain",rolledBack?"Custom light delete failed; previous schedules were restored":"Custom light delete failed and schedule rollback needs review");return;}sendJson("{\"ok\":true}");customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;return;}
     if(!name.length()){server.send(400,"text/plain","Give this custom light a name");return;}for(JsonObject x:arr){String n=x["name"].as<String>();if(n.equalsIgnoreCase(name)){server.send(409,"text/plain","That custom light name is already in use");return;}}
-    if(arr.size()>=12)arr.remove(0);uint32_t seq=nextStoredId(arr,'p');String newId=String("p")+String(seq);JsonObject o=arr.add<JsonObject>();o["id"]=newId;o["name"]=name;o["effect"]=d["effect"]|String("Jump");o["brightness"]=constrain(d["brightness"]|100,1,100);o["speed"]=constrain(d["speed"]|1,1,5);o["enabled"]=true;o["favorite"]=false;JsonArray c=o["colors"].to<JsonArray>();if(d["colors"].is<JsonArray>())for(JsonVariant v:d["colors"].as<JsonArray>()){if(c.size()>=8)break;String color=v.as<String>();if(color.length())c.add(andersonCorrectHex(color));}if(!c.size())c.add("#FFFF44");
+    if(arr.size()>=12){server.send(409,"text/plain","Custom-light capacity reached (12). Delete one before adding another.");return;}uint32_t seq=nextStoredId(arr,'p');if(!seq){server.send(500,"text/plain","Could not reserve a stable custom-light ID");return;}String newId=String("p")+String(seq);JsonObject o=arr.add<JsonObject>();o["id"]=newId;o["name"]=name;o["effect"]=d["effect"]|String("Jump");o["brightness"]=constrain(d["brightness"]|100,1,100);o["speed"]=constrain(d["speed"]|1,1,5);o["enabled"]=true;o["favorite"]=false;JsonArray c=o["colors"].to<JsonArray>();if(d["colors"].is<JsonArray>())for(JsonVariant v:d["colors"].as<JsonArray>()){if(c.size()>=8)break;String color=v.as<String>();if(color.length())c.add(andersonCorrectHex(color));}if(!c.size())c.add("#FFFF44");
     String out;serializeJson(list,out);if(out.length()>3800){server.send(507,"text/plain","Custom-light storage is full");return;}if(!customFileWrite("/custom_lights.json",out)){server.send(500,"text/plain","Custom light file write failed");return;}JsonDocument r;r["ok"]=true;r["id"]=newId;r["count"]=(uint32_t)arr.size();r["fileBytes"]=(uint32_t)presetStoreRaw().length();r["backend"]="NVS";String json;serializeJson(r,json);sendJson(json);
   });
   server.on("/api/custom-schedules",HTTP_GET,[]{
-    if(!requireUser())return;if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}int year=server.arg("year").toInt(),month=server.arg("month").toInt();String raw=scheduleStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonDocument d;JsonArray out=d["items"].to<JsonArray>();for(JsonObject o:list.as<JsonArray>()){bool annual=o["annual"]|true;int oy=o["year"]|0,om=o["month"]|0;if(month>=1&&month<=12&&om!=month)continue;if(!annual&&year>=2020&&oy!=year)continue;JsonObject z=out.add<JsonObject>();z["id"]=o["id"];z["presetId"]=o["presetId"];z["year"]=oy;z["month"]=om;z["day"]=o["day"]|0;z["annual"]=annual;z["enabled"]=o["enabled"]|true;Theme t;uint8_t br=100,sp=1;String n;if(loadPresetTheme(o["presetId"].as<String>(),t,br,sp,&n)){z["name"]=n;z["effect"]=effectName(t.effect);z["brightness"]=br;z["speed"]=sp;JsonArray c=z["colors"].to<JsonArray>();for(uint8_t i=0;i<t.colorCount;i++)c.add(colorHex(t.colors[i]));}}String json;serializeJson(d,json);sendJson(json);
+    if(!requireUser())return;if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}int year=server.arg("year").toInt(),month=server.arg("month").toInt();String raw=scheduleStoreRaw();JsonDocument list,presets;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();if(deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())presets.to<JsonArray>();JsonDocument d;JsonArray out=d["items"].to<JsonArray>();for(JsonObject o:list.as<JsonArray>()){bool annual=o["annual"]|true;int oy=o["year"]|0,om=o["month"]|0;if(month>=1&&month<=12&&om!=month)continue;if(!annual&&year>=2020&&oy!=year)continue;JsonObject z=out.add<JsonObject>();z["id"]=o["id"];z["presetId"]=o["presetId"];z["year"]=oy;z["month"]=om;z["day"]=o["day"]|0;z["annual"]=annual;z["enabled"]=o["enabled"]|true;Theme t;uint8_t br=100,sp=1;String n;if(loadPresetThemeFromArray(presets.as<JsonArray>(),o["presetId"].as<String>(),t,br,sp,&n)){z["name"]=n;z["effect"]=effectName(t.effect);z["brightness"]=br;z["speed"]=sp;JsonArray c=z["colors"].to<JsonArray>();for(uint8_t i=0;i<t.colorCount;i++)c.add(colorHex(t.colors[i]));}}String json;serializeJson(d,json);sendJson(json);
   });
   server.on("/api/custom-schedules",HTTP_POST,[]{
     if(!requireUser())return;uint8_t role=requestRole();if(!customFsReady){server.send(500,"text/plain","Persistent storage unavailable");return;}JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();String savedId=id;bool removing=(d["remove"]|false)&&id.length();bool toggling=id.length()&&!d["enabled"].isNull();String presetId=d["presetId"].as<String>();
     if(!removing&&!toggling){if(role<ROLE_ADMIN){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can create custom schedules\"}");return;}Theme t;uint8_t br=100,sp=1;if(!loadPresetTheme(presetId,t,br,sp)){server.send(404,"text/plain","Custom light not found");return;}int month=d["month"]|0,day=d["day"]|0,year=d["year"]|0;if(month<1||month>12||day<1||day>31){server.send(400,"text/plain","Choose a valid schedule date");return;}}
-    String raw=scheduleStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonArray arr=list.as<JsonArray>();if(removing){for(int i=(int)arr.size()-1;i>=0;i--)if(arr[i]["id"].as<String>()==id)arr.remove(i);}else if(toggling){bool found=false;for(JsonObject o:arr)if(o["id"].as<String>()==id){o["enabled"]=d["enabled"].as<bool>();found=true;break;}if(!found){server.send(404,"text/plain","Schedule entry not found");return;}}else{int month=d["month"]|0,day=d["day"]|0,year=d["year"]|0;uint32_t seq=nextStoredId(arr,'s');savedId=String("s")+String(seq);JsonObject o=arr.add<JsonObject>();o["id"]=savedId;o["presetId"]=presetId;o["month"]=month;o["day"]=day;o["year"]=year;o["annual"]=d["annual"]|true;o["enabled"]=true;}
-    while(arr.size()>32)arr.remove(0);String out;serializeJson(list,out);if(out.length()>3800){server.send(507,"text/plain","Schedule storage is full");return;}if(!customFileWrite("/custom_schedules.json",out)){server.send(500,"text/plain","Schedule file write failed");return;}JsonDocument ack;ack["ok"]=true;ack["id"]=savedId;ack["count"]=(uint32_t)arr.size();ack["fileBytes"]=(uint32_t)scheduleStoreRaw().length();ack["backend"]="NVS";String ackJson;serializeJson(ack,ackJson);sendJson(ackJson);customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;
+    String raw=scheduleStoreRaw();JsonDocument list;if(deserializeJson(list,raw)||!list.is<JsonArray>())list.to<JsonArray>();JsonArray arr=list.as<JsonArray>();if(removing){for(int i=(int)arr.size()-1;i>=0;i--)if(arr[i]["id"].as<String>()==id)arr.remove(i);}else if(toggling){bool found=false;for(JsonObject o:arr)if(o["id"].as<String>()==id){o["enabled"]=d["enabled"].as<bool>();found=true;break;}if(!found){server.send(404,"text/plain","Schedule entry not found");return;}}else{if(arr.size()>=32){server.send(409,"text/plain","Schedule capacity reached (32). Delete one before adding another.");return;}int month=d["month"]|0,day=d["day"]|0,year=d["year"]|0;uint32_t seq=nextStoredId(arr,'s');if(!seq){server.send(500,"text/plain","Could not reserve a stable schedule ID");return;}savedId=String("s")+String(seq);JsonObject o=arr.add<JsonObject>();o["id"]=savedId;o["presetId"]=presetId;o["month"]=month;o["day"]=day;o["year"]=year;o["annual"]=d["annual"]|true;o["enabled"]=true;}
+    String out;serializeJson(list,out);if(out.length()>3800){server.send(507,"text/plain","Schedule storage is full");return;}if(!customFileWrite("/custom_schedules.json",out)){server.send(500,"text/plain","Schedule file write failed");return;}JsonDocument ack;ack["ok"]=true;ack["id"]=savedId;ack["count"]=(uint32_t)arr.size();ack["fileBytes"]=(uint32_t)scheduleStoreRaw().length();ack["backend"]="NVS";String ackJson;serializeJson(ack,ackJson);sendJson(ackJson);customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;
   });
   server.on("/api/system",HTTP_GET,[]{if(!requireAdmin())return;sendJson(systemJson());});
 
@@ -548,17 +501,17 @@ void setupRoutes(){
     scanStartedAt=millis();JsonDocument d;d["scanning"]=true;d["started"]=true;String out;serializeJson(d,out);sendJson(out,202);
   });
   server.on("/api/wifi",HTTP_POST,[]{
-    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String ssid=d["ssid"].as<String>(),pass=d["password"].as<String>();if(!ssid.length()){server.send(400,"text/plain","SSID required");return;}store.saveWiFi(ssid,pass);sendJson("{\"ok\":true}");delay(300);ESP.restart();
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String ssid=d["ssid"].as<String>(),pass=d["password"].as<String>();if(!ssid.length()){server.send(400,"text/plain","SSID required");return;}if(!store.saveWiFi(ssid,pass)){server.send(500,"text/plain","Wi-Fi settings could not be saved");return;}sendJson("{\"ok\":true}");delay(300);ESP.restart();
   });
 
   server.on("/api/ble/scan",HTTP_GET,[]{
     if(!requireAdmin())return;if(ble.connecting()){server.send(409,"text/plain","Bluetooth connection in progress. Try scanning again shortly.");return;}auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);
   });
   server.on("/api/ble/select",HTTP_POST,[]{
-    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();bool ok=ble.selectAndConnect(addr);if(ok){store.saveAll();ble.setTarget(0);applyRunning(true);}sendJson(stateJson(),ok?200:500);
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();bool ok=ble.selectAndConnect(addr);if(ok){if(!store.saveBle()){server.send(500,"text/plain","Controller selected but its saved settings could not be verified");return;}ble.setTarget(0);applyRunning(true);}sendJson(stateJson(),ok?200:500);
   });
   server.on("/api/ble/remove",HTTP_POST,[]{
-    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}ble.removeController(slot);store.saveAll();ble.setTarget(0);sendJson(stateJson());
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}ble.removeController(slot);if(!store.saveBle()){server.send(500,"text/plain","Controller removal could not be persisted");return;}ble.setTarget(0);sendJson(stateJson());
   });
   server.on("/api/ble/target",HTTP_POST,[]{
     if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;if(role<ROLE_ADMIN&&t!=0){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can select individual controllers\"}");return;}ble.setTarget(t);applyRunning(true);sendJson(stateJson());
@@ -582,7 +535,7 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
 }
@@ -597,7 +550,7 @@ void loop(){
   if(millis()-lastScheduleCheck>15000){lastScheduleCheck=millis();evaluateSchedule();}
   if(power)applyRunning(false);
   bool pressed=digitalRead(USER_BUTTON)==LOW;if(pressed && !buttonDown)buttonDown=millis();if(!pressed)buttonDown=0;
-  if(buttonDown && millis()-buttonDown>5000){buttonDown=0;store.clearWiFi();digitalWrite(BLUE_LED,HIGH);delay(500);ESP.restart();}
+  if(buttonDown && millis()-buttonDown>5000){buttonDown=0;if(store.clearWiFi()){digitalWrite(BLUE_LED,HIGH);delay(500);ESP.restart();}}
   const uint64_t loopEndUs=(uint64_t)esp_timer_get_time();if(cpuWindowStartUs==0)cpuWindowStartUs=loopStartUs;cpuBusyUs+=loopEndUs-loopStartUs;const uint64_t cpuWindowUs=loopEndUs-cpuWindowStartUs;if(cpuWindowUs>=2000000ULL){uint64_t pct=(cpuBusyUs*100ULL+cpuWindowUs/2)/cpuWindowUs;if(pct>100)pct=100;cpuLoadPct=(uint8_t)pct;cpuBusyUs=0;cpuWindowStartUs=loopEndUs;}
   delay(2);
 }

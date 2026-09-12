@@ -1,7 +1,6 @@
 #include "Scheduler.h"
 #include "EventCatalog.h"
 #include "EventState.h"
-#include <vector>
 #include <math.h>
 extern Theme applyEventOverrideByIndex(size_t i,const Theme& base);
 
@@ -42,24 +41,28 @@ bool Scheduler::inSchedule2Window(const tm& l) const{
 }
 Theme Scheduler::resolve(const tm& l){
   Theme normal;normal.name="Warm White";normal.effect=Effect::Solid;normal.colors[0]=0xFFFFFA;normal.colorCount=1;
-  std::vector<size_t> exact,multiHoliday,monthly,seasonal;
+  int exactHoliday=-1,exactOther=-1,holidayWindow=-1,seasonal=-1;size_t monthly[64];size_t monthlyCount=0;
   for(size_t i=0;i<EVENT_COUNT;i++){
-    if(!eventStateEnabled(i)||!eventActiveOn(i,l))continue;const auto&e=EVENTS[i];
-    if(e.rule==RuleType::Month||(e.kind==EventKind::Awareness&&e.durationDays>1)){if(e.kind==EventKind::Seasonal)seasonal.push_back(i);else monthly.push_back(i);}
-    else if(e.kind==EventKind::Holiday&&e.durationDays>1)multiHoliday.push_back(i);
-    else exact.push_back(i);
+    if(i>=MAX_BUILTIN_EVENTS||!eventStateEnabled(i))continue;const auto&e=EVENTS[i];bool active=eventActiveOn(i,l);
+    if(active){
+      if(e.kind==EventKind::Seasonal){if(seasonal<0)seasonal=(int)i;continue;}
+      if(e.rule==RuleType::Month){if(monthlyCount<64)monthly[monthlyCount++]=i;continue;}
+      if(e.kind==EventKind::Holiday){if(exactHoliday<0)exactHoliday=(int)i;}else if(exactOther<0)exactOther=(int)i;continue;
+    }
+    if(e.kind==EventKind::Holiday&&(cfg->leadDays||cfg->trailDays)&&eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)&&holidayWindow<0)holidayWindow=(int)i;
   }
-  auto pickHolidayFirst=[&](const std::vector<size_t>&v)->int{for(auto i:v)if(EVENTS[i].kind==EventKind::Holiday)return (int)i;return v.empty()?-1:(int)v[0];};
-  int p=pickHolidayFirst(exact);if(p>=0)return applyEventOverrideByIndex(p,themeFromEvent(p));
-  p=pickHolidayFirst(multiHoliday);if(p>=0)return applyEventOverrideByIndex(p,themeFromEvent(p));
-  if(!monthly.empty()){
-    if(monthly.size()==1)return applyEventOverrideByIndex(monthly[0],themeFromEvent(monthly[0]));
-    if(cfg->overlap==2){Theme t;t.name="Combined Monthly Themes";t.effect=Effect::Gradient;t.colorCount=0;for(auto i:monthly){Theme et=applyEventOverrideByIndex(i,themeFromEvent(i));for(int c=0;c<et.colorCount&&t.colorCount<8;c++)t.colors[t.colorCount++]=et.colors[c];}return t;}
-    int idx=0;if(cfg->overlap==0)idx=(l.tm_mday-1)%monthly.size();else{int mins=l.tm_hour*60+l.tm_min,start=cfg->onMinutes,end=cfg->offMinutes;if(end<=start)end+=1440;if(mins<start)mins+=1440;int span=max(1,end-start),pos=constrain(mins-start,0,span-1);idx=min((int)monthly.size()-1,(int)(pos*monthly.size()/span));}
-    return applyEventOverrideByIndex(monthly[idx],themeFromEvent(monthly[idx]));
+  if(exactHoliday>=0)return applyEventOverrideByIndex((size_t)exactHoliday,themeFromEvent((size_t)exactHoliday));
+  if(exactOther>=0)return applyEventOverrideByIndex((size_t)exactOther,themeFromEvent((size_t)exactOther));
+  if(holidayWindow>=0)return applyEventOverrideByIndex((size_t)holidayWindow,themeFromEvent((size_t)holidayWindow));
+  if(monthlyCount){
+    if(cfg->overlap==0){size_t pick=monthly[(l.tm_yday+(l.tm_year+1900))%monthlyCount];return applyEventOverrideByIndex(pick,themeFromEvent(pick));}
+    if(cfg->overlap==1){int mins=l.tm_hour*60+l.tm_min;uint16_t on=cfg->onMinutes,off=cfg->offMinutes;int elapsed=mins-on;if(elapsed<0)elapsed+=1440;int span=off-on;if(span<=0)span+=1440;size_t slot=min(monthlyCount-1,(size_t)((elapsed*monthlyCount)/max(1,span)));return applyEventOverrideByIndex(monthly[slot],themeFromEvent(monthly[slot]));}
+    Theme t;t.name="Combined monthly events";t.effect=Effect::Breath;t.colorCount=0;for(size_t n=0;n<monthlyCount&&t.colorCount<8;n++){Theme q=applyEventOverrideByIndex(monthly[n],themeFromEvent(monthly[n]));for(uint8_t c=0;c<q.colorCount&&t.colorCount<8;c++)t.colors[t.colorCount++]=q.colors[c];}if(!t.colorCount){t.colors[0]=0xFFFFFA;t.colorCount=1;}return t;
   }
-  if(!seasonal.empty())return applyEventOverrideByIndex(seasonal[0],themeFromEvent(seasonal[0]));return normal;
+  if(seasonal>=0)return applyEventOverrideByIndex((size_t)seasonal,themeFromEvent((size_t)seasonal));
+  return normal;
 }
+
 String Scheduler::nextEventLabel(const tm& l) const{
   int y=l.tm_year+1900;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;
   for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=y;yy<=y+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}
