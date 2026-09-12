@@ -3,7 +3,7 @@ name: Anderson Retention
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 9 * * *'
+    - cron: '17 * * * *'
   # Run once when this policy is first merged or later revised on main.
   push:
     branches: [main]
