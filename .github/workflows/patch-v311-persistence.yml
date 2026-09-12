@@ -15,6 +15,15 @@ jobs:
         with:
           ref: staging/v3.1.1-persistence
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Install validation dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
       - name: Apply palette persistence foundation
         shell: bash
         run: |
