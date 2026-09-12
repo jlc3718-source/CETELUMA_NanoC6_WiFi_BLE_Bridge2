@@ -25,6 +25,7 @@
 #include "PaletteMigration.h"
 #include "ColorCorrection.h"
 #include "RemoteUpdate.h"
+#include "BuildIdentity.h"
 #include "LoopWatchdog.h"
 
 static constexpr int BLUE_LED=7;
@@ -54,14 +55,14 @@ static constexpr uint16_t MAINTENANCE_REBOOT_MINUTES[]={0U,6U*60U,12U*60U,18U*60
 static constexpr uint8_t MAINTENANCE_REBOOT_COUNT=sizeof(MAINTENANCE_REBOOT_MINUTES)/sizeof(MAINTENANCE_REBOOT_MINUTES[0]);
 static bool maintenanceRebootClockInitialized=false;
 static int32_t maintenanceRebootHandledSlot=-1;
-bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false;int otaUploadResponseCode=403;String otaUploadError;
+bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false,otaExternalClaimed=false;int otaUploadResponseCode=403;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
 static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsigned long)c);return b;}
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.9";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.10";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -207,7 +208,7 @@ static const char* resetReasonName(){
 }
 static String firmwareJson(){
   JsonDocument d;const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* next=esp_ota_get_next_update_partition(running);
-  d["version"]=ANDERSON_FIRMWARE_VERSION;d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["previousAvailable"]=otaPartitionValid(next);
+  d["version"]=ANDERSON_FIRMWARE_VERSION;d["buildCommit"]=ANDERSON_BUILD_COMMIT;d["runningPartition"]=running?running->label:"";d["nextPartition"]=next?next->label:"";d["slotSize"]=next?(uint32_t)next->size:0;d["previousAvailable"]=otaPartitionValid(next);
   d["uptimeMs"]=(uint32_t)millis();d["resetReason"]=resetReasonName();d["loopWatchdog"]=loopWatchdogActive;
   esp_app_desc_t desc{};if(running&&esp_ota_get_partition_description(running,&desc)==ESP_OK){d["appVersion"]=desc.version;d["project"]=desc.project_name;d["buildDate"]=desc.date;d["buildTime"]=desc.time;}
   String out;serializeJson(d,out);return out;
@@ -469,9 +470,8 @@ void setupRoutes(){
 
   server.on("/api/remote-update",HTTP_GET,[]{if(!requireAdmin())return;sendJson(remoteUpdateStatusJson(ANDERSON_FIRMWARE_VERSION));});
   server.on("/api/remote-update/check",HTTP_POST,[]{if(!requireAdmin())return;sendJson(remoteUpdateCheckJson(ANDERSON_FIRMWARE_VERSION));});
-  server.on("/api/remote-update/install",HTTP_POST,[]{
-    if(!requireAdmin())return;String result=remoteUpdateInstallJson(ANDERSON_FIRMWARE_VERSION);sendJson(result);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}
-  });
+  server.on("/api/remote-update/install",HTTP_POST,[]{if(!requireAdmin())return;sendJson(remoteUpdateInstallJson(ANDERSON_FIRMWARE_VERSION));});
+  server.on("/api/remote-update/resume",HTTP_POST,[]{if(!requireAdmin())return;sendJson(remoteUpdateResumeJson(ANDERSON_FIRMWARE_VERSION));});
 
   server.on("/api/firmware",HTTP_GET,[]{sendJson(firmwareJson());});
   // ANDERSON_PROTECTED_OTA: routine uploads require Jason's session; independent recovery verifies Jason's PIN directly.
@@ -487,19 +487,21 @@ void setupRoutes(){
       if(otaRecoveryRequest&&pinProtectionEnabled){uint32_t retry=pinRetryAfter();if(retry){otaUploadAllowed=false;otaUploadResponseCode=429;otaUploadError=String("Too many incorrect PIN attempts. Try again in ")+String(retry)+" seconds.";return;}String recoveryPin=server.header(RECOVERY_PIN_HEADER);if(!recoveryPin.length()&&server.hasArg("recoveryPin"))recoveryPin=server.arg("recoveryPin");uint8_t recoveryRole=ROLE_NONE;if(!verifyProfilePin("jason",recoveryPin,recoveryRole)){notePinFailure();otaUploadAllowed=false;otaUploadResponseCode=401;otaUploadError="Jason's four-digit PIN is required for emergency firmware recovery";return;}clearPinFailures();}
       if(!otaRecoveryRequest){uint8_t role=requestRole();if(role<ROLE_ADMIN){otaUploadAllowed=false;otaUploadResponseCode=role==ROLE_NONE?401:403;otaUploadError=role==ROLE_NONE?"A valid Jason session is required for routine firmware updates":"Only Jason can install routine firmware updates";return;}}
       String fn=u.filename;fn.toLowerCase();if(!fn.endsWith(".bin")){otaUploadAllowed=false;otaUploadResponseCode=400;otaUploadError="Select an app-only .bin firmware file";return;}
-      if(!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){otaUploadAllowed=false;otaUploadResponseCode=500;otaUploadError=String("Unable to open OTA slot. Error ")+String(Update.getError());return;}
+      if(!remoteUpdateTryClaimExternalOperation()){otaUploadAllowed=false;otaUploadResponseCode=409;otaUploadError="Another firmware operation is already active";return;}otaExternalClaimed=true;
+      if(!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){otaUploadAllowed=false;otaUploadResponseCode=500;otaUploadError=String("Unable to open OTA slot. Error ")+String(Update.getError());remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;return;}
     }else if(u.status==UPLOAD_FILE_WRITE){
-      if(otaUploadAllowed&&!otaUploadError.length()&&Update.write(u.buf,u.currentSize)!=u.currentSize){otaUploadResponseCode=500;otaUploadError=String("Firmware write failed. Error ")+String(Update.getError());Update.abort();}
+      if(otaUploadAllowed&&!otaUploadError.length()&&Update.write(u.buf,u.currentSize)!=u.currentSize){otaUploadResponseCode=500;otaUploadError=String("Firmware write failed. Error ")+String(Update.getError());Update.abort();otaUploadAllowed=false;if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}}
     }else if(u.status==UPLOAD_FILE_END){
-      if(otaUploadAllowed&&!otaUploadError.length()){otaUploadOk=Update.end(true);if(!otaUploadOk){otaUploadResponseCode=500;otaUploadError=String("Firmware validation failed. Error ")+String(Update.getError());}}
-    }else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();otaUploadOk=false;otaUploadResponseCode=500;otaUploadError="Firmware upload aborted";}
+      if(otaUploadAllowed&&!otaUploadError.length()){otaUploadOk=Update.end(true);if(!otaUploadOk){otaUploadResponseCode=500;otaUploadError=String("Firmware validation failed. Error ")+String(Update.getError());}}if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}
+    }else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}otaUploadOk=false;otaUploadResponseCode=500;otaUploadError="Firmware upload aborted";}
   });
-  server.on("/api/reboot",HTTP_POST,[]{if(!requireAdmin())return;sendJson("{\"ok\":true,\"message\":\"Rebooting NanoC6\"}");otaAutoRebootPending=true;otaAutoRebootAt=millis()+700;});
+  server.on("/api/reboot",HTTP_POST,[]{if(!requireAdmin())return;if(remoteUpdateOperationBusy()||Update.isRunning()){server.send(409,"application/json","{\"ok\":false,\"error\":\"A firmware operation is already active\"}");return;}sendJson("{\"ok\":true,\"message\":\"Rebooting NanoC6\"}");otaAutoRebootPending=true;otaAutoRebootAt=millis()+700;});
   server.on("/api/rollback",HTTP_POST,[]{
-    if(!requireAdmin())return;const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* other=esp_ota_get_next_update_partition(running);
+    if(!requireAdmin())return;if(remoteUpdateOperationBusy()||Update.isRunning()){server.send(409,"application/json","{\"ok\":false,\"error\":\"A firmware operation is already active\"}");return;}const esp_partition_t* running=esp_ota_get_running_partition();const esp_partition_t* other=esp_ota_get_next_update_partition(running);
     if(!otaPartitionValid(other)){server.send(404,"text/plain","No valid previous firmware is available in the other OTA slot");return;}
-    if(esp_ota_set_boot_partition(other)!=ESP_OK){server.send(500,"text/plain","Could not select the previous firmware slot");return;}
-    sendJson("{\"ok\":true,\"message\":\"Previous firmware selected. Press Reboot NanoC6.\"}");
+    if(!remoteUpdateSetRollbackHold(ANDERSON_FIRMWARE_VERSION)){server.send(500,"text/plain","Could not save the rejected-release update hold");return;}
+    if(esp_ota_set_boot_partition(other)!=ESP_OK){remoteUpdateClearHold();server.send(500,"text/plain","Could not select the previous firmware slot");return;}
+    JsonDocument d;d["ok"]=true;d["message"]="Previous firmware selected and the current release is marked rejected.";d["rejectedVersion"]=ANDERSON_FIRMWARE_VERSION;d["legacyRollbackCaution"]="If the previous slot is older than 3.1.10, it cannot enforce the new update-hold key. Keep its Internet/OTA access blocked until you intentionally resume updates or install a newer fixed release.";String out;serializeJson(d,out);sendJson(out);
   });
 
   server.on("/api/wifi/scan",HTTP_GET,[]{
@@ -549,7 +551,7 @@ static bool scheduledMaintenanceRebootDue(int32_t dayKey,uint16_t minute){
   maintenanceRebootHandledSlot=slotKey;return true;
 }
 static void checkScheduledMaintenanceReboot(){
-  if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;
+  if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||!timeValid())return;
   time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;
   int32_t dayKey=maintenanceRebootDayKey(local);uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);
   if(!scheduledMaintenanceRebootDue(dayKey,minute))return;
@@ -558,9 +560,9 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION);loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventColorTheme();migrateLegacyEventOverrides();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventColorTheme();migrateLegacyEventOverrides();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
-  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);digitalWrite(BLUE_LED,LOW);
+  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();

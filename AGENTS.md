@@ -15,7 +15,7 @@ APP-only binary; do not stop after starting a build.
 
 1. Start from the latest `main` source. Reuse the current handoff and this file,
    and read only files relevant to the requested change. Put the requested change
-   set together on one `codex/` branch. Avoid reconstructing project history.
+   set together on one `codex/release-current` branch. Avoid reconstructing project history.
 2. Keep changes focused. Run `python tools/release.py bump` once unless the user
    supplied a version, then `python tools/release.py prepare` plus focused checks
    for the changed behavior. Do not add unrelated refactors or dependency changes.

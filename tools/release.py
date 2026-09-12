@@ -23,6 +23,7 @@ V3_CSS = ROOT / 'firmware/web/v3_mockup.css'
 V3_JS = ROOT / 'firmware/web/v3_mockup.js'
 RECOVERY_UI = ROOT / 'firmware/web/recovery.html'
 MAIN = ROOT / 'firmware/src/main.cpp'
+BUILD_IDENTITY = ROOT / 'firmware/include/BuildIdentity.h'
 SLOT = 0x1E0000
 ZOPFLI_ITERATIONS = 50
 
@@ -182,6 +183,8 @@ def check():
 def prepare():
     validate_runtime_version()
     check()
+    commit = git('rev-parse', 'HEAD')
+    BUILD_IDENTITY.write_text('#pragma once\n#define ANDERSON_BUILD_COMMIT "' + commit + '"\n')
     lines = ['#pragma once', '#include <Arduino.h>']
     for name, rendered in rendered_pages().items():
         packed = compress_page(rendered)
@@ -277,6 +280,28 @@ def payload(base):
     print(json.dumps({'base_tree_sha': git('rev-parse', base + '^{tree}'),
                       'tree_elements': entries}))
 
+def deliver(args):
+    """Resume the canonical release-current build/publish path and emit a receipt."""
+    source=args.source_sha or git('rev-parse','HEAD'); receipt=ROOT/'.anderson-delivery.json'
+    state={'source_sha':source,'version':version(),'branch':'codex/release-current'}
+    if receipt.exists():
+        try:
+            prior=json.loads(receipt.read_text())
+            if prior.get('source_sha')==source:state.update(prior)
+        except Exception:pass
+    def gh(*a):return subprocess.check_output(['gh',*a],text=True).strip()
+    if git('rev-parse','HEAD')!=source:raise ValueError('Working tree must be at --source-sha')
+    run=state.get('build_run_id')
+    if not run:
+        subprocess.run(['gh','workflow','run','compile-anderson-home-multi.yml','--ref','codex/release-current'],check=True)
+        import time
+        for _ in range(30):
+            time.sleep(2);raw=gh('run','list','--workflow','compile-anderson-home-multi.yml','--branch','codex/release-current','--limit','10','--json','databaseId,headSha,status,conclusion');rows=json.loads(raw);hit=next((x for x in rows if x['headSha']==source),None)
+            if hit:run=hit['databaseId'];break
+        if not run:raise RuntimeError('Could not resolve build run for source SHA')
+        state['build_run_id']=run;receipt.write_text(json.dumps(state,indent=2)+'\n')
+    print(json.dumps(state,indent=2))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
@@ -287,6 +312,8 @@ if __name__ == '__main__':
     p.add_argument('--full', action='store_true')
     p = sub.add_parser('payload')
     p.add_argument('--base', required=True)
+    p = sub.add_parser('deliver')
+    p.add_argument('--source-sha')
     p = sub.add_parser('download')
     for key in ('url', 'digest', 'commit', 'output'):
         p.add_argument('--' + key, required=True)
@@ -297,3 +324,4 @@ if __name__ == '__main__':
     elif args.command == 'package': package(args.full)
     elif args.command == 'payload': payload(args.base)
     elif args.command == 'download': download(args)
+    elif args.command == 'deliver': deliver(args)

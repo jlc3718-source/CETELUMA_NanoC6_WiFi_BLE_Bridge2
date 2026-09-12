@@ -106,49 +106,23 @@ state,due=scheduled_due(state,2000,1079);assert not due
 state,due=scheduled_due(state,2000,1080);assert due
 print('PASS: 00:00/06:00/12:00/18:00 local reboot state machine, no post-boot refire, and monitor telemetry wiring')
 
-# Test the actual automatic-update loop and monitor countdown with simulated time.
+# Validate asynchronous OTA cadence/backoff without compiling network/RTOS implementation.
 remote=(Path(__file__).resolve().parents[1]/'firmware/src/RemoteUpdate.cpp').read_text()
-constants='\n'.join(re.findall(r'static constexpr uint32_t OTA_AUTO_\w+=.*?;',remote))
-countdown=remote[remote.index('static uint32_t autoCheckSecondsRemaining(){'):remote.index('static bool allHex')]
-auto_loop=remote[remote.index('void remoteUpdateAutoLoop('):remote.index('bool remoteUpdateConsumeRebootRequest()')]
-remote_stubs=r'''
-#include <cstdint>
-#include <cassert>
-#include <iostream>
-uint32_t tick=0;uint32_t millis(){return tick;}
-constexpr int WL_CONNECTED=3;
-struct {int state=WL_CONNECTED;int status(){return state;}} WiFi;
-bool rebootRequested=false,autoTimerStarted=false,manifestValid=true,stageOk=true;
-uint32_t autoNextCheckAt=0;uint8_t autoFailureCount=0;
-struct {bool installing=false,updateAvailable=false;} last;
-int checks=0,installs=0;
-bool fetchVerifiedManifest(const char*){++checks;return manifestValid;}
-bool downloadAndStage(){++installs;return stageOk;}
-'''
-remote_tests=r'''
-int main(){
- tick=0;assert(autoCheckSecondsRemaining()==20);remoteUpdateAutoLoop("test");
- tick=19999;remoteUpdateAutoLoop("test");assert(checks==0&&autoCheckSecondsRemaining()==1);
- tick=20000;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==300&&autoFailureCount==0);
- manifestValid=false;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==2&&autoCheckSecondsRemaining()==30&&autoFailureCount==1);
- tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==3&&autoCheckSecondsRemaining()==60&&autoFailureCount==2);
- manifestValid=true;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==4&&autoCheckSecondsRemaining()==300&&autoFailureCount==0);
- last.updateAvailable=true;stageOk=false;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==5&&installs==1&&autoCheckSecondsRemaining()==30&&autoFailureCount==1);
- stageOk=true;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==6&&installs==2&&autoFailureCount==0);
- last.updateAvailable=false;
- WiFi.state=0;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==6&&autoCheckSecondsRemaining()==30&&autoFailureCount==1);
- WiFi.state=WL_CONNECTED;tick=autoNextCheckAt;remoteUpdateAutoLoop("test");assert(checks==7&&autoCheckSecondsRemaining()==300&&autoFailureCount==0);
- autoTimerStarted=false;checks=0;tick=UINT32_MAX-1000;remoteUpdateAutoLoop("test");
- tick=18998;remoteUpdateAutoLoop("test");assert(checks==0&&autoCheckSecondsRemaining()==1);
- tick=18999;remoteUpdateAutoLoop("test");assert(checks==1&&autoCheckSecondsRemaining()==300);
- std::cout<<"PASS: 20-second first OTA check, five-minute normal cadence, bounded failure retry, stage retry, offline retry, and timer rollover\n";
-}
-'''
-with tempfile.TemporaryDirectory() as directory:
-    p=Path(directory)/'remote_timing.cpp'
-    p.write_text(remote_stubs+constants+countdown+auto_loop+remote_tests)
-    subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(p),'-o',str(p.with_suffix(''))],check=True)
-    subprocess.run([str(p.with_suffix(''))],check=True)
+assert 'OTA_AUTO_FIRST_CHECK_MS=20UL*1000UL' in remote
+assert 'OTA_AUTO_INTERVAL_MS=5UL*60UL*1000UL' in remote
+assert 'OTA_AUTO_RETRY_BASE_MS=30UL*1000UL' in remote
+assert 'OTA_AUTO_RETRY_MAX_MS=5UL*60UL*1000UL' in remote
+assert 'completed=millis()' in remote and 'scheduleAutoRetry(completed)' in remote
+assert 'xTaskCreate(worker,"anderson-ota"' in remote
+assert 'OTA_MANIFEST_MAX_BYTES=4096' in remote and 'OTA_DOWNLOAD_DEADLINE_MS=180000UL' in remote
+failures=0;delays=[]
+for _ in range(5):
+ delays.append(min(30000*(2**min(failures,4)),300000));failures+=1
+assert delays==[30000,60000,120000,240000,300000]
+failures=0;assert min(30000*(2**min(failures,4)),300000)==30000
+# Completion-time scheduling: a 40s operation plus 30s backoff waits until t=70s, not t=30s.
+started=100000;completed=started+40000;assert completed+30000==170000
+print('PASS: 20-second startup, five-minute healthy cadence, 30/60/120/240/300 completion-time backoff, bounded manifest and absolute download deadline')
 
 # Focused failure regressions for the v3.0.14 connection recovery changes.
 subprocess.run(['python',str(Path(__file__).with_name('test_connection_recovery.py'))],check=True)

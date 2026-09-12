@@ -34,18 +34,28 @@ class BleController {
   void setColor(uint32_t rgb,bool reliable=true);
   void applyTheme(const Theme& theme,uint8_t brightness,uint8_t speedLevel,uint32_t nowMs,bool force=false);
  private:
+  struct PendingFrame {
+    uint8_t data[9]{};
+    uint8_t len=0;
+    uint8_t sendsRemaining=0;
+    uint8_t failures=0;
+    uint32_t dueAt=0;
+    uint32_t generation=0;
+    bool pending=false;
+  };
   struct Slot {
     String name;
     String address;
-    uint32_t generation=0,nextConnectAt=0;
+    uint32_t generation=0,nextConnectAt=0,commandGeneration=0;
+    PendingFrame power,brightness,color;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
     NimBLERemoteCharacteristic* chr=nullptr;
 #endif
   } slots[2];
   AppSettings* cfg=nullptr;
-  uint8_t target=0;
-  uint32_t lastWrite=0,lastEffect=0,lastStaticReassert=0;
+  uint8_t target=0,nextServiceSlot=0;
+  uint32_t lastWrite=0,lastEffect=0,lastStaticReassert=0,lastControlReassert=0;
   uint32_t startedAt=0;
   bool connectionChanged=false;
   Theme activeTheme;
@@ -66,6 +76,10 @@ class BleController {
   bool slotConnected(uint8_t slot) const;
   bool slotTargeted(uint8_t slot) const;
   bool writeSlot(uint8_t slot,const uint8_t* data,size_t len);
-  void writeReliableToTargets(const uint8_t* data,size_t len);
+  void enqueueFrame(uint8_t slot,PendingFrame& pending,const uint8_t* data,size_t len,bool reliable);
+  void enqueueToTargets(uint8_t kind,const uint8_t* data,size_t len,bool reliable);
+  void servicePendingWrites(uint32_t now);
+  void clearPending(uint8_t slot);
+  void clearAllPending();
   void saveSlots();
 };
