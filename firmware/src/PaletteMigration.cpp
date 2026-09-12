@@ -83,11 +83,11 @@ static bool canonicalizeCurrentStoredPalette(){
   return setMigrationState(STATE_APPLIED,true);
 }
 static bool applyFromBackup(){
-  JsonDocument backup;if(!loadBackup(backup))return false;String presets,colors;if(!transformPresetJson(backup["presets"].as<String>(),presets)||!transformFavoriteJson(backup["favoriteColors"].as<String>(),colors))return false;
-  if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writePrefStringVerified("anderson-colors","saved",colors))return false;if(!writeEvents(backup["events"].as<JsonObject>(),true))return false;return setMigrationState(STATE_APPLIED,true);
+  JsonDocument backup;if(!loadBackup(backup))return false;String presets;if(!transformPresetJson(backup["presets"].as<String>(),presets))return false;
+  if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writeEvents(backup["events"].as<JsonObject>(),true))return false;return setMigrationState(STATE_APPLIED,true);
 }
 static bool restoreFromBackup(){
-  JsonDocument backup;if(!loadBackup(backup))return false;String presets=backup["presets"].as<String>(),colors=backup["favoriteColors"].as<String>();if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writePrefStringVerified("anderson-colors","saved",colors))return false;if(!writeEvents(backup["events"].as<JsonObject>(),false))return false;return setMigrationState(STATE_RESTORED,true);
+  JsonDocument backup;if(!loadBackup(backup))return false;String presets=backup["presets"].as<String>();if(!writePrefStringVerified("anderson-preset","custom",presets))return false;if(!writeEvents(backup["events"].as<JsonObject>(),false))return false;return setMigrationState(STATE_RESTORED,true);
 }
 
 bool runPaletteColorMigration(){
