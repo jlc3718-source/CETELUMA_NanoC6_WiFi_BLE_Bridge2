@@ -100,6 +100,7 @@
     const values=['Jump','Breath','Strobe','Solid'];
     const labels={Jump:'Jump',Breath:'Breath',Strobe:'Strobe',Solid:'Solid'};
     const hints={Jump:'Snaps between colors',Breath:'Gently fades in and out',Strobe:'Flashes on and off',Solid:'Holds one color steady'};
+    const palette=['#42d8ff','#ff4ebd','#ffd24a','#7cff74','#7c72ff'];
     if(!byId('v3EffectPreviewStyle')) {
       const style=document.createElement('style');style.id='v3EffectPreviewStyle';style.textContent=`
 .v3EffectNative{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;clip-path:inset(50%)!important}
@@ -107,40 +108,46 @@
 .v3EffectButton{min-width:0;min-height:66px;padding:7px 5px 6px;border:1px solid #79bde644;border-radius:12px;background:linear-gradient(155deg,#122943d9,#071426f2);color:#dceeff;box-shadow:inset 0 1px 0 #eaf8ff14,0 4px 12px #0003;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:border-color .18s,background .18s,box-shadow .18s,transform .12s}
 .v3EffectButton:active{transform:scale(.97)}.v3EffectButton[aria-pressed="true"]{border-color:#79e9ff;background:radial-gradient(ellipse at 50% 0,#35cfff38,transparent 72%),linear-gradient(145deg,#164c78e8,#08213bea);box-shadow:inset 0 1px 0 #e8fbff38,0 0 0 1px #22cfff33,0 0 16px #08a9ff28}
 .v3EffectMini{width:100%;max-width:66px;min-height:20px;display:grid;grid-template-columns:repeat(5,1fr);align-items:center;gap:3px;padding:5px 6px;border-radius:99px;background:#020914c9;border:1px solid #8fdfff26;overflow:hidden}
-.v3EffectMini i{display:block;width:100%;aspect-ratio:1;border-radius:50%;background:#42d8ff;box-shadow:0 0 6px currentColor;color:#42d8ff}
+.v3EffectMini i{display:block;width:100%;aspect-ratio:1;border-radius:50%;background:#42d8ff;box-shadow:0 0 7px currentColor;color:#42d8ff;will-change:opacity,transform,filter}
 .v3EffectName{font-size:10px;font-weight:720;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i{animation:v3FxJump 1000ms steps(1,end) infinite}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(1){background:#42d8ff;color:#42d8ff;animation-delay:0ms}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(2){background:#ff4ebd;color:#ff4ebd;animation-delay:-200ms}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(3){background:#ffd24a;color:#ffd24a;animation-delay:-400ms}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(4){background:#7cff74;color:#7cff74;animation-delay:-600ms}
-.v3EffectButton[data-effect="Jump"] .v3EffectMini i:nth-child(5){background:#7c72ff;color:#7c72ff;animation-delay:-800ms}
-.v3EffectButton[data-effect="Breath"] .v3EffectMini i{animation:v3FxBreath 2000ms ease-in-out infinite;background:#45d9ff;color:#45d9ff}
-.v3EffectButton[data-effect="Strobe"] .v3EffectMini i{animation:v3FxStrobe 1000ms steps(1,end) infinite;background:#f3fbff;color:#f3fbff}
-.v3EffectButton[data-effect="Solid"] .v3EffectMini i{background:#45d9ff;color:#45d9ff;opacity:1;transform:scale(1)}
-@keyframes v3FxJump{0%,19.9%{opacity:1;transform:scale(1.12)}20%,100%{opacity:.28;transform:scale(.76)}}
-@keyframes v3FxBreath{0%,100%{opacity:.22;filter:brightness(.65)}50%{opacity:1;filter:brightness(1.35)}}
-@keyframes v3FxStrobe{0%,44.9%{opacity:1;filter:brightness(1.4)}45%,100%{opacity:.08;filter:brightness(.55)}}
-.v3EffectCard .v3EffectPicker{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:7px}.v3EffectCard .v3EffectButton{min-height:56px;padding:5px 3px;gap:4px}.v3EffectCard .v3EffectMini{max-width:52px;min-height:18px;padding:4px}.v3EffectCard .v3EffectName{font-size:9px}
-@media(max-width:520px){.page:not([data-page="home"]) .v3EffectPicker{grid-template-columns:repeat(3,minmax(0,1fr))}.page:not([data-page="home"]) .v3EffectButton{min-height:62px}}
-@media(prefers-reduced-motion:reduce){.v3EffectMini i{animation:none!important}.v3EffectButton{transition:none}}
+.v3EffectCard .v3EffectPicker{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:7px}.v3EffectCard .v3EffectButton{min-height:58px;padding:5px 3px;gap:4px}.v3EffectCard .v3EffectMini{max-width:56px;min-height:19px;padding:4px}.v3EffectCard .v3EffectName{font-size:9px}
+@media(max-width:520px){.v3EffectPicker,.page:not([data-page="home"]) .v3EffectPicker,.v3EffectCard .v3EffectPicker{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.v3EffectButton,.page:not([data-page="home"]) .v3EffectButton{min-height:58px;padding:5px 3px}.v3EffectMini{padding:4px;gap:2px}.v3EffectName{font-size:9px}}
 `;document.head.appendChild(style);
     }
+    const paintButton=(button,now)=>{
+      const dots=qa('i',button);if(!dots.length)return;
+      const effect=button.dataset.effect;
+      dots.forEach((dot,i)=>{dot.style.background=palette[i];dot.style.color=palette[i];dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='none'});
+      if(effect==='Jump'){
+        const active=Math.floor(now/360)%dots.length;
+        dots.forEach((dot,i)=>{const on=i===active;dot.style.opacity=on?'1':'.18';dot.style.transform=on?'scale(1.18)':'scale(.72)';dot.style.filter=on?'brightness(1.45)':'brightness(.65)'});
+      }else if(effect==='Breath'){
+        const wave=.22+.78*((Math.sin(now/430)+1)/2);
+        dots.forEach(dot=>{dot.style.background='#45d9ff';dot.style.color='#45d9ff';dot.style.opacity=String(wave);dot.style.transform=`scale(${.78+wave*.24})`;dot.style.filter=`brightness(${.65+wave*.7})`});
+      }else if(effect==='Strobe'){
+        const on=Math.floor(now/240)%2===0;
+        dots.forEach(dot=>{dot.style.background='#f3fbff';dot.style.color='#f3fbff';dot.style.opacity=on?'1':'.07';dot.style.transform=on?'scale(1.12)':'scale(.78)';dot.style.filter=on?'brightness(1.6)':'brightness(.5)'});
+      }else{
+        dots.forEach(dot=>{dot.style.background='#45d9ff';dot.style.color='#45d9ff';dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='brightness(1.15)'});
+      }
+    };
+    const animate=now=>{qa('.v3EffectButton').forEach(button=>paintButton(button,now));requestAnimationFrame(animate)};
     const sync=select=>{
       const picker=select.nextElementSibling?.classList.contains('v3EffectPicker')?select.nextElementSibling:null;if(!picker)return;
-      qa('.v3EffectButton',picker).forEach(b=>{const active=b.dataset.effect===select.value;b.setAttribute('aria-pressed',String(active));b.classList.toggle('active',active)});
+      qa('.v3EffectButton',picker).forEach(button=>{const active=button.dataset.effect===select.value;button.setAttribute('aria-pressed',String(active));button.classList.toggle('active',active)});
     };
     const enhance=select=>{
       if(!(select instanceof HTMLSelectElement)||select.dataset.v3EffectPreview==='1')return;
       const options=[...select.options].map(o=>o.value);if(!values.every(v=>options.includes(v)))return;
       select.dataset.v3EffectPreview='1';select.classList.add('v3EffectNative');select.tabIndex=-1;select.setAttribute('aria-hidden','true');
       const picker=el('div','v3EffectPicker');picker.setAttribute('role','group');picker.setAttribute('aria-label',select.getAttribute('aria-label')||'Effect type');
-      values.forEach(value=>{const b=el('button','v3EffectButton',`<span class="v3EffectMini" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="v3EffectName">${labels[value]}</span>`);b.type='button';b.dataset.effect=value;b.title=hints[value];b.setAttribute('aria-label',`${value==='Solid'?'Solid / Static':value}: ${hints[value]}`);b.addEventListener('click',()=>{if(select.value===value){sync(select);return}select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));sync(select)});picker.appendChild(b)});
+      values.forEach(value=>{const button=el('button','v3EffectButton',`<span class="v3EffectMini" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="v3EffectName">${labels[value]}</span>`);button.type='button';button.dataset.effect=value;button.title=hints[value];button.setAttribute('aria-label',`${value==='Solid'?'Solid / Static':value}: ${hints[value]}`);button.addEventListener('click',()=>{if(select.value!==value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}))}sync(select)});picker.appendChild(button)});
       select.insertAdjacentElement('afterend',picker);select.addEventListener('change',()=>sync(select));sync(select);
     };
     const scan=root=>{if(root instanceof HTMLSelectElement)enhance(root);qa('select',root instanceof Element?root:document).forEach(enhance)};
     scan(document);
     new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node instanceof Element)scan(node)}))).observe(document.body,{childList:true,subtree:true});
+    requestAnimationFrame(animate);
   }
   function settingsSubTabs() {
     const page=q('.page[data-page="settings"]');
