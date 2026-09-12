@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory() as directory:
 main_loop=source[source.index('void loop(){'):]
 assert 'MAINTENANCE_REBOOT_MINUTES[]={0U,6U*60U,12U*60U,18U*60U}' in source
 maintenance_check=source[source.index('static void checkScheduledMaintenanceReboot(){'):source.index('void setup(){')]
-assert 'if(Update.isRunning()||otaAutoRebootPending||!timeValid())return;' in maintenance_check
+assert 'if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||!timeValid())return;' in maintenance_check
 assert 'checkScheduledMaintenanceReboot();' in main_loop
 assert 'nextRebootSeconds' in source and 'rebootSchedule' in source
 
