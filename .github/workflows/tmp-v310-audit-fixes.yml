@@ -20,6 +20,7 @@ jobs:
           p=Path('tools/v310_apply_audit_fixes.py');s=p.read_text()
           s=s.replace("js=helper+r'''\\nconst assert=", 'js=helper+r"""\\nconst assert=', 1)
           s=s.replace("process.exitCode=1});\\n'''\nsubprocess.run", 'process.exitCode=1});\\n"""\nsubprocess.run', 1)
+          s=s.replace('start=html.index("let otaBeforePartition=\'\',otaExpectedPartition=\'\',otaExpectedVersion=\'\';")','start=html.index("let otaBeforePartition")',1)
           p.write_text(s)
           PY
           python tools/v310_apply_audit_fixes.py
