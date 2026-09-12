@@ -83,6 +83,7 @@ GitHub runner queue vary.
 - Built-in event palettes are editable through saved per-event overrides. The UI must
   allow visible removal as well as addition of colors while keeping at least one color;
   preserve event identity, ordering, schedules, and unrelated event settings.
+- v3.0.21 and later Favorite Colors are the firmware-locked nine-color master palette in this exact order: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#FFFF44`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
 
 ## Source map
 

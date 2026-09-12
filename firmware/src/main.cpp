@@ -59,7 +59,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.20";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.0.21";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -392,17 +392,13 @@ void setupRoutes(){
   });
 
   server.on("/api/colors",HTTP_GET,[]{
-    if(!requireUser())return;Preferences p;p.begin("anderson-colors",true);String raw=p.getString("saved","[]");p.end();
-    JsonDocument list;if(deserializeJson(list,raw))list.to<JsonArray>();JsonDocument d;JsonArray out=d["colors"].to<JsonArray>();
-    for(JsonVariant v:list.as<JsonArray>())out.add(v.as<String>());String json;serializeJson(d,json);sendJson(json);
+    if(!requireUser())return;JsonDocument d;d["locked"]=true;d["requiresFirmware"]=true;JsonArray out=d["colors"].to<JsonArray>();
+    out.add("#FF0000");out.add("#FF0D00");out.add("#FF0024");out.add("#FFFF44");out.add("#28FF00");out.add("#00BD4C");out.add("#0D00FF");out.add("#5B00E6");out.add("#FFFFFA");
+    String json;serializeJson(d,json);sendJson(json);
   });
   server.on("/api/colors",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;String col=d["color"].as<String>();col.trim();if(!col.startsWith("#"))col="#"+col;col.toUpperCase();
-    if(col.length()!=7){server.send(400,"text/plain","Color must be #RRGGBB");return;}col=andersonCorrectHex(col);bool remove=d["remove"]|false;
-    Preferences p;p.begin("anderson-colors",false);String raw=p.getString("saved","[]");JsonDocument list;if(deserializeJson(list,raw))list.to<JsonArray>();JsonArray arr=list.as<JsonArray>();
-    int found=-1;for(int i=0;i<(int)arr.size();i++){String x=arr[i].as<String>();x.toUpperCase();if(x==col){found=i;break;}}
-    if(remove){if(found>=0)arr.remove(found);}else if(found<0&&arr.size()<32)arr.add(col);
-    String saved;serializeJson(list,saved);p.putString("saved",saved);p.end();JsonDocument out;JsonArray oa=out["colors"].to<JsonArray>();for(JsonVariant v:arr)oa.add(v.as<String>());String json;serializeJson(out,json);sendJson(json);
+    if(!requireUser())return;server.sendHeader("Cache-Control","no-store");
+    server.send(423,"application/json","{\"ok\":false,\"locked\":true,\"error\":\"Master Favorite Colors are firmware-locked. Install a new firmware build to change them.\"}");
   });
 
   // ANDERSON_HOME_CUSTOM_LIGHTS: all profiles may preview and change Enabled/Favorite; only Jason may create or delete.
