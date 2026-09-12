@@ -58,12 +58,17 @@ jobs:
       - name: Wait for exact signed OTA manifest
         run: |
           mkdir -p publish-input
+          rm -f publish-input/latest.json
           for attempt in $(seq 1 120); do
-            encoded="$(gh api "/repos/$GITHUB_REPOSITORY/contents/remote-update/pending/$VERSION.json?ref=ota" --jq '.content' 2>/dev/null || true)"
-            if [ -n "$encoded" ]; then
-              printf '%s' "$encoded" | tr -d '\n' | base64 --decode > publish-input/latest.json
-              break
+            if gh api \
+              -H "Accept: application/vnd.github.raw+json" \
+              "/repos/$GITHUB_REPOSITORY/contents/remote-update/pending/$VERSION.json?ref=ota" \
+              > publish-input/latest.json 2>/dev/null; then
+              if [ -s publish-input/latest.json ]; then
+                break
+              fi
             fi
+            rm -f publish-input/latest.json
             sleep 5
           done
           test -s publish-input/latest.json
