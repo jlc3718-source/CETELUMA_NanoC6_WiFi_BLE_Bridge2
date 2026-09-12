@@ -1,0 +1,107 @@
+from pathlib import Path
+import re
+
+js_path=Path('firmware/web/v3_mockup.js')
+css_path=Path('firmware/web/v3_mockup.css')
+js=js_path.read_text()
+css=css_path.read_text()
+
+home_insert="    panel.appendChild(el('div','v3HomeTiles'));\n"
+if home_insert not in js:
+    raise SystemExit('Home shortcut insertion not found')
+js=js.replace(home_insert,'',1)
+
+old_role="""    const tiles=q('.v3HomeTiles'); tiles.replaceChildren();tiles.hidden=!admin;
+    if(admin) [ ['home','Zones','By controller','settings','v3Controllers'],['effects','Effects','Make it yours','lights'],['clock','Schedules','Your calendar','events'],['settings','Settings','Your home','settings'] ].forEach(([symbol,label,sub,target,anchor])=>{
+      if(canOpen(target))tiles.append(routeButton('v3HomeTile',target,`${icon(symbol)}<strong>${label}</strong><small>${sub}</small>${icon('arrow')}`,anchor));
+    });
+"""
+if old_role not in js:
+    raise SystemExit('Home shortcut role block not found')
+js=js.replace(old_role,'',1)
+
+settings_fn=r'''  function settingsSubTabs() {
+    const page=q('.page[data-page="settings"]');
+    if(!page || byId('v3SettingsTabs'))return;
+    const title=q(':scope > .v3PageTitle',page);
+    const original=[...page.children].filter(node=>node!==title);
+    const defs=[['general','General'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];
+    const tabs=el('div','v3SettingsTabs');tabs.id='v3SettingsTabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Settings sections');
+    const panes=new Map(),buttons=new Map();
+    defs.forEach(([id,label])=>{
+      const button=el('button','v3SettingsTab',label);button.type='button';button.dataset.settingsTab=id;button.setAttribute('role','tab');button.setAttribute('aria-controls','v3SettingsPane-'+id);tabs.appendChild(button);buttons.set(id,button);
+      const pane=el('div','v3SettingsPane');pane.id='v3SettingsPane-'+id;pane.dataset.settingsPane=id;pane.setAttribute('role','tabpanel');panes.set(id,pane);
+    });
+    if(title)title.insertAdjacentElement('afterend',tabs);else page.prepend(tabs);
+    defs.forEach(([id])=>page.appendChild(panes.get(id)));
+    const category=node=>{
+      if(node.id==='systemMonitorPanel'||node.classList.contains('v3SettingsLink'))return 'general';
+      if(node.id==='liveColorTunerPanel')return 'lighting';
+      const heading=q(':scope > strong',node)?.textContent.trim()||'';
+      if(heading==='Overlap Behavior')return 'lighting';
+      if(heading==='Scheduling Rules'||heading==='Priority')return 'schedules';
+      if(heading==='Bluetooth Light Controllers')return 'controllers';
+      if(heading==='Profile PINs')return 'security';
+      if(heading==='Firmware Update'||heading==='Firmware Revision')return 'firmware';
+      return 'general';
+    };
+    original.forEach(node=>panes.get(category(node)).appendChild(node));
+    const activate=id=>{
+      defs.forEach(([key])=>{
+        const active=key===id,button=buttons.get(key),pane=panes.get(key);
+        button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;
+        pane.classList.toggle('active',active);pane.hidden=!active;
+      });
+    };
+    buttons.forEach((button,id)=>button.addEventListener('click',()=>activate(id)));
+    tabs.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const ids=defs.map(([id])=>id),current=ids.findIndex(id=>buttons.get(id)===document.activeElement);let next=current<0?0:current;
+      if(event.key==='ArrowRight')next=(next+1)%ids.length;else if(event.key==='ArrowLeft')next=(next-1+ids.length)%ids.length;else if(event.key==='Home')next=0;else next=ids.length-1;
+      activate(ids[next]);buttons.get(ids[next]).focus();
+    });
+    activate('general');
+  }
+'''
+marker='  function syncRole() {'
+if marker not in js:
+    raise SystemExit('syncRole marker not found')
+js=js.replace(marker,settings_fn+marker,1)
+
+old_init="  function init() { navigation();composeHome();effectPreviews();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }"
+new_init="  function init() { navigation();composeHome();effectPreviews();settingsSubTabs();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }"
+if old_init not in js:
+    raise SystemExit('init marker not found')
+js=js.replace(old_init,new_init,1)
+
+if 'ANDERSON_SETTINGS_SUBTABS_V3_0_27' not in css:
+    css += '''\n\n/* ANDERSON_SETTINGS_SUBTABS_V3_0_27 */
+.v3SettingsTabs{position:sticky;top:7px;z-index:35;display:flex;gap:8px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none;margin:2px -2px 16px;padding:7px 2px 10px;background:linear-gradient(180deg,#030b18f2 0%,#030b18dd 76%,transparent 100%);backdrop-filter:blur(16px);-webkit-overflow-scrolling:touch}
+.v3SettingsTabs::-webkit-scrollbar{display:none}.v3SettingsTab{flex:0 0 auto;min-height:42px;padding:9px 14px;border:1px solid #76bde248;border-radius:999px;background:linear-gradient(145deg,#10243bd9,#06111fe8);color:#afc4d8;font-size:13px;font-weight:650;white-space:nowrap;box-shadow:inset 0 1px 0 #e8f8ff12,0 5px 14px #0002}
+.v3SettingsTab.active{color:#8cecff;border-color:#6fe4ffb8;background:radial-gradient(ellipse at 50% 0,#28cfff36,transparent 75%),linear-gradient(145deg,#124568,#092039);box-shadow:inset 0 1px 0 #e7fbff38,0 0 0 1px #23cfff26,0 0 16px #00aaff22}.v3SettingsPane{display:none}.v3SettingsPane.active{display:block}.v3SettingsPane>.panel:first-child,.v3SettingsPane>.v3SettingsLink:first-child{margin-top:0}
+'''
+
+js_path.write_text(js)
+css_path.write_text(css)
+Path('FIRMWARE_VERSION.txt').write_text('3.0.27\n')
+readme=Path('README.md')
+text=readme.read_text()
+text,count=re.subn(r'Current firmware: \*\*v\d+\.\d+\.\d+[a-z]?\*\*\.', 'Current firmware: **v3.0.27**.', text, count=1)
+if count!=1:
+    raise SystemExit('README version marker not found')
+readme.write_text(text)
+Path('firmware/RELEASE_NOTES_v3.0.27.md').write_text('''# Anderson Home v3.0.27
+
+- Removes the redundant Zones / Effects / Schedules / Settings shortcut tile menu from Home.
+- Reorganizes Settings into internal General, Lighting, Schedules, Controllers, Users & Security, and Firmware sub-tabs.
+- Settings sub-tabs switch content in place without reloading and remain horizontally scrollable on phones.
+- Keeps the bottom Home / Effects / Schedules / Favorites / Settings bar as the only primary navigation.
+- Preserves v3.0.26 holiday search, Favorites tab, Jason/Shirley access, Schedule 1/2, event persistence, reboot storage-health optimization, Wi-Fi/BLE/PINs, custom shows, partitions, and signed OTA trust.
+''')
+
+assert "panel.appendChild(el('div','v3HomeTiles'))" not in js
+assert "const tiles=q('.v3HomeTiles')" not in js
+assert 'function settingsSubTabs()' in js
+assert 'settingsSubTabs();profiles();syncRole()' in js
+assert 'ANDERSON_SETTINGS_SUBTABS_V3_0_27' in css
+print('v3.0.27 patch applied')
