@@ -88,7 +88,7 @@ class IPAddress {
   operator uint32_t() const{return addr_;}
   bool operator==(const IPAddress& o)const{return addr_==o.addr_;}
   bool operator!=(const IPAddress& o)const{return addr_!=o.addr_;}
-  String toString() const {esp_ip4_addr_t a{};a.addr=addr_;char b[16]{};esp_ip4addr_ntoa(&a,b,sizeof(b));return String(b);}
+  String toString() const {esp_ip4_addr_t a{};a.addr=addr_;char b[16]{};snprintf(b,sizeof(b),IPSTR,IP2STR(&a));return String(b);}
 };
 
 uint32_t millis();

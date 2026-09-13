@@ -5,7 +5,7 @@
 #include <vector>
 #include "host/ble_hs.h"
 #include "host/ble_gap.h"
-#include "host/ble_gattc.h"
+#include "host/ble_gatt.h"
 #include "host/ble_uuid.h"
 
 class NimBLEAddress {

@@ -16,7 +16,8 @@ std::string NimBLEAddress::toString()const{if(null_)return std::string();char b[
 void NimBLEDevice::hostTask(void*){nimble_port_run();nimble_port_freertos_deinit();}
 void NimBLEDevice::onSync(){if(ble_hs_id_infer_auto(0,&g_own)!=0)g_own=BLE_OWN_ADDR_PUBLIC;if(g_sync)xSemaphoreGive(g_sync);}
 void NimBLEDevice::init(const char* name){if(g_init)return;g_sync=xSemaphoreCreateBinary();g_bleMutex=xSemaphoreCreateMutex();if(nimble_port_init()!=0)return;ble_svc_gap_init();ble_svc_gatt_init();ble_svc_gap_device_name_set(name?name:"AndersonHome-Bridge");ble_hs_cfg.sync_cb=&NimBLEDevice::onSync;nimble_port_freertos_init(&NimBLEDevice::hostTask);if(g_sync)xSemaphoreTake(g_sync,pdMS_TO_TICKS(3000));g_init=true;}
-void NimBLEDevice::setPower(int){#if CONFIG_BT_ENABLED
+void NimBLEDevice::setPower(int){
+#if CONFIG_BT_ENABLED
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT,ESP_PWR_LVL_P3);
 #endif
 }
