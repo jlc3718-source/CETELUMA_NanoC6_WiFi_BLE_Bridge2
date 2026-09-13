@@ -55,6 +55,12 @@ def bump():
     if count != 1:
         raise ValueError('Expected one ANDERSON_FIRMWARE_VERSION marker in firmware/src/main.cpp')
     MAIN.write_text(source)
+    sdkconfig = ROOT / 'firmware/sdkconfig.defaults'
+    sdk = sdkconfig.read_text()
+    sdk, count = re.subn(r'CONFIG_APP_PROJECT_VER="\d+\.\d+\.\d+[a-z]?"', f'CONFIG_APP_PROJECT_VER="{new}"', sdk, count=1)
+    if count != 1:
+        raise ValueError('Expected one CONFIG_APP_PROJECT_VER marker in firmware/sdkconfig.defaults')
+    sdkconfig.write_text(sdk)
     readme = ROOT / 'README.md'
     if readme.exists():
         text = readme.read_text()

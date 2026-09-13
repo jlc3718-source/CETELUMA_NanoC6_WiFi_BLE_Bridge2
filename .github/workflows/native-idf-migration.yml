@@ -24,13 +24,18 @@ jobs:
         run: |
           grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
           ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
-          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.0"
-          grep -q 'ANDERSON_FIRMWARE_VERSION="4.0.0"' firmware/src/main.cpp
+          VERSION="$(cat FIRMWARE_VERSION.txt)"
+          printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$'
+          grep -Fq "ANDERSON_FIRMWARE_VERSION=\"$VERSION\"" firmware/src/main.cpp
           grep -q '^CONFIG_APP_PROJECT_VER_FROM_CONFIG=y$' firmware/sdkconfig.defaults
-          grep -q '^CONFIG_APP_PROJECT_VER="4.0.0"$' firmware/sdkconfig.defaults
+          grep -Fq "CONFIG_APP_PROJECT_VER=\"$VERSION\"" firmware/sdkconfig.defaults
           grep -q 'X-Anderson-Filename' firmware/web/index.html
           grep -q 'X-Anderson-Filename' firmware/web/recovery.html
-          grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
+          grep -q 'id="loginEmergencyRecovery"' firmware/web/index.html
+          grep -q 'X-Anderson-Recovery-PIN' firmware/web/index.html
+          ! grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
+          grep -q 'if(ticks==0)ticks=1' firmware/src/ArduinoCompat.cpp
+          grep -q 'esp_image_get_metadata' firmware/src/ArduinoCompat.cpp
           grep -q 'Emergency Firmware Recovery' firmware/web/v4_home_recovery.js
           grep -q 'Boot Previous Firmware' firmware/web/v4_home_recovery.js
           grep -q 'V4_HOME_JS' tools/release.py
