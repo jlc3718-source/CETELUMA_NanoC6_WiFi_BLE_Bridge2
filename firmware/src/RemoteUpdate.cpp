@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <Update.h>
+#include <esp_ota_ops.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <mbedtls/base64.h>
@@ -76,12 +77,34 @@ static bool fetchVerifiedManifest(const char*current){last=RemoteStatus();last.c
 String remoteUpdateStatusJson(const char*current){return statusJson(current);}
 String remoteUpdateCheckJson(const char*current){fetchVerifiedManifest(current);return statusJson(current);}
 
-static bool downloadAndStage(){last.installing=true;last.installReady=false;last.downloadedBytes=0;WiFiClientSecure client;client.setInsecure();client.setHandshakeTimeout(12);feedControllerWatchdog();HTTPClient http;http.setConnectTimeout(6000);http.setTimeout(12000);http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);if(!http.begin(client,last.url)){last.ok=false;last.installing=false;last.message="Could not open the signed firmware URL";return false;}int code=http.GET();last.httpStatus=code;if(code!=HTTP_CODE_OK){last.ok=false;last.installing=false;last.message=String("Firmware download failed (HTTP ")+String(code)+")";http.end();return false;}int announced=http.getSize();if(announced>0&&(size_t)announced!=last.bytes){last.ok=false;last.installing=false;last.message="Firmware Content-Length does not match the signed manifest";http.end();return false;}if(!Update.begin(last.bytes,U_FLASH)){last.ok=false;last.installing=false;last.message=String("Could not open inactive OTA slot. Error ")+String(Update.getError());http.end();return false;}
-
-mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);if(mbedtls_sha256_starts(&sha,0)!=0){Update.abort();mbedtls_sha256_free(&sha);http.end();last.ok=false;last.installing=false;last.message="Could not start SHA-256 verification";return false;}NetworkClient*stream=http.getStreamPtr();uint8_t buffer[2048];size_t total=0;uint32_t lastData=millis();bool failed=false;String failure;
-while(total<last.bytes){feedControllerWatchdog();int available=stream->available();if(available>0){size_t want=(size_t)available;if(want>sizeof(buffer))want=sizeof(buffer);if(want>last.bytes-total)want=last.bytes-total;int got=stream->read(buffer,want);if(got>0){if(mbedtls_sha256_update(&sha,buffer,(size_t)got)!=0){failed=true;failure="SHA-256 update failed";break;}if(Update.write(buffer,(size_t)got)!=(size_t)got){failed=true;failure=String("Firmware write failed. Error ")+String(Update.getError());break;}total+=(size_t)got;last.downloadedBytes=total;lastData=millis();continue;}}if((uint32_t)(millis()-lastData)>12000UL){failed=true;failure="Firmware download stalled before the signed byte count was received";break;}delay(1);}
-uint8_t digest[32];bool hashFinished=!failed&&mbedtls_sha256_finish(&sha,digest)==0;mbedtls_sha256_free(&sha);http.end();if(failed||!hashFinished||total!=last.bytes){Update.abort();last.ok=false;last.installing=false;if(failure.length())last.message=failure;else if(!hashFinished)last.message="Could not finish SHA-256 verification";else last.message="Firmware download ended before the signed byte count";return false;}String actual=hexBytes(digest,sizeof(digest));if(actual!=last.sha256){Update.abort();last.ok=false;last.installing=false;last.message="Downloaded firmware SHA-256 does not match the signed manifest";return false;}if(!setPending(last)){Update.abort();last.ok=false;last.installing=false;last.message="Could not save remote-update recovery status; current firmware was left active";return false;}if(!Update.end(true)){clearPending();last.ok=false;last.installing=false;last.message=String("Firmware validation failed. Error ")+String(Update.getError());return false;}
-last.installing=false;last.installReady=true;last.updateAvailable=false;last.ok=true;last.message=String("Remote firmware ")+last.availableVersion+" downloaded, SHA-256 verified, and installed to the inactive OTA slot. Rebooting.";saveLastMessage(last.availableVersion,String("Remote firmware ")+last.availableVersion+" verified and selected for reboot.");rebootRequested=true;return true;}
+static bool downloadAndStage(){
+  last.installing=true;last.installReady=false;last.downloadedBytes=0;
+  const esp_partition_t* target=esp_ota_get_next_update_partition(nullptr);
+  if(!target||target->size<last.bytes){last.ok=false;last.installing=false;last.message="No valid inactive OTA slot";return false;}
+  WiFiClientSecure client;client.setInsecure();client.setHandshakeTimeout(12);feedControllerWatchdog();
+  HTTPClient http;http.setConnectTimeout(6000);http.setTimeout(12000);http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  if(!http.begin(client,last.url)){last.ok=false;last.installing=false;last.message="Could not open the signed firmware URL";return false;}
+  int code=http.GET();last.httpStatus=code;
+  if(code!=HTTP_CODE_OK){last.ok=false;last.installing=false;last.message=String("Firmware download failed (HTTP ")+String(code)+")";http.end();return false;}
+  int announced=http.getSize();if(announced>0&&(size_t)announced!=last.bytes){last.ok=false;last.installing=false;last.message="Firmware Content-Length does not match the signed manifest";http.end();return false;}
+  esp_ota_handle_t handle=0;esp_err_t err=esp_ota_begin(target,last.bytes,&handle);
+  if(err!=ESP_OK){last.ok=false;last.installing=false;last.message=String("Native OTA begin failed: ")+esp_err_to_name(err);http.end();return false;}
+  mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);
+  if(mbedtls_sha256_starts(&sha,0)!=0){esp_ota_abort(handle);mbedtls_sha256_free(&sha);http.end();last.ok=false;last.installing=false;last.message="Could not start SHA-256 verification";return false;}
+  NetworkClient* stream=http.getStreamPtr();uint8_t buffer[2048];size_t total=0;uint32_t lastData=millis();bool failed=false;String failure;
+  while(total<last.bytes){feedControllerWatchdog();int available=stream->available();if(available>0){size_t want=(size_t)available;if(want>sizeof(buffer))want=sizeof(buffer);if(want>last.bytes-total)want=last.bytes-total;int got=stream->read(buffer,want);if(got>0){if(mbedtls_sha256_update(&sha,buffer,(size_t)got)!=0){failed=true;failure="SHA-256 update failed";break;}err=esp_ota_write(handle,buffer,(size_t)got);if(err!=ESP_OK){failed=true;failure=String("Native OTA write failed: ")+esp_err_to_name(err);break;}total+=(size_t)got;last.downloadedBytes=total;lastData=millis();continue;}}if((uint32_t)(millis()-lastData)>12000UL){failed=true;failure="Firmware download stalled before the signed byte count was received";break;}delay(1);}
+  uint8_t digest[32];bool hashFinished=!failed&&mbedtls_sha256_finish(&sha,digest)==0;mbedtls_sha256_free(&sha);http.end();
+  if(failed||!hashFinished||total!=last.bytes){esp_ota_abort(handle);last.ok=false;last.installing=false;last.message=failure.length()?failure:(!hashFinished?"Could not finish SHA-256 verification":"Firmware download ended before the signed byte count");return false;}
+  String actual=hexBytes(digest,sizeof(digest));if(actual!=last.sha256){esp_ota_abort(handle);last.ok=false;last.installing=false;last.message="Downloaded firmware SHA-256 does not match the signed manifest";return false;}
+  err=esp_ota_end(handle);if(err!=ESP_OK){last.ok=false;last.installing=false;last.message=String("Native OTA validation failed: ")+esp_err_to_name(err);return false;}
+  err=esp_ota_set_boot_partition(target);if(err!=ESP_OK){last.ok=false;last.installing=false;last.message=String("Could not select repaired OTA slot: ")+esp_err_to_name(err);return false;}
+  // Recovery metadata is best-effort. NVS failure must never veto a fully verified OTA image.
+  (void)setPending(last);
+  last.installing=false;last.installReady=true;last.updateAvailable=false;last.ok=true;
+  last.message=String("Remote firmware ")+last.availableVersion+" downloaded, SHA-256 verified, validated by native ESP-IDF OTA, and selected for reboot.";
+  saveLastMessage(last.availableVersion,String("Remote firmware ")+last.availableVersion+" verified and selected for reboot.");
+  rebootRequested=true;return true;
+}
 
 String remoteUpdateInstallJson(const char*current){rebootRequested=false;if(!fetchVerifiedManifest(current))return statusJson(current);if(!last.updateAvailable){last.ok=false;last.message="No newer signed Anderson firmware is available to install";return statusJson(current);}downloadAndStage();return statusJson(current);}
 
