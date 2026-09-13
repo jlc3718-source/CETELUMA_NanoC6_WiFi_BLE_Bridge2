@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Convert routine local firmware upload to raw APP-image transport for native esp_http_server.
 p=Path('firmware/web/index.html')
 s=p.read_text()
 old="const fd=new FormData();fd.append('firmware',file,file.name);const x=new XMLHttpRequest();x.open('POST','/api/update');if(window.andersonAuthToken)x.setRequestHeader('X-Anderson-Session',window.andersonAuthToken);"
@@ -10,16 +11,18 @@ assert s.count('x.send(fd)')==1, 'expected one routine FormData send'
 s=s.replace('x.send(fd)','x.send(file)',1)
 p.write_text(s)
 
+# Keep the independent recovery page compatible with the same native raw-body OTA endpoint.
 p=Path('firmware/web/recovery.html')
 s=p.read_text()
 old="const data=new FormData();data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);"
 new="const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');request.setRequestHeader('Content-Type','application/octet-stream');request.setRequestHeader('X-Anderson-Filename',file.name);if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);"
 assert s.count(old)==1, 'expected one recovery firmware FormData transport'
 s=s.replace(old,new,1)
-assert s.count('request.send(data);')==1, 'expected one recovery FormData send'
-s=s.replace('request.send(data);','request.send(file);',1)
+assert s.count('request.send(data)')==1, 'expected one recovery FormData send'
+s=s.replace('request.send(data)','request.send(file)',1)
 p.write_text(s)
 
+# Add a Jason/admin-only emergency APP flash card to the Home screen.
 p=Path('firmware/web/v3_mockup.js')
 s=p.read_text()
 marker="  function init() { navigation();composeHome();effectPreviews();settingsSubTabs();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }"
@@ -59,3 +62,27 @@ block=r'''  function syncEmergencyFirmwareVisibility() {
 newinit="  function init() { navigation();composeHome();effectPreviews();settingsSubTabs();profiles();emergencyFirmwarePanel();syncRole();syncEmergencyFirmwareVisibility();window.addEventListener('anderson-profile-selected',()=>{syncRole();syncEmergencyFirmwareVisibility();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',()=>{syncRole();syncEmergencyFirmwareVisibility();}); }"
 s=s.replace(marker,block+newinit,1)
 p.write_text(s)
+
+# ESP-IDF 6.1/Mbed TLS 4 exposes SHA-256 through PSA Crypto. Use the Anderson
+# wrapper with unique names so it cannot collide with Mbed TLS private structs.
+p=Path('firmware/src/RemoteUpdate.cpp')
+s=p.read_text()
+assert s.count('#include <mbedtls/sha256.h>')==1, 'expected legacy SHA include'
+s=s.replace('#include <mbedtls/sha256.h>','#include "AndersonSha256.h"',1)
+exact='mbedtls_sha256((const unsigned char*)payload.c_str(),payload.length(),digest,0)'
+assert s.count(exact)==1, 'expected manifest SHA compute call'
+s=s.replace(exact,'andersonSha256Compute((const uint8_t*)payload.c_str(),payload.length(),digest)',1)
+for old,new in [
+    ('mbedtls_sha256_context','AndersonSha256Context'),
+    ('mbedtls_sha256_init','andersonSha256Init'),
+    ('mbedtls_sha256_starts(&sha,0)','andersonSha256Starts(&sha)'),
+    ('mbedtls_sha256_update','andersonSha256Update'),
+    ('mbedtls_sha256_finish','andersonSha256Finish'),
+    ('mbedtls_sha256_free','andersonSha256Free'),
+]:
+    assert old in s, f'missing SHA migration token: {old}'
+    s=s.replace(old,new)
+p.write_text(s)
+legacy=Path('firmware/include/mbedtls/sha256.h')
+assert legacy.exists(), 'expected temporary legacy SHA shim'
+legacy.unlink()
