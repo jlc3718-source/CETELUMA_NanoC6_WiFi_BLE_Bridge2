@@ -1,0 +1,66 @@
+name: Scrub Retired Color Labels v3.1.11
+
+on:
+  push:
+    branches: ['work/v3.1.11-yellow-unified']
+
+permissions:
+  contents: write
+
+jobs:
+  scrub:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v3.1.11-yellow-unified
+      - name: Scrub residual retired labels and validate functional palette
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          cp=Path('firmware/src/ColorCorrection.cpp')
+          s=cp.read_text().replace('Purple/Lavender','Purple')
+          cp.write_text(s)
+
+          tp=Path('tools/test_regressions.py')
+          t=tp.read_text()
+          t=re.sub(r"\nretired_names=\[.*?\]\nfor name in retired_names: assert f\"name:'\{name\}'\" not in web",'',t,count=1,flags=re.S)
+          marker="assert \"{name:'Navy Blue',reference:'#000080',output:'#001478'}\" in web"
+          assert marker in t
+          t=t.replace(marker,marker+"\npalette_block=re.search(r'const NAMED_COLOR_PALETTE=\\[(.*?)\\];',web,re.S); assert palette_block and palette_block.group(1).count(\"{name:'\")==9")
+          tp.write_text(t)
+
+          retired=['Burgundy','Cyan','Teal','Sky Blue','Amber Gold','Lavender','Silver Gray']
+          runtime_files=[Path('firmware/src/ColorCorrection.cpp'),Path('firmware/src/PaletteMigration.cpp'),Path('firmware/src/EventCatalog.cpp'),Path('firmware/web/index.html')]
+          for f in runtime_files:
+            text=f.read_text()
+            for name in retired:
+              assert name not in text,(f,name)
+
+          web=Path('firmware/web/index.html').read_text()
+          block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S);assert block
+          assert block.group(1).count("{name:'")==9
+          for name in ['Red','Orange','Pink','Yellow','Green','Blue','Purple','White','Navy Blue']:
+            assert f"name:'{name}'" in block.group(1)
+          assert "name:'Yellow',reference:'#FFFF00',output:'#E0B400'" in block.group(1)
+
+          ev=Path('firmware/src/EventCatalog.cpp').read_text()
+          for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D','0xA0A5AF']:
+            assert value not in ev
+
+          print('Runtime palette contains only the 9 retained named colors; retired labels are absent.')
+          PY
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+      - name: Commit scrub and remove helper
+        run: |
+          rm -f .github/workflows/zz-scrub-retired-color-labels-v3.1.11.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Scrub retired color labels from v3.1.11"
+          git push origin HEAD:refs/heads/work/v3.1.11-yellow-unified
