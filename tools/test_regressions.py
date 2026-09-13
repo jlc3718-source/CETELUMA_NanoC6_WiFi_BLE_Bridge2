@@ -19,6 +19,9 @@ assert '/api/event-color-theme' not in main+web and 'eventColorsOriginal' not in
 assert 'EventColorTheme' not in main and 'eventColorThemeGeneration' not in main
 assert '0xE0B400' in ev and '0xFFFF44' not in ev
 assert '{0xE0B400,0xE0B400}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
+assert "{name:'Yellow',reference:'#FFFF00',output:'#E0B400'}" in web
+assert "let running={name:'Yellow',colors:['#E0B400']" in web
+assert "'#FFFF44':'#E0B400'" in web
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
 assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web
 assert 'PinAttemptState pinAttempts[6]' in main
