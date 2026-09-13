@@ -26,6 +26,8 @@ jobs:
           ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
           test "$(cat FIRMWARE_VERSION.txt)" = "4.0.0"
           grep -q 'ANDERSON_FIRMWARE_VERSION="4.0.0"' firmware/src/main.cpp
+          grep -q '^CONFIG_APP_PROJECT_VER_FROM_CONFIG=y$' firmware/sdkconfig.defaults
+          grep -q '^CONFIG_APP_PROJECT_VER="4.0.0"$' firmware/sdkconfig.defaults
           grep -q 'X-Anderson-Filename' firmware/web/index.html
           grep -q 'X-Anderson-Filename' firmware/web/recovery.html
           grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
