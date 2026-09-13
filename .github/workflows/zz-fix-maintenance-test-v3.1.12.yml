@@ -1,0 +1,33 @@
+name: Update v3.1.12 Maintenance Gate
+
+on:
+  push:
+    branches:
+      - work/v3.1.12-customized-backup
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v3.1.12-customized-backup
+      - name: Require customized-restore reboot deferral
+        run: |
+          python -c "from pathlib import Path; p=Path('tools/test_maintenance.py'); s=p.read_text(); old='if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||!timeValid())return;'; new='if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||customizedRestoreRebootPending||!timeValid())return;'; assert old in s; p.write_text(s.replace(old,new,1))"
+          python tools/test_maintenance.py
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+      - name: Commit test alignment
+        run: |
+          rm -f .github/workflows/zz-fix-maintenance-test-v3.1.12.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Validate customized restore reboot deferral"
+          git push origin HEAD:refs/heads/work/v3.1.12-customized-backup
