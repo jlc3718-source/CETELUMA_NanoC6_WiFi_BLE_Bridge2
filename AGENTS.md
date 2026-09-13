@@ -103,3 +103,5 @@ GitHub runner queue vary.
 - v3.1.11 unified event palette uses the retained approved color set, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.
 
 - v3.1.11 approved named colors: Red, Orange, Pink, Yellow, Green, Blue, Purple, White/Warm White, and Navy Blue. Legacy stored values are migrated to the nearest retained family and are not presented as selectable palette entries.
+
+- Customized Settings backup: retain exactly one `/customized-settings-backup.json` snapshot on the controller filesystem. Create/replace it automatically every 7 days and on manual **Back Up**. **Restore** validates schema/checksum, restores saved user customizations, then reboots. Include schedule rules, event enable/favorite state and event overrides, custom lights, custom scheduled dates, and saved BLE light-controller configuration. Exclude Wi-Fi credentials, PIN/auth records, OTA/firmware state, and other security/system data.

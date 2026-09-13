@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 
 def t(p): return Path(p).read_text()
-main=t('firmware/src/main.cpp'); web=t('firmware/web/index.html'); mock=t('firmware/web/v3_mockup.js'); ev=t('firmware/src/EventCatalog.cpp'); sched=t('firmware/src/Scheduler.cpp'); types=t('firmware/include/Types.h'); ble=t('firmware/src/BleController.cpp')
+main=t('firmware/src/main.cpp'); web=t('firmware/web/index.html'); backup=t('firmware/src/CustomizedBackup.cpp'); mock=t('firmware/web/v3_mockup.js'); ev=t('firmware/src/EventCatalog.cpp'); sched=t('firmware/src/Scheduler.cpp'); types=t('firmware/include/Types.h'); ble=t('firmware/src/BleController.cpp')
 build=t('.github/workflows/compile-anderson-home-multi.yml'); retention=t('.github/workflows/anderson-retention.yml'); publisher=t('.github/workflows/publish-anderson-home.yml'); branch_cleanup=t('.github/scripts/anderson-branch-cleanup.sh')
 assert 'Effect::Gradient' not in ev+ble+sched+types
 assert 'Gradient</option>' not in web and "effect:'Gradient'" not in web
@@ -26,6 +26,17 @@ for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D',
 assert "{name:'Navy Blue',reference:'#000080',output:'#001478'}" in web
 palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and palette_block.group(1).count("{name:'")==9
 assert 'PALETTE_MIGRATION_REVISION=8' in t('firmware/src/PaletteMigration.cpp')
+assert 'CUSTOM_BACKUP_PATH="/customized-settings-backup.json"' in backup
+assert 'CUSTOM_BACKUP_INTERVAL_SECONDS=7UL*24UL*60UL*60UL' in backup
+assert 'anderson-preset' in backup and 'anderson-csched' in backup and 'anderson-event' in backup
+assert 'anderson-auth' not in backup and 'anderson-remote' not in backup
+assert 'data["customLights"]' in backup and 'data["customSchedules"]' in backup and 'data["eventOverrides"]' in backup
+assert 'server.on("/api/customized-backup/status"' in main and 'server.on("/api/customized-backup/create"' in main and 'server.on("/api/customized-backup/restore"' in main
+assert 'customizedSettingsBackupAutoLoop(store.get(),ANDERSON_FIRMWARE_VERSION)' in main
+assert 'id="settingsCustomizedTab"' in web and 'id="customBackupNow"' in web and 'id="customRestoreNow"' in web
+assert 'only one customized-settings backup is retained' in web
+assert 'Wi-Fi passwords, profile PINs, firmware/OTA state' in web
+
 
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
 assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web

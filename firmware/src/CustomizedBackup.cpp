@@ -72,7 +72,7 @@ bool customizedSettingsBackupCreate(const AppSettings& settings,const char* firm
   return writeBackupPayload(payload,error);
 }
 
-static bool putStringChecked(Preferences& p,const char* key,const String& value){size_t wrote=p.putString(key,value);return wrote==value.length()&&p.getString(key,"")==value;}
+static bool putStringChecked(Preferences& p,const char* key,const String& value){if(p.getString(key,"__ANDERSON_MISSING__")==value)return true;p.putString(key,value);return p.getString(key,"__ANDERSON_VERIFY__")==value;}
 static bool putUShortChecked(Preferences& p,const char* key,uint16_t value){p.putUShort(key,value);return p.getUShort(key,(uint16_t)(value^0xFFFF))==value;}
 static bool putUCharChecked(Preferences& p,const char* key,uint8_t value){p.putUChar(key,value);return p.getUChar(key,(uint8_t)(value^0xFF))==value;}
 static bool putBoolChecked(Preferences& p,const char* key,bool value){p.putBool(key,value);return p.getBool(key,!value)==value;}

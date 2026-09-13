@@ -23,6 +23,7 @@
 #include "Scheduler.h"
 #include "PaletteMigration.h"
 #include "ColorCorrection.h"
+#include "CustomizedBackup.h"
 #include "RemoteUpdate.h"
 #include "BuildIdentity.h"
 #include "LoopWatchdog.h"
@@ -61,9 +62,11 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.11";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.12";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
+static bool customizedRestoreRebootPending=false;
+static uint32_t customizedRestoreRebootAt=0;
 
 // ANDERSON_FOUR_DIGIT_PIN_AUTH: PIN hashes live in NVS; browser sessions live only in RAM.
 static constexpr uint8_t ROLE_NONE=0,ROLE_USER=1,ROLE_ADMIN=2;
@@ -443,6 +446,15 @@ void setupRoutes(){
   });
   server.on("/api/system",HTTP_GET,[]{if(!requireAdmin())return;sendJson(systemJson());});
 
+  server.on("/api/customized-backup/status",HTTP_GET,[]{if(!requireAdmin())return;sendJson(customizedSettingsBackupStatusJson());});
+  server.on("/api/customized-backup/create",HTTP_POST,[]{
+    if(!requireAdmin())return;String error;if(!customizedSettingsBackupCreate(store.get(),ANDERSON_FIRMWARE_VERSION,false,error)){JsonDocument out;out["ok"]=false;out["error"]=error;String json;serializeJson(out,json);sendJson(json,500);return;}sendJson(customizedSettingsBackupStatusJson());
+  });
+  server.on("/api/customized-backup/restore",HTTP_POST,[]{
+    if(!requireAdmin())return;String error;if(!customizedSettingsBackupRestore(error)){JsonDocument out;out["ok"]=false;out["error"]=error;String json;serializeJson(out,json);sendJson(json,500);return;}JsonDocument out;out["ok"]=true;out["restored"]=true;out["rebooting"]=true;String json;serializeJson(out,json);sendJson(json);customizedRestoreRebootPending=true;customizedRestoreRebootAt=millis()+1400;
+  });
+
+
   server.on("/api/palette-migration",HTTP_GET,[]{if(!requireAdmin())return;sendJson(paletteColorMigrationStatusJson());});
   server.on("/api/palette-migration",HTTP_POST,[]{
     if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String action=d["action"]|String("");bool ok=false;if(action=="restore")ok=restoreOriginalPaletteColors();else if(action=="apply")ok=reapplyCorrectedPaletteColors();else{server.send(400,"application/json","{\"ok\":false,\"error\":\"Use action restore or apply\"}");return;}if(!ok){server.send(500,"application/json","{\"ok\":false,\"error\":\"Palette migration operation failed verification\"}");return;}sendJson(paletteColorMigrationStatusJson());delay(250);ESP.restart();
@@ -531,7 +543,7 @@ static bool scheduledMaintenanceRebootDue(int32_t dayKey,uint16_t minute){
   maintenanceRebootHandledSlot=slotKey;return true;
 }
 static void checkScheduledMaintenanceReboot(){
-  if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||!timeValid())return;
+  if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||customizedRestoreRebootPending||!timeValid())return;
   time_t now=time(nullptr);tm local{};if(!localtime_r(&now,&local))return;
   int32_t dayKey=maintenanceRebootDayKey(local);uint16_t minute=(uint16_t)(local.tm_hour*60+local.tm_min);
   if(!scheduledMaintenanceRebootDue(dayKey,minute))return;
@@ -540,7 +552,7 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();customizedSettingsBackupBegin();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE0B400;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);
 }
@@ -549,8 +561,10 @@ void loop(){
   server.handleClient();ble.loop();
   if(ble.consumeConnectionChange())applyRunning(true);
   maintainWiFiConnection();checkScheduledMaintenanceReboot();
+  if(!Update.isRunning()&&!remoteUpdateOperationBusy()&&!otaAutoRebootPending&&!customizedRestoreRebootPending)customizedSettingsBackupAutoLoop(store.get(),ANDERSON_FIRMWARE_VERSION);
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
+  if(customizedRestoreRebootPending&&(int32_t)(millis()-customizedRestoreRebootAt)>=0){customizedRestoreRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
   if(millis()-lastScheduleCheck>15000){lastScheduleCheck=millis();evaluateSchedule();}
   if(power)applyRunning(false);
