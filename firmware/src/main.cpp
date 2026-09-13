@@ -11,7 +11,7 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <nvs_flash.h>
-#include <mbedtls/sha256.h>
+#include "AndersonSha256.h"
 #include <time.h>
 #include <atomic>
 #include "WebUIGzip.h"
@@ -55,7 +55,7 @@ static constexpr uint16_t MAINTENANCE_REBOOT_MINUTES[]={0U,6U*60U,12U*60U,18U*60
 static constexpr uint8_t MAINTENANCE_REBOOT_COUNT=sizeof(MAINTENANCE_REBOOT_MINUTES)/sizeof(MAINTENANCE_REBOOT_MINUTES[0]);
 static bool maintenanceRebootClockInitialized=false;
 static int32_t maintenanceRebootHandledSlot=-1;
-bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false,otaExternalClaimed=false;int otaUploadResponseCode=403;String otaUploadError;
+bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false,otaExternalClaimed=false,otaUploadHeaderChecked=false;int otaUploadResponseCode=403;String otaUploadError;
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
 static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsigned long)c);return b;}
@@ -83,7 +83,7 @@ static PinAttemptState pinAttempts[6];
 static bool fourDigitPin(const String& pin){if(pin.length()!=4)return false;for(size_t i=0;i<4;i++)if(pin[i]<'0'||pin[i]>'9')return false;return true;}
 static String hexBytes(const uint8_t* data,size_t len){static const char h[]="0123456789abcdef";String out;out.reserve(len*2);for(size_t i=0;i<len;i++){out+=h[data[i]>>4];out+=h[data[i]&15];}return out;}
 static String randomHex(size_t bytes){uint8_t data[32];if(bytes>sizeof(data))bytes=sizeof(data);esp_fill_random(data,bytes);return hexBytes(data,bytes);}
-static String pinDigest(const String& profile,const String& pin,const String& salt){String material=String("anderson-pin-v1|")+profile+"|"+salt+"|"+pin;uint8_t digest[32];if(mbedtls_sha256((const uint8_t*)material.c_str(),material.length(),digest,0)!=0)return "";return hexBytes(digest,sizeof(digest));}
+static String pinDigest(const String& profile,const String& pin,const String& salt){String material=String("anderson-pin-v1|")+profile+"|"+salt+"|"+pin;uint8_t digest[32];if(andersonSha256Compute((const uint8_t*)material.c_str(),material.length(),digest)!=0)return "";return hexBytes(digest,sizeof(digest));}
 static bool constantTimeEqual(const String& a,const String& b){if(a.length()!=b.length())return false;uint8_t diff=0;for(size_t i=0;i<a.length();i++)diff|=(uint8_t)(a[i]^b[i]);return diff==0;}
 static bool pinRecordConfigured(const String& salt,const String& hash){return salt.length()==32&&hash.length()==64;}
 static bool basePinAuthConfigured(){return pinRecordConfigured(shirleyPinSalt,shirleyPinHash)&&pinRecordConfigured(jasonPinSalt,jasonPinHash);}
@@ -475,15 +475,21 @@ void setupRoutes(){
     HTTPUpload& u=server.upload();
     feedControllerWatchdog();
     if(u.status==UPLOAD_FILE_START){
-      otaUploadAllowed=true;otaUploadOk=false;otaUploadResponseCode=403;otaRecoveryRequest=server.hasArg("recovery")&&server.arg("recovery")=="1";otaUploadError="";
+      otaUploadAllowed=true;otaUploadOk=false;otaUploadHeaderChecked=false;otaUploadResponseCode=403;otaRecoveryRequest=server.hasArg("recovery")&&server.arg("recovery")=="1";otaUploadError="";
       if(otaRecoveryRequest&&pinProtectionEnabled){uint32_t retry=pinRetryAfter();if(retry){otaUploadAllowed=false;otaUploadResponseCode=429;otaUploadError=String("Too many incorrect PIN attempts. Try again in ")+String(retry)+" seconds.";return;}String recoveryPin=server.header(RECOVERY_PIN_HEADER);if(!recoveryPin.length()&&server.hasArg("recoveryPin"))recoveryPin=server.arg("recoveryPin");uint8_t recoveryRole=ROLE_NONE;if(!verifyProfilePin("jason",recoveryPin,recoveryRole)){notePinFailure();otaUploadAllowed=false;otaUploadResponseCode=401;otaUploadError="Jason's four-digit PIN is required for emergency firmware recovery";return;}clearPinFailures();}
       if(!otaRecoveryRequest){uint8_t role=requestRole();if(role<ROLE_ADMIN){otaUploadAllowed=false;otaUploadResponseCode=role==ROLE_NONE?401:403;otaUploadError=role==ROLE_NONE?"A valid Jason session is required for routine firmware updates":"Only Jason can install routine firmware updates";return;}}
       String fn=u.filename;fn.toLowerCase();if(!fn.endsWith(".bin")){otaUploadAllowed=false;otaUploadResponseCode=400;otaUploadError="Select an app-only .bin firmware file";return;}
+      if(u.totalSize<4096||u.totalSize>=0x1E0000){otaUploadAllowed=false;otaUploadResponseCode=400;otaUploadError="Firmware size is not valid for the APP-only OTA slot";return;}
       if(!remoteUpdateTryClaimExternalOperation()){otaUploadAllowed=false;otaUploadResponseCode=409;otaUploadError="Another firmware operation is already active";return;}otaExternalClaimed=true;
       if(!Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH)){otaUploadAllowed=false;otaUploadResponseCode=500;otaUploadError=String("Unable to open OTA slot. Error ")+String(Update.getError());remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;return;}
     }else if(u.status==UPLOAD_FILE_WRITE){
+      if(otaUploadAllowed&&!otaUploadError.length()&&!otaUploadHeaderChecked){
+        if(!u.buf||u.currentSize==0||u.buf[0]!=0xE9){otaUploadResponseCode=400;otaUploadError="Firmware is not an ESP APP image (missing 0xE9 image header)";Update.abort();otaUploadAllowed=false;if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}return;}
+        otaUploadHeaderChecked=true;
+      }
       if(otaUploadAllowed&&!otaUploadError.length()&&Update.write(u.buf,u.currentSize)!=u.currentSize){otaUploadResponseCode=500;otaUploadError=String("Firmware write failed. Error ")+String(Update.getError());Update.abort();otaUploadAllowed=false;if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}}
     }else if(u.status==UPLOAD_FILE_END){
+      if(otaUploadAllowed&&!otaUploadError.length()&&!otaUploadHeaderChecked){otaUploadAllowed=false;otaUploadResponseCode=400;otaUploadError="Firmware APP image header was not received";Update.abort();}
       if(otaUploadAllowed&&!otaUploadError.length()){otaUploadOk=Update.end(true);if(!otaUploadOk){otaUploadResponseCode=500;otaUploadError=String("Firmware validation failed. Error ")+String(Update.getError());}}if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}
     }else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}otaUploadOk=false;otaUploadResponseCode=500;otaUploadError="Firmware upload aborted";}
   });
