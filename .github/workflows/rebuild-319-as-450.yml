@@ -70,14 +70,15 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import hashlib, json
-          m=json.loads(Path('release/manifest.json').read_text())
+          m=json.loads(Path('release/release.json').read_text())
           if m.get('version') != '4.5.0':
               raise SystemExit('Manifest version mismatch')
           for n in ('and_4.5.0.bin','and_4.5.0_full.bin'):
               p=Path('release')/n
-              if not p.exists() or p.stat().st_size == 0:
-                  raise SystemExit(f'Missing {n}')
-              print(n, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest())
+              digest=hashlib.sha256(p.read_bytes()).hexdigest()
+              if m['files'][n]['sha256'] != digest or m['files'][n]['bytes'] != p.stat().st_size:
+                  raise SystemExit(f'Manifest verification failed for {n}')
+              print(n, p.stat().st_size, digest)
           PY
       - name: Publish rebadged commit and tag
         run: |
