@@ -20,7 +20,52 @@ jobs:
         with:
           path: ~/.platformio
           key: ${{ runner.os }}-anderson-native-idf61-v1
+      - name: Verify native ESP-IDF source contract
+        run: |
+          grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
+          ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
+          grep -q 'X-Anderson-Filename' firmware/web/index.html
+          grep -q 'X-Anderson-Filename' firmware/web/recovery.html
+          grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
+          grep -q 'missing 0xE9 image header' firmware/src/main.cpp
+          grep -q 'u.totalSize<4096||u.totalSize>=0x1E0000' firmware/src/main.cpp
+          grep -q 'andersonSha256Compute' firmware/src/main.cpp
+          grep -q 'andersonSha256Compute' firmware/src/RemoteUpdate.cpp
+          test ! -e firmware/include/mbedtls/sha256.h
+          node --check firmware/web/v3_mockup.js
       - name: Install PlatformIO
         run: pip install -q platformio==6.2.0
       - name: Compile native ESP-IDF NanoC6 image
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Run Anderson source regressions
+        run: |
+          python tools/test_regressions.py
+          python tools/test_connection_recovery.py
+          python tools/test_maintenance.py
+          python tools/audit_event_coverage.py
+      - name: Verify APP-only image
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('firmware/.pio/build/m5stack-nanoc6/firmware.bin')
+          if not p.exists(): raise SystemExit('firmware.bin was not produced')
+          data=p.read_bytes()
+          if len(data) < 4096: raise SystemExit(f'APP image unexpectedly small: {len(data)}')
+          if len(data) >= 0x1E0000: raise SystemExit(f'APP image exceeds OTA slot: {len(data)} >= {0x1E0000}')
+          if data[0] != 0xE9: raise SystemExit(f'APP image header is 0x{data[0]:02X}, expected 0xE9')
+          print(f'APP bytes={len(data)}')
+          print(f'APP margin={0x1E0000-len(data)}')
+          print(f'APP sha256={hashlib.sha256(data).hexdigest()}')
+          PY
+      - name: Stage candidate artifact
+        run: |
+          mkdir -p native-idf-artifact
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.bin native-idf-artifact/anderson-native-idf-candidate.bin
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf native-idf-artifact/anderson-native-idf-candidate.elf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Native-IDF-${{ github.sha }}
+          path: native-idf-artifact/
+          if-no-files-found: error
+          retention-days: 7
