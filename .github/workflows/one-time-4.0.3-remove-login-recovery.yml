@@ -1,0 +1,113 @@
+name: Prepare Anderson Home 4.0.3
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/workflows/one-time-4.0.3-remove-login-recovery.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bump to 4.0.3 and remove login emergency flash
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.2"
+          python tools/release.py bump
+          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.3"
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          ui = Path('firmware/web/index.html')
+          text = ui.read_text()
+
+          # Remove only the pre-login emergency firmware panel. The protected recovery
+          # backend and standalone recovery page remain intact.
+          text, panel_count = re.subn(
+              r'\n\s*<div id="loginEmergencyRecovery"\b.*?<div id="loginRecoveryStatus"\b.*?</div>\s*</div>',
+              '', text, count=1, flags=re.S)
+          if panel_count != 1:
+              raise SystemExit(f'expected one login emergency recovery panel, removed {panel_count}')
+
+          text, script_count = re.subn(
+              r'\n?<script id="anderson-login-emergency-recovery">.*?</script>',
+              '', text, count=1, flags=re.S)
+          if script_count != 1:
+              raise SystemExit(f'expected one login emergency recovery script, removed {script_count}')
+
+          forbidden = [
+              'loginEmergencyRecovery','loginRecoveryPin','loginRecoveryFile',
+              'loginRecoveryFlash','loginRecoveryProgress','loginRecoveryStatus',
+              'anderson-login-emergency-recovery','X-Anderson-Recovery-PIN',
+              '/api/update?recovery=1'
+          ]
+          found = [s for s in forbidden if s in text]
+          if found:
+              raise SystemExit('login recovery remnants remain: ' + ', '.join(found))
+          ui.write_text(text)
+
+          test = Path('tools/test_regressions.py')
+          source = test.read_text()
+          old = '''assert 'id="loginEmergencyRecovery"' in web and 'X-Anderson-Recovery-PIN' in web
+          assert 'loginRecoveryFile' in web and 'loginRecoveryFlash' in web
+          assert "x.open('POST','/api/update?recovery=1')" in web
+          assert "first[0]!==0xE9" in web
+          assert 'Emergency Firmware Flash' not in mock
+          '''
+          new = '''assert 'id="loginEmergencyRecovery"' not in web
+          assert 'loginRecoveryFile' not in web and 'loginRecoveryFlash' not in web
+          assert 'anderson-login-emergency-recovery' not in web
+          assert 'X-Anderson-Recovery-PIN' not in web and '/api/update?recovery=1' not in web
+          assert 'Emergency Firmware Recovery' not in web and 'Emergency Flash &amp; Reboot' not in web
+          assert 'X-Anderson-Recovery-PIN' in main and 'otaRecoveryRequest' in main
+          assert 'recovery=1' in t('firmware/web/recovery.html') or '/api/update' in t('firmware/web/recovery.html')
+          assert 'Emergency Firmware Flash' not in mock
+          '''
+          if old not in source:
+              raise SystemExit('expected legacy login recovery regression block not found')
+          test.write_text(source.replace(old, new, 1))
+
+          # Focused source-level safety contract.
+          main = Path('firmware/src/main.cpp').read_text()
+          recovery = Path('firmware/web/recovery.html').read_text()
+          assert 'X-Anderson-Recovery-PIN' in main
+          assert 'otaRecoveryRequest' in main
+          assert '/api/update' in main
+          assert '/api/update' in recovery
+          assert 'loginEmergencyRecovery' not in ui.read_text()
+          PY
+
+      - name: Run focused regression and release checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/test_regressions.py
+          python tools/test_maintenance.py
+          python tools/test_audit_fixes.py
+          python tools/release.py check
+
+      - name: Commit focused 4.0.3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/one-time-4.0.3-remove-login-recovery.yml
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add FIRMWARE_VERSION.txt README.md firmware/src/main.cpp firmware/sdkconfig.defaults firmware/web/index.html tools/test_regressions.py .github/workflows/one-time-4.0.3-remove-login-recovery.yml
+          git commit -m 'Anderson Home 4.0.3: remove emergency flash from login'
+          git push origin HEAD:codex/release-current
