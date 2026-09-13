@@ -1,0 +1,35 @@
+name: Stage v4 Native IDF OTA Safety
+on:
+  push:
+    branches:
+      - work/v4.0.0-native-idf
+    paths:
+      - .github/workflows/zz-v4-main-safety.yml
+      - .github/scripts/v4-main-safety.py
+permissions:
+  contents: write
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v4.0.0-native-idf
+      - name: Apply main OTA safety migration
+        run: python .github/scripts/v4-main-safety.py
+      - name: Validate migration
+        run: |
+          grep -q 'AndersonSha256.h' firmware/src/main.cpp
+          grep -q 'andersonSha256Compute' firmware/src/main.cpp
+          grep -q 'missing 0xE9 image header' firmware/src/main.cpp
+          grep -q 'u.totalSize<4096||u.totalSize>=0x1E0000' firmware/src/main.cpp
+          git diff --check
+      - name: Commit migration and remove helper
+        run: |
+          rm -f .github/workflows/zz-v4-main-safety.yml .github/scripts/v4-main-safety.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Harden native IDF APP-only firmware upload"
+          git push origin HEAD:refs/heads/work/v4.0.0-native-idf
