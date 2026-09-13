@@ -1,0 +1,105 @@
+name: Archive Anderson before 3.1.11 reset
+
+on:
+  push:
+    branches: ['codex/rebuild-3.1.11-full']
+    paths: ['.github/workflows/archive-before-3.1.11-reset.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch every branch and tag
+        run: |
+          set -euo pipefail
+          git fetch --force --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+
+      - name: Build complete recovery archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BENCHMARK_COMMIT: 58d74972da79d6c75735e6946d736b50b4e83b37
+          BENCHMARK_TAG: anderson-v3.1.11
+        run: |
+          set -euo pipefail
+          mkdir -p snapshot/releases
+
+          # Full Git object/history/ref backup. This is sufficient to reconstruct the
+          # repository even after branches/tags are cleaned up.
+          git bundle create snapshot/CETELUMA_NanoC6_WiFi_BLE_Bridge2-before-reset.bundle --all
+          git bundle verify snapshot/CETELUMA_NanoC6_WiFi_BLE_Bridge2-before-reset.bundle
+
+          # Exact source tree that will become the new Anderson baseline.
+          git archive --format=zip --prefix=Anderson-3.1.11/ \
+            --output=snapshot/Anderson-3.1.11-benchmark-source.zip "$BENCHMARK_COMMIT"
+
+          # Human-readable repository reconstruction metadata.
+          git show-ref > snapshot/git-show-ref.txt
+          git for-each-ref --sort=refname \
+            --format='%(refname) %(objectname) %(objecttype) %(subject)' \
+            > snapshot/git-refs-detailed.txt
+          git log --all --date=iso-strict --pretty='format:%H%x09%P%x09%ad%x09%an%x09%s' \
+            > snapshot/git-history.tsv
+          git ls-tree -r "$BENCHMARK_COMMIT" > snapshot/3.1.11-tree.txt
+          git show --no-patch --format=fuller "$BENCHMARK_COMMIT" > snapshot/3.1.11-commit.txt
+          git rev-parse "$BENCHMARK_TAG^{commit}" > snapshot/3.1.11-commit-sha.txt
+          git rev-parse "$BENCHMARK_COMMIT^{tree}" > snapshot/3.1.11-tree-sha.txt
+
+          # Preserve release metadata and every release asset before cleanup.
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > snapshot/releases-pages.json
+          python - <<'PY'
+          import json, os, pathlib, re, subprocess
+          root=pathlib.Path('snapshot')
+          pages=json.loads((root/'releases-pages.json').read_text())
+          releases=[]
+          for page in pages:
+              if isinstance(page,list): releases.extend(page)
+          (root/'releases.json').write_text(json.dumps(releases,indent=2)+'\n')
+          repo=os.environ['GITHUB_REPOSITORY']
+          index=[]
+          for rel in releases:
+              tag=rel.get('tag_name') or f"release-{rel.get('id')}"
+              safe=re.sub(r'[^A-Za-z0-9._-]+','_',tag)
+              folder=root/'releases'/safe
+              folder.mkdir(parents=True,exist_ok=True)
+              (folder/'release-metadata.json').write_text(json.dumps(rel,indent=2)+'\n')
+              for asset in rel.get('assets',[]):
+                  name=pathlib.Path(asset['name']).name
+                  out=folder/name
+                  with out.open('wb') as fh:
+                      subprocess.run([
+                          'gh','api','-H','Accept: application/octet-stream',
+                          f"repos/{repo}/releases/assets/{asset['id']}"
+                      ],stdout=fh,check=True)
+                  index.append({'tag':tag,'asset_id':asset['id'],'name':name,'bytes':out.stat().st_size})
+          (root/'release-assets-index.json').write_text(json.dumps(index,indent=2)+'\n')
+          PY
+          rm -f snapshot/releases-pages.json
+
+          # Integrity manifest for everything being archived.
+          find snapshot -type f -print0 | sort -z | xargs -0 sha256sum > snapshot/SHA256SUMS.txt
+          printf '%s\n' \
+            'Anderson Home GitHub pre-reset recovery package' \
+            'Benchmark: anderson-v3.1.11' \
+            'Benchmark commit: 58d74972da79d6c75735e6946d736b50b4e83b37' \
+            'Created before resetting repository history/refs to the 3.1.11 benchmark.' \
+            > snapshot/README-RECOVERY.txt
+
+      - name: Upload complete pre-reset backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-GitHub-PreReset-Backup
+          path: snapshot/
+          if-no-files-found: error
+          retention-days: 90
