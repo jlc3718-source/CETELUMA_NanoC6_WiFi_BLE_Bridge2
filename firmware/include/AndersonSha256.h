@@ -4,6 +4,7 @@
 #include <psa/crypto.h>
 
 // Native ESP-IDF 6.1 / PSA Crypto SHA-256 adapter used by Anderson OTA verification.
+// Kept independent of removed legacy Mbed TLS SHA-256 public APIs.
 struct AndersonSha256Context {
   psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
   bool active = false;
