@@ -1,0 +1,37 @@
+name: Publish Anderson Home 4.5.2 OTA
+on:
+  push:
+    branches: ['codex/4.5.2-nvs-ota-repair']
+    paths: ['.github/workflows/publish-4.5.2-ota.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN_ID: '34789267755'
+      BUILD_SHA: '0edbf79de023112be95c561b9b041dc48728dd9d'
+      VERSION: '4.5.2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BUILD_SHA }}
+      - run: gh run download "$BUILD_RUN_ID" --name "Anderson-Home-NanoC6-v$VERSION" --dir release-work
+      - name: Verify artifact
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          r=Path('release-work');v=os.environ['VERSION'];sha=os.environ['BUILD_SHA'];b=r/f'and_{v}.bin';m=json.loads((r/'release.json').read_text());d=b.read_bytes();h=hashlib.sha256(d).hexdigest()
+          assert m['version']==v and m['commit']==sha
+          assert m['ota_slot_bytes']==0x1E0000 and 0<len(d)<0x1E0000 and d[0]==0xE9
+          assert m['files'][b.name]['bytes']==len(d) and m['files'][b.name]['sha256']==h
+          print(len(d),h)
+          PY
+      - name: Create release
+        run: |
+          TAG="anderson-v$VERSION"
+          gh release view "$TAG" >/dev/null 2>&1 && gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json --target "$BUILD_SHA" --title "Anderson Home v$VERSION" --notes "Verified OTA repair release. Signed-manifest remote updates use native ESP-IDF OTA finalization; NVS recovery metadata is best-effort and can no longer veto a verified update."
