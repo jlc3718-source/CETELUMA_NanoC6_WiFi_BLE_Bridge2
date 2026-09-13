@@ -19,11 +19,13 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: ${{ runner.os }}-anderson-native-idf61-v1
+          key: ${{ runner.os }}-anderson-native-idf-v401
       - name: Verify native ESP-IDF source contract
         run: |
           grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
           ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
+          ! grep -q 'NimBLE-Arduino' firmware/platformio.ini
+          ! grep -q 'ARDUINO_USB_' firmware/platformio.ini
           VERSION="$(cat FIRMWARE_VERSION.txt)"
           printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$'
           grep -Fq "ANDERSON_FIRMWARE_VERSION=\"$VERSION\"" firmware/src/main.cpp
@@ -37,7 +39,8 @@ jobs:
           test ! -e firmware/web/v4_home_recovery.js
           ! grep -q 'V4_HOME_JS' tools/release.py
           grep -q 'if(ticks==0)ticks=1' firmware/src/ArduinoCompat.cpp
-          grep -q 'esp_image_get_metadata' firmware/src/ArduinoCompat.cpp
+          grep -q 'esp_image_verify' firmware/src/ArduinoCompat.cpp
+          grep -q 'meta.image_len' firmware/src/ArduinoCompat.cpp
           grep -q 'bootHealthBegin' firmware/src/IdfEntry.cpp
           grep -q 'esp_ota_mark_app_valid_cancel_rollback' firmware/src/BootHealth.cpp
           grep -q 'Content-Encoding: gzip' firmware/src/BootHealth.cpp
@@ -87,12 +90,13 @@ jobs:
           PY
       - name: Stage candidate artifact
         run: |
+          VERSION="$(cat FIRMWARE_VERSION.txt)"
           mkdir -p native-idf-artifact
-          cp firmware/.pio/build/m5stack-nanoc6/firmware.bin native-idf-artifact/anderson-native-idf-candidate.bin
-          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf native-idf-artifact/anderson-native-idf-candidate.elf
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.bin "native-idf-artifact/and_${VERSION}.bin"
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf "native-idf-artifact/and_${VERSION}.elf"
       - uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Native-IDF-${{ github.sha }}
+          name: Anderson-Native-IDF-v${{ github.run_number }}
           path: native-idf-artifact/
           if-no-files-found: error
           retention-days: 7
