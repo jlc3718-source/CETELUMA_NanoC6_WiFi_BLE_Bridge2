@@ -26,7 +26,9 @@ class NetworkClient {
       if(length_>=0&&read_>=length_)connected_=false;
       return n;
     }
-    if(n==0)connected_=false;
+    // A zero-length read can be transient on ESP-IDF HTTPS streams.
+    // Only declare EOF when the HTTP client confirms the response is complete.
+    if(n==0&&esp_http_client_is_complete_data_received(h_))connected_=false;
     return n;
   }
   bool connected()const{return connected_;}
