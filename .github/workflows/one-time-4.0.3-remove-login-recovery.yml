@@ -58,7 +58,7 @@ jobs:
           ui = Path('firmware/web/index.html')
           text = ui.read_text()
           text, panel_count = re.subn(
-              r'\n\s*<div id="loginEmergencyRecovery"\b.*?<div id="loginRecoveryStatus"\b.*?</div>\s*</div>',
+              r'\n\s*<div id="loginEmergencyRecovery".*?<div id="loginRecoveryStatus".*?</div>\s*</div>',
               '', text, count=1, flags=re.S)
           if panel_count != 1:
               raise SystemExit(f'expected one login emergency recovery panel, removed {panel_count}')
