@@ -1,0 +1,56 @@
+name: Build Recovery Hub 4.0.5
+
+on:
+  push:
+    branches: ['rescue/recovery-hub-4.0.5']
+    paths: ['recovery-hub/**', '.github/workflows/build-recovery-hub-4.0.5.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install -q platformio==6.2.0
+      - name: Compile Recovery Hub
+        run: pio run -d recovery-hub -e nanoc6-recovery -j 4
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovery-release
+          cp recovery-hub/.pio/build/nanoc6-recovery/firmware.bin recovery-release/and_4.0.5.bin
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          p=Path('recovery-release/and_4.0.5.bin')
+          b=p.read_bytes()
+          if not b or b[0] != 0xE9: raise SystemExit('not ESP app image')
+          if len(b) >= 1_250_000: raise SystemExit(f'Recovery Hub too large: {len(b)}')
+          meta={'version':'4.0.5','mode':'recovery-hub','bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'commit':os.environ['GITHUB_SHA'],'magic':'0xE9','app_only':True,'preserves_nvs':True,'dynamic_signed_ota':True,'manual_web_flash':True,'size_ceiling':1250000}
+          Path('recovery-release/release.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print(json.dumps(meta,indent=2))
+          PY
+      - name: Publish immutable-named recovery release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release delete anderson-v4.0.5 --yes >/dev/null 2>&1 || true
+          git push origin :refs/tags/anderson-v4.0.5 >/dev/null 2>&1 || true
+          gh release create anderson-v4.0.5 recovery-release/and_4.0.5.bin recovery-release/release.json --target "$GITHUB_SHA" --title 'Anderson Recovery Hub v4.0.5' --notes 'Emergency remotely recoverable firmware. Dynamic signed OTA, manual web flash, NVS preserved.'
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Recovery-Hub-4.0.5
+          path: recovery-release/*
+          if-no-files-found: error
