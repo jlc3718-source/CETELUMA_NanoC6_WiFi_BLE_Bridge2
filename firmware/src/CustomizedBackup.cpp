@@ -11,8 +11,14 @@ static constexpr uint8_t CUSTOM_BACKUP_SCHEMA=1;
 static constexpr uint32_t CUSTOM_BACKUP_INTERVAL_SECONDS=7UL*24UL*60UL*60UL;
 static constexpr uint32_t CUSTOM_BACKUP_CHECK_MS=60UL*1000UL;
 static constexpr time_t VALID_TIME_EPOCH=1700000000;
-static constexpr const char* CUSTOM_BACKUP_PATH="/customized-settings-backup.json";
-static constexpr const char* CUSTOM_BACKUP_TMP="/customized-settings-backup.tmp";
+// ESP32 SPIFFS object names are limited; keep active paths <=31 characters including the leading slash.
+static constexpr const char* CUSTOM_BACKUP_PATH="/cust-backup.json";
+static constexpr const char* CUSTOM_BACKUP_TMP="/cust-backup.tmp";
+// v3.1.12 used an overlength final name. Its temp name was valid and can contain a verified backup after failed promotion.
+static constexpr const char* LEGACY_BACKUP_PATH="/customized-settings-backup.json";
+static constexpr const char* LEGACY_BACKUP_TMP="/customized-settings-backup.tmp";
+static_assert(sizeof("/cust-backup.json")-1<=31,"SPIFFS backup path too long");
+static_assert(sizeof("/cust-backup.tmp")-1<=31,"SPIFFS backup temp path too long");
 static uint32_t lastAutomaticCheckMs=0;
 static bool backupFsReady=false;
 
@@ -47,16 +53,42 @@ static bool writeBackupPayload(const String& payload,String& error){
   size_t wrote=f.print(payload);f.flush();f.close();if(wrote!=payload.length()||readFile(CUSTOM_BACKUP_TMP)!=payload){SPIFFS.remove(CUSTOM_BACKUP_TMP);error="Backup write verification failed";return false;}
   JsonDocument verify;String verifyError;if(!parseBackup(payload,verify,&verifyError)){SPIFFS.remove(CUSTOM_BACKUP_TMP);error=verifyError;return false;}
   if(SPIFFS.exists(CUSTOM_BACKUP_PATH)&&!SPIFFS.remove(CUSTOM_BACKUP_PATH)){SPIFFS.remove(CUSTOM_BACKUP_TMP);error="Previous backup could not be replaced";return false;}
-  if(!SPIFFS.rename(CUSTOM_BACKUP_TMP,CUSTOM_BACKUP_PATH)){error="Verified backup could not be promoted";return false;}
+  if(!SPIFFS.rename(CUSTOM_BACKUP_TMP,CUSTOM_BACKUP_PATH)){SPIFFS.remove(CUSTOM_BACKUP_TMP);error="Verified backup could not be promoted";return false;}
   JsonDocument finalCheck;if(!parseBackup(readFile(CUSTOM_BACKUP_PATH),finalCheck,&verifyError)){error=verifyError;return false;}
   return true;
 }
 
 void customizedSettingsBackupBegin(){
   backupFsReady=SPIFFS.begin(false);if(!backupFsReady)return;
-  if(!SPIFFS.exists(CUSTOM_BACKUP_TMP))return;
-  if(SPIFFS.exists(CUSTOM_BACKUP_PATH)){SPIFFS.remove(CUSTOM_BACKUP_TMP);return;}
-  String raw=readFile(CUSTOM_BACKUP_TMP);JsonDocument d;if(parseBackup(raw,d,nullptr))SPIFFS.rename(CUSTOM_BACKUP_TMP,CUSTOM_BACKUP_PATH);else SPIFFS.remove(CUSTOM_BACKUP_TMP);
+
+  // Recover the verified v3.1.12 temporary backup left behind when its overlength destination could not be created.
+  if(!SPIFFS.exists(CUSTOM_BACKUP_PATH)){
+    const char* legacyCandidates[]={LEGACY_BACKUP_TMP,LEGACY_BACKUP_PATH};
+    for(const char* candidate:legacyCandidates){
+      if(!SPIFFS.exists(candidate))continue;
+      String raw=readFile(candidate);JsonDocument d;
+      if(!parseBackup(raw,d,nullptr)){SPIFFS.remove(candidate);continue;}
+      if(SPIFFS.rename(candidate,CUSTOM_BACKUP_PATH))break;
+      String ignored;if(writeBackupPayload(raw,ignored)){SPIFFS.remove(candidate);break;}
+    }
+  }
+
+  // Recover an interrupted v3.1.13+ write using only SPIFFS-safe short filenames.
+  if(SPIFFS.exists(CUSTOM_BACKUP_TMP)){
+    if(SPIFFS.exists(CUSTOM_BACKUP_PATH))SPIFFS.remove(CUSTOM_BACKUP_TMP);
+    else{
+      String raw=readFile(CUSTOM_BACKUP_TMP);JsonDocument d;
+      if(parseBackup(raw,d,nullptr)){
+        if(!SPIFFS.rename(CUSTOM_BACKUP_TMP,CUSTOM_BACKUP_PATH))SPIFFS.remove(CUSTOM_BACKUP_TMP);
+      }else SPIFFS.remove(CUSTOM_BACKUP_TMP);
+    }
+  }
+
+  // Once a valid short-name backup exists, remove any stale v3.1.12 artifacts.
+  if(SPIFFS.exists(CUSTOM_BACKUP_PATH)){
+    if(SPIFFS.exists(LEGACY_BACKUP_TMP))SPIFFS.remove(LEGACY_BACKUP_TMP);
+    if(SPIFFS.exists(LEGACY_BACKUP_PATH))SPIFFS.remove(LEGACY_BACKUP_PATH);
+  }
 }
 
 bool customizedSettingsBackupCreate(const AppSettings& settings,const char* firmwareVersion,bool automatic,String& error){
