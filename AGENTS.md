@@ -86,7 +86,7 @@ GitHub runner queue vary.
 - Color buttons and tiles use recognizable browser-facing sRGB reference colors for their names while preserving the separate calibrated LED output codes. Quick Colors must show each color name.
 - Built-in events use one firmware-owned event palette. Per-event edits use one persistent override slot and routine firmware upgrades must preserve those edits. Legacy dual-theme override slots migrate into the single retained slot non-destructively.
 - The Favorites page shows a checked Favorite control beside every favorite scene so it can be removed directly from Favorites.
-- v3.0.29 and later Favorite Colors are the firmware-locked 16-color master palette: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#E0B400`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, Teal `#00B4B4`, Sky Blue `#0096FF`, Amber Gold `#FFA000`, Lavender `#B464FF`, Navy Blue `#001478`, Burgundy `#87002D`, Silver Gray `#A0A5AF`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
+- Favorite Colors are firmware-locked to the retained approved set: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#E0B400`, Green `#28FF00`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, and Navy Blue `#001478`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
 
 ## Source map
 
@@ -102,4 +102,4 @@ GitHub runner queue vary.
 
 - v3.1.11 unified event palette uses the retained approved color set, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.
 
-- v3.1.11 approved named colors: Red, Orange, Pink, Yellow, Green, Blue, Purple, White/Warm White, and Navy Blue. Retired named colors are migrated to the nearest retained family and are not presented as selectable palette entries.
+- v3.1.11 approved named colors: Red, Orange, Pink, Yellow, Green, Blue, Purple, White/Warm White, and Navy Blue. Legacy stored values are migrated to the nearest retained family and are not presented as selectable palette entries.

@@ -20,7 +20,7 @@ struct DirectMap{uint32_t source,output;};
 // Exact user matches plus the historical Anderson event/UI colors. Known source
 // colors are mapped by their intended named family before CIEDE2000 is used for
 // genuinely unknown saved colors. In particular, blue-family source colors can
-// never drift into Purple/Lavender simply because of a perceptual near-tie.
+// never drift into Purple simply because of a perceptual near-tie.
 static constexpr DirectMap DIRECT_MAP[] = {
   // Retained approved outputs are idempotent; retired outputs migrate forward.
   {0xFF0000,0xFF0000},{0xFF0D00,0xFF0D00},{0xFF0024,0xFF0024},{0xE0B400,0xE0B400},{0xFFFF44,0xE0B400},
