@@ -3,64 +3,165 @@ on:
   push:
     branches: [build/full-flash-4.0.3]
   workflow_dispatch:
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install PlatformIO
-        run: pip install -U platformio
-      - name: Build exact 4.0.3 source
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Anderson build dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -U platformio
+          python -m pip install -r tools/requirements-build.txt
+          npm ci --prefix tools
+
+      - name: Generate embedded web assets and validate release inputs
+        run: |
+          set -euo pipefail
+          python tools/release.py check
+          python tools/release.py prepare
+          test -s firmware/include/WebUIGzip.h
+          grep -q 'WEB_UI_GZ' firmware/include/WebUIGzip.h
+          grep -q 'RECOVERY_UI_GZ' firmware/include/WebUIGzip.h
+
+      - name: Build exact Anderson Home 4.0.3 source
         working-directory: firmware
-        run: pio run -e m5stack-nanoc6
-      - name: Assemble and verify complete 4MB flash image
+        run: |
+          set -euo pipefail
+          pio run -e m5stack-nanoc6
+
+      - name: Assemble and independently verify complete 4MB flash image
         working-directory: firmware
         shell: bash
         run: |
           set -euo pipefail
-          BUILD=.pio/build/m5stack-nanoc6
           python - <<'PY'
-          import json, hashlib, os, subprocess
+          import hashlib, json, subprocess
           from pathlib import Path
-          b=Path('.pio/build/m5stack-nanoc6')
-          app=b/'firmware.bin'; boot=b/'bootloader.bin'; part=b/'partitions.bin'
-          for p in (app,boot,part):
-              if not p.exists(): raise SystemExit(f'Missing {p}')
-          if app.read_bytes()[:1] != b'\xe9': raise SystemExit('Invalid app image magic')
-          # Standard ESP32-C6 PlatformIO offsets: bootloader 0x0000, partition table 0x8000.
-          # This project's partition CSV puts otadata at 0xE000 and app0 at 0x10000.
-          # Generate a deterministic 4MB factory image with erased (0xFF) NVS/otadata/app1/SPIFFS.
-          image=bytearray(b'\xff'*(4*1024*1024))
-          def put(path, off):
-              data=path.read_bytes(); end=off+len(data)
-              if end>len(image): raise SystemExit(f'{path} exceeds flash')
-              image[off:end]=data
-          put(boot,0x0000); put(part,0x8000); put(app,0x10000)
-          out=Path('Anderson_Home_4.0.3_FULL_FLASH_4MB.bin'); out.write_bytes(image)
-          # Also use esptool merge-bin as an independent structural check.
-          merged=Path('Anderson_Home_4.0.3_FULL_FLASH_esptool.bin')
-          subprocess.check_call(['python','-m','esptool','--chip','esp32c6','merge_bin','-o',str(merged),'0x0',str(boot),'0x8000',str(part),'0x10000',str(app)])
-          m=merged.read_bytes()
-          if image[:len(m)] != m: raise SystemExit('Independent esptool merge differs from deterministic full image')
-          meta={
-            'version':'4.0.3','source_commit':'8122adfdca6f5c0ddbb4e0b89faa2ce651904b78',
-            'flash_size':len(image),'sha256':hashlib.sha256(image).hexdigest(),
-            'app_size':app.stat().st_size,'app_sha256':hashlib.sha256(app.read_bytes()).hexdigest(),
-            'offsets':{'bootloader':'0x0000','partition_table':'0x8000','app0':'0x10000'},
-            'erased_regions':'NVS, otadata, app1, SPIFFS are 0xFF in this full-device image',
-            'flash_command':'esptool --chip esp32c6 --port <PORT> write_flash 0x0 Anderson_Home_4.0.3_FULL_FLASH_4MB.bin'
+
+          b = Path('.pio/build/m5stack-nanoc6')
+          app = b / 'firmware.bin'
+          boot = b / 'bootloader.bin'
+          part = b / 'partitions.bin'
+          for p in (app, boot, part):
+              if not p.exists() or p.stat().st_size == 0:
+                  raise SystemExit(f'Missing or empty required build output: {p}')
+
+          app_data = app.read_bytes()
+          boot_data = boot.read_bytes()
+          part_data = part.read_bytes()
+          if app_data[:1] != b'\xE9':
+              raise SystemExit('Invalid ESP application image magic')
+          if boot_data[:1] != b'\xE9':
+              raise SystemExit('Invalid ESP bootloader image magic')
+          if len(app_data) >= 0x1E0000:
+              raise SystemExit(f'Application is too large for OTA slot: {len(app_data)} bytes')
+
+          csv = Path('partitions_ota.csv').read_text().splitlines()
+          expected = {
+              'nvs': (0x9000, 0x5000),
+              'otadata': (0xE000, 0x2000),
+              'app0': (0x10000, 0x1E0000),
+              'app1': (0x1F0000, 0x1E0000),
+              'spiffs': (0x3D0000, 0x30000),
           }
-          Path('Anderson_Home_4.0.3_FULL_FLASH_4MB.json').write_text(json.dumps(meta,indent=2)+'\n')
-          print(json.dumps(meta,indent=2))
+          found = {}
+          for line in csv:
+              s = line.strip()
+              if not s or s.startswith('#'):
+                  continue
+              row = [x.strip() for x in s.split(',')]
+              found[row[0]] = (int(row[3], 0), int(row[4], 0))
+          for name, pair in expected.items():
+              if found.get(name) != pair:
+                  raise SystemExit(f'Unexpected partition layout for {name}: {found.get(name)} != {pair}')
+
+          image = bytearray(b'\xFF' * (4 * 1024 * 1024))
+          def put(data, offset, label):
+              end = offset + len(data)
+              if end > len(image):
+                  raise SystemExit(f'{label} exceeds 4MB flash image')
+              image[offset:end] = data
+
+          put(boot_data, 0x0000, 'bootloader')
+          put(part_data, 0x8000, 'partition table')
+          put(app_data, 0x10000, 'app0')
+
+          # If ESP-IDF produced initial OTA data, include it at the project's otadata offset.
+          ota_candidates = [b/'ota_data_initial.bin', b/'otadata.bin']
+          ota_file = next((p for p in ota_candidates if p.exists() and p.stat().st_size), None)
+          if ota_file:
+              ota_data = ota_file.read_bytes()
+              if len(ota_data) > 0x2000:
+                  raise SystemExit('Generated OTA data exceeds otadata partition')
+              put(ota_data, 0xE000, 'otadata')
+
+          out = Path('Anderson_Home_4.0.3_COMPLETE_FLASH_4MB.bin')
+          out.write_bytes(image)
+
+          # Independent merge check using esptool for every populated segment.
+          merged = Path('Anderson_Home_4.0.3_COMPLETE_FLASH_esptool.bin')
+          cmd = ['python', '-m', 'esptool', '--chip', 'esp32c6', 'merge_bin', '-o', str(merged),
+                 '0x0', str(boot), '0x8000', str(part), '0x10000', str(app)]
+          if ota_file:
+              cmd += ['0xE000', str(ota_file)]
+          subprocess.check_call(cmd)
+          merged_data = merged.read_bytes()
+          if image[:len(merged_data)] != merged_data:
+              raise SystemExit('Independent esptool merge does not match complete image contents')
+
+          # Verify inserted segments byte-for-byte after final image creation.
+          verify = out.read_bytes()
+          if len(verify) != 4 * 1024 * 1024:
+              raise SystemExit('Complete image is not exactly 4MB')
+          checks = [(boot_data,0x0000,'bootloader'),(part_data,0x8000,'partition table'),(app_data,0x10000,'app0')]
+          if ota_file:
+              checks.append((ota_file.read_bytes(),0xE000,'otadata'))
+          for data, off, label in checks:
+              if verify[off:off+len(data)] != data:
+                  raise SystemExit(f'Final image verification failed for {label}')
+
+          # esptool must recognize both bootloader and app images.
+          subprocess.check_call(['python','-m','esptool','--chip','esp32c6','image_info',str(boot)])
+          subprocess.check_call(['python','-m','esptool','--chip','esp32c6','image_info',str(app)])
+
+          meta = {
+              'version': '4.0.3',
+              'build_commit': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+              'complete_flash_bytes': len(verify),
+              'complete_flash_sha256': hashlib.sha256(verify).hexdigest(),
+              'app_bytes': len(app_data),
+              'app_sha256': hashlib.sha256(app_data).hexdigest(),
+              'bootloader_bytes': len(boot_data),
+              'partition_table_bytes': len(part_data),
+              'offsets': {'bootloader':'0x0000','partition_table':'0x8000','nvs':'0x9000','otadata':'0xE000','app0':'0x10000','app1':'0x1F0000','spiffs':'0x3D0000'},
+              'otadata_initialized': bool(ota_file),
+              'flash_offset': '0x0000',
+              'flash_command': 'esptool --chip esp32c6 --port <PORT> write_flash 0x0 Anderson_Home_4.0.3_COMPLETE_FLASH_4MB.bin',
+              'verification': ['release.py check','release.py prepare','PlatformIO ESP-IDF build','partition-layout validation','byte-for-byte segment verification','independent esptool merge comparison','esptool image_info bootloader','esptool image_info app'],
+              'warning': 'Complete-device flash image. NVS/app1/SPIFFS remain erased unless explicitly populated by generated build output.'
+          }
+          Path('Anderson_Home_4.0.3_COMPLETE_FLASH_4MB.json').write_text(json.dumps(meta, indent=2) + '\n')
+          print(json.dumps(meta, indent=2))
           PY
-      - name: Upload full-flash package
+
+      - name: Upload verified full-flash package
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-4.0.3-FULL-FLASH-4MB
+          name: Anderson-Home-4.0.3-COMPLETE-FLASH-4MB
           path: |
-            firmware/Anderson_Home_4.0.3_FULL_FLASH_4MB.bin
-            firmware/Anderson_Home_4.0.3_FULL_FLASH_4MB.json
+            firmware/Anderson_Home_4.0.3_COMPLETE_FLASH_4MB.bin
+            firmware/Anderson_Home_4.0.3_COMPLETE_FLASH_4MB.json
           if-no-files-found: error
+          retention-days: 30
