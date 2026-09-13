@@ -52,7 +52,7 @@ class NimBLEClient {
 };
 class NimBLEDevice {
  public:
-  static void init(const char* name);static void setPower(int level);static NimBLEScan* getScan();static NimBLEClient* createClient(){return new NimBLEClient();}static void deleteClient(NimBLEClient* c){delete c;}
+  static void init(const char* name);static bool ready();static void setPower(int level);static NimBLEScan* getScan();static NimBLEClient* createClient(){return new NimBLEClient();}static void deleteClient(NimBLEClient* c){delete c;}
   static uint8_t ownAddrType();
  private:static void hostTask(void*);static void onSync();
 };
