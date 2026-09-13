@@ -1,14 +1,12 @@
-name: Native ESP-IDF Migration Check
+name: Build Anderson 4.0.3 Full Device Flash
 on:
   push:
-    branches: ['work/v4.0.0-native-idf']
-    paths: ['firmware/**','tools/release.py','tools/test_regressions.py','.github/workflows/native-idf-migration.yml','FIRMWARE_VERSION.txt']
-  workflow_dispatch:
-concurrency:
-  group: native-idf-migration
-  cancel-in-progress: true
+    branches: ['full-flash-v403']
+    paths: ['.github/workflows/native-idf-migration.yml']
+permissions:
+  contents: read
 jobs:
-  compile:
+  build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -16,87 +14,75 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/cache@v4
-        with:
-          path: ~/.platformio
-          key: ${{ runner.os }}-anderson-native-idf-v402
-      - name: Verify native ESP-IDF source contract
+      - name: Verify exact 4.0.3 source baseline
         run: |
-          grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
-          ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
-          ! grep -q 'NimBLE-Arduino' firmware/platformio.ini
-          ! grep -q 'ARDUINO_USB_' firmware/platformio.ini
-          VERSION="$(cat FIRMWARE_VERSION.txt)"
-          printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$'
-          grep -Fq "ANDERSON_FIRMWARE_VERSION=\"$VERSION\"" firmware/src/main.cpp
-          grep -q '^CONFIG_APP_PROJECT_VER_FROM_CONFIG=y$' firmware/sdkconfig.defaults
-          grep -Fq "CONFIG_APP_PROJECT_VER=\"$VERSION\"" firmware/sdkconfig.defaults
-          grep -q 'X-Anderson-Filename' firmware/web/index.html
-          grep -q 'X-Anderson-Filename' firmware/web/recovery.html
-          grep -q 'id="loginEmergencyRecovery"' firmware/web/index.html
-          grep -q 'X-Anderson-Recovery-PIN' firmware/web/index.html
-          ! grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
-          test ! -e firmware/web/v4_home_recovery.js
-          ! grep -q 'V4_HOME_JS' tools/release.py
-          grep -q 'if(ticks==0)ticks=1' firmware/src/ArduinoCompat.cpp
-          grep -q 'esp_image_verify' firmware/src/ArduinoCompat.cpp
-          grep -q 'meta.image_len' firmware/src/ArduinoCompat.cpp
-          grep -q 'bootHealthBegin' firmware/src/IdfEntry.cpp
-          grep -q 'esp_ota_mark_app_valid_cancel_rollback' firmware/src/BootHealth.cpp
-          grep -q 'Content-Encoding: gzip' firmware/src/BootHealth.cpp
-          grep -q 'missing 0xE9 image header' firmware/src/main.cpp
-          grep -q 'u.totalSize<4096||u.totalSize>=0x1E0000' firmware/src/main.cpp
-          grep -q 'andersonSha256Compute' firmware/src/main.cpp
-          grep -q 'andersonSha256Compute' firmware/src/RemoteUpdate.cpp
-          grep -q 'kUploadAbsoluteTimeoutUs' firmware/src/WebServer.cpp
-          grep -q 'kBodyAbsoluteTimeoutUs' firmware/src/WebServer.cpp
-          grep -q 'kMaxConsecutiveReceiveTimeouts' firmware/src/WebServer.cpp
-          grep -q 'HTTPD_SOCK_ERR_TIMEOUT' firmware/src/WebServer.cpp
-          grep -q '^CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y$' firmware/sdkconfig.defaults
-          grep -q '^# CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL is not set$' firmware/sdkconfig.defaults
-          grep -q 'mdns_hostname_set(host_.c_str())!=ESP_OK' firmware/src/ESPmDNS.cpp
-          test ! -e firmware/include/mbedtls/sha256.h
-          node --check firmware/web/v3_mockup.js
-      - name: Install build tools
-        run: python -m pip install -q -r tools/requirements-build.txt
-      - name: Install pinned web minifier
-        run: npm ci --prefix tools --no-audit --no-fund
-      - name: Prepare native firmware assets
-        run: python tools/release.py prepare
-      - name: Compile native ESP-IDF NanoC6 image
-        run: pio run -d firmware -e m5stack-nanoc6 -j 4
-      - name: Compile native MOCK_BLE compatibility image
-        run: pio run -d firmware -e wokwi -j 4
-      - name: Run Anderson source regressions
+          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.3"
+          grep -Fq 'CONFIG_APP_PROJECT_VER="4.0.3"' firmware/sdkconfig.defaults
+          grep -Fq 'ANDERSON_FIRMWARE_VERSION="4.0.3"' firmware/src/main.cpp
+          grep -Fq 'app0,     app,  ota_0,   0x10000,  0x1E0000' firmware/partitions_ota.csv
+          grep -Fq 'app1,     app,  ota_1,   0x1F0000, 0x1E0000' firmware/partitions_ota.csv
+      - name: Install pinned build tools
         run: |
-          python tools/test_regressions.py
-          python tools/test_connection_recovery.py
-          python tools/test_maintenance.py
-          python tools/audit_event_coverage.py
-      - name: Verify APP-only image
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Prepare and compile 4.0.3 platform image
+        run: |
+          python tools/release.py prepare
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+          test -s firmware/.pio/build/m5stack-nanoc6/firmware.factory.bin
+      - name: Retrieve immutable published 4.0.3 APP
+        run: |
+          curl -fL --retry 4 --retry-delay 2 -o /tmp/and_4.0.3.bin https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v4.0.3/and_4.0.3.bin
+          echo 'e242d8197e9b49cc9b5db5ff3c59fa994445cbbc75b31b65a1176b4c81cddb73  /tmp/and_4.0.3.bin' | sha256sum -c -
+          test "$(stat -c%s /tmp/and_4.0.3.bin)" = "1723376"
+          test "$(od -An -tx1 -N1 /tmp/and_4.0.3.bin | tr -d ' ')" = "e9"
+      - name: Create exact 4 MB full-device image
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib
-          p=Path('firmware/.pio/build/m5stack-nanoc6/firmware.bin')
-          if not p.exists(): raise SystemExit('firmware.bin was not produced')
-          data=p.read_bytes()
-          if len(data) < 4096: raise SystemExit(f'APP image unexpectedly small: {len(data)}')
-          if len(data) >= 0x1E0000: raise SystemExit(f'APP image exceeds OTA slot: {len(data)} >= {0x1E0000}')
-          if data[0] != 0xE9: raise SystemExit(f'APP image header is 0x{data[0]:02X}, expected 0xE9')
-          print(f'APP bytes={len(data)}')
-          print(f'APP margin={0x1E0000-len(data)}')
-          print(f'APP sha256={hashlib.sha256(data).hexdigest()}')
+          import hashlib, json
+          factory=Path('firmware/.pio/build/m5stack-nanoc6/firmware.factory.bin').read_bytes()
+          app=Path('/tmp/and_4.0.3.bin').read_bytes()
+          if len(factory) <= 0x10000: raise SystemExit('factory image is missing boot/partition content')
+          if len(app) != 1723376 or hashlib.sha256(app).hexdigest() != 'e242d8197e9b49cc9b5db5ff3c59fa994445cbbc75b31b65a1176b4c81cddb73': raise SystemExit('published 4.0.3 APP identity mismatch')
+          full=bytearray(b'\xff' * 0x400000)
+          full[:len(factory)] = factory
+          # Force the immutable published v4.0.3 APP into OTA_0 and blank the rest of both OTA slots.
+          full[0x10000:0x3D0000] = b'\xff' * (0x3D0000-0x10000)
+          full[0x10000:0x10000+len(app)] = app
+          # Full-device recovery intentionally starts with blank user NVS and SPIFFS.
+          full[0x9000:0xE000] = b'\xff' * 0x5000
+          full[0x3D0000:0x400000] = b'\xff' * 0x30000
+          out=Path('full-flash'); out.mkdir()
+          image=out/'Anderson_Home_4.0.3_FULL_4MB.bin'; image.write_bytes(full)
+          info={
+            'version':'4.0.3','flash_bytes':len(full),'app_offset':'0x10000','app_bytes':len(app),
+            'app_sha256':hashlib.sha256(app).hexdigest(),'full_sha256':hashlib.sha256(full).hexdigest(),
+            'source_release_commit':'8122adfdca6f5c0ddbb4e0b89faa2ce651904b78',
+            'layout':{'nvs':'0x9000-0xDFFF blank','otadata':'factory initialized','app0':'0x10000 immutable 4.0.3','app1':'0x1F0000 blank','spiffs':'0x3D0000 blank'},
+            'flash_address':'0x0','chip':'ESP32-C6','flash_size':'4MB'
+          }
+          (out/'Anderson_Home_4.0.3_FULL_4MB.json').write_text(json.dumps(info,indent=2)+'\n')
+          print(json.dumps(info,indent=2))
           PY
-      - name: Stage candidate artifact
+      - name: Verify full image boundaries and embedded APP
         run: |
-          VERSION="$(cat FIRMWARE_VERSION.txt)"
-          mkdir -p native-idf-artifact
-          cp firmware/.pio/build/m5stack-nanoc6/firmware.bin "native-idf-artifact/and_${VERSION}.bin"
-          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf "native-idf-artifact/and_${VERSION}.elf"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          p=Path('full-flash/Anderson_Home_4.0.3_FULL_4MB.bin'); d=p.read_bytes(); app=Path('/tmp/and_4.0.3.bin').read_bytes()
+          assert len(d)==0x400000
+          assert d[0x10000:0x10000+len(app)]==app
+          assert hashlib.sha256(d[0x10000:0x10000+len(app)]).hexdigest()=='e242d8197e9b49cc9b5db5ff3c59fa994445cbbc75b31b65a1176b4c81cddb73'
+          assert set(d[0x9000:0xE000])=={0xff}
+          assert set(d[0x1F0000:0x3D0000])=={0xff}
+          assert set(d[0x3D0000:0x400000])=={0xff}
+          print('FULL 4MB image verified; published 4.0.3 APP embedded exactly at 0x10000')
+          print('sha256='+hashlib.sha256(d).hexdigest())
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Native-IDF-v${{ github.run_number }}
-          path: native-idf-artifact/
+          name: Anderson-Home-4.0.3-FULL-4MB
+          path: full-flash/*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
