@@ -7,7 +7,7 @@
 #include <SPIFFS.h>
 
 static constexpr uint8_t BACKUP_FORMAT_VERSION=1;
-static constexpr uint8_t PALETTE_MIGRATION_REVISION=6;
+static constexpr uint8_t PALETTE_MIGRATION_REVISION=7;
 static constexpr uint8_t STATE_PENDING=0;
 static constexpr uint8_t STATE_APPLIED=1;
 static constexpr uint8_t STATE_RESTORED=2;
@@ -61,7 +61,7 @@ static bool transformPresetJson(const String& original,String& corrected){
 }
 static bool transformFavoriteJson(const String& original,String& corrected){
   (void)original;JsonDocument d;JsonArray a=d.to<JsonArray>();
-  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#FFFF44");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");a.add("#00B4B4");a.add("#0096FF");a.add("#FFA000");a.add("#B464FF");a.add("#001478");a.add("#87002D");a.add("#A0A5AF");
+  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#E0B400");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");a.add("#00B4B4");a.add("#0096FF");a.add("#FFA000");a.add("#B464FF");a.add("#001478");a.add("#87002D");a.add("#A0A5AF");
   serializeJson(d,corrected);return true;
 }
 static String transformEventRaw(const String& original){
@@ -76,6 +76,11 @@ static bool writeEvents(JsonObject events,bool corrected){
   }
   p.end();return true;
 }
+static bool clearRetiredThemeOverrideStorage(){
+  Preferences p;if(!p.begin("anderson-event",false))return false;bool ok=true;
+  for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++)for(char prefix:{'o','m'}){String key=String(prefix)+String((unsigned)i);if(p.isKey(key.c_str())&&!p.remove(key.c_str())&&p.isKey(key.c_str()))ok=false;}
+  p.end();Preferences pal;if(pal.begin("anderson-evpal",false)){pal.clear();pal.end();}return ok;
+}
 static bool canonicalizeCurrentStoredPalette(){
   String originalPresets=readPrefString("anderson-preset","custom","[]"),correctedPresets;
   if(!transformPresetJson(originalPresets,correctedPresets))return false;
@@ -83,9 +88,13 @@ static bool canonicalizeCurrentStoredPalette(){
   String originalFavorites=readPrefString("anderson-colors","saved","[]"),correctedFavorites;
   if(!transformFavoriteJson(originalFavorites,correctedFavorites))return false;
   if(!writePrefStringVerified("anderson-colors","saved",correctedFavorites))return false;
-  JsonDocument current;JsonObject events=current["events"].to<JsonObject>();
-  for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){String key=eventKey(i),raw=readPrefString("anderson-event",key.c_str(),"");if(raw.length())events[key]=raw;}
-  if(!writeEvents(events,true))return false;
+  uint8_t oldTheme=1;Preferences pal;if(pal.begin("anderson-evpal",true)){oldTheme=pal.getUChar("theme",1);pal.end();}
+  JsonDocument current;JsonObject events=current["events"].to<JsonObject>();Preferences ev;if(!ev.begin("anderson-event",true))return false;
+  for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){
+    String unified=eventKey(i),primary=String(oldTheme==0?'o':'m')+String((unsigned)i),secondary=String(oldTheme==0?'m':'o')+String((unsigned)i);
+    String raw=ev.getString(primary.c_str(),"");if(!raw.length())raw=ev.getString(unified.c_str(),"");if(!raw.length())raw=ev.getString(secondary.c_str(),"");if(raw.length())events[unified]=raw;
+  }
+  ev.end();if(!writeEvents(events,true))return false;if(!clearRetiredThemeOverrideStorage())return false;
   return setMigrationState(STATE_APPLIED,true);
 }
 static bool applyFromBackup(){
@@ -100,7 +109,7 @@ static bool restoreFromBackup(){
 bool runPaletteColorMigration(){
   uint8_t state=migrationState(),revision=migrationRevision();
   if(revision>=PALETTE_MIGRATION_REVISION&&(state==STATE_APPLIED||state==STATE_RESTORED))return true;
-  // Automatic v4 migration normalizes CURRENT custom lights and event overrides,
+  // Revision 7 normalizes current custom lights and the one retained event-override set,
   // then resets Favorite Colors to the sixteen approved user baselines.
   if(!setMigrationState(STATE_APPLY_PENDING,false))return false;
   return canonicalizeCurrentStoredPalette();

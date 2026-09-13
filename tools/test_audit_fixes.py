@@ -13,4 +13,4 @@ assert 'remote-update/releases/$VERSION.json' in pub
 assert pub.index('Fast-forward production main') < pub.index('Promote the signed OTA manifest')
 assert 'actions/runs/$BUILD_RUN_ID' in pub and 'head_repository' in pub and 'full_name' in pub
 assert 'merge-base --is-ancestor "$sha" origin/main' in clean and 'in_progress' in clean
-print('PASS: Anderson v3.1.10 audit invariants present')
+print('PASS: Anderson v3.1.11 audit invariants present')

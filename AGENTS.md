@@ -84,9 +84,9 @@ GitHub runner queue vary.
   allow visible removal as well as addition of colors while keeping at least one color;
   preserve event identity, ordering, schedules, and unrelated event settings.
 - Color buttons and tiles use recognizable browser-facing sRGB reference colors for their names while preserving the separate calibrated LED output codes. Quick Colors must show each color name.
-- Original Colors and Modern Colors each retain independent per-event overrides in NVS. Switching palettes must never discard the other palette's custom colors/effect/speed, and routine firmware upgrades must preserve both sets. Legacy single-slot overrides migrate non-destructively.
+- Built-in events use one firmware-owned event palette. Per-event edits use one persistent override slot and routine firmware upgrades must preserve those edits. Legacy dual-theme override slots migrate into the single retained slot non-destructively.
 - The Favorites page shows a checked Favorite control beside every favorite scene so it can be removed directly from Favorites.
-- v3.0.29 and later Favorite Colors are the firmware-locked 16-color master palette: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#FFFF44`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, Teal `#00B4B4`, Sky Blue `#0096FF`, Amber Gold `#FFA000`, Lavender `#B464FF`, Navy Blue `#001478`, Burgundy `#87002D`, Silver Gray `#A0A5AF`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
+- v3.0.29 and later Favorite Colors are the firmware-locked 16-color master palette: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#E0B400`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, Teal `#00B4B4`, Sky Blue `#0096FF`, Amber Gold `#FFA000`, Lavender `#B464FF`, Navy Blue `#001478`, Burgundy `#87002D`, Silver Gray `#A0A5AF`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
 
 ## Source map
 
@@ -94,10 +94,10 @@ GitHub runner queue vary.
 - `firmware/src/main.cpp`: API routes, auth, NVS custom data, OTA, main loop.
 - `firmware/src/RemoteUpdate.cpp`: signed remote-update discovery/download/install.
 - `firmware/src/BleController.cpp`: dual-controller BLE and software effects.
-- `firmware/src/Scheduler.cpp`, `EventCatalog.cpp`: timing/event resolution.
+- `firmware/src/Scheduler.cpp`, `EventCatalog.cpp`: timing/event resolution and the single built-in event palette.
 - `firmware/src/SettingsStore.cpp`: persistent device settings.
 - `tools/release.py`, `.github/workflows/compile-anderson-home-multi.yml`: release path.
 - `.github/scripts/anderson-retention.sh`, `.github/workflows/anderson-retention.yml`:
   current-plus-one build/release retention policy.
 
-- v3.0.17 canonical calibrated event palette (exact LED RGB): Red #FF0000; Purple #23018C; Blue #05008A; Cyan #00BD4C; Pink #BF0005; Orange #FF2900; Yellow #FF6E00; Green #4DFF00. Built-in events, event overrides, custom saved lights, and schedules that reference those saved lights use these family codes. Existing Favorite Colors must remain untouched by palette migration. White, black, and intentional autumn browns remain distinct.
+- v3.1.11 unified event palette uses the retained Original Colors scheme, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.

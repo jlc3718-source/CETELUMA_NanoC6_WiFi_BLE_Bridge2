@@ -17,7 +17,6 @@
 #include "WebUIGzip.h"
 #include "Types.h"
 #include "EventCatalog.h"
-#include "EventColorThemes.h"
 #include "EventState.h"
 #include "SettingsStore.h"
 #include "BleController.h"
@@ -62,7 +61,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.10";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.11";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -250,43 +249,26 @@ static String systemJson(){
 // The independent recovery page is compressed separately by tools/release.py.
 
 
-static EventColorTheme activeEventColorTheme=EventColorTheme::Modern;
-static uint32_t eventColorThemeGeneration=1;
-static bool loadEventColorTheme(){Preferences p;if(!p.begin("anderson-evpal",true))return false;uint8_t t=p.getUChar("theme",1);uint32_t g=p.getUInt("gen",1);p.end();activeEventColorTheme=t==0?EventColorTheme::Original:EventColorTheme::Modern;eventColorThemeGeneration=max((uint32_t)1,g);return true;}
-static bool setEventColorTheme(EventColorTheme next){if(next==activeEventColorTheme)return true;uint32_t nextGen=eventColorThemeGeneration+1;if(nextGen==0)nextGen=1;Preferences p;if(!p.begin("anderson-evpal",false))return false;size_t wt=p.putUChar("theme",next==EventColorTheme::Original?0:1),wg=p.putUInt("gen",nextGen);bool ok=wt>0&&wg>0&&p.getUChar("theme",255)==(next==EventColorTheme::Original?0:1)&&p.getUInt("gen",0)==nextGen;p.end();if(!ok)return false;activeEventColorTheme=next;eventColorThemeGeneration=nextGen;return true;}
-
-struct EventOverrideCfg{bool valid=false;Effect effect=Effect::Jump;uint32_t colors[8]={0};uint8_t colorCount=0;uint8_t speed=1;uint32_t colorGeneration=1;};
+struct EventOverrideCfg{bool valid=false;Effect effect=Effect::Jump;uint32_t colors[8]={0};uint8_t colorCount=0;uint8_t speed=1;};
 static EventOverrideCfg eventOverrides[MAX_BUILTIN_EVENTS];
-static String eventOverrideKey(size_t i,EventColorTheme theme){return String(theme==EventColorTheme::Original?"o":"m")+String((unsigned)i);}
-static String legacyEventOverrideKey(size_t i){return String("e")+String((unsigned)i);}
-static EventColorTheme legacyOverrideTheme(const String& raw){
-  int sep=raw.indexOf(';');if(sep>0){String head=raw.substring(0,sep);if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b2>=0){uint32_t g=max((uint32_t)1,(uint32_t)head.substring(b2+1).toInt());return (g&1U)?EventColorTheme::Modern:EventColorTheme::Original;}}}
-  return EventColorTheme::Modern;
-}
-static bool migrateLegacyEventOverrides(){
-  Preferences p;if(!p.begin("anderson-event",false))return false;bool ok=true;
-  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-    String oldKey=legacyEventOverrideKey(i),raw=p.getString(oldKey.c_str(),"");if(!raw.length())continue;String newKey=eventOverrideKey(i,legacyOverrideTheme(raw));
-    if(!p.isKey(newKey.c_str())){size_t wrote=p.putString(newKey.c_str(),raw);if(wrote!=raw.length()||p.getString(newKey.c_str(),"")!=raw){ok=false;continue;}}
-    if(p.isKey(newKey.c_str())&&!p.remove(oldKey.c_str())&&p.isKey(oldKey.c_str()))ok=false;
-  }
-  p.end();return ok;
-}
+static String eventOverrideKey(size_t i){return String("e")+String((unsigned)i);}
 static uint8_t scheduledEventSpeedHint=1;
-Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;if(i<EVENT_COUNT&&activeEventColorTheme==EventColorTheme::Original)applyOriginalEventColors(i,t);scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,5);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
+Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,5);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
 static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
 static void loadEventOverrides(){
   for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++)eventOverrides[i]=EventOverrideCfg();
   Preferences p;if(!p.begin("anderson-event",true))return;
   for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-    String raw=p.getString(eventOverrideKey(i,activeEventColorTheme).c_str(),"");
-    if(!raw.length()){String legacy=p.getString(legacyEventOverrideKey(i).c_str(),"");if(legacy.length()&&legacyOverrideTheme(legacy)==activeEventColorTheme)raw=legacy;}
-    if(!raw.length())continue;int sep=raw.indexOf(';');if(sep<1)continue;String head=raw.substring(0,sep);EventOverrideCfg o;o.valid=true;o.colorGeneration=eventColorThemeGeneration;if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b1<0||b2<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1,b2).toInt(),1,5);o.colorGeneration=max((uint32_t)1,(uint32_t)head.substring(b2+1).toInt());}else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,5);}else{o.effect=effectFromString(head);o.speed=1;}}String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}eventOverrides[i]=o;
+    String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;int sep=raw.indexOf(';');if(sep<1)continue;String head=raw.substring(0,sep);EventOverrideCfg o;o.valid=true;
+    if(head.startsWith("v3|")){int b1=head.indexOf('|',3);if(b1<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1).toInt(),1,5);}
+    else if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b1<0||b2<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1,b2).toInt(),1,5);}
+    else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,5);}else{o.effect=effectFromString(head);o.speed=1;}}
+    String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}eventOverrides[i]=o;
   }
   p.end();
 }
-static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next;next.valid=true;next.effect=t.effect;next.speed=constrain(sp,1,5);next.colorGeneration=eventColorThemeGeneration;next.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=andersonCorrectColor(t.colors[c]);String raw=String("v2|")+effectName(next.effect)+"|"+String(next.speed)+"|"+String(next.colorGeneration)+";";for(uint8_t c=0;c<next.colorCount;c++){if(c)raw+=",";raw+=colorHex(next.colors[c]);}Preferences p;if(!p.begin("anderson-event",false))return false;String key=eventOverrideKey(i,activeEventColorTheme);size_t wrote=p.putString(key.c_str(),raw);String verify=p.getString(key.c_str(),"");p.end();if(wrote!=raw.length()||verify!=raw)return false;eventOverrides[i]=next;return true;}
-static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i,activeEventColorTheme);Preferences p;if(!p.begin("anderson-event",false))return false;String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
+static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next;next.valid=true;next.effect=t.effect;next.speed=constrain(sp,1,5);next.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=andersonCorrectColor(t.colors[c]);String raw=String("v3|")+effectName(next.effect)+"|"+String(next.speed)+";";for(uint8_t c=0;c<next.colorCount;c++){if(c)raw+=",";raw+=colorHex(next.colors[c]);}Preferences p;if(!p.begin("anderson-event",false))return false;String key=eventOverrideKey(i);size_t wrote=p.putString(key.c_str(),raw);String verify=p.getString(key.c_str(),"");p.end();if(wrote!=raw.length()||verify!=raw)return false;eventOverrides[i]=next;return true;}
+static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i);Preferences p;if(!p.begin("anderson-event",false))return false;String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
 
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
 String stateJson(){
@@ -389,7 +371,7 @@ void setupRoutes(){
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
     if(!d["name"].isNull())runningTheme.name=d["name"].as<String>();
     if(!d["effect"].isNull())runningTheme.effect=effectFromString(d["effect"].as<String>());
-    if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=strtoul(s.c_str(),nullptr,16);}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;}}
+    if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=strtoul(s.c_str(),nullptr,16);}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xE0B400;runningTheme.colorCount=1;}}
     applyRunning(true);sendJson(stateJson());
   });
 
@@ -436,8 +418,6 @@ void setupRoutes(){
     server.send(423,"application/json","{\"ok\":false,\"locked\":true,\"error\":\"Master Favorite Colors are firmware-locked. Install a new firmware build to change them.\"}");
   });
 
-  server.on("/api/event-color-theme",HTTP_GET,[]{if(!requireUser())return;JsonDocument d;d["theme"]=activeEventColorTheme==EventColorTheme::Original?"original":"modern";d["name"]=eventColorThemeName(activeEventColorTheme);d["generation"]=eventColorThemeGeneration;String out;serializeJson(d,out);sendJson(out);});
-  server.on("/api/event-color-theme",HTTP_POST,[]{if(!requireUser())return;JsonDocument d;if(!body(d))return;String name=d["theme"]|String("");EventColorTheme next=name=="original"?EventColorTheme::Original:(name=="modern"?EventColorTheme::Modern:activeEventColorTheme);if(name!="original"&&name!="modern"){server.send(400,"text/plain","Choose original or modern colors");return;}if(!setEventColorTheme(next)){server.send(500,"text/plain","Event color theme write failed");return;}loadEventOverrides();evaluateSchedule(true);JsonDocument out;out["ok"]=true;out["theme"]=name;out["name"]=eventColorThemeName(activeEventColorTheme);out["generation"]=eventColorThemeGeneration;String json;serializeJson(out,json);sendJson(json);});
 
   // ANDERSON_HOME_CUSTOM_LIGHTS: all profiles may preview and change Enabled/Favorite; only Jason may create or delete.
   server.on("/api/presets",HTTP_GET,[]{
@@ -560,8 +540,8 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventColorTheme();migrateLegacyEventOverrides();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
-  runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF44;runningTheme.colorCount=1;
+  store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE0B400;runningTheme.colorCount=1;
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){

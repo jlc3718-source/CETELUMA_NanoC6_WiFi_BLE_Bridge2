@@ -1,4 +1,4 @@
-# v3.1.10 production event fairness, OTA verification, and bottom-menu logout
+# v3.1.11 unified event palette, OTA verification, and bottom-menu logout
 from pathlib import Path
 import re
 
@@ -15,8 +15,10 @@ assert 'eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
 assert 't.effect=Effect::Breath' in sched
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
-assert 'server.on("/api/event-color-theme"' in main and 'eventColorsOriginal' in web and 'eventColorsModern' in web
-assert 'eventColorThemeGeneration' in main and 'colorGeneration' in main
+assert '/api/event-color-theme' not in main+web and 'eventColorsOriginal' not in web and 'eventColorsModern' not in web
+assert 'EventColorTheme' not in main and 'eventColorThemeGeneration' not in main
+assert '0xE0B400' in ev and '0xFFFF44' not in ev
+assert '{0xE0B400,0xE0B400}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
 assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web
 assert 'PinAttemptState pinAttempts[6]' in main
@@ -37,8 +39,7 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
-assert 'Basic Scheme v 3.0.28' in web and 'v3.0.28 event palette' not in web
-assert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web
+assert 'Basic Scheme v 3.0.28' not in web and 'Advanced Scheme v 3.0.29' not in web
 assert 'id=\"homeSpeed\"' in mock and 'Effect Speed' in mock and "bindSpeedControl('homeSpeed')" in mock
 assert "icon('logout') + '<span>Logout</span>'" in mock and 'nav.appendChild(switcher)' in mock
 assert 'actions.replaceChildren(badge, profile, switcher)' not in mock and "'Logout'" in mock
