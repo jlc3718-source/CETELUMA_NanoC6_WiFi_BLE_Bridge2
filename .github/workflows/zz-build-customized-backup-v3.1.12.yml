@@ -2,7 +2,8 @@ name: Implement Anderson Customized Settings Backup v3.1.12
 
 on:
   push:
-    branches: ['work/v3.1.12-customized-backup']
+    branches:
+      - work/v3.1.12-customized-backup
 
 permissions:
   contents: write
@@ -18,128 +19,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply customized backup integration
+      - name: Apply integration
+        run: python tools/apply_customized_backup_v312.py
+      - name: Bump and validate
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          mainp=Path('firmware/src/main.cpp')
-          main=mainp.read_text()
-          assert '#include "CustomizedBackup.h"' not in main
-          main=main.replace('#include "ColorCorrection.h"\n','#include "ColorCorrection.h"\n#include "CustomizedBackup.h"\n',1)
-          anchor='static bool customScheduleRefreshPending=false;\nstatic uint32_t customScheduleRefreshAt=0;'
-          assert anchor in main
-          main=main.replace(anchor,anchor+'\nstatic bool customizedRestoreRebootPending=false;\nstatic uint32_t customizedRestoreRebootAt=0;',1)
-
-          route_anchor='  server.on("/api/system",HTTP_GET,[]{if(!requireAdmin())return;sendJson(systemJson());});\n'
-          assert route_anchor in main
-          routes=r'''  server.on("/api/customized-backup/status",HTTP_GET,[]{if(!requireAdmin())return;sendJson(customizedSettingsBackupStatusJson());});
-          server.on("/api/customized-backup/create",HTTP_POST,[]{
-            if(!requireAdmin())return;String error;if(!customizedSettingsBackupCreate(store.get(),ANDERSON_FIRMWARE_VERSION,false,error)){JsonDocument out;out["ok"]=false;out["error"]=error;String json;serializeJson(out,json);sendJson(json,500);return;}sendJson(customizedSettingsBackupStatusJson());
-          });
-          server.on("/api/customized-backup/restore",HTTP_POST,[]{
-            if(!requireAdmin())return;String error;if(!customizedSettingsBackupRestore(error)){JsonDocument out;out["ok"]=false;out["error"]=error;String json;serializeJson(out,json);sendJson(json,500);return;}JsonDocument out;out["ok"]=true;out["restored"]=true;out["rebooting"]=true;String json;serializeJson(out,json);sendJson(json);customizedRestoreRebootPending=true;customizedRestoreRebootAt=millis()+1400;
-          });
-
-'''
-          main=main.replace(route_anchor,route_anchor+'\n'+routes,1)
-
-          setup_old='store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();connectWiFi();'
-          setup_new='store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();}seedMasterSceneFavoritesV4();loadEventOverrides();customizedSettingsBackupBegin();connectWiFi();'
-          assert setup_old in main
-          main=main.replace(setup_old,setup_new,1)
-
-          maint='if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||!timeValid())return;'
-          assert maint in main
-          main=main.replace(maint,'if(Update.isRunning()||remoteUpdateOperationBusy()||otaAutoRebootPending||customizedRestoreRebootPending||!timeValid())return;',1)
-
-          loop_anchor='  maintainWiFiConnection();checkScheduledMaintenanceReboot();\n'
-          assert loop_anchor in main
-          main=main.replace(loop_anchor,loop_anchor+'  if(!Update.isRunning()&&!remoteUpdateOperationBusy()&&!otaAutoRebootPending&&!customizedRestoreRebootPending)customizedSettingsBackupAutoLoop(store.get(),ANDERSON_FIRMWARE_VERSION);\n',1)
-          reboot_anchor='  if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}\n'
-          assert reboot_anchor in main
-          main=main.replace(reboot_anchor,reboot_anchor+'  if(customizedRestoreRebootPending&&(int32_t)(millis()-customizedRestoreRebootAt)>=0){customizedRestoreRebootPending=false;delay(40);ESP.restart();}\n',1)
-          mainp.write_text(main)
-
-          # Make empty-string restores verifiable without relying on putString's byte-count convention.
-          bp=Path('firmware/src/CustomizedBackup.cpp')
-          b=bp.read_text()
-          old='static bool putStringChecked(Preferences& p,const char* key,const String& value){size_t wrote=p.putString(key,value);return wrote==value.length()&&p.getString(key,"")==value;}'
-          new='static bool putStringChecked(Preferences& p,const char* key,const String& value){if(p.getString(key,"__ANDERSON_MISSING__")==value)return true;p.putString(key,value);return p.getString(key,"__ANDERSON_VERIFY__")==value;}'
-          assert old in b
-          bp.write_text(b.replace(old,new,1))
-
-          webp=Path('firmware/web/index.html')
-          web=webp.read_text()
-          css_anchor='.sysDetails{margin-top:8px;font-size:11px;line-height:1.55;color:var(--muted)}'
-          assert css_anchor in web
-          web=web.replace(css_anchor,css_anchor+'.settingsSubtabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 11px}.settingsSubtab.active{border-color:var(--accent);background:var(--accentbg);font-weight:800}.backupActions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}@media(max-width:430px){.backupActions{grid-template-columns:1fr}}',1)
-
-          settings_open='  <section class="page" data-page="settings">\n'
-          assert settings_open in web
-          settings_tabs='''  <section class="page" data-page="settings">\n    <div class="settingsSubtabs" role="tablist" aria-label="Settings sections">\n      <button id="settingsGeneralTab" class="btn settingsSubtab active" type="button">Controller Settings</button>\n      <button id="settingsCustomizedTab" class="btn settingsSubtab" type="button">Customized Settings</button>\n    </div>\n    <div id="settingsGeneralPane">\n'''
-          web=web.replace(settings_open,settings_tabs,1)
-
-          close_anchor='\n  </section>\n\n  <div id="statusMsg" class="status" aria-live="polite"></div>'
-          assert close_anchor in web
-          custom_panel='''\n    </div>\n    <div id="settingsCustomizedPane" hidden>\n      <div class="panel">\n        <strong>Customized Settings</strong>\n        <div class="sub" style="margin-top:4px">Back up your saved Anderson customizations to one protected file on this NanoC6 and restore them automatically when needed.</div>\n        <div id="customBackupMeta" class="card small" style="margin-top:10px">Checking customized-settings backup…</div>\n        <div class="backupActions">\n          <button id="customBackupNow" class="btn primary" type="button">Back Up</button>\n          <button id="customRestoreNow" class="btn" type="button">Restore</button>\n        </div>\n        <div class="note"><strong>Automatic protection:</strong> the NanoC6 creates or replaces this same backup once every 7 days, so only one customized-settings backup is retained. It includes saved event edits, event enabled/favorite choices, custom lights, custom scheduled dates, scheduling rules, and saved light-controller configuration. Wi-Fi passwords, profile PINs, firmware/OTA state, and other security/system data are deliberately not included.</div>\n      </div>\n    </div>\n  </section>\n\n  <div id="statusMsg" class="status" aria-live="polite"></div>'''
-          web=web.replace(close_anchor,custom_panel,1)
-
-          js_anchor="async function post(path,obj,timeoutMs=12000){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)},timeoutMs)}\n"
-          assert js_anchor in web
-          backup_js=r'''async function loadCustomizedBackupStatus(){
-  if(currentRole!=='admin')return;const box=$('customBackupMeta'),restore=$('customRestoreNow');if(!box)return;box.textContent='Checking customized-settings backup…';
-  try{const d=await api('/api/customized-backup/status?cb='+Date.now());restore.disabled=!d.available||!d.valid;if(!d.available){box.innerHTML='<strong>No backup yet</strong><div class="sub" style="margin-top:4px">A backup will be created automatically after the controller has valid time, or tap Back Up now.</div>';return}const when=d.createdEpoch?new Date(Number(d.createdEpoch)*1000).toLocaleString():'time unavailable';const next=d.nextAutomaticEpoch?new Date(Number(d.nextAutomaticEpoch)*1000).toLocaleString():'after time sync';box.innerHTML='<strong>Backup ready</strong><div class="sub" style="margin-top:4px">Saved '+when+' • '+Number(d.bytes||0).toLocaleString()+' bytes • source v'+(d.sourceFirmware||'unknown')+'</div><div class="sub" style="margin-top:3px">Next automatic replacement: '+next+' • one copy retained</div>'}
-  catch(error){restore.disabled=true;box.textContent=error.message||'Backup status unavailable.'}
-}
-function showSettingsPane(name){const customized=name==='customized';$('settingsGeneralPane').hidden=customized;$('settingsCustomizedPane').hidden=!customized;$('settingsGeneralTab').classList.toggle('active',!customized);$('settingsCustomizedTab').classList.toggle('active',customized);if(customized)loadCustomizedBackupStatus()}
-$('settingsGeneralTab').addEventListener('click',()=>showSettingsPane('general'));
-$('settingsCustomizedTab').addEventListener('click',()=>showSettingsPane('customized'));
-$('customBackupNow').addEventListener('click',async()=>{const button=$('customBackupNow');button.disabled=true;$('customBackupMeta').textContent='Creating and verifying backup…';try{await post('/api/customized-backup/create',{});status('Customized settings backed up.');await loadCustomizedBackupStatus()}catch(error){$('customBackupMeta').textContent=error.message;status('Backup failed: '+error.message)}finally{button.disabled=false}});
-$('customRestoreNow').addEventListener('click',async()=>{if(!confirm('Restore the saved customized settings? Current customized settings will be replaced and the NanoC6 will reboot.'))return;const button=$('customRestoreNow');button.disabled=true;$('customBackupMeta').textContent='Validating and restoring customized settings…';try{await post('/api/customized-backup/restore',{},20000);$('customBackupMeta').innerHTML='<strong>Restore complete</strong><div class="sub" style="margin-top:4px">NanoC6 is rebooting with the restored settings…</div>';status('Customized settings restored. Rebooting…');setTimeout(()=>location.reload(),5500)}catch(error){button.disabled=false;$('customBackupMeta').textContent=error.message;status('Restore failed: '+error.message)}});
-'''
-          web=web.replace(js_anchor,js_anchor+backup_js,1)
-
-          profile_old="if(event.detail?.id==='jason'){loadCustomPresets();loadFirmwareInfo();loadPinSettings()}"
-          profile_new="if(event.detail?.id==='jason'){loadCustomPresets();loadFirmwareInfo();loadPinSettings();loadCustomizedBackupStatus()}"
-          assert profile_old in web
-          web=web.replace(profile_old,profile_new,1)
-          settings_click="if(btn.dataset.tab==='settings'){loadState();loadPinSettings();loadSystemMonitor();}"
-          assert settings_click in web
-          web=web.replace(settings_click,"if(btn.dataset.tab==='settings'){showSettingsPane('general');loadState();loadPinSettings();loadSystemMonitor();}",1)
-          webp.write_text(web)
-
-          tp=Path('tools/test_regressions.py')
-          t=tp.read_text()
-          t=t.replace("main=t('firmware/src/main.cpp'); web=t('firmware/web/index.html');", "main=t('firmware/src/main.cpp'); web=t('firmware/web/index.html'); backup=t('firmware/src/CustomizedBackup.cpp');")
-          marker="assert 'PALETTE_MIGRATION_REVISION=8' in t('firmware/src/PaletteMigration.cpp')"
-          assert marker in t
-          checks=r'''
-assert 'CUSTOM_BACKUP_PATH="/customized-settings-backup.json"' in backup
-assert 'CUSTOM_BACKUP_INTERVAL_SECONDS=7UL*24UL*60UL*60UL' in backup
-assert 'anderson-preset' in backup and 'anderson-csched' in backup and 'anderson-event' in backup
-assert 'anderson-auth' not in backup and 'anderson-remote' not in backup
-assert 'data["customLights"]' in backup and 'data["customSchedules"]' in backup and 'data["eventOverrides"]' in backup
-assert 'server.on("/api/customized-backup/status"' in main and 'server.on("/api/customized-backup/create"' in main and 'server.on("/api/customized-backup/restore"' in main
-assert 'customizedSettingsBackupAutoLoop(store.get(),ANDERSON_FIRMWARE_VERSION)' in main
-assert 'id="settingsCustomizedTab"' in web and 'id="customBackupNow"' in web and 'id="customRestoreNow"' in web
-assert 'only one customized-settings backup is retained' in web
-assert 'Wi-Fi passwords, profile PINs, firmware/OTA state' in web
-'''
-          t=t.replace(marker,marker+checks,1)
-          tp.write_text(t)
-
-          agp=Path('AGENTS.md');ag=agp.read_text()
-          addition='''\n- Customized Settings backup: retain exactly one `/customized-settings-backup.json` snapshot on the controller filesystem. Create/replace it automatically every 7 days and on manual **Back Up**. **Restore** validates schema/checksum, restores saved user customizations, then reboots. Include schedule rules, event enable/favorite state and event overrides, custom lights, custom scheduled dates, and saved BLE light-controller configuration. Exclude Wi-Fi credentials, PIN/auth records, OTA/firmware state, and other security/system data.\n'''
-          if 'Customized Settings backup:' not in ag: ag+=addition
-          agp.write_text(ag)
-          PY
           python tools/release.py bump
           python tools/test_regressions.py
           python tools/test_audit_fixes.py
-      - name: Commit complete v3.1.12 source
+      - name: Commit complete source
         run: |
           rm -f .github/workflows/zz-build-customized-backup-v3.1.12.yml
+          rm -f tools/apply_customized_backup_v312.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
