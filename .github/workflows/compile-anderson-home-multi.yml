@@ -58,17 +58,15 @@ jobs:
             ~/.platformio/packages
             ~/.platformio/.cache
             firmware/.pio/libdeps
-          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
-          restore-keys: |
-            ${{ runner.os }}-pio-v1-
+          key: ${{ runner.os }}-pio-native-v402-${{ hashFiles('firmware/platformio.ini') }}
       - name: Restore compiled objects
         id: objects
         uses: actions/cache/restore@v4
         with:
           path: .pio-build-cache
-          key: ${{ runner.os }}-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-${{ github.ref_name }}-${{ github.sha }}
+          key: ${{ runner.os }}-anderson-objects-native-v402-${{ hashFiles('firmware/platformio.ini') }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-${{ github.ref_name }}-
+            ${{ runner.os }}-anderson-objects-native-v402-${{ hashFiles('firmware/platformio.ini') }}-${{ github.ref_name }}-
       - name: Prepare release
         run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
