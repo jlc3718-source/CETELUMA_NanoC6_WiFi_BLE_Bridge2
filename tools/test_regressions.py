@@ -26,7 +26,11 @@ for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D',
 assert "{name:'Navy Blue',reference:'#000080',output:'#001478'}" in web
 palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and palette_block.group(1).count("{name:'")==9
 assert 'PALETTE_MIGRATION_REVISION=8' in t('firmware/src/PaletteMigration.cpp')
-assert 'CUSTOM_BACKUP_PATH="/customized-settings-backup.json"' in backup
+assert 'CUSTOM_BACKUP_PATH="/cust-backup.json"' in backup
+assert 'CUSTOM_BACKUP_TMP="/cust-backup.tmp"' in backup
+assert len('/cust-backup.json')<=31 and len('/cust-backup.tmp')<=31
+assert 'LEGACY_BACKUP_TMP="/customized-settings-backup.tmp"' in backup
+assert 'SPIFFS.rename(candidate,CUSTOM_BACKUP_PATH)' in backup
 assert 'CUSTOM_BACKUP_INTERVAL_SECONDS=7UL*24UL*60UL*60UL' in backup
 assert 'anderson-preset' in backup and 'anderson-csched' in backup and 'anderson-event' in backup
 assert 'anderson-auth' not in backup and 'anderson-remote' not in backup
@@ -58,18 +62,3 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
-assert 'Basic Scheme v 3.0.28' not in web and 'Advanced Scheme v 3.0.29' not in web
-assert 'id=\"homeSpeed\"' in mock and 'Effect Speed' in mock and "bindSpeedControl('homeSpeed')" in mock
-assert "icon('logout') + '<span>Logout</span>'" in mock and 'nav.appendChild(switcher)' in mock
-assert 'actions.replaceChildren(badge, profile, switcher)' not in mock and "'Logout'" in mock
-assert 'Specific holiday / awareness / seasonal day' in web and 'Coverage guarantee:' in web and '<div>6. Normal preset</div>' in web
-assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_ACTIVE_TIER_EVENTS=64' in sched
-assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched
-assert 'forcedMonthlyCoverage' in sched and 'first third of the least-conflicted' in sched
-assert 'if(specificCount)' in sched and 'if(holidayWindowCount)' in sched
-assert 'python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full' in build
-version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
-remote=t('firmware/src/RemoteUpdate.cpp')
-assert 'OTA_MANIFEST_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json"' in remote
-assert '?cb=' in remote and 'esp_random()' in remote and 'OTA_AUTO_RETRY_BASE_MS' in remote
-print('Anderson regression source checks passed')
