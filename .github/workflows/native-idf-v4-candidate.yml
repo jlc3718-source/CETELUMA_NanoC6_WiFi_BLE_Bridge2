@@ -1,0 +1,91 @@
+name: Anderson Native-IDF Candidate
+on:
+  push:
+    branches: ['work/v4*']
+    paths:
+      - 'firmware/**'
+      - 'tools/**'
+      - 'FIRMWARE_VERSION.txt'
+      - '.github/workflows/native-idf-v4-candidate.yml'
+  workflow_dispatch:
+concurrency:
+  group: anderson-native-v4-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-anderson-native-idf61-v2
+      - name: Verify source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(cat FIRMWARE_VERSION.txt)"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
+          ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
+          grep -Fq "ANDERSON_FIRMWARE_VERSION=\"$VERSION\"" firmware/src/main.cpp
+          grep -Fq "CONFIG_APP_PROJECT_VER=\"$VERSION\"" firmware/sdkconfig.defaults
+          grep -q '^CONFIG_COMPILER_OPTIMIZATION_SIZE=y$' firmware/sdkconfig.defaults
+          grep -q 'if(ticks==0)ticks=1' firmware/src/ArduinoCompat.cpp
+          grep -q 'esp_image_get_metadata(&pos,&metadata)' firmware/src/ArduinoCompat.cpp
+          grep -q 'id="openLoginRecovery"' firmware/web/index.html
+          grep -q 'id="loginRecoveryFile"' firmware/web/index.html
+          grep -q 'X-Anderson-Recovery-PIN' firmware/web/index.html
+          ! grep -q 'emergencyFirmwarePanel' firmware/web/v3_mockup.js
+          grep -q 'Reloading the new firmware UI' firmware/web/index.html
+          grep -q 'missing 0xE9 image header' firmware/src/main.cpp
+          node --check firmware/web/v3_mockup.js
+      - name: Install build tools
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Install pinned web minifier
+        run: npm ci --prefix tools --no-audit --no-fund
+      - name: Prepare firmware assets
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 native ESP-IDF image
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Compile MOCK_BLE compatibility image
+        run: pio run -d firmware -e wokwi -j 4
+      - name: Run Anderson regressions
+        run: |
+          python tools/test_regressions.py
+          python tools/test_connection_recovery.py
+          python tools/test_maintenance.py
+          python tools/audit_event_coverage.py
+      - name: Verify and package APP-only image
+        shell: bash
+        run: |
+          python tools/release.py package
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          version=Path('FIRMWARE_VERSION.txt').read_text().strip()
+          p=Path('release')/f'and_{version}.bin'
+          data=p.read_bytes(); slot=0x1E0000
+          if len(data)<4096: raise SystemExit('APP image unexpectedly small')
+          if len(data)>=slot: raise SystemExit(f'APP image exceeds OTA slot: {len(data)} >= {slot}')
+          if data[0]!=0xE9: raise SystemExit(f'APP image header 0x{data[0]:02X}, expected 0xE9')
+          print(json.dumps({'file':p.name,'bytes':len(data),'headroom':slot-len(data),'used_pct':round(len(data)*100/slot,2),'sha256':hashlib.sha256(data).hexdigest()},indent=2))
+          PY
+      - name: Stage candidate artifact
+        shell: bash
+        run: |
+          VERSION="$(cat FIRMWARE_VERSION.txt)"
+          mkdir -p candidate
+          cp "release/and_${VERSION}.bin" candidate/
+          cp release/release.json candidate/
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf "candidate/and_${VERSION}.elf"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-v${{ github.sha }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 7
