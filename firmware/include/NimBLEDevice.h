@@ -35,7 +35,7 @@ class NimBLEClient;
 class NimBLERemoteCharacteristic {
  public:
   bool canWrite()const{return (properties_&BLE_GATT_CHR_PROP_WRITE)!=0;}bool writeValue(const uint8_t* data,size_t len,bool response);
- private:friend class NimBLERemoteService;NimBLEClient* client_=nullptr;uint16_t valueHandle_=0;uint8_t properties_=0;
+ private:friend class NimBLERemoteService;friend class NimBLEClient;NimBLEClient* client_=nullptr;uint16_t valueHandle_=0;uint8_t properties_=0;
 };
 class NimBLERemoteService {
  public:

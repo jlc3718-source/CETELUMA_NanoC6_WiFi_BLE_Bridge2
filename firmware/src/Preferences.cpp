@@ -15,5 +15,6 @@ uint64_t Preferences::getULong64(const char* k,uint64_t d)const{uint64_t v=d;ret
 size_t Preferences::putULong64(const char* k,uint64_t v){return open_&&!readOnly_&&nvs_set_u64(handle_,k,v)==ESP_OK&&nvs_commit(handle_)==ESP_OK?8:0;}
 bool Preferences::getBool(const char* k,bool d)const{return getUChar(k,d?1:0)!=0;}
 size_t Preferences::putBool(const char* k,bool v){return putUChar(k,v?1:0);}
+bool Preferences::isKey(const char* k)const{return open_&&k&&nvs_find_key(handle_,k,nullptr)==ESP_OK;}
 bool Preferences::remove(const char* k){if(!open_||readOnly_)return false;esp_err_t e=nvs_erase_key(handle_,k);return (e==ESP_OK||e==ESP_ERR_NVS_NOT_FOUND)&&nvs_commit(handle_)==ESP_OK;}
 bool Preferences::clear(){if(!open_||readOnly_)return false;return nvs_erase_all(handle_)==ESP_OK&&nvs_commit(handle_)==ESP_OK;}

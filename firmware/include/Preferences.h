@@ -15,5 +15,6 @@ class Preferences {
   uint32_t getUInt(const char* key,uint32_t def=0) const;size_t putUInt(const char* key,uint32_t v);
   uint64_t getULong64(const char* key,uint64_t def=0) const;size_t putULong64(const char* key,uint64_t v);
   bool getBool(const char* key,bool def=false) const;size_t putBool(const char* key,bool v);
+  bool isKey(const char* key) const;
   bool remove(const char* key);bool clear();
 };
