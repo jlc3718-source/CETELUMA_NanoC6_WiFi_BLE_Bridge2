@@ -10,7 +10,7 @@ on:
   # Production delivery uses one persistent release branch so caches survive
   # normal source revisions and the publisher can validate one stable ref.
   push:
-    branches: ['codex/release-current']
+    branches: ['codex/full-flash-v3.1.11']
     paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt']
   pull_request:
     branches: [main]
@@ -75,7 +75,7 @@ jobs:
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
       - name: Package verified firmware
         env:
-          FULL_IMAGE: ${{ inputs.full_image }}
+          FULL_IMAGE: true
         run: |
           if [ "$FULL_IMAGE" = true ]; then
             python tools/release.py package --full
