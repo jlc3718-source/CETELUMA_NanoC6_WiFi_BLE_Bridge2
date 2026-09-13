@@ -12,8 +12,8 @@ p.write_text(s)
 
 p=Path('firmware/web/recovery.html')
 s=p.read_text()
-old="const data=new FormData();\n        data.append('firmware',file,file.name);\n        const request=new XMLHttpRequest();\n        request.open('POST','/api/update?recovery=1');\n        if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);"
-new="const request=new XMLHttpRequest();\n        request.open('POST','/api/update?recovery=1');\n        request.setRequestHeader('Content-Type','application/octet-stream');\n        request.setRequestHeader('X-Anderson-Filename',file.name);\n        if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);"
+old="const data=new FormData();data.append('firmware',file,file.name);const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);"
+new="const request=new XMLHttpRequest();request.open('POST','/api/update?recovery=1');request.setRequestHeader('Content-Type','application/octet-stream');request.setRequestHeader('X-Anderson-Filename',file.name);if(pin)request.setRequestHeader('X-Anderson-Recovery-PIN',pin);"
 assert s.count(old)==1, 'expected one recovery firmware FormData transport'
 s=s.replace(old,new,1)
 assert s.count('request.send(data);')==1, 'expected one recovery FormData send'
