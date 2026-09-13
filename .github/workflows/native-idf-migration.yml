@@ -31,6 +31,13 @@ jobs:
           grep -q 'u.totalSize<4096||u.totalSize>=0x1E0000' firmware/src/main.cpp
           grep -q 'andersonSha256Compute' firmware/src/main.cpp
           grep -q 'andersonSha256Compute' firmware/src/RemoteUpdate.cpp
+          grep -q 'kUploadAbsoluteTimeoutUs' firmware/src/WebServer.cpp
+          grep -q 'kBodyAbsoluteTimeoutUs' firmware/src/WebServer.cpp
+          grep -q 'kMaxConsecutiveReceiveTimeouts' firmware/src/WebServer.cpp
+          grep -q 'HTTPD_SOCK_ERR_TIMEOUT' firmware/src/WebServer.cpp
+          grep -q '^CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y$' firmware/sdkconfig.defaults
+          grep -q '^# CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL is not set$' firmware/sdkconfig.defaults
+          grep -q 'mdns_hostname_set(host_.c_str())!=ESP_OK' firmware/src/ESPmDNS.cpp
           test ! -e firmware/include/mbedtls/sha256.h
           node --check firmware/web/v3_mockup.js
       - name: Install build tools
@@ -41,6 +48,8 @@ jobs:
         run: python tools/release.py prepare
       - name: Compile native ESP-IDF NanoC6 image
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Compile native MOCK_BLE compatibility image
+        run: pio run -d firmware -e wokwi -j 4
       - name: Run Anderson source regressions
         run: |
           python tools/test_regressions.py
