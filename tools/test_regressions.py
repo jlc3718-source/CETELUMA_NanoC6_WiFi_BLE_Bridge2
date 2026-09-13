@@ -1,9 +1,9 @@
-# v3.1.11 unified event palette, OTA verification, and bottom-menu logout
+# Anderson Home regression contract: legacy behavior plus native ESP-IDF v4 safeguards
 from pathlib import Path
 import re
 
 def t(p): return Path(p).read_text()
-main=t('firmware/src/main.cpp'); web=t('firmware/web/index.html'); backup=t('firmware/src/CustomizedBackup.cpp'); mock=t('firmware/web/v3_mockup.js'); ev=t('firmware/src/EventCatalog.cpp'); sched=t('firmware/src/Scheduler.cpp'); types=t('firmware/include/Types.h'); ble=t('firmware/src/BleController.cpp')
+main=t('firmware/src/main.cpp'); web=t('firmware/web/index.html'); backup=t('firmware/src/CustomizedBackup.cpp'); mock=t('firmware/web/v3_mockup.js'); v4home=t('firmware/web/v4_home_recovery.js'); ev=t('firmware/src/EventCatalog.cpp'); sched=t('firmware/src/Scheduler.cpp'); types=t('firmware/include/Types.h'); ble=t('firmware/src/BleController.cpp'); boot_health=t('firmware/src/BootHealth.cpp'); idf_entry=t('firmware/src/IdfEntry.cpp'); release=t('tools/release.py')
 build=t('.github/workflows/compile-anderson-home-multi.yml'); retention=t('.github/workflows/anderson-retention.yml'); publisher=t('.github/workflows/publish-anderson-home.yml'); branch_cleanup=t('.github/scripts/anderson-branch-cleanup.sh')
 assert 'Effect::Gradient' not in ev+ble+sched+types
 assert 'Gradient</option>' not in web and "effect:'Gradient'" not in web
@@ -46,6 +46,25 @@ assert "primarySettings.addEventListener('click',()=>activate('general'))" in mo
 assert 'only one customized-settings backup is retained' in web
 assert 'Wi-Fi passwords, profile PINs, firmware/OTA state' in web
 
+# Native v4 rollback safety: do not bless a new OTA slot until the controller can
+# serve a correct gzip Home response and its public firmware API from real sockets.
+assert 'bootHealthBegin();' in idf_entry and 'bootHealthLoop();' in idf_entry
+assert 'ESP_OTA_IMG_PENDING_VERIFY' in boot_health
+assert 'esp_ota_mark_app_valid_cancel_rollback()' in boot_health
+assert 'Content-Encoding: gzip' in boot_health
+assert 'rootProbe()' in boot_health and 'firmwareProbe()' in boot_health
+assert 'ROLLBACK_DEADLINE_US=45LL*1000000LL' in boot_health
+assert 'esp_restart();' in boot_health
+
+# Jason's emergency APP flasher must be on Home immediately below the main
+# dashboard, not buried in Settings, and previous-slot recovery stays adjacent.
+assert 'Emergency Firmware Recovery' in v4home
+assert "dashboard.insertAdjacentElement('afterend',panel)" in v4home
+assert 'Boot Previous Firmware' in v4home
+assert "window.andersonProfile.role!=='admin'" in v4home
+assert 'emergencyFirmwareFile' in v4home and 'emergencyFirmwareFlash' in v4home
+assert "V4_HOME_JS = ROOT / 'firmware/web/v4_home_recovery.js'" in release
+assert "V3_JS.read_text() + '\\n' + V4_HOME_JS.read_text()" in release
 
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
 assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web
