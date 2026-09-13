@@ -316,6 +316,14 @@ async function controllerRequest(path,options={},timeoutMs=12000){
       <div class="note">Both PINs must be different. They are stored as separate salted hashes in the NanoC6, not in this page or GitHub. Five incorrect attempts cause a temporary 60-second delay. Firmware recovery continues to require Jason’s PIN.</div>
     </div>
 
+    <div class="panel" id="customSettingsBackupPanel">
+      <strong>Save / Restore Custom Settings</strong><div class="sub">Back up your custom lights and custom schedules to a JSON file, or restore them later. Wi-Fi credentials and profile PINs are intentionally excluded.</div>
+      <button id="saveCustomSettingsBackup" class="btn primary" type="button" style="width:100%;margin-top:10px">Save Custom Settings Backup</button>
+      <div class="label">Restore backup JSON</div><input id="customSettingsRestoreFile" class="field" type="file" accept=".json,application/json">
+      <button id="restoreCustomSettingsBackup" class="btn" type="button" style="width:100%;margin-top:9px">Restore Custom Settings</button>
+      <div id="customSettingsBackupStatus" class="sub" style="margin-top:7px">Backup preserves custom-light IDs and their linked custom schedules.</div>
+    </div>
+
     <div class="panel">
       <strong>Firmware Update</strong><div class="sub">When PIN protection is on, routine uploads require Jason’s active session. Select the app-only BIN; the NanoC6 writes it to the inactive OTA slot and keeps the current firmware available as the previous slot.</div>
       <div id="fwMeta" class="card small" style="margin-top:10px">Loading firmware information…</div>
@@ -329,7 +337,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
       <div class="grid2" style="margin-top:10px"><button id="rebootNano" class="btn">Reboot NanoC6</button><button id="rollbackFirmware" class="btn">Boot Previous Firmware</button></div>
     </div>
 
-        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v3.0.0</strong></div></div>
+        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v4.5.1</strong></div></div>
 
     <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness / seasonal day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Normal preset</div><div style="margin-top:5px">Coverage guarantee: if higher-priority dates occupy every night of a month, the least-conflicted night reserves its first third for the enabled month-long events; the higher-priority scene finishes the night and continues through Schedule 2.</div></div></div>
   </section>
@@ -359,6 +367,16 @@ const API_MODE = location.protocol==='http:' || location.protocol==='https:';
 const $=id=>document.getElementById(id); const status=m=>$('statusMsg').textContent=m;
 async function api(path,opts={},timeoutMs=12000){if(!API_MODE)throw new Error('preview');const headers=new Headers(opts.headers||{});if(window.andersonAuthToken)headers.set('X-Anderson-Session',window.andersonAuthToken);const {response:r,text:t}=await controllerRequest(path,{...opts,headers},timeoutMs);let data={};try{data=t?JSON.parse(t):{}}catch(error){}if(r.status===401&&currentRole!=='none')window.dispatchEvent(new Event('anderson-auth-required'));if(!r.ok)throw new Error(data.error||t||r.statusText);return data}
 async function post(path,obj,timeoutMs=12000){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)},timeoutMs)}
+async function saveCustomSettingsBackup(){
+  const meta=$('customSettingsBackupStatus');
+  try{meta.textContent='Creating backup…';const data=await api('/api/custom-settings-backup',{cache:'no-store'});const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);const stamp=new Date().toISOString().slice(0,10);a.download=`Anderson_Custom_Settings_${stamp}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),500);meta.textContent=`Saved ${data.customLights?.length||0} custom lights and ${data.customSchedules?.length||0} custom schedules.`;status('Custom settings backup saved.');}catch(e){meta.textContent='Backup failed: '+e.message;status('Custom settings backup failed.');}
+}
+async function restoreCustomSettingsBackup(){
+  const input=$('customSettingsRestoreFile'),meta=$('customSettingsBackupStatus'),file=input.files&&input.files[0];if(!file){meta.textContent='Choose an Anderson custom-settings JSON backup first.';return}
+  try{const text=await file.text(),data=JSON.parse(text);if(data.format!=='anderson-custom-settings'||data.schema!==1)throw new Error('This is not a supported Anderson custom-settings backup');if(!confirm(`Restore ${data.customLights?.length||0} custom lights and ${data.customSchedules?.length||0} custom schedules? Current custom lights and schedules will be replaced.`))return;meta.textContent='Validating and restoring backup…';await post('/api/custom-settings-backup',data,20000);meta.textContent='Restore complete and verified.';status('Custom settings restored.');await Promise.all([loadCustomPresets(),loadCustomSchedules(),loadHomeCustomLights()]);}catch(e){meta.textContent='Restore failed: '+e.message;status('Custom settings restore failed.');}
+}
+$('saveCustomSettingsBackup').addEventListener('click',saveCustomSettingsBackup);
+$('restoreCustomSettingsBackup').addEventListener('click',restoreCustomSettingsBackup);
 window.addEventListener('anderson-profile-selected',event=>{currentRole=event.detail?.role||'none';loadState();loadEventColorTheme();loadEvents();loadCustomSchedules();loadHomeCustomLights();loadSavedColors();if(event.detail?.id==='jason'){loadCustomPresets();loadFirmwareInfo();loadPinSettings()}});
 window.addEventListener('anderson-profile-cleared',()=>{currentRole='none'});
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{if(btn.hidden||currentRole==='none')return;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='home')loadHomeCustomLights();if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();}if(btn.dataset.tab==='events'){loadEvents();loadCustomSchedules();}if(btn.dataset.tab==='settings'){loadState();loadPinSettings();loadSystemMonitor();}}));

@@ -61,7 +61,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="4.5.0";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="4.5.1";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -493,6 +493,35 @@ void setupRoutes(){
     }else if(u.status==UPLOAD_FILE_END){
       if(otaUploadAllowed&&!otaUploadError.length()){otaUploadOk=Update.end(true);if(!otaUploadOk){otaUploadResponseCode=500;otaUploadError=String("Firmware validation failed. Error ")+String(Update.getError());}}
     }else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();otaUploadOk=false;otaUploadResponseCode=500;otaUploadError="Firmware upload aborted";}
+  });
+  server.on("/api/custom-settings-backup",HTTP_GET,[]{
+    if(!requireAdmin())return;
+    String lights=presetStoreRaw(),schedules=scheduleStoreRaw();
+    if(!jsonArrayValid(lights)||!jsonArrayValid(schedules)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Custom settings storage is not valid JSON\"}");return;}
+    String out=String("{\"format\":\"anderson-custom-settings\",\"schema\":1,\"firmware\":\"")+ANDERSON_FIRMWARE_VERSION+"\",\"customLights\":"+lights+",\"customSchedules\":"+schedules+"}";
+    server.sendHeader("Cache-Control","no-store");
+    server.sendHeader("Content-Disposition",String("attachment; filename=Anderson_Custom_Settings_")+ANDERSON_FIRMWARE_VERSION+".json");
+    server.send(200,"application/json",out);
+  });
+  server.on("/api/custom-settings-backup",HTTP_POST,[]{
+    if(!requireAdmin())return;
+    JsonDocument d;if(!body(d))return;
+    String format=d["format"].as<String>();int schema=d["schema"]|0;
+    if(format!="anderson-custom-settings"||schema!=1||!d["customLights"].is<JsonArray>()||!d["customSchedules"].is<JsonArray>()){
+      server.send(400,"application/json","{\"ok\":false,\"error\":\"Unsupported or invalid Anderson custom-settings backup\"}");return;
+    }
+    JsonArray lights=d["customLights"].as<JsonArray>(),schedules=d["customSchedules"].as<JsonArray>();
+    if(lights.size()>12||schedules.size()>32){server.send(409,"application/json","{\"ok\":false,\"error\":\"Backup exceeds custom light or schedule capacity\"}");return;}
+    for(JsonObject p:lights){String id=p["id"].as<String>();if(!id.startsWith("p")){server.send(400,"application/json","{\"ok\":false,\"error\":\"Backup contains an invalid custom-light ID\"}");return;}}
+    for(JsonObject s:schedules){String id=s["id"].as<String>(),preset=s["presetId"].as<String>();bool found=false;for(JsonObject p:lights)if(p["id"].as<String>()==preset){found=true;break;}if(!id.startsWith("s")||!found){server.send(400,"application/json","{\"ok\":false,\"error\":\"Backup contains an invalid schedule link\"}");return;}}
+    String newLights,newSchedules;serializeJson(lights,newLights);serializeJson(schedules,newSchedules);
+    if(newLights.length()>3800||newSchedules.length()>3800){server.send(507,"application/json","{\"ok\":false,\"error\":\"Backup is too large for persistent custom settings storage\"}");return;}
+    String oldLights=presetStoreRaw(),oldSchedules=scheduleStoreRaw();
+    if(!customFileWrite("/custom_schedules.json",newSchedules)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Could not restore custom schedules\"}");return;}
+    if(!customFileWrite("/custom_lights.json",newLights)){bool rolledBack=customFileWrite("/custom_schedules.json",oldSchedules);server.send(500,"application/json",rolledBack?"{\"ok\":false,\"error\":\"Custom lights restore failed; schedules were rolled back\"}":"{\"ok\":false,\"error\":\"Custom lights restore failed and schedule rollback also failed\"}");return;}
+    if(!jsonArrayValid(presetStoreRaw())||!jsonArrayValid(scheduleStoreRaw())){customFileWrite("/custom_lights.json",oldLights);customFileWrite("/custom_schedules.json",oldSchedules);server.send(500,"application/json","{\"ok\":false,\"error\":\"Restore verification failed; previous settings were restored\"}");return;}
+    customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+350;
+    sendJson("{\"ok\":true,\"message\":\"Custom lights and schedules restored\"}");
   });
   server.on("/api/reboot",HTTP_POST,[]{if(!requireAdmin())return;sendJson("{\"ok\":true,\"message\":\"Rebooting NanoC6\"}");otaAutoRebootPending=true;otaAutoRebootAt=millis()+700;});
   server.on("/api/rollback",HTTP_POST,[]{
