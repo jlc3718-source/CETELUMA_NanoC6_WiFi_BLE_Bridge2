@@ -1,0 +1,22 @@
+name: Native ESP-IDF Migration Check
+on:
+  push:
+    branches: ['work/v4.0.0-native-idf']
+    paths: ['firmware/**','.github/workflows/native-idf-migration.yml','FIRMWARE_VERSION.txt']
+  workflow_dispatch:
+concurrency:
+  group: native-idf-migration
+  cancel-in-progress: true
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: pip install -q platformio==6.2.0
+      - name: Compile native ESP-IDF NanoC6 image
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4

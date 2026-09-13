@@ -2,8 +2,8 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 
-// Watch the application task itself, including waits that leave Wi-Fi/idle tasks
-// alive. Feed during real firmware-upload progress, never from the BLE worker.
+// Watch the native ESP-IDF application task itself. Feed during real firmware
+// upload progress, never from the BLE worker.
 inline bool beginControllerWatchdog(){
   esp_task_wdt_config_t config{};
   config.timeout_ms=120000;
@@ -12,10 +12,8 @@ inline bool beginControllerWatchdog(){
   esp_err_t result=esp_task_wdt_reconfigure(&config);
   if(result==ESP_ERR_INVALID_STATE)result=esp_task_wdt_init(&config);
   if(result!=ESP_OK)return false;
-  enableLoopWDT();
+  result=esp_task_wdt_add(nullptr);
+  if(result!=ESP_OK&&result!=ESP_ERR_INVALID_STATE)return false;
   return esp_task_wdt_status(nullptr)==ESP_OK;
 }
-
-inline void feedControllerWatchdog(){
-  if(esp_task_wdt_status(nullptr)==ESP_OK)esp_task_wdt_reset();
-}
+inline void feedControllerWatchdog(){if(esp_task_wdt_status(nullptr)==ESP_OK)esp_task_wdt_reset();}
