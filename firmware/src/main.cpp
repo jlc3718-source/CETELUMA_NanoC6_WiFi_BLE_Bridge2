@@ -60,7 +60,7 @@ bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 
 static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsigned long)c);return b;}
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
-static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
+static String fmtTime(uint16_t m){m%=1440U;char b[6];snprintf(b,sizeof(b),"%02u:%02u",(unsigned)(m/60U),(unsigned)(m%60U));return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
 static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.14";
 static bool customScheduleRefreshPending=false;
