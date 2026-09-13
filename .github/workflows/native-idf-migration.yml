@@ -2,7 +2,7 @@ name: Native ESP-IDF Migration Check
 on:
   push:
     branches: ['work/v4.0.0-native-idf']
-    paths: ['firmware/**','.github/workflows/native-idf-migration.yml','FIRMWARE_VERSION.txt']
+    paths: ['firmware/**','tools/release.py','tools/test_regressions.py','.github/workflows/native-idf-migration.yml','FIRMWARE_VERSION.txt']
   workflow_dispatch:
 concurrency:
   group: native-idf-migration
@@ -31,6 +31,12 @@ jobs:
           grep -q 'X-Anderson-Filename' firmware/web/index.html
           grep -q 'X-Anderson-Filename' firmware/web/recovery.html
           grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
+          grep -q 'Emergency Firmware Recovery' firmware/web/v4_home_recovery.js
+          grep -q 'Boot Previous Firmware' firmware/web/v4_home_recovery.js
+          grep -q 'V4_HOME_JS' tools/release.py
+          grep -q 'bootHealthBegin' firmware/src/IdfEntry.cpp
+          grep -q 'esp_ota_mark_app_valid_cancel_rollback' firmware/src/BootHealth.cpp
+          grep -q 'Content-Encoding: gzip' firmware/src/BootHealth.cpp
           grep -q 'missing 0xE9 image header' firmware/src/main.cpp
           grep -q 'u.totalSize<4096||u.totalSize>=0x1E0000' firmware/src/main.cpp
           grep -q 'andersonSha256Compute' firmware/src/main.cpp
@@ -44,6 +50,7 @@ jobs:
           grep -q 'mdns_hostname_set(host_.c_str())!=ESP_OK' firmware/src/ESPmDNS.cpp
           test ! -e firmware/include/mbedtls/sha256.h
           node --check firmware/web/v3_mockup.js
+          node --check firmware/web/v4_home_recovery.js
       - name: Install build tools
         run: python -m pip install -q -r tools/requirements-build.txt
       - name: Install pinned web minifier
