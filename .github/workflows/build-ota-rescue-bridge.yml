@@ -1,0 +1,64 @@
+name: Build OTA Rescue Bridge
+
+on:
+  push:
+    branches: ['rescue/ota-bridge-4.0.1r']
+    paths: ['rescue-bridge/**', '.github/workflows/build-ota-rescue-bridge.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install -q platformio==6.1.18
+      - name: Compile compact rescue bridge
+        run: pio run -d rescue-bridge -e nanoc6-rescue -j 4
+      - name: Verify APP-only image and rescue size ceiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rescue-release
+          cp rescue-bridge/.pio/build/nanoc6-rescue/firmware.bin rescue-release/Anderson_OTA_Rescue_Bridge_4.0.1r.bin
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          p=Path('rescue-release/Anderson_OTA_Rescue_Bridge_4.0.1r.bin')
+          data=p.read_bytes()
+          if not data or data[0] != 0xE9:
+              raise SystemExit('rescue bridge is not an ESP APP image')
+          # Hardware failures were observed around ~1.55 MB transferred. Keep a
+          # large safety margin so 4.0.1 can finish this bridge before that point.
+          if len(data) >= 1_350_000:
+              raise SystemExit(f'rescue bridge too large: {len(data)} bytes')
+          meta={
+              'name':'Anderson OTA Rescue Bridge',
+              'bridge_version':'4.0.1r',
+              'target_version':'4.0.4',
+              'target_commit':'15bcfd45cb155a714fc7456f1a1ab4ad8a49f401',
+              'target_bytes':1723440,
+              'target_sha256':'b96868243a0cd1e97e0e179dd7baebf4b42304b91b0a99ad79aff4254f5afb5a',
+              'bytes':len(data),
+              'sha256':hashlib.sha256(data).hexdigest(),
+              'magic':'0xE9',
+              'max_rescue_bytes':1_350_000,
+              'preserves_nvs':True,
+              'app_only':True,
+          }
+          Path('rescue-release/rescue.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print(json.dumps(meta,indent=2))
+          PY
+      - name: Upload verified rescue bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-OTA-Rescue-Bridge-4.0.1r
+          path: rescue-release/*
+          if-no-files-found: error
