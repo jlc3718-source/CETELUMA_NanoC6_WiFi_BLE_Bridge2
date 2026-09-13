@@ -16,6 +16,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-anderson-native-idf61-v1
       - name: Install PlatformIO
         run: pip install -q platformio==6.2.0
       - name: Compile native ESP-IDF NanoC6 image
