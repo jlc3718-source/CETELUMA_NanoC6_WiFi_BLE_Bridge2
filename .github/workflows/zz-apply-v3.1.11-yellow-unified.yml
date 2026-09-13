@@ -1,0 +1,204 @@
+name: Apply Anderson v3.1.11 Yellow Unification
+
+on:
+  push:
+    branches: ['work/v3.1.11-yellow-unified']
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v3.1.11-yellow-unified
+          fetch-depth: 0
+      - name: Apply focused source migration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('.')
+          NEW='E0B400'
+
+          # Bump exactly once from the current production version.
+          vf=root/'FIRMWARE_VERSION.txt'
+          assert vf.read_text().strip()=='3.1.10'
+          vf.write_text('3.1.11\n')
+
+          mainp=root/'firmware/src/main.cpp'
+          main=mainp.read_text()
+          main=main.replace('static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.10";','static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.11";')
+          main=main.replace('#include "EventColorThemes.h"\n','')
+
+          # Fold the approved Original Colors table into EventCatalog so there is only one built-in palette.
+          themep=root/'firmware/src/EventColorThemes.cpp'
+          th=themep.read_text()
+          dm=re.search(r'ORIGINAL_COLOR_DICTIONARY\[\]\s*=\s*\{(.*?)\};',th,re.S); assert dm
+          dictionary=re.findall(r'0x[0-9A-Fa-f]{6}',dm.group(1)); assert len(dictionary)==9
+          dictionary=[('0x'+NEW) if x.upper()=='0XFFFF44' else x.upper().replace('0X','0x') for x in dictionary]
+          im=re.search(r'ORIGINAL_EVENT_COLOR_INDEX\[210\]\[6\]\s*=\s*\{(.*?)\};\s*static constexpr uint8_t ORIGINAL_EVENT_COLOR_COUNT',th,re.S); assert im
+          index_rows=[]
+          for row in re.findall(r'\{([^{}]+)\}',im.group(1)):
+              vals=[int(x.strip()) for x in row.split(',') if x.strip()]
+              assert len(vals)==6
+              index_rows.append(vals)
+          cm=re.search(r'ORIGINAL_EVENT_COLOR_COUNT\[210\]\s*=\s*\{(.*?)\};',th,re.S); assert cm
+          counts=[int(x) for x in re.findall(r'\d+',cm.group(1))]
+          assert len(index_rows)==len(counts)==210
+
+          eventp=root/'firmware/src/EventCatalog.cpp'
+          lines=eventp.read_text().splitlines()
+          event_positions=[i for i,line in enumerate(lines) if line.startswith('{"evt')]
+          assert len(event_positions)==210
+          for n,pos in enumerate(event_positions):
+              count=counts[n]
+              cols=[dictionary[index_rows[n][j]] for j in range(count)]
+              m=re.match(r'^(.*?,Effect::[A-Za-z]+),C[1-6]\([^)]*\),\d+\s*\},$',lines[pos]); assert m, lines[pos]
+              lines[pos]=m.group(1)+f",C{count}({','.join(cols)}),{count} }},"
+          eventp.write_text('\n'.join(lines)+'\n')
+
+          # Remove the retired dual-theme runtime and keep one event-override slot per event.
+          single_override=r'''struct EventOverrideCfg{bool valid=false;Effect effect=Effect::Jump;uint32_t colors[8]={0};uint8_t colorCount=0;uint8_t speed=1;};
+          static EventOverrideCfg eventOverrides[MAX_BUILTIN_EVENTS];
+          static String eventOverrideKey(size_t i){return String("e")+String((unsigned)i);}
+          static uint8_t scheduledEventSpeedHint=1;
+          Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,5);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
+          static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
+          static void loadEventOverrides(){
+            for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++)eventOverrides[i]=EventOverrideCfg();
+            Preferences p;if(!p.begin("anderson-event",true))return;
+            for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
+              String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;int sep=raw.indexOf(';');if(sep<1)continue;String head=raw.substring(0,sep);EventOverrideCfg o;o.valid=true;
+              if(head.startsWith("v3|")){int b1=head.indexOf('|',3);if(b1<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1).toInt(),1,5);}
+              else if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b1<0||b2<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1,b2).toInt(),1,5);}
+              else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,5);}else{o.effect=effectFromString(head);o.speed=1;}}
+              String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}eventOverrides[i]=o;
+            }
+            p.end();
+          }
+          static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next;next.valid=true;next.effect=t.effect;next.speed=constrain(sp,1,5);next.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=andersonCorrectColor(t.colors[c]);String raw=String("v3|")+effectName(next.effect)+"|"+String(next.speed)+";";for(uint8_t c=0;c<next.colorCount;c++){if(c)raw+=",";raw+=colorHex(next.colors[c]);}Preferences p;if(!p.begin("anderson-event",false))return false;String key=eventOverrideKey(i);size_t wrote=p.putString(key.c_str(),raw);String verify=p.getString(key.c_str(),"");p.end();if(wrote!=raw.length()||verify!=raw)return false;eventOverrides[i]=next;return true;}
+          static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i);Preferences p;if(!p.begin("anderson-event",false))return false;String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
+          '''
+          main,count=re.subn(r'static EventColorTheme activeEventColorTheme=.*?\nvoid addTheme\(JsonObject o,const Theme&t\)',single_override+'\nvoid addTheme(JsonObject o,const Theme&t)',main,flags=re.S)
+          assert count==1
+          main='\n'.join(line for line in main.splitlines() if '/api/event-color-theme' not in line)+'\n'
+          main=main.replace('seedMasterSceneFavoritesV4();loadEventColorTheme();migrateLegacyEventOverrides();loadEventOverrides();','seedMasterSceneFavoritesV4();loadEventOverrides();')
+          main=main.replace('runningTheme.colors[0]=0xFFFF44;','runningTheme.colors[0]=0x'+NEW+';')
+          assert 'EventColorTheme' not in main and 'eventColorTheme' not in main and '/api/event-color-theme' not in main
+          mainp.write_text(main)
+
+          # Make E0B400 the one approved Yellow output, while mapping historical yellow inputs forward.
+          ccp=root/'firmware/src/ColorCorrection.cpp'; cc=ccp.read_text()
+          cc=cc.replace('{0xFFFF44,0xFFFF44}, // Yellow','{0xE0B400,0xE0B400}, // Yellow')
+          cc=cc.replace('{0xFF0000,0xFF0000},{0xFF0D00,0xFF0D00},{0xFF0024,0xFF0024},{0xFFFF44,0xFFFF44},','{0xFF0000,0xFF0000},{0xFF0D00,0xFF0D00},{0xFF0024,0xFF0024},{0xE0B400,0xE0B400},{0xFFFF44,0xE0B400},')
+          cc=cc.replace('{0xFF2900,0xFF0D00},{0xFF6E00,0xFF0D00},','{0xFF2900,0xFF0D00},{0xFF6E00,0xE0B400},')
+          ys=cc.index('// Yellow / gold / warm-white family -> approved yellow.')
+          ye=cc.index('// Green family -> approved green.',ys)
+          ysec=cc[ys:ye].replace(',0xFFFF44}',',0xE0B400}')
+          cc=cc[:ys]+ysec+cc[ye:]
+          assert '{0xE0B400,0xE0B400}, // Yellow' in cc and '{0xFFFF00,0xE0B400}' in cc and '{0xFF6E00,0xE0B400}' in cc
+          ccp.write_text(cc)
+
+          # Revision 7 migrates the currently-selected old theme override into the one remaining event slot,
+          # corrects every saved yellow, then removes the retired per-theme keys/state.
+          pmp=root/'firmware/src/PaletteMigration.cpp'; pm=pmp.read_text()
+          pm=pm.replace('static constexpr uint8_t PALETTE_MIGRATION_REVISION=6;','static constexpr uint8_t PALETTE_MIGRATION_REVISION=7;')
+          pm=pm.replace('a.add("#FFFF44")','a.add("#E0B400")')
+          old_func=re.search(r'static bool canonicalizeCurrentStoredPalette\(\)\{.*?\n\}\nstatic bool applyFromBackup',pm,re.S); assert old_func
+          new_func=r'''static bool clearRetiredThemeOverrideStorage(){
+            Preferences p;if(!p.begin("anderson-event",false))return false;bool ok=true;
+            for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++)for(char prefix:{'o','m'}){String key=String(prefix)+String((unsigned)i);if(p.isKey(key.c_str())&&!p.remove(key.c_str())&&p.isKey(key.c_str()))ok=false;}
+            p.end();Preferences pal;if(pal.begin("anderson-evpal",false)){pal.clear();pal.end();}return ok;
+          }
+          static bool canonicalizeCurrentStoredPalette(){
+            String originalPresets=readPrefString("anderson-preset","custom","[]"),correctedPresets;
+            if(!transformPresetJson(originalPresets,correctedPresets))return false;
+            if(!writePrefStringVerified("anderson-preset","custom",correctedPresets))return false;
+            String originalFavorites=readPrefString("anderson-colors","saved","[]"),correctedFavorites;
+            if(!transformFavoriteJson(originalFavorites,correctedFavorites))return false;
+            if(!writePrefStringVerified("anderson-colors","saved",correctedFavorites))return false;
+            uint8_t oldTheme=1;Preferences pal;if(pal.begin("anderson-evpal",true)){oldTheme=pal.getUChar("theme",1);pal.end();}
+            JsonDocument current;JsonObject events=current["events"].to<JsonObject>();Preferences ev;if(!ev.begin("anderson-event",true))return false;
+            for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){
+              String unified=eventKey(i),primary=String(oldTheme==0?'o':'m')+String((unsigned)i),secondary=String(oldTheme==0?'m':'o')+String((unsigned)i);
+              String raw=ev.getString(primary.c_str(),"");if(!raw.length())raw=ev.getString(unified.c_str(),"");if(!raw.length())raw=ev.getString(secondary.c_str(),"");if(raw.length())events[unified]=raw;
+            }
+            ev.end();if(!writeEvents(events,true))return false;if(!clearRetiredThemeOverrideStorage())return false;
+            return setMigrationState(STATE_APPLIED,true);
+          }
+          static bool applyFromBackup'''
+          pm=pm[:old_func.start()]+new_func+pm[old_func.end():]
+          pm=pm.replace('// Automatic v4 migration normalizes CURRENT custom lights and event overrides,\n  // then resets Favorite Colors to the sixteen approved user baselines.','// Revision 7 normalizes current custom lights and the one retained event-override set,\n  // then resets Favorite Colors to the sixteen approved user baselines.')
+          pmp.write_text(pm)
+
+          # Remove the Modern Colors UI selector and all browser code supporting it.
+          webp=root/'firmware/web/index.html'; web=webp.read_text()
+          css_start=web.index('.eventColorThemeBox{')
+          css_end_marker='@media(max-width:430px){.eventColorThemeGrid{grid-template-columns:1fr}}\n'
+          css_end=web.index(css_end_marker,css_start)+len(css_end_marker)
+          web=web[:css_start]+web[css_end:]
+          html_start=web.index('<div class="eventColorThemeBox">')
+          search_marker='<div class="row" style="margin-top:10px"><input id="eventSearch"'
+          html_end=web.index(search_marker,html_start)
+          web=web[:html_start]+web[html_end:]
+          js_start=web.index("let currentEventColorTheme='modern';")
+          js_end_marker="$('eventColorsModern').addEventListener('click',()=>chooseEventColorTheme('modern'));"
+          js_end=web.index(js_end_marker,js_start)+len(js_end_marker)
+          web=web[:js_start]+web[js_end:]
+          web=web.replace('loadState();loadEventColorTheme();loadEvents();','loadState();loadEvents();')
+          assert 'Modern Colors' not in web and 'eventColorsModern' not in web and 'eventColorTheme' not in web and '/api/event-color-theme' not in web
+          webp.write_text(web)
+
+          # Update source regression checks to enforce the one-palette design.
+          trp=root/'tools/test_regressions.py'; tr=trp.read_text()
+          tr=tr.replace('# v3.1.10 production event fairness, OTA verification, and bottom-menu logout','# v3.1.11 unified event palette, OTA verification, and bottom-menu logout')
+          tr=tr.replace("assert 'server.on(\"/api/event-color-theme\"' in main and 'eventColorsOriginal' in web and 'eventColorsModern' in web\nassert 'eventColorThemeGeneration' in main and 'colorGeneration' in main","assert '/api/event-color-theme' not in main+web and 'eventColorsOriginal' not in web and 'eventColorsModern' not in web\nassert 'EventColorTheme' not in main and 'eventColorThemeGeneration' not in main\nassert '0xE0B400' in ev and '0xFFFF44' not in ev\nassert '{0xE0B400,0xE0B400}, // Yellow' in t('firmware/src/ColorCorrection.cpp')")
+          tr=tr.replace("assert 'Basic Scheme v 3.0.28' in web and 'v3.0.28 event palette' not in web\nassert 'Advanced Scheme v 3.0.29' in web and 'v3.0.29 revised palette' not in web","assert 'Basic Scheme v 3.0.28' not in web and 'Advanced Scheme v 3.0.29' not in web")
+          trp.write_text(tr)
+
+          tap=root/'tools/test_audit_fixes.py'; ta=tap.read_text().replace("PASS: Anderson v3.1.10 audit invariants present","PASS: Anderson v3.1.11 audit invariants present"); tap.write_text(ta)
+
+          # Keep project instructions accurate after retiring the dual-palette feature.
+          ap=root/'AGENTS.md'; ag=ap.read_text()
+          ag=ag.replace('- Original Colors and Modern Colors each retain independent per-event overrides in NVS. Switching palettes must never discard the other palette\'s custom colors/effect/speed, and routine firmware upgrades must preserve both sets. Legacy single-slot overrides migrate non-destructively.\n','- Built-in events use one firmware-owned event palette. Per-event edits use one persistent override slot and routine firmware upgrades must preserve those edits. Legacy dual-theme override slots migrate into the single retained slot non-destructively.\n')
+          ag=ag.replace('Yellow `#FFFF44`','Yellow `#E0B400`')
+          ag=ag.replace('- `firmware/src/Scheduler.cpp`, `EventCatalog.cpp`: timing/event resolution.','- `firmware/src/Scheduler.cpp`, `EventCatalog.cpp`: timing/event resolution and the single built-in event palette.')
+          ag=ag.replace('- v3.0.17 canonical calibrated event palette (exact LED RGB): Red #FF0000; Purple #23018C; Blue #05008A; Cyan #00BD4C; Pink #BF0005; Orange #FF2900; Yellow #FF6E00; Green #4DFF00. Built-in events, event overrides, custom saved lights, and schedules that reference those saved lights use these family codes. Existing Favorite Colors must remain untouched by palette migration. White, black, and intentional autumn browns remain distinct.','- v3.1.11 unified event palette uses the retained Original Colors scheme, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.')
+          ap.write_text(ag)
+
+          rp=root/'README.md'; rd=rp.read_text().replace('**v3.1.10**','**v3.1.11**'); rp.write_text(rd)
+
+          # Retired source files are no longer needed after their table is folded into EventCatalog.
+          (root/'firmware/src/EventColorThemes.cpp').unlink()
+          (root/'firmware/include/EventColorThemes.h').unlink()
+
+          # Focused structural validation before the normal production build pipeline.
+          firmware_text='\n'.join(p.read_text(errors='ignore') for p in (root/'firmware').rglob('*') if p.is_file())
+          assert 'Modern Colors' not in firmware_text
+          assert 'EventColorTheme' not in firmware_text
+          assert '/api/event-color-theme' not in firmware_text
+          assert 'eventColorsModern' not in firmware_text
+          assert '0xFFFF44' not in eventp.read_text()
+          assert eventp.read_text().count('0xE0B400')>0
+          assert 'runningTheme.colors[0]=0xE0B400;' in mainp.read_text()
+          assert '#E0B400' in pmp.read_text()
+          assert not (root/'firmware/src/EventColorThemes.cpp').exists()
+          assert not (root/'firmware/include/EventColorThemes.h').exists()
+          print('Applied v3.1.11: unified Original Colors palette; Yellow #E0B400')
+          PY
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+      - name: Commit final source and remove helper workflow
+        run: |
+          rm -f .github/workflows/zz-apply-v3.1.11-yellow-unified.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Unify event palette and set Yellow to #E0B400"
+          git push origin HEAD:refs/heads/work/v3.1.11-yellow-unified
