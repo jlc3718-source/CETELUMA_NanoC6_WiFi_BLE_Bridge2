@@ -1,0 +1,67 @@
+name: Build Anderson Minimal Recovery 4.5 Compatible
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/anderson-4.5.0-from-3.1.9']
+    paths:
+      - 'firmware/minimal/minimal_recovery_45.cpp'
+      - 'firmware/minimal/.build-trigger-45'
+      - '.github/workflows/build-minimal-recovery-45.yml'
+      - 'firmware/platformio.ini'
+      - 'firmware/partitions_ota.csv'
+
+permissions:
+  contents: read
+
+jobs:
+  build-minimal-recovery-45:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Install PlatformIO
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Stage only 4.5-compatible recovery source
+        run: |
+          cp firmware/minimal/minimal_recovery_45.cpp /tmp/minimal_recovery_45.cpp
+          find firmware/src -type f -delete
+          cp /tmp/minimal_recovery_45.cpp firmware/src/main.cpp
+          test "$(find firmware/src -maxdepth 1 -type f | wc -l)" -eq 1
+      - name: Compile with exact 4.5.0 Arduino toolchain
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Verify 4.5-compatible APP-only recovery image
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('firmware/.pio/build/m5stack-nanoc6/firmware.bin')
+          data=p.read_bytes()
+          assert data and data[0]==0xE9, 'missing ESP image header'
+          assert len(data)<0x1E0000, 'image exceeds 4.5.0 OTA slot'
+          assert b'Anderson Firmware Recovery' in data, 'recovery UI missing'
+          assert b'4.5.0-recovery' in data, 'recovery version marker missing'
+          forbidden=[b'BLE Diagnostics',b'Holiday Schedule',b'Custom Lights',b'EventCatalog']
+          for marker in forbidden:
+              assert marker not in data, f'unexpected application marker present: {marker!r}'
+          out=Path('minimal-release-45')
+          out.mkdir(exist_ok=True)
+          target=out/'Anderson-Minimal-Recovery-v4.5-Compatible.bin'
+          target.write_bytes(data)
+          digest=hashlib.sha256(data).hexdigest()
+          (out/'SHA256.txt').write_text(digest+'  '+target.name+'\n')
+          print('verified bytes:',len(data))
+          print('sha256:',digest)
+          PY
+          ~/.platformio/packages/tool-esptoolpy/esptool.py image_info firmware/.pio/build/m5stack-nanoc6/firmware.bin
+      - name: Upload verified 4.5-compatible recovery firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Minimal-Recovery-v4.5-Compatible
+          path: minimal-release-45/*
+          if-no-files-found: error
