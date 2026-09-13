@@ -1,0 +1,94 @@
+name: Rebuild Anderson 3.1.9 as 4.5.0
+
+on:
+  push:
+    branches: ['codex/anderson-4.5.0-from-3.1.9']
+    paths: ['.github/workflows/rebuild-319-as-450.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Rebadge exact 3.1.9 baseline as 4.5.0
+        run: |
+          set -euo pipefail
+          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.9"
+          grep -q 'ANDERSON_FIRMWARE_VERSION="3.1.9"' firmware/src/main.cpp
+          printf '4.5.0\n' > FIRMWARE_VERSION.txt
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/src/main.cpp')
+          s=p.read_text()
+          old='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.9";'
+          new='static constexpr const char* ANDERSON_FIRMWARE_VERSION="4.5.0";'
+          if s.count(old) != 1:
+              raise SystemExit('Expected exactly one 3.1.9 runtime marker')
+          p.write_text(s.replace(old,new,1))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add FIRMWARE_VERSION.txt firmware/src/main.cpp
+          git commit -m 'Rebadge Anderson 3.1.9 baseline as 4.5.0'
+      - name: Verify source remains 3.1.9 baseline apart from version identity
+        run: |
+          set -euo pipefail
+          git diff --exit-code e5711fd5d81e3bda04e331781316454bfb62645d HEAD -- . ':(exclude)FIRMWARE_VERSION.txt' ':(exclude)firmware/src/main.cpp' ':(exclude).github/workflows/rebuild-319-as-450.yml'
+          git show e5711fd5d81e3bda04e331781316454bfb62645d:firmware/src/main.cpp > /tmp/main319.cpp
+          cp firmware/src/main.cpp /tmp/main450.cpp
+          sed -i 's/ANDERSON_FIRMWARE_VERSION="4.5.0"/ANDERSON_FIRMWARE_VERSION="3.1.9"/' /tmp/main450.cpp
+          cmp /tmp/main319.cpp /tmp/main450.cpp
+      - name: Prepare and validate release
+        run: |
+          python tools/release.py check
+          python tools/release.py prepare
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package full verified release
+        run: python tools/release.py package --full
+      - name: Verify packaged version and binaries
+        run: |
+          set -euo pipefail
+          test -s release/and_4.5.0.bin
+          test -s release/and_4.5.0_full.bin
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          m=json.loads(Path('release/manifest.json').read_text())
+          if m.get('version') != '4.5.0':
+              raise SystemExit('Manifest version mismatch')
+          for n in ('and_4.5.0.bin','and_4.5.0_full.bin'):
+              p=Path('release')/n
+              if not p.exists() or p.stat().st_size == 0:
+                  raise SystemExit(f'Missing {n}')
+              print(n, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+      - name: Publish rebadged commit and tag
+        run: |
+          set -euo pipefail
+          git push origin HEAD:codex/anderson-4.5.0-from-3.1.9
+          git tag -a anderson-v4.5.0 -m 'Anderson Home 4.5.0 - exact 3.1.9 baseline rebuilt and rebadged'
+          git push origin anderson-v4.5.0
+      - name: Upload 4.5.0 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-4.5.0-from-3.1.9
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
