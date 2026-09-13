@@ -100,4 +100,6 @@ GitHub runner queue vary.
 - `.github/scripts/anderson-retention.sh`, `.github/workflows/anderson-retention.yml`:
   current-plus-one build/release retention policy.
 
-- v3.1.11 unified event palette uses the retained Original Colors scheme, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.
+- v3.1.11 unified event palette uses the retained approved color set, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.
+
+- v3.1.11 approved named colors: Red, Orange, Pink, Yellow, Green, Blue, Purple, White/Warm White, and Navy Blue. Retired named colors are migrated to the nearest retained family and are not presented as selectable palette entries.

@@ -361,22 +361,15 @@ const NAMED_COLOR_PALETTE=[
   {name:'Pink',reference:'#FFC0CB',output:'#FF0024'},
   {name:'Yellow',reference:'#FFFF00',output:'#E0B400'},
   {name:'Green',reference:'#008000',output:'#28FF00'},
-  {name:'Cyan',reference:'#00FFFF',output:'#00BD4C'},
   {name:'Blue',reference:'#0000FF',output:'#0D00FF'},
   {name:'Purple',reference:'#800080',output:'#5B00E6'},
   {name:'White',reference:'#FFFFFF',output:'#FFFFFA'},
-  {name:'Teal',reference:'#008080',output:'#00B4B4'},
-  {name:'Sky Blue',reference:'#87CEEB',output:'#0096FF'},
-  {name:'Amber Gold',reference:'#FFBF00',output:'#FFA000'},
-  {name:'Lavender',reference:'#E6E6FA',output:'#B464FF'},
-  {name:'Navy Blue',reference:'#000080',output:'#001478'},
-  {name:'Burgundy',reference:'#800020',output:'#87002D'},
-  {name:'Silver Gray',reference:'#C0C0C0',output:'#A0A5AF'}
+  {name:'Navy Blue',reference:'#000080',output:'#001478'}
 ];
 const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(x=>[x.output,x.name]));
 const REFERENCE_LED=Object.assign(Object.fromEntries(NAMED_COLOR_PALETTE.flatMap(x=>[[x.reference,x.output],[x.output,x.output]])),{'#FF9500':'#FF0D00','#22C55E':'#28FF00','#2563EB':'#0D00FF','#7E22CE':'#5B00E6','#FF69B4':'#FF0024'});
-const EXPLICIT_LED={'#FFFF44':'#E0B400','#FF3B30':'#FF0000','#EF4444':'#FF0000','#DC2626':'#FF0000','#EF233C':'#FF0000','#FF1744':'#FF0000','#E11D48':'#FF0000','#BF0005':'#FF0000','#FF020C':'#FF0000','#FF2900':'#FF0D00','#FF3000':'#FF0D00','#FF7A00':'#FF0D00','#F97316':'#FF0D00','#FF6B35':'#FF0D00','#FF6E00':'#E0B400','#F18900':'#FF0D00','#E44300':'#FF0D00','#92400E':'#FF0D00','#360500':'#FF0D00','#220200':'#FF0D00','#FFDA7F':'#E0B400','#FFF1C7':'#E0B400','#FACC15':'#E0B400','#F59E0B':'#E0B400','#FFFFFF':'#FFFFFA','#4DFF00':'#28FF00','#00FF00':'#28FF00','#2AD555':'#28FF00','#34C759':'#28FF00','#16A34A':'#28FF00','#00BD4C':'#00BD4C','#00FFFF':'#00BD4C','#00664D':'#00BD4C','#14B8A6':'#00BD4C','#2DD4BF':'#00BD4C','#32D7D5':'#00BD4C','#05008A':'#0D00FF','#0000FF':'#0D00FF','#004BC6':'#0D00FF','#377CF9':'#0D00FF','#A7C8FC':'#0D00FF','#0A84FF':'#0D00FF','#3B82F6':'#0D00FF','#23018C':'#5B00E6','#7A62F9':'#5B00E6','#C4B5FD':'#5B00E6','#000000':'#5B00E6','#FF1560':'#FF0024','#EF4F98':'#FF0024','#FF00FF':'#FF0024','#FF2D55':'#FF0024','#F9A8D4':'#FF0024'};
-const LEGACY_DISPLAY={'#FF0000':'#FF0000','#FF2900':'#FF0D00','#FF6E00':'#E0B400','#4DFF00':'#28FF00','#00BD4C':'#00BD4C','#05008A':'#0D00FF','#23018C':'#5B00E6','#BF0005':'#FF0000','#FFFFFF':'#FFFFFA','#360500':'#FF0D00','#220200':'#FF0D00','#000000':'#5B00E6'};
+const EXPLICIT_LED={'#FFFF44':'#E0B400','#FF3B30':'#FF0000','#EF4444':'#FF0000','#DC2626':'#FF0000','#EF233C':'#FF0000','#FF1744':'#FF0000','#E11D48':'#FF0000','#BF0005':'#FF0000','#FF020C':'#FF0000','#FF2900':'#FF0D00','#FF3000':'#FF0D00','#FF7A00':'#FF0D00','#F97316':'#FF0D00','#FF6B35':'#FF0D00','#FF6E00':'#E0B400','#F18900':'#FF0D00','#E44300':'#FF0D00','#92400E':'#FF0D00','#360500':'#FF0D00','#220200':'#FF0D00','#FFDA7F':'#E0B400','#FFF1C7':'#E0B400','#FACC15':'#E0B400','#F59E0B':'#E0B400','#FFFFFF':'#FFFFFA','#4DFF00':'#28FF00','#00FF00':'#28FF00','#2AD555':'#28FF00','#34C759':'#28FF00','#16A34A':'#28FF00','#00BD4C':'#28FF00','#00FFFF':'#28FF00','#00664D':'#28FF00','#14B8A6':'#28FF00','#2DD4BF':'#28FF00','#32D7D5':'#28FF00','#05008A':'#0D00FF','#0000FF':'#0D00FF','#004BC6':'#0D00FF','#377CF9':'#0D00FF','#A7C8FC':'#0D00FF','#0A84FF':'#0D00FF','#3B82F6':'#0D00FF','#23018C':'#5B00E6','#7A62F9':'#5B00E6','#C4B5FD':'#5B00E6','#000000':'#5B00E6','#FF1560':'#FF0024','#EF4F98':'#FF0024','#FF00FF':'#FF0024','#FF2D55':'#FF0024','#F9A8D4':'#FF0024'};
+const LEGACY_DISPLAY={'#FF0000':'#FF0000','#FF2900':'#FF0D00','#FF6E00':'#E0B400','#4DFF00':'#28FF00','#00BD4C':'#28FF00','#05008A':'#0D00FF','#23018C':'#5B00E6','#BF0005':'#FF0000','#FFFFFF':'#FFFFFA','#360500':'#FF0D00','#220200':'#FF0D00','#000000':'#5B00E6'};
 function normalizeLedColor(c){const k=normHex(c);return REFERENCE_LED[k]||EXPLICIT_LED[k]||k}
 function displayColor(c){const k=String(c||'').toUpperCase();return LED_REFERENCE[k]||LEGACY_DISPLAY[k]||c}
 function displayLabel(c){const k=String(c||'').toUpperCase(),n=LED_COLOR_NAME[k],r=LED_REFERENCE[k];return n&&r?`${n} ${r} • LED ${k}`:c}
