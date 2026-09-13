@@ -60,10 +60,13 @@ assert 'esp_restart();' in boot_health
 compat=t('firmware/src/ArduinoCompat.cpp')
 assert 'if(ticks==0)ticks=1' in compat
 assert 'esp_image_verify' in compat and 'meta.image_len' in compat
-assert 'id="loginEmergencyRecovery"' in web and 'X-Anderson-Recovery-PIN' in web
-assert 'loginRecoveryFile' in web and 'loginRecoveryFlash' in web
-assert "x.open('POST','/api/update?recovery=1')" in web
-assert "first[0]!==0xE9" in web
+assert 'id="loginEmergencyRecovery"' not in web
+assert 'loginRecoveryFile' not in web and 'loginRecoveryFlash' not in web
+assert 'anderson-login-emergency-recovery' not in web
+assert 'X-Anderson-Recovery-PIN' not in web and '/api/update?recovery=1' not in web
+assert 'Emergency Firmware Recovery' not in web and 'Emergency Flash &amp; Reboot' not in web
+assert 'X-Anderson-Recovery-PIN' in main and 'otaRecoveryRequest' in main
+assert '/api/update' in t('firmware/web/recovery.html')
 assert 'Emergency Firmware Flash' not in mock
 assert not Path('firmware/web/v4_home_recovery.js').exists()
 assert 'V4_HOME_JS' not in release

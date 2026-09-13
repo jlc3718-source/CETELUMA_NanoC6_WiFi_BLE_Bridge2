@@ -90,15 +90,6 @@ input[type=checkbox],input[type=range]{accent-color:#2cff8a}
       <div id="profilePinError" class="pinError" aria-live="polite"></div>
       <div class="grid2"><button id="cancelProfilePin" class="btn" type="button">Cancel</button><button id="submitProfilePin" class="btn primary" type="submit">Continue</button></div>
     </form>
-    <div id="loginEmergencyRecovery" class="pinPanel" style="margin-top:14px">
-      <strong>Emergency Firmware Recovery</strong>
-      <div class="sub" style="margin-top:4px">Available before login if the normal Anderson interface is damaged. Requires Jason’s four-digit PIN and writes only an APP-only BIN to the inactive OTA slot.</div>
-      <div class="label">Jason PIN</div><input id="loginRecoveryPin" class="field pinDigits" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" aria-label="Jason recovery PIN">
-      <div class="label">APP-only firmware BIN</div><input id="loginRecoveryFile" class="field" type="file" accept=".bin,application/octet-stream">
-      <button id="loginRecoveryFlash" class="btn danger" type="button" style="width:100%;margin-top:10px">Emergency Flash &amp; Reboot</button>
-      <progress id="loginRecoveryProgress" max="100" value="0" style="width:100%;height:14px;margin-top:9px"></progress>
-      <div id="loginRecoveryStatus" class="sub" style="margin-top:6px" aria-live="polite">Use only a verified Anderson Home APP-only .bin image.</div>
-    </div>
   </div>
 </main>
 
@@ -140,28 +131,6 @@ async function controllerRequest(path,options={},timeoutMs=12000){
   }
   document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-profile]').forEach(button=>button.addEventListener('click',()=>requestProfile(button.dataset.profile)));byId('profilePin').addEventListener('input',event=>event.target.value=event.target.value.replace(/\D/g,'').slice(0,4));byId('profilePinForm').addEventListener('submit',submitProfilePin);byId('cancelProfilePin').addEventListener('click',()=>{pendingProfile='';byId('profilePinForm').hidden=true});byId('switchProfile').addEventListener('click',()=>showProfileGate());window.addEventListener('anderson-auth-required',()=>showProfileGate('Your session ended. Enter the profile PIN again.',false));loadPinStatus()});
   window.addEventListener('pageshow',event=>{if(event.persisted)showProfileGate()});
-})();
-</script>
-<script id="anderson-login-emergency-recovery">
-(function(){
-  const byId=id=>document.getElementById(id),pin=byId('loginRecoveryPin'),file=byId('loginRecoveryFile'),button=byId('loginRecoveryFlash'),progress=byId('loginRecoveryProgress'),out=byId('loginRecoveryStatus');
-  if(!pin||!file||!button)return;
-  pin.addEventListener('input',()=>pin.value=pin.value.replace(/\D/g,'').slice(0,4));
-  button.addEventListener('click',async()=>{
-    const p=pin.value,f=file.files&&file.files[0];
-    if(!/^\d{4}$/.test(p)){out.textContent='Enter Jason’s four-digit PIN.';return;}
-    if(!f){out.textContent='Choose an Anderson APP-only .bin file first.';return;}
-    if(!/\.bin$/i.test(f.name)){out.textContent='Firmware file must end in .bin.';return;}
-    if(f.size<4096||f.size>=0x1E0000){out.textContent='That file does not fit the Anderson APP-only OTA slot.';return;}
-    try{const first=new Uint8Array(await f.slice(0,1).arrayBuffer());if(first.length!==1||first[0]!==0xE9){out.textContent='Invalid ESP application image: missing 0xE9 header.';return;}}catch(e){out.textContent='Could not inspect the selected firmware file.';return;}
-    if(!confirm('Emergency flash this APP-only firmware to the inactive slot and reboot?'))return;
-    button.disabled=true;progress.value=0;out.textContent='Opening emergency recovery path…';
-    const x=new XMLHttpRequest();x.open('POST','/api/update?recovery=1');x.setRequestHeader('Content-Type','application/octet-stream');x.setRequestHeader('X-Anderson-Recovery-PIN',p);x.setRequestHeader('X-Anderson-Filename',f.name);
-    x.upload.onprogress=e=>{if(e.lengthComputable){const pct=Math.round(e.loaded*100/e.total);progress.value=pct;out.textContent=pct<100?`Emergency upload ${pct}%…`:'Upload complete. Validating APP image and boot slot…';}};
-    x.onload=()=>{if(x.status>=200&&x.status<300){progress.value=100;out.textContent='Firmware accepted. NanoC6 is rebooting…';setTimeout(()=>location.reload(),6500);}else{button.disabled=false;out.textContent=x.responseText||'Emergency firmware recovery failed.';}};
-    x.onerror=()=>{button.disabled=false;out.textContent='Emergency firmware upload connection failed.';};
-    x.send(f);
-  });
 })();
 </script>
 
