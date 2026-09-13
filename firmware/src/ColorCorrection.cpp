@@ -22,7 +22,7 @@ struct DirectMap{uint32_t source,output;};
 // genuinely unknown saved colors. In particular, blue-family source colors can
 // never drift into Purple simply because of a perceptual near-tie.
 static constexpr DirectMap DIRECT_MAP[] = {
-  // Retained approved outputs are idempotent; retired outputs migrate forward.
+  // Retained approved outputs are idempotent; legacy inputs migrate forward.
   {0xFF0000,0xFF0000},{0xFF0D00,0xFF0D00},{0xFF0024,0xFF0024},{0xE0B400,0xE0B400},{0xFFFF44,0xE0B400},
   {0x28FF00,0x28FF00},{0x0D00FF,0x0D00FF},{0x5B00E6,0x5B00E6},{0xFFFFFA,0xFFFFFA},{0x001478,0x001478},
   {0x00BD4C,0x28FF00},{0x00B4B4,0x28FF00},{0x0096FF,0x0D00FF},{0xFFA000,0xE0B400},
