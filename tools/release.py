@@ -21,7 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'firmware/web/index.html'
 V3_CSS = ROOT / 'firmware/web/v3_mockup.css'
 V3_JS = ROOT / 'firmware/web/v3_mockup.js'
-V4_HOME_JS = ROOT / 'firmware/web/v4_home_recovery.js'
 RECOVERY_UI = ROOT / 'firmware/web/recovery.html'
 MAIN = ROOT / 'firmware/src/main.cpp'
 BUILD_IDENTITY = ROOT / 'firmware/include/BuildIdentity.h'
@@ -96,11 +95,11 @@ def render_ui():
     if count != 1:
         raise ValueError('Expected one firmware revision marker in firmware/web/index.html')
 
-    if not V3_CSS.exists() or not V3_JS.exists() or not V4_HOME_JS.exists():
+    if not V3_CSS.exists() or not V3_JS.exists():
         raise ValueError('Anderson UI runtime assets are missing')
 
     css = V3_CSS.read_text()
-    js = V3_JS.read_text() + '\n' + V4_HOME_JS.read_text()
+    js = V3_JS.read_text()
     style_tag = '\n<style id="anderson-v3-reference-layout">\n' + css + '\n</style>\n'
     script_tag = '\n<script id="anderson-v3-reference-layout-runtime">\n' + js + '\n</script>\n'
 

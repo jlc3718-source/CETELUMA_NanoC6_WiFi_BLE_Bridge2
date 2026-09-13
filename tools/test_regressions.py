@@ -94,3 +94,5 @@ assert 'esp_image_get_metadata' in compat and 'meta.image_len' in compat
 assert 'id="loginEmergencyRecovery"' in web and 'X-Anderson-Recovery-PIN' in web
 assert 'Emergency Firmware Flash' not in mock
 assert 'loading the new firmware interface' in web and 'setTimeout(()=>location.reload(),700)' in web
+
+assert not Path('firmware/web/v4_home_recovery.js').exists()
