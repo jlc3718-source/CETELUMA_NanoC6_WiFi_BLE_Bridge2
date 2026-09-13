@@ -16,6 +16,11 @@ jobs:
         with:
           ref: codex/release-current
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install patch dependencies
+        run: python -m pip install -q -r tools/requirements-build.txt
       - name: Apply fixes and advance to 4.0.6
         run: |
           python - <<'PY'
@@ -31,16 +36,17 @@ jobs:
           s=p.read_text()
           old='''  delay(2);\n}\n'''
           assert s.count(old)==1, s.count(old)
-          p.write_text(s.replace(old,'''  // 10 ms cooperative idle keeps BLE timing responsive while avoiding a hot main loop.\n  delay(10);\n}\n''',1))
+          p.write_text(s.replace(old,'''  // Yield enough time for the IDF idle task while preserving BLE timing.\n  delay(10);\n}\n''',1))
           PY
           python tools/release.py bump
           python tools/release.py bump
-          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.6"
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "4.0.6"
           python tools/test_maintenance.py
           python tools/test_regressions.py
           python tools/test_audit_fixes.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add FIRMWARE_VERSION.txt README.md firmware/include/NetworkClient.h firmware/src/main.cpp firmware/sdkconfig.defaults
-          git commit -m "Anderson Home 4.0.6: fix OTA zero-byte reads and hot loop"
+          rm -f .github/workflows/patch-v406.yml
+          git add -A FIRMWARE_VERSION.txt README.md firmware/include/NetworkClient.h firmware/src/main.cpp firmware/sdkconfig.defaults .github/workflows/patch-v406.yml
+          git commit -m "Anderson Home 4.0.6: fix OTA zero-byte reads and CPU load"
           git push origin HEAD:refs/heads/codex/release-current
