@@ -5,11 +5,24 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace {
 constexpr int64_t kUploadAbsoluteTimeoutUs = 10LL * 60LL * 1000000LL;
 constexpr int64_t kBodyAbsoluteTimeoutUs = 2LL * 60LL * 1000000LL;
 constexpr uint8_t kMaxConsecutiveReceiveTimeouts = 3;
+
+// ESP-IDF's httpd_resp_set_hdr() retains pointers to the supplied strings until
+// the response is sent. Arduino-style callers routinely pass temporary String
+// objects (for example sendHeader("Content-Encoding", "gzip")), so applying the
+// header immediately leaves ESP-IDF holding dangling pointers. Keep owned copies
+// for the lifetime of the current request and apply them immediately before send.
+thread_local std::vector<std::pair<String,String>> gResponseHeaders;
+
+void applyPendingHeaders(httpd_req_t* req){
+  if(!req)return;
+  for(auto& h:gResponseHeaders)httpd_resp_set_hdr(req,h.first.c_str(),h.second.c_str());
+}
 }
 
 thread_local WebServer::RequestContext* WebServer::current_=nullptr;
@@ -71,14 +84,17 @@ const char* WebServer::statusText(int c){
   }
 }
 
-void WebServer::sendHeader(const String& n,const String& v,bool){
-  if(current_&&current_->req)httpd_resp_set_hdr(current_->req,n.c_str(),v.c_str());
+void WebServer::sendHeader(const String& n,const String& v,bool first){
+  if(!current_||!current_->req)return;
+  if(first)gResponseHeaders.insert(gResponseHeaders.begin(),{n,v});
+  else gResponseHeaders.push_back({n,v});
 }
 
 void WebServer::send(int code,const char* type,const String& body){
   if(!current_||!current_->req||current_->responded)return;
   httpd_resp_set_status(current_->req,statusText(code));
   httpd_resp_set_type(current_->req,type?type:"text/plain");
+  applyPendingHeaders(current_->req);
   if(code==204)httpd_resp_send(current_->req,nullptr,0);
   else httpd_resp_send(current_->req,body.data(),body.size());
   current_->responded=true;
@@ -88,6 +104,7 @@ void WebServer::send_P(int code,const char* type,PGM_P data,size_t len){
   if(!current_||!current_->req||current_->responded)return;
   httpd_resp_set_status(current_->req,statusText(code));
   httpd_resp_set_type(current_->req,type?type:"application/octet-stream");
+  applyPendingHeaders(current_->req);
   httpd_resp_send(current_->req,data,len);
   current_->responded=true;
 }
@@ -144,6 +161,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
   ctx.owner=this;
   ctx.req=req;
   current_=&ctx;
+  gResponseHeaders.clear();
 
   if(route->upload){
     String fn=header("X-Anderson-Filename");
@@ -185,6 +203,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
       if(timedOut)send(408,"text/plain","Firmware upload timed out");
       else send(aborted?500:200,"text/plain",aborted?"Upload connection aborted":"OK");
     }
+    gResponseHeaders.clear();
     current_=nullptr;
     return ESP_OK;
   }
@@ -192,6 +211,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
   if(req->content_len){
     if(req->content_len>131072){
       send(400,"text/plain","Request body too large");
+      gResponseHeaders.clear();
       current_=nullptr;
       return ESP_OK;
     }
@@ -203,6 +223,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
     while(remaining){
       if(esp_timer_get_time()>=deadlineUs){
         send(408,"text/plain","Request body timed out");
+        gResponseHeaders.clear();
         current_=nullptr;
         return ESP_OK;
       }
@@ -210,6 +231,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
       if(got==HTTPD_SOCK_ERR_TIMEOUT){
         if(++consecutiveTimeouts>=kMaxConsecutiveReceiveTimeouts){
           send(408,"text/plain","Request body timed out");
+          gResponseHeaders.clear();
           current_=nullptr;
           return ESP_OK;
         }
@@ -217,6 +239,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
       }
       if(got<=0){
         send(400,"text/plain","Request body read failed");
+        gResponseHeaders.clear();
         current_=nullptr;
         return ESP_OK;
       }
@@ -228,6 +251,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
 
   if(route->handler)route->handler();
   if(!ctx.responded)send(204);
+  gResponseHeaders.clear();
   current_=nullptr;
   return ESP_OK;
 }
