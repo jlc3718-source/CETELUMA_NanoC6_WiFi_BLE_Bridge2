@@ -1,0 +1,1 @@
+Isolated full-flash rebuild trigger for Anderson Home v3.1.11.
