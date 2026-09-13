@@ -1,0 +1,46 @@
+name: Build Anderson OTA Escape Bridge
+
+on:
+  push:
+    branches: ['codex/ota-escape-bridge']
+    paths: ['bridge/**','.github/workflows/build-ota-escape-bridge.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO and esptool
+        run: python -m pip install -q platformio esptool
+      - name: Build bridge
+        run: pio run -d bridge -e m5stack-nanoc6
+      - name: Verify bridge image
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('bridge/.pio/build/m5stack-nanoc6/firmware.bin')
+          b=p.read_bytes()
+          assert b and b[0]==0xE9
+          assert len(b)<0x1E0000
+          print('bytes',len(b))
+          print('sha256',hashlib.sha256(b).hexdigest())
+          PY
+          python -m esptool --chip esp32c6 image-info bridge/.pio/build/m5stack-nanoc6/firmware.bin
+      - name: Package bridge
+        run: |
+          mkdir -p release
+          cp bridge/.pio/build/m5stack-nanoc6/firmware.bin release/Anderson_OTA_Escape_Bridge.bin
+          sha256sum release/Anderson_OTA_Escape_Bridge.bin > release/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-OTA-Escape-Bridge
+          path: release/*
+          if-no-files-found: error
