@@ -21,7 +21,11 @@ jobs:
       - name: Install PlatformIO
         run: python -m pip install -q platformio==6.2.0
       - name: Compile recovery portal
-        run: pio run -d recovery-portal -e nanoc6-recovery -j 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/F"/"/g' recovery-portal/src/main.cpp
+          pio run -d recovery-portal -e nanoc6-recovery -j 4
       - name: Verify compact APP image
         shell: bash
         run: |
