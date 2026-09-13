@@ -1,4 +1,5 @@
 #include "Arduino.h"
+#include "BootHealth.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 extern void setup();
@@ -14,5 +15,9 @@ extern "C" void app_main(){
     return;
   }
   setup();
-  for(;;)loop();
+  bootHealthBegin();
+  for(;;){
+    loop();
+    bootHealthLoop();
+  }
 }
