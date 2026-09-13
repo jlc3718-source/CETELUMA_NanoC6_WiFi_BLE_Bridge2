@@ -24,6 +24,8 @@ jobs:
         run: |
           grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
           ! grep -Eq '^framework[[:space:]]*=[[:space:]]*arduino' firmware/platformio.ini
+          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.0"
+          grep -q 'ANDERSON_FIRMWARE_VERSION="4.0.0"' firmware/src/main.cpp
           grep -q 'X-Anderson-Filename' firmware/web/index.html
           grep -q 'X-Anderson-Filename' firmware/web/recovery.html
           grep -q 'Emergency Firmware Flash' firmware/web/v3_mockup.js
