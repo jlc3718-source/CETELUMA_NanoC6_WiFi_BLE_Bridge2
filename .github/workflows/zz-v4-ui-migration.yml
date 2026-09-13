@@ -5,6 +5,7 @@ on:
       - work/v4.0.0-native-idf
     paths:
       - .github/workflows/zz-v4-ui-migration.yml
+      - .github/scripts/v4-ui-migration.py
 permissions:
   contents: write
 jobs:
