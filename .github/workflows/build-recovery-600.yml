@@ -1,0 +1,62 @@
+name: Build Anderson Recovery 6.0.0
+
+on:
+  push:
+    branches: ['rescue/6.0.0-recovery-portal']
+    paths: ['recovery-portal/**', '.github/workflows/build-recovery-600.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install -q platformio==6.2.0
+      - name: Compile recovery portal 6.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/F"/"/g; s/4\.0\.5/6.0.0/g' recovery-portal/src/main.cpp
+          grep -q 'VERSION\[\]="6.0.0"' recovery-portal/src/main.cpp
+          pio run -d recovery-portal -e nanoc6-recovery -j 4
+      - name: Verify compact APP image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovery-release
+          cp recovery-portal/.pio/build/nanoc6-recovery/firmware.bin recovery-release/and_6.0.0.bin
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          p=Path('recovery-release/and_6.0.0.bin'); d=p.read_bytes()
+          if not d or d[0] != 0xE9: raise SystemExit('not ESP APP image')
+          if len(d) >= 1350000: raise SystemExit(f'recovery image too large: {len(d)}')
+          m={'version':'6.0.0','bytes':len(d),'sha256':hashlib.sha256(d).hexdigest(),'commit':os.environ['GITHUB_SHA'],'magic':'0xE9','app_only':True,'purpose':'remote recovery portal above all Galaxy 5.x holds'}
+          Path('recovery-release/release.json').write_text(json.dumps(m,indent=2)+'\n')
+          print(json.dumps(m,indent=2))
+          PY
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Recovery-6.0.0
+          path: recovery-release/*
+          if-no-files-found: error
+      - name: Publish recovery release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create anderson-v6.0.0 recovery-release/and_6.0.0.bin recovery-release/release.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title 'Anderson Recovery v6.0.0' \
+            --notes 'Emergency remote recovery portal intentionally versioned above all Galaxy 5.x holds. Preserves NVS, serves port 80, manual firmware upload, dynamic signed-manifest OTA.'
