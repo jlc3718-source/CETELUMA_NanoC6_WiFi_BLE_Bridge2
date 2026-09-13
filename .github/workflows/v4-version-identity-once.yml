@@ -1,0 +1,41 @@
+name: One-time v4 Runtime Identity Update
+on:
+  push:
+    branches: ['work/v4.0.0-native-idf']
+    paths: ['.github/workflows/v4-version-identity-once.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v4.0.0-native-idf
+          fetch-depth: 0
+      - name: Set one authoritative v4 identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/src/main.cpp')
+          s=p.read_text()
+          old='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.14";'
+          new='static constexpr const char* ANDERSON_FIRMWARE_VERSION="4.0.0";'
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one legacy runtime identity, found {s.count(old)}')
+          p.write_text(s.replace(old,new))
+          Path('FIRMWARE_VERSION.txt').write_text('4.0.0\n')
+          PY
+          grep -q 'ANDERSON_FIRMWARE_VERSION="4.0.0"' firmware/src/main.cpp
+          test "$(cat FIRMWARE_VERSION.txt)" = "4.0.0"
+          rm .github/workflows/v4-version-identity-once.yml
+      - name: Commit exact source identity
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add firmware/src/main.cpp FIRMWARE_VERSION.txt .github/workflows/v4-version-identity-once.yml
+          git commit -m 'Set native v4.0.0 runtime identity'
+          git push origin HEAD:work/v4.0.0-native-idf
