@@ -24,6 +24,7 @@ jobs:
           set -euo pipefail
           python -m pip install -U platformio
           python -m pip install -r tools/requirements-build.txt
+          python -m pip install esptool
           npm ci --prefix tools
 
       - name: Generate embedded web assets and validate release inputs
@@ -98,7 +99,6 @@ jobs:
           put(part_data, 0x8000, 'partition table')
           put(app_data, 0x10000, 'app0')
 
-          # If ESP-IDF produced initial OTA data, include it at the project's otadata offset.
           ota_candidates = [b/'ota_data_initial.bin', b/'otadata.bin']
           ota_file = next((p for p in ota_candidates if p.exists() and p.stat().st_size), None)
           if ota_file:
@@ -110,7 +110,6 @@ jobs:
           out = Path('Anderson_Home_4.0.3_COMPLETE_FLASH_4MB.bin')
           out.write_bytes(image)
 
-          # Independent merge check using esptool for every populated segment.
           merged = Path('Anderson_Home_4.0.3_COMPLETE_FLASH_esptool.bin')
           cmd = ['python', '-m', 'esptool', '--chip', 'esp32c6', 'merge_bin', '-o', str(merged),
                  '0x0', str(boot), '0x8000', str(part), '0x10000', str(app)]
@@ -121,7 +120,6 @@ jobs:
           if image[:len(merged_data)] != merged_data:
               raise SystemExit('Independent esptool merge does not match complete image contents')
 
-          # Verify inserted segments byte-for-byte after final image creation.
           verify = out.read_bytes()
           if len(verify) != 4 * 1024 * 1024:
               raise SystemExit('Complete image is not exactly 4MB')
@@ -132,7 +130,6 @@ jobs:
               if verify[off:off+len(data)] != data:
                   raise SystemExit(f'Final image verification failed for {label}')
 
-          # esptool must recognize both bootloader and app images.
           subprocess.check_call(['python','-m','esptool','--chip','esp32c6','image_info',str(boot)])
           subprocess.check_call(['python','-m','esptool','--chip','esp32c6','image_info',str(app)])
 
