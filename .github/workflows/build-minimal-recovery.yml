@@ -1,0 +1,39 @@
+name: Build Anderson Minimal Recovery
+
+on:
+  push:
+    branches: ['codex/minimal-recovery-updater']
+    paths:
+      - 'minimal-recovery/**'
+      - '.github/workflows/build-minimal-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: python -m pip install -q platformio
+      - name: Build recovery firmware
+        run: pio run -d minimal-recovery -e nanoc6-recovery
+      - name: Verify artifact and hash
+        run: |
+          test -s minimal-recovery/.pio/build/nanoc6-recovery/firmware.bin
+          mkdir -p release-minimal
+          cp minimal-recovery/.pio/build/nanoc6-recovery/firmware.bin release-minimal/Anderson-Minimal-Recovery.bin
+          sha256sum release-minimal/Anderson-Minimal-Recovery.bin | tee release-minimal/Anderson-Minimal-Recovery.sha256
+          stat -c 'firmware bytes: %s' release-minimal/Anderson-Minimal-Recovery.bin
+      - name: Upload recovery firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Minimal-Recovery-NanoC6
+          path: release-minimal/*
+          if-no-files-found: error
