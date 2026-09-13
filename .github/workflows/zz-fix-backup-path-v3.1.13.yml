@@ -25,67 +25,26 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-
           p=Path('firmware/src/CustomizedBackup.cpp')
           s=p.read_text()
-          old='''static constexpr const char* CUSTOM_BACKUP_PATH="/customized-settings-backup.json";\nstatic constexpr const char* CUSTOM_BACKUP_TMP="/customized-settings-backup.tmp";'''
-          new='''// ESP32 SPIFFS object names are limited; keep live paths <=31 characters including the leading slash.\nstatic constexpr const char* CUSTOM_BACKUP_PATH="/cust-backup.json";\nstatic constexpr const char* CUSTOM_BACKUP_TMP="/cust-backup.tmp";\n// v3.1.12 used an overlength final name. The temp name was valid and can contain a verified backup after the failed promotion.\nstatic constexpr const char* LEGACY_BACKUP_PATH="/customized-settings-backup.json";\nstatic constexpr const char* LEGACY_BACKUP_TMP="/customized-settings-backup.tmp";\nstatic_assert(sizeof("/cust-backup.json")-1<=31,"SPIFFS backup path too long");\nstatic_assert(sizeof("/cust-backup.tmp")-1<=31,"SPIFFS backup temp path too long");'''
+          old='static constexpr const char* CUSTOM_BACKUP_PATH="/customized-settings-backup.json";\nstatic constexpr const char* CUSTOM_BACKUP_TMP="/customized-settings-backup.tmp";'
+          new='// ESP32 SPIFFS object names are limited; keep live paths <=31 characters including the leading slash.\nstatic constexpr const char* CUSTOM_BACKUP_PATH="/cust-backup.json";\nstatic constexpr const char* CUSTOM_BACKUP_TMP="/cust-backup.tmp";\n// v3.1.12 used an overlength final name. The temp name was valid and can contain a verified backup after the failed promotion.\nstatic constexpr const char* LEGACY_BACKUP_PATH="/customized-settings-backup.json";\nstatic constexpr const char* LEGACY_BACKUP_TMP="/customized-settings-backup.tmp";\nstatic_assert(sizeof("/cust-backup.json")-1<=31,"SPIFFS backup path too long");\nstatic_assert(sizeof("/cust-backup.tmp")-1<=31,"SPIFFS backup temp path too long");'
           assert old in s
           s=s.replace(old,new,1)
-
-          pattern=r'''void customizedSettingsBackupBegin\(\)\{.*?\n\}\n\nbool customizedSettingsBackupCreate'''
-          replacement='''void customizedSettingsBackupBegin(){
-  backupFsReady=SPIFFS.begin(false);if(!backupFsReady)return;
-
-  // Recover the verified v3.1.12 temporary backup left behind when its overlength
-  // destination filename could not be created. Also accept the legacy final name
-  // if a filesystem implementation happened to allow it.
-  const char* legacyCandidates[]={LEGACY_BACKUP_TMP,LEGACY_BACKUP_PATH};
-  if(!SPIFFS.exists(CUSTOM_BACKUP_PATH)){
-    for(const char* candidate:legacyCandidates){
-      if(!SPIFFS.exists(candidate))continue;
-      String raw=readFile(candidate);JsonDocument d;
-      if(parseBackup(raw,d,nullptr)){
-        String ignored;
-        if(writeBackupPayload(raw,ignored)){SPIFFS.remove(candidate);break;}
-      }else SPIFFS.remove(candidate);
-    }
-  }
-
-  // Recover an interrupted write using only SPIFFS-safe short filenames.
-  if(SPIFFS.exists(CUSTOM_BACKUP_TMP)){
-    if(SPIFFS.exists(CUSTOM_BACKUP_PATH)){SPIFFS.remove(CUSTOM_BACKUP_TMP);}
-    else{
-      String raw=readFile(CUSTOM_BACKUP_TMP);JsonDocument d;
-      if(parseBackup(raw,d,nullptr)){
-        if(!SPIFFS.rename(CUSTOM_BACKUP_TMP,CUSTOM_BACKUP_PATH))SPIFFS.remove(CUSTOM_BACKUP_TMP);
-      }else SPIFFS.remove(CUSTOM_BACKUP_TMP);
-    }
-  }
-
-  // Once a valid short-name backup exists, stale v3.1.12 artifacts are no longer needed.
-  if(SPIFFS.exists(CUSTOM_BACKUP_PATH)){
-    if(SPIFFS.exists(LEGACY_BACKUP_TMP))SPIFFS.remove(LEGACY_BACKUP_TMP);
-    if(SPIFFS.exists(LEGACY_BACKUP_PATH))SPIFFS.remove(LEGACY_BACKUP_PATH);
-  }
-}
-
-bool customizedSettingsBackupCreate'''
+          pattern=r'void customizedSettingsBackupBegin\(\)\{.*?\n\}\n\nbool customizedSettingsBackupCreate'
+          replacement='void customizedSettingsBackupBegin(){\n  backupFsReady=SPIFFS.begin(false);if(!backupFsReady)return;\n\n  // Recover the verified v3.1.12 temporary backup left behind when its overlength\n  // destination filename could not be created. Also accept the legacy final name\n  // if a filesystem implementation happened to allow it.\n  const char* legacyCandidates[]={LEGACY_BACKUP_TMP,LEGACY_BACKUP_PATH};\n  if(!SPIFFS.exists(CUSTOM_BACKUP_PATH)){\n    for(const char* candidate:legacyCandidates){\n      if(!SPIFFS.exists(candidate))continue;\n      String raw=readFile(candidate);JsonDocument d;\n      if(parseBackup(raw,d,nullptr)){\n        String ignored;\n        if(writeBackupPayload(raw,ignored)){SPIFFS.remove(candidate);break;}\n      }else SPIFFS.remove(candidate);\n    }\n  }\n\n  // Recover an interrupted write using only SPIFFS-safe short filenames.\n  if(SPIFFS.exists(CUSTOM_BACKUP_TMP)){\n    if(SPIFFS.exists(CUSTOM_BACKUP_PATH)){SPIFFS.remove(CUSTOM_BACKUP_TMP);}\n    else{\n      String raw=readFile(CUSTOM_BACKUP_TMP);JsonDocument d;\n      if(parseBackup(raw,d,nullptr)){\n        if(!SPIFFS.rename(CUSTOM_BACKUP_TMP,CUSTOM_BACKUP_PATH))SPIFFS.remove(CUSTOM_BACKUP_TMP);\n      }else SPIFFS.remove(CUSTOM_BACKUP_TMP);\n    }\n  }\n\n  // Once a valid short-name backup exists, stale v3.1.12 artifacts are no longer needed.\n  if(SPIFFS.exists(CUSTOM_BACKUP_PATH)){\n    if(SPIFFS.exists(LEGACY_BACKUP_TMP))SPIFFS.remove(LEGACY_BACKUP_TMP);\n    if(SPIFFS.exists(LEGACY_BACKUP_PATH))SPIFFS.remove(LEGACY_BACKUP_PATH);\n  }\n}\n\nbool customizedSettingsBackupCreate'
           s2,n=re.subn(pattern,replacement,s,count=1,flags=re.S)
           assert n==1
           p.write_text(s2)
-
           Path('FIRMWARE_VERSION.txt').write_text('3.1.13\n')
-
-          # Regression guard: the active SPIFFS names must stay within the 31-character object-name limit.
           text=p.read_text()
           for value in ['/cust-backup.json','/cust-backup.tmp']:
             assert len(value)<=31,(value,len(value))
             assert f'"{value}"' in text
           assert 'LEGACY_BACKUP_TMP="/customized-settings-backup.tmp"' in text
           assert 'writeBackupPayload(raw,ignored)' in text
-          assert 'FIRMWARE_VERSION.txt' and Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.13'
-          print('PASS: v3.1.13 uses SPIFFS-safe backup names and migrates the v3.1.12 verified temp backup')
+          assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.13'
+          print('PASS v3.1.13 SPIFFS-safe backup names and legacy temp recovery')
           PY
           python tools/test_regressions.py
           python tools/test_audit_fixes.py
