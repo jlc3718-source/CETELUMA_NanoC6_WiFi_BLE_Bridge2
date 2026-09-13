@@ -86,3 +86,14 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
+
+
+# v4 native-IDF hardware regression guards.
+compat=t('firmware/src/ArduinoCompat.cpp')
+assert 'if(ticks==0)ticks=1' in compat
+assert 'esp_image_get_metadata(&pos,&metadata)' in compat
+assert 'id="openLoginRecovery"' in web and 'id="loginRecoveryFile"' in web and 'id="loginRecoveryPin"' in web
+assert "'/api/update?recovery=1'" in web and 'X-Anderson-Recovery-PIN' in web
+assert 'emergencyFirmwarePanel' not in mock
+assert 'Reloading the new firmware UI' in web and 'setTimeout(()=>location.reload(),700)' in web
+assert '<span class="sysLabel">App Loop</span>' in web
