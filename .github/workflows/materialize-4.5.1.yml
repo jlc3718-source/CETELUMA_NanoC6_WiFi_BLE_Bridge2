@@ -1,0 +1,41 @@
+name: Materialize Anderson Home 4.5.1
+
+on:
+  push:
+    branches: ['codex/work-4.5.1-do']
+    paths:
+      - 'tools/apply_451_restore.py'
+      - '.github/workflows/materialize-4.5.1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/work-4.5.1-do
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply 4.5.1 source changes
+        run: python tools/apply_451_restore.py
+      - name: Verify expected source markers
+        run: |
+          grep -F 'ANDERSON_FIRMWARE_VERSION="4.5.1"' firmware/src/main.cpp
+          grep -F '/api/custom-settings-backup' firmware/src/main.cpp
+          grep -F 'Save / Restore Custom Settings' firmware/web/index.html
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = '4.5.1'
+      - name: Commit materialized source
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add firmware/src/main.cpp firmware/web/index.html FIRMWARE_VERSION.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Anderson Home 4.5.1: restore custom settings backup and restore'
+            git push origin HEAD:refs/heads/codex/work-4.5.1-do
+          fi
