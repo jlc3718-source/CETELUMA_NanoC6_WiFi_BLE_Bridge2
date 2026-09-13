@@ -56,7 +56,7 @@ assert 'rootProbe()' in boot_health and 'firmwareProbe()' in boot_health
 assert 'ROLLBACK_DEADLINE_US=45LL*1000000LL' in boot_health
 assert 'esp_restart();' in boot_health
 
-# v4.0.1 hardware-observed native-IDF regressions and recovery placement.
+# Native-IDF v4 hardware regressions; v4.0.3 keeps emergency flashing off the front login screen.
 compat=t('firmware/src/ArduinoCompat.cpp')
 assert 'if(ticks==0)ticks=1' in compat
 assert 'esp_image_verify' in compat and 'meta.image_len' in compat
