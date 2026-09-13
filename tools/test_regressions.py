@@ -56,17 +56,22 @@ assert 'rootProbe()' in boot_health and 'firmwareProbe()' in boot_health
 assert 'ROLLBACK_DEADLINE_US=45LL*1000000LL' in boot_health
 assert 'esp_restart();' in boot_health
 
-# Native-IDF v4 hardware regressions; v4.0.3 keeps emergency flashing off the front login screen.
+# Native-IDF v4 hardware regressions: emergency APP-only flashing must remain
+# available before login, survive a dropped HTTP response, and tolerate long stalls.
 compat=t('firmware/src/ArduinoCompat.cpp')
+webserver=t('firmware/src/WebServer.cpp')
 assert 'if(ticks==0)ticks=1' in compat
 assert 'esp_image_verify' in compat and 'meta.image_len' in compat
-assert 'id="loginEmergencyRecovery"' not in web
-assert 'loginRecoveryFile' not in web and 'loginRecoveryFlash' not in web
-assert 'anderson-login-emergency-recovery' not in web
-assert 'X-Anderson-Recovery-PIN' not in web and '/api/update?recovery=1' not in web
-assert 'Emergency Firmware Recovery' not in web and 'Emergency Flash &amp; Reboot' not in web
+assert 'id="loginEmergencyRecovery"' in web
+assert 'loginRecoveryFile' in web and 'loginRecoveryFlash' in web
+assert 'anderson-login-emergency-recovery' in web
+assert 'X-Anderson-Recovery-PIN' in web and '/api/update?recovery=1' in web
+assert 'Emergency Firmware Recovery' in web and 'Emergency Flash &amp; Reboot' in web
+assert 'verifyBootAfterDisconnect' in web and 'recoveryProbe=' in web
 assert 'X-Anderson-Recovery-PIN' in main and 'otaRecoveryRequest' in main
 assert '/api/update' in t('firmware/web/recovery.html')
+assert 'kUploadMaxConsecutiveReceiveTimeouts = 9' in webserver
+assert '>=kUploadMaxConsecutiveReceiveTimeouts' in webserver
 assert 'Emergency Firmware Flash' not in mock
 assert not Path('firmware/web/v4_home_recovery.js').exists()
 assert 'V4_HOME_JS' not in release

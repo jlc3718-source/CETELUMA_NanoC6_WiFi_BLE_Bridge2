@@ -11,6 +11,7 @@ namespace {
 constexpr int64_t kUploadAbsoluteTimeoutUs = 10LL * 60LL * 1000000LL;
 constexpr int64_t kBodyAbsoluteTimeoutUs = 2LL * 60LL * 1000000LL;
 constexpr uint8_t kMaxConsecutiveReceiveTimeouts = 3;
+constexpr uint8_t kUploadMaxConsecutiveReceiveTimeouts = 9;
 
 // ESP-IDF's httpd_resp_set_hdr() retains pointers to the supplied strings until
 // the response is sent. Arduino-style callers routinely pass temporary String
@@ -182,7 +183,7 @@ esp_err_t WebServer::dispatch(Route* route,httpd_req_t* req){
       if(esp_timer_get_time()>=deadlineUs){aborted=true;timedOut=true;break;}
       int got=httpd_req_recv(req,(char*)buffer,(int)std::min(remaining,sizeof(buffer)));
       if(got==HTTPD_SOCK_ERR_TIMEOUT){
-        if(++consecutiveTimeouts>=kMaxConsecutiveReceiveTimeouts){aborted=true;timedOut=true;break;}
+        if(++consecutiveTimeouts>=kUploadMaxConsecutiveReceiveTimeouts){aborted=true;timedOut=true;break;}
         continue;
       }
       if(got<=0){aborted=true;break;}
