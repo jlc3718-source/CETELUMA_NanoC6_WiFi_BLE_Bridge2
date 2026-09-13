@@ -21,4 +21,4 @@ uint32_t ESPClass::getHeapSize() const{return (uint32_t)heap_caps_get_total_size
 uint32_t ESPClass::getFreeHeap() const{return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);}
 uint32_t ESPClass::getMinFreeHeap() const{return (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);}
 uint32_t ESPClass::getMaxAllocHeap() const{return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);}
-uint32_t ESPClass::getSketchSize() const{const esp_partition_t* p=esp_ota_get_running_partition();if(!p)return 0;esp_partition_pos_t pos{};pos.offset=p->address;pos.size=p->size;esp_image_metadata_t meta{};return esp_image_get_metadata(&pos,&meta)==ESP_OK?(uint32_t)meta.image_len:0;}
+uint32_t ESPClass::getSketchSize() const{const esp_partition_t* p=esp_ota_get_running_partition();if(!p)return 0;esp_partition_pos_t pos{};pos.offset=p->address;pos.size=p->size;esp_image_metadata_t meta{};meta.start_addr=p->address;return esp_image_verify(ESP_IMAGE_VERIFY_SILENT,&pos,&meta)==ESP_OK?(uint32_t)meta.image_len:0;}
