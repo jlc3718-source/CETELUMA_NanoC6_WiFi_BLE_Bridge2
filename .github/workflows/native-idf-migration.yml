@@ -33,8 +33,12 @@ jobs:
           grep -q 'andersonSha256Compute' firmware/src/RemoteUpdate.cpp
           test ! -e firmware/include/mbedtls/sha256.h
           node --check firmware/web/v3_mockup.js
-      - name: Install PlatformIO
-        run: pip install -q platformio==6.2.0
+      - name: Install build tools
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Install pinned web minifier
+        run: npm ci --prefix tools --no-audit --no-fund
+      - name: Prepare native firmware assets
+        run: python tools/release.py prepare
       - name: Compile native ESP-IDF NanoC6 image
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
       - name: Run Anderson source regressions
