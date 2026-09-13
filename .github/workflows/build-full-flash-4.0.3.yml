@@ -1,0 +1,66 @@
+name: Build Full Flash 4.0.3
+on:
+  push:
+    branches: [build/full-flash-4.0.3]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: pip install -U platformio
+      - name: Build exact 4.0.3 source
+        working-directory: firmware
+        run: pio run -e m5stack-nanoc6
+      - name: Assemble and verify complete 4MB flash image
+        working-directory: firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD=.pio/build/m5stack-nanoc6
+          python - <<'PY'
+          import json, hashlib, os, subprocess
+          from pathlib import Path
+          b=Path('.pio/build/m5stack-nanoc6')
+          app=b/'firmware.bin'; boot=b/'bootloader.bin'; part=b/'partitions.bin'
+          for p in (app,boot,part):
+              if not p.exists(): raise SystemExit(f'Missing {p}')
+          if app.read_bytes()[:1] != b'\xe9': raise SystemExit('Invalid app image magic')
+          # Standard ESP32-C6 PlatformIO offsets: bootloader 0x0000, partition table 0x8000.
+          # This project's partition CSV puts otadata at 0xE000 and app0 at 0x10000.
+          # Generate a deterministic 4MB factory image with erased (0xFF) NVS/otadata/app1/SPIFFS.
+          image=bytearray(b'\xff'*(4*1024*1024))
+          def put(path, off):
+              data=path.read_bytes(); end=off+len(data)
+              if end>len(image): raise SystemExit(f'{path} exceeds flash')
+              image[off:end]=data
+          put(boot,0x0000); put(part,0x8000); put(app,0x10000)
+          out=Path('Anderson_Home_4.0.3_FULL_FLASH_4MB.bin'); out.write_bytes(image)
+          # Also use esptool merge-bin as an independent structural check.
+          merged=Path('Anderson_Home_4.0.3_FULL_FLASH_esptool.bin')
+          subprocess.check_call(['python','-m','esptool','--chip','esp32c6','merge_bin','-o',str(merged),'0x0',str(boot),'0x8000',str(part),'0x10000',str(app)])
+          m=merged.read_bytes()
+          if image[:len(m)] != m: raise SystemExit('Independent esptool merge differs from deterministic full image')
+          meta={
+            'version':'4.0.3','source_commit':'8122adfdca6f5c0ddbb4e0b89faa2ce651904b78',
+            'flash_size':len(image),'sha256':hashlib.sha256(image).hexdigest(),
+            'app_size':app.stat().st_size,'app_sha256':hashlib.sha256(app.read_bytes()).hexdigest(),
+            'offsets':{'bootloader':'0x0000','partition_table':'0x8000','app0':'0x10000'},
+            'erased_regions':'NVS, otadata, app1, SPIFFS are 0xFF in this full-device image',
+            'flash_command':'esptool --chip esp32c6 --port <PORT> write_flash 0x0 Anderson_Home_4.0.3_FULL_FLASH_4MB.bin'
+          }
+          Path('Anderson_Home_4.0.3_FULL_FLASH_4MB.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print(json.dumps(meta,indent=2))
+          PY
+      - name: Upload full-flash package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-4.0.3-FULL-FLASH-4MB
+          path: |
+            firmware/Anderson_Home_4.0.3_FULL_FLASH_4MB.bin
+            firmware/Anderson_Home_4.0.3_FULL_FLASH_4MB.json
+          if-no-files-found: error
