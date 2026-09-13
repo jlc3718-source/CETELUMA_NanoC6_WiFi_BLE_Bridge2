@@ -38,6 +38,11 @@ assert 'data["customLights"]' in backup and 'data["customSchedules"]' in backup 
 assert 'server.on("/api/customized-backup/status"' in main and 'server.on("/api/customized-backup/create"' in main and 'server.on("/api/customized-backup/restore"' in main
 assert 'customizedSettingsBackupAutoLoop(store.get(),ANDERSON_FIRMWARE_VERSION)' in main
 assert 'id="settingsCustomizedTab"' in web and 'id="customBackupNow"' in web and 'id="customRestoreNow"' in web
+assert "['customized','Customized Settings']" in mock
+assert "const controllerNodes=generalHost?[...generalHost.children]:[]" in mock
+assert "controllerNodes.forEach(node=>panes.get(category(node)).appendChild(node))" in mock
+assert "window.andersonActivateSettingsTab=activate" in mock
+assert "primarySettings.addEventListener('click',()=>activate('general'))" in mock
 assert 'only one customized-settings backup is retained' in web
 assert 'Wi-Fi passwords, profile PINs, firmware/OTA state' in web
 

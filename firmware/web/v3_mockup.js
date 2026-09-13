@@ -156,8 +156,12 @@
     const page=q('.page[data-page="settings"]');
     if(!page || byId('v3SettingsTabs'))return;
     const title=q(':scope > .v3PageTitle',page);
-    const original=[...page.children].filter(node=>node!==title);
-    const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];
+    const legacyTabs=byId('settingsGeneralTab')?.parentElement;
+    const generalHost=byId('settingsGeneralPane');
+    const customHost=byId('settingsCustomizedPane');
+    const direct=[...page.children].filter(node=>node!==title&&node!==legacyTabs&&node!==generalHost&&node!==customHost);
+    const controllerNodes=generalHost?[...generalHost.children]:[];
+    const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware'],['customized','Customized Settings']];
     const tabs=el('div','v3SettingsTabs');tabs.id='v3SettingsTabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Settings sections');
     const panes=new Map(),buttons=new Map();
     defs.forEach(([id,label])=>{
@@ -178,14 +182,22 @@
       if(heading==='Firmware Update'||heading==='Firmware Revision')return 'firmware';
       return 'general';
     };
-    original.forEach(node=>panes.get(category(node)).appendChild(node));
-    const activate=id=>{
+    direct.forEach(node=>panes.get(category(node)).appendChild(node));
+    controllerNodes.forEach(node=>panes.get(category(node)).appendChild(node));
+    if(legacyTabs){legacyTabs.hidden=true;panes.get('general').appendChild(legacyTabs);}
+    if(generalHost){generalHost.replaceChildren();generalHost.hidden=true;panes.get('general').appendChild(generalHost);}
+    if(customHost){customHost.hidden=false;panes.get('customized').appendChild(customHost);}
+    const activate=requested=>{
+      const id=panes.has(requested)?requested:'general';
       defs.forEach(([key])=>{
         const active=key===id,button=buttons.get(key),pane=panes.get(key);
         button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;
         pane.classList.toggle('active',active);pane.hidden=!active;
       });
+      if(customHost)customHost.hidden=id!=='customized';
+      if(id==='customized'&&typeof window.loadCustomizedBackupStatus==='function')window.loadCustomizedBackupStatus();
     };
+    window.andersonActivateSettingsTab=activate;
     buttons.forEach((button,id)=>button.addEventListener('click',()=>activate(id)));
     tabs.addEventListener('keydown',event=>{
       if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
@@ -193,6 +205,7 @@
       if(event.key==='ArrowRight')next=(next+1)%ids.length;else if(event.key==='ArrowLeft')next=(next-1+ids.length)%ids.length;else if(event.key==='Home')next=0;else next=ids.length-1;
       activate(ids[next]);buttons.get(ids[next]).focus();
     });
+    const primarySettings=q('.tab[data-tab="settings"]');if(primarySettings)primarySettings.addEventListener('click',()=>activate('general'));
     activate('general');
   }
   function syncRole() {
