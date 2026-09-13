@@ -25,11 +25,17 @@ jobs:
         run: |
           python -m pip install -q -r tools/requirements-build.txt
           npm ci --prefix tools --no-audit --no-fund
-      - name: Prepare and compile 4.0.3 platform image
+      - name: Compile native 4.0.3 boot components
         run: |
           python tools/release.py prepare
           pio run -d firmware -e m5stack-nanoc6 -j 4
-          test -s firmware/.pio/build/m5stack-nanoc6/firmware.factory.bin
+          B=firmware/.pio/build/m5stack-nanoc6
+          test -s "$B/bootloader.bin"
+          test -s "$B/partitions.bin"
+          test -s "$B/ota_data_initial.bin"
+          test "$(stat -c%s "$B/bootloader.bin")" -lt $((0x8000))
+          test "$(stat -c%s "$B/partitions.bin")" -le $((0x1000))
+          test "$(stat -c%s "$B/ota_data_initial.bin")" -le $((0x2000))
       - name: Retrieve immutable published 4.0.3 APP
         run: |
           curl -fL --retry 4 --retry-delay 2 -o /tmp/and_4.0.3.bin https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v4.0.3/and_4.0.3.bin
@@ -41,43 +47,37 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import hashlib, json
-          factory=Path('firmware/.pio/build/m5stack-nanoc6/firmware.factory.bin').read_bytes()
-          app=Path('/tmp/and_4.0.3.bin').read_bytes()
-          if len(factory) <= 0x10000: raise SystemExit('factory image is missing boot/partition content')
-          if len(app) != 1723376 or hashlib.sha256(app).hexdigest() != 'e242d8197e9b49cc9b5db5ff3c59fa994445cbbc75b31b65a1176b4c81cddb73': raise SystemExit('published 4.0.3 APP identity mismatch')
-          full=bytearray(b'\xff' * 0x400000)
-          full[:len(factory)] = factory
-          # Force the immutable published v4.0.3 APP into OTA_0 and blank the rest of both OTA slots.
-          full[0x10000:0x3D0000] = b'\xff' * (0x3D0000-0x10000)
-          full[0x10000:0x10000+len(app)] = app
-          # Full-device recovery intentionally starts with blank user NVS and SPIFFS.
-          full[0x9000:0xE000] = b'\xff' * 0x5000
-          full[0x3D0000:0x400000] = b'\xff' * 0x30000
+          b=Path('firmware/.pio/build/m5stack-nanoc6')
+          boot=(b/'bootloader.bin').read_bytes(); part=(b/'partitions.bin').read_bytes(); ota=(b/'ota_data_initial.bin').read_bytes(); app=Path('/tmp/and_4.0.3.bin').read_bytes()
+          expected='e242d8197e9b49cc9b5db5ff3c59fa994445cbbc75b31b65a1176b4c81cddb73'
+          if len(app)!=1723376 or hashlib.sha256(app).hexdigest()!=expected: raise SystemExit('published 4.0.3 APP identity mismatch')
+          if len(boot)>=0x8000 or len(part)>0x1000 or len(ota)>0x2000: raise SystemExit('boot component exceeds reserved region')
+          full=bytearray(b'\xff'*0x400000)
+          full[0:len(boot)]=boot
+          full[0x8000:0x8000+len(part)]=part
+          full[0xE000:0xE000+len(ota)]=ota
+          full[0x10000:0x10000+len(app)]=app
           out=Path('full-flash'); out.mkdir()
           image=out/'Anderson_Home_4.0.3_FULL_4MB.bin'; image.write_bytes(full)
-          info={
-            'version':'4.0.3','flash_bytes':len(full),'app_offset':'0x10000','app_bytes':len(app),
-            'app_sha256':hashlib.sha256(app).hexdigest(),'full_sha256':hashlib.sha256(full).hexdigest(),
-            'source_release_commit':'8122adfdca6f5c0ddbb4e0b89faa2ce651904b78',
-            'layout':{'nvs':'0x9000-0xDFFF blank','otadata':'factory initialized','app0':'0x10000 immutable 4.0.3','app1':'0x1F0000 blank','spiffs':'0x3D0000 blank'},
-            'flash_address':'0x0','chip':'ESP32-C6','flash_size':'4MB'
-          }
+          info={'version':'4.0.3','flash_bytes':len(full),'flash_address':'0x0','chip':'ESP32-C6','flash_size':'4MB','bootloader_offset':'0x0','partition_table_offset':'0x8000','otadata_offset':'0xE000','app_offset':'0x10000','app_bytes':len(app),'app_sha256':hashlib.sha256(app).hexdigest(),'full_sha256':hashlib.sha256(full).hexdigest(),'source_release_commit':'8122adfdca6f5c0ddbb4e0b89faa2ce651904b78','wipes_existing_settings':True}
           (out/'Anderson_Home_4.0.3_FULL_4MB.json').write_text(json.dumps(info,indent=2)+'\n')
           print(json.dumps(info,indent=2))
           PY
-      - name: Verify full image boundaries and embedded APP
+      - name: Verify full image
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json
-          p=Path('full-flash/Anderson_Home_4.0.3_FULL_4MB.bin'); d=p.read_bytes(); app=Path('/tmp/and_4.0.3.bin').read_bytes()
+          import hashlib
+          d=Path('full-flash/Anderson_Home_4.0.3_FULL_4MB.bin').read_bytes(); app=Path('/tmp/and_4.0.3.bin').read_bytes()
           assert len(d)==0x400000
+          assert d[0]==0xE9
+          assert d[0x10000]==0xE9
           assert d[0x10000:0x10000+len(app)]==app
           assert hashlib.sha256(d[0x10000:0x10000+len(app)]).hexdigest()=='e242d8197e9b49cc9b5db5ff3c59fa994445cbbc75b31b65a1176b4c81cddb73'
           assert set(d[0x9000:0xE000])=={0xff}
           assert set(d[0x1F0000:0x3D0000])=={0xff}
           assert set(d[0x3D0000:0x400000])=={0xff}
-          print('FULL 4MB image verified; published 4.0.3 APP embedded exactly at 0x10000')
+          print('VERIFIED full 4MB ESP32-C6 image with exact published Anderson 4.0.3 APP')
           print('sha256='+hashlib.sha256(d).hexdigest())
           PY
       - uses: actions/upload-artifact@v4
