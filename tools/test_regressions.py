@@ -22,10 +22,9 @@ assert '{0xE0B400,0xE0B400}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
 assert "{name:'Yellow',reference:'#FFFF00',output:'#E0B400'}" in web
 assert "let running={name:'Yellow',colors:['#E0B400']" in web
 assert "'#FFFF44':'#E0B400'" in web
-retired_names=['Burgundy','Cyan','Teal','Sky Blue','Amber Gold','Lavender','Silver Gray']
-for name in retired_names: assert f"name:'{name}'" not in web
 for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D','0xA0A5AF']: assert value not in ev
 assert "{name:'Navy Blue',reference:'#000080',output:'#001478'}" in web
+palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and palette_block.group(1).count("{name:'")==9
 assert 'PALETTE_MIGRATION_REVISION=8' in t('firmware/src/PaletteMigration.cpp')
 
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
