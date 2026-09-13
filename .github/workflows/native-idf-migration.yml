@@ -19,7 +19,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: ${{ runner.os }}-anderson-native-idf-v401
+          key: ${{ runner.os }}-anderson-native-idf-v402
       - name: Verify native ESP-IDF source contract
         run: |
           grep -Eq '^framework[[:space:]]*=[[:space:]]*espidf$' firmware/platformio.ini
