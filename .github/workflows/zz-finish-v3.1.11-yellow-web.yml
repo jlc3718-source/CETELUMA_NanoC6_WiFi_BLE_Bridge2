@@ -1,0 +1,59 @@
+name: Finish Anderson v3.1.11 Yellow Web Mapping
+
+on:
+  push:
+    branches: ['work/v3.1.11-yellow-unified']
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/v3.1.11-yellow-unified
+      - name: Align every functional browser Yellow mapping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/web/index.html')
+          s=p.read_text()
+          s=s.replace('#FFFF44','#E0B400')
+          s=s.replace("'#FF6E00':'#FF0D00'","'#FF6E00':'#E0B400'")
+          marker='const EXPLICIT_LED={'
+          assert marker in s
+          s=s.replace(marker,marker+"'#FFFF44':'#E0B400',",1)
+          assert "{name:'Yellow',reference:'#FFFF00',output:'#E0B400'}" in s
+          assert "let running={name:'Yellow',colors:['#E0B400']" in s
+          assert "function addColor(v='#E0B400')" in s
+          assert "(ev.colors||['#E0B400']).forEach(addColor);" in s
+          assert "'#FF6E00':'#E0B400'" in s
+          assert "'#FFFF44':'#E0B400'" in s
+          p.write_text(s)
+
+          # The visual effect-preview dot should use the same approved Yellow as the controller UI.
+          q=Path('firmware/web/v3_mockup.js')
+          j=q.read_text().replace('#ffd24a','#E0B400').replace('#FFD24A','#E0B400')
+          q.write_text(j)
+
+          t=Path('tools/test_regressions.py')
+          r=t.read_text()
+          anchor="assert '{0xE0B400,0xE0B400}, // Yellow' in t('firmware/src/ColorCorrection.cpp')"
+          assert anchor in r
+          r=r.replace(anchor,anchor+"\nassert \"{name:'Yellow',reference:'#FFFF00',output:'#E0B400'}\" in web\nassert \"let running={name:'Yellow',colors:['#E0B400']\" in web\nassert \"'#FFFF44':'#E0B400'\" in web")
+          t.write_text(r)
+          PY
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+      - name: Commit final browser alignment and remove helper
+        run: |
+          rm -f .github/workflows/zz-finish-v3.1.11-yellow-web.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Align browser Yellow mapping to #E0B400"
+          git push origin HEAD:refs/heads/work/v3.1.11-yellow-unified
