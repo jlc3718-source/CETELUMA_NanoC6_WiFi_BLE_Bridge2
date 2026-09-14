@@ -9,6 +9,8 @@ main=main.replace('ANDERSON_FIRMWARE_VERSION="3.1.20"','ANDERSON_FIRMWARE_VERSIO
 mp.write_text(main)
 web=web.replace('3.1.20','3.1.21')
 
+# Critical 3.1.20 runtime fix: semanticColorName() was reached by renderColorBuilder()
+# before these lexical bindings initialized, throwing a TDZ ReferenceError and halting UI startup.
 old="let savedColors=[],savedColorLabels=[],activeColorChip=null,pickerH=0,pickerS=0,pickerV=1;"
 if old not in web: raise SystemExit('saved color declaration not found')
 web=web.replace(old,"let activeColorChip=null,pickerH=0,pickerS=0,pickerV=1;",1)
@@ -17,6 +19,7 @@ pos=web.find(anchor)
 if pos<0: raise SystemExit('semantic visual anchor missing')
 web=web[:pos]+"let savedColors=[],savedColorLabels=[];\n\n"+web[pos:]
 
+# Side-effect-free effect button renderer. Incoming state updates repaint buttons without POSTing.
 old="  const sync=()=>buttons.forEach(b=>b.classList.toggle('active',b.dataset.effect===sel.value));"
 new="  const sync=()=>buttons.forEach(b=>{const active=b.dataset.effect===sel.value;b.classList.toggle('active',active);b.setAttribute('aria-pressed',active?'true':'false')});\n  sel._syncEffectButtons=sync;"
 if old not in web: raise SystemExit('effect sync anchor missing')
@@ -24,6 +27,7 @@ web=web.replace(old,new,1)
 web=web.replace("  $('effectSelect').value=effect;\n  $('homeEffect').value=effect;","  $('effectSelect').value=effect;$('effectSelect')._syncEffectButtons?.();\n  $('homeEffect').value=effect;$('homeEffect')._syncEffectButtons?.();",1)
 web=web.replace("  $('effectSelect').value=effect;\n  setBuilderColors(colors,false);","  $('effectSelect').value=effect;$('effectSelect')._syncEffectButtons?.();\n  setBuilderColors(colors,false);",1)
 
+# Reuse the event editor's addColor path after RGB picker refresh so every chip keeps remove controls.
 old="document.querySelectorAll('.eventFavoriteGrid').forEach(g=>{const box=g.closest('.eventEditor'),colors=box?.querySelector('.row.wraprow');if(colors)renderEventFavoriteGrid(g,c=>{if(colors.children.length>=8)return;const b=document.createElement('button');b.type='button';b.className='colorChip';setChipColor(b,c);b.onclick=()=>openRgbWheel(b);colors.appendChild(b)})})"
 new="document.querySelectorAll('.eventFavoriteGrid').forEach(g=>{const box=g.closest('.eventEditor');if(box&&typeof box._addEventColor==='function')renderEventFavoriteGrid(g,c=>box._addEventColor(c))})"
 if old not in web: raise SystemExit('event favorite rebuild anchor missing')
@@ -36,17 +40,18 @@ if end<0: raise SystemExit('event addColor helper end missing')
 end+=2
 web=web[:end]+"box._addEventColor=addColor;"+web[end:]
 
+# Keep exact tuning information prominent in the dedicated tuning panel.
 web=web.replace("$('liveColorCode').textContent=semanticColorName(h);","$('liveColorCode').textContent=h;",1)
 webp.write_text(web)
 
 tp=Path('tools/test_regressions.py')
 t=tp.read_text()
+t=t.replace("assert \"$('liveColorCode').textContent=semanticColorName(h)\" in web\n","assert \"$('liveColorCode').textContent=h\" in web\n",1)
 insert="""
 assert web.index('let savedColors=[],savedColorLabels=[];') < web.index('function semanticColorName') < web.index('renderColorBuilder();')
 assert 'sel._syncEffectButtons=sync' in web and "setAttribute('aria-pressed'" in web
 assert "$('effectSelect')._syncEffectButtons?.()" in web and "$('homeEffect')._syncEffectButtons?.()" in web
 assert 'box._addEventColor=addColor' in web and "typeof box._addEventColor==='function'" in web
-assert "$('liveColorCode').textContent=h" in web
 """
 marker="assert 'savedColorLabels' in web and \"p.name||NAMED_COLOR_PALETTE[i]?.name\" in web\n"
 if marker not in t: raise SystemExit('regression insertion marker missing')
