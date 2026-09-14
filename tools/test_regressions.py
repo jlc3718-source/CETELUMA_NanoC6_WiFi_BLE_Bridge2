@@ -1,4 +1,4 @@
-# v3.1.19 major U.S. holiday profile, relabeled expanded calendars, slow/no-Breath defaults
+# v3.1.22 major U.S. holiday profile, expanded calendars, Breath UI, backup/recovery hardening
 from pathlib import Path
 import re
 
@@ -52,11 +52,11 @@ assert 'id="backupSettingsTab"' in web and 'id="backupSettingsPanel"' in web
 assert 'class="profileRecoveryButton" href="/recovery"' in web and 'profileRecoveryWrap' in web
 assert 'server.on("/recovery",HTTP_GET' in main
 assert "post('/api/backup/settings',{mask})" in web and "post('/api/backup/manual',{mask})" in web and "post('/api/backup/restore',{})" in web
-assert "/api/backup/config" not in web and "/api/backup/now" not in web
+assert '/api/backup/config' not in web and '/api/backup/now' not in web
+assert '/api/backup/status' in web and '/api/backup/settings' in web and '/api/backup/manual' in web and '/api/backup/restore' in web
 assert "const values=['Jump','Breath','Strobe','Solid'];" in mock
 assert "effect==='Breath'" in mock and '__REMOVED_BREATH__' not in mock
 assert "const selector='.anderson-no-plain-effect-buttons';" in web
-assert '/api/backup/status' in web and '/api/backup/now' in web and '/api/backup/restore' in web
 
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
@@ -67,9 +67,6 @@ assert '{0xE08700,0xE08700}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
 assert "{name:'Yellow',reference:'#E08700',output:'#E08700'}" in web
 assert '#E08700' in web
 assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorSavePreset' in web
-# 3.0.29 advanced event mappings use the expanded colors below. 3.0.28 keeps
-# its historical Cyan in EventColorThemes.cpp rather than requiring every
-# master-palette color to appear in the 3.0.29 event table.
 for value in ['0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x001478','0x87002D','0xA0A5AF']: assert value in ev
 original=t('firmware/src/EventColorThemes.cpp')
 assert '0x00BD4C' in original and 'ORIGINAL_EVENT_COLOR_INDEX[210][6]' in original and 'ORIGINAL_EVENT_COLOR_COUNT[210]' in original
