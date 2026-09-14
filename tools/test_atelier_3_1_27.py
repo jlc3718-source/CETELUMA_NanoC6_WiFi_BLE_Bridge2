@@ -76,6 +76,7 @@ with sync_playwright() as p:
         page.locator("#profilePin").fill("1234");page.locator("#submitProfilePin").click()
         expect(page.locator("#profileGate")).to_be_hidden()
         expect(page.locator("#homeBrightVal")).to_have_text("75%")
+        assert page.locator(".v3BottomNav").bounding_box()["height"]<90, "Bottom navigation stretched"
         assert page.locator("#houseLeds .houseLed").count()==36
         ids=page.evaluate("Array.from(document.querySelectorAll('[id]'),n=>n.id)")
         assert len(ids)==len(set(ids)), "Duplicate IDs after composition"

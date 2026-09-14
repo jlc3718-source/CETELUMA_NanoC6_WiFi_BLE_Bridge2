@@ -8,7 +8,7 @@ body:before{content:'';position:fixed;inset:0;pointer-events:none;background-ima
 button,input,select{font:inherit;touch-action:manipulation}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}
 button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #8fb6ff!important;outline-offset:4px}
 .wrap{max-width:1230px;padding:0 34px calc(122px + env(safe-area-inset-bottom));margin:auto}
-.header{display:flex;position:relative;align-items:center;justify-content:space-between;min-height:108px;padding:24px 0;margin:0;border-bottom:1px solid #b8cfff17;gap:20px}
+.header{display:flex;flex-direction:row;position:relative;background:none;border:0;border-radius:0;box-shadow:none;align-items:center;justify-content:space-between;min-height:108px;padding:24px 0;margin:0;border-bottom:1px solid #b8cfff17;gap:20px}
 .ahBrand{display:flex;align-items:center;gap:14px}.ahMark{width:43px;height:43px;flex-shrink:0;color:#a9c2ff}.ahBrandName{display:block;font-size:20px;font-weight:350;letter-spacing:-.045em;white-space:nowrap}.ahBrandName b{font-weight:650}.ahBrandSub{display:block;font-size:8px;letter-spacing:.26em;color:#8fa4c9;margin-top:4px}
 .headerActions{display:flex;align-items:center;gap:13px;flex-wrap:wrap;justify-content:flex-end}
 .v3ProfileName{font-size:12px;font-weight:600;color:#cedcff}
@@ -92,7 +92,7 @@ body.ah27 .v3EffectName{font-size:11px;font-weight:450;letter-spacing:.04em}
 #homeFavoriteColorGrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;min-width:0;margin:0}
 #homeFavoriteColorGrid .savedSwatch{width:100%;min-width:0;min-height:57px;border-radius:7px;padding:4px 2px;border:1px solid #f1f7ff33;font-size:8px;line-height:1.1;font-weight:650;box-shadow:inset 0 1px 0 #fff5,inset 0 -16px 18px #0002;position:relative;overflow:hidden}
 #homeFavoriteColorGrid .savedSwatch:after{content:'';position:absolute;left:5px;right:5px;top:5px;height:36%;border-top:1px solid #fff6;border-radius:3px;pointer-events:none}
-.v3BottomNav.nav{position:fixed;z-index:100;bottom:max(17px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:3px;width:min(620px,calc(100% - 30px));padding:6px;border-radius:20px;border:1px solid #bdd5ff3b;background:#111e36f5;backdrop-filter:blur(16px);box-shadow:0 8px 40px #0009;margin:0}
+.v3BottomNav.nav{position:fixed;top:auto;height:auto;z-index:100;bottom:max(17px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:3px;width:min(620px,calc(100% - 30px));padding:6px;border-radius:20px;border:1px solid #bdd5ff3b;background:#111e36f5;backdrop-filter:blur(16px);box-shadow:0 8px 40px #0009;margin:0}
 .v3BottomNav .tab{display:flex;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:5px;min-width:0;min-height:57px;border:0;border-radius:14px;padding:7px 4px;color:#8098bf;background:none;font-size:10px;font-weight:500;line-height:1.2}
 .v3BottomNav .tab .v3Icon{width:22px;height:22px}
 .v3BottomNav .tab.active{color:#16325c;background:#d2e2ff;box-shadow:0 3px 15px #0003}
