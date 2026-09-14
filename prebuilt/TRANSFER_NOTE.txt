@@ -1,0 +1,1 @@
+Exact local firmware only; GitHub is OTA transport/publishing, not build processing.
