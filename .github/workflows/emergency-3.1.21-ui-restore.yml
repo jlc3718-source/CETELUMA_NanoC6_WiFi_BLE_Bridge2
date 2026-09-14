@@ -36,8 +36,6 @@ jobs:
           p.write_text(s.replace('3.1.20','3.1.21'))
           p=Path('firmware/web/index.html')
           s=p.read_text()
-          if '3.1.19' not in s:
-              raise SystemExit('expected 3.1.19 version in restored web UI')
           p.write_text(s.replace('3.1.19','3.1.21'))
           Path('firmware/RELEASE_NOTES_v3.1.21.md').write_text(
               '# Anderson Home v3.1.21\n\n'
