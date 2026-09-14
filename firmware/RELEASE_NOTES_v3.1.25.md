@@ -9,3 +9,4 @@ Compression-only production release based on the exact v3.1.24 source.
 - Increases Terser compression analysis from 3 to 10 passes while preserving public/global bindings and function names.
 - Increases deterministic Zopfli gzip effort from 50 to 1000 iterations with unlimited block splitting for both embedded web pages.
 - LTO and unsafe semantic-changing compiler transforms remain intentionally disabled.
+- Production build is intentionally triggered from this exact compressed-source revision so the normal CI verification and signed publish chain can validate it end to end.
