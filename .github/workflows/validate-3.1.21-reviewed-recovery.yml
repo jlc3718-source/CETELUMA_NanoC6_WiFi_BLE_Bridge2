@@ -1,0 +1,105 @@
+name: Validate Anderson Home 3.1.21 Reviewed Recovery
+
+on:
+  push:
+    branches: ['codex/3.1.21-reviewed-recovery']
+    paths:
+      - 'tools/apply_3_1_21_reviewed_recovery.py'
+      - '.github/workflows/validate-3.1.21-reviewed-recovery.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Apply reviewed recovery
+        run: python tools/apply_3_1_21_reviewed_recovery.py
+      - name: Install build tool
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Install pinned web minifier
+        run: npm ci --prefix tools --no-audit --no-fund
+      - name: Verify browser script parses and startup order is safe
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          w=Path('firmware/web/index.html').read_text()
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',w,re.S|re.I)
+          Path('/tmp/anderson-inline.js').write_text('\n;\n'.join(scripts))
+          assert w.index('let savedColors=[],savedColorLabels=[];') < w.index('function semanticColorName') < w.index('renderColorBuilder();')
+          assert 'id="backupSettingsTab"' in w or '/api/backup/status' in w
+          assert "const EFFECT_BUTTON_VALUES=['Jump','Breath','Strobe','Solid']" in w
+          assert "$('liveColorCode').textContent=h" in w
+          assert '--accent:#29d8ff' in w or '#27aaff' in w
+          print('UI startup-order and preserved-feature checks passed')
+          PY
+          node --check /tmp/anderson-inline.js
+      - name: Run maintenance and recovery checks
+        run: python tools/test_maintenance.py
+      - name: Run regression checks
+        run: python tools/test_regressions.py
+      - name: Run audit checks
+        run: python tools/test_audit_fixes.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Verify no partition-map or Android changes
+        run: |
+          git diff --exit-code 27b07eee07d02d84283f2733af24210120aa869c -- firmware/platformio.ini android || true
+          python - <<'PY'
+          import subprocess
+          changed=subprocess.check_output(['git','diff','--name-only','27b07eee07d02d84283f2733af24210120aa869c']).decode().splitlines()
+          assert not any(p.startswith('android/') for p in changed), changed
+          assert 'firmware/platformio.ini' not in changed, changed
+          print('Partition/build map and Android tree unchanged')
+          PY
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package verified firmware
+        run: python tools/release.py package
+      - name: Verify packaged v3.1.21
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib,subprocess
+          assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.21'
+          p=Path('release/and_3.1.21.bin')
+          assert p.exists() and p.stat().st_size>1000000 and p.read_bytes()[:1]==b'\xE9'
+          r=json.loads(Path('release/release.json').read_text())
+          assert r['version']=='3.1.21'
+          info=r['files']['and_3.1.21.bin']
+          assert info['bytes']==p.stat().st_size
+          assert info['sha256']==hashlib.sha256(p.read_bytes()).hexdigest()
+          assert p.stat().st_size < 0x1E0000
+          print('v3.1.21 recovery package verified',p.stat().st_size,info['sha256'])
+          PY
+      - name: Upload validation outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.21-Reviewed-Recovery
+          path: |
+            release/*
+            firmware/web/index.html
+            firmware/RELEASE_NOTES_v3.1.21.md
+          if-no-files-found: error
+      - name: Materialize exact validated source and remove temporary validator
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f tools/apply_3_1_21_reviewed_recovery.py .github/workflows/validate-3.1.21-reviewed-recovery.yml
+          git add -A
+          git diff --cached --quiet && { echo 'No validated source changes to materialize'; exit 1; }
+          git commit -m 'Anderson Home v3.1.21 recover UI startup and reviewed regressions'
+          git push origin HEAD:refs/heads/codex/3.1.21-reviewed-recovery
