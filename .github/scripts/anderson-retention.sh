@@ -5,12 +5,13 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 
 BUILD_WORKFLOW_NAME="${ANDERSON_BUILD_WORKFLOW_NAME:-Build Anderson Home Firmware}"
-# v3.0.10 was built by this one-off production workflow. Include it as the
-# previous successful generation when returning to the standard build workflow.
 LEGACY_BUILD_WORKFLOW_NAME="Run Wi-Fi Scan Fix v3.0.10"
 CURRENT_RUN_ID="${GITHUB_RUN_ID:-0}"
 CURRENT_WORKFLOW_NAME="${GITHUB_WORKFLOW:-}"
 CLEAN_RELEASES="${CLEAN_RELEASES:-0}"
+RUN_MAX_AGE_HOURS="${RUN_MAX_AGE_HOURS:-48}"
+NOW_EPOCH="$(date -u +%s)"
+CUTOFF_EPOCH=$((NOW_EPOCH-RUN_MAX_AGE_HOURS*3600))
 
 is_kept_run() {
   local id="$1" keep
@@ -21,8 +22,9 @@ is_kept_run() {
   return 1
 }
 
-# Retain exactly two Anderson firmware-build generations. During the build that is
-# still running, keep that current run plus the newest previously successful build.
+# Preserve the current and immediately previous successful Anderson firmware
+# build generations as the proof/recovery chain, even when they are older than
+# the general workflow-history window.
 KEEP_RUN_IDS=()
 if [[ "$CURRENT_WORKFLOW_NAME" == "$BUILD_WORKFLOW_NAME" && "$CURRENT_RUN_ID" != "0" ]]; then
   KEEP_RUN_IDS+=("$CURRENT_RUN_ID")
@@ -41,18 +43,22 @@ else
   KEEP_RUN_IDS+=("${LATEST_BUILD_RUNS[@]:-}")
 fi
 
-# Remove older completed Anderson firmware runs and one-off firmware helper runs.
-# Keep unrelated Android/test/Pages workflows outside this firmware retention policy.
-# Helper naming intentionally accepts both "Anderson" and "Anderson Home" so new
-# patch/publish/cleanup helpers cannot accumulate history when their title changes.
-mapfile -t COMPLETED_RUN_IDS < <(
+# Repository-wide workflow history policy: completed runs older than the window
+# are disposable, except the two retained Anderson firmware-build generations
+# above and the cleanup run that is currently executing.
+mapfile -t COMPLETED_RUN_ROWS < <(
   gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
-    --jq ".workflow_runs[] | select(.status == \"completed\" and (.name == \"$BUILD_WORKFLOW_NAME\" or .name == \"$LEGACY_BUILD_WORKFLOW_NAME\" or (.name | startswith(\"Publish Anderson\")) or (.name | startswith(\"Patch Anderson\")) or (.name | startswith(\"Stage Anderson\")) or (.name | startswith(\"Cleanup Anderson\")) or .name == \"Anderson Retention\" or (.head_branch // \"\" | startswith(\"codex/v3.\")) or (.head_branch // \"\" | startswith(\"publish/v3.\")) or (.head_branch // \"\" | startswith(\"staging/v3.\")) or (.head_branch // \"\" | startswith(\"cleanup/v3.\")))) | .id"
+    --jq '.workflow_runs[] | select(.status == "completed") | [.id,.updated_at] | @tsv'
 )
-for run_id in "${COMPLETED_RUN_IDS[@]:-}"; do
-  [[ -n "$run_id" ]] || continue
+for row in "${COMPLETED_RUN_ROWS[@]:-}"; do
+  [[ -n "$row" ]] || continue
+  run_id="${row%%$'\t'*}"
+  updated="${row#*$'\t'}"
   is_kept_run "$run_id" && continue
-  gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id"
+  updated_epoch="$(date -u -d "$updated" +%s 2>/dev/null || echo "$NOW_EPOCH")"
+  if ((updated_epoch<=CUTOFF_EPOCH)); then
+    gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id" || true
+  fi
 done
 
 if [[ "$CLEAN_RELEASES" == "1" ]]; then
@@ -66,6 +72,6 @@ if [[ "$CLEAN_RELEASES" == "1" ]]; then
   )
   for release_id in "${OLD_RELEASE_IDS[@]:-}"; do
     [[ -n "$release_id" ]] || continue
-    gh api --method DELETE "/repos/$GITHUB_REPOSITORY/releases/$release_id"
+    gh api --method DELETE "/repos/$GITHUB_REPOSITORY/releases/$release_id" || true
   done
 fi
