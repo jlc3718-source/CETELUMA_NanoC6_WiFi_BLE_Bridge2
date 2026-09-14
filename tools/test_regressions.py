@@ -1,4 +1,4 @@
-# v3.1.11 unified event palette, OTA verification, and bottom-menu logout
+# v3.1.17 selectable historical event palettes, editable preset slots, OTA verification
 from pathlib import Path
 import re
 
@@ -15,17 +15,17 @@ assert 'eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
 assert 't.effect=Effect::Breath' in sched
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
-assert '/api/event-color-theme' not in main+web and 'eventColorsOriginal' not in web and 'eventColorsModern' not in web
-assert 'EventColorTheme' not in main and 'eventColorThemeGeneration' not in main
-assert '0xE0B400' in ev and '0xFFFF44' not in ev
-assert '{0xE0B400,0xE0B400}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
-assert "{name:'Yellow',reference:'#FFFF00',output:'#E0B400'}" in web
-assert "let running={name:'Yellow',colors:['#E0B400']" in web
-assert "'#FFFF44':'#E0B400'" in web
-for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D','0xA0A5AF']: assert value not in ev
-assert "{name:'Navy Blue',reference:'#000080',output:'#001478'}" in web
-palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and palette_block.group(1).count("{name:'")==9
-assert 'PALETTE_MIGRATION_REVISION=8' in t('firmware/src/PaletteMigration.cpp')
+assert '/api/event-color-theme' in main+web and 'eventColors3028' in web and 'eventColors3029' in web
+assert 'EventColorTheme' in main and 'eventColorThemeGeneration' in main and 'applyOriginalEventColors' in main
+assert '0xE08700' in ev and '0xFFFF44' not in ev and '0xE0B400' not in ev
+assert '{0xE08700,0xE08700}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
+assert "{name:'Yellow',reference:'#E08700',output:'#E08700'}" in web
+assert '#E08700' in web
+assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorSavePreset' in web
+for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D','0xA0A5AF']: assert value in ev
+assert "{name:'Navy Blue',reference:'#001478',output:'#001478'}" in web
+palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and palette_block.group(1).count("{name:'")==16
+assert 'PALETTE_MIGRATION_REVISION=9' in t('firmware/src/PaletteMigration.cpp')
 
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
 assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web
@@ -37,7 +37,7 @@ assert 'anderson-cache-cleanup.sh' in retention and 'anderson-cache-cleanup.sh' 
 assert 'anderson-branch-cleanup.sh' in retention and 'anderson-branch-cleanup.sh' in publisher
 assert "BRANCH_MAX_AGE_HOURS: '2'" in retention and "BRANCH_MAX_AGE_HOURS: '2'" in publisher
 assert 'BRANCH_MAX_AGE_HOURS:-2' in branch_cleanup
-assert 'verify_ota_manifest.py' in publisher and 'remote-update/pending/$VERSION.json' in publisher and 'remote-update/releases/$VERSION.json' in publisher
+assert 'verify_ota_manifest.py' in publisher and 'ANDERSON_OTA_SIGNING_KEY_B64' in publisher and 'remote-update/pending/$VERSION.json' in publisher
 assert "cp publish-input/latest.json ../anderson-ota/latest.json" in publisher
 assert 'git add latest.json remote-update' in publisher
 assert 'setInterval(()=>qa(\'select[data-v3-effect-preview="1"]\')' not in mock
@@ -47,7 +47,7 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
-assert 'Basic Scheme v 3.0.28' not in web and 'Advanced Scheme v 3.0.29' not in web
+assert '3.0.28 Colors' in web and '3.0.29 Colors' in web
 assert 'id=\"homeSpeed\"' in mock and 'Effect Speed' in mock and "bindSpeedControl('homeSpeed')" in mock
 assert "icon('logout') + '<span>Logout</span>'" in mock and 'nav.appendChild(switcher)' in mock
 assert 'actions.replaceChildren(badge, profile, switcher)' not in mock and "'Logout'" in mock

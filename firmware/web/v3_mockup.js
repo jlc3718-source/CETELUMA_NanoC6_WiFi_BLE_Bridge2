@@ -103,7 +103,7 @@
     const values=['Jump','Strobe','Solid'];
     const labels={Jump:'Jump',Strobe:'Strobe',Solid:'Solid'};
     const hints={Jump:'Whole string steps from one color to the next',Strobe:'Color on, off, then the next color',Solid:'Holds one color steady'};
-    const palette=['#42d8ff','#ff4ebd','#E0B400','#7cff74','#7c72ff'];
+    const palette=['#42d8ff','#ff4ebd','#E08700','#7cff74','#7c72ff'];
     if(!byId('v3EffectPreviewStyle')) {
       const style=document.createElement('style');style.id='v3EffectPreviewStyle';style.textContent=`
 .v3EffectNative{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;clip-path:inset(50%)!important}
