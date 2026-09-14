@@ -1,4 +1,4 @@
-# v3.1.18 Breath restored, automatic events capped at Slow, preset names preserved
+# v3.1.19 major U.S. holiday profile, relabeled expanded calendars, slow/no-Breath defaults
 from pathlib import Path
 import re
 
@@ -30,7 +30,7 @@ assert 'savedColorLabels' in web and "p.name||NAMED_COLOR_PALETTE[i]?.name" in w
 
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
-assert '/api/event-color-theme' in main+web and 'eventColors3028' in web and 'eventColors3029' in web
+assert '/api/event-color-theme' in main+web and 'eventColors1' in web and 'eventColors3028' in web and 'eventColors3029' in web
 assert 'EventColorTheme' in main and 'eventColorThemeGeneration' in main and 'applyOriginalEventColors' in main
 assert '0xE08700' in ev and '0xFFFF44' not in ev and '0xE0B400' not in ev
 assert '{0xE08700,0xE08700}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
@@ -67,14 +67,24 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
-assert '<strong>3.0.28 Colors</strong>' in web and '<strong>3.0.29 Colors</strong>' in web
-assert 'Original 9-color event scheme' in web and 'Expanded 16-color event scheme' in web
+assert '<strong>Major U.S. Government Holidays</strong>' in web
+assert '<span class="eventColorThemeLetter">1</span>' in web and '<span class="eventColorThemeLetter">9</span>' in web and '<span class="eventColorThemeLetter">16</span>' in web
+assert '<strong>Expanded Holidays — Basic Colors</strong>' in web and '<strong>Expanded Holidays — Expanded Colors</strong>' in web
 assert 'Specific holiday / awareness / seasonal day' in web and 'Coverage guarantee:' in web and '<div>6. Normal preset</div>' in web
 assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_ACTIVE_TIER_EVENTS=64' in sched
 assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched
 assert 'forcedMonthlyCoverage' in sched and 'first third of the least-conflicted' in sched
 assert 'if(specificCount)' in sched and 'if(holidayWindowCount)' in sched
 assert 'python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full' in build
+assert 'EventColorTheme::MajorUS' in main and 'EventColorTheme::MajorUS' in original
+assert 'eventAllowedInActiveSchedule' in main and 'eventAllowedInActiveSchedule' in sched
+assert 'MAJOR_US_EVENT_INDEX[]={5,10,25,94,105,117,143,172,192,196,207}' in original
+assert 'MAJOR_US_EVENT_COLOR_INDEX' in original and 'eventColorPresetCount(EventColorTheme theme){return theme==EventColorTheme::V3029?16U:9U;}' in original
+for name in ["New Year's Day","Martin Luther King Jr. Day","Presidents' Day / Washington's Birthday","Memorial Day","Juneteenth","Independence Day","Labor Day","Indigenous Peoples' Day / Columbus Day","Veterans Day","Thanksgiving","Christmas Day"]: assert name in ev,name
+major_colors=re.search(r'static constexpr uint8_t MAJOR_US_EVENT_COLOR_INDEX\[\]\[4\]=\{(.*?)\};',original,re.S); assert major_colors
+assert max(int(x) for x in re.findall(r'\b\d+\b',major_colors.group(1)))<=8
+assert 'applyMajorUsEventColors' in original and 'resolvedPresetColor(PRESET_DEFAULTS[' in original
+assert 'Choose Major U.S., 9-color expanded, or 16-color expanded holidays' in main
 version=t('FIRMWARE_VERSION.txt').strip(); assert f'ANDERSON_FIRMWARE_VERSION="{version}"' in main
 remote=t('firmware/src/RemoteUpdate.cpp')
 assert 'OTA_MANIFEST_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json"' in remote

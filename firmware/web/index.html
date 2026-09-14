@@ -235,14 +235,15 @@ async function controllerRequest(path,options={},timeoutMs=12000){
     <div class="panel">
       <div class="row between wraprow"><div><strong>Events This Month</strong><div class="sub">Enable events and mark Home favorites.</div></div></div>
             <div class="eventColorThemeBox">
-        <div><strong>Event Color Scheme</strong><div class="sub">Switch all non-customized built-in scheduled events between the preserved historical color assignments.</div></div>
-        <div class="eventColorThemeGrid" role="group" aria-label="Event color scheme">
-          <button id="eventColors3028" class="eventColorThemeTile" type="button" data-theme="3.0.28" aria-pressed="false"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">28</span><span><strong>3.0.28 Colors</strong><small>Original 9-color event scheme</small></span></button>
-          <button id="eventColors3029" class="eventColorThemeTile" type="button" data-theme="3.0.29" aria-pressed="true"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">29</span><span><strong>3.0.29 Colors</strong><small>Expanded 16-color event scheme</small></span></button>
+        <div><strong>Built-in Holiday Schedule</strong><div class="sub">Choose which built-in holiday calendar runs and which saved color palette it uses.</div></div>
+        <div class="eventColorThemeGrid" role="group" aria-label="Built-in holiday schedule">
+          <button id="eventColors1" class="eventColorThemeTile" type="button" data-theme="1" aria-pressed="false"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">1</span><span><strong>Major U.S. Government Holidays</strong><small>Basic Colors · original 9-color palette</small></span></button>
+          <button id="eventColors3028" class="eventColorThemeTile" type="button" data-theme="3.0.28" aria-pressed="false"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">9</span><span><strong>Expanded Holidays — Basic Colors</strong><small>9-color expanded holiday calendar</small></span></button>
+          <button id="eventColors3029" class="eventColorThemeTile" type="button" data-theme="3.0.29" aria-pressed="true"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">16</span><span><strong>Expanded Holidays — Expanded Colors</strong><small>16-color expanded holiday calendar</small></span></button>
         </div>
       </div>
       <div class="row" style="margin-top:10px"><input id="eventSearch" class="field" type="search" autocomplete="off" placeholder="Search all holidays & events" aria-label="Search all holidays and events"><button id="clearEventSearch" class="btn" type="button">Clear</button></div>
-      <div class="sub" style="margin-top:6px">Searches the full 210-event calendar for the selected year.</div>
+      <div class="sub" style="margin-top:6px">Searches the selected built-in holiday calendar for the selected year.</div>
       <div class="monthHead"><select id="monthSelect" class="field"></select><select id="yearSelect" class="field"></select></div>
       <div id="overlapInfo" class="note"></div><div id="eventList" style="display:grid;gap:8px;margin-top:10px"></div>
     </div>
@@ -585,10 +586,10 @@ async function saveOverLivePreset(){if(liveTuneSelectedPreset<0)return status('S
 function bindLiveColorTuner(){const w=$('liveColorWheel');if(!w)return;let drag=false;w.addEventListener('pointerdown',e=>{drag=true;w.setPointerCapture(e.pointerId);liveColorWheelPoint(e)});w.addEventListener('pointermove',e=>{if(drag)liveColorWheelPoint(e)});w.addEventListener('pointerup',()=>drag=false);w.addEventListener('pointercancel',()=>drag=false);$('liveColorValue').addEventListener('input',e=>{liveTuneV=(+e.target.value)/100;renderLiveColorTune(true)});$('liveColorHex').addEventListener('change',e=>setLiveTuneHex(e.target.value,true));['liveColorR','liveColorG','liveColorB'].forEach(id=>$(id).addEventListener('change',()=>setLiveTuneHex(rgbHex($('liveColorR').value,$('liveColorG').value,$('liveColorB').value),true)));$('liveColorPreviewButton').addEventListener('click',()=>sendLiveColorTune(true));$('liveColorSavePreset').addEventListener('click',saveOverLivePreset);$('liveColorEnabled').addEventListener('change',e=>{if(e.target.checked)sendLiveColorTune(false)});renderLiveColorTune(false);loadLiveColorPresets()}
 
 let currentEventColorTheme='3.0.29';
-function renderEventColorTheme(theme){currentEventColorTheme=theme==='3.0.28'?'3.0.28':'3.0.29';[['3.0.28','eventColors3028'],['3.0.29','eventColors3029']].forEach(([v,id])=>{const b=$(id);if(b)b.setAttribute('aria-pressed',String(v===currentEventColorTheme))})}
+function renderEventColorTheme(theme){currentEventColorTheme=theme==='1'?'1':(theme==='3.0.28'?'3.0.28':'3.0.29');[['1','eventColors1'],['3.0.28','eventColors3028'],['3.0.29','eventColors3029']].forEach(([v,id])=>{const b=$(id);if(b)b.setAttribute('aria-pressed',String(v===currentEventColorTheme))})}
 async function loadEventColorTheme(){try{const d=await api('/api/event-color-theme',{cache:'no-store'});renderEventColorTheme(d.theme);return d}catch(e){renderEventColorTheme('3.0.29');return{theme:'3.0.29'}}}
-async function chooseEventColorTheme(theme){if(theme===currentEventColorTheme)return;const b=$(theme==='3.0.28'?'eventColors3028':'eventColors3029');if(b)b.disabled=true;try{const d=await post('/api/event-color-theme',{theme});renderEventColorTheme(d.theme);liveTuneSelectedPreset=-1;const gen=invalidateEventRequest();await Promise.all([loadLiveColorPresets(),loadSavedColors(),loadEvents(gen),loadFavorites()]);status((d.name||'Event color scheme')+' applied.')}catch(e){status('Event color scheme change failed: '+e.message)}finally{if(b)b.disabled=false}}
-$('eventColors3028').addEventListener('click',()=>chooseEventColorTheme('3.0.28'));$('eventColors3029').addEventListener('click',()=>chooseEventColorTheme('3.0.29'));
+async function chooseEventColorTheme(theme){if(theme===currentEventColorTheme)return;const b=$(theme==='1'?'eventColors1':(theme==='3.0.28'?'eventColors3028':'eventColors3029'));if(b)b.disabled=true;try{const d=await post('/api/event-color-theme',{theme});renderEventColorTheme(d.theme);liveTuneSelectedPreset=-1;const gen=invalidateEventRequest();await Promise.all([loadLiveColorPresets(),loadSavedColors(),loadEvents(gen),loadFavorites()]);status((d.name||'Event color scheme')+' applied.')}catch(e){status('Event color scheme change failed: '+e.message)}finally{if(b)b.disabled=false}}
+$('eventColors1').addEventListener('click',()=>chooseEventColorTheme('1'));$('eventColors3028').addEventListener('click',()=>chooseEventColorTheme('3.0.28'));$('eventColors3029').addEventListener('click',()=>chooseEventColorTheme('3.0.29'));
 
 function editEventInline(ev,row){
   const old=row.querySelector('.eventEditor');if(old){old.remove();return}

@@ -2,11 +2,13 @@
 #include <Arduino.h>
 #include "Types.h"
 
-enum class EventColorTheme : uint8_t { V3028=0, V3029=1 };
+enum class EventColorTheme : uint8_t { MajorUS=0, V3028=1, V3029=2 };
 const char* eventColorThemeName(EventColorTheme theme);
 const char* eventColorThemeId(EventColorTheme theme);
 void applyOriginalEventColors(size_t index, Theme& theme);
 void applyModernEventColors(Theme& theme);
+void applyMajorUsEventColors(size_t index, Theme& theme);
+bool eventColorThemeIncludesEvent(EventColorTheme theme,size_t index);
 void loadEventColorPresetOverrides();
 size_t eventColorPresetCount(EventColorTheme theme);
 const char* eventColorPresetName(size_t index);

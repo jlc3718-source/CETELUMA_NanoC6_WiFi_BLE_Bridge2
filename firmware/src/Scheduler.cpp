@@ -3,6 +3,7 @@
 #include "EventState.h"
 #include <math.h>
 extern Theme applyEventOverrideByIndex(size_t i,const Theme& base);
+extern bool eventAllowedInActiveSchedule(size_t i);
 
 static constexpr double ANDERSON_LATITUDE_DEG=42.16;
 static constexpr double ANDERSON_LONGITUDE_DEG=-78.97;
@@ -35,13 +36,13 @@ static uint16_t timedTierPick(const uint16_t* items,size_t count,const tm& l,con
 
 static uint32_t enabledEventHash(){
   uint32_t h=2166136261u;
-  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){h^=(uint32_t)(eventStateEnabled(i)?(i+1):0);h*=16777619u;}
+  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){h^=(uint32_t)(eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)?(i+1):0);h*=16777619u;}
   return h;
 }
 static uint8_t higherPriorityCountOn(const tm& day,const AppSettings* cfg){
   uint8_t count=0;
   for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-    if(!eventStateEnabled(i))continue;const auto&e=EVENTS[i];if(e.rule==RuleType::Month)continue;
+    if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;const auto&e=EVENTS[i];if(e.rule==RuleType::Month)continue;
     bool active=eventActiveOn(i,day);if(active){if(count<255)count++;continue;}
     if(e.kind==EventKind::Holiday&&(cfg->leadDays||cfg->trailDays)&&eventWindowActiveOn(i,day,cfg->leadDays,cfg->trailDays)){if(count<255)count++;}
   }
@@ -98,7 +99,7 @@ Theme Scheduler::resolve(const tm& l){
   uint16_t specific[MAX_ACTIVE_TIER_EVENTS],holidayWindows[MAX_ACTIVE_TIER_EVENTS],monthly[MAX_ACTIVE_TIER_EVENTS];
   size_t specificCount=0,holidayWindowCount=0,monthlyCount=0;
   for(size_t i=0;i<EVENT_COUNT;i++){
-    if(i>=MAX_BUILTIN_EVENTS||!eventStateEnabled(i))continue;const auto&e=EVENTS[i];bool active=eventActiveOn(i,l);
+    if(i>=MAX_BUILTIN_EVENTS||!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;const auto&e=EVENTS[i];bool active=eventActiveOn(i,l);
     if(active){
       if(e.rule==RuleType::Month){if(monthlyCount<MAX_ACTIVE_TIER_EVENTS)monthly[monthlyCount++]=(uint16_t)i;continue;}
       // Holiday, awareness, and seasonal dates all share the specific-event tier.
@@ -152,6 +153,6 @@ Theme Scheduler::resolve(const tm& l){
 
 String Scheduler::nextEventLabel(const tm& l) const{
   int y=l.tm_year+1900;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;
-  for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=y;yy<=y+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}
+  for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=y;yy<=y+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}
   if(bi<0)return "-";tm out{};localtime_r(&best,&out);return String(EVENTS[bi].name)+" - "+eventWhen(bi,out.tm_year+1900);
 }
