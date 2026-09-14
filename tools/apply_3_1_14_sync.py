@@ -40,3 +40,4 @@ test.write_text(t)
 subprocess.run(['python','tools/release.py','bump'],cwd=ROOT,check=True)
 (ROOT/'firmware/RELEASE_NOTES_v3.1.14.md').write_text('''# Anderson Home v3.1.14\n\n- Removes the shared BLE write timer that forced controller B to trail controller A.\n- Preserves the 18 ms safety gap independently on each controller.\n- Prefers BLE write-without-response when supported so paired commands can be queued back-to-back.\n- Keeps reliable reassert/retry behavior for dropped frames.\n''')
 print('Applied Anderson Home v3.1.14 synchronization patch')
+# retrigger after workflow dependency-order correction
