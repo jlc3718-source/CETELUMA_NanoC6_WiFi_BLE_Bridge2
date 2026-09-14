@@ -10,6 +10,7 @@ CURRENT_RUN_ID="${GITHUB_RUN_ID:-0}"
 CURRENT_WORKFLOW_NAME="${GITHUB_WORKFLOW:-}"
 CLEAN_RELEASES="${CLEAN_RELEASES:-0}"
 RUN_MAX_AGE_HOURS="${RUN_MAX_AGE_HOURS:-48}"
+RUN_KEEP_LATEST="${RUN_KEEP_LATEST:-20}"
 NOW_EPOCH="$(date -u +%s)"
 CUTOFF_EPOCH=$((NOW_EPOCH-RUN_MAX_AGE_HOURS*3600))
 
@@ -23,8 +24,7 @@ is_kept_run() {
 }
 
 # Preserve the current and immediately previous successful Anderson firmware
-# build generations as the proof/recovery chain, even when they are older than
-# the general workflow-history window.
+# build generations as the proof/recovery chain.
 KEEP_RUN_IDS=()
 if [[ "$CURRENT_WORKFLOW_NAME" == "$BUILD_WORKFLOW_NAME" && "$CURRENT_RUN_ID" != "0" ]]; then
   KEEP_RUN_IDS+=("$CURRENT_RUN_ID")
@@ -43,9 +43,20 @@ else
   KEEP_RUN_IDS+=("${LATEST_BUILD_RUNS[@]:-}")
 fi
 
-# Repository-wide workflow history policy: completed runs older than the window
-# are disposable, except the two retained Anderson firmware-build generations
-# above and the cleanup run that is currently executing.
+# Hard-cap repository workflow history by preserving the newest N runs across
+# all workflows. The currently executing cleanup run is naturally among these
+# newest runs and is also explicitly protected above.
+if ((RUN_KEEP_LATEST>0)); then
+  mapfile -t LATEST_RUN_IDS < <(
+    gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+      --jq '.workflow_runs[] | [.created_at,.id] | @tsv' \
+      | sort -r | head -n "$RUN_KEEP_LATEST" | cut -f2
+  )
+  KEEP_RUN_IDS+=("${LATEST_RUN_IDS[@]:-}")
+fi
+
+# Delete completed runs outside the retained newest-run set. If the hard cap is
+# disabled (RUN_KEEP_LATEST=0), fall back to the age-based retention window.
 mapfile -t COMPLETED_RUN_ROWS < <(
   gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
     --jq '.workflow_runs[] | select(.status == "completed") | [.id,.updated_at] | @tsv'
@@ -55,6 +66,12 @@ for row in "${COMPLETED_RUN_ROWS[@]:-}"; do
   run_id="${row%%$'\t'*}"
   updated="${row#*$'\t'}"
   is_kept_run "$run_id" && continue
+
+  if ((RUN_KEEP_LATEST>0)); then
+    gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id" || true
+    continue
+  fi
+
   updated_epoch="$(date -u -d "$updated" +%s 2>/dev/null || echo "$NOW_EPOCH")"
   if ((updated_epoch<=CUTOFF_EPOCH)); then
     gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id" || true
