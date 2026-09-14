@@ -1,0 +1,79 @@
+name: Export Anderson Offline Toolchain Chunks
+
+on:
+  push:
+    branches:
+      - tooling/offline-build-kit-3127-run2
+    paths:
+      - '.github/workflows/export-anderson-offline-toolchain-chunks.yml'
+
+permissions:
+  contents: read
+
+env:
+  PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+
+jobs:
+  export-toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install exact build dependencies
+        run: |
+          python -m pip install -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Restore exact Anderson PlatformIO cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: Linux-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            Linux-pio-v1-
+      - name: Initialize pioarduino local tools and prove compiler
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.27"
+          python tools/release.py prepare
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package exact compiler toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p stage/pio-home/packages stage/pio-home/tools
+          cp -a "$HOME/.platformio/packages/toolchain-riscv32-esp" stage/pio-home/packages/
+          if [ -d "$HOME/.platformio/tools/tool-esptoolpy" ]; then cp -a "$HOME/.platformio/tools/tool-esptoolpy" stage/pio-home/tools/; fi
+          if [ -d "$HOME/.platformio/penv" ]; then cp -a "$HOME/.platformio/penv" stage/pio-home/; fi
+          tar -C stage -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home
+          sha256sum anderson-pio-toolchain-3.1.27.tar.zst > TOOLCHAIN_SHA256.txt
+          split -b 300000000 -d -a 2 anderson-pio-toolchain-3.1.27.tar.zst toolchain.part
+          test -f toolchain.part00
+          test -f toolchain.part01
+          ls -lh anderson-pio-toolchain-3.1.27.tar.zst toolchain.part* TOOLCHAIN_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Offline-Toolchain-3.1.27-part00
+          path: toolchain.part00
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Offline-Toolchain-3.1.27-part01
+          path: toolchain.part01
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Offline-Toolchain-3.1.27-checksum
+          path: TOOLCHAIN_SHA256.txt
+          compression-level: 0
+          if-no-files-found: error
