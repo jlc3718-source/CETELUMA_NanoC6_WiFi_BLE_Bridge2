@@ -1,0 +1,38 @@
+name: Export Anderson 3.1.27 Object Cache
+
+on:
+  push:
+    branches:
+      - tooling/offline-build-kit-3127-run2
+    paths:
+      - '.github/workflows/export-anderson-object-cache.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore exact 3.1.27 compiled object cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .pio-build-cache
+          key: Linux-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-codex/release-current-72a5f7bcd24236b6cbbb16ebab9da757922bbdb4
+          fail-on-cache-miss: true
+      - name: Package object cache
+        run: |
+          set -euo pipefail
+          du -sh .pio-build-cache
+          tar -I 'zstd -8 -T0' -cf anderson-object-cache-3.1.27.tar.zst .pio-build-cache
+          sha256sum anderson-object-cache-3.1.27.tar.zst > OBJECT_CACHE_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Object-Cache-3.1.27
+          path: |
+            anderson-object-cache-3.1.27.tar.zst
+            OBJECT_CACHE_SHA256.txt
+          compression-level: 0
+          if-no-files-found: error
