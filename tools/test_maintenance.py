@@ -115,6 +115,7 @@ assert 'OTA_AUTO_RETRY_MAX_MS=5UL*60UL*1000UL' in remote
 assert 'completed=millis()' in remote and 'scheduleAutoRetry(completed)' in remote
 assert 'xTaskCreate(worker,"anderson-ota"' in remote
 assert 'OTA_MANIFEST_MAX_BYTES=4096' in remote and 'OTA_DOWNLOAD_DEADLINE_MS=180000UL' in remote
+assert 'OTA_RELEASE_API_MAX_BYTES=32768' in remote and 'OTA_RELEASE_API_URL=' in remote and 'OTA_MANIFEST_FALLBACK_URL=' in remote
 failures=0;delays=[]
 for _ in range(5):
  delays.append(min(30000*(2**min(failures,4)),300000));failures+=1
