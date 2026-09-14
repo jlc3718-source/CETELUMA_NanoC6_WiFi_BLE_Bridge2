@@ -1,0 +1,100 @@
+name: Apply Anderson Home v3.1.30
+
+on:
+  push:
+    branches: ['tooling/apply-3130']
+    paths: ['.github/workflows/apply-anderson-3.1.30.yml']
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  apply-build-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tooling/apply-3130
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply exact locally validated source patch
+        run: |
+          set -euo pipefail
+          cp tools/apply_3_1_30.py /tmp/apply_3_1_30.py
+          git fetch origin main codex/release-current --quiet
+          test "$(git rev-parse origin/main)" = "$(git rev-parse origin/codex/release-current)"
+          git checkout -B production-candidate origin/main
+          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.29"
+          python /tmp/apply_3_1_30.py
+      - name: Validate exact 3.1.30 source
+        run: |
+          set -euo pipefail
+          python tools/test_maintenance.py
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+          python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+          node --check firmware/web/v3_mockup.js
+          python - <<'PY'
+          from pathlib import Path
+          m=Path('firmware/src/main.cpp').read_text();w=Path('firmware/web/index.html').read_text();j=Path('firmware/web/v3_mockup.js').read_text()
+          assert 'server.on("/api/auth/pin"' in m and 'configureSingleProfilePin' in m and 'pinConflictsWithOtherProfile' in m
+          assert all(x in w for x in ['changeShirleyPin','changeKellyPin','changeJasonPin','changeSinglePin'])
+          assert "post('/api/auth/pin',{profile,pin})" in w
+          assert "event.detail?.id==='jason'" in j and 'setTimeout(refreshBackupStatus,0)' in j
+          assert "id==='backup'&&window.andersonProfile?.id==='jason'" in j
+          PY
+      - name: Commit production candidate
+        id: commit
+        run: |
+          set -euo pipefail
+          git config user.name jlc3718-source
+          git config user.email jlc3718@gmail.com
+          git add FIRMWARE_VERSION.txt firmware/src/main.cpp firmware/web/index.html firmware/web/v3_mockup.js firmware/RELEASE_NOTES_v3.1.30.md
+          test "$(git diff --cached --name-only | wc -l)" -eq 5
+          git commit -m "Anderson Home v3.1.30: independent PIN updates and backup refresh"
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          git push origin "HEAD:refs/heads/codex/release-current" --force-with-lease
+      - name: Dispatch and wait for verified firmware build
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh workflow run compile-anderson-home-multi.yml --ref codex/release-current -f full_image=false
+          RUN=""
+          for i in $(seq 1 60); do
+            RUN="$(gh run list --workflow compile-anderson-home-multi.yml --branch codex/release-current --event workflow_dispatch --json databaseId,headSha -L 20 --jq ".[] | select(.headSha==\"$SHA\") | .databaseId" | head -1)"
+            [ -n "$RUN" ] && break
+            sleep 2
+          done
+          test -n "$RUN"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          gh run watch "$RUN" --exit-status
+      - name: Dispatch and wait for signed OTA publisher
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          BUILD_RUN: ${{ steps.build.outputs.run }}
+        run: |
+          set -euo pipefail
+          BEFORE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run publish-anderson-home.yml --ref main -f build_run_id="$BUILD_RUN" -f head_sha="$SHA" -f head_branch=codex/release-current
+          RUN=""
+          for i in $(seq 1 60); do
+            RUN="$(gh run list --workflow publish-anderson-home.yml --event workflow_dispatch --json databaseId,createdAt -L 20 --jq ".[] | select(.createdAt>=\"$BEFORE\") | .databaseId" | head -1)"
+            [ -n "$RUN" ] && break
+            sleep 2
+          done
+          test -n "$RUN"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          gh run watch "$RUN" --exit-status
