@@ -1,0 +1,40 @@
+name: Apply Anderson Home 3.1.25 Max Compression
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths:
+      - '.github/workflows/apply-anderson-3.1.25-max-compression.yml'
+      - 'scripts/apply_anderson_3_1_25_max_compression.py'
+
+concurrency:
+  group: anderson-3-1-25-max-compression
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - name: Apply compression-only v3.1.25 source changes
+        run: python scripts/apply_anderson_3_1_25_max_compression.py
+      - name: Remove one-shot applicator
+        run: |
+          rm -f scripts/apply_anderson_3_1_25_max_compression.py
+          rm -f .github/workflows/apply-anderson-3.1.25-max-compression.yml
+      - name: Commit exact production candidate
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'Anderson Home v3.1.25 maximum safe compression'
+          git push origin HEAD:codex/release-current
