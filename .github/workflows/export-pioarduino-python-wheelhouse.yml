@@ -1,0 +1,82 @@
+name: Export pioarduino Python Wheelhouse
+
+on:
+  push:
+    branches:
+      - tooling/offline-build-kit-3127-run2
+    paths:
+      - '.github/workflows/export-pioarduino-python-wheelhouse.yml'
+
+permissions:
+  contents: read
+
+env:
+  PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+
+jobs:
+  export-python-deps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Anderson build requirements
+        run: |
+          python -m pip install -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Restore exact Anderson PlatformIO cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: Linux-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            Linux-pio-v1-
+      - name: Initialize exact pioarduino build environment
+        run: |
+          python tools/release.py prepare
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Build offline Python dependency wheelhouse
+        run: |
+          set -euo pipefail
+          mkdir -p pioarduino-wheels
+          cat > pioarduino-python-requirements.txt <<'REQ'
+          uv>=0.1.0
+          pioarduino>=6.1.19
+          littlefs-python>=0.16.0
+          fatfs-ng>=0.1.14
+          pyyaml>=6.0.2
+          rich-click>=1.8.6
+          zopfli>=0.2.2
+          intelhex>=2.3.0
+          rich>=14.0.0
+          cryptography>=45.0.3
+          certifi>=2025.8.3
+          ecdsa>=0.19.1
+          bitstring>=4.3.1
+          reedsolo>=1.5.3,<1.8
+          esp-idf-size>=2.0.0
+          esp-coredump>=1.14.0
+          pyelftools>=0.32
+          REQ
+          python -m pip download --dest pioarduino-wheels -r pioarduino-python-requirements.txt
+          if [ -d "$HOME/.platformio/tools/tool-esptoolpy" ]; then
+            python -m pip download --dest pioarduino-wheels "$HOME/.platformio/tools/tool-esptoolpy"
+          fi
+          sha256sum pioarduino-wheels/* > PIOARDUINO_WHEELS_SHA256.txt
+          tar -I 'zstd -8 -T0' -cf pioarduino-python-wheelhouse-3.1.27.tar.zst pioarduino-wheels pioarduino-python-requirements.txt PIOARDUINO_WHEELS_SHA256.txt
+          ls -lh pioarduino-python-wheelhouse-3.1.27.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Pioarduino-Python-Wheelhouse-3.1.27
+          path: pioarduino-python-wheelhouse-3.1.27.tar.zst
+          compression-level: 0
+          if-no-files-found: error
