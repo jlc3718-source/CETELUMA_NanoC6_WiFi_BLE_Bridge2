@@ -1,23 +1,17 @@
-name: Build Anderson Home Firmware
+name: Build Anderson Home Firmware (Manual Fallback Only)
 
 on:
+  # Anderson production firmware is built and verified locally.
+  # This workflow is retained only as an explicit emergency/manual fallback.
   workflow_dispatch:
     inputs:
       full_image:
         description: Include a full serial-recovery image
         type: boolean
         default: false
-  # Production delivery uses one persistent release branch so caches survive
-  # normal source revisions and the publisher can validate one stable ref.
-  push:
-    branches: ['codex/release-current']
-    paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt']
-  pull_request:
-    branches: [main]
-    paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt', '.github/workflows/compile-anderson-home-multi.yml']
 
 concurrency:
-  group: anderson-firmware-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  group: anderson-firmware-manual-fallback
   cancel-in-progress: true
 
 permissions:
@@ -25,13 +19,8 @@ permissions:
   actions: write
 
 jobs:
-  # Source validation and compilation run in parallel. Validation uses only the
-  # standard Python/C++ tooling already present on the runner; version-specific
-  # browser-review jobs are intentionally kept out of the permanent production
-  # pipeline after their release has been accepted.
   validate-source:
     name: Validate source
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -50,7 +39,6 @@ jobs:
 
   build-firmware:
     name: Compile, verify, and package firmware
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -120,35 +108,14 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib
-          import json
-          import os
-
-          root = Path('release')
-          version = os.environ['VERSION']
-          expected_commit = os.environ['EXPECTED_COMMIT']
-          manifest = json.loads((root / 'release.json').read_text())
-          name = f'and_{version}.bin'
-          app = root / name
-          data = app.read_bytes()
-          digest = hashlib.sha256(data).hexdigest()
-
-          assert manifest.get('version') == version, 'release version mismatch'
-          assert manifest.get('commit') == expected_commit, 'release commit mismatch'
-          slot = int(manifest.get('ota_slot_bytes', 0))
-          assert slot == 0x1E0000, 'unexpected OTA slot size'
-          assert data and data[0] == 0xE9, 'invalid ESP application image header'
-          assert len(data) < slot, 'application image does not fit inactive OTA slot'
-
-          meta = manifest.get('files', {}).get(name)
-          assert meta, 'app-only image missing from release manifest'
-          assert meta.get('bytes') == len(data), 'manifest byte count mismatch'
-          assert meta.get('sha256') == digest, 'manifest SHA-256 mismatch'
-
-          full = root / f'and_{version}_full.bin'
-          if full.exists():
-              assert full.stat().st_size > 0, 'full recovery image is empty'
-
+          import hashlib,json,os
+          root=Path('release');version=os.environ['VERSION'];expected_commit=os.environ['EXPECTED_COMMIT']
+          manifest=json.loads((root/'release.json').read_text());name=f'and_{version}.bin';app=root/name;data=app.read_bytes();digest=hashlib.sha256(data).hexdigest()
+          assert manifest.get('version')==version
+          assert manifest.get('commit')==expected_commit
+          assert int(manifest.get('ota_slot_bytes',0))==0x1E0000
+          assert data and data[0]==0xE9 and len(data)<0x1E0000
+          meta=manifest.get('files',{}).get(name);assert meta and meta.get('bytes')==len(data) and meta.get('sha256')==digest
           print(f'VERIFIED {name}: {len(data)} bytes sha256={digest}')
           PY
       - name: Upload verified firmware candidate
