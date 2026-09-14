@@ -85,16 +85,48 @@ jobs:
           assert manifest['files'][name]['bytes']==len(data) and manifest['files'][name]['sha256']==digest
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'OTA_BYTES={len(data)}\nOTA_SHA256={digest}\n')
           PY
-      - name: Resolve durable or pending signed OTA manifest
+      - name: Resolve or create signed OTA manifest
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
         run: |
+          set -euo pipefail
           mkdir -p publish-input; rm -f publish-input/latest.json
-          for attempt in $(seq 1 120); do
-            for path in "remote-update/releases/$VERSION.json" "remote-update/pending/$VERSION.json"; do
-              if gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/$path?ref=ota" > publish-input/latest.json 2>/dev/null && [ -s publish-input/latest.json ]; then break 2; fi
-              rm -f publish-input/latest.json
+          if [ -n "${OTA_SIGNING_KEY_B64:-}" ]; then
+            printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > /tmp/anderson-ota-signing-key.pem
+            chmod 600 /tmp/anderson-ota-signing-key.pem
+            python - <<'PY'
+          from pathlib import Path
+          import os
+          payload=(
+              f"version={os.environ['VERSION']}\n"
+              f"bytes={os.environ['OTA_BYTES']}\n"
+              f"sha256={os.environ['OTA_SHA256']}\n"
+              f"commit={os.environ['HEAD_SHA']}\n"
+              f"url={os.environ['OTA_URL']}\n"
+          )
+          Path('/tmp/anderson-ota-payload.txt').write_text(payload)
+          PY
+            openssl dgst -sha256 -sign /tmp/anderson-ota-signing-key.pem -out /tmp/anderson-ota-signature.der /tmp/anderson-ota-payload.txt
+            OTA_SIGNATURE="$(base64 -w 0 /tmp/anderson-ota-signature.der)"
+            export OTA_SIGNATURE
+            python - <<'PY'
+          from pathlib import Path
+          import json,os
+          payload=Path('/tmp/anderson-ota-payload.txt').read_text()
+          manifest={'schema':1,'payload':payload,'signature':os.environ['OTA_SIGNATURE']}
+          Path('publish-input/latest.json').write_text(json.dumps(manifest,separators=(',',':')))
+          PY
+            rm -f /tmp/anderson-ota-signature.der /tmp/anderson-ota-payload.txt
+            shred -u /tmp/anderson-ota-signing-key.pem 2>/dev/null || rm -f /tmp/anderson-ota-signing-key.pem
+          else
+            for attempt in $(seq 1 120); do
+              for path in "remote-update/releases/$VERSION.json" "remote-update/pending/$VERSION.json"; do
+                if gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/$path?ref=ota" > publish-input/latest.json 2>/dev/null && [ -s publish-input/latest.json ]; then break 2; fi
+                rm -f publish-input/latest.json
+              done
+              sleep 5
             done
-            sleep 5
-          done
+          fi
           test -s publish-input/latest.json
           python tools/verify_ota_manifest.py --manifest publish-input/latest.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$HEAD_SHA" --url "$OTA_URL"
       - name: Publish or verify immutable stable release
