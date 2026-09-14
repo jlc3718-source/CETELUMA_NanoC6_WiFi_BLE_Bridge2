@@ -100,9 +100,9 @@
     new MutationObserver(syncLive).observe(byId('homeBrightVal'),{childList:true});
   }
   function effectPreviews() {
-    const values=['Jump','Breath','Strobe','Solid'];
-    const labels={Jump:'Jump',Breath:'Breath',Strobe:'Strobe',Solid:'Solid'};
-    const hints={Jump:'Whole string steps from one color to the next',Breath:'Gently fades in and out',Strobe:'Color on, off, then the next color',Solid:'Holds one color steady'};
+    const values=['Jump','Strobe','Solid'];
+    const labels={Jump:'Jump',Strobe:'Strobe',Solid:'Solid'};
+    const hints={Jump:'Whole string steps from one color to the next',Strobe:'Color on, off, then the next color',Solid:'Holds one color steady'};
     const palette=['#42d8ff','#ff4ebd','#E0B400','#7cff74','#7c72ff'];
     if(!byId('v3EffectPreviewStyle')) {
       const style=document.createElement('style');style.id='v3EffectPreviewStyle';style.textContent=`
@@ -124,7 +124,7 @@
       if(effect==='Jump'){
         const color=palette[Math.floor(now/360)%palette.length];
         dots.forEach(dot=>{dot.style.background=color;dot.style.color=color;dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='brightness(1.2)'});
-      }else if(effect==='Breath'){
+      }else if(effect==='__REMOVED_BREATH__'){
         const wave=.22+.78*((Math.sin(now/430)+1)/2);
         dots.forEach(dot=>{dot.style.background='#45d9ff';dot.style.color='#45d9ff';dot.style.opacity=String(wave);dot.style.transform=`scale(${.78+wave*.24})`;dot.style.filter=`brightness(${.65+wave*.7})`});
       }else if(effect==='Strobe'){
@@ -152,12 +152,19 @@
     new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node instanceof Element)scan(node)}))).observe(document.body,{childList:true,subtree:true});
     requestAnimationFrame(animate);
   }
+
+  /* ANDERSON_BACKUP_RESTORE_UI_V3_1_13 */
+  const backupCategories=[['schedule','Scheduling & timezone',1],['controllers','Light controllers',2],['custom','Custom shows & schedules',4],['favorites','Favorite colors',8],['events','Events & favorites',16]];
+  function backupMaskFromUi(){return backupCategories.reduce((m,[id,,bit])=>m+(byId('backup-'+id)?.checked?bit:0),0)}
+  function backupDate(epoch){if(!epoch)return 'Not yet';try{return new Date(epoch*1000).toLocaleString()}catch(_){return 'Unknown'}}
+  async function refreshBackupStatus(){const line=byId('backupStatus');if(!line)return;try{const d=await api('/api/backup/status',{cache:'no-store'});backupCategories.forEach(([id,,bit])=>{const box=byId('backup-'+id);if(box)box.checked=!!(d.mask&bit)});byId('backupLast').textContent=d.hasBackup?backupDate(d.lastBackup):'No backup saved yet';byId('backupNext').textContent=d.lastAutomatic?backupDate(d.nextAutomatic):'Will run after time sync';byId('backupRestore').disabled=!d.hasBackup;line.textContent=d.lastOk||!d.hasBackup?'Weekly automatic backup is enabled for the selected settings.':'The last backup attempt did not complete.'}catch(e){line.textContent='Backup status is available to Jason only.'}}
+  function buildBackupPane(root){if(!root||byId('backupSettingsPanel'))return;const panel=el('div','panel');panel.id='backupSettingsPanel';panel.innerHTML=`<strong>Custom Settings Backup</strong><div class="sub">Choose what Anderson Home protects. The controller automatically saves these settings once a week. Wi-Fi passwords and profile PINs are intentionally excluded.</div><div class="v3BackupChoices">${backupCategories.map(([id,label])=>`<label class="v3BackupChoice"><input id="backup-${id}" type="checkbox"><span>${label}</span></label>`).join('')}</div><div class="v3BackupMeta"><div><span>Last backup</span><strong id="backupLast">Loading…</strong></div><div><span>Next automatic</span><strong id="backupNext">Loading…</strong></div></div><div class="row wraprow v3BackupActions"><button id="backupSaveSelection" class="btn" type="button">Save Selection</button><button id="backupNow" class="btn primary" type="button">Back Up Now</button><button id="backupRestore" class="btn" type="button">Restore Last Backup</button></div><div id="backupStatus" class="sub">Loading backup status…</div>`;root.appendChild(panel);byId('backupSaveSelection').addEventListener('click',async()=>{try{await post('/api/backup/settings',{mask:backupMaskFromUi()});status('Backup selection saved.');await refreshBackupStatus()}catch(e){status('Could not save backup selection: '+e.message)}});byId('backupNow').addEventListener('click',async()=>{try{byId('backupNow').disabled=true;await post('/api/backup/manual',{mask:backupMaskFromUi()});status('Custom settings backup saved.');await refreshBackupStatus()}catch(e){status('Manual backup failed: '+e.message)}finally{byId('backupNow').disabled=false}});byId('backupRestore').addEventListener('click',async()=>{if(!confirm('Restore the last saved Anderson Home settings backup? The controller will reboot after restore.'))return;try{byId('backupRestore').disabled=true;await post('/api/backup/restore',{});status('Backup restored. Anderson Home is rebooting…');setTimeout(()=>location.reload(),5000)}catch(e){status('Restore failed: '+e.message);byId('backupRestore').disabled=false}});refreshBackupStatus();}
   function settingsSubTabs() {
     const page=q('.page[data-page="settings"]');
     if(!page || byId('v3SettingsTabs'))return;
     const title=q(':scope > .v3PageTitle',page);
     const original=[...page.children].filter(node=>node!==title);
-    const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];
+    const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['backup','Backup & Restore'],['security','Users & Security'],['firmware','Firmware']];
     const tabs=el('div','v3SettingsTabs');tabs.id='v3SettingsTabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Settings sections');
     const panes=new Map(),buttons=new Map();
     defs.forEach(([id,label])=>{
@@ -166,6 +173,7 @@
     });
     if(title)title.insertAdjacentElement('afterend',tabs);else page.prepend(tabs);
     defs.forEach(([id])=>page.appendChild(panes.get(id)));
+    buildBackupPane(panes.get('backup'));
     const category=node=>{
       if(node.classList.contains('v3SettingsLink'))return 'wifi';
       if(node.id==='systemMonitorPanel')return 'general';

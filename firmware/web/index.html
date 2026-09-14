@@ -157,7 +157,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
       <div class="label row between"><span>Brightness</span><span id="homeBrightVal" class="muted">75%</span></div>
       <input id="homeBrightness" type="range" min="1" max="100" value="75">
       <div class="label">Current Effect</div>
-      <select id="homeEffect" class="field"><option value="Jump">Jump</option><option value="Breath">Breath</option><option value="Strobe">Strobe</option><option value="Solid">Solid / Static</option></select>
+      <select id="homeEffect" class="field"><option value="Jump">Jump</option><option value="Strobe">Strobe</option><option value="Solid">Solid / Static</option></select>
       <div id="homeEffectHelp" class="sub" style="margin-top:5px">Changes the currently running theme without changing its saved palette. Solid / Static holds Color 1 steady.</div>
     </div>
 
@@ -217,7 +217,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
       <div class="quick" id="quickColors" style="margin-top:8px"></div>
       <div class="label">Favorite Colors</div><div id="lightSavedColorGrid" class="savedColorGrid"></div>
       <div class="sub" style="margin-top:5px">Tap a saved color to add it to this custom light setup. Tap any color slot above to open the RGB wheel.</div>
-      <div class="label">Effect</div><select id="effectSelect" class="field"><option value="Jump">Jump</option><option value="Breath">Breath</option><option value="Strobe">Strobe</option><option value="Solid">Solid / Static</option></select>
+      <div class="label">Effect</div><select id="effectSelect" class="field"><option value="Jump">Jump</option><option value="Strobe">Strobe</option><option value="Solid">Solid / Static</option></select>
       <div class="sub" style="margin-top:5px">Solid / Static holds Color 1 steady.</div>
       <div class="label row between"><span>Brightness</span><span id="brightVal" class="muted">100%</span></div><input id="brightness" type="range" min="1" max="100" value="100">
       <div class="label row between"><span>Speed</span><span id="speedVal" class="muted">Very Slow</span></div><input id="speed" type="range" min="1" max="5" value="1">
@@ -560,7 +560,7 @@ function editEventInline(ev,row){
   const box=document.createElement('div');box.className='card eventEditor';box.style.gridColumn='1/-1';box.style.marginTop='8px';
   const title=document.createElement('div');title.className='small';title.innerHTML=`<strong>Edit ${ev.name}</strong>${ev.customized?' <span class="tag">Customized</span>':''}`;
   const lab=document.createElement('div');lab.className='label';lab.textContent='Effect';
-  const effect=document.createElement('select');effect.className='field';['Jump','Breath','Strobe','Solid'].forEach(x=>{const o=document.createElement('option');o.textContent=x==='Solid'?'Solid / Static':x;o.value=x;o.selected=x===ev.effect;effect.appendChild(o)});
+  const effect=document.createElement('select');effect.className='field';['Jump','Strobe','Solid'].forEach(x=>{const o=document.createElement('option');o.textContent=x==='Solid'?'Solid / Static':x;o.value=x;o.selected=x===ev.effect;effect.appendChild(o)});
   const speedLab=document.createElement('div');speedLab.className='label';speedLab.textContent='Speed';const evSpeed=document.createElement('input');evSpeed.type='range';evSpeed.min='1';evSpeed.max='5';evSpeed.value=ev.speed||1;const evSpeedVal=document.createElement('div');evSpeedVal.className='sub';const showEvSpeed=()=>evSpeedVal.textContent=['Very Slow','Slow','Normal','Fast','Very Fast'][+evSpeed.value-1];evSpeed.addEventListener('input',showEvSpeed);showEvSpeed();
   const colorsLab=document.createElement('div');colorsLab.className='label';colorsLab.textContent='Colors — tap a color to open the RGB wheel; saved colors are available inside the wheel';
   const colors=document.createElement('div');colors.className='row wraprow';const eventFavLab=document.createElement('div');eventFavLab.className='label';eventFavLab.textContent='Favorite Colors';const eventFav=document.createElement('div');eventFav.className='savedColorGrid eventFavoriteGrid';

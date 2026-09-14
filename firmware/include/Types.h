@@ -54,7 +54,7 @@ struct AppSettings {
 inline const char* effectName(Effect e) {
   switch(e) {
     case Effect::Jump: return "Jump";
-    case Effect::Breath: return "Breath";
+    case Effect::Breath: return "Jump";
     case Effect::Strobe: return "Strobe";
     case Effect::Solid: return "Solid";
   }
@@ -64,9 +64,9 @@ inline const char* effectName(Effect e) {
 inline Effect effectFromString(const String& s) {
   // Current Anderson Home effect set. Legacy names are intentionally mapped so
   // old presets/API calls cannot reintroduce retired effects.
-  if (s=="Breath" || s=="Pulse") return Effect::Breath;
+  if (s=="Breath" || s=="Pulse") return Effect::Jump;
   if (s=="Strobe" || s=="Twinkle") return Effect::Strobe;
-  if (s=="Gradient" || s=="Fade" || s=="Rainbow" || s=="Fire" || s=="Water") return Effect::Breath;
+  if (s=="Gradient" || s=="Fade" || s=="Rainbow" || s=="Fire" || s=="Water") return Effect::Jump;
   if (s=="Solid" || s=="Static") return Effect::Solid;
   // Jump remains the safe replacement for Chase/Meteor/Candy Cane and unknown names.
   return Effect::Jump;

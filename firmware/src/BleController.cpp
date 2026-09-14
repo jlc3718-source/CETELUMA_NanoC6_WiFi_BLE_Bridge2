@@ -101,15 +101,15 @@ void BleController::setColor(uint32_t c,bool reliable){uint8_t f[9]={0x7E,0x07,0
 void BleController::setBrightness(uint8_t B,bool reliable){B=constrain(B,0,100);uint8_t f[9]={0x7E,0x04,0x01,B,0x00,0x00,0x00,0x00,0xEF};enqueueToTargets(1,f,9,reliable);}
 
 void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,uint32_t nowMs,bool force){
-  bool changed=!activeValid||activeTheme.name!=t.name||activeTheme.effect!=t.effect||activeTheme.colorCount!=t.colorCount||activeBrightness!=bright||activeSpeed!=speedLevel;if(!changed)for(uint8_t i=0;i<t.colorCount&&i<8;i++)if(activeTheme.colors[i]!=t.colors[i]){changed=true;break;}
-  const bool starting=force||changed;if(starting){activeTheme=t;activeBrightness=bright;activeSpeed=speedLevel;activeValid=true;setPower(true);setBrightness(bright,true);lastEffect=0;lastStaticReassert=nowMs;lastControlReassert=nowMs;}
-  uint8_t count=max((uint8_t)1,t.colorCount);uint32_t interval=softwareEffectIntervalMs(speedLevel);
-  if(t.effect==Effect::Solid){bool periodic=!starting&&(uint32_t)(nowMs-lastStaticReassert)>=STATIC_REASSERT_INTERVAL_MS;if(starting||periodic){if(periodic){setPower(true);setBrightness(bright,true);}setColor(t.colors[0],true);lastStaticReassert=nowMs;}return;}
-  if(t.effect==Effect::Jump&&count==1){bool periodic=!starting&&(uint32_t)(nowMs-lastStaticReassert)>=STATIC_REASSERT_INTERVAL_MS;if(starting||periodic){if(periodic){setPower(true);setBrightness(bright,true);}setColor(t.colors[0],true);lastStaticReassert=nowMs;}return;}
-  if(!starting&&(uint32_t)(nowMs-lastControlReassert)>=CONTROL_REASSERT_INTERVAL_MS){setPower(true);if(t.effect!=Effect::Breath)setBrightness(bright,true);lastControlReassert=nowMs;}
-  if(t.effect==Effect::Jump){if(!force&&nowMs-lastEffect<interval)return;lastEffect=nowMs;uint32_t step=(nowMs/interval)%count;setColor(t.colors[step],starting);return;}
-  if(t.effect==Effect::Strobe){uint32_t half=max((uint32_t)45,interval/2);if(!force&&nowMs-lastEffect<half)return;lastEffect=nowMs;uint32_t phase=nowMs/half;if((phase&1)==0)setColor(0x000000,false);else setColor(t.colors[(phase/2)%count],starting);return;}
-  if(t.effect==Effect::Breath){uint32_t frame=max((uint32_t)55,interval/5);if(!force&&nowMs-lastEffect<frame)return;lastEffect=nowMs;float cycleMs=(float)(interval*8UL),phase=fmodf((float)nowMs,cycleMs)/cycleMs;int idx=(int)(phase*count)%count,nxt=(idx+1)%count;float local=fmodf(phase*count,1.0f);uint32_t a=t.colors[idx],z=t.colors[nxt];uint8_t R=(uint8_t)(r8(a)+(r8(z)-r8(a))*local),G=(uint8_t)(g8(a)+(g8(z)-g8(a))*local),B=(uint8_t)(b8(a)+(b8(z)-b8(a))*local);uint32_t color=((uint32_t)R<<16)|((uint32_t)G<<8)|B;float wave=0.5f-0.5f*cosf(phase*2.0f*PI);uint8_t level=(uint8_t)max(1.0f,bright*(0.10f+0.90f*wave));setColor(count>1?color:t.colors[0],starting);setBrightness(level,false);return;}
+  Theme normalized=t;if(normalized.effect==Effect::Breath)normalized.effect=Effect::Jump;const Theme& syncTheme=normalized;
+  bool changed=!activeValid||activeTheme.name!=syncTheme.name||activeTheme.effect!=syncTheme.effect||activeTheme.colorCount!=syncTheme.colorCount||activeBrightness!=bright||activeSpeed!=speedLevel;if(!changed)for(uint8_t i=0;i<syncTheme.colorCount&&i<8;i++)if(activeTheme.colors[i]!=syncTheme.colors[i]){changed=true;break;}
+  const bool starting=force||changed;if(starting){activeTheme=syncTheme;activeBrightness=bright;activeSpeed=speedLevel;activeValid=true;setPower(true);setBrightness(bright,true);lastEffect=0;lastStaticReassert=nowMs;lastControlReassert=nowMs;}
+  uint8_t count=max((uint8_t)1,syncTheme.colorCount);uint32_t interval=softwareEffectIntervalMs(speedLevel);
+  if(syncTheme.effect==Effect::Solid){bool periodic=!starting&&(uint32_t)(nowMs-lastStaticReassert)>=STATIC_REASSERT_INTERVAL_MS;if(starting||periodic){if(periodic){setPower(true);setBrightness(bright,true);}setColor(syncTheme.colors[0],true);lastStaticReassert=nowMs;}return;}
+  if(syncTheme.effect==Effect::Jump&&count==1){bool periodic=!starting&&(uint32_t)(nowMs-lastStaticReassert)>=STATIC_REASSERT_INTERVAL_MS;if(starting||periodic){if(periodic){setPower(true);setBrightness(bright,true);}setColor(syncTheme.colors[0],true);lastStaticReassert=nowMs;}return;}
+  if(!starting&&(uint32_t)(nowMs-lastControlReassert)>=CONTROL_REASSERT_INTERVAL_MS){setPower(true);setBrightness(bright,true);lastControlReassert=nowMs;}
+  if(syncTheme.effect==Effect::Jump){if(!force&&nowMs-lastEffect<interval)return;lastEffect=nowMs;uint32_t step=(nowMs/interval)%count;setColor(syncTheme.colors[step],true);return;}
+  if(syncTheme.effect==Effect::Strobe){uint32_t half=max((uint32_t)45,interval/2);if(!force&&nowMs-lastEffect<half)return;lastEffect=nowMs;uint32_t phase=nowMs/half;if((phase&1)==0)setColor(0x000000,true);else setColor(syncTheme.colors[(phase/2)%count],true);return;}
 }
 
 void BleController::loop(){
