@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   stage:
-    if: github.event.head_commit.message == 'Stage one-time Anderson v3.1.24 publisher'
+    if: github.event.head_commit.message == 'Retry Anderson v3.1.24 staging'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install release tool dependencies
+        run: python -m pip install -q -r tools/requirements-build.txt
       - name: Bump only release identity to v3.1.24
         run: |
           set -euo pipefail
