@@ -67,6 +67,7 @@ jobs:
               f.write(f'VERSION={version}\nLOCAL_SOURCE_COMMIT={commit}\nOTA_BYTES={len(data)}\nOTA_SHA256={digest}\n')
           print(f'VERIFIED LOCAL PREBUILT {name}: {len(data)} bytes sha256={digest} source={commit}')
           PY
+          source "$GITHUB_ENV"
           echo "OTA_URL=https://github.com/${GITHUB_REPOSITORY}/releases/download/anderson-v$VERSION/and_$VERSION.bin" >> "$GITHUB_ENV"
       - name: Create signed OTA manifest
         working-directory: repo
