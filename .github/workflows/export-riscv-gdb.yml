@@ -1,0 +1,46 @@
+name: Export RISC-V GDB Package
+
+on:
+  push:
+    branches:
+      - tooling/offline-build-kit-3127-run2
+    paths:
+      - '.github/workflows/export-riscv-gdb.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore exact Anderson PlatformIO cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: Linux-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            Linux-pio-v1-
+      - name: Package exact RISC-V GDB package
+        run: |
+          set -euo pipefail
+          d="$HOME/.platformio/packages/tool-riscv32-esp-elf-gdb"
+          test -d "$d"
+          du -sh "$d"
+          tar -I 'zstd -8 -T0' -cf anderson-riscv-gdb-3.1.27.tar.zst -C "$HOME/.platformio/packages" tool-riscv32-esp-elf-gdb
+          sha256sum anderson-riscv-gdb-3.1.27.tar.zst > RISCV_GDB_SHA256.txt
+          ls -lh anderson-riscv-gdb-3.1.27.tar.zst RISCV_GDB_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-RISCV-GDB-3.1.27
+          path: |
+            anderson-riscv-gdb-3.1.27.tar.zst
+            RISCV_GDB_SHA256.txt
+          compression-level: 0
+          if-no-files-found: error
