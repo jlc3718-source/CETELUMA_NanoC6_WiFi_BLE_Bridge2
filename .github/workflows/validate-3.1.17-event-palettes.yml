@@ -54,7 +54,8 @@ jobs:
           assert '{0xE08700,0xE08700}, // Yellow' in block
           assert '{0xFFFF44,0xE08700},{0xE0B400,0xE08700}' in cc
           assert 'eventColors3028' in web and 'eventColors3029' in web
-          assert 'Basic Scheme v 3.0.28' in web and 'Advanced Scheme v 3.0.29' in web
+          assert '3.0.28 Colors' in web and 'Original 9-color event scheme' in web
+          assert '3.0.29 Colors' in web and 'Expanded 16-color event scheme' in web
           assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorG' in web and 'liveColorB' in web
           assert 'Save Over Selected Preset' in web
           assert 'saveEventColorPreset' in main
