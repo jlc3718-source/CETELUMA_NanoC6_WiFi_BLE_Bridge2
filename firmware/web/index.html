@@ -98,7 +98,7 @@ input[type=checkbox],input[type=range]{accent-color:#2cff8a}
 <body class="profile-locked">
 <main id="profileGate" class="profileGate" aria-label="Choose an Anderson Home user">
   <div class="profileShell">
-    <div class="profileBrand"></div>
+    <div class="profileBrand"><div class="ahBrand"><svg class="ahMark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M7 22 24 8l17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 21v19h24V21M21 40V29h6v11" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="12" cy="22" r="2" fill="currentColor"/><circle cx="24" cy="12" r="2" fill="currentColor"/><circle cx="36" cy="22" r="2" fill="currentColor"/></svg><div><span class="ahBrandName">Anderson <b>Home</b></span><span class="ahBrandSub">LIGHTING, BEAUTIFULLY SIMPLE</span></div></div></div>
     <div class="profileChoices">
       <button class="profileChoice" type="button" data-profile="shirley" disabled><span class="profileAvatar">S</span><span class="profileName">Shirley</span><span class="profileAccess">Home &amp; Events</span></button>
       <button class="profileChoice" type="button" data-profile="jason" disabled><span class="profileAvatar">J</span><span class="profileName">Jason</span><span class="profileAccess">All controls</span></button>
@@ -158,6 +158,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
 
 <div class="wrap">
   <div class="header">
+    <div class="ahBrand"><svg class="ahMark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M7 22 24 8l17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 21v19h24V21M21 40V29h6v11" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="12" cy="22" r="2" fill="currentColor"/><circle cx="24" cy="12" r="2" fill="currentColor"/><circle cx="36" cy="22" r="2" fill="currentColor"/></svg><div><span class="ahBrandName">Anderson <b>Home</b></span><span class="ahBrandSub">LIGHTING, BEAUTIFULLY SIMPLE</span></div></div>
     <div class="headerActions"><span id="activeProfile" class="profilePill" hidden></span><button id="switchProfile" class="btn switchProfile" type="button" hidden>Logout</button><div id="connectionBadge" class="badge offline">● Preview</div></div>
   </div>
 

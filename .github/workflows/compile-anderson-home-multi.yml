@@ -50,6 +50,22 @@ jobs:
         run: |
           python -m pip install -q -r tools/requirements-build.txt
           npm ci --prefix tools --no-audit --no-fund
+      - name: Verify 3.1.26 visual layout and unchanged behavior
+        if: hashFiles('tools/test_facelift_3_1_26.py') != '' && github.event_name != 'pull_request'
+        run: |
+          if [ "$(cat FIRMWARE_VERSION.txt)" = "3.1.26" ]; then
+            git fetch --depth=1 origin 4d1196b1318bd6d26ab7e9507e61ee7a942305ba
+            python -m pip install -q playwright==1.55.0
+            python -m playwright install --with-deps chromium
+            python tools/test_facelift_3_1_26.py
+          fi
+      - name: Save interface review images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-interface-review
+          path: ui-review/*.png
+          if-no-files-found: ignore
       - name: Check maintenance, Wi-Fi recovery, and update timing
         run: python tools/test_maintenance.py
       - name: Check Anderson source regressions
