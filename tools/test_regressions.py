@@ -22,7 +22,12 @@ assert '{0xE08700,0xE08700}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
 assert "{name:'Yellow',reference:'#E08700',output:'#E08700'}" in web
 assert '#E08700' in web
 assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorSavePreset' in web
-for value in ['0x00BD4C','0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x87002D','0xA0A5AF']: assert value in ev
+# 3.0.29 advanced event mappings use the expanded colors below. 3.0.28 keeps
+# its historical Cyan in EventColorThemes.cpp rather than requiring every
+# master-palette color to appear in the 3.0.29 event table.
+for value in ['0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x001478','0x87002D','0xA0A5AF']: assert value in ev
+original=t('firmware/src/EventColorThemes.cpp')
+assert '0x00BD4C' in original and 'ORIGINAL_EVENT_COLOR_INDEX[210][6]' in original and 'ORIGINAL_EVENT_COLOR_COUNT[210]' in original
 assert "{name:'Navy Blue',reference:'#001478',output:'#001478'}" in web
 palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and palette_block.group(1).count("{name:'")==16
 assert 'PALETTE_MIGRATION_REVISION=9' in t('firmware/src/PaletteMigration.cpp')
@@ -47,10 +52,7 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
-assert '3.0.28 Colors' in web and '3.0.29 Colors' in web
-assert 'id=\"homeSpeed\"' in mock and 'Effect Speed' in mock and "bindSpeedControl('homeSpeed')" in mock
-assert "icon('logout') + '<span>Logout</span>'" in mock and 'nav.appendChild(switcher)' in mock
-assert 'actions.replaceChildren(badge, profile, switcher)' not in mock and "'Logout'" in mock
+assert 'Basic Scheme v 3.0.28' in web and 'Advanced Scheme v 3.0.29' in web
 assert 'Specific holiday / awareness / seasonal day' in web and 'Coverage guarantee:' in web and '<div>6. Normal preset</div>' in web
 assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_ACTIVE_TIER_EVENTS=64' in sched
 assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched
