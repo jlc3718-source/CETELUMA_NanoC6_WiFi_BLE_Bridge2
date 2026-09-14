@@ -14,7 +14,10 @@ assert 'p->generation!=generation' in ble
 assert 'failureRetryMs' in ble
 assert 'STATIC_REASSERT_INTERVAL_MS=30000UL' in ble
 assert 'syncTheme.effect==Effect::Jump&&count==1' in ble
-assert 'if(normalized.effect==Effect::Breath)normalized.effect=Effect::Jump' in ble
+assert 'normalized.effect==Effect::Breath' not in ble
+assert 'if(syncTheme.effect==Effect::Breath)' in ble
+assert 'float wave=0.5f-0.5f*cosf(phase*2.0f*PI)' in ble
+assert 'setBrightness(level,false)' in ble
 assert 'setColor(syncTheme.colors[step],true)' in ble
 assert 'setColor(0x000000,true)' in ble
 # Model the fixed-size, superseding queue: failed work retries, then a newer generation cancels it.
@@ -29,7 +32,7 @@ p=P();g=p.put();p.result(g,False);assert p.pending and p.fail==1
 g2=p.put();p.result(g,True);assert p.pending and p.gen==g2
 p.result(g2,True);assert p.pending and p.remaining==1
 p.result(g2,True);assert not p.pending
-print('PASS: BLE delivery has zero intentional A/B write gap, services both controllers in one pass, uses no-response fast writes where supported, and preserves retry/convergence semantics')
+print('PASS: BLE delivery has zero intentional A/B write gap, services both controllers in one pass, restores Breath rendering, and preserves retry/convergence semantics')
 html=(ROOT/'firmware/web/index.html').read_text();helper=html[html.index('async function controllerRequest('):html.index('/* ANDERSON_LOCKOUT_SAFE_PROFILE_GATE */')]
 js=helper+"""
 const assert=require('node:assert/strict');function stalled(signal){return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true}));}(async()=>{global.fetch=(_,options)=>stalled(options.signal);await assert.rejects(controllerRequest('/test',{},5),/timed out/);global.fetch=async()=>({ok:true,text:async()=>'{"ok":true}'});const result=await controllerRequest('/test',{},50);assert.equal(JSON.parse(result.text).ok,true);console.log('PASS: timed-out requests release the UI for retry')})().catch(e=>{console.error(e);process.exitCode=1});
