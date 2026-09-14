@@ -1,0 +1,106 @@
+name: Validate Anderson Home 3.1.22 Release
+
+on:
+  push:
+    branches: ['codex/3.1.22-recovery-button']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+
+jobs:
+  validate-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/3.1.22-recovery-button
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Materialize clean v3.1.22 source
+        run: |
+          python tools/apply_3_1_22_recovery_button.py
+          rm -f tools/apply_3_1_22_recovery_button.py .github/workflows/validate-3.1.22-release.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Anderson Home v3.1.22 recovery effects backup and fairness verification'
+          git push origin HEAD:codex/3.1.22-recovery-button
+
+      - name: Install canonical build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+
+      - name: Verify requested UI and backup fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          web=Path('firmware/web/index.html').read_text()
+          mock=Path('firmware/web/v3_mockup.js').read_text()
+          main=Path('firmware/src/main.cpp').read_text()
+          assert 'class="profileRecoveryButton" href="/recovery"' in web
+          assert 'server.on("/recovery",HTTP_GET' in main
+          assert "post('/api/backup/settings',{mask})" in web
+          assert "post('/api/backup/manual',{mask})" in web
+          assert "post('/api/backup/restore',{})" in web
+          assert '/api/backup/config' not in web
+          assert '/api/backup/now' not in web
+          assert "const values=['Jump','Breath','Strobe','Solid'];" in mock
+          assert "effect==='Breath'" in mock
+          assert '__REMOVED_BREATH__' not in mock
+          assert "const selector='.anderson-no-plain-effect-buttons';" in web
+          assert '<strong>v3.1.22</strong>' in web
+          print('Requested v3.1.22 UI/backup invariants passed')
+          PY
+
+      - name: Check maintenance, Wi-Fi recovery, and update timing
+        run: python tools/test_maintenance.py
+
+      - name: Check Anderson source regressions
+        run: python tools/test_regressions.py
+
+      - name: Check audited delivery invariants
+        run: python tools/test_audit_fixes.py
+
+      - name: Check every built-in event for lockout and yearly coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+
+      - name: Verify no partition-map or Android changes
+        run: test -z "$(git diff --name-only 0abe1bcedd14ea85a7e96995ddab4648afb40338 -- firmware/platformio.ini android/)"
+
+      - name: Prepare release
+        run: python tools/release.py prepare
+
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+
+      - name: Package verified firmware
+        run: python tools/release.py package
+
+      - name: Verify packaged v3.1.22 artifact
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          v=Path('FIRMWARE_VERSION.txt').read_text().strip()
+          assert v=='3.1.22', v
+          p=Path('release')/f'and_{v}.bin'
+          assert p.exists() and p.stat().st_size > 1000000
+          print('BIN', p.name, p.stat().st_size, hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+
+      - name: Upload validated candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.22-Validated
+          path: release/*
+          if-no-files-found: error
