@@ -6,3 +6,4 @@ UI-only refinement from the verified v3.1.27 production baseline.
 - Bottom navigation label `Collection` is now `Favorites`.
 - The separate `THE COLOR COLLECTION` heading is unchanged.
 - Controller behavior, BLE, Wi-Fi recovery, schedules/events, profiles/PINs, NVS, recovery, OTA security, and safety logic are unchanged.
+- Local offline PlatformIO source build and package verification passed before production OTA validation.
