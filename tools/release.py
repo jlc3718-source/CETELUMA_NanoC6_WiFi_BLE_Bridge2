@@ -25,7 +25,7 @@ RECOVERY_UI = ROOT / 'firmware/web/recovery.html'
 MAIN = ROOT / 'firmware/src/main.cpp'
 BUILD_IDENTITY = ROOT / 'firmware/include/BuildIdentity.h'
 SLOT = 0x1E0000
-ZOPFLI_ITERATIONS = 50
+ZOPFLI_ITERATIONS = 1000
 
 
 def sha(data):

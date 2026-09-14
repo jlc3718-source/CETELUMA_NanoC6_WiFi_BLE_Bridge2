@@ -8,7 +8,7 @@ async function main() {
   for (const source of scripts) {
     const { code } = await minify(source, {
       ecma: 2020,
-      compress: { passes: 3 },
+      compress: { passes: 10 },
       mangle: { toplevel: false },
       keep_fnames: true,
       format: { comments: 'some', inline_script: true },
