@@ -1,0 +1,103 @@
+name: Build Anderson Home 3.1.16 Zero-Gap
+
+on:
+  push:
+    branches: ['codex/3.1.16-zero-gap']
+    paths:
+      - '.github/workflows/build-3.1.16-zero-gap.yml'
+      - 'tools/apply_3_1_16_zero_gap_preview.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      VERSION: 3.1.16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Apply 3.1.16 changes
+        run: |
+          if [ "$(cat FIRMWARE_VERSION.txt)" != "3.1.16" ]; then
+            python tools/apply_3_1_16_zero_gap_preview.py
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add FIRMWARE_VERSION.txt README.md firmware tools/test_connection_recovery.py
+            git commit -m "Anderson Home v3.1.16 zero-gap BLE, Schedule 2 10 percent, live presets"
+            git push origin HEAD:codex/3.1.16-zero-gap
+          fi
+      - name: Check zero-gap BLE regression
+        run: python tools/test_connection_recovery.py
+      - name: Check 3.1.16 requested behavior
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          ble=Path('firmware/src/BleController.cpp').read_text()
+          hdr=Path('firmware/include/BleController.h').read_text()
+          main=Path('firmware/src/main.cpp').read_text()
+          web=Path('firmware/web/index.html').read_text()
+          assert 'WRITE_GAP_MS' not in ble
+          assert 'lastWriteAt' not in ble and 'lastWriteAt' not in hdr
+          assert 'bool serviced=false' in ble and 'serviced=true;break;' in ble
+          assert 'cfg["schedule2Brightness"]=10;' in main
+          assert 'if(schedule2Active&&!schedule1Active)brightness=10;' in main
+          assert '30% brightness' not in web and '30% from Schedule 1 end until dawn' not in web
+          for name,hexv in [('Red','#FF0000'),('Orange','#FF0D00'),('Pink','#FF0024'),('Yellow','#E0B400'),('Green','#28FF00'),('Blue','#0D00FF'),('Purple','#5B00E6'),('White','#FFFFFA'),('Navy Blue','#001478')]:
+              assert name in web and hexv in web
+          assert 'setLiveTuneHex' in web and 'rgbHsv' in web and 'renderLiveColorPresets' in web
+          print('PASS: zero-gap BLE, Schedule 2 at 10%, and Live Preview preset-wheel sync are present')
+          PY
+      - name: Check maintenance and recovery regressions
+        run: python tools/test_maintenance.py
+      - name: Check Anderson source regressions
+        run: python tools/test_regressions.py
+      - name: Check audited delivery invariants
+        run: python tools/test_audit_fixes.py
+      - name: Validate release source
+        run: python tools/release.py check
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 app-only firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package app-only firmware
+        run: python tools/release.py package
+      - name: Verify packaged firmware
+        run: |
+          set -euo pipefail
+          test -s "release/and_${VERSION}.bin"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          v=os.environ['VERSION']
+          p=Path(f'release/and_{v}.bin')
+          m=json.loads(Path('release/release.json').read_text())
+          data=p.read_bytes()
+          assert data[0]==0xE9
+          assert m['version']==v
+          assert m['files'][p.name]['bytes']==len(data)
+          assert m['files'][p.name]['sha256']==hashlib.sha256(data).hexdigest()
+          print(json.dumps({'name':p.name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'commit':m['commit']}))
+          PY
+      - name: Upload verified firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.16-ZERO-GAP
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
