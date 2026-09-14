@@ -1,0 +1,56 @@
+name: Prepare Anderson Home 3.1.29
+
+on:
+  push:
+    branches: ['codex/prepare-3.1.29']
+    paths:
+      - '.github/workflows/prepare-anderson-3-1-29.yml'
+      - 'tools/prepare_3129.py'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout tooling branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preserve one-shot patcher and reset to latest production main
+        run: |
+          cp tools/prepare_3129.py /tmp/prepare_3129.py
+          git fetch origin main codex/release-current
+          git checkout -B codex/release-current origin/main
+          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.28"
+
+      - name: Apply exact 3.1.29 changes
+        run: python /tmp/prepare_3129.py
+
+      - name: Validate changed source
+        run: |
+          python tools/test_regressions.py
+          python tools/test_maintenance.py
+          python tools/test_audit_fixes.py
+          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.29"
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' FIRMWARE_VERSION.txt firmware/RELEASE_NOTES_v3.1.29.md firmware/src/main.cpp firmware/web/index.html firmware/web/v3_mockup.css tools/test_regressions.py | sort)"
+          test "$changed" = "$expected"
+
+      - name: Commit production candidate
+        run: |
+          git config user.name 'jlc3718-source'
+          git config user.email 'jlc3718@gmail.com'
+          git add FIRMWARE_VERSION.txt firmware/RELEASE_NOTES_v3.1.29.md firmware/src/main.cpp firmware/web/index.html firmware/web/v3_mockup.css tools/test_regressions.py
+          git commit -m 'Anderson Home v3.1.29: restore Kelly and fix next-event spacing'
+          git push origin HEAD:codex/release-current
+
+      - name: Dispatch verified production build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run compile-anderson-home-multi.yml --ref codex/release-current
