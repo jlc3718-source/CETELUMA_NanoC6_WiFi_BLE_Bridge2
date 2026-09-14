@@ -1,20 +1,20 @@
 {
-  "version": "3.1.31",
-  "commit": "2f72fe5a929afa706ec97e8c4dfccd7154254118",
+  "version": "3.1.32",
+  "commit": "33078a55bfecc1436ba0ac1206b98be6fde99616",
   "ota_slot_bytes": 1966080,
-  "ui_sha256": "bba578b9dce80d2d3c88a5d7d1b8c73ef567a799add0752b7bab0ac13203b346",
+  "ui_sha256": "b212ebcd8806473bc940e43da8b8244005746bf323280817ca7a3e7df85da7b4",
   "files": {
-    "and_3.1.31.bin": {
-      "bytes": 1824208,
-      "sha256": "27840368cab0bef4fc1f5cd47ff73bdfa2c23a6a0aa8205db7d8a9b973fecd0a"
+    "and_3.1.32.bin": {
+      "bytes": 1825264,
+      "sha256": "5c64c841977a49ec38728daac120b52ef1efb0bce1f2ec53b9daf3d6c326f973"
     }
   },
   "web_assets": {
     "WEB_UI": {
-      "bytes": 182431,
-      "sha256": "bba578b9dce80d2d3c88a5d7d1b8c73ef567a799add0752b7bab0ac13203b346",
-      "gzip_bytes": 46679,
-      "gzip_sha256": "4354c9c8752903d1df3618605e29645110ce064f6632c200681c09dee13e58c7"
+      "bytes": 187147,
+      "sha256": "b212ebcd8806473bc940e43da8b8244005746bf323280817ca7a3e7df85da7b4",
+      "gzip_bytes": 47729,
+      "gzip_sha256": "87045ad9628df37c030b143d8b7054bbaad2baf5cc72bfa0e1e3bd86c7d001e3"
     },
     "RECOVERY_UI": {
       "bytes": 5403,
