@@ -43,21 +43,15 @@ jobs:
           key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
           restore-keys: |
             ${{ runner.os }}-pio-v1-
+      - name: Measure restored PlatformIO cache components
+        run: |
+          du -sh ~/.platformio/platforms ~/.platformio/packages ~/.platformio/.cache firmware/.pio/libdeps 2>/dev/null || true
+          du -sh ~/.platformio 2>/dev/null || true
       - name: Prepare release assets
         run: python tools/release.py prepare
-      - name: Verify UI is unchanged
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib
-          p=Path('firmware/web/index.html')
-          h=hashlib.sha256(p.read_bytes()).hexdigest()
-          assert h=='f99f55b5e163c8424867129fbc5c3410ae97c06b9186937d9a8ee824dd052419', h
-          print('UI source SHA-256 unchanged:',h)
-          PY
       - name: Compile trimmed firmware
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
-      - name: Package and compare size
+      - name: Package and compare size and UI identity
         run: |
           python tools/release.py package
           python - <<'PY'
@@ -68,6 +62,9 @@ jobs:
           new=r['files'][name]['bytes']
           old=1817392
           saved=old-new
+          expected_ui='f99f55b5e163c8424867129fbc5c3410ae97c06b9186937d9a8ee824dd052419'
+          assert r['ui_sha256']==expected_ui, (r['ui_sha256'], expected_ui)
+          print('UI_SHA256_UNCHANGED='+r['ui_sha256'])
           print(f'BASELINE_BYTES={old}')
           print(f'TRIMMED_BYTES={new}')
           print(f'BYTES_SAVED={saved}')
