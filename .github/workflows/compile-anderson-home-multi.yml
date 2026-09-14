@@ -59,12 +59,21 @@ jobs:
             python -m playwright install --with-deps chromium
             python tools/test_facelift_3_1_26.py
           fi
+      - name: Verify 3.1.27 Atelier controls and safety preservation
+        if: hashFiles('tools/test_atelier_3_1_27.py') != '' && github.event_name != 'pull_request'
+        run: |
+          if [ "$(cat FIRMWARE_VERSION.txt)" = "3.1.27" ]; then
+            git fetch --depth=1 origin 949294c0346bcf3c0a167062fc3ac973f05882bd
+            python -m pip install -q playwright==1.55.0
+            python -m playwright install --with-deps chromium
+            python tools/test_atelier_3_1_27.py
+          fi
       - name: Save interface review images
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Anderson-interface-review
-          path: ui-review/*.png
+          path: ui-review/*
           if-no-files-found: ignore
       - name: Check maintenance, Wi-Fi recovery, and update timing
         run: python tools/test_maintenance.py

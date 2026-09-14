@@ -197,19 +197,47 @@ async function controllerRequest(path,options={},timeoutMs=12000){
             <linearGradient id="liveHouseGlass" x2="1" y2="1"><stop stop-color="#b5eaff" stop-opacity=".7"/><stop offset=".5" stop-color="#3c809e" stop-opacity=".45"/><stop offset="1" stop-color="#162c42"/></linearGradient>
             <linearGradient id="liveHousePath" x2="0" y2="1"><stop stop-color="#46617c" stop-opacity=".5"/><stop offset="1" stop-color="#14263e" stop-opacity="0"/></linearGradient>
           </defs>
-          <ellipse cx="180" cy="155" rx="133" ry="13" fill="#000a"/>
-          <path d="m166 143-37 45h103l-39-45z" fill="url(#liveHousePath)"/>
-          <path d="M75 80 180 28 285 80v65H75Z" fill="url(#liveHouseWall)" stroke="#6995b5" stroke-opacity=".5"/>
-          <path d="m47 85 133-69 133 69-13 7-120-59L60 92Z" fill="url(#liveHouseRoof)" stroke="#81aecb" stroke-opacity=".6"/>
-          <path d="M225 41V19h19v31" fill="#254259" stroke="#6d97b7" stroke-opacity=".4"/>
-          <path d="M87 96h186M87 117h186M87 135h186" stroke="#759ab4" stroke-opacity=".1"/>
-          <rect x="159" y="100" width="42" height="45" rx="2" fill="url(#liveHouseGlass)" stroke="#98c3d7" stroke-opacity=".6"/>
-          <rect x="96" y="98" width="38" height="29" rx="2" fill="url(#liveHouseGlass)" stroke="#a9d5e6" stroke-opacity=".6"/>
-          <rect x="226" y="98" width="38" height="29" rx="2" fill="url(#liveHouseGlass)" stroke="#a9d5e6" stroke-opacity=".6"/>
-          <path d="M115 98v29m130-29v29M96 113h38m92 0h38M180 100v45" stroke="#14293c" stroke-width="2"/>
-          <rect x="166" y="58" width="28" height="23" rx="2" fill="url(#liveHouseGlass)" stroke="#88bbd7" stroke-opacity=".5"/>
-          <path d="M180 58v23m-14-11h28M149 148h63" stroke="#53829d" stroke-width="2"/>
-          <g id="houseLeds"></g>
+<g aria-hidden="true">
+          <path d="M24 151 164 119 338 150 200 184Z" fill="#081426" stroke="#8eb2ed" stroke-opacity=".22"/>
+          <path d="m24 151 176 33v-6L24 146Z" fill="#152946"/>
+          <path d="m200 184 138-34v-5l-138 33Z" fill="#1b3357"/>
+          <ellipse cx="180" cy="154" rx="128" ry="12" fill="#020916" opacity=".65"/>
+          <path d="m156 145-32 23 61 10 27-33Z" fill="#a9c1e8" opacity=".12"/>
+          <path d="m75 83 29-13 215 3-34 17Z" fill="#192f51"/>
+          <path d="m285 79 31-13v63l-31 16Z" fill="#101f36" stroke="#839fc9" stroke-opacity=".3"/>
+          <path d="m47 85 133-69 30-10 131 69-28 10-133-69Z" fill="#506686" stroke="#b6c5df" stroke-opacity=".3"/>
+          <path d="m300 92 13-7 28-10-14 13Z" fill="#223656"/>
+          <path d="M75 80 180 28 285 80v65H75Z" fill="url(#liveHouseWall)" stroke="#8aa9d5" stroke-opacity=".7"/>
+          <path d="M82 98h65v45H82Z" fill="#1c3650"/>
+          <path d="M217 98h61v45h-61Z" fill="#203b57"/>
+          <path d="M89 99v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44M223 99v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44" stroke="#b1c3df" stroke-opacity=".08"/>
+          <path d="m47 85 133-69 133 69-13 7-120-59L60 92Z" fill="url(#liveHouseRoof)" stroke="#b4c7e5" stroke-opacity=".75"/>
+          <path d="m64 84 116-60 116 60" fill="none" stroke="#c0d2f2" stroke-opacity=".15"/>
+          <path d="M225 41V19l7-3 19 7v24l-7 3" fill="#172943"/>
+          <path d="M225 19h19v31l-19-9Z" fill="#36516d" stroke="#8ea5c7" stroke-opacity=".35"/>
+          <path d="M87 96h186M87 117h186M87 135h186" stroke="#aec8e8" stroke-opacity=".08"/>
+          <rect x="155" y="94" width="49" height="51" rx="1" fill="#041024" stroke="#c2d8f9" stroke-opacity=".35"/>
+          <rect x="159" y="98" width="41" height="45" rx="1" fill="url(#liveHouseGlass)" stroke="#adc9f0" stroke-opacity=".6"/>
+          <rect x="96" y="101" width="38" height="26" rx="1" fill="#030b18"/>
+          <rect x="98" y="103" width="34" height="22" rx="1" fill="url(#liveHouseGlass)"/>
+          <rect x="226" y="101" width="38" height="26" rx="1" fill="#030b18"/>
+          <rect x="228" y="103" width="34" height="22" rx="1" fill="url(#liveHouseGlass)"/>
+          <path d="m100 105 29 18m102-18 29 18M163 101l33 36" stroke="#d6e8ff" stroke-opacity=".18"/>
+          <path d="M115 102v24m130-24v24M98 114h34m96 0h34M179 99v43" stroke="#0e2038" stroke-width="2"/>
+          <path d="M176 123v9m6-9v9" stroke="#c8d5ed" stroke-width=".8"/>
+          <rect x="166" y="58" width="28" height="23" rx="1" fill="#081529" stroke="#93afd6" stroke-opacity=".45"/>
+          <rect x="169" y="61" width="22" height="17" fill="url(#liveHouseGlass)"/>
+          <path d="M180 61v17m-11-8h22" stroke="#1b324e" stroke-width="1.4"/>
+          <path d="M149 146h63l6 4h-75Z" fill="#435e7e"/>
+          <path d="M143 150h75v3h-75Z" fill="#1f3655"/>
+          <path d="m289 94 22-9m-22 23 22-9m-22 23 22-9m-22 23 22-9" stroke="#829dbf" stroke-opacity=".1"/>
+          <path d="M51 127v21m-2-24-5 12h12Z" fill="#1e3c55" stroke="#7798b8" stroke-opacity=".25"/>
+          <path d="m50 113-10 19h20Z" fill="#24465e"/><path d="m50 105-7 17h14Z" fill="#315771"/>
+          <path d="M315 118v22m0-27-7 17h14Z" fill="#203d54"/><path d="m315 105-9 20h18Z" fill="#2b4c65"/>
+          <path d="M67 147h38l8 6H70Z" fill="#172f46"/><path d="M236 148h44l-6 6h-47Z" fill="#172f46"/>
+          <path d="m69 147 4-4 4 4 5-6 4 6 5-4 5 4m143 1 5-6 5 6 6-4 5 4 7-6 5 6" fill="#35546b"/>
+        </g>
+                  <g id="houseLeds"></g>
         </svg>
       </div>
     </div>

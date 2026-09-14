@@ -216,3 +216,88 @@ function profiles() {
   function init() { navigation();composeHome();effectPreviews();settingsSubTabs();profiles();syncRole();window.addEventListener('anderson-profile-selected',()=>{syncRole();window.scrollTo(0,0);});window.addEventListener('anderson-profile-cleared',syncRole); }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
+
+/* ANDERSON_ATELIER_3_1_27 — presentation composition only.
+   Move the original live nodes; never duplicate controls or replace their handlers. */
+(() => {
+  'use strict';
+  const q = s => document.querySelector(s), byId = id => document.getElementById(id);
+  function node(tag, cls, html='') { const n=document.createElement(tag); n.className=cls; n.innerHTML=html; return n; }
+  function composeAtelier() {
+    document.body.classList.add('ah27');
+    const home=q('.page[data-page="home"]'), dashboard=q('.v3Dashboard');
+    const live=q('.v3LiveCard'), fx=q('.v3EffectCard'), bright=q('.v3BrightnessBlock');
+    const master=q('.v3MasterRow'), schedule=q('.v3ScheduleCard'), next=q('.v3Next');
+    const hero=node('div','ah27Hero');
+    const introduction=node('div','ah27Introduction','<div class="ah27Overline"><span class="ah27Diamond" aria-hidden="true"></span> THE ANDERSON LIGHT STUDIO <span class="ah27Edition">01 / HOME</span></div><h1>Make an<br><em>entrance.</em></h1>');
+    const scene=q('.housePreview');
+    const sceneLabel=node('div','ah27SceneLabel','<span class="ah27Overline">ON THE HOUSE</span><strong id="ah27SceneName"></strong>');
+    live.prepend(sceneLabel);
+    const originalKicker=live.querySelector('.v3CardKicker');
+    originalKicker.querySelector('span').textContent='Live preview';
+    live.append(originalKicker);
+    hero.append(introduction,live,fx);
+    const console=node('div','ah27Console','<div class="ah27ConsoleTitle"><span class="ah27Overline">MASTER CONTROL</span><strong>Your atmosphere.</strong><span>One home. Every light.</span></div>');
+    const dial=node('div','ah27Dial');
+    const readout=byId('homeBrightVal');
+    const dialLabel=node('div','ah27DialLabel','<span>INTENSITY</span>');
+    dialLabel.prepend(readout);
+    dial.append(dialLabel);
+    const originalLabel=bright.querySelector(':scope > .label');
+    originalLabel.remove();
+    const tempo=q('.v3HomeSpeedBlock');
+    bright.prepend(dial);
+    master.querySelector('.v3MasterTitle').remove();
+    master.classList.add('ah27Power');
+    console.append(bright,master,tempo);
+    dashboard.replaceChildren(hero,console);
+    const scheduleBand=node('div','ah27ScheduleBand');
+    scheduleBand.append(schedule,next);
+    const palette=node('div','ah27Palette','<div class="ah27PaletteTitle"><span class="ah27Overline">THE COLOR COLLECTION</span><strong>A shade for every mood.</strong><span>Tap a color to light your home.</span></div><div id="homeFavoriteColorGrid" class="ah27ColorCollection"></div>');
+    dashboard.after(scheduleBand,palette);
+    renderHomeFavoriteGrid();
+    const sync=()=>{
+      const pct=Math.max(0,Math.min(100,parseFloat(readout.textContent)||0));
+      dial.style.setProperty('--intensity',pct);
+      byId('ah27SceneName').textContent=running.name||byId('nowTheme').textContent||'Your lights';
+    };
+    new MutationObserver(sync).observe(readout,{childList:true,subtree:true,characterData:true});
+    new MutationObserver(sync).observe(byId('nowTheme'),{childList:true,subtree:true,characterData:true});
+    sync();
+    byId('connectionBadge').style.display='';
+    byId('activeProfile').style.display='';
+    const header=q('.header');
+    header.querySelector('.ahBrandSub').textContent='LIGHT STUDIO';
+    const headerBrand=q('.profileBrand .ahBrandSub');
+    if(headerBrand)headerBrand.textContent='A DIFFERENT KIND OF HOME';
+    const welcome=q('.v3Welcome');
+    welcome.innerHTML='<span class="ah27Overline">WELCOME TO YOUR LIGHT STUDIO</span><h2>Extraordinary<br>starts <em>at home.</em></h2><p>Choose your space. Set the mood.</p>';
+    const installation=node('div','ah27Installation','<i></i><i></i><i></i><i></i><i></i><i></i><i></i><span>ANDERSON / AFTER DARK</span>');
+    installation.setAttribute('aria-hidden','true');
+    q('.profileBrand').after(installation);
+    const brand=q('.profileBrand');brand.removeAttribute('role');brand.removeAttribute('aria-label');
+    const chapterNames={lights:['02 / CREATE','The light lab.'],events:['03 / AUTOMATE','Perfectly timed.'],favorites:['04 / COLLECT','Your greatest hits.'],settings:['05 / REFINE','Behind the scenes.'],wifi:['06 / CONNECT','Stay connected.']};
+    document.querySelectorAll('.v3PageTitle').forEach(title=>{
+      const d=chapterNames[title.closest('.page').dataset.page];
+      if(d){title.querySelector('span').textContent=d[0];title.querySelector('h2').textContent=d[1];}
+    });
+    q('.v3SettingsTabs').setAttribute('aria-orientation','horizontal');
+    document.querySelectorAll('.v3SettingsTab').forEach((tab,i)=>{
+      const label=tab.textContent;
+      tab.replaceChildren(node('span','ah27SectionNumber',String(i+1).padStart(2,'0')),node('span','ah27SectionLabel'));
+      tab.lastElementChild.textContent=label;
+    });
+    const navLabels={home:'Home',lights:'Create',events:'Schedules',favorites:'Collection',settings:'Settings'};
+    document.querySelectorAll('.v3BottomNav [data-tab]').forEach(tab=>{
+      const label=navLabels[tab.dataset.tab];if(label)tab.querySelector('span').textContent=label;
+    });
+    document.querySelectorAll('.page[data-page="lights"] > .panel').forEach((panel,i)=>panel.classList.add('ah27Lab'+i));
+    const refreshRole=()=>{
+      home.setAttribute('aria-label','Anderson Home light studio');
+      const profile=window.andersonProfile;
+      if(profile)header.dataset.profileName=profile.name;
+    };
+    window.addEventListener('anderson-profile-selected',refreshRole);refreshRole();
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',composeAtelier);else composeAtelier();
+})();
