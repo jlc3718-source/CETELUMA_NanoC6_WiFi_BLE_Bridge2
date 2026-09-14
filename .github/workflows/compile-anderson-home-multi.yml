@@ -25,10 +25,45 @@ permissions:
   actions: write
 
 jobs:
+  # Source validation and compilation deliberately run in parallel. Publication is
+  # fail-closed because the workflow can only succeed after verify-artifact passes.
+  validate-source:
+    name: Validate source
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+      - name: Install validation dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Check maintenance, Wi-Fi recovery, and update timing
+        run: python tools/test_maintenance.py
+      - name: Check Anderson source regressions
+        run: python tools/test_regressions.py
+      - name: Check audited delivery invariants
+        run: python tools/test_audit_fixes.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+
   build-firmware:
+    name: Compile and package firmware
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
     steps:
@@ -38,18 +73,24 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: tools/requirements-build.txt
-      - name: Install build tool
-        run: python -m pip install -q -r tools/requirements-build.txt
-      - name: Install pinned web minifier
-        run: npm ci --prefix tools --no-audit --no-fund
-      - name: Check maintenance, Wi-Fi recovery, and update timing
-        run: python tools/test_maintenance.py
-      - name: Check Anderson source regressions
-        run: python tools/test_regressions.py
-      - name: Check audited delivery invariants
-        run: python tools/test_audit_fixes.py
-      - name: Check scheduled event coverage
-        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+      - name: Install build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Resolve firmware version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$ ]]
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
       - name: Restore PlatformIO dependencies
         uses: actions/cache@v4
         with:
@@ -82,10 +123,10 @@ jobs:
           else
             python tools/release.py package
           fi
-      - name: Upload firmware
+      - name: Upload firmware candidate
         uses: actions/upload-artifact@v4
         with:
-          name: Anderson-Home-NanoC6-v${{ env.VERSION }}
+          name: Anderson-Home-NanoC6-v${{ steps.version.outputs.version }}
           path: release/*
           if-no-files-found: error
       - name: Save compiled objects for the next revision
@@ -94,3 +135,54 @@ jobs:
         with:
           path: .pio-build-cache
           key: ${{ steps.objects.outputs.cache-primary-key }}
+
+  verify-artifact:
+    name: Final artifact verification gate
+    needs: [validate-source, build-firmware]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Download exact build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Anderson-Home-NanoC6-v${{ needs.build-firmware.outputs.version }}
+          path: release-check
+      - name: Verify app image, manifest, version, commit, size, and SHA-256
+        env:
+          VERSION: ${{ needs.build-firmware.outputs.version }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+
+          root = Path("release-check")
+          version = os.environ["VERSION"]
+          expected_commit = os.environ["EXPECTED_COMMIT"]
+          manifest = json.loads((root / "release.json").read_text())
+          name = f"and_{version}.bin"
+          app = root / name
+          data = app.read_bytes()
+          digest = hashlib.sha256(data).hexdigest()
+
+          assert manifest.get("version") == version, "release version mismatch"
+          assert manifest.get("commit") == expected_commit, "release commit mismatch"
+          slot = int(manifest.get("ota_slot_bytes", 0))
+          assert slot == 0x1E0000, "unexpected OTA slot size"
+          assert data and data[0] == 0xE9, "invalid ESP application image header"
+          assert len(data) < slot, "application image does not fit inactive OTA slot"
+
+          meta = manifest.get("files", {}).get(name)
+          assert meta, "app-only image missing from release manifest"
+          assert meta.get("bytes") == len(data), "manifest byte count mismatch"
+          assert meta.get("sha256") == digest, "manifest SHA-256 mismatch"
+
+          full = root / f"and_{version}_full.bin"
+          if full.exists():
+              assert full.stat().st_size > 0, "full recovery image is empty"
+
+          print(f"VERIFIED {name}: {len(data)} bytes sha256={digest}")
+          print("FINAL GATE PASS: source validation + build + package verification succeeded")
+          PY
