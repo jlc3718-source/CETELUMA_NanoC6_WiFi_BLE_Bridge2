@@ -1,0 +1,82 @@
+name: Test Anderson Safe Size Trim
+
+on:
+  push:
+    branches: ['codex/3.1.24-safe-size-pipeline']
+    paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt', '.github/workflows/test-safe-size-trim.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Install build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Run full source validation
+        run: |
+          python tools/test_maintenance.py
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+          python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Restore PlatformIO dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-v1-
+      - name: Prepare release assets
+        run: python tools/release.py prepare
+      - name: Verify UI is unchanged
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('firmware/web/index.html')
+          h=hashlib.sha256(p.read_bytes()).hexdigest()
+          assert h=='f99f55b5e163c8424867129fbc5c3410ae97c06b9186937d9a8ee824dd052419', h
+          print('UI source SHA-256 unchanged:',h)
+          PY
+      - name: Compile trimmed firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package and compare size
+        run: |
+          python tools/release.py package
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          r=json.loads(Path('release/release.json').read_text())
+          name='and_3.1.23.bin'
+          new=r['files'][name]['bytes']
+          old=1817392
+          saved=old-new
+          print(f'BASELINE_BYTES={old}')
+          print(f'TRIMMED_BYTES={new}')
+          print(f'BYTES_SAVED={saved}')
+          print(f'HEADROOM_BYTES={0x1E0000-new}')
+          assert new < old, f'no size reduction: {new} >= {old}'
+          PY
+      - name: Upload comparison artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Safe-Size-Trim-Test
+          path: release/*
+          if-no-files-found: error
