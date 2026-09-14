@@ -1,0 +1,95 @@
+name: Emergency Anderson Home 3.1.21 UI Restore
+
+on:
+  push:
+    branches: ['codex/3.1.21-emergency-ui-restore']
+    paths:
+      - '.github/workflows/emergency-3.1.21-ui-restore.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  restore-validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Restore last known-good web UI and materialize v3.1.21
+        run: |
+          set -euo pipefail
+          git show 1a9c5c0cd2f2daedc0160007851e93d3e7227546:firmware/web/index.html > firmware/web/index.html
+          python - <<'PY'
+          from pathlib import Path
+          Path('FIRMWARE_VERSION.txt').write_text('3.1.21\n')
+          p=Path('firmware/src/main.cpp')
+          s=p.read_text()
+          if '3.1.20' not in s:
+              raise SystemExit('expected 3.1.20 firmware version in main.cpp')
+          p.write_text(s.replace('3.1.20','3.1.21'))
+          p=Path('firmware/web/index.html')
+          s=p.read_text()
+          if '3.1.19' not in s:
+              raise SystemExit('expected 3.1.19 version in restored web UI')
+          p.write_text(s.replace('3.1.19','3.1.21'))
+          Path('firmware/RELEASE_NOTES_v3.1.21.md').write_text(
+              '# Anderson Home v3.1.21\n\n'
+              '- Emergency recovery release after the v3.1.20 web UI regression.\n'
+              '- Restores the last known-good v3.1.19 web interface and keeps the v3.1.20 backend schedule/favorite catalog changes.\n'
+              '- Removes the v3.1.20 semantic-color/effect-button UI patch pending safer reimplementation.\n'
+          )
+          PY
+          rm -f .github/workflows/emergency-3.1.21-ui-restore.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Anderson Home v3.1.21 emergency restore known-good web UI'
+          git push origin HEAD:refs/heads/codex/3.1.21-emergency-ui-restore
+          echo "CLEAN_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Install build tool
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Install pinned web minifier
+        run: npm ci --prefix tools --no-audit --no-fund
+      - name: Run maintenance and recovery checks
+        run: python tools/test_maintenance.py
+      - name: Run regression checks
+        run: python tools/test_regressions.py
+      - name: Run audit checks
+        run: python tools/test_audit_fixes.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package verified firmware
+        run: python tools/release.py package
+      - name: Verify emergency package identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib,os
+          assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.21'
+          p=Path('release/and_3.1.21.bin')
+          assert p.exists() and p.stat().st_size>1000000 and p.read_bytes()[:1]==b'\xE9'
+          r=json.loads(Path('release/release.json').read_text())
+          assert r['version']=='3.1.21'
+          assert r['commit']==os.environ['CLEAN_SHA']
+          info=r['files']['and_3.1.21.bin']
+          assert info['bytes']==p.stat().st_size
+          assert info['sha256']==hashlib.sha256(p.read_bytes()).hexdigest()
+          print('v3.1.21 emergency recovery package verified')
+          PY
+      - name: Upload recovery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.21-Emergency-Recovery
+          path: release/*
+          if-no-files-found: error
