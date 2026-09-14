@@ -30,6 +30,9 @@ jobs:
           python -m pip install -q -r tools/requirements-build.txt
           npm ci --prefix tools --no-audit --no-fund
 
+      - name: Prepare exact production web assets
+        run: python tools/release.py prepare
+
       - name: Enable linker map for this audit only
         run: |
           python - <<'PY'
@@ -65,7 +68,7 @@ jobs:
           cp "$BIN" size-audit/firmware.bin
           python - <<'PY'
           from pathlib import Path
-          import re, os
+          import re
           slot=0x1E0000
           binp=Path('size-audit/firmware.bin')
           b=binp.stat().st_size
@@ -74,8 +77,7 @@ jobs:
           sec=[]
           for line in Path('size-audit/sections.txt').read_text(errors='ignore').splitlines():
               m=re.match(r'^(\S+)\s+(\d+)\s+',line)
-              if m:
-                  sec.append((m.group(1),int(m.group(2))))
+              if m: sec.append((m.group(1),int(m.group(2))))
           sec_sorted=sorted(sec,key=lambda x:x[1],reverse=True)
           syms=[]
           for line in Path('size-audit/symbols-all.txt').read_text(errors='ignore').splitlines():
@@ -84,29 +86,12 @@ jobs:
                   try: syms.append((int(parts[1]),parts[-1]))
                   except: pass
           syms=sorted(syms,reverse=True)
-          md=[]
-          md.append('# Anderson Home 3.1.23 linked-image size audit')
-          md.append('')
-          md.append(f'- Firmware BIN: **{b:,} bytes**')
-          md.append(f'- OTA slot: **{slot:,} bytes**')
-          md.append(f'- Slot utilization: **{pct:.2f}%**')
-          md.append(f'- Remaining OTA headroom: **{headroom:,} bytes ({100-pct:.2f}%)**')
-          md.append('')
-          md.append('## Largest ELF sections')
-          md.append('')
-          md.append('| Section | Bytes |')
-          md.append('|---|---:|')
+          md=['# Anderson Home 3.1.23 linked-image size audit','',f'- Firmware BIN: **{b:,} bytes**',f'- OTA slot: **{slot:,} bytes**',f'- Slot utilization: **{pct:.2f}%**',f'- Remaining OTA headroom: **{headroom:,} bytes ({100-pct:.2f}%)**','','## Largest ELF sections','','| Section | Bytes |','|---|---:|']
           for name,size in sec_sorted[:20]: md.append(f'| `{name}` | {size:,} |')
-          md.append('')
-          md.append('## Largest linked symbols')
-          md.append('')
-          md.append('| Bytes | Symbol |')
-          md.append('|---:|---|')
-          for size,name in syms[:40]:
-              name=name.replace('|','\\|')
-              md.append(f'| {size:,} | `{name}` |')
+          md += ['','## Largest linked symbols','','| Bytes | Symbol |','|---:|---|']
+          for size,name in syms[:40]: md.append(f'| {size:,} | `{name.replace("|","\\|")}` |')
           Path('size-audit/report.md').write_text('\n'.join(md)+'\n')
-          print('\n'.join(md[:30]))
+          print('\n'.join(md[:36]))
           PY
 
       - name: Upload audit outputs
