@@ -6,9 +6,37 @@ Path('FIRMWARE_VERSION.txt').write_text('3.1.21\n')
 mp=Path('firmware/src/main.cpp')
 main=mp.read_text()
 main=main.replace('ANDERSON_FIRMWARE_VERSION="3.1.20"','ANDERSON_FIRMWARE_VERSION="3.1.21"')
-mp.write_text(main)
-web=web.replace('3.1.20','3.1.21')
 
+# Firmware-operation ownership / restart gate hardening from the 3.1.20 review.
+anchor="bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;"
+if anchor not in main: raise SystemExit('OTA global anchor missing')
+main=main.replace(anchor,anchor+"\nstatic bool firmwareOperationBusy(){return otaExternalClaimed||otaAutoRebootPending||Update.isRunning()||remoteUpdateOperationBusy();}",1)
+main=main.replace('server.on("/api/backup/restore",HTTP_POST,[]{if(!requireAdmin())return;if(!restoreSettingsBackup())',
+                  'server.on("/api/backup/restore",HTTP_POST,[]{if(!requireAdmin())return;if(firmwareOperationBusy()){server.send(409,"application/json","{\\"ok\\":false,\\"error\\":\\"A firmware operation is already active\\"}");return;}if(!restoreSettingsBackup())',1)
+main=main.replace('server.on("/api/palette-migration",HTTP_POST,[]{\n    if(!requireAdmin())return;JsonDocument d;',
+                  'server.on("/api/palette-migration",HTTP_POST,[]{\n    if(!requireAdmin())return;if(firmwareOperationBusy()){server.send(409,"application/json","{\\"ok\\":false,\\"error\\":\\"A firmware operation is already active\\"}");return;}JsonDocument d;',1)
+main=main.replace('server.on("/api/wifi",HTTP_POST,[]{\n    if(!requireAdmin())return;JsonDocument d;',
+                  'server.on("/api/wifi",HTTP_POST,[]{\n    if(!requireAdmin())return;if(firmwareOperationBusy()){server.send(409,"application/json","{\\"ok\\":false,\\"error\\":\\"A firmware operation is already active\\"}");return;}JsonDocument d;',1)
+old='}else if(u.status==UPLOAD_FILE_ABORTED){Update.abort();if(otaExternalClaimed){remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}otaUploadOk=false;otaUploadResponseCode=500;otaUploadError="Firmware upload aborted";}'
+new='}else if(u.status==UPLOAD_FILE_ABORTED){if(otaExternalClaimed){Update.abort();remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}otaUploadOk=false;otaUploadResponseCode=500;otaUploadError="Firmware upload aborted";}'
+if old not in main: raise SystemExit('upload aborted anchor missing')
+main=main.replace(old,new,1)
+old='if(buttonDown && millis()-buttonDown>5000){buttonDown=0;if(store.clearWiFi()){digitalWrite(BLUE_LED,HIGH);delay(500);ESP.restart();}}'
+new='if(buttonDown && millis()-buttonDown>5000){buttonDown=0;if(!firmwareOperationBusy()&&store.clearWiFi()){digitalWrite(BLUE_LED,HIGH);delay(500);ESP.restart();}}'
+if old not in main: raise SystemExit('physical reset anchor missing')
+main=main.replace(old,new,1)
+
+# Bounded automatic-backup retry: keep weekly success cadence separate from failure retries.
+anchor='static uint32_t settingsBackupLastCheckMs=0;'
+if anchor not in main: raise SystemExit('backup timer anchor missing')
+main=main.replace(anchor,anchor+'\nstatic uint64_t settingsBackupRetryAfter=0;static uint8_t settingsBackupFailureCount=0;',1)
+old='static void maybeWeeklySettingsBackup(){if(!timeValid()||Update.isRunning()||remoteUpdateOperationBusy())return;uint32_t ms=millis();if(settingsBackupLastCheckMs&&(uint32_t)(ms-settingsBackupLastCheckMs)<60000UL)return;settingsBackupLastCheckMs=ms;if(!settingsBackupMask())return;Preferences p;uint64_t lastauto=0;if(p.begin(SETTINGS_BACKUP_NS,true)){lastauto=p.getULong64("lastauto",0);p.end();}uint64_t now=(uint64_t)time(nullptr);if(!lastauto||now>=lastauto+SETTINGS_BACKUP_WEEK_SECONDS)createSettingsBackup(true);}'
+new='static void maybeWeeklySettingsBackup(){if(!timeValid()||firmwareOperationBusy())return;uint32_t ms=millis();if(settingsBackupLastCheckMs&&(uint32_t)(ms-settingsBackupLastCheckMs)<60000UL)return;settingsBackupLastCheckMs=ms;if(!settingsBackupMask())return;Preferences p;uint64_t lastauto=0;if(p.begin(SETTINGS_BACKUP_NS,true)){lastauto=p.getULong64("lastauto",0);p.end();}uint64_t now=(uint64_t)time(nullptr);if(settingsBackupRetryAfter&&now<settingsBackupRetryAfter)return;if(!lastauto||now>=lastauto+SETTINGS_BACKUP_WEEK_SECONDS){if(createSettingsBackup(true)){settingsBackupFailureCount=0;settingsBackupRetryAfter=0;}else{settingsBackupFailureCount=min<uint8_t>(settingsBackupFailureCount+1,6);uint64_t delaySeconds=300ULL<<(settingsBackupFailureCount-1);if(delaySeconds>21600ULL)delaySeconds=21600ULL;settingsBackupRetryAfter=now+delaySeconds;}}}'
+if old not in main: raise SystemExit('weekly backup anchor missing')
+main=main.replace(old,new,1)
+mp.write_text(main)
+
+web=web.replace('3.1.20','3.1.21')
 # Critical 3.1.20 runtime fix: semanticColorName() was reached by renderColorBuilder()
 # before these lexical bindings initialized, throwing a TDZ ReferenceError and halting UI startup.
 old="let savedColors=[],savedColorLabels=[],activeColorChip=null,pickerH=0,pickerS=0,pickerV=1;"
@@ -59,11 +87,13 @@ assert 'sel._syncEffectButtons=sync' in web and "setAttribute('aria-pressed'" in
 assert "$('effectSelect')._syncEffectButtons?.()" in web and "$('homeEffect')._syncEffectButtons?.()" in web
 assert 'box._addEventColor=addColor' in web and "typeof box._addEventColor==='function'" in web
 assert "customLightSummary" in web and "chip.className='colorNamePill'" in web
+assert 'static bool firmwareOperationBusy()' in main and 'if(otaExternalClaimed){Update.abort();remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}' in main
+assert 'settingsBackupRetryAfter' in main and 'delaySeconds>21600ULL' in main
 """
 marker="assert 'savedColorLabels' in web and \"p.name||NAMED_COLOR_PALETTE[i]?.name\" in web\n"
 if marker not in t: raise SystemExit('regression insertion marker missing')
 t=t.replace(marker,marker+insert,1)
 tp.write_text(t)
 
-Path('firmware/RELEASE_NOTES_v3.1.21.md').write_text('''# Anderson Home v3.1.21\n\n- Emergency recovery for the v3.1.20 browser runtime failure that prevented the remainder of the UI from initializing.\n- Preserves the blue interface, four visible Jump/Breath/Strobe/Solid buttons, backup tab, schedules, favorites, calibrated LED payload values, permissions, and Android freeze.\n- Synchronizes effect-button highlighting with incoming state without sending unintended control commands.\n- Keeps event favorite-color additions removable after the RGB picker is opened.\n- Uses semantic color names on built-in and custom schedule surfaces while preserving calibrated LED payloads.\n- Preserves exact HEX/RGB tuning values in Live Color Tuning.\n''')
+Path('firmware/RELEASE_NOTES_v3.1.21.md').write_text('''# Anderson Home v3.1.21\n\n- Emergency recovery for the v3.1.20 browser runtime failure that prevented the remainder of the UI from initializing.\n- Preserves the blue interface, four visible Jump/Breath/Strobe/Solid buttons, backup tab, schedules, favorites, calibrated LED payload values, permissions, partition map, protected updates, and Android freeze.\n- Synchronizes effect-button highlighting with incoming state without sending unintended control commands.\n- Keeps event favorite-color additions removable after the RGB picker is opened.\n- Uses semantic color names on built-in and custom schedule surfaces while preserving calibrated LED payloads.\n- Preserves exact HEX/RGB tuning values in Live Color Tuning.\n- Restricts firmware abort/reboot-sensitive paths to the owning operation and adds bounded automatic-backup failure retry backoff.\n''')
 print('v3.1.21 reviewed recovery patch applied')
