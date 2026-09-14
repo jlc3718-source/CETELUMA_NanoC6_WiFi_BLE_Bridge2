@@ -79,6 +79,8 @@ jobs:
       - name: Report cache footprint and benchmark
         run: |
           du -sh ~/.platformio/platforms ~/.platformio/packages firmware/.pio/libdeps .pio-build-cache 2>/dev/null || true
+          echo 'Largest PlatformIO package directories:'
+          du -sh ~/.platformio/packages/* 2>/dev/null | sort -h | tail -n 25 || true
           echo "### Lean pipeline benchmark" >> "$GITHUB_STEP_SUMMARY"
           echo "- Lean PIO cache hit: ${{ steps.piolean.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Object cache hit: ${{ steps.objects.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
