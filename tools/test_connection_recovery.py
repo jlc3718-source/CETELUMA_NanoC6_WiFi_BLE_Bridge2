@@ -6,7 +6,9 @@ ble=(ROOT/'firmware/src/BleController.cpp').read_text();hdr=(ROOT/'firmware/incl
 assert 'delay(RELIABLE_RETRY_DELAY_MS)' not in ble
 assert 'writeReliableToTargets' not in ble
 assert 'servicePendingWrites' in ble and 'PendingFrame' in hdr
-assert 'WRITE_GAP_MS=18UL' in ble and '(uint32_t)(now-lastWrite)<WRITE_GAP_MS' in ble
+assert 'WRITE_GAP_MS=18UL' in ble and '(uint32_t)(now-slots[i].lastWriteAt)<WRITE_GAP_MS' in ble
+assert 'lastWrite=0' not in hdr
+assert 'canWriteNoResponse()' in ble and 'const bool requestAck=!canNoResponse' in ble
 assert 'p->generation!=generation' in ble
 assert 'failureRetryMs' in ble
 assert 'STATIC_REASSERT_INTERVAL_MS=30000UL' in ble
@@ -26,7 +28,7 @@ p=P();g=p.put();p.result(g,False);assert p.pending and p.fail==1
 g2=p.put();p.result(g,True);assert p.pending and p.gen==g2
 p.result(g2,True);assert p.pending and p.remaining==1
 p.result(g2,True);assert not p.pending
-print('PASS: BLE delivery uses a bounded nonblocking superseding queue with retry/convergence semantics and synchronized software-effect frames')
+print('PASS: BLE delivery uses per-controller pacing, back-to-back dual-controller dispatch, no-response fast writes where supported, and retry/convergence semantics')
 html=(ROOT/'firmware/web/index.html').read_text();helper=html[html.index('async function controllerRequest('):html.index('/* ANDERSON_LOCKOUT_SAFE_PROFILE_GATE */')]
 js=helper+"""
 const assert=require('node:assert/strict');function stalled(signal){return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true}));}(async()=>{global.fetch=(_,options)=>stalled(options.signal);await assert.rejects(controllerRequest('/test',{},5),/timed out/);global.fetch=async()=>({ok:true,text:async()=>'{"ok":true}'});const result=await controllerRequest('/test',{},50);assert.equal(JSON.parse(result.text).ok,true);console.log('PASS: timed-out requests release the UI for retry')})().catch(e=>{console.error(e);process.exitCode=1});

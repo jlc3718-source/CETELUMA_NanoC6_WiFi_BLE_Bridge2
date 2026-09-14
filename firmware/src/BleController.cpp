@@ -85,16 +85,16 @@ void BleController::disconnectSlot(uint8_t i){if(i>1)return;clearPending(i);
 }
 bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);++slots[i].generation;slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}
 
-bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i)||(uint32_t)(millis()-lastWrite)<WRITE_GAP_MS)return false;lastWrite=millis();
+bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i))return false;slots[i].lastWriteAt=millis();
 #ifdef MOCK_BLE
   (void)data;(void)len;return true;
 #else
-  const bool requestAck=slots[i].chr&&slots[i].chr->canWrite();return slots[i].chr->writeValue(data,len,requestAck);
+  auto* chr=slots[i].chr;if(!chr)return false;const bool canNoResponse=chr->canWriteNoResponse(),canResponse=chr->canWrite();if(!canNoResponse&&!canResponse)return false;const bool requestAck=!canNoResponse;return chr->writeValue(data,len,requestAck);
 #endif
 }
 void BleController::enqueueFrame(uint8_t i,PendingFrame& p,const uint8_t* data,size_t len,bool reliable){if(i>1||!data||!len||len>sizeof(p.data))return;memcpy(p.data,data,len);p.len=(uint8_t)len;p.sendsRemaining=reliable?2:1;p.failures=0;p.dueAt=millis();p.generation=++slots[i].commandGeneration;p.pending=true;}
 void BleController::enqueueToTargets(uint8_t kind,const uint8_t* data,size_t len,bool reliable){for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i))continue;PendingFrame* p=kind==0?&slots[i].power:(kind==1?&slots[i].brightness:&slots[i].color);enqueueFrame(i,*p,data,len,reliable);}}
-void BleController::servicePendingWrites(uint32_t now){if((uint32_t)(now-lastWrite)<WRITE_GAP_MS)return;for(uint8_t pass=0;pass<2;pass++){uint8_t i=(uint8_t)((nextServiceSlot+pass)%2);if(!slotConnected(i)){clearPending(i);continue;}PendingFrame* choices[3]={&slots[i].power,&slots[i].brightness,&slots[i].color};for(auto* p:choices){if(!p->pending||(int32_t)(now-p->dueAt)<0)continue;uint32_t generation=p->generation;bool ok=writeSlot(i,p->data,p->len);if(!p->pending||p->generation!=generation)return;if(ok){p->failures=0;if(p->sendsRemaining>0)--p->sendsRemaining;if(!p->sendsRemaining)p->pending=false;else p->dueAt=millis()+RELIABLE_RETRY_DELAY_MS;}else{if(p->failures<255)++p->failures;p->dueAt=millis()+failureRetryMs(p->failures);}nextServiceSlot=(uint8_t)((i+1)%2);return;}}}
+void BleController::servicePendingWrites(uint32_t now){for(uint8_t pass=0;pass<2;pass++){uint8_t i=(uint8_t)((nextServiceSlot+pass)%2);if(!slotConnected(i)){clearPending(i);continue;}if((uint32_t)(now-slots[i].lastWriteAt)<WRITE_GAP_MS)continue;PendingFrame* choices[3]={&slots[i].power,&slots[i].brightness,&slots[i].color};for(auto* p:choices){if(!p->pending||(int32_t)(now-p->dueAt)<0)continue;uint32_t generation=p->generation;bool ok=writeSlot(i,p->data,p->len);if(!p->pending||p->generation!=generation)return;if(ok){p->failures=0;if(p->sendsRemaining>0)--p->sendsRemaining;if(!p->sendsRemaining)p->pending=false;else p->dueAt=millis()+RELIABLE_RETRY_DELAY_MS;}else{if(p->failures<255)++p->failures;p->dueAt=millis()+failureRetryMs(p->failures);}nextServiceSlot=(uint8_t)((i+1)%2);return;}}}
 
 void BleController::setPower(bool on){uint8_t f[9]={0x7E,0x04,0x04,(uint8_t)(on?0xF0:0x00),0x00,(uint8_t)(on?0x01:0x00),0xFF,0x00,0xEF};enqueueToTargets(0,f,9,true);}
 void BleController::setColor(uint32_t c,bool reliable){uint8_t f[9]={0x7E,0x07,0x05,0x03,r8(c),g8(c),b8(c),0x10,0xEF};enqueueToTargets(2,f,9,reliable);}

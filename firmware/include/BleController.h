@@ -46,7 +46,7 @@ class BleController {
   struct Slot {
     String name;
     String address;
-    uint32_t generation=0,nextConnectAt=0,commandGeneration=0;
+    uint32_t generation=0,nextConnectAt=0,commandGeneration=0,lastWriteAt=0;
     PendingFrame power,brightness,color;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
@@ -55,7 +55,7 @@ class BleController {
   } slots[2];
   AppSettings* cfg=nullptr;
   uint8_t target=0,nextServiceSlot=0;
-  uint32_t lastWrite=0,lastEffect=0,lastStaticReassert=0,lastControlReassert=0;
+  uint32_t lastEffect=0,lastStaticReassert=0,lastControlReassert=0;
   uint32_t startedAt=0;
   bool connectionChanged=false;
   Theme activeTheme;
