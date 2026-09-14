@@ -61,7 +61,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.15";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.16";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -273,8 +273,8 @@ static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENT
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
 String stateJson(){
   JsonDocument d;d["firmwareVersion"]=ANDERSON_FIRMWARE_VERSION;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();addTheme(r,runningTheme);
-  auto&s=store.get();JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);cfg["lead"]=s.leadDays;cfg["trail"]=s.trailDays;cfg["overlap"]=s.overlap;cfg["tz"]=s.tz;cfg["scheduler"]=s.schedulerEnabled;cfg["scheduler2"]=s.schedule2Enabled;cfg["schedule2Brightness"]=30;
-  tm l{};if(timeValid()){time_t n=time(nullptr);localtime_r(&n,&l);uint16_t dawn=scheduler.civilDawnMinutes(l);cfg["dawn"]=fmtTime(dawn);d["scheduleWindow"]=String("Schedule 1 ")+fmtTime(s.onMinutes)+" - "+fmtTime(s.offMinutes)+" • Schedule 2 "+fmtTime(s.offMinutes)+" - dawn ("+fmtTime(dawn)+") at 30%";d["nextEvent"]=scheduler.nextEventLabel(l);}else{d["scheduleWindow"]=String("Schedule 1 ")+fmtTime(s.onMinutes)+" - "+fmtTime(s.offMinutes)+" • Schedule 2 "+fmtTime(s.offMinutes)+" - dawn at 30%";d["nextEvent"]="Waiting for time sync";}
+  auto&s=store.get();JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);cfg["lead"]=s.leadDays;cfg["trail"]=s.trailDays;cfg["overlap"]=s.overlap;cfg["tz"]=s.tz;cfg["scheduler"]=s.schedulerEnabled;cfg["scheduler2"]=s.schedule2Enabled;cfg["schedule2Brightness"]=10;
+  tm l{};if(timeValid()){time_t n=time(nullptr);localtime_r(&n,&l);uint16_t dawn=scheduler.civilDawnMinutes(l);cfg["dawn"]=fmtTime(dawn);d["scheduleWindow"]=String("Schedule 1 ")+fmtTime(s.onMinutes)+" - "+fmtTime(s.offMinutes)+" • Schedule 2 "+fmtTime(s.offMinutes)+" - dawn ("+fmtTime(dawn)+") at 10%";d["nextEvent"]=scheduler.nextEventLabel(l);}else{d["scheduleWindow"]=String("Schedule 1 ")+fmtTime(s.onMinutes)+" - "+fmtTime(s.offMinutes)+" • Schedule 2 "+fmtTime(s.offMinutes)+" - dawn at 10%";d["nextEvent"]="Waiting for time sync";}
   JsonObject w=d["wifi"].to<JsonObject>();w["ssid"]=WiFi.status()==WL_CONNECTED?WiFi.SSID():"";w["rssi"]=WiFi.status()==WL_CONNECTED?WiFi.RSSI():0;w["ip"]=WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString();
   JsonObject b=d["ble"].to<JsonObject>();b["connected"]=ble.connected();b["connectedCount"]=ble.connectedCount();b["name"]=ble.name();b["address"]=ble.address();b["protocol"]=ble.protocolName();b["target"]=ble.getTarget();JsonArray ca=b["controllers"].to<JsonArray>();for(uint8_t i=0;i<2;i++){auto si=ble.slotInfo(i);if(!si.address.length())continue;JsonObject c=ca.add<JsonObject>();c["slot"]=i;c["name"]=si.name;c["address"]=si.address;c["protocol"]=si.protocol;c["connected"]=si.connected;}
   d["manualOverride"]=manualOverride;String out;serializeJson(d,out);return out;
@@ -306,7 +306,7 @@ void evaluateSchedule(bool force=false){
   if(manualOverride||!timeValid())return;tm l{};time_t n=time(nullptr);localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
   ble.setTarget(0);brightness=100;speedLevel=1;bool schedule1Active=s.schedulerEnabled&&scheduler.inRunWindow(l);bool schedule2Active=s.schedule2Enabled&&scheduler.inSchedule2Window(l);if(!schedule1Active&&!schedule2Active){if(power){power=false;ble.setPower(false);}return;}
   tm themeLocal=l;if(schedule2Active&&!schedule1Active){uint16_t dawn=scheduler.civilDawnMinutes(l);int mins=l.tm_hour*60+l.tm_min;if(mins<dawn){themeLocal.tm_mday-=1;themeLocal.tm_isdst=-1;mktime(&themeLocal);}}
-  Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=30;bool changed=!power||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;power=true;runningTheme=t;if(changed||force)applyRunning(true);
+  Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=10;bool changed=!power||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;power=true;runningTheme=t;if(changed||force)applyRunning(true);
 }
 void startAP(){
   WiFi.mode(WIFI_AP_STA);WiFi.softAP("AndersonHome-Setup","andersonhome");setupAP=true;

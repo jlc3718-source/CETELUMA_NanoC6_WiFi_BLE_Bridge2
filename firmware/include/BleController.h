@@ -46,7 +46,7 @@ class BleController {
   struct Slot {
     String name;
     String address;
-    uint32_t generation=0,nextConnectAt=0,commandGeneration=0,lastWriteAt=0;
+    uint32_t generation=0,nextConnectAt=0,commandGeneration=0;
     PendingFrame power,brightness,color;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
