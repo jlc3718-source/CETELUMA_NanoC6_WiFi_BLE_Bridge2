@@ -9,8 +9,9 @@ on:
         default: false
   # Production delivery uses one persistent release branch so caches survive
   # normal source revisions and the publisher can validate one stable ref.
+  # The UI facelift branch is temporary build-only validation and is not publishable.
   push:
-    branches: ['codex/release-current']
+    branches: ['codex/release-current', 'codex/ui-glass-facelift']
     paths: ['firmware/**', 'tools/**', 'FIRMWARE_VERSION.txt']
   pull_request:
     branches: [main]
