@@ -38,7 +38,7 @@ jobs:
           scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',w,re.S|re.I)
           Path('/tmp/anderson-inline.js').write_text('\n;\n'.join(scripts))
           assert w.index('let savedColors=[],savedColorLabels=[];') < w.index('function semanticColorName') < w.index('renderColorBuilder();')
-          assert 'id="backupSettingsTab"' in w or '/api/backup/status' in w
+          assert 'data-page="settings"' in w and 'systemMonitorPanel' in w and 'Firmware Update' in w
           assert "const EFFECT_BUTTON_VALUES=['Jump','Breath','Strobe','Solid']" in w
           assert "$('liveColorCode').textContent=h" in w
           assert '--accent:#29d8ff' in w or '#27aaff' in w
@@ -55,12 +55,12 @@ jobs:
         run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
       - name: Verify no partition-map or Android changes
         run: |
-          git diff --exit-code 27b07eee07d02d84283f2733af24210120aa869c -- firmware/platformio.ini android || true
           python - <<'PY'
           import subprocess
           changed=subprocess.check_output(['git','diff','--name-only','27b07eee07d02d84283f2733af24210120aa869c']).decode().splitlines()
           assert not any(p.startswith('android/') for p in changed), changed
           assert 'firmware/platformio.ini' not in changed, changed
+          assert 'firmware/partitions_ota.csv' not in changed, changed
           print('Partition/build map and Android tree unchanged')
           PY
       - name: Prepare release
@@ -73,7 +73,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json,hashlib,subprocess
+          import json,hashlib
           assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.21'
           p=Path('release/and_3.1.21.bin')
           assert p.exists() and p.stat().st_size>1000000 and p.read_bytes()[:1]==b'\xE9'
