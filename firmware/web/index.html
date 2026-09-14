@@ -87,6 +87,12 @@ input[type=checkbox],input[type=range]{accent-color:#2cff8a}
 .colorNamePill{display:inline-flex;align-items:center;justify-content:center;min-height:25px;padding:4px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.32);font-size:10px;font-weight:800;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.22)}
 .colorChip.namedColorChip{width:auto!important;min-width:74px!important;height:48px!important;padding:5px 7px!important;font-size:10px!important;font-weight:800!important;line-height:1.05!important;text-align:center!important}
 @media(max-width:430px){.effectButtonGroup{gap:5px}.effectChoice{font-size:10px;padding:7px 3px}.colorChip.namedColorChip{min-width:66px!important}}
+
+<style id="anderson-settings-backup-ui">
+.settingsSubnav{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 12px}.settingsSubnav .btn.active{border-color:#55dfff;background:linear-gradient(180deg,rgba(39,170,255,.34),rgba(20,90,145,.42));box-shadow:0 0 14px rgba(41,216,255,.16)}
+.backupChoiceGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.backupChoice{display:flex;gap:9px;align-items:center;min-height:52px;padding:9px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+@media(max-width:430px){.backupChoiceGrid{grid-template-columns:1fr}}
+</style>
 </style>
 </head>
 <body class="profile-locked">
@@ -272,6 +278,22 @@ async function controllerRequest(path,options={},timeoutMs=12000){
   </section>
 
   <section class="page" data-page="settings">
+  <div id="settingsSubnav" class="settingsSubnav" role="tablist" aria-label="Settings sections"><button id="settingsGeneralTab" class="btn active" type="button" role="tab" aria-selected="true">System</button><button id="backupSettingsTab" class="btn" type="button" role="tab" aria-selected="false">Backup &amp; Restore</button></div>
+    <div id="backupSettingsPanel" class="panel" hidden>
+      <strong>Settings Backup</strong><div class="sub">Automatically backs up the selected settings once a week. You can also back up or restore manually at any time.</div>
+      <div class="backupChoiceGrid">
+        <label class="backupChoice"><input id="backupSchedule" type="checkbox"><span><strong>Schedules</strong><br><span class="sub">Times, rules, holiday calendar</span></span></label>
+        <label class="backupChoice"><input id="backupControllers" type="checkbox"><span><strong>Controllers</strong><br><span class="sub">BLE controller setup</span></span></label>
+        <label class="backupChoice"><input id="backupCustom" type="checkbox"><span><strong>Custom Lights</strong><br><span class="sub">Shows and custom schedules</span></span></label>
+        <label class="backupChoice"><input id="backupFavorites" type="checkbox"><span><strong>Favorite Colors</strong><br><span class="sub">Saved calibrated palette values</span></span></label>
+        <label class="backupChoice"><input id="backupEvents" type="checkbox"><span><strong>Events</strong><br><span class="sub">Enabled, favorites, event edits</span></span></label>
+      </div>
+      <div id="backupStatusCard" class="card small" style="margin-top:10px">Loading backup status…</div>
+      <button id="saveBackupSelection" class="btn" type="button" style="width:100%;margin-top:9px">Save Backup Selection</button>
+      <button id="backupNow" class="btn primary" type="button" style="width:100%;margin-top:9px">Back Up Now</button>
+      <button id="restoreBackup" class="btn" type="button" style="width:100%;margin-top:9px" disabled>Restore Last Good Backup</button>
+      <div class="note">Backups use two verified generations in the existing persistent storage partition. A failed backup cannot replace the last good backup. Restore prevalidates the complete snapshot and keeps a recovery copy until the restore commits.</div>
+    </div>
     <div id="systemMonitorPanel" class="panel">
       <div class="row between"><div><strong>System Monitor</strong><div class="sub">Live NanoC6 health • refreshes every 2 seconds</div></div><span id="sysLive" class="badge">LIVE</span></div>
       <div class="sysToolbar">
@@ -345,7 +367,7 @@ async function controllerRequest(path,options={},timeoutMs=12000){
       <div class="grid2" style="margin-top:10px"><button id="rebootNano" class="btn">Reboot NanoC6</button><button id="rollbackFirmware" class="btn">Boot Previous Firmware</button></div>
     </div>
 
-        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v3.0.0</strong></div></div>
+        <div class="panel"><strong>Firmware Revision</strong><div class="sub">Current NanoC6 firmware</div><div class="card small" style="margin-top:10px"><strong>v3.1.21</strong></div></div>
 
     <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. Custom scheduled light</div><div>3. Specific holiday / awareness / seasonal day</div><div>4. Holiday window</div><div>5. Month-long events</div><div>6. Normal preset</div><div style="margin-top:5px">Coverage guarantee: if higher-priority dates occupy every night of a month, the least-conflicted night reserves its first third for the enabled month-long events; the higher-priority scene finishes the night and continues through Schedule 2.</div></div></div>
   </section>
@@ -370,6 +392,12 @@ async function controllerRequest(path,options={},timeoutMs=12000){
 <div id="scheduleOverlay" class="scheduleOverlay"><div class="scheduleCard"><strong>Add Custom Light to Schedule</strong><div id="schedulePresetName" class="sub" style="margin-top:4px"></div><div class="label">Date</div><input id="customScheduleDate" type="date" class="field"><label class="row" style="margin-top:12px"><input id="customScheduleAnnual" type="checkbox" checked><span class="small">Repeat every year</span></label><div class="grid2" style="margin-top:12px"><button id="cancelCustomSchedule" class="btn">Cancel</button><button id="saveCustomSchedule" class="btn primary">Add to Schedule</button></div></div></div>
 <script>
 let currentRole='none',wifiScanBusy=false;
+let settingsSubtab='main',settingsBackupState=null;
+function settingsBackupMaskFromUi(){let m=0;if($('backupSchedule')?.checked)m|=1;if($('backupControllers')?.checked)m|=2;if($('backupCustom')?.checked)m|=4;if($('backupFavorites')?.checked)m|=8;if($('backupEvents')?.checked)m|=16;return m}
+function settingsBackupTime(v){const n=Number(v||0);if(!n)return 'Never';try{return new Date(n*1000).toLocaleString()}catch(e){return String(n)}}
+function showSettingsSubtab(which){settingsSubtab=which==='backup'?'backup':'main';const page=document.querySelector('.page[data-page="settings"]'),backup=$('backupSettingsPanel');if(!page||!backup)return;Array.from(page.children).forEach(el=>{if(el.classList?.contains('panel'))el.hidden=settingsSubtab==='backup'?el!==backup:el===backup});const g=$('settingsGeneralTab'),b=$('backupSettingsTab');if(g){g.classList.toggle('active',settingsSubtab==='main');g.setAttribute('aria-selected',settingsSubtab==='main'?'true':'false')}if(b){b.classList.toggle('active',settingsSubtab==='backup');b.setAttribute('aria-selected',settingsSubtab==='backup'?'true':'false')}if(settingsSubtab==='backup')loadSettingsBackupStatus()}
+async function loadSettingsBackupStatus(){if(currentRole!=='admin'&&currentRole!=='jason'){}try{const d=await api('/api/backup/status');settingsBackupState=d;const mask=Number(d.mask||0);[['backupSchedule',1],['backupControllers',2],['backupCustom',4],['backupFavorites',8],['backupEvents',16]].forEach(([id,bit])=>{const el=$(id);if(el)el.checked=!!(mask&bit)});const parts=[];parts.push(`<strong>${d.hasBackup?'Last good backup available':'No completed backup yet'}</strong>`);parts.push(`Last successful: ${settingsBackupTime(d.lastBackup)}`);parts.push(`Last automatic: ${settingsBackupTime(d.lastAutomatic)}`);parts.push(`Next weekly backup: ${d.nextAutomatic?settingsBackupTime(d.nextAutomatic):'As soon as time is synchronized'}`);if(d.retryAfter)parts.push(`Failure retry: ${settingsBackupTime(d.retryAfter)}`);if(d.restorePending)parts.push('<b>Restore recovery is pending and will be completed before normal operation.</b>');parts.push(`Storage: ${d.storageReady===false?'Unavailable':(d.backend||'Persistent storage')}`);$('backupStatusCard').innerHTML=parts.join('<br>');$('restoreBackup').disabled=!d.hasBackup;$('backupNow').disabled=!mask||d.storageReady===false}catch(e){$('backupStatusCard').textContent='Backup status unavailable: '+e.message}}
+
 
 const API_MODE = location.protocol==='http:' || location.protocol==='https:';
 const $=id=>document.getElementById(id); const status=m=>$('statusMsg').textContent=m;
@@ -377,7 +405,12 @@ async function api(path,opts={},timeoutMs=12000){if(!API_MODE)throw new Error('p
 async function post(path,obj,timeoutMs=12000){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)},timeoutMs)}
 window.addEventListener('anderson-profile-selected',event=>{currentRole=event.detail?.role||'none';loadState();loadEventColorTheme();loadEvents();loadCustomSchedules();loadHomeCustomLights();loadSavedColors();if(event.detail?.id==='jason'){loadCustomPresets();loadFirmwareInfo();loadPinSettings()}});
 window.addEventListener('anderson-profile-cleared',()=>{currentRole='none'});
-document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{if(btn.hidden||currentRole==='none')return;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='home')loadHomeCustomLights();if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();}if(btn.dataset.tab==='events'){loadEventColorTheme();loadEvents();loadCustomSchedules();}if(btn.dataset.tab==='settings'){loadState();loadPinSettings();loadSystemMonitor();loadLiveColorPresets();}}));
+$('settingsGeneralTab')?.addEventListener('click',()=>showSettingsSubtab('main'));
+$('backupSettingsTab')?.addEventListener('click',()=>showSettingsSubtab('backup'));
+$('saveBackupSelection')?.addEventListener('click',async()=>{try{const mask=settingsBackupMaskFromUi();await post('/api/backup/config',{mask});status(mask?'Backup selection saved; weekly backup is enabled.':'Backup selection cleared; automatic backup is disabled.');await loadSettingsBackupStatus()}catch(e){status('Backup selection failed: '+e.message)}});
+$('backupNow')?.addEventListener('click',async()=>{try{const mask=settingsBackupMaskFromUi();if(!mask){status('Select at least one backup category first.');return}await post('/api/backup/config',{mask});status('Creating verified backup…');await post('/api/backup/now',{});status('Backup completed and verified.');await loadSettingsBackupStatus()}catch(e){status('Backup failed; the previous good backup was preserved: '+e.message);await loadSettingsBackupStatus()}});
+$('restoreBackup')?.addEventListener('click',async()=>{if(!confirm('Restore the last verified settings backup? The NanoC6 will reboot after the restore commits.'))return;try{status('Validating and restoring backup…');await post('/api/backup/restore',{});status('Restore committed. NanoC6 is rebooting…')}catch(e){status('Restore failed; recovery kept the previous live settings: '+e.message);await loadSettingsBackupStatus()}});
+document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{if(btn.hidden||currentRole==='none')return;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===btn));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===btn.dataset.tab));if(btn.dataset.tab==='home')loadHomeCustomLights();if(btn.dataset.tab==='lights'){/* ANDERSON_CUSTOM_LIGHTS_AUTO_LOAD */loadCustomPresets();}if(btn.dataset.tab==='events'){loadEventColorTheme();loadEvents();loadCustomSchedules();}if(btn.dataset.tab==='settings'){loadState();loadPinSettings();loadSystemMonitor();loadLiveColorPresets();if(settingsSubtab==='backup')loadSettingsBackupStatus();}}));
 
 const leds=[],rows=$('ledRows');{const row=document.createElement('div');row.className='ledgrid';for(let i=0;i<20;i++){const d=document.createElement('div');d.className='led';row.appendChild(d);leds.push(d)}rows.appendChild(row)}
 const houseLeds=[],houseGroup=$('houseLeds'),houseScene=houseGroup.closest('.housePreview'),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82],[285,92],[285,106],[285,120],[285,134],[270,145],[250,145],[230,145],[210,145],[190,145],[170,145],[150,145],[130,145],[110,145],[90,145],[75,134],[75,118],[75,102],[75,88]];

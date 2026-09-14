@@ -43,6 +43,14 @@ assert "customLightSummary" in web and "chip.className='colorNamePill'" in web
 assert 'static bool firmwareOperationBusy()' in main and 'if(otaExternalClaimed){Update.abort();remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}' in main
 assert 'settingsBackupRetryAfter' in main and 'delaySeconds>21600ULL' in main
 
+assert 'ANDERSON_SETTINGS_BACKUP_V3_1_21_TRANSACTIONAL' in main
+assert 'SETTINGS_BACKUP_FILE0' in main and 'SETTINGS_BACKUP_FILE1' in main and 'SETTINGS_RESTORE_ROLLBACK' in main
+assert 'settingsBackupValidateDocument' in main and 'settingsBackupCommitActive' in main
+assert 'settingsBackupSetRestorePending(true)' in main and 'settingsBackupRecoverPendingRestore' in main
+assert 'settingsBackupMigrateLegacy' in main and 'SPIFFS dual-generation' in main
+assert 'id="backupSettingsTab"' in web and 'id="backupSettingsPanel"' in web
+assert '/api/backup/status' in web and '/api/backup/now' in web and '/api/backup/restore' in web
+
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
 assert '/api/event-color-theme' in main+web and 'eventColors1' in web and 'eventColors3028' in web and 'eventColors3029' in web

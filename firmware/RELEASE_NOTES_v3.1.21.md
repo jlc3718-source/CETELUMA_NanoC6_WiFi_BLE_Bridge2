@@ -7,3 +7,7 @@
 - Uses semantic color names on built-in and custom schedule surfaces while preserving calibrated LED payloads.
 - Preserves exact HEX/RGB tuning values in Live Color Tuning.
 - Restricts firmware abort/reboot-sensitive paths to the owning operation and adds bounded automatic-backup failure retry backoff.
+- Restores the separate Settings → Backup & Restore tab for weekly user-selected backups, manual backup, and manual restore.
+- Moves settings snapshots to verified dual-generation files in the existing SPIFFS partition, preserving the previous good generation until a new one validates and commits.
+- Prevalidates complete restores and uses a boot-recoverable rollback journal so a failed or interrupted restore can return to the prior live state.
+- Migrates a valid legacy v1 settings backup into the new verified format without changing the partition map.

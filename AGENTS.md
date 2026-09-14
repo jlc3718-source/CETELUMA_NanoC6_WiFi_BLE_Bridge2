@@ -59,7 +59,7 @@ GitHub runner queue vary.
 - Existing Wi-Fi defaults/connection behavior, BLE frames/GATT, and partition map.
 - Shirley/Jason independent PINs, access rules, and protected recovery.
 - Saved NVS key names and formats, events, colors, names, and effects.
-- Supported user effects are Jump, Breath, Strobe, and Solid/Static. Legacy Gradient ID 3 may remain reserved for backward compatibility but must never be offered or assigned; legacy Gradient assignments migrate to Breath.
+- Supported user effects are Jump, Breath, Strobe, and Solid/Static. Legacy Gradient ID 3 may remain reserved for backward compatibility but must never be offered or assigned; retired/unknown legacy effect names map to Jump. Breath is a supported selectable effect but is not assigned automatically to built-in events.
 - Software speeds `2000/1000/500/250/100 ms`; Solid holds the first palette color.
 - Do not use an unconditional uptime-based maintenance reboot. Reboot at **00:00, 06:00, 12:00, and 18:00 local controller time** when the clock is valid. Each scheduled slot must fire at most once, initialize after boot/time-sync without immediately re-firing an already-passed slot, and defer while firmware update/reboot activity is active. System Monitor must show the next scheduled maintenance reboot and a live countdown. While saved Wi-Fi credentials exist and the controller is disconnected, retry the saved network every 30 seconds; if it remains continuously offline for 10 minutes despite retries, reboot as a last-resort recovery. Reset the offline watchdog immediately after reconnection.
 - Successful Wi-Fi recovery must stop fallback AP mode and renew NTP/mDNS. Preserve saved credentials. Do not reboot repeatedly when no credentials are configured.
@@ -71,8 +71,7 @@ GitHub runner queue vary.
 
 ## Remote OTA behavior
 
-- v2.0.6 and later periodically check the signed `ota/latest.json` channel after
-  startup and every hour while Wi-Fi is available.
+- Current firmware checks the signed `ota/latest.json` channel about 20 seconds after startup and every 5 minutes while Wi-Fi is healthy, with bounded retry/backoff after failures.
 - A newer release is installed automatically only after the existing ECDSA manifest
   verification, version/URL/size checks, exact streamed SHA-256 verification, and
   successful write to the inactive OTA slot. Downgrades remain blocked.
@@ -84,9 +83,10 @@ GitHub runner queue vary.
   allow visible removal as well as addition of colors while keeping at least one color;
   preserve event identity, ordering, schedules, and unrelated event settings.
 - Color buttons and tiles use recognizable browser-facing sRGB reference colors for their names while preserving the separate calibrated LED output codes. Quick Colors must show each color name.
-- Built-in events use one firmware-owned event palette. Per-event edits use one persistent override slot and routine firmware upgrades must preserve those edits. Legacy dual-theme override slots migrate into the single retained slot non-destructively.
-- The Favorites page shows a checked Favorite control beside every favorite scene so it can be removed directly from Favorites.
-- Favorite Colors are firmware-locked to the retained approved set: Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#E0B400`, Green `#28FF00`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, and Navy Blue `#001478`. `/api/colors` is read-only; the UI must not offer add/delete controls. Changing this palette requires a firmware build.
+- Built-in event scheduling has three selectable profiles: **1** = the 28 approved Scene Favorites using the basic/original color families, **9** = the expanded holiday calendar using the basic nine-color palette, and **16** = the expanded calendar using the expanded 16-color palette. Per-event edits use one persistent override slot and routine firmware upgrades must preserve those edits.
+- The Favorites page shows a checked Favorite control beside every favorite scene so it can be removed directly from Favorites. The approved built-in Scene Favorites list currently contains 28 entries and the **1** schedule mirrors that list.
+- The current named palette is Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#E08700`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, Teal `#00B4B4`, Sky Blue `#0096FF`, Amber Gold `#FFA000`, Lavender `#B464FF`, Navy Blue `#001478`, Burgundy `#87002D`, and Silver Gray `#A0A5AF`. Browser-facing swatches use recognizable reference colors while calibrated LED payload values remain separate. Existing named slots may be tuned/overwritten through Live Color Tuning; do not add or delete palette slots from the UI.
+- Settings includes a separate **Backup & Restore** sub-tab. It backs up the user-selected categories automatically once per week and supports manual backup/restore. A failed backup must preserve the previous verified generation; restore must prevalidate the complete snapshot and retain a recoverable prior-state journal until commit.
 
 ## Source map
 
@@ -100,6 +100,4 @@ GitHub runner queue vary.
 - `.github/scripts/anderson-retention.sh`, `.github/workflows/anderson-retention.yml`:
   current-plus-one build/release retention policy.
 
-- v3.1.11 unified event palette uses the retained approved color set, with Yellow calibrated to #E0B400. Built-in events, event overrides, custom saved lights, and schedules use the approved firmware color correction table. White, black, and intentional autumn browns remain distinct.
-
-- v3.1.11 approved named colors: Red, Orange, Pink, Yellow, Green, Blue, Purple, White/Warm White, and Navy Blue. Legacy stored values are migrated to the nearest retained family and are not presented as selectable palette entries.
+- Current event/palette behavior is defined by the 1/9/16 schedule profiles above, with Yellow calibrated to `#E08700`. Preserve the 16 named slots and the current color-correction table.
