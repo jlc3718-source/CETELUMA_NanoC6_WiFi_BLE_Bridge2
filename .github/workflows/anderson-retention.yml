@@ -29,16 +29,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Keep current plus one backup
+      - name: Keep current plus one backup and purge old run history
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           CLEAN_RELEASES: '1'
+          RUN_MAX_AGE_HOURS: '48'
         run: bash .github/scripts/anderson-retention.sh
       - name: Clean stale build caches
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          CACHE_MAX_AGE_HOURS: '48'
         run: bash .github/scripts/anderson-cache-cleanup.sh
       - name: Clean stale Anderson work branches
         continue-on-error: true

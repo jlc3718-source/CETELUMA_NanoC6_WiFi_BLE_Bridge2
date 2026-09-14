@@ -25,10 +25,10 @@ permissions:
   actions: write
 
 jobs:
-  # Validation and compilation deliberately run in parallel. The overall workflow
-  # can only succeed when both jobs pass, while the build job verifies its package
-  # before the candidate artifact is uploaded. The trusted publisher independently
-  # verifies the downloaded artifact again before signing or releasing anything.
+  # Source validation and compilation run in parallel. Validation uses only the
+  # standard Python/C++ tooling already present on the runner; version-specific
+  # browser-review jobs are intentionally kept out of the permanent production
+  # pipeline after their release has been accepted.
   validate-source:
     name: Validate source
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
@@ -39,42 +39,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tools/requirements-build.txt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: tools/package-lock.json
-      - name: Install validation dependencies
-        run: |
-          python -m pip install -q -r tools/requirements-build.txt
-          npm ci --prefix tools --no-audit --no-fund
-      - name: Verify 3.1.26 visual layout and unchanged behavior
-        if: hashFiles('tools/test_facelift_3_1_26.py') != '' && github.event_name != 'pull_request'
-        run: |
-          if [ "$(cat FIRMWARE_VERSION.txt)" = "3.1.26" ]; then
-            git fetch --depth=1 origin 4d1196b1318bd6d26ab7e9507e61ee7a942305ba
-            python -m pip install -q playwright==1.55.0
-            python -m playwright install --with-deps chromium
-            python tools/test_facelift_3_1_26.py
-          fi
-      - name: Verify 3.1.27 Atelier controls and safety preservation
-        if: hashFiles('tools/test_atelier_3_1_27.py') != '' && github.event_name != 'pull_request'
-        run: |
-          if [ "$(cat FIRMWARE_VERSION.txt)" = "3.1.27" ]; then
-            git fetch --depth=1 origin 949294c0346bcf3c0a167062fc3ac973f05882bd
-            python -m pip install -q playwright==1.55.0
-            python -m playwright install --with-deps chromium
-            python tools/test_atelier_3_1_27.py
-          fi
-      - name: Save interface review images
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Anderson-interface-review
-          path: ui-review/*
-          if-no-files-found: ignore
       - name: Check maintenance, Wi-Fi recovery, and update timing
         run: python tools/test_maintenance.py
       - name: Check Anderson source regressions
