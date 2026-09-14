@@ -1,8 +1,8 @@
-name: Publish Prebuilt Anderson OTA (Chunked Local Payload)
+name: Publish Prebuilt Anderson OTA (Local Payload)
 
 on:
   push:
-    branches: ['ota-staging-chunks/**']
+    branches: ['ota-staging-prebuilt/**']
     paths: ['prebuilt/**']
 
 concurrency:
@@ -37,9 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           test -f staged/prebuilt/release.json
-          test -d staged/prebuilt/chunks
-          cat staged/prebuilt/chunks/part*.b64 | base64 --decode > /tmp/anderson.bin.xz
-          xz -dc /tmp/anderson.bin.xz > /tmp/anderson.bin
+          XZ_FILE="$(find staged/prebuilt -maxdepth 1 -type f -name 'and_*.bin.xz' -print -quit)"
+          if [ -n "$XZ_FILE" ]; then
+            xz -dc "$XZ_FILE" > /tmp/anderson.bin
+          else
+            test -d staged/prebuilt/chunks
+            cat staged/prebuilt/chunks/part*.b64 | base64 --decode > /tmp/anderson.bin.xz
+            xz -dc /tmp/anderson.bin.xz > /tmp/anderson.bin
+          fi
           python - <<'PY'
           from pathlib import Path
           import hashlib,json,os,re,shutil
