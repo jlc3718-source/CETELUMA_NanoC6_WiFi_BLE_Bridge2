@@ -1,0 +1,92 @@
+name: Validate Anderson Home 3.1.17 Event Palettes
+
+on:
+  push:
+    branches: ['codex/3.1.17-event-palettes']
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: validate-anderson-3-1-17-event-palettes
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/3.1.17-event-palettes
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Install build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Check maintenance and recovery
+        run: python tools/test_maintenance.py
+      - name: Check source regressions
+        run: python tools/test_regressions.py
+      - name: Check audited invariants
+        run: python tools/test_audit_fixes.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Check v3.1.17 palette and Live Preview invariants
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          cc=Path('firmware/src/ColorCorrection.cpp').read_text()
+          ev=Path('firmware/src/EventCatalog.cpp').read_text()
+          main=Path('firmware/src/main.cpp').read_text()
+          web=Path('firmware/web/index.html').read_text()
+          assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.17'
+          assert 'ANDERSON_FIRMWARE_VERSION="3.1.17"' in main
+          block=re.search(r'ANDERSON_COLOR_PALETTE\[\]\s*=\s*\{(.*?)\};',cc,re.S).group(1)
+          assert block.count('//')==16, block.count('//')
+          assert '{0xE08700,0xE08700}, // Yellow' in block
+          assert '{0xFFFF44,0xE08700},{0xE0B400,0xE08700}' in cc
+          assert 'eventColors3028' in web and 'eventColors3029' in web
+          assert 'Basic Scheme v 3.0.28' in web and 'Advanced Scheme v 3.0.29' in web
+          assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorG' in web and 'liveColorB' in web
+          assert 'Save Over Selected Preset' in web
+          assert 'saveEventColorPreset' in main
+          assert '0xE08700' in ev and '0xFFFF44' not in ev and '0xE0B400' not in ev
+          assert 'schedule2Brightness"]=10' in main
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',web,re.S)
+          Path('/tmp/anderson-web.js').write_text('\n'.join(scripts))
+          print('v3.1.17 invariants passed')
+          PY
+          node --check /tmp/anderson-web.js
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package verified firmware
+        run: python tools/release.py package
+      - name: Verify packaged identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib,subprocess
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          r=json.loads(Path('release/release.json').read_text())
+          f=Path('release/and_3.1.17.bin'); data=f.read_bytes(); digest=hashlib.sha256(data).hexdigest()
+          assert r['version']=='3.1.17' and r['commit']==sha
+          assert data and data[0]==0xE9 and len(data)<0x1E0000
+          assert r['files'][f.name]['bytes']==len(data) and r['files'][f.name]['sha256']==digest
+          print('bytes',len(data),'sha256',digest,'commit',sha)
+          PY
+      - name: Upload verified firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.17-Event-Palettes-Validated
+          path: release/*
+          if-no-files-found: error
