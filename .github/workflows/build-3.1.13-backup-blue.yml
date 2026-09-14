@@ -1,0 +1,190 @@
+name: Build Anderson Home 3.1.13 Backup Blue
+
+on:
+  push:
+    branches: ['codex/3.1.13-backup-blue']
+    paths: ['.github/workflows/build-3.1.13-backup-blue.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      VERSION: 3.1.13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply 3.1.13 backup and blue changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('.')
+          version='3.1.13'
+          (root/'FIRMWARE_VERSION.txt').write_text(version+'\n')
+
+          main=root/'firmware/src/main.cpp'
+          s=main.read_text()
+          s,n=re.subn(r'static constexpr const char\* ANDERSON_FIRMWARE_VERSION="\d+\.\d+\.\d+[a-z]?";',f'static constexpr const char* ANDERSON_FIRMWARE_VERSION="{version}";',s,count=1)
+          if n!=1: raise SystemExit('runtime version marker not found')
+
+          marker='// ANDERSON_SETTINGS_BACKUP_V3_1_13'
+          if marker not in s:
+            anchor='void applyRunning(bool force=false){'
+            if anchor not in s: raise SystemExit('backup insertion anchor missing')
+            code=r'''
+// ANDERSON_SETTINGS_BACKUP_V3_1_13
+static constexpr char SETTINGS_BACKUP_NS[]="anderson-bkup";
+static constexpr uint32_t SETTINGS_BACKUP_WEEK_SECONDS=7UL*24UL*60UL*60UL;
+enum : uint8_t {BACKUP_SCHEDULE=1U<<0,BACKUP_CONTROLLERS=1U<<1,BACKUP_CUSTOM=1U<<2,BACKUP_FAVORITES=1U<<3,BACKUP_EVENTS=1U<<4};
+static constexpr uint8_t SETTINGS_BACKUP_DEFAULT_MASK=BACKUP_SCHEDULE|BACKUP_CONTROLLERS|BACKUP_CUSTOM|BACKUP_FAVORITES|BACKUP_EVENTS;
+static uint32_t settingsBackupLastCheckMs=0;
+
+static uint8_t settingsBackupMask(){Preferences p;if(!p.begin(SETTINGS_BACKUP_NS,true))return SETTINGS_BACKUP_DEFAULT_MASK;uint8_t mask=p.getUChar("mask",SETTINGS_BACKUP_DEFAULT_MASK);p.end();return mask&SETTINGS_BACKUP_DEFAULT_MASK;}
+static bool settingsBackupSetMask(uint8_t mask){mask&=SETTINGS_BACKUP_DEFAULT_MASK;Preferences p;if(!p.begin(SETTINGS_BACKUP_NS,false))return false;size_t wrote=p.putUChar("mask",mask);bool ok=wrote>0&&p.getUChar("mask",0)==mask;p.end();return ok;}
+static bool settingsBackupPutString(Preferences& p,const char* key,const String& value){size_t wrote=p.putString(key,value);return wrote==value.length()&&p.getString(key,"__verify__")==value;}
+static bool settingsBackupPutU64(Preferences& p,const char* key,uint64_t value){size_t wrote=p.putULong64(key,value);return wrote>0&&p.getULong64(key,~value)==value;}
+
+static bool createSettingsBackup(bool automatic){
+  const uint8_t mask=settingsBackupMask();if(!mask)return false;bool ok=true;Preferences backup;if(!backup.begin(SETTINGS_BACKUP_NS,false))return false;
+  backup.putUChar("schema",1);backup.putUChar("snapmask",mask);
+  if(mask&BACKUP_SCHEDULE){auto&a=store.get();JsonDocument d;d["tz"]=a.tz;d["on"]=a.onMinutes;d["off"]=a.offMinutes;d["lead"]=a.leadDays;d["trail"]=a.trailDays;d["overlap"]=a.overlap;d["scheduler"]=a.schedulerEnabled;d["scheduler2"]=a.schedule2Enabled;String raw;serializeJson(d,raw);ok=settingsBackupPutString(backup,"schedule",raw)&&ok;}
+  if(mask&BACKUP_CONTROLLERS){auto&a=store.get();JsonDocument d;d["addr1"]=a.bleAddress;d["name1"]=a.bleName;d["proto1"]=a.bleProtocol;d["addr2"]=a.bleAddress2;d["name2"]=a.bleName2;d["proto2"]=a.bleProtocol2;d["pixels"]=a.pixelCount;String raw;serializeJson(d,raw);ok=settingsBackupPutString(backup,"controllers",raw)&&ok;}
+  if(mask&BACKUP_CUSTOM){ok=settingsBackupPutString(backup,"lights",presetStoreRaw())&&ok;ok=settingsBackupPutString(backup,"csched",scheduleStoreRaw())&&ok;}
+  if(mask&BACKUP_FAVORITES){Preferences src;if(src.begin("anderson-colors",true)){String raw=src.getString("saved","[]");src.end();ok=settingsBackupPutString(backup,"colors",raw)&&ok;}else ok=false;}
+  if(mask&BACKUP_EVENTS){
+    Preferences state;if(state.begin("anderson-evst",true)){for(size_t w=0;w<EVENT_STATE_WORDS;w++){String ek=String("en")+String((unsigned)w),fk=String("fav")+String((unsigned)w),bek=String("ben")+String((unsigned)w),bfk=String("bfv")+String((unsigned)w);uint64_t en=state.getULong64(ek.c_str(),UINT64_MAX),fav=state.getULong64(fk.c_str(),0);ok=settingsBackupPutU64(backup,bek.c_str(),en)&&ok;ok=settingsBackupPutU64(backup,bfk.c_str(),fav)&&ok;}state.end();}else ok=false;
+    Preferences ev;if(ev.begin("anderson-event",true)){for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){String srcKey=String("e")+String((unsigned)i),dstKey=String("be")+String((unsigned)i);String raw=ev.getString(srcKey.c_str(),"");if(raw.length())ok=settingsBackupPutString(backup,dstKey.c_str(),raw)&&ok;else backup.remove(dstKey.c_str());}ev.end();}else ok=false;
+  }
+  time_t now=timeValid()?time(nullptr):0;if(ok){ok=settingsBackupPutU64(backup,"last",(uint64_t)now)&&ok;if(automatic)ok=settingsBackupPutU64(backup,"lastauto",(uint64_t)now)&&ok;backup.putBool("lastok",ok);}else backup.putBool("lastok",false);backup.end();return ok;
+}
+
+static bool restoreSettingsBackup(){
+  Preferences backup;if(!backup.begin(SETTINGS_BACKUP_NS,true))return false;if(backup.getUChar("schema",0)!=1||!backup.isKey("last")){backup.end();return false;}uint8_t mask=backup.getUChar("snapmask",0)&SETTINGS_BACKUP_DEFAULT_MASK;bool ok=true;
+  if(mask&BACKUP_SCHEDULE){String raw=backup.getString("schedule","");JsonDocument d;if(deserializeJson(d,raw)||!d.is<JsonObject>())ok=false;else{AppSettings next=store.get();next.tz=d["tz"]|next.tz;next.onMinutes=d["on"]|next.onMinutes;next.offMinutes=d["off"]|next.offMinutes;next.leadDays=d["lead"]|next.leadDays;next.trailDays=d["trail"]|next.trailDays;next.overlap=d["overlap"]|next.overlap;next.schedulerEnabled=d["scheduler"]|next.schedulerEnabled;next.schedule2Enabled=d["scheduler2"]|next.schedule2Enabled;ok=store.saveSettings(next)&&ok;}}
+  if(mask&BACKUP_CONTROLLERS){String raw=backup.getString("controllers","");JsonDocument d;if(deserializeJson(d,raw)||!d.is<JsonObject>())ok=false;else{auto&a=store.get();a.bleAddress=d["addr1"]|String("");a.bleName=d["name1"]|String("");a.bleProtocol=d["proto1"]|0;a.bleAddress2=d["addr2"]|String("");a.bleName2=d["name2"]|String("");a.bleProtocol2=d["proto2"]|0;a.pixelCount=d["pixels"]|100;ok=store.saveBle()&&ok;}}
+  if(mask&BACKUP_CUSTOM){String lights=backup.getString("lights","[]"),csched=backup.getString("csched","[]");if(!jsonArrayValid(lights)||!jsonArrayValid(csched))ok=false;else{ok=customFileWrite("/custom_lights.json",lights)&&ok;ok=customFileWrite("/custom_schedules.json",csched)&&ok;}}
+  if(mask&BACKUP_FAVORITES){String colors=backup.getString("colors","[]");JsonDocument d;if(deserializeJson(d,colors)||!d.is<JsonArray>())ok=false;else{Preferences dst;if(dst.begin("anderson-colors",false)){size_t wrote=dst.putString("saved",colors);ok=(wrote==colors.length()&&dst.getString("saved","")==colors)&&ok;dst.end();}else ok=false;}}
+  if(mask&BACKUP_EVENTS){
+    Preferences state;if(state.begin("anderson-evst",false)){for(size_t w=0;w<EVENT_STATE_WORDS;w++){String ek=String("en")+String((unsigned)w),fk=String("fav")+String((unsigned)w),bek=String("ben")+String((unsigned)w),bfk=String("bfv")+String((unsigned)w);uint64_t en=backup.getULong64(bek.c_str(),UINT64_MAX),fav=backup.getULong64(bfk.c_str(),0);state.putULong64(ek.c_str(),en);state.putULong64(fk.c_str(),fav);ok=(state.getULong64(ek.c_str(),~en)==en&&state.getULong64(fk.c_str(),~fav)==fav)&&ok;}state.putUChar("rev",1);state.end();}else ok=false;
+    Preferences ev;if(ev.begin("anderson-event",false)){ev.clear();for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++){String srcKey=String("be")+String((unsigned)i),dstKey=String("e")+String((unsigned)i);if(!backup.isKey(srcKey.c_str()))continue;String raw=backup.getString(srcKey.c_str(),"");if(raw.length()){size_t wrote=ev.putString(dstKey.c_str(),raw);ok=(wrote==raw.length()&&ev.getString(dstKey.c_str(),"")==raw)&&ok;}}ev.end();}else ok=false;
+  }
+  backup.end();if(mask&BACKUP_EVENTS){eventStateBegin();loadEventOverrides();}if(mask&BACKUP_SCHEDULE)configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");customScheduleRefreshPending=true;customScheduleRefreshAt=millis()+250;return ok;
+}
+
+static String settingsBackupStatusJson(){Preferences p;uint8_t mask=SETTINGS_BACKUP_DEFAULT_MASK,snapmask=0;uint64_t last=0,lastauto=0;bool lastok=false,has=false;if(p.begin(SETTINGS_BACKUP_NS,true)){mask=p.getUChar("mask",SETTINGS_BACKUP_DEFAULT_MASK)&SETTINGS_BACKUP_DEFAULT_MASK;snapmask=p.getUChar("snapmask",0)&SETTINGS_BACKUP_DEFAULT_MASK;last=p.getULong64("last",0);lastauto=p.getULong64("lastauto",0);lastok=p.getBool("lastok",false);has=p.getUChar("schema",0)==1&&p.isKey("last");p.end();}JsonDocument d;d["mask"]=mask;d["snapshotMask"]=snapmask;d["hasBackup"]=has;d["lastBackup"]=(uint64_t)last;d["lastAutomatic"]=(uint64_t)lastauto;d["nextAutomatic"]=(uint64_t)(lastauto?lastauto+SETTINGS_BACKUP_WEEK_SECONDS:0);d["intervalDays"]=7;d["lastOk"]=lastok;String out;serializeJson(d,out);return out;}
+static void maybeWeeklySettingsBackup(){if(!timeValid()||Update.isRunning()||remoteUpdateOperationBusy())return;uint32_t nowMs=millis();if(settingsBackupLastCheckMs&&(uint32_t)(nowMs-settingsBackupLastCheckMs)<60000UL)return;settingsBackupLastCheckMs=nowMs;uint8_t mask=settingsBackupMask();if(!mask)return;Preferences p;uint64_t lastauto=0;if(p.begin(SETTINGS_BACKUP_NS,true)){lastauto=p.getULong64("lastauto",0);p.end();}uint64_t now=(uint64_t)time(nullptr);if(!lastauto||now>=lastauto+SETTINGS_BACKUP_WEEK_SECONDS)createSettingsBackup(true);}
+
+'''
+            s=s.replace(anchor,code+anchor,1)
+
+          route_anchor='  server.on("/api/settings",HTTP_POST,[]{'
+          if route_anchor not in s: raise SystemExit('backup route anchor missing')
+          if 'server.on("/api/backup/status"' not in s:
+            routes=r'''  server.on("/api/backup/status",HTTP_GET,[]{if(!requireAdmin())return;sendJson(settingsBackupStatusJson());});
+  server.on("/api/backup/settings",HTTP_POST,[]{if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int raw=d["mask"]|SETTINGS_BACKUP_DEFAULT_MASK;if(raw<0||raw>SETTINGS_BACKUP_DEFAULT_MASK){server.send(400,"application/json","{\"ok\":false,\"error\":\"Invalid backup selection\"}");return;}if(!settingsBackupSetMask((uint8_t)raw)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Backup selection could not be saved\"}");return;}sendJson(settingsBackupStatusJson());});
+  server.on("/api/backup/manual",HTTP_POST,[]{if(!requireAdmin())return;JsonDocument d;if(server.arg("plain").length()&&!body(d))return;if(!d["mask"].isNull()&&!settingsBackupSetMask((uint8_t)constrain(d["mask"].as<int>(),0,(int)SETTINGS_BACKUP_DEFAULT_MASK))){server.send(500,"application/json","{\"ok\":false,\"error\":\"Backup selection could not be saved\"}");return;}if(!createSettingsBackup(false)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Manual backup failed\"}");return;}sendJson(settingsBackupStatusJson());});
+  server.on("/api/backup/restore",HTTP_POST,[]{if(!requireAdmin())return;if(!restoreSettingsBackup()){server.send(500,"application/json","{\"ok\":false,\"error\":\"Backup restore failed or no backup is available\"}");return;}sendJson("{\"ok\":true,\"rebooting\":true}");delay(350);ESP.restart();});
+
+'''
+            s=s.replace(route_anchor,routes+route_anchor,1)
+
+          loop_anchor='  maintainWiFiConnection();checkScheduledMaintenanceReboot();'
+          if loop_anchor not in s: raise SystemExit('weekly backup loop anchor missing')
+          s=s.replace(loop_anchor,'  maintainWiFiConnection();maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();',1)
+          main.write_text(s)
+
+          js_path=root/'firmware/web/v3_mockup.js'
+          js=js_path.read_text()
+          if 'ANDERSON_BACKUP_RESTORE_UI_V3_1_13' not in js:
+            helper=r'''
+  /* ANDERSON_BACKUP_RESTORE_UI_V3_1_13 */
+  const backupCategories=[['schedule','Scheduling & timezone',1],['controllers','Light controllers',2],['custom','Custom shows & schedules',4],['favorites','Favorite colors',8],['events','Events & favorites',16]];
+  function backupMaskFromUi(){return backupCategories.reduce((m,[id,,bit])=>m+(byId('backup-'+id)?.checked?bit:0),0)}
+  function backupDate(epoch){if(!epoch)return 'Not yet';try{return new Date(epoch*1000).toLocaleString()}catch(_){return 'Unknown'}}
+  async function refreshBackupStatus(){const line=byId('backupStatus');if(!line)return;try{const d=await api('/api/backup/status',{cache:'no-store'});backupCategories.forEach(([id,,bit])=>{const box=byId('backup-'+id);if(box)box.checked=!!(d.mask&bit)});byId('backupLast').textContent=d.hasBackup?backupDate(d.lastBackup):'No backup saved yet';byId('backupNext').textContent=d.lastAutomatic?backupDate(d.nextAutomatic):'Will run after time sync';byId('backupRestore').disabled=!d.hasBackup;line.textContent=d.lastOk||!d.hasBackup?'Weekly automatic backup is enabled for the selected settings.':'The last backup attempt did not complete.'}catch(e){line.textContent='Backup status is available to Jason only.'}}
+  function buildBackupPane(root){if(!root||byId('backupSettingsPanel'))return;const panel=el('div','panel');panel.id='backupSettingsPanel';panel.innerHTML=`<strong>Custom Settings Backup</strong><div class="sub">Choose what Anderson Home protects. The controller automatically saves these settings once a week. Wi-Fi passwords and profile PINs are intentionally excluded.</div><div class="v3BackupChoices">${backupCategories.map(([id,label])=>`<label class="v3BackupChoice"><input id="backup-${id}" type="checkbox"><span>${label}</span></label>`).join('')}</div><div class="v3BackupMeta"><div><span>Last backup</span><strong id="backupLast">Loading…</strong></div><div><span>Next automatic</span><strong id="backupNext">Loading…</strong></div></div><div class="row wraprow v3BackupActions"><button id="backupSaveSelection" class="btn" type="button">Save Selection</button><button id="backupNow" class="btn primary" type="button">Back Up Now</button><button id="backupRestore" class="btn" type="button">Restore Last Backup</button></div><div id="backupStatus" class="sub">Loading backup status…</div>`;root.appendChild(panel);
+    byId('backupSaveSelection').addEventListener('click',async()=>{try{await post('/api/backup/settings',{mask:backupMaskFromUi()});status('Backup selection saved.');await refreshBackupStatus()}catch(e){status('Could not save backup selection: '+e.message)}});
+    byId('backupNow').addEventListener('click',async()=>{try{byId('backupNow').disabled=true;await post('/api/backup/manual',{mask:backupMaskFromUi()});status('Custom settings backup saved.');await refreshBackupStatus()}catch(e){status('Manual backup failed: '+e.message)}finally{byId('backupNow').disabled=false}});
+    byId('backupRestore').addEventListener('click',async()=>{if(!confirm('Restore the last saved Anderson Home settings backup? The controller will reboot after restore.'))return;try{byId('backupRestore').disabled=true;await post('/api/backup/restore',{});status('Backup restored. Anderson Home is rebooting…');setTimeout(()=>location.reload(),5000)}catch(e){status('Restore failed: '+e.message);byId('backupRestore').disabled=false}});
+    refreshBackupStatus();
+  }
+'''
+            anchor='  function settingsSubTabs() {'
+            if anchor not in js: raise SystemExit('settings tabs helper anchor missing')
+            js=js.replace(anchor,helper+anchor,1)
+            old="const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['security','Users & Security'],['firmware','Firmware']];"
+            new="const defs=[['general','General'],['wifi','Wi-Fi'],['lighting','Lighting'],['schedules','Schedules'],['controllers','Controllers'],['backup','Backup & Restore'],['security','Users & Security'],['firmware','Firmware']];"
+            if old not in js: raise SystemExit('settings tab defs anchor missing')
+            js=js.replace(old,new,1)
+            pane_anchor="    defs.forEach(([id])=>page.appendChild(panes.get(id)));"
+            if pane_anchor not in js: raise SystemExit('backup pane anchor missing')
+            js=js.replace(pane_anchor,pane_anchor+"\n    buildBackupPane(panes.get('backup'));",1)
+            js_path.write_text(js)
+
+          css_path=root/'firmware/web/v3_mockup.css'
+          css=css_path.read_text()
+          if 'ANDERSON_BLUE_BACKGROUND_V3_1_13' not in css:
+            css+='''\n\n/* ANDERSON_BLUE_BACKGROUND_V3_1_13 */\nhtml,body{background:#0a3f88!important;background-image:linear-gradient(160deg,#0f5fc4 0%,#0a3f88 48%,#03142b 100%)!important;background-attachment:fixed!important}\n.v3BackupChoices{display:grid;gap:9px;margin:16px 0}.v3BackupChoice{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid #79bde63a;border-radius:13px;background:#07142699}.v3BackupChoice input{width:18px;height:18px}.v3BackupMeta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}.v3BackupMeta>div{padding:11px 12px;border-radius:13px;background:#06111fbd;border:1px solid #79bde62c}.v3BackupMeta span{display:block;color:#8ba7bf;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.v3BackupMeta strong{display:block;margin-top:4px;font-size:13px}.v3BackupActions{gap:8px}@media(max-width:520px){.v3BackupMeta{grid-template-columns:1fr}.v3BackupActions .btn{width:100%}}\n'''
+            css_path.write_text(css)
+
+          notes=root/'firmware/RELEASE_NOTES_v3.1.13.md'
+          notes.write_text('''# Anderson Home v3.1.13\n\n- Restores the blue Anderson Home background.\n- Adds a dedicated Backup & Restore tab inside Settings.\n- Lets Jason select which safe user settings are included in controller-side backups.\n- Automatically backs up the selected settings once every seven days.\n- Adds manual Back Up Now and Restore Last Backup controls.\n- Backs up scheduling/timezone, BLE controller setup, custom shows/schedules, favorite colors, and event preferences/customizations.\n- Intentionally excludes Wi-Fi passwords and profile PINs from settings backups.\n- Preserves signed OTA verification and APP-only update behavior.\n''')
+
+          readme=root/'README.md'
+          if readme.exists():
+            text=readme.read_text()
+            text=re.sub(r'Current firmware: \*\*v\d+\.\d+\.\d+[a-z]?\*\*\.',f'Current firmware: **v{version}**.',text,count=1)
+            readme.write_text(text)
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add FIRMWARE_VERSION.txt README.md firmware
+          git commit -m "Anderson Home v3.1.13 backup restore and blue UI"
+          git push origin HEAD:codex/3.1.13-backup-blue
+      - name: Install build dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Validate release source
+        run: python tools/release.py check
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 app-only firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package app-only firmware
+        run: python tools/release.py package
+      - name: Verify packaged firmware
+        run: |
+          set -euo pipefail
+          test -s "release/and_${VERSION}.bin"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          v=os.environ['VERSION'];p=Path(f'release/and_{v}.bin');m=json.loads(Path('release/release.json').read_text());data=p.read_bytes()
+          assert data[0]==0xE9
+          assert m['version']==v
+          assert m['files'][p.name]['bytes']==len(data)
+          assert m['files'][p.name]['sha256']==hashlib.sha256(data).hexdigest()
+          print(json.dumps({'name':p.name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'commit':m['commit']}))
+          PY
+      - name: Upload verified firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.13-BACKUP-BLUE
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
