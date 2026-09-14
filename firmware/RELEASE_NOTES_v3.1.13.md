@@ -1,6 +1,7 @@
 # Anderson Home v3.1.13
 
 - Restores the blue Anderson Home background.
+- Adds a dedicated Live Preview tab in Settings using the existing live controller preview controls.
 - Adds a dedicated Backup & Restore tab with user-selectable weekly automatic backup, manual backup, and manual restore.
 - Excludes Wi-Fi passwords and profile PINs from backups.
 - Removes Breath from the user-visible effect set and maps all legacy/saved Breath effects to Jump.
