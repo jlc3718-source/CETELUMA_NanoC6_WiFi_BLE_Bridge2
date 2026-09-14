@@ -32,7 +32,7 @@ input[type=checkbox]{accent-color:#5e90ff}
 .ah27Introduction h1{font-size:clamp(46px,5vw,70px);font-weight:400;letter-spacing:-.055em;line-height:.99;margin:28px 0 0;position:relative;z-index:2}
 .ah27Introduction h1 em{font-family:Georgia,'Times New Roman',serif;font-weight:400;letter-spacing:-.065em;color:#a5c4ff}
 .v3LiveCard{position:relative;margin-top:-20px;min-width:0;padding:0}
-.v3LiveCard .housePreview{position:relative;isolation:isolate;width:calc(100% + 46px);margin:0 -23px;padding:25px 12px 0;background:none;border:0;border-radius:0;min-height:244px;display:flex;align-items:center;perspective:900px}
+.v3LiveCard .housePreview{position:relative;isolation:isolate;width:calc(100% + 46px);margin:0 -23px;padding:25px 12px 0;background:none;box-shadow:none;overflow:visible;border:0;border-radius:0;min-height:244px;display:flex;align-items:center;perspective:900px}
 .v3LiveCard .housePreview:before{content:'';position:absolute;z-index:-1;inset:18% 5% 5%;border-radius:50%;background:radial-gradient(ellipse,var(--v3-live-color,#4579ff),transparent 66%);opacity:var(--v3-live-glow,.25);filter:blur(22px);pointer-events:none}
 .v3LiveCard .housePreview:after{content:'';position:absolute;left:8%;right:8%;height:38%;bottom:1%;z-index:-1;border:1px solid #749fff33;border-radius:50%;transform:rotateX(62deg);box-shadow:0 0 0 30px #80aaff04,0 0 0 31px #80aaff0d,0 0 0 70px #80aaff03,0 0 0 71px #80aaff09;background:repeating-linear-gradient(90deg,transparent 0 29px,#91b8ff09 30px),repeating-linear-gradient(0deg,transparent 0 29px,#91b8ff09 30px)}
 .v3LiveCard .housePreview svg{width:100%;height:auto;overflow:visible;transform:rotateY(-13deg) rotateX(5deg);filter:drop-shadow(9px 22px 13px #0005)}
@@ -222,3 +222,8 @@ body{font-size:14px}.wrap{padding:0 15px calc(112px + env(safe-area-inset-bottom
 }
 @media(max-width:350px){.wrap{padding-left:11px;padding-right:11px}.ah27Hero{padding-left:18px;padding-right:18px}.ah27Introduction h1{font-size:53px}.ah27Edition{display:none!important}.ah27Console{padding:24px 18px;gap:0 14px}#homeBrightVal{font-size:37px}.ah27Dial:after{inset:17px}.ah27PaletteTitle strong{font-size:25px}#homeFavoriteColorGrid{grid-template-columns:repeat(4,minmax(0,1fr))}.v3Welcome h2{font-size:36px}.v3BottomNav .tab{font-size:7px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* Finish the house canvas and make the color collection a bank of illuminated lenses. */
+#homeFavoriteColorGrid .savedSwatch{aspect-ratio:auto!important;min-height:67px!important;padding:8px 2px!important;border-radius:23px!important;border:1px solid #d5e4ff3d!important;box-shadow:inset 0 1px 2px #fff7,inset 0 -14px 20px #0003,0 5px 13px #0003!important}
+#homeFavoriteColorGrid .savedSwatch:after{left:5px;right:5px;top:5px;height:38%;border-radius:18px;border-top:1px solid #ffffff80}
+@media(max-width:650px){#homeFavoriteColorGrid .savedSwatch{min-height:59px!important;border-radius:18px!important;font-size:7px}#homeFavoriteColorGrid .savedSwatch:after{left:4px;right:4px;border-radius:14px}}
