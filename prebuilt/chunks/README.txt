@@ -1,0 +1,1 @@
+Anderson 3.1.31 local prebuilt transfer chunks. Concatenate part*.b64, base64-decode to XZ, then xz-decompress. Publisher verifies the reconstructed BIN against prebuilt/release.json before signing or publishing.
