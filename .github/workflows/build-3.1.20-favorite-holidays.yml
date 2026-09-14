@@ -1,0 +1,88 @@
+name: Build Anderson Home 3.1.20 Favorite Holidays
+
+on:
+  push:
+    branches: [codex/3.1.20-favorite-holidays]
+
+permissions:
+  contents: write
+
+env:
+  PIO_CORE_VERSION: '6.1.18'
+  HTML_MINIFIER_VERSION: '4.0.0'
+
+jobs:
+  patch-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply v3.1.20 source changes
+        run: |
+          python tools/apply_3_1_20_favorite_holidays.py
+          rm tools/apply_3_1_20_favorite_holidays.py .github/workflows/build-3.1.20-favorite-holidays.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Anderson Home v3.1.20 include current favorites in major holiday schedule'
+          git push origin HEAD:codex/3.1.20-favorite-holidays
+      - name: Install build dependencies
+        run: |
+          python -m pip install --disable-pip-version-check platformio==${PIO_CORE_VERSION}
+          npm install --no-save html-minifier-terser@${HTML_MINIFIER_VERSION}
+      - name: Run maintenance and recovery checks
+        run: python tools/test_maintenance.py
+      - name: Run regression checks
+        run: python tools/test_regressions.py
+      - name: Run audit checks
+        run: python tools/test_audit_fixes.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Verify favorite holiday invariants
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('firmware/src/EventColorThemes.cpp').read_text()
+          m=re.search(r'MAJOR_US_EVENT_INDEX\[\]=\{(.*?)\};',s,re.S)
+          assert m
+          vals=[int(x) for x in re.findall(r'\d+',m.group(1))]
+          assert vals==[5,10,25,24,26,45,60,64,86,94,104,108,105,117,143,134,133,144,145,146,172,178,192,196,201,207,208,209], vals
+          assert len(vals)==28 and len(set(vals))==28
+          f=re.search(r'MAJOR_US_FEDERAL_EVENT_INDEX\[\]=\{([^}]*)\};',s)
+          assert f
+          federal=[int(x) for x in re.findall(r'\d+',f.group(1))]
+          assert federal==[5,10,25,94,105,117,143,172,192,196,207]
+          assert 'applyOriginalEventColors(index,theme);' in s
+          assert 'Effect::Breath' not in Path('firmware/src/EventCatalog.cpp').read_text()
+          print('favorite holiday invariants passed')
+          PY
+      - name: Prepare release
+        run: python tools/release.py
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware
+      - name: Package verified firmware
+        env:
+          ANDERSON_RELEASE_COMMIT: ${{ github.sha }}
+        run: python tools/package_firmware.py
+      - name: Verify v3.1.20 packaged identity
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          d=json.loads(pathlib.Path('dist/release.json').read_text())
+          assert d['version']=='3.1.20', d
+          assert pathlib.Path('dist/and_3.1.20.bin').is_file()
+          print(d)
+          PY
+      - name: Upload verified v3.1.20
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.20-Favorite-Holidays-Validated
+          path: |
+            dist/and_3.1.20.bin
+            dist/release.json
+          if-no-files-found: error
