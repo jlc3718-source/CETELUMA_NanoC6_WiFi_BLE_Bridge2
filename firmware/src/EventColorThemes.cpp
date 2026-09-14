@@ -232,11 +232,15 @@ static constexpr uint32_t PRESET_DEFAULTS[]={
 static_assert(sizeof(PRESET_NAMES)/sizeof(PRESET_NAMES[0])==16,"preset name count");
 static_assert(sizeof(PRESET_DEFAULTS)/sizeof(PRESET_DEFAULTS[0])==16,"preset value count");
 
-// Major U.S. federal holiday calendar. Indices are zero-based EventCatalog rows:
-// New Year, MLK, Washington's Birthday, Memorial Day, Juneteenth, Independence
-// Day, Labor Day, Columbus/Indigenous Peoples' Day, Veterans Day, Thanksgiving,
-// and Christmas. Every color index references only the original nine presets.
-static constexpr uint16_t MAJOR_US_EVENT_INDEX[]={5,10,25,94,105,117,143,172,192,196,207};
+// Major U.S. schedule = the complete currently-approved 28 Scene Favorites.
+// The 11 federal-holiday subset keeps the nationally recognizable color choices
+// introduced in v3.1.19. All additional favorites use their preserved 3.0.28
+// assignments, so this schedule remains strictly on the original nine-color palette.
+static constexpr uint16_t MAJOR_US_EVENT_INDEX[]={
+  5,10,25,24,26,45,60,64,86,94,104,108,105,117,
+  143,134,133,144,145,146,172,178,192,196,201,207,208,209
+};
+static constexpr uint16_t MAJOR_US_FEDERAL_EVENT_INDEX[]={5,10,25,94,105,117,143,172,192,196,207};
 static constexpr uint8_t MAJOR_US_EVENT_COLOR_COUNT[]={2,3,3,3,4,3,3,3,4,3,4};
 static constexpr uint8_t MAJOR_US_EVENT_COLOR_INDEX[][4]={
   {3,8,0,0}, // New Year's Day: Yellow, White
@@ -251,9 +255,10 @@ static constexpr uint8_t MAJOR_US_EVENT_COLOR_INDEX[][4]={
   {1,0,3,0}, // Thanksgiving: Orange, Red, Yellow
   {0,4,3,8}, // Christmas: Red, Green, Yellow, White
 };
-static_assert(sizeof(MAJOR_US_EVENT_INDEX)/sizeof(MAJOR_US_EVENT_INDEX[0])==11,"major holiday event count");
-static_assert(sizeof(MAJOR_US_EVENT_COLOR_COUNT)/sizeof(MAJOR_US_EVENT_COLOR_COUNT[0])==11,"major holiday color count");
-static_assert(sizeof(MAJOR_US_EVENT_COLOR_INDEX)/sizeof(MAJOR_US_EVENT_COLOR_INDEX[0])==11,"major holiday color table");
+static_assert(sizeof(MAJOR_US_EVENT_INDEX)/sizeof(MAJOR_US_EVENT_INDEX[0])==28,"favorite holiday event count");
+static_assert(sizeof(MAJOR_US_FEDERAL_EVENT_INDEX)/sizeof(MAJOR_US_FEDERAL_EVENT_INDEX[0])==11,"major federal holiday event count");
+static_assert(sizeof(MAJOR_US_EVENT_COLOR_COUNT)/sizeof(MAJOR_US_EVENT_COLOR_COUNT[0])==11,"major federal holiday color count");
+static_assert(sizeof(MAJOR_US_EVENT_COLOR_INDEX)/sizeof(MAJOR_US_EVENT_COLOR_INDEX[0])==11,"major federal holiday color table");
 static uint32_t presetValues[16]={0};
 static bool presetLoaded=false;
 
@@ -280,12 +285,13 @@ bool eventColorThemeIncludesEvent(EventColorTheme theme,size_t index){
   return false;
 }
 void applyMajorUsEventColors(size_t index,Theme& theme){
-  for(size_t row=0;row<sizeof(MAJOR_US_EVENT_INDEX)/sizeof(MAJOR_US_EVENT_INDEX[0]);row++){
-    if(MAJOR_US_EVENT_INDEX[row]!=index)continue;
+  for(size_t row=0;row<sizeof(MAJOR_US_FEDERAL_EVENT_INDEX)/sizeof(MAJOR_US_FEDERAL_EVENT_INDEX[0]);row++){
+    if(MAJOR_US_FEDERAL_EVENT_INDEX[row]!=index)continue;
     theme.colorCount=MAJOR_US_EVENT_COLOR_COUNT[row];
     for(uint8_t c=0;c<theme.colorCount;c++)theme.colors[c]=resolvedPresetColor(PRESET_DEFAULTS[MAJOR_US_EVENT_COLOR_INDEX[row][c]]);
     return;
   }
+  if(eventColorThemeIncludesEvent(EventColorTheme::MajorUS,index))applyOriginalEventColors(index,theme);
 }
 const char* eventColorPresetName(size_t index){return index<16?PRESET_NAMES[index]:"";}
 uint32_t eventColorPresetDefault(size_t index){return index<16?PRESET_DEFAULTS[index]:0;}

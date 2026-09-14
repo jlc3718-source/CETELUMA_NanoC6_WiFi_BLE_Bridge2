@@ -78,7 +78,9 @@ assert 'if(specificCount)' in sched and 'if(holidayWindowCount)' in sched
 assert 'python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full' in build
 assert 'EventColorTheme::MajorUS' in main and 'EventColorTheme::MajorUS' in original
 assert 'eventAllowedInActiveSchedule' in main and 'eventAllowedInActiveSchedule' in sched
-assert 'MAJOR_US_EVENT_INDEX[]={5,10,25,94,105,117,143,172,192,196,207}' in original
+assert 'MAJOR_US_EVENT_INDEX[]={' in original and '5,10,25,24,26,45,60,64,86,94,104,108,105,117,' in original and '143,134,133,144,145,146,172,178,192,196,201,207,208,209' in original
+assert 'MAJOR_US_FEDERAL_EVENT_INDEX[]={5,10,25,94,105,117,143,172,192,196,207}' in original
+assert 'favorite holiday event count' in original and 'applyOriginalEventColors(index,theme);' in original
 assert 'MAJOR_US_EVENT_COLOR_INDEX' in original and 'eventColorPresetCount(EventColorTheme theme){return theme==EventColorTheme::V3029?16U:9U;}' in original
 for name in ["New Year's Day","Martin Luther King Jr. Day","Presidents' Day / Washington's Birthday","Memorial Day","Juneteenth","Independence Day","Labor Day","Indigenous Peoples' Day / Columbus Day","Veterans Day","Thanksgiving","Christmas Day"]: assert name in ev,name
 major_colors=re.search(r'static constexpr uint8_t MAJOR_US_EVENT_COLOR_INDEX\[\]\[4\]=\{(.*?)\};',original,re.S); assert major_colors
