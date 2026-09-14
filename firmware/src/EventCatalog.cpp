@@ -388,7 +388,7 @@ int eventIndexById(const String& id){
   return -1;
 }
 
-uint8_t eventSpeed(size_t index){return index<EVENT_COUNT?EVENT_SPEEDS[index]:1;}
+uint8_t eventSpeed(size_t index){return index<EVENT_COUNT?(EVENT_SPEEDS[index]>2?2:EVENT_SPEEDS[index]):1;}
 
 time_t eventStartEpoch(size_t i,int year){
   if(i>=EVENT_COUNT)return 0;const auto&e=EVENTS[i];int m=e.month,d=e.day;

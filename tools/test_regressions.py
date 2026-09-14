@@ -1,4 +1,4 @@
-# v3.1.17 selectable historical event palettes, editable preset slots, OTA verification
+# v3.1.18 Breath restored, automatic events capped at Slow, preset names preserved
 from pathlib import Path
 import re
 
@@ -12,7 +12,22 @@ assert 'ANDERSON_COLOR_PALETTE_COUNT' in main and 'server.on("/api/colors"' in m
 assert '/api/events/bulk' not in main+web and 'enableMonth' not in web and 'clearMonth' not in web
 assert 'eventsSchedule1Toggle' not in web and 'eventsSchedule2Toggle' not in web
 assert 'eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
-assert 't.effect=Effect::Breath' in sched
+assert 't.effect=Effect::Breath' not in sched
+assert 'Effect::Breath' not in ev
+assert 'if(syncTheme.effect==Effect::Breath)' in ble
+assert 'normalized.effect==Effect::Breath' not in ble
+assert 'case Effect::Breath: return "Breath";' in types
+assert 'if (s=="Breath" || s=="Pulse") return Effect::Breath;' in types
+assert '<option value="Breath">Breath</option>' in web and "['Jump','Breath','Strobe','Solid']" in web
+speed_block=re.search(r'static const uint8_t EVENT_SPEEDS\[\]\s*=\s*\{(.*?)\};',ev,re.S); assert speed_block
+speed_values=[int(x) for x in re.findall(r'\b\d+\b',speed_block.group(1))]; assert len(speed_values)==210 and max(speed_values)<=2
+assert 'EVENT_SPEEDS[index]>2?2:EVENT_SPEEDS[index]' in ev
+assert 'scheduledEventSpeedHint=constrain(o.speed,1,2)' in main and 'next.speed=constrain(sp,1,2)' in main
+assert 'sp=min((uint8_t)2,qs)' in main
+assert 'String raw=String("v4|")+effectName(next.effect)' in main and '!head.startsWith("v4|")&&o.effect==Effect::Breath' in main
+assert "evSpeed.max='2'" in web and 'id="eventsSpeed" type="range" min="1" max="2"' in web
+assert 'savedColorLabels' in web and "p.name||NAMED_COLOR_PALETTE[i]?.name" in web
+
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
 assert '/api/event-color-theme' in main+web and 'eventColors3028' in web and 'eventColors3029' in web

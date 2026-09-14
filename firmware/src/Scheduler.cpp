@@ -67,7 +67,7 @@ static void monthlyEligiblePosition(const tm& l,const AppSettings* cfg,size_t& o
   ordinal=0;for(int d=1;d<l.tm_mday&&d<32;d++)if(c.eligible[d])ordinal++;total=c.total;forcedDay=c.forcedDay;
 }
 static Theme combinedMonthlyTheme(const uint16_t* monthly,size_t monthlyCount){
-  Theme t;t.name="Combined monthly events";t.effect=Effect::Breath;t.colorCount=0;
+  Theme t;t.name="Combined monthly events";t.effect=Effect::Jump;t.colorCount=0;
   for(size_t n=0;n<monthlyCount&&t.colorCount<8;n++){Theme q=applyEventOverrideByIndex(monthly[n],themeFromEvent(monthly[n]));for(uint8_t c=0;c<q.colorCount&&t.colorCount<8;c++)t.colors[t.colorCount++]=q.colors[c];}
   if(!t.colorCount){t.colors[0]=0xFFFFFA;t.colorCount=1;}return t;
 }
