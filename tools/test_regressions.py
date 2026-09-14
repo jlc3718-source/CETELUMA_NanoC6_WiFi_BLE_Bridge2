@@ -52,7 +52,8 @@ assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
 assert "badge.style.display = 'none'" in mock and "profile.style.display = 'none'" in mock
-assert 'Basic Scheme v 3.0.28' in web and 'Advanced Scheme v 3.0.29' in web
+assert '<strong>3.0.28 Colors</strong>' in web and '<strong>3.0.29 Colors</strong>' in web
+assert 'Original 9-color event scheme' in web and 'Expanded 16-color event scheme' in web
 assert 'Specific holiday / awareness / seasonal day' in web and 'Coverage guarantee:' in web and '<div>6. Normal preset</div>' in web
 assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_ACTIVE_TIER_EVENTS=64' in sched
 assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched
