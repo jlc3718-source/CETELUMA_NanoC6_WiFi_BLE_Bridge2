@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/build-3.1.13-backup-blue.yml'
       - 'tools/apply_3_1_13.py'
+      - 'tools/apply_3_1_13_live_preview.py'
   workflow_dispatch:
 
 permissions:
@@ -31,11 +32,12 @@ jobs:
       - name: Apply 3.1.13 changes
         run: |
           python tools/apply_3_1_13.py
+          python tools/apply_3_1_13_live_preview.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add FIRMWARE_VERSION.txt README.md firmware
           if ! git diff --cached --quiet; then
-            git commit -m "Anderson Home v3.1.13 backup blue no-Breath controller sync"
+            git commit -m "Anderson Home v3.1.13 backup blue no-Breath controller sync live preview"
             git push origin HEAD:codex/3.1.13-backup-blue
           fi
       - name: Install build dependencies
