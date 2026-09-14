@@ -1,0 +1,19 @@
+name: Dispatch Anderson v3.1.24 Build Once
+
+on:
+  push:
+    branches: ['codex/publish-glass-3.1.24']
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.event.head_commit.message == 'Dispatch Anderson v3.1.24 production build'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dispatch canonical production build
+        run: gh workflow run compile-anderson-home-multi.yml --repo "$GITHUB_REPOSITORY" --ref codex/release-current
