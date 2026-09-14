@@ -8,7 +8,7 @@ on:
       - '.github/workflows/validate-3.1.20-ui-semantics.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate-build:
@@ -82,3 +82,12 @@ jobs:
             tools/test_regressions.py
             firmware/RELEASE_NOTES_v3.1.20.md
           if-no-files-found: error
+      - name: Materialize exact validated source and remove temporary validator
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f tools/apply_3_1_20_ui_semantics.py .github/workflows/validate-3.1.20-ui-semantics.yml
+          git add firmware/web/index.html tools/test_regressions.py firmware/RELEASE_NOTES_v3.1.20.md tools/apply_3_1_20_ui_semantics.py .github/workflows/validate-3.1.20-ui-semantics.yml
+          git diff --cached --quiet && { echo 'No validated source changes to materialize'; exit 1; }
+          git commit -m "Anderson Home v3.1.20 visible effects and semantic colors"
+          git push origin HEAD:refs/heads/codex/3.1.20-favorite-holidays
