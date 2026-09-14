@@ -19,6 +19,13 @@ assert 'normalized.effect==Effect::Breath' not in ble
 assert 'case Effect::Breath: return "Breath";' in types
 assert 'if (s=="Breath" || s=="Pulse") return Effect::Breath;' in types
 assert '<option value="Breath">Breath</option>' in web and "['Jump','Breath','Strobe','Solid']" in web
+assert 'const EFFECT_BUTTON_VALUES=[' in web and "'Jump','Breath','Strobe','Solid'" in web
+assert 'effectButtonGroup' in web and 'enhanceEffectSelect' in web and 'effectSelectHidden' in web
+assert 'const SEMANTIC_COLOR_VISUAL=' in web and 'semanticColorName' in web and 'semanticColorVisual' in web
+assert "'Yellow':'#FFD400'" in web and "'Orange':'#FF7A00'" in web
+assert 'colorNamePill' in web and '${semanticColorName(c)}</span>' in web
+assert "$('liveColorCode').textContent=semanticColorName(h)" in web
+assert "b.title=verb+' '+n" in web and "preset '+hex" not in web
 speed_block=re.search(r'static const uint8_t EVENT_SPEEDS\[\]\s*=\s*\{(.*?)\};',ev,re.S); assert speed_block
 speed_values=[int(x) for x in re.findall(r'\b\d+\b',speed_block.group(1))]; assert len(speed_values)==210 and max(speed_values)<=2
 assert 'EVENT_SPEEDS[index]>2?2:EVENT_SPEEDS[index]' in ev
