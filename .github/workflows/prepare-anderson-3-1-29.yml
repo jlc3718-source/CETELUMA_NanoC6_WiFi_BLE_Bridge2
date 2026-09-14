@@ -46,6 +46,7 @@ jobs:
           python tools/test_audit_fixes.py
           test "$(cat FIRMWARE_VERSION.txt)" = "3.1.29"
           git diff --check
+          git add -N firmware/RELEASE_NOTES_v3.1.29.md
           changed="$(git diff --name-only | sort)"
           expected="$(printf '%s\n' FIRMWARE_VERSION.txt firmware/RELEASE_NOTES_v3.1.29.md firmware/src/main.cpp firmware/web/index.html firmware/web/v3_mockup.css tools/test_regressions.py | sort)"
           test "$changed" = "$expected"
