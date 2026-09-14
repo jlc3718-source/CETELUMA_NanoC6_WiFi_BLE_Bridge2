@@ -1,0 +1,144 @@
+name: Export Anderson Offline Build Kit
+
+on:
+  push:
+    branches:
+      - tooling/offline-build-kit-3127-run2
+    paths:
+      - '.github/workflows/export-anderson-offline-build-kit.yml'
+
+permissions:
+  contents: read
+
+env:
+  PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install exact Anderson build dependencies
+        run: |
+          python -m pip install -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+
+      - name: Restore exact PlatformIO package cache used by Anderson
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: Linux-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            Linux-pio-v1-
+
+      - name: Prove restored toolchain can build production 3.1.27
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.27"
+          python tools/release.py prepare
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+          python tools/release.py package
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('release/and_3.1.27.bin')
+          b=p.read_bytes()
+          assert b and b[0] == 0xE9
+          assert len(b) < 0x1E0000
+          print('OFFLINE_EXPORT_BASELINE_BIN', len(b), hashlib.sha256(b).hexdigest())
+          PY
+
+      - name: Build Python wheelhouse for network-free PlatformIO installation
+        run: |
+          mkdir -p offline/wheels
+          python -m pip download --dest offline/wheels -r tools/requirements-build.txt
+
+      - name: Stage lean exact PlatformIO toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p offline/pio-home/packages offline/pio-home/platforms offline/pio-home/tools
+          cp -a "$HOME/.platformio/platforms/." offline/pio-home/platforms/
+          for d in framework-arduinoespressif32 framework-arduinoespressif32-libs toolchain-riscv32-esp; do
+            test -d "$HOME/.platformio/packages/$d"
+            cp -a "$HOME/.platformio/packages/$d" offline/pio-home/packages/
+          done
+          # PIOarduino installs esptool during the build. Capture the resulting local tool copy.
+          if [ -d "$HOME/.platformio/tools/tool-esptoolpy" ]; then
+            cp -a "$HOME/.platformio/tools/tool-esptoolpy" offline/pio-home/tools/
+          fi
+          if [ -d "$HOME/.platformio/penv" ]; then
+            cp -a "$HOME/.platformio/penv" offline/pio-home/
+          fi
+          mkdir -p offline/project/firmware/.pio
+          rsync -a --exclude='.git' --exclude='.github/workflows/export-anderson-offline-build-kit.yml' --exclude='release' --exclude='.pio-build-cache' --exclude='firmware/.pio/build' ./ offline/project/
+          cp -a firmware/.pio/libdeps offline/project/firmware/.pio/
+          printf '%s\n' '72a5f7bcd24236b6cbbb16ebab9da757922bbdb4' > offline/BASELINE_COMMIT.txt
+          printf '%s\n' '3.1.27' > offline/BASELINE_VERSION.txt
+          pio --version > offline/PLATFORMIO_VERSION.txt
+          du -sh offline/pio-home/* offline/pio-home/packages/* || true
+
+      - name: Add local install and build helper
+        run: |
+          cat > offline/install-and-build.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "$0")" && pwd)"
+          python3 -m venv "$ROOT/venv"
+          "$ROOT/venv/bin/python" -m pip install --no-index --find-links "$ROOT/wheels" -r "$ROOT/project/tools/requirements-build.txt"
+          export PLATFORMIO_CORE_DIR="$ROOT/pio-home"
+          export PATH="$ROOT/venv/bin:$PATH"
+          cd "$ROOT/project"
+          python tools/release.py prepare
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+          python tools/release.py package
+          echo "Build complete: $ROOT/project/release/"
+          SH
+          chmod +x offline/install-and-build.sh
+
+      - name: Create portable archives
+        run: |
+          set -euo pipefail
+          tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-framework-3.1.27.tar.zst pio-home/platforms pio-home/packages/framework-arduinoespressif32 pio-home/packages/framework-arduinoespressif32-libs
+          tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home/packages/toolchain-riscv32-esp pio-home/tools pio-home/penv 2>/dev/null || tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home/packages/toolchain-riscv32-esp pio-home/tools
+          tar -C offline -I 'zstd -8 -T0' -cf anderson-offline-support-3.1.27.tar.zst wheels project BASELINE_COMMIT.txt BASELINE_VERSION.txt PLATFORMIO_VERSION.txt install-and-build.sh
+          sha256sum anderson-*.tar.zst > SHA256SUMS.txt
+          ls -lh anderson-*.tar.zst SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Offline-Framework-3.1.27
+          path: anderson-pio-framework-3.1.27.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Offline-Toolchain-3.1.27
+          path: anderson-pio-toolchain-3.1.27.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Offline-Support-3.1.27
+          path: |
+            anderson-offline-support-3.1.27.tar.zst
+            SHA256SUMS.txt
+          compression-level: 0
+          if-no-files-found: error
