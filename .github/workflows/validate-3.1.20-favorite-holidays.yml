@@ -1,0 +1,88 @@
+name: Validate Anderson Home 3.1.20 Favorite Holidays
+
+on:
+  push:
+    branches: [codex/3.1.20-favorite-holidays]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Materialize clean release source
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/validate-3.1.20-favorite-holidays.yml
+          git commit -m 'Remove temporary v3.1.20 validator'
+          git push origin HEAD:codex/3.1.20-favorite-holidays
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - name: Install build tool
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Install pinned web minifier
+        run: npm ci --prefix tools --no-audit --no-fund
+      - name: Run maintenance and recovery checks
+        run: python tools/test_maintenance.py
+      - name: Run regression checks
+        run: python tools/test_regressions.py
+      - name: Run audit checks
+        run: python tools/test_audit_fixes.py
+      - name: Check scheduled event coverage
+        run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Verify favorite holiday invariants
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('firmware/src/EventColorThemes.cpp').read_text()
+          m=re.search(r'MAJOR_US_EVENT_INDEX\[\]=\{(.*?)\};',s,re.S)
+          assert m
+          vals=[int(x) for x in re.findall(r'\d+',m.group(1))]
+          expected=[5,10,25,24,26,45,60,64,86,94,104,108,105,117,143,134,133,144,145,146,172,178,192,196,201,207,208,209]
+          assert vals==expected, vals
+          assert len(vals)==28 and len(set(vals))==28
+          f=re.search(r'MAJOR_US_FEDERAL_EVENT_INDEX\[\]=\{([^}]*)\};',s)
+          assert f
+          federal=[int(x) for x in re.findall(r'\d+',f.group(1))]
+          assert federal==[5,10,25,94,105,117,143,172,192,196,207]
+          assert 'applyOriginalEventColors(index,theme);' in s
+          ev=Path('firmware/src/EventCatalog.cpp').read_text()
+          assert 'Effect::Breath' not in ev
+          speeds=re.search(r'static const uint8_t EVENT_SPEEDS\[\]\s*=\s*\{(.*?)\};',ev,re.S)
+          vals2=[int(x) for x in re.findall(r'\b\d+\b',speeds.group(1))]
+          assert len(vals2)==210 and max(vals2)<=2
+          assert Path('FIRMWARE_VERSION.txt').read_text().strip()=='3.1.20'
+          print('v3.1.20 favorite holiday invariants passed')
+          PY
+      - name: Prepare release
+        run: python tools/release.py prepare
+      - name: Compile NanoC6 firmware
+        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Package verified firmware
+        run: python tools/release.py package
+      - name: Verify packaged v3.1.20
+        run: |
+          test -f release/and_3.1.20.bin
+          test -f release/release.json
+          python - <<'PY'
+          import json
+          d=json.load(open('release/release.json'))
+          assert d['version']=='3.1.20', d
+          print(d)
+          PY
+      - name: Upload verified v3.1.20
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.20-Favorite-Holidays-Validated
+          path: release/*
+          if-no-files-found: error
