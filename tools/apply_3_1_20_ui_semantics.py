@@ -40,8 +40,8 @@ repls=[
  "await post('/api/control',{power:true,name:'Live Color Tune '+semanticColorName(color),colors:[color],effect:'Solid',brightness});"),
 ("power=true;running={name:'Live Color Tune '+color,colors:[color],effect:'Solid'};",
  "power=true;running={name:'Live Color Tune '+semanticColorName(color),colors:[color],effect:'Solid'};"),
-("if(announce)status('Previewing '+color+' on the selected light controller.');",
- "if(announce)status('Previewing '+semanticColorName(color)+' on the selected light controller.');"),
+("if(announce)status('Previewing '+color+' on the selected light controller.')",
+ "if(announce)status('Previewing '+semanticColorName(color)+' on the selected light controller.')"),
 ("status(`${d.name||record.name} overwritten with ${d.color||color}.`);",
  "status(`${d.name||record.name} preset overwritten.`);"),
 ]
