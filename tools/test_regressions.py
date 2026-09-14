@@ -24,7 +24,7 @@ assert 'effectButtonGroup' in web and 'enhanceEffectSelect' in web and 'effectSe
 assert 'const SEMANTIC_COLOR_VISUAL=' in web and 'semanticColorName' in web and 'semanticColorVisual' in web
 assert "'Yellow':'#FFD400'" in web and "'Orange':'#FF7A00'" in web
 assert 'colorNamePill' in web and '${semanticColorName(c)}</span>' in web
-assert "$('liveColorCode').textContent=semanticColorName(h)" in web
+assert "$('liveColorCode').textContent=h" in web
 assert "b.title=verb+' '+n" in web and "preset '+hex" not in web
 speed_block=re.search(r'static const uint8_t EVENT_SPEEDS\[\]\s*=\s*\{(.*?)\};',ev,re.S); assert speed_block
 speed_values=[int(x) for x in re.findall(r'\b\d+\b',speed_block.group(1))]; assert len(speed_values)==210 and max(speed_values)<=2
@@ -34,6 +34,14 @@ assert 'sp=min((uint8_t)2,qs)' in main
 assert 'String raw=String("v4|")+effectName(next.effect)' in main and '!head.startsWith("v4|")&&o.effect==Effect::Breath' in main
 assert "evSpeed.max='2'" in web and 'id="eventsSpeed" type="range" min="1" max="2"' in web
 assert 'savedColorLabels' in web and "p.name||NAMED_COLOR_PALETTE[i]?.name" in web
+
+assert web.index('let savedColors=[],savedColorLabels=[];') < web.index('function semanticColorName') < web.index('renderColorBuilder();')
+assert 'sel._syncEffectButtons=sync' in web and "setAttribute('aria-pressed'" in web
+assert "$('effectSelect')._syncEffectButtons?.()" in web and "$('homeEffect')._syncEffectButtons?.()" in web
+assert 'box._addEventColor=addColor' in web and "typeof box._addEventColor==='function'" in web
+assert "customLightSummary" in web and "chip.className='colorNamePill'" in web
+assert 'static bool firmwareOperationBusy()' in main and 'if(otaExternalClaimed){Update.abort();remoteUpdateReleaseExternalOperation();otaExternalClaimed=false;}' in main
+assert 'settingsBackupRetryAfter' in main and 'delaySeconds>21600ULL' in main
 
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
