@@ -1,0 +1,37 @@
+name: Stage Exact Local Anderson BIN
+
+on:
+  push:
+    branches: ['ota-staging-prebuilt/**']
+    paths: ['.github/transfer-trigger.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  stage-exact-local-bin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Fetch and verify exact local BIN
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(cat prebuilt/transfer-url.txt)"
+          curl --fail --location --retry 2 --connect-timeout 15 "$URL" -o /tmp/and_3.1.31.bin
+          test "$(stat -c%s /tmp/and_3.1.31.bin)" = "1824208"
+          echo "27840368cab0bef4fc1f5cd47ff73bdfa2c23a6a0aa8205db7d8a9b973fecd0a  /tmp/and_3.1.31.bin" | sha256sum -c -
+          test "$(od -An -tx1 -N1 /tmp/and_3.1.31.bin | tr -d ' \n')" = "e9"
+      - name: Stage transport copy only
+        shell: bash
+        run: |
+          set -euo pipefail
+          xz -9 -c /tmp/and_3.1.31.bin > prebuilt/and_3.1.31.bin.xz
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add prebuilt/and_3.1.31.bin.xz
+          git commit -m "Stage exact locally built Anderson 3.1.31 BIN for OTA publication"
+          git push
