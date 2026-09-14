@@ -32,6 +32,17 @@ jobs:
         run: |
           python -m pip install -q -r tools/requirements-build.txt
           npm ci --prefix tools --no-audit --no-fund
+      - name: Adapt patch to current web color map
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/apply_3_1_17_event_palettes.py')
+          s=p.read_text()
+          old='web,n=re.subn(r"const REFERENCE_LED=\\{.*?\\};","const REFERENCE_LED=Object.fromEntries(NAMED_COLOR_PALETTE.flatMap(x=>[[x.reference,x.output],[x.output,x.output]]));",web,count=1,flags=re.S); assert n==1'
+          new='web,n=re.subn(r"const REFERENCE_LED=.*?;\\nconst EXPLICIT_LED","const REFERENCE_LED=Object.fromEntries(NAMED_COLOR_PALETTE.flatMap(x=>[[x.reference,x.output],[x.output,x.output]]));\\nconst EXPLICIT_LED",web,count=1,flags=re.S); assert n==1'
+          assert old in s
+          p.write_text(s.replace(old,new,1))
+          PY
       - name: Apply v3.1.17 source changes
         run: python tools/apply_3_1_17_event_palettes.py
       - name: Commit exact release source
@@ -80,7 +91,7 @@ jobs:
               assert c in ev,c
           assert 'eventColorPresetCount(activeEventColorTheme)' in main
           assert 'saveEventColorPreset' in main
-          assert 'schedule2Brightness\"]=10' in main
+          assert 'schedule2Brightness"]=10' in main
           PY
       - name: Prepare release
         run: python tools/release.py prepare
