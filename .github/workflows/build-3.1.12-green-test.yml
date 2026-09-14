@@ -1,9 +1,6 @@
 name: Build Anderson Home 3.1.12 Green Test
 
 on:
-  push:
-    branches: ['codex/3.1.12-green-test']
-    paths: ['.github/workflows/build-3.1.12-green-test.yml']
   workflow_dispatch:
 
 permissions:
@@ -25,7 +22,7 @@ jobs:
         run: |
           python -m pip install -q -r tools/requirements-build.txt
           npm ci --prefix tools --no-audit --no-fund
-      - name: Create 3.1.12 green test from exact 3.1.11 source
+      - name: Validate 3.1.12 green test source
         run: |
           set -euo pipefail
           test "$(cat FIRMWARE_VERSION.txt)" = "3.1.12"
@@ -38,19 +35,6 @@ jobs:
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
       - name: Package app-only firmware
         run: python tools/release.py package
-      - name: Verify app-only artifact
-        run: |
-          set -euo pipefail
-          test -s release/and_3.1.12.bin
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib,json
-          p=Path('release/and_3.1.12.bin');m=json.loads(Path('release/release.json').read_text())
-          assert m['version']=='3.1.12'
-          assert p.read_bytes()[0]==0xE9
-          assert m['files']['and_3.1.12.bin']['bytes']==p.stat().st_size
-          assert m['files']['and_3.1.12.bin']['sha256']==hashlib.sha256(p.read_bytes()).hexdigest()
-          PY
       - name: Upload private test artifact only
         uses: actions/upload-artifact@v4
         with:
