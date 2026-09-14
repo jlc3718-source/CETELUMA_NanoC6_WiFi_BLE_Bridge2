@@ -1,4 +1,4 @@
-name: Dispatch Anderson v3.1.24 Build Once
+name: Dispatch Anderson v3.1.24 Publish Once
 
 on:
   push:
@@ -10,10 +10,16 @@ permissions:
 
 jobs:
   dispatch:
-    if: github.event.head_commit.message == 'Dispatch Anderson v3.1.24 production build'
+    if: github.event.head_commit.message == 'Dispatch Anderson v3.1.24 production publish'
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Dispatch canonical production build
-        run: gh workflow run compile-anderson-home-multi.yml --repo "$GITHUB_REPOSITORY" --ref codex/release-current
+      - name: Dispatch canonical production publisher
+        run: |
+          gh workflow run publish-anderson-home.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f build_run_id=34864577462 \
+            -f head_sha=09d26ccd63e7fb774017f829a8211a8255607587 \
+            -f head_branch=codex/release-current
