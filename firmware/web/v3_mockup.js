@@ -100,9 +100,9 @@
     new MutationObserver(syncLive).observe(byId('homeBrightVal'),{childList:true});
   }
   function effectPreviews() {
-    const values=['Jump','Strobe','Solid'];
-    const labels={Jump:'Jump',Strobe:'Strobe',Solid:'Solid'};
-    const hints={Jump:'Whole string steps from one color to the next',Strobe:'Color on, off, then the next color',Solid:'Holds one color steady'};
+    const values=['Jump','Breath','Strobe','Solid'];
+    const labels={Jump:'Jump',Breath:'Breath',Strobe:'Strobe',Solid:'Solid'};
+    const hints={Jump:'Whole string steps from one color to the next',Breath:'Smoothly fades the current colors brighter and dimmer',Strobe:'Color on, off, then the next color',Solid:'Holds one color steady'};
     const palette=['#42d8ff','#ff4ebd','#E08700','#7cff74','#7c72ff'];
     if(!byId('v3EffectPreviewStyle')) {
       const style=document.createElement('style');style.id='v3EffectPreviewStyle';style.textContent=`
@@ -124,7 +124,7 @@
       if(effect==='Jump'){
         const color=palette[Math.floor(now/360)%palette.length];
         dots.forEach(dot=>{dot.style.background=color;dot.style.color=color;dot.style.opacity='1';dot.style.transform='scale(1)';dot.style.filter='brightness(1.2)'});
-      }else if(effect==='__REMOVED_BREATH__'){
+      }else if(effect==='Breath'){
         const wave=.22+.78*((Math.sin(now/430)+1)/2);
         dots.forEach(dot=>{dot.style.background='#45d9ff';dot.style.color='#45d9ff';dot.style.opacity=String(wave);dot.style.transform=`scale(${.78+wave*.24})`;dot.style.filter=`brightness(${.65+wave*.7})`});
       }else if(effect==='Strobe'){

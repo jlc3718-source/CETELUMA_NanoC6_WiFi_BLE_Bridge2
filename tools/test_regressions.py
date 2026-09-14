@@ -49,6 +49,13 @@ assert 'settingsBackupValidateDocument' in main and 'settingsBackupCommitActive'
 assert 'settingsBackupSetRestorePending(true)' in main and 'settingsBackupRecoverPendingRestore' in main
 assert 'settingsBackupMigrateLegacy' in main and 'SPIFFS dual-generation' in main
 assert 'id="backupSettingsTab"' in web and 'id="backupSettingsPanel"' in web
+assert 'class="profileRecoveryButton" href="/recovery"' in web and 'profileRecoveryWrap' in web
+assert 'server.on("/recovery",HTTP_GET' in main
+assert "post('/api/backup/settings',{mask})" in web and "post('/api/backup/manual',{mask})" in web and "post('/api/backup/restore',{})" in web
+assert "/api/backup/config" not in web and "/api/backup/now" not in web
+assert "const values=['Jump','Breath','Strobe','Solid'];" in mock
+assert "effect==='Breath'" in mock and '__REMOVED_BREATH__' not in mock
+assert "const selector='.anderson-no-plain-effect-buttons';" in web
 assert '/api/backup/status' in web and '/api/backup/now' in web and '/api/backup/restore' in web
 
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
