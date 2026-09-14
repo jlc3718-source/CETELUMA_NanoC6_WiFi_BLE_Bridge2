@@ -1,0 +1,47 @@
+name: Seed Anderson Lean Build Cache
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/workflows/seed-anderson-lean-cache.yml']
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore current production PlatformIO cache
+        id: oldcache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-v1-
+      - name: Require an existing production cache
+        run: |
+          test -n "${{ steps.oldcache.outputs.cache-matched-key }}"
+          test -d "$HOME/.platformio/platforms"
+          test -d "$HOME/.platformio/packages"
+          test -d firmware/.pio/libdeps
+      - name: Save lean PlatformIO runtime cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+          key: ${{ runner.os }}-pio-lean-v2-${{ hashFiles('firmware/platformio.ini') }}
+      - name: Save small library dependency cache
+        uses: actions/cache/save@v4
+        with:
+          path: firmware/.pio/libdeps
+          key: ${{ runner.os }}-pio-libdeps-v1-${{ hashFiles('firmware/platformio.ini') }}
