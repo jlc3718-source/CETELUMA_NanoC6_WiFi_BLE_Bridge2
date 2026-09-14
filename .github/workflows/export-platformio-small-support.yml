@@ -1,0 +1,60 @@
+name: Export PlatformIO Small Support Packages
+
+on:
+  push:
+    branches:
+      - tooling/offline-build-kit-3127-run2
+    paths:
+      - '.github/workflows/export-platformio-small-support.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install exact PlatformIO core
+        run: python -m pip install -q -r tools/requirements-build.txt
+      - name: Restore exact Anderson PlatformIO cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            ~/.platformio/.cache
+            firmware/.pio/libdeps
+          key: Linux-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            Linux-pio-v1-
+      - name: Stage small PlatformIO support packages
+        run: |
+          set -euo pipefail
+          echo 'Available package directories:'
+          du -sh "$HOME/.platformio/packages"/* | sort -h
+          mkdir -p small-packages
+          for d in "$HOME/.platformio/packages"/*; do
+            name="$(basename "$d")"
+            case "$name" in
+              framework-arduinoespressif32|framework-arduinoespressif32-libs|toolchain-riscv32-esp|tool-riscv32-esp-elf-gdb)
+                continue
+                ;;
+            esac
+            cp -a "$d" small-packages/
+          done
+          tar -I 'zstd -8 -T0' -cf anderson-platformio-small-support-3.1.27.tar.zst small-packages
+          sha256sum anderson-platformio-small-support-3.1.27.tar.zst > SMALL_SUPPORT_SHA256.txt
+          ls -lh anderson-platformio-small-support-3.1.27.tar.zst SMALL_SUPPORT_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-PlatformIO-Small-Support-3.1.27
+          path: |
+            anderson-platformio-small-support-3.1.27.tar.zst
+            SMALL_SUPPORT_SHA256.txt
+          compression-level: 0
+          if-no-files-found: error
