@@ -1,0 +1,1 @@
+Firmware binary was compiled and verified locally before upload. GitHub is used only to reconstruct the uploaded bytes, verify them, sign the OTA manifest, host the release, and promote the OTA channel.
