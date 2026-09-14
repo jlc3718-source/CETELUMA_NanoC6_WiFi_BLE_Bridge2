@@ -287,7 +287,7 @@ function profiles() {
       tab.replaceChildren(node('span','ah27SectionNumber',String(i+1).padStart(2,'0')),node('span','ah27SectionLabel'));
       tab.lastElementChild.textContent=label;
     });
-    const navLabels={home:'Home',lights:'Create',events:'Schedules',favorites:'Collection',settings:'Settings'};
+    const navLabels={home:'Home',lights:'Create',events:'Schedules',favorites:'Favorites',settings:'Settings'};
     document.querySelectorAll('.v3BottomNav [data-tab]').forEach(tab=>{
       const label=navLabels[tab.dataset.tab];if(label)tab.querySelector('span').textContent=label;
     });
