@@ -67,7 +67,9 @@ jobs:
           assert p.read_bytes()[:1]==b'\xE9'
           r=json.loads(Path('release/release.json').read_text())
           assert r.get('version')=='3.1.20'
-          assert r.get('sha256')==hashlib.sha256(p.read_bytes()).hexdigest()
+          info=r['files']['and_3.1.20.bin']
+          assert info['bytes']==p.stat().st_size
+          assert info['sha256']==hashlib.sha256(p.read_bytes()).hexdigest()
           print('v3.1.20 semantic UI package verified')
           PY
       - name: Upload validation outputs
