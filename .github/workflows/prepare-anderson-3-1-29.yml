@@ -24,6 +24,14 @@ jobs:
       - name: Preserve one-shot patcher and reset to latest production main
         run: |
           cp tools/prepare_3129.py /tmp/prepare_3129.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/prepare_3129.py')
+          s=p.read_text()
+          s=s.replace('re.subn(pattern, replacement, s, count=1, flags=re.M)', 're.subn(pattern, lambda _m: replacement, s, count=1, flags=re.M)')
+          s=s.replace('re.subn(pattern, replacement, s, count=1, flags=re.M | re.S)', 're.subn(pattern, lambda _m: replacement, s, count=1, flags=re.M | re.S)')
+          p.write_text(s)
+          PY
           git fetch origin main codex/release-current
           git checkout -B codex/release-current origin/main
           test "$(cat FIRMWARE_VERSION.txt)" = "3.1.28"
