@@ -79,6 +79,12 @@ assert 'PALETTE_MIGRATION_REVISION=9' in t('firmware/src/PaletteMigration.cpp')
 assert 'saveSettings(next)' in main and 'Event override write failed' in main
 assert 'if(tries>=8)' not in web and 'otaOperation' in web and 'expectedCommit' in web and 'versionOk&&commitOk' in web
 assert 'PinAttemptState pinAttempts[6]' in main
+assert 'profile=="shirley"||profile=="kelly"' in main and 'kellyPinConfigured()' in main and 'd["kellyConfigured"]' in main
+assert 'data-profile="kelly"' in web and 'kellyPinConfig' in web and 'Kelly PIN' in web
+assert 'body[data-profile="shirley"] .nav,body[data-profile="kelly"] .nav' in web
+mock_css=t('firmware/web/v3_mockup.css')
+assert 'grid-template-columns:20px minmax(0,1fr)' in mock_css and '#nextEvent{grid-column:2;min-width:0;margin-top:0!important' in mock_css
+assert '.profileChoices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))' in mock_css
 assert 'store.clearWiFi()' in main and 'saveWiFi("","")' in t('firmware/src/SettingsStore.cpp')
 for row in ['{"evt028",2037,2,15}','{"evt030",2037,10,11}','{"evt047",2037,11,9}','{"evt096",2037,1,27}','{"evt177",2037,10,18}','{"evt192",2037,11,7}']: assert row in ev,row
 assert 'anderson-cache-cleanup.sh' not in build
