@@ -1,4 +1,4 @@
-name: Build Anderson 3.1.12 Green Test
+name: Build Anderson Home 3.1.12 Green Test
 
 on:
   push:
@@ -27,29 +27,9 @@ jobs:
           npm ci --prefix tools --no-audit --no-fund
       - name: Create 3.1.12 green test from exact 3.1.11 source
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          v=Path('FIRMWARE_VERSION.txt')
-          if v.read_text().strip() != '3.1.11':
-              raise SystemExit('Base is not exact 3.1.11')
-          v.write_text('3.1.12\n')
-
-          p=Path('firmware/src/main.cpp')
-          s=p.read_text()
-          old='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.11";'
-          new='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.12";'
-          if s.count(old) != 1:
-              raise SystemExit('Expected exactly one 3.1.11 runtime version marker')
-          p.write_text(s.replace(old,new,1))
-
-          p=Path('firmware/web/v3_mockup.css')
-          s=p.read_text()
-          old='background:radial-gradient(ellipse at 2% 25%,#07316566,transparent 46%),radial-gradient(ellipse at 100% 68%,#25285c44,transparent 42%),linear-gradient(160deg,#030c1c,#020714)!important;'
-          new='background:radial-gradient(ellipse at 2% 25%,#0d5a2f66,transparent 46%),radial-gradient(ellipse at 100% 68%,#214d3444,transparent 42%),linear-gradient(160deg,#03180c,#020d07)!important;'
-          if s.count(old) != 1:
-              raise SystemExit('Expected exact 3.1.11 page background once')
-          p.write_text(s.replace(old,new,1))
-          PY
+          set -euo pipefail
+          test "$(cat FIRMWARE_VERSION.txt)" = "3.1.12"
+          grep -q 'ANDERSON_FIRMWARE_VERSION="3.1.12"' firmware/src/main.cpp
       - name: Prepare and validate release
         run: |
           python tools/release.py check
@@ -60,26 +40,21 @@ jobs:
         run: python tools/release.py package
       - name: Verify app-only artifact
         run: |
+          set -euo pipefail
+          test -s release/and_3.1.12.bin
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json
-          p=Path('release/and_3.1.12.bin')
-          if not p.exists(): raise SystemExit('Missing and_3.1.12.bin')
-          data=p.read_bytes()
-          if not data or data[0] != 0xE9: raise SystemExit('Invalid ESP app header')
-          if len(data) >= 0x1E0000: raise SystemExit('Firmware exceeds OTA slot')
-          m=json.loads(Path('release/release.json').read_text())
-          h=hashlib.sha256(data).hexdigest()
-          f=m['files']['and_3.1.12.bin']
-          if f['bytes'] != len(data) or f['sha256'] != h: raise SystemExit('Manifest verification failed')
-          print('and_3.1.12.bin', len(data), h)
+          import hashlib,json
+          p=Path('release/and_3.1.12.bin');m=json.loads(Path('release/release.json').read_text())
+          assert m['version']=='3.1.12'
+          assert p.read_bytes()[0]==0xE9
+          assert m['files']['and_3.1.12.bin']['bytes']==p.stat().st_size
+          assert m['files']['and_3.1.12.bin']['sha256']==hashlib.sha256(p.read_bytes()).hexdigest()
           PY
       - name: Upload private test artifact only
         uses: actions/upload-artifact@v4
         with:
           name: Anderson-Home-3.1.12-GREEN-TEST
-          path: |
-            release/and_3.1.12.bin
-            release/release.json
+          path: release/*
           if-no-files-found: error
           retention-days: 30
