@@ -90,7 +90,7 @@ jobs:
           OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
         run: |
           set -euo pipefail
-          mkdir -p publish-input; rm -f publish-input/latest.json
+          mkdir -p publish-input; rm -f publish-input/latest.json publish-input/ota-manifest.json
           if [ -n "${OTA_SIGNING_KEY_B64:-}" ]; then
             printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > /tmp/anderson-ota-signing-key.pem
             chmod 600 /tmp/anderson-ota-signing-key.pem
@@ -129,6 +129,7 @@ jobs:
           fi
           test -s publish-input/latest.json
           python tools/verify_ota_manifest.py --manifest publish-input/latest.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$HEAD_SHA" --url "$OTA_URL"
+          cp publish-input/latest.json publish-input/ota-manifest.json
       - name: Publish or verify immutable stable release
         run: |
           TAG="anderson-v$VERSION"
@@ -137,11 +138,20 @@ jobs:
           import json,os
           r=json.load(open('/tmp/release.json'));assert r['targetCommitish']==os.environ['HEAD_SHA'];assert not r['isDraft'] and not r['isPrerelease']
           PY
+            gh release view "$TAG" --json assets >/tmp/release-assets.json
+            if ! python - <<'PY'
+          import json,sys
+          a=json.load(open('/tmp/release-assets.json')).get('assets',[])
+          sys.exit(0 if any(x.get('name')=='ota-manifest.json' for x in a) else 1)
+          PY
+            then
+              gh release upload "$TAG" publish-input/ota-manifest.json
+            fi
           else
-            gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json --target "$HEAD_SHA" --title "Anderson Home v$VERSION" --notes "Verified Anderson Home production release from commit $HEAD_SHA."
+            gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json publish-input/ota-manifest.json --target "$HEAD_SHA" --title "Anderson Home v$VERSION" --notes "Verified Anderson Home production release from commit $HEAD_SHA."
           fi
-          rm -rf public-check;mkdir public-check;gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --dir public-check
-          cmp "release-work/and_$VERSION.bin" "public-check/and_$VERSION.bin";cmp release-work/release.json public-check/release.json
+          rm -rf public-check;mkdir public-check;gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --pattern ota-manifest.json --dir public-check
+          cmp "release-work/and_$VERSION.bin" "public-check/and_$VERSION.bin";cmp release-work/release.json public-check/release.json;cmp publish-input/ota-manifest.json public-check/ota-manifest.json
       - name: Fast-forward production main
         run: |
           git fetch origin main --quiet
@@ -166,6 +176,9 @@ jobs:
         run: |
           gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > /tmp/live.json
           cmp publish-input/latest.json /tmp/live.json
+          rm -rf /tmp/release-api-check;mkdir -p /tmp/release-api-check
+          gh release download "anderson-v$VERSION" --pattern ota-manifest.json --dir /tmp/release-api-check
+          cmp publish-input/latest.json /tmp/release-api-check/ota-manifest.json
       - name: Production housekeeping
         continue-on-error: true
         env:
