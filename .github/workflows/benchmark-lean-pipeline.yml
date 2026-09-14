@@ -1,0 +1,89 @@
+name: Benchmark Anderson Lean Pipeline
+
+on:
+  push:
+    branches: ['analysis/pipeline-speed']
+    paths: ['.github/workflows/benchmark-lean-pipeline.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PLATFORMIO_BUILD_CACHE_DIR: ${{ github.workspace }}/.pio-build-cache
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+
+      - name: Install Python and web tools
+        run: |
+          t=$SECONDS
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+          echo "TOOLS_SECONDS=$((SECONDS-t))" | tee -a "$GITHUB_ENV"
+
+      - name: Restore lean PlatformIO runtime only
+        id: piolean
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+          key: ${{ runner.os }}-pio-lean-v2-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Restore production compiled objects
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: .pio-build-cache
+          key: ${{ runner.os }}-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-codex/release-current-06e00f183128f5ce07d53446d9453e463757a8af
+          restore-keys: |
+            ${{ runner.os }}-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-codex/release-current-
+
+      - name: Prepare release
+        run: |
+          t=$SECONDS
+          python tools/release.py prepare
+          echo "PREPARE_SECONDS=$((SECONDS-t))" | tee -a "$GITHUB_ENV"
+
+      - name: Compile exact production source
+        run: |
+          t=$SECONDS
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+          echo "COMPILE_SECONDS=$((SECONDS-t))" | tee -a "$GITHUB_ENV"
+
+      - name: Package exact production firmware
+        run: |
+          t=$SECONDS
+          python tools/release.py package
+          echo "PACKAGE_SECONDS=$((SECONDS-t))" | tee -a "$GITHUB_ENV"
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          r=json.loads(Path('release/release.json').read_text())
+          f=r['files']['and_3.1.23.bin']
+          assert f['bytes']==1817392, f
+          assert f['sha256']=='d7f2d33dbcea7b114af5e0eccd6bd047a953a8e2d7415f07b323a3c1a0faaa2', f
+          assert r['ui_sha256']=='f99f55b5e163c8424867129fbc5c3410ae97c06b9186937d9a8ee824dd052419'
+          print('Exact production firmware and UI reproduced.')
+          PY
+
+      - name: Report cache footprint and benchmark
+        run: |
+          du -sh ~/.platformio/platforms ~/.platformio/packages firmware/.pio/libdeps .pio-build-cache 2>/dev/null || true
+          echo "### Lean pipeline benchmark" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Lean PIO cache hit: ${{ steps.piolean.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Object cache hit: ${{ steps.objects.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tool install: ${TOOLS_SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Prepare: ${PREPARE_SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Compile: ${COMPILE_SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package: ${PACKAGE_SECONDS}s" >> "$GITHUB_STEP_SUMMARY"
