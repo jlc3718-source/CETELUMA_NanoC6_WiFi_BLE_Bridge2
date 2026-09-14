@@ -1,0 +1,59 @@
+from pathlib import Path
+import re
+root=Path('.')
+main=root/'firmware/src/main.cpp'; web=root/'firmware/web/index.html'; mock=root/'firmware/web/v3_mockup.js'
+s=main.read_text()
+assert 'ANDERSON_FIRMWARE_VERSION="3.1.29"' in s and '/api/auth/pin' not in s
+s=s.replace('ANDERSON_FIRMWARE_VERSION="3.1.29"','ANDERSON_FIRMWARE_VERSION="3.1.30"',1)
+needle='static bool disablePinProtection()'
+pos=s.index(needle)
+helpers=r'''static bool pinMatchesStoredProfile(const String& profile,const String& pin){if(!fourDigitPin(pin)||profileRole(profile)==ROLE_NONE)return false;const String& salt=profile=="jason"?jasonPinSalt:(profile=="kelly"?kellyPinSalt:shirleyPinSalt);const String& expected=profile=="jason"?jasonPinHash:(profile=="kelly"?kellyPinHash:shirleyPinHash);return pinRecordConfigured(salt,expected)&&constantTimeEqual(pinDigest(profile,pin,salt),expected);}
+static bool pinConflictsWithOtherProfile(const String& profile,const String& pin){for(const char* other:{"shirley","kelly","jason"}){String p(other);if(p==profile)continue;if(pinMatchesStoredProfile(p,pin))return true;}return false;}
+static void revokeAuthSessionsForProfile(const String& profile){for(auto&s:authSessions)if(s.profile==profile){s.token="";s.profile="";s.role=ROLE_NONE;s.lastSeen=0;}}
+static bool configureSingleProfilePin(const String& profile,const String& pin){if(!pinProtectionEnabled||!pinAuthConfigured()||profileRole(profile)==ROLE_NONE||!fourDigitPin(pin))return false;String salt=randomHex(16),hash=pinDigest(profile,pin,salt);if(hash.length()!=64)return false;String ss=shirleyPinSalt,sh=shirleyPinHash,ks=kellyPinSalt,kh=kellyPinHash,js=jasonPinSalt,jh=jasonPinHash;if(profile=="shirley"){ss=salt;sh=hash;}else if(profile=="kelly"){ks=salt;kh=hash;}else{js=salt;jh=hash;}if(!storePinAuthConfig(true,ss,sh,ks,kh,js,jh))return false;shirleyPinSalt=ss;shirleyPinHash=sh;kellyPinSalt=ks;kellyPinHash=kh;jasonPinSalt=js;jasonPinHash=jh;revokeAuthSessionsForProfile(profile);return true;}
+'''
+s=s[:pos]+helpers+s[pos:]
+route_end='  server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});'
+pos=s.index(route_end)
+route=r'''  server.on("/api/auth/pin",HTTP_POST,[]{
+    if(!requireAdmin())return;if(!pinProtectionEnabled||!pinAuthConfigured()){server.send(409,"application/json","{\"ok\":false,\"error\":\"Configure all three profile PINs first\"}");return;}JsonDocument d;if(!body(d))return;String profile=d["profile"]|String(""),pin=d["pin"]|String("");if(profileRole(profile)==ROLE_NONE){server.send(400,"application/json","{\"ok\":false,\"error\":\"Unknown profile\"}");return;}if(!fourDigitPin(pin)){server.send(400,"application/json","{\"ok\":false,\"error\":\"The new PIN must contain exactly four digits\"}");return;}if(pinMatchesStoredProfile(profile,pin)){server.send(400,"application/json","{\"ok\":false,\"error\":\"Choose a PIN different from the current PIN\"}");return;}if(pinConflictsWithOtherProfile(profile,pin)){server.send(400,"application/json","{\"ok\":false,\"error\":\"Each profile must use a different PIN\"}");return;}if(!configureSingleProfilePin(profile,pin)){server.send(500,"application/json","{\"ok\":false,\"error\":\"The selected PIN could not be saved and verified\"}");return;}JsonDocument out;out["ok"]=true;out["profile"]=profile;out["pinEnabled"]=true;if(profile=="jason")out["token"]=issueAuthSession(ROLE_ADMIN,"jason");String json;serializeJson(out,json);sendJson(json);
+  });
+'''
+s=s[:pos]+route+s[pos:]
+main.write_text(s)
+
+w=web.read_text()
+panel='''    <div class="panel">
+      <strong>Profile PINs</strong><div class="sub">Each profile has its own four-digit PIN. Once protection is configured, you can change just one person without re-entering the other two PINs.</div>
+      <div id="pinConfigMeta" class="card small" style="margin-top:10px">Checking PIN protection…</div>
+      <div class="profilePinGrid">
+        <div><div class="label">Shirley PIN</div><input id="shirleyPinConfig" class="field" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="4 digits"><div class="label">Confirm Shirley PIN</div><input id="shirleyPinConfirm" class="field" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="Repeat 4 digits"><button id="changeShirleyPin" class="btn primary singlePinChange" type="button" style="width:100%;margin-top:8px" hidden>Change Shirley PIN</button></div>
+        <div><div class="label">Kelly PIN</div><input id="kellyPinConfig" class="field" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="4 digits"><div class="label">Confirm Kelly PIN</div><input id="kellyPinConfirm" class="field" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="Repeat 4 digits"><button id="changeKellyPin" class="btn primary singlePinChange" type="button" style="width:100%;margin-top:8px" hidden>Change Kelly PIN</button></div>
+        <div><div class="label">Jason PIN</div><input id="jasonPinConfig" class="field" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="4 digits"><div class="label">Confirm Jason PIN</div><input id="jasonPinConfirm" class="field" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="Repeat 4 digits"><button id="changeJasonPin" class="btn primary singlePinChange" type="button" style="width:100%;margin-top:8px" hidden>Change Jason PIN</button></div>
+      </div>
+      <button id="savePinConfig" class="btn primary" type="button" style="width:100%;margin-top:10px">Save All Three PINs &amp; Enable</button>
+      <button id="disablePinConfig" class="btn" type="button" style="width:100%;margin-top:8px" disabled>Disable PIN Protection</button>
+      <div class="note">All three PINs must remain different. Changing one PIN rewrites only that profile’s salted PIN record; the other two PIN records are preserved. Five incorrect attempts cause a temporary 60-second delay. Firmware recovery continues to require Jason’s PIN.</div>
+    </div>'''
+pat=r'    <div class="panel">\n      <strong>Profile PINs</strong>.*?\n    </div>(?=\n\n    <div class="panel">\n      <strong>Firmware Update</strong>)'
+w,n=re.subn(pat,panel,w,count=1,flags=re.S); assert n==1
+pinjs=r'''function scrubPinInput(event){event.target.value=event.target.value.replace(/\D/g,'').slice(0,4)}
+['shirleyPinConfig','shirleyPinConfirm','kellyPinConfig','kellyPinConfirm','jasonPinConfig','jasonPinConfirm'].forEach(id=>$(id).addEventListener('input',scrubPinInput));
+async function loadPinSettings(){const meta=$('pinConfigMeta');try{const d=await api('/api/auth/status?settings='+Date.now()),singleReady=d.pinEnabled&&d.configured;meta.innerHTML=d.pinEnabled?(d.configured?'<strong>PIN protection is ON</strong><br><span class="sub">Change one profile at a time below; the other two PINs stay unchanged.</span>':'<strong>PIN protection is partially configured</strong><br><span class="sub">Enter all three PINs once to complete secure setup.</span>'):'<strong>PIN protection is OFF</strong><br><span class="sub">Set all three PINs below when you are ready to turn it on.</span>';$('disablePinConfig').disabled=!d.pinEnabled;$('savePinConfig').hidden=singleReady;['changeShirleyPin','changeKellyPin','changeJasonPin'].forEach(id=>$(id).hidden=!singleReady)}catch(e){meta.textContent=API_MODE?'PIN status unavailable.':'Preview mode — PIN settings require the NanoC6.'}}
+async function changeSinglePin(profile){const cap=profile[0].toUpperCase()+profile.slice(1),pin=$(profile+'PinConfig').value,confirmPin=$(profile+'PinConfirm').value,button=$('change'+cap+'Pin');if(!/^\d{4}$/.test(pin))return status(cap+' PIN must contain exactly four digits.');if(pin!==confirmPin)return status(cap+' PIN confirmation does not match.');button.disabled=true;try{const d=await post('/api/auth/pin',{profile,pin});if(d.token)window.andersonAuthToken=d.token;$(profile+'PinConfig').value='';$(profile+'PinConfirm').value='';await loadPinSettings();status(cap+' PIN changed successfully. The other two PINs were not changed.')}catch(e){status(cap+' PIN change failed: '+e.message)}finally{button.disabled=false}}
+$('changeShirleyPin').addEventListener('click',()=>changeSinglePin('shirley'));$('changeKellyPin').addEventListener('click',()=>changeSinglePin('kelly'));$('changeJasonPin').addEventListener('click',()=>changeSinglePin('jason'));
+$('savePinConfig').addEventListener('click',async()=>{const shirleyPin=$('shirleyPinConfig').value,shirleyConfirm=$('shirleyPinConfirm').value,kellyPin=$('kellyPinConfig').value,kellyConfirm=$('kellyPinConfirm').value,jasonPin=$('jasonPinConfig').value,jasonConfirm=$('jasonPinConfirm').value,pins=[shirleyPin,kellyPin,jasonPin];if(pins.some(pin=>!/^\d{4}$/.test(pin)))return status('All three profile PINs must contain exactly four digits.');if(shirleyPin!==shirleyConfirm||kellyPin!==kellyConfirm||jasonPin!==jasonConfirm)return status('Each confirmation must match its four-digit PIN.');if(new Set(pins).size!==3)return status('Shirley, Kelly, and Jason must use three different PINs.');$('savePinConfig').disabled=true;try{const d=await post('/api/auth/config',{enabled:true,shirleyPin,kellyPin,jasonPin});if(d.token)window.andersonAuthToken=d.token;['shirleyPinConfig','shirleyPinConfirm','kellyPinConfig','kellyPinConfirm','jasonPinConfig','jasonPinConfirm'].forEach(id=>$(id).value='');await loadPinSettings();status('All three four-digit PINs were saved and verified. PIN protection is now on.')}catch(e){status('PIN setup failed: '+e.message)}finally{$('savePinConfig').disabled=false}});
+'''
+pat=r'function scrubPinInput\(event\).*?(?=\$\(\'disablePinConfig\'\)\.addEventListener)'
+w,n=re.subn(pat,lambda _:pinjs,w,count=1,flags=re.S); assert n==1
+web.write_text(w)
+
+m=mock.read_text(); marker='  function settingsSubTabs() {'; assert marker in m and "event.detail?.id==='jason'" not in m
+hooks="  window.addEventListener('anderson-profile-selected',event=>{if(event.detail?.id==='jason')setTimeout(refreshBackupStatus,0)});\n  window.addEventListener('anderson-profile-cleared',()=>{const last=byId('backupLast'),next=byId('backupNext'),line=byId('backupStatus');if(last)last.textContent='Sign in as Jason to load';if(next)next.textContent='Sign in as Jason to load';if(line)line.textContent='Backup status is available to Jason only.'});\n"
+m=m.replace(marker,hooks+marker,1)
+old="""    const activate=id=>{\n      defs.forEach(([key])=>{\n        const active=key===id,button=buttons.get(key),pane=panes.get(key);\n        button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;\n        pane.classList.toggle('active',active);pane.hidden=!active;\n      });\n    };"""
+new=old.replace("      });\n    };","      });\n      if(id==='backup'&&window.andersonProfile?.id==='jason')refreshBackupStatus();\n    };")
+assert old in m; m=m.replace(old,new,1); mock.write_text(m)
+(root/'FIRMWARE_VERSION.txt').write_text('3.1.30\n')
+(root/'firmware/RELEASE_NOTES_v3.1.30.md').write_text('''# Anderson Home v3.1.30\n\n- Adds independent profile PIN changes for Shirley, Kelly, and Jason after initial three-profile PIN setup.\n- Changing one profile PIN preserves the other two stored salted PIN records.\n- Preserves the rule that all three profile PINs must be different.\n- Refreshes Backup & Restore status immediately when Jason signs in again after logout.\n- Refreshes Last Backup / Next Automatic whenever the Backup & Restore settings tab is opened.\n- Preserves APP-only signed OTA, role restrictions, recovery-PIN behavior, schedules, lighting, and backup contents.\n''')
+print('Patched 3.1.30')
