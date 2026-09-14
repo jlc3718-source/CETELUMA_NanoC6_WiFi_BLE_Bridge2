@@ -1,0 +1,90 @@
+name: Publish Anderson Home 3.1.12 Green Test
+
+on:
+  push:
+    branches: ['codex/3.1.12-green-test']
+    paths: ['.github/workflows/publish-3.1.12-green-test.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERSION: 3.1.12
+      BUILD_RUN_ID: '34791522723'
+      ARTIFACT_NAME: Anderson-Home-3.1.12-GREEN-TEST
+      RELEASE_COMMIT: 53797128783a1e5fbc71505a5b00327e5aa521d6
+      EXPECTED_BYTES: '1783392'
+      EXPECTED_SHA256: d23f05f5f010b7a17928878e969223f6486d136c6db9011ad99c45cdc2b2cb5b
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download exact verified artifact
+        run: |
+          mkdir -p release-work
+          gh run download "$BUILD_RUN_ID" --name "$ARTIFACT_NAME" --dir release-work
+      - name: Verify exact app-only BIN
+        run: |
+          set -euo pipefail
+          FILE="release-work/and_${VERSION}.bin"
+          test -s "$FILE"
+          test "$(stat -c%s "$FILE")" = "$EXPECTED_BYTES"
+          test "$(sha256sum "$FILE" | awk '{print $1}')" = "$EXPECTED_SHA256"
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('release-work/and_3.1.12.bin')
+          assert p.read_bytes()[0] == 0xE9
+          PY
+      - name: Verify signed pending OTA manifest
+        run: |
+          mkdir -p manifest
+          gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/remote-update/pending/$VERSION.json?ref=ota" > manifest/latest.json
+          python - <<'PY'
+          import json, os
+          m=json.load(open('manifest/latest.json'))
+          payload=dict(line.split('=',1) for line in m['payload'].strip().splitlines())
+          assert payload['version']==os.environ['VERSION']
+          assert payload['bytes']==os.environ['EXPECTED_BYTES']
+          assert payload['sha256']==os.environ['EXPECTED_SHA256']
+          assert payload['commit']==os.environ['RELEASE_COMMIT']
+          assert payload['url']==f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/anderson-v{os.environ['VERSION']}/and_{os.environ['VERSION']}.bin"
+          assert m.get('signature')
+          PY
+      - name: Create immutable release
+        run: |
+          TAG="anderson-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists" >&2
+            exit 1
+          fi
+          gh release create "$TAG" "release-work/and_${VERSION}.bin" --target "$RELEASE_COMMIT" --title "Anderson Home v$VERSION" --notes "Verified Anderson Home 3.1.12 green-background test promoted from Actions run $BUILD_RUN_ID."
+      - name: Promote signed OTA manifest
+        run: |
+          git fetch origin ota --quiet
+          rm -rf ../ota-work
+          git worktree add -B ota-publish ../ota-work origin/ota
+          cp manifest/latest.json ../ota-work/latest.json
+          mkdir -p ../ota-work/remote-update/releases
+          cp manifest/latest.json ../ota-work/remote-update/latest.json
+          cp manifest/latest.json "../ota-work/remote-update/releases/$VERSION.json"
+          rm -f "../ota-work/remote-update/pending/$VERSION.json"
+          cd ../ota-work
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add latest.json remote-update
+          git commit -m "Publish signed Anderson Home v$VERSION OTA manifest"
+          git push origin HEAD:refs/heads/ota
+      - name: Verify published release and live OTA
+        run: |
+          mkdir -p verify
+          gh release download "anderson-v$VERSION" --pattern "and_${VERSION}.bin" --dir verify
+          test "$(stat -c%s "verify/and_${VERSION}.bin")" = "$EXPECTED_BYTES"
+          test "$(sha256sum "verify/and_${VERSION}.bin" | awk '{print $1}')" = "$EXPECTED_SHA256"
+          gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > /tmp/live.json
+          cmp manifest/latest.json /tmp/live.json
