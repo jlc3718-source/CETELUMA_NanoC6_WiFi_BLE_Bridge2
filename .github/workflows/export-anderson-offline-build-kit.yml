@@ -78,7 +78,6 @@ jobs:
             test -d "$HOME/.platformio/packages/$d"
             cp -a "$HOME/.platformio/packages/$d" offline/pio-home/packages/
           done
-          # PIOarduino installs esptool during the build. Capture the resulting local tool copy.
           if [ -d "$HOME/.platformio/tools/tool-esptoolpy" ]; then
             cp -a "$HOME/.platformio/tools/tool-esptoolpy" offline/pio-home/tools/
           fi
@@ -86,7 +85,15 @@ jobs:
             cp -a "$HOME/.platformio/penv" offline/pio-home/
           fi
           mkdir -p offline/project/firmware/.pio
-          rsync -a --exclude='.git' --exclude='.github/workflows/export-anderson-offline-build-kit.yml' --exclude='release' --exclude='.pio-build-cache' --exclude='firmware/.pio/build' ./ offline/project/
+          rsync -a \
+            --exclude='.git' \
+            --exclude='offline' \
+            --exclude='.github/workflows/export-anderson-offline-build-kit.yml' \
+            --exclude='release' \
+            --exclude='.pio-build-cache' \
+            --exclude='firmware/.pio/build' \
+            ./ offline/project/
+          rm -rf offline/project/firmware/.pio/libdeps
           cp -a firmware/.pio/libdeps offline/project/firmware/.pio/
           printf '%s\n' '72a5f7bcd24236b6cbbb16ebab9da757922bbdb4' > offline/BASELINE_COMMIT.txt
           printf '%s\n' '3.1.27' > offline/BASELINE_VERSION.txt
@@ -115,7 +122,11 @@ jobs:
         run: |
           set -euo pipefail
           tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-framework-3.1.27.tar.zst pio-home/platforms pio-home/packages/framework-arduinoespressif32 pio-home/packages/framework-arduinoespressif32-libs
-          tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home/packages/toolchain-riscv32-esp pio-home/tools pio-home/penv 2>/dev/null || tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home/packages/toolchain-riscv32-esp pio-home/tools
+          if [ -d offline/pio-home/penv ]; then
+            tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home/packages/toolchain-riscv32-esp pio-home/tools pio-home/penv
+          else
+            tar -C offline -I 'zstd -8 -T0' -cf anderson-pio-toolchain-3.1.27.tar.zst pio-home/packages/toolchain-riscv32-esp pio-home/tools
+          fi
           tar -C offline -I 'zstd -8 -T0' -cf anderson-offline-support-3.1.27.tar.zst wheels project BASELINE_COMMIT.txt BASELINE_VERSION.txt PLATFORMIO_VERSION.txt install-and-build.sh
           sha256sum anderson-*.tar.zst > SHA256SUMS.txt
           ls -lh anderson-*.tar.zst SHA256SUMS.txt
