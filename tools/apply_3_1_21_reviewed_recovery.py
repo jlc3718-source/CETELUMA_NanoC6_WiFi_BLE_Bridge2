@@ -7,7 +7,6 @@ mp=Path('firmware/src/main.cpp')
 main=mp.read_text()
 main=main.replace('ANDERSON_FIRMWARE_VERSION="3.1.20"','ANDERSON_FIRMWARE_VERSION="3.1.21"')
 
-# Firmware-operation ownership / restart gate hardening from the 3.1.20 review.
 anchor="bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;"
 if anchor not in main: raise SystemExit('OTA global anchor missing')
 main=main.replace(anchor,anchor+"\nstatic bool firmwareOperationBusy(){return otaExternalClaimed||otaAutoRebootPending||Update.isRunning()||remoteUpdateOperationBusy();}",1)
@@ -26,19 +25,16 @@ new='if(buttonDown && millis()-buttonDown>5000){buttonDown=0;if(!firmwareOperati
 if old not in main: raise SystemExit('physical reset anchor missing')
 main=main.replace(old,new,1)
 
-# Bounded automatic-backup retry: keep weekly success cadence separate from failure retries.
 anchor='static uint32_t settingsBackupLastCheckMs=0;'
 if anchor not in main: raise SystemExit('backup timer anchor missing')
 main=main.replace(anchor,anchor+'\nstatic uint64_t settingsBackupRetryAfter=0;static uint8_t settingsBackupFailureCount=0;',1)
 old='static void maybeWeeklySettingsBackup(){if(!timeValid()||Update.isRunning()||remoteUpdateOperationBusy())return;uint32_t ms=millis();if(settingsBackupLastCheckMs&&(uint32_t)(ms-settingsBackupLastCheckMs)<60000UL)return;settingsBackupLastCheckMs=ms;if(!settingsBackupMask())return;Preferences p;uint64_t lastauto=0;if(p.begin(SETTINGS_BACKUP_NS,true)){lastauto=p.getULong64("lastauto",0);p.end();}uint64_t now=(uint64_t)time(nullptr);if(!lastauto||now>=lastauto+SETTINGS_BACKUP_WEEK_SECONDS)createSettingsBackup(true);}'
-new='static void maybeWeeklySettingsBackup(){if(!timeValid()||firmwareOperationBusy())return;uint32_t ms=millis();if(settingsBackupLastCheckMs&&(uint32_t)(ms-settingsBackupLastCheckMs)<60000UL)return;settingsBackupLastCheckMs=ms;if(!settingsBackupMask())return;Preferences p;uint64_t lastauto=0;if(p.begin(SETTINGS_BACKUP_NS,true)){lastauto=p.getULong64("lastauto",0);p.end();}uint64_t now=(uint64_t)time(nullptr);if(settingsBackupRetryAfter&&now<settingsBackupRetryAfter)return;if(!lastauto||now>=lastauto+SETTINGS_BACKUP_WEEK_SECONDS){if(createSettingsBackup(true)){settingsBackupFailureCount=0;settingsBackupRetryAfter=0;}else{settingsBackupFailureCount=min<uint8_t>(settingsBackupFailureCount+1,6);uint64_t delaySeconds=300ULL<<(settingsBackupFailureCount-1);if(delaySeconds>21600ULL)delaySeconds=21600ULL;settingsBackupRetryAfter=now+delaySeconds;}}}'
+new='static void maybeWeeklySettingsBackup(){if(!timeValid()||firmwareOperationBusy())return;uint32_t ms=millis();if(settingsBackupLastCheckMs&&(uint32_t)(ms-settingsBackupLastCheckMs)<60000UL)return;settingsBackupLastCheckMs=ms;if(!settingsBackupMask())return;Preferences p;uint64_t lastauto=0;if(p.begin(SETTINGS_BACKUP_NS,true)){lastauto=p.getULong64("lastauto",0);p.end();}uint64_t now=(uint64_t)time(nullptr);if(settingsBackupRetryAfter&&now<settingsBackupRetryAfter)return;if(!lastauto||now>=lastauto+SETTINGS_BACKUP_WEEK_SECONDS){if(createSettingsBackup(true)){settingsBackupFailureCount=0;settingsBackupRetryAfter=0;}else{if(settingsBackupFailureCount<6)settingsBackupFailureCount++;uint64_t delaySeconds=300ULL<<(settingsBackupFailureCount-1);if(delaySeconds>21600ULL)delaySeconds=21600ULL;settingsBackupRetryAfter=now+delaySeconds;}}}'
 if old not in main: raise SystemExit('weekly backup anchor missing')
 main=main.replace(old,new,1)
 mp.write_text(main)
 
 web=web.replace('3.1.20','3.1.21')
-# Critical 3.1.20 runtime fix: semanticColorName() was reached by renderColorBuilder()
-# before these lexical bindings initialized, throwing a TDZ ReferenceError and halting UI startup.
 old="let savedColors=[],savedColorLabels=[],activeColorChip=null,pickerH=0,pickerS=0,pickerV=1;"
 if old not in web: raise SystemExit('saved color declaration not found')
 web=web.replace(old,"let activeColorChip=null,pickerH=0,pickerS=0,pickerV=1;",1)
@@ -47,7 +43,6 @@ pos=web.find(anchor)
 if pos<0: raise SystemExit('semantic visual anchor missing')
 web=web[:pos]+"let savedColors=[],savedColorLabels=[];\n\n"+web[pos:]
 
-# Side-effect-free effect button renderer. Incoming state updates repaint buttons without POSTing.
 old="  const sync=()=>buttons.forEach(b=>b.classList.toggle('active',b.dataset.effect===sel.value));"
 new="  const sync=()=>buttons.forEach(b=>{const active=b.dataset.effect===sel.value;b.classList.toggle('active',active);b.setAttribute('aria-pressed',active?'true':'false')});\n  sel._syncEffectButtons=sync;"
 if old not in web: raise SystemExit('effect sync anchor missing')
@@ -55,7 +50,6 @@ web=web.replace(old,new,1)
 web=web.replace("  $('effectSelect').value=effect;\n  $('homeEffect').value=effect;","  $('effectSelect').value=effect;$('effectSelect')._syncEffectButtons?.();\n  $('homeEffect').value=effect;$('homeEffect')._syncEffectButtons?.();",1)
 web=web.replace("  $('effectSelect').value=effect;\n  setBuilderColors(colors,false);","  $('effectSelect').value=effect;$('effectSelect')._syncEffectButtons?.();\n  setBuilderColors(colors,false);",1)
 
-# Reuse the event editor's addColor path after RGB picker refresh so every chip keeps remove controls.
 old="document.querySelectorAll('.eventFavoriteGrid').forEach(g=>{const box=g.closest('.eventEditor'),colors=box?.querySelector('.row.wraprow');if(colors)renderEventFavoriteGrid(g,c=>{if(colors.children.length>=8)return;const b=document.createElement('button');b.type='button';b.className='colorChip';setChipColor(b,c);b.onclick=()=>openRgbWheel(b);colors.appendChild(b)})})"
 new="document.querySelectorAll('.eventFavoriteGrid').forEach(g=>{const box=g.closest('.eventEditor');if(box&&typeof box._addEventColor==='function')renderEventFavoriteGrid(g,c=>box._addEventColor(c))})"
 if old not in web: raise SystemExit('event favorite rebuild anchor missing')
@@ -64,7 +58,6 @@ marker="  (ev.colors||['#E08700']).forEach(addColor);"
 if marker not in web: raise SystemExit('event addColor marker missing')
 web=web.replace(marker,"  box._addEventColor=addColor;\n"+marker,1)
 
-# Finish semantic color presentation on custom-light and custom-schedule surfaces without changing payloads.
 old="(Array.isArray(p.colors)?p.colors:[]).forEach(color=>{const chip=document.createElement('span');chip.className='chip';chip.style.background=displayColor(color);chips.appendChild(chip)})"
 new="(Array.isArray(p.colors)?p.colors:[]).forEach(color=>{const chip=document.createElement('span');chip.className='colorNamePill';chip.style.background=semanticColorVisual(color);chip.style.color=semanticColorInk(color);chip.textContent=semanticColorName(color);chip.title=semanticColorName(color);chips.appendChild(chip)})"
 if old not in web: raise SystemExit('custom light semantic anchor missing')
@@ -73,8 +66,6 @@ old="(x.colors||[]).forEach(c=>{const chip=document.createElement('span');chip.c
 new="(x.colors||[]).forEach(c=>{const chip=document.createElement('span');chip.className='colorNamePill';chip.style.background=semanticColorVisual(c);chip.style.color=semanticColorInk(c);chip.textContent=semanticColorName(c);chip.title=semanticColorName(c);chips.appendChild(chip)})"
 if old not in web: raise SystemExit('custom schedule semantic anchor missing')
 web=web.replace(old,new,1)
-
-# Keep exact tuning information prominent in the dedicated tuning panel.
 web=web.replace("$('liveColorCode').textContent=semanticColorName(h);","$('liveColorCode').textContent=h;",1)
 webp.write_text(web)
 
