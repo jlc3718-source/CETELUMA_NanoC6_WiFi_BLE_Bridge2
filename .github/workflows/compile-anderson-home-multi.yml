@@ -25,8 +25,10 @@ permissions:
   actions: write
 
 jobs:
-  # Source validation and compilation deliberately run in parallel. Publication is
-  # fail-closed because the workflow can only succeed after verify-artifact passes.
+  # Validation and compilation deliberately run in parallel. The overall workflow
+  # can only succeed when both jobs pass, while the build job verifies its package
+  # before the candidate artifact is uploaded. The trusted publisher independently
+  # verifies the downloaded artifact again before signing or releasing anything.
   validate-source:
     name: Validate source
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
@@ -58,7 +60,7 @@ jobs:
         run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
 
   build-firmware:
-    name: Compile and package firmware
+    name: Compile, verify, and package firmware
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -114,7 +116,7 @@ jobs:
         run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
-      - name: Package verified firmware
+      - name: Package firmware
         env:
           FULL_IMAGE: ${{ inputs.full_image }}
         run: |
@@ -123,7 +125,44 @@ jobs:
           else
             python tools/release.py package
           fi
-      - name: Upload firmware candidate
+      - name: Verify packaged app image and manifest
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+
+          root = Path('release')
+          version = os.environ['VERSION']
+          expected_commit = os.environ['EXPECTED_COMMIT']
+          manifest = json.loads((root / 'release.json').read_text())
+          name = f'and_{version}.bin'
+          app = root / name
+          data = app.read_bytes()
+          digest = hashlib.sha256(data).hexdigest()
+
+          assert manifest.get('version') == version, 'release version mismatch'
+          assert manifest.get('commit') == expected_commit, 'release commit mismatch'
+          slot = int(manifest.get('ota_slot_bytes', 0))
+          assert slot == 0x1E0000, 'unexpected OTA slot size'
+          assert data and data[0] == 0xE9, 'invalid ESP application image header'
+          assert len(data) < slot, 'application image does not fit inactive OTA slot'
+
+          meta = manifest.get('files', {}).get(name)
+          assert meta, 'app-only image missing from release manifest'
+          assert meta.get('bytes') == len(data), 'manifest byte count mismatch'
+          assert meta.get('sha256') == digest, 'manifest SHA-256 mismatch'
+
+          full = root / f'and_{version}_full.bin'
+          if full.exists():
+              assert full.stat().st_size > 0, 'full recovery image is empty'
+
+          print(f'VERIFIED {name}: {len(data)} bytes sha256={digest}')
+          PY
+      - name: Upload verified firmware candidate
         uses: actions/upload-artifact@v4
         with:
           name: Anderson-Home-NanoC6-v${{ steps.version.outputs.version }}
@@ -135,54 +174,3 @@ jobs:
         with:
           path: .pio-build-cache
           key: ${{ steps.objects.outputs.cache-primary-key }}
-
-  verify-artifact:
-    name: Final artifact verification gate
-    needs: [validate-source, build-firmware]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Download exact build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Anderson-Home-NanoC6-v${{ needs.build-firmware.outputs.version }}
-          path: release-check
-      - name: Verify app image, manifest, version, commit, size, and SHA-256
-        env:
-          VERSION: ${{ needs.build-firmware.outputs.version }}
-          EXPECTED_COMMIT: ${{ github.sha }}
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib
-          import json
-          import os
-
-          root = Path("release-check")
-          version = os.environ["VERSION"]
-          expected_commit = os.environ["EXPECTED_COMMIT"]
-          manifest = json.loads((root / "release.json").read_text())
-          name = f"and_{version}.bin"
-          app = root / name
-          data = app.read_bytes()
-          digest = hashlib.sha256(data).hexdigest()
-
-          assert manifest.get("version") == version, "release version mismatch"
-          assert manifest.get("commit") == expected_commit, "release commit mismatch"
-          slot = int(manifest.get("ota_slot_bytes", 0))
-          assert slot == 0x1E0000, "unexpected OTA slot size"
-          assert data and data[0] == 0xE9, "invalid ESP application image header"
-          assert len(data) < slot, "application image does not fit inactive OTA slot"
-
-          meta = manifest.get("files", {}).get(name)
-          assert meta, "app-only image missing from release manifest"
-          assert meta.get("bytes") == len(data), "manifest byte count mismatch"
-          assert meta.get("sha256") == digest, "manifest SHA-256 mismatch"
-
-          full = root / f"and_{version}_full.bin"
-          if full.exists():
-              assert full.stat().st_size > 0, "full recovery image is empty"
-
-          print(f"VERIFIED {name}: {len(data)} bytes sha256={digest}")
-          print("FINAL GATE PASS: source validation + build + package verification succeeded")
-          PY
