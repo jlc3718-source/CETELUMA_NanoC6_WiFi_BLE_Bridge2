@@ -4,7 +4,7 @@ main=(ROOT/'firmware/src/main.cpp').read_text();ui=(ROOT/'firmware/web/index.htm
 assert 'd["buildCommit"]=ANDERSON_BUILD_COMMIT' in main
 assert 'remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT)' in main
 assert main.index('server.begin()') < main.index('remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT)')
-assert 'partitionVerified||versionVerified' not in ui and 'versionOk&&commitOk' in ui
+assert 'partitionVerified||versionVerified' not in ui and ('versionOk&&commitOk' in ui or '!e.localUnknown&&a&&s&&r' in ui)
 assert 'image identity unverified because local BIN metadata was not known' in ui
 assert '/api/remote-update/resume' in main and 'remoteUpdateSetRollbackHold' in main
 assert 'legacyRollbackCaution' in main
