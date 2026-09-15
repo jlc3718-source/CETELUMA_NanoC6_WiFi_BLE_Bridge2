@@ -1,0 +1,109 @@
+name: Patch Anderson 3.1.38 Named Preview Colors
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-preview-colors.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - name: Patch animated house preview to named display colors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          js_path = Path('firmware/web/v3_mockup.js')
+          js = js_path.read_text()
+          marker = 'ANDERSON_HOUSE_NAMED_PREVIEW_V1'
+          if marker not in js:
+              patch = r'''
+;(()=>{
+  // ANDERSON_HOUSE_NAMED_PREVIEW_V1
+  // The controller uses calibrated LED output hex values. The animated house is
+  // a human-facing preview, so translate the sixteen approved output colors to
+  // visually recognizable browser colors without changing any BLE/light payload.
+  const DISPLAY={
+    '#FF0000':'#FF3B30', // Red
+    '#FF0D00':'#FF9500', // Orange
+    '#FF0024':'#FF69B4', // Pink
+    '#E08700':'#FFD60A', // Yellow
+    '#28FF00':'#34C759', // Green
+    '#00BD4C':'#00FFFF', // Cyan
+    '#0D00FF':'#0A84FF', // Blue
+    '#5B00E6':'#BF5AF2', // Purple
+    '#FFFFFA':'#FFFFFF', // White
+    '#00B4B4':'#14B8A6', // Teal
+    '#0096FF':'#38BDF8', // Sky Blue
+    '#FFA000':'#F59E0B', // Amber Gold
+    '#B464FF':'#C4B5FD', // Lavender
+    '#001478':'#1E3A8A', // Navy Blue
+    '#87002D':'#800020', // Burgundy
+    '#A0A5AF':'#B8BEC8'  // Silver Gray
+  };
+  const toHex=value=>{
+    if(!value)return'';
+    const v=String(value).trim().toUpperCase();
+    if(/^#[0-9A-F]{6}$/.test(v))return v;
+    const m=v.match(/^RGB\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+    if(!m)return'';
+    return '#'+m.slice(1).map(x=>Math.max(0,Math.min(255,+x)).toString(16).padStart(2,'0')).join('').toUpperCase();
+  };
+  const display=value=>DISPLAY[toHex(value)]||'';
+  let pending=false;
+  const paint=()=>{
+    pending=false;
+    document.querySelectorAll('.housePreview .houseLed').forEach(led=>{
+      const af=led.getAttribute('fill'),mf=display(af);
+      if(mf&&toHex(af)!==toHex(mf))led.setAttribute('fill',mf);
+      const sf=led.style&&led.style.fill,ms=display(sf);
+      if(ms&&toHex(sf)!==toHex(ms))led.style.fill=ms;
+      const bg=led.style&&led.style.backgroundColor,mb=display(bg);
+      if(mb&&toHex(bg)!==toHex(mb))led.style.backgroundColor=mb;
+    });
+  };
+  const queue=()=>{if(!pending){pending=true;requestAnimationFrame(paint)}};
+  const start=()=>{
+    paint();
+    new MutationObserver(queue).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['fill','style']});
+  };
+  document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start,{once:true}):start();
+})();
+'''
+              js_path.write_text(js + patch)
+
+          version = Path('FIRMWARE_VERSION.txt').read_text().strip()
+          if version != '3.1.37':
+              raise SystemExit(f'Expected 3.1.37 baseline, found {version}')
+          Path('FIRMWARE_VERSION.txt').write_text('3.1.38\n')
+
+          main = Path('firmware/src/main.cpp')
+          text = main.read_text()
+          old='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.37";'
+          new='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.38";'
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one runtime version marker; found {text.count(old)}')
+          main.write_text(text.replace(old,new,1))
+
+          Path('.github/trigger-build.txt').write_text('3.1.38 named house preview colors run 1\n')
+          PY
+      - name: Commit 3.1.38 source and trigger build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add firmware/web/v3_mockup.js firmware/src/main.cpp FIRMWARE_VERSION.txt .github/trigger-build.txt
+          git diff --cached --check
+          git commit -m "Anderson Home v3.1.38: named house preview colors"
+          git push origin HEAD:codex/release-current
