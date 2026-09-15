@@ -1,0 +1,178 @@
+name: Publish Anderson Home 3.1.34 One-Shot
+
+on:
+  push:
+    branches: ['automation/publish-3.1.34']
+    paths: ['.github/trigger-publish-3.1.34.txt']
+
+concurrency:
+  group: anderson-production-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN_ID: '34913183116'
+      HEAD_SHA: '90eb409c78b9b9fef05f71730d68acfc4b72555e'
+      HEAD_BRANCH: 'codex/release-current'
+      VERSION: '3.1.34'
+    steps:
+      - name: Checkout trusted publisher tools
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Validate successful GitHub build identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > /tmp/run.json
+          python - <<'PY'
+          import json,os
+          r=json.load(open('/tmp/run.json'))
+          assert r['name']=='Build Anderson Home Firmware'
+          assert r['conclusion']=='success'
+          assert r['head_repository']['full_name']==os.environ['GITHUB_REPOSITORY']
+          assert r['head_sha']==os.environ['HEAD_SHA']
+          assert r['head_branch']==os.environ['HEAD_BRANCH']=='codex/release-current'
+          assert r['event']=='push'
+          PY
+          git fetch origin "$HEAD_BRANCH" main ota --quiet
+          test "$(git rev-parse "origin/$HEAD_BRANCH")" = "$HEAD_SHA"
+          test "$(git show "$HEAD_SHA:FIRMWARE_VERSION.txt" | tr -d '\r\n')" = "$VERSION"
+          git merge-base --is-ancestor origin/main "$HEAD_SHA"
+          echo "OTA_URL=https://github.com/${GITHUB_REPOSITORY}/releases/download/anderson-v$VERSION/and_$VERSION.bin" >> "$GITHUB_ENV"
+      - name: Download exact verified GitHub build artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release-work
+          mkdir -p release-work
+          gh run download "$BUILD_RUN_ID" --name "Anderson-Home-NanoC6-v$VERSION" --dir release-work
+      - name: Verify artifact identity and app image
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('release-work'); version=os.environ['VERSION']; head=os.environ['HEAD_SHA']
+          manifest=json.loads((root/'release.json').read_text())
+          name=f'and_{version}.bin'; app=root/name; data=app.read_bytes(); digest=hashlib.sha256(data).hexdigest()
+          assert manifest['version']==version
+          assert manifest['commit']==head
+          assert int(manifest['ota_slot_bytes'])==0x1E0000
+          assert data and data[0]==0xE9 and len(data)<0x1E0000
+          meta=manifest['files'][name]
+          assert int(meta['bytes'])==len(data) and meta['sha256']==digest
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write(f'OTA_BYTES={len(data)}\nOTA_SHA256={digest}\n')
+          print(f'VERIFIED {name}: {len(data)} bytes sha256={digest} commit={head}')
+          PY
+      - name: Create and verify signed OTA manifest
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OTA_SIGNING_KEY_B64:-}"
+          mkdir -p publish-input
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > /tmp/anderson-ota-signing-key.pem
+          chmod 600 /tmp/anderson-ota-signing-key.pem
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          Path('/tmp/anderson-ota-payload.txt').write_text(
+              f"version={os.environ['VERSION']}\n"
+              f"bytes={os.environ['OTA_BYTES']}\n"
+              f"sha256={os.environ['OTA_SHA256']}\n"
+              f"commit={os.environ['HEAD_SHA']}\n"
+              f"url={os.environ['OTA_URL']}\n"
+          )
+          PY
+          openssl dgst -sha256 -sign /tmp/anderson-ota-signing-key.pem -out /tmp/anderson-ota-signature.der /tmp/anderson-ota-payload.txt
+          OTA_SIGNATURE="$(base64 -w 0 /tmp/anderson-ota-signature.der)"; export OTA_SIGNATURE
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          payload=Path('/tmp/anderson-ota-payload.txt').read_text()
+          Path('publish-input/latest.json').write_text(json.dumps({'schema':1,'payload':payload,'signature':os.environ['OTA_SIGNATURE']},separators=(',',':')))
+          PY
+          shred -u /tmp/anderson-ota-signing-key.pem 2>/dev/null || rm -f /tmp/anderson-ota-signing-key.pem
+          rm -f /tmp/anderson-ota-signature.der /tmp/anderson-ota-payload.txt
+          python tools/verify_ota_manifest.py --manifest publish-input/latest.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$HEAD_SHA" --url "$OTA_URL"
+          cp publish-input/latest.json publish-input/ota-manifest.json
+      - name: Create immutable 3.1.34 release from build artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="anderson-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite." >&2
+            exit 1
+          fi
+          gh release create "$TAG" "release-work/and_$VERSION.bin" release-work/release.json publish-input/ota-manifest.json --target "$HEAD_SHA" --title "Anderson Home v$VERSION" --notes "GitHub-built and verified Anderson Home firmware from commit $HEAD_SHA."
+          rm -rf /tmp/release-check; mkdir -p /tmp/release-check
+          gh release download "$TAG" --pattern "and_$VERSION.bin" --pattern release.json --pattern ota-manifest.json --dir /tmp/release-check
+          cmp "release-work/and_$VERSION.bin" "/tmp/release-check/and_$VERSION.bin"
+          cmp release-work/release.json /tmp/release-check/release.json
+          cmp publish-input/ota-manifest.json /tmp/release-check/ota-manifest.json
+      - name: Promote 3.1.34 source to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main "$HEAD_BRANCH" --quiet
+          git merge-base --is-ancestor origin/main "$HEAD_SHA"
+          git push origin "$HEAD_SHA:refs/heads/main"
+      - name: Promote signed 3.1.34 manifest to live OTA
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin ota --quiet
+          rm -rf ../anderson-ota
+          git worktree add -B ota-release ../anderson-ota origin/ota
+          mkdir -p ../anderson-ota/remote-update/pending ../anderson-ota/remote-update/releases
+          if [ -s ../anderson-ota/latest.json ]; then
+            python - <<'PY'
+          import json,os,re
+          def v(x):
+              m=re.fullmatch(r'(\d+)\.(\d+)\.(\d+)([a-z]?)',x); assert m
+              return (*map(int,m.groups()[:3]),m.group(4))
+          cur=json.load(open('../anderson-ota/latest.json'))['payload'].splitlines()[0].split('=',1)[1]
+          assert v(os.environ['VERSION'])>v(cur),f'refusing non-upgrade OTA {cur} -> {os.environ["VERSION"]}'
+          PY
+          fi
+          cp publish-input/latest.json ../anderson-ota/latest.json
+          cp publish-input/latest.json ../anderson-ota/remote-update/latest.json
+          cp publish-input/latest.json "../anderson-ota/remote-update/releases/$VERSION.json"
+          rm -f "../anderson-ota/remote-update/pending/$VERSION.json"
+          cd ../anderson-ota
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add latest.json remote-update
+          git commit -m "Publish signed Anderson Home v$VERSION OTA manifest"
+          git push origin HEAD:refs/heads/ota
+      - name: Verify live OTA and release match exact GitHub build
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > /tmp/live.json
+          cmp publish-input/latest.json /tmp/live.json
+          python tools/verify_ota_manifest.py --manifest /tmp/live.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$HEAD_SHA" --url "$OTA_URL"
+          gh release view "anderson-v$VERSION" --json targetCommitish,assets > /tmp/release.json
+          python - <<'PY'
+          import json,os
+          r=json.load(open('/tmp/release.json')); assert r['targetCommitish']==os.environ['HEAD_SHA']
+          name=f"and_{os.environ['VERSION']}.bin"
+          hit=next(x for x in r['assets'] if x['name']==name)
+          assert int(hit['size'])==int(os.environ['OTA_BYTES'])
+          assert (hit.get('digest') or '')==f"sha256:{os.environ['OTA_SHA256']}"
+          print('LIVE OTA VERIFIED', os.environ['VERSION'], os.environ['OTA_BYTES'], os.environ['OTA_SHA256'])
+          PY
