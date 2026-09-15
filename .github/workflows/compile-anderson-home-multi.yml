@@ -35,6 +35,8 @@ jobs:
         run: python tools/test_regressions.py
       - name: Check audited delivery invariants
         run: python tools/test_audit_fixes.py
+      - name: Check BLE connection and queue recovery
+        run: python tools/test_connection_recovery.py
       - name: Check scheduled event coverage
         run: python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
 
@@ -77,11 +79,10 @@ jobs:
           path: |
             ~/.platformio/platforms
             ~/.platformio/packages
-            ~/.platformio/.cache
             firmware/.pio/libdeps
-          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
+          key: ${{ runner.os }}-pio-v2-${{ hashFiles('firmware/platformio.ini', 'tools/requirements-build.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pio-v1-
+            ${{ runner.os }}-pio-v2-
       - name: Restore compiled objects
         id: objects
         uses: actions/cache/restore@v4
@@ -94,6 +95,21 @@ jobs:
         run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Capture linker diagnostics
+        run: |
+          set -euo pipefail
+          test -s firmware/.pio/build/m5stack-nanoc6/firmware.elf
+          test -s firmware/.pio/build/m5stack-nanoc6/firmware.map
+          mkdir -p build-diagnostics
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf build-diagnostics/
+          cp firmware/.pio/build/m5stack-nanoc6/firmware.map build-diagnostics/
+      - name: Upload short-lived linker diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Linker-Diagnostics-v${{ steps.version.outputs.version }}
+          path: build-diagnostics/*
+          retention-days: 7
+          if-no-files-found: error
       - name: Package firmware
         env:
           FULL_IMAGE: ${{ inputs.full_image }}
