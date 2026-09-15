@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.39"
+          sed -i 's/out,n=re.subn(pat,repl,s,count=1,flags=re.S)/out,n=re.subn(pat,lambda m: repl,s,count=1,flags=re.S)/' .github/scripts/apply-audit-3140.py
           python .github/scripts/apply-audit-3140.py
           git rm -f .github/workflows/publish-anderson-prebuilt.yml 2>/dev/null || true
           git rm -f .github/workflows/publish-anderson-prebuilt-chunks.yml 2>/dev/null || true
