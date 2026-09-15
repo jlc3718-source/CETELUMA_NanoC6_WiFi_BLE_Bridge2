@@ -17,229 +17,18 @@ jobs:
         with:
           ref: audit/3.1.40-final-try
           fetch-depth: 0
-      - name: Apply complete audit bundle
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply and validate complete audit bundle
         shell: bash
         run: |
           set -euo pipefail
           test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.39"
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          def rep(path,old,new,count=1):
-              p=Path(path);s=p.read_text()
-              if s.count(old)!=count: raise SystemExit(f'{path}: anchor mismatch ({s.count(old)} != {count})')
-              p.write_text(s.replace(old,new,count))
-          def sub1(path,pattern,repl):
-              p=Path(path);s=p.read_text();out,n=re.subn(pattern,repl,s,count=1,flags=re.S)
-              if n!=1: raise SystemExit(f'{path}: regex anchor mismatch')
-              p.write_text(out)
-
-          # Version.
-          Path('FIRMWARE_VERSION.txt').write_text('3.1.40\n')
-          rep('firmware/src/main.cpp','static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.39";','static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.40";')
-          r=Path('README.md')
-          if r.exists(): r.write_text(r.read_text().replace('**v3.1.39**','**v3.1.40**'))
-
-          # Same-run verified web-compression reuse.
-          rep('tools/release.py','ZOPFLI_ITERATIONS = 1000\n','ZOPFLI_ITERATIONS = 1000\nWEB_CACHE_DIR = ROOT / ".anderson-web-cache"\nCOMPRESSION_ID = f"zopfli-0.2.3.post1-gzip-{ZOPFLI_ITERATIONS}-unlimited-blocks"\n')
-          anchor='''@lru_cache(maxsize=4)
-def compress_page(rendered):
-    """High-effort standard gzip; decompression stays in the existing browser."""
-    packed = zopfli.gzip.compress(rendered, numiterations=ZOPFLI_ITERATIONS, blocksplittingmax=0)
-    if gzip.decompress(packed) != rendered:
-        raise ValueError('Compressed web page failed its lossless round-trip check')
-    return packed
-'''
-          cache=anchor+'''\ndef verified_page_gzip(name, rendered):
-    WEB_CACHE_DIR.mkdir(exist_ok=True)
-    rp=WEB_CACHE_DIR/f'{name}.rendered'; gp=WEB_CACHE_DIR/f'{name}.gz'; mp=WEB_CACHE_DIR/f'{name}.json'; digest=sha(rendered)
-    try:
-        meta=json.loads(mp.read_text()); packed=gp.read_bytes(); cached=rp.read_bytes()
-        if meta.get('compression')==COMPRESSION_ID and meta.get('rendered_sha256')==digest and cached==rendered and meta.get('gzip_sha256')==sha(packed) and gzip.decompress(packed)==rendered:
-            print(f'{name}: verified same-run gzip cache hit ({len(packed)} bytes)'); return packed
-    except (OSError,ValueError,KeyError,json.JSONDecodeError): pass
-    packed=compress_page(rendered); rp.write_bytes(rendered); gp.write_bytes(packed); mp.write_text(json.dumps({'compression':COMPRESSION_ID,'rendered_sha256':digest,'gzip_sha256':sha(packed),'rendered_bytes':len(rendered),'gzip_bytes':len(packed)},sort_keys=True)+'\\n'); print(f'{name}: generated verified gzip cache ({len(packed)} bytes)'); return packed
-'''
-          rep('tools/release.py',anchor,cache)
-          rep('tools/release.py','        packed = compress_page(rendered)\n','        packed = verified_page_gzip(name, rendered)\n')
-          rep('tools/release.py','        if compress_page(rendered) not in data:\n','        if verified_page_gzip(name, rendered) not in data:\n')
-          rep('tools/release.py',"""    manifest['web_assets'] = {
-        name: {'bytes': len(page), 'sha256': sha(page),
-               'gzip_bytes': len(compress_page(page)),
-               'gzip_sha256': sha(compress_page(page))}
-        for name, page in rendered_pages().items()
-    }
-    manifest['web_compression'] = f'zopfli-0.2.3.post1-gzip-{ZOPFLI_ITERATIONS}-unlimited-blocks'
-""","""    manifest['web_assets'] = {}
-    for name,page in rendered_pages().items():
-        packed=verified_page_gzip(name,page)
-        manifest['web_assets'][name]={'bytes':len(page),'sha256':sha(page),'gzip_bytes':len(packed),'gzip_sha256':sha(packed)}
-    manifest['web_compression'] = COMPRESSION_ID
-""")
-
-          # Complete the misleading deliver command so it actually follows build -> production.
-          deliver='''def deliver(args):
-    """Follow the exact source build through stable release, main, and live OTA."""
-    import time
-    source=args.source_sha or git('rev-parse','HEAD'); ver=version(); branch='codex/release-current'; receipt=ROOT/'.anderson-delivery.json'
-    def gh(*a): return subprocess.check_output(['gh',*a],text=True).strip()
-    def gj(*a):
-        raw=gh(*a); return json.loads(raw) if raw else {}
-    if git('rev-parse','HEAD')!=source: raise ValueError('Working tree must be at --source-sha')
-    if gh('api',f'/repos/{{owner}}/{{repo}}/git/ref/heads/{branch}','--jq','.object.sha')!=source: raise ValueError('release-current does not match requested source')
-    rows=gj('run','list','--workflow','compile-anderson-home-multi.yml','--branch',branch,'--limit','30','--json','databaseId,headSha,status,conclusion,createdAt'); exact=[r for r in rows if r.get('headSha')==source]; exact.sort(key=lambda r:r.get('createdAt',''),reverse=True); run=exact[0] if exact else None
-    if not run:
-        gh('workflow','run','compile-anderson-home-multi.yml','--ref',branch); deadline=time.time()+90
-        while time.time()<deadline and not run:
-            time.sleep(2); rows=gj('run','list','--workflow','compile-anderson-home-multi.yml','--branch',branch,'--limit','20','--json','databaseId,headSha,status,conclusion,createdAt'); run=next((r for r in rows if r.get('headSha')==source),None)
-    if not run: raise RuntimeError('Could not resolve exact-SHA build run')
-    run_id=int(run['databaseId'])
-    if run.get('status')!='completed': subprocess.run(['gh','run','watch',str(run_id),'--exit-status'],check=True)
-    info=gj('run','view',str(run_id),'--json','status,conclusion,headSha')
-    if info.get('conclusion')!='success' or info.get('headSha')!=source: raise RuntimeError('Build did not succeed for exact source')
-    state={'source_sha':source,'version':ver,'branch':branch,'build_run_id':run_id}; deadline=time.time()+180; release=None; payload={}
-    while time.time()<deadline:
-        try: release=gj('api',f'/repos/{{owner}}/{{repo}}/releases/tags/anderson-v{ver}')
-        except subprocess.CalledProcessError: release=None
-        if release and release.get('target_commitish')==source:
-            try:
-                main=gh('api','/repos/{owner}/{repo}/git/ref/heads/main','--jq','.object.sha'); live=json.loads(gh('api','-H','Accept: application/vnd.github.raw+json','/repos/{owner}/{repo}/contents/latest.json?ref=ota')); payload=dict(x.split('=',1) for x in live.get('payload','').splitlines() if '=' in x)
-                if main==source and payload.get('version')==ver and payload.get('commit')==source: break
-            except Exception: pass
-        time.sleep(3)
-    else: raise RuntimeError('Release/main/OTA did not converge')
-    assets={a['name']:a for a in release.get('assets',[])}; required=[f'and_{ver}.bin','release.json','ota-manifest.json']; missing=[x for x in required if x not in assets]
-    if missing: raise RuntimeError('Release missing: '+','.join(missing))
-    app=assets[f'and_{ver}.bin']; digest=str(app.get('digest') or '').removeprefix('sha256:')
-    if int(payload.get('bytes','0'))!=int(app.get('size',0)) or payload.get('sha256')!=digest: raise RuntimeError('OTA identity differs from release asset')
-    state.update({'release_url':release.get('html_url'),'main_sha':source,'ota_version':payload.get('version'),'ota_commit':payload.get('commit'),'ota_bytes':int(payload.get('bytes','0')),'ota_sha256':payload.get('sha256'),'release_bytes':int(app.get('size',0)),'release_digest':digest}); receipt.write_text(json.dumps(state,indent=2,sort_keys=True)+'\\n'); print(json.dumps(state,indent=2,sort_keys=True))
-'''
-          sub1('tools/release.py',r'def deliver\(args\):.*?(?=\n\nif __name__ ==)',deliver.rstrip())
-
-          # Smaller dependency cache + linker map + BLE recovery validation.
-          wf=Path('.github/workflows/compile-anderson-home-multi.yml'); s=wf.read_text()
-          old="""      - name: Restore PlatformIO dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio/platforms
-            ~/.platformio/packages
-            ~/.platformio/.cache
-            firmware/.pio/libdeps
-          key: ${{ runner.os }}-pio-v1-${{ hashFiles('firmware/platformio.ini') }}
-          restore-keys: |
-            ${{ runner.os }}-pio-v1-
-"""
-          new="""      - name: Restore PlatformIO dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio/platforms
-            ~/.platformio/packages
-            firmware/.pio/libdeps
-          key: ${{ runner.os }}-pio-v2-${{ hashFiles('firmware/platformio.ini', 'tools/requirements-build.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pio-v2-
-"""
-          if s.count(old)!=1: raise SystemExit('dependency cache block mismatch')
-          s=s.replace(old,new,1)
-          a="""      - name: Check audited delivery invariants
-        run: python tools/test_audit_fixes.py
-"""
-          if s.count(a)!=1: raise SystemExit('audit validation anchor mismatch')
-          s=s.replace(a,a+"""      - name: Check BLE connection and queue recovery
-        run: python tools/test_connection_recovery.py
-""",1)
-          c="""      - name: Compile NanoC6 firmware
-        run: pio run -d firmware -e m5stack-nanoc6 -j 4
-"""
-          d="""      - name: Compile NanoC6 firmware
-        run: pio run -d firmware -e m5stack-nanoc6 -j 4
-      - name: Capture linker diagnostics
-        run: |
-          set -euo pipefail
-          test -s firmware/.pio/build/m5stack-nanoc6/firmware.elf
-          test -s firmware/.pio/build/m5stack-nanoc6/firmware.map
-          mkdir -p build-diagnostics
-          cp firmware/.pio/build/m5stack-nanoc6/firmware.elf build-diagnostics/
-          cp firmware/.pio/build/m5stack-nanoc6/firmware.map build-diagnostics/
-      - name: Upload short-lived linker diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: Anderson-Linker-Diagnostics-v${{ steps.version.outputs.version }}
-          path: build-diagnostics/*
-          retention-days: 7
-          if-no-files-found: error
-"""
-          if s.count(c)!=1: raise SystemExit('compile step mismatch')
-          wf.write_text(s.replace(c,d,1))
-          rep('.github/scripts/anderson-cache-cleanup.sh','pio-v1 dependency cache and anderson-objects-v2 object cache;','pio-v2 scoped dependency cache and anderson-objects-v2 object cache;')
-          rep('.github/scripts/anderson-cache-cleanup.sh',"'Linux-pio-v1-',","'Linux-pio-v2-',")
-          rep('firmware/platformio.ini','    -Wl,--gc-sections\n','    -Wl,--gc-sections\n    -Wl,-Map=.pio/build/m5stack-nanoc6/firmware.map\n')
-
-          # UI: remove duplicate effect observer, gate System Monitor, poll async BLE scan.
-          p=Path('firmware/web/index.html'); s=p.read_text()
-          s,n=re.subn(r'const EFFECT_BUTTON_VALUES=\["Jump","Breath","Strobe","Solid"\];function enhanceEffectSelect\(e\).*?requestAnimationFrame\(\(\)=>\{enhanceEffectButtons\(document\),effectButtonObserver\.observe\(document\.body,\{childList:!0,subtree:!0\}\)\}\);(?=const LED_REFERENCE=)','',s,count=1,flags=re.S)
-          if n!=1: raise SystemExit('duplicate effect enhancer mismatch')
-          s,n=re.subn(r'\$\("scanBle"\)\.addEventListener\("click",async\(\)=>\{.*?\}\),\$\("targetAll"\)','''$("scanBle").addEventListener("click",async()=>{const e=$("scanBle"),t=e.textContent;e.disabled=!0,e.textContent="Scanning…",status("Scanning Bluetooth…");try{const n=Date.now()+12e3;let o=await api("/api/ble/scan?ts="+Date.now());for(;o.scanning;){if(Date.now()>n)throw new Error("scan timed out");await new Promise(e=>setTimeout(e,300)),o=await api("/api/ble/scan?ts="+Date.now())}const a=$("bleList");a.replaceChildren(),(o.devices||[]).forEach(e=>{const t=document.createElement("div");t.className="card bleDevice";const n=document.createElement("div"),o=document.createElement("div"),a=document.createElement("strong"),s=document.createElement("div");o.className="small",a.textContent=e.name||"BLE controller",o.appendChild(a),s.className="sub",s.textContent=`${e.address||"—"} • ${Number(e.rssi)||0} dBm`,n.append(o,s);const r=document.createElement("button");r.className="btn",r.textContent="Add / Use",r.addEventListener("click",()=>post("/api/ble/select",{address:e.address}).then(()=>{status("Controller saved. Connecting in the background…"),loadState()}).catch(e=>status(e.message))),t.append(n,r),a.appendChild(t)}),status(`${(o.devices||[]).length} controllers found.`)}catch(e){status(API_MODE?"Bluetooth scan failed: "+e.message:"Preview mode — BLE scanning requires the NanoC6.")}finally{e.disabled=!1,e.textContent=t}}),$("targetAll")''',s,count=1,flags=re.S)
-          if n!=1: raise SystemExit('BLE client scan mismatch')
-          old='async function loadSystemMonitor(){if($("systemMonitorPanel")&&"admin"===currentRole&&!wifiScanBusy&&!systemMonitorBusy){'
-          if s.count(old)!=1: raise SystemExit('system monitor function mismatch')
-          s=s.replace(old,'function systemMonitorVisible(){const e=$("systemMonitorPanel");return!!e&&!document.hidden&&"admin"===currentRole&&e.offsetParent!==null}async function loadSystemMonitor(){if(systemMonitorVisible()&&!wifiScanBusy&&!systemMonitorBusy){',1)
-          old='setInterval(()=>{const e=document.querySelector(\'[data-page="settings"].active\');"admin"===currentRole&&e&&!wifiScanBusy&&loadSystemMonitor()},2e3);'
-          if s.count(old)!=1: raise SystemExit('system monitor timer mismatch')
-          p.write_text(s.replace(old,'setInterval(()=>{systemMonitorVisible()&&!wifiScanBusy&&loadSystemMonitor()},2e3);',1))
-
-          # Effect preview animation: registry, visible-only, phase updates, reduced-motion stop/resume.
-          p=Path('firmware/web/v3_mockup.js'); v=p.read_text(); a=v.find('function effectPreviews(){'); b=v.find('}(),function settingsSubTabs(){',a)
-          if a<0 or b<0: raise SystemExit('effect preview section missing')
-          sec=v[a:b+3]; pal='n=["#42d8ff","#ff4ebd","#E08700","#7cff74","#7c72ff"];'
-          if pal not in sec: raise SystemExit('effect preview palette missing')
-          sec=sec.replace(pal,pal+'const previews=new Set,reduce=window.matchMedia("(prefers-reduced-motion: reduce)");let raf=0;',1)
-          pattern=r'const animate=e=>\{qa\("\.v3EffectButton"\).*?requestAnimationFrame\(animate\)\},sync=e=>'
-          repl='''const paintPreview=(e,t)=>{const a=qa("i",e);if(!a.length)return;const s=e.dataset.effect,p="Jump"===s?"j"+Math.floor(t/360):"Strobe"===s?"s"+Math.floor(t/240):"Breath"===s?"b"+Math.floor(t/40):"solid";if(e.dataset.previewPhase===p)return;e.dataset.previewPhase=p,a.forEach((e,t)=>{e.style.background=n[t],e.style.color=n[t],e.style.opacity="1",e.style.transform="scale(1)",e.style.filter="none"});if("Jump"===s){const e=n[Math.floor(t/360)%n.length];a.forEach(t=>{t.style.background=e,t.style.color=e,t.style.filter="brightness(1.2)"})}else if("Breath"===s){const e=.22+(Math.sin(t/430)+1)/2*.78;a.forEach(t=>{t.style.background="#45d9ff",t.style.color="#45d9ff",t.style.opacity=String(e),t.style.transform=`scale(${.78+.24*e})`,t.style.filter=`brightness(${.65+.7*e})`})}else if("Strobe"===s){const e=Math.floor(t/240),s=e%2==0,o=n[Math.floor(e/2)%n.length];a.forEach(e=>{e.style.background=o,e.style.color=o,e.style.opacity=s?"1":".04",e.style.transform=s?"scale(1.08)":"scale(.82)",e.style.filter=s?"brightness(1.45)":"brightness(.4)"})}else a.forEach(e=>{e.style.background="#45d9ff",e.style.color="#45d9ff",e.style.filter="brightness(1.15)"})},canAnimate=()=>!document.hidden&&!!window.andersonProfile,animate=e=>{raf=0;if(!canAnimate())return;const t=reduce.matches?0:e;previews.forEach(e=>{e.isConnected?e.offsetParent!==null&&paintPreview(e,t):previews.delete(e)}),reduce.matches||(raf=requestAnimationFrame(animate))},start=()=>{canAnimate()&&(reduce.matches?animate(0):raf||(raf=requestAnimationFrame(animate)))},stop=()=>{raf&&(cancelAnimationFrame(raf),raf=0)},sync=e=>'''
-          sec,n=re.subn(pattern,repl,sec,count=1,flags=re.S)
-          if n!=1: raise SystemExit('effect preview animation mismatch')
-          sec=sec.replace('o.appendChild(s)','previews.add(s),o.appendChild(s)',1)
-          old='n.insertAdjacentElement("afterend",o),n.addEventListener("change",()=>sync(n)),sync(n)},scan='
-          if old not in sec: raise SystemExit('effect preview sync mismatch')
-          sec=sec.replace(old,'n.insertAdjacentElement("afterend",o),n._syncEffectButtons=()=>sync(n),n.addEventListener("change",()=>sync(n)),sync(n),start()},scan=',1)
-          pos=sec.rfind('requestAnimationFrame(animate)')
-          if pos<0: raise SystemExit('effect preview RAF mismatch')
-          sec=sec[:pos]+'document.addEventListener("visibilitychange",()=>{document.hidden?stop():start()}),window.addEventListener("anderson-profile-selected",start),window.addEventListener("anderson-profile-cleared",stop),document.addEventListener("click",e=>{e.target.closest?.(".tab")&&setTimeout(start,0)},!0),reduce.addEventListener?.("change",()=>{stop(),start()}),start()'+sec[pos+len('requestAnimationFrame(animate)'):]
-          p.write_text(v[:a]+sec+v[b+3:])
-
-          # Scheduler caches: date/offset dawn + minute/state-hash next-event.
-          p=Path('firmware/src/Scheduler.cpp'); sc=p.read_text()
-          sc,n=re.subn(r'uint16_t Scheduler::civilDawnMinutes\(const tm& l\) const\{.*?\n\}\nbool Scheduler::inSchedule2Window','''uint16_t Scheduler::civilDawnMinutes(const tm& l) const{const int year=l.tm_year+1900,yday=l.tm_yday,offset=localUtcOffsetMinutes(l);struct DawnCache{int year=-1,yday=-1,offset=99999;uint16_t minutes=360;};static DawnCache c;if(c.year==year&&c.yday==yday&&c.offset==offset)return c.minutes;const int n=l.tm_yday+1;const double lngHour=ANDERSON_LONGITUDE_DEG/15.0,t=n+((6.0-lngHour)/24.0),M=0.9856*t-3.289;double L=normalizeDegrees(M+1.916*sin(M*RAD_PER_DEG)+0.020*sin(2.0*M*RAD_PER_DEG)+282.634),RA=normalizeDegrees(atan(0.91764*tan(L*RAD_PER_DEG))/RAD_PER_DEG);const double lq=floor(L/90.0)*90.0,rq=floor(RA/90.0)*90.0;RA=(RA+(lq-rq))/15.0;const double sd=0.39782*sin(L*RAD_PER_DEG),cd=cos(asin(sd)),ch=(cos(CIVIL_DAWN_ZENITH_DEG*RAD_PER_DEG)-sd*sin(ANDERSON_LATITUDE_DEG*RAD_PER_DEG))/(cd*cos(ANDERSON_LATITUDE_DEG*RAD_PER_DEG));uint16_t minutes=360;if(ch<=1.0&&ch>=-1.0){const double H=(360.0-(acos(ch)/RAD_PER_DEG))/15.0,lh=normalizeHours(H+RA-(0.06571*t)-6.622-lngHour+(offset/60.0));int m=(int)lround(lh*60.0);if(m>=1440)m-=1440;if(m<0)m+=1440;minutes=(uint16_t)m;}c.year=year;c.yday=yday;c.offset=offset;c.minutes=minutes;return minutes;}\nbool Scheduler::inSchedule2Window''',sc,count=1,flags=re.S)
-          if n!=1: raise SystemExit('dawn cache mismatch')
-          sc,n=re.subn(r'String Scheduler::nextEventLabel\(const tm& l\) const\{.*?\n\}','''String Scheduler::nextEventLabel(const tm& l) const{const int year=l.tm_year+1900,offset=localUtcOffsetMinutes(l);const uint32_t hash=enabledEventHash();struct NextCache{int year=-1,yday=-1,hour=-1,minute=-1,offset=99999;uint32_t hash=0;String value;};static NextCache c;if(c.year==year&&c.yday==l.tm_yday&&c.hour==l.tm_hour&&c.minute==l.tm_min&&c.offset==offset&&c.hash==hash)return c.value;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=year;yy<=year+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}String value="-";if(bi>=0){tm out{};localtime_r(&best,&out);value=String(EVENTS[bi].name)+" - "+eventWhen(bi,out.tm_year+1900);}c.year=year;c.yday=l.tm_yday;c.hour=l.tm_hour;c.minute=l.tm_min;c.offset=offset;c.hash=hash;c.value=value;return c.value;}''',sc,count=1,flags=re.S)
-          if n!=1: raise SystemExit('next event cache mismatch')
-          p.write_text(sc)
-
-          # Async BLE worker, pause reconnect attempts during scan, expose start/status/results API.
-          p=Path('firmware/include/BleController.h'); h=p.read_text()
-          h=h.replace('  std::vector<BleFound> scan(uint32_t ms=2500);\n  bool selectAndConnect(const String& address);','  std::vector<BleFound> scan(uint32_t ms=2500);\n  bool startScan(uint32_t ms=2500);\n  bool scanInProgress() const { return asyncScanBusy; }\n  bool consumeScanResults(std::vector<BleFound>& out);\n  bool selectAndConnect(const String& address);',1)
-          h=h.replace('  bool activeValid=false;\n#ifndef MOCK_BLE','  bool activeValid=false;\n  std::vector<BleFound> asyncScanResults;\n  volatile bool asyncScanBusy=false,asyncScanReady=false;\n  uint32_t asyncScanMs=2500;\n#ifndef MOCK_BLE',1)
-          h=h.replace('  TaskHandle_t connectTask=nullptr;','  TaskHandle_t connectTask=nullptr,scanTask=nullptr;',1)
-          h=h.replace('  static void connectionWorker(void* context);\n  bool requestConnection(uint8_t slot);','  static void connectionWorker(void* context);\n  static void scanWorker(void* context);\n  bool requestConnection(uint8_t slot);',1)
-          p.write_text(h)
-          p=Path('firmware/src/BleController.cpp'); bc=p.read_text()
-          marker='}\nbool BleController::connecting() const{'
-          if bc.count(marker)!=1: raise SystemExit('BLE scan end mismatch')
-          bc=bc.replace(marker,'}\\nbool BleController::startScan(uint32_t ms){if(asyncScanBusy||connecting())return false;asyncScanMs=constrain(ms,250UL,10000UL);asyncScanReady=false;asyncScanBusy=true;\\n#ifdef MOCK_BLE\\n  asyncScanResults=scan(asyncScanMs);asyncScanReady=true;asyncScanBusy=false;return true;\\n#else\\n  if(xTaskCreate(scanWorker,"anderson-scan",4096,this,1,&scanTask)!=pdPASS){scanTask=nullptr;asyncScanBusy=false;return false;}return true;\\n#endif\\n}\\nbool BleController::consumeScanResults(std::vector<BleFound>& out){if(asyncScanBusy||!asyncScanReady)return false;out=asyncScanResults;asyncScanReady=false;return true;}\\nbool BleController::connecting() const{'.replace('\\n','\n'),1)
-          bc=bc.replace('#ifndef MOCK_BLE\nvoid BleController::connectionWorker','#ifndef MOCK_BLE\nvoid BleController::scanWorker(void* context){auto* self=static_cast<BleController*>(context);auto found=self->scan(self->asyncScanMs);self->asyncScanResults=found;self->asyncScanReady=true;self->asyncScanBusy=false;self->scanTask=nullptr;vTaskDelete(nullptr);}\nvoid BleController::connectionWorker',1)
-          bc=bc.replace('bool BleController::requestConnection(uint8_t i){if(i>1||connectPending||!connectTask||slots[i].address.length()!=17)return false;','bool BleController::requestConnection(uint8_t i){if(i>1||connectPending||asyncScanBusy||!connectTask||slots[i].address.length()!=17)return false;',1)
-          bc=bc.replace('  if(connectTask){ConnectResult result{};','  if(connectTask&&!asyncScanBusy){ConnectResult result{};',1)
-          p.write_text(bc)
-          p=Path('firmware/src/main.cpp'); m=p.read_text()
-          m,n=re.subn(r'  server\.on\("/api/ble/scan",HTTP_GET,\[\]\{\n    if\(!requireAdmin\(\)\)return;if\(ble\.connecting\(\)\)\{server\.send\(409,"text/plain","Bluetooth connection in progress\. Try scanning again shortly\."\);return;\}auto found=ble\.scan\(\);JsonDocument d;JsonArray a=d\["devices"\]\.to<JsonArray>\(\);for\(auto&f:found\)\{JsonObject x=a\.add<JsonObject>\(\);x\["name"\]=f\.name;x\["address"\]=f\.address;x\["rssi"\]=f\.rssi;\}String out;serializeJson\(d,out\);sendJson\(out\);\n  \}\);','''  server.on("/api/ble/scan",HTTP_GET,[]{
-    if(!requireAdmin())return;if(ble.connecting()){server.send(409,"text/plain","Bluetooth connection in progress. Try scanning again shortly.");return;}JsonDocument d;std::vector<BleFound> found;if(ble.consumeScanResults(found)){d["scanning"]=false;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);return;}if(ble.scanInProgress()){d["scanning"]=true;String out;serializeJson(d,out);sendJson(out);return;}if(!ble.startScan()){server.send(409,"text/plain","Bluetooth scan could not start. Try again shortly.");return;}d["scanning"]=true;String out;serializeJson(d,out);sendJson(out,202);
-  });''',m,count=1,flags=re.S)
-          if n!=1: raise SystemExit('BLE endpoint mismatch')
-          p.write_text(m)
-          print('3.1.40 audit bundle patched')
-          PY
+          python .github/scripts/apply-audit-3140.py
           git rm -f .github/workflows/publish-anderson-prebuilt.yml 2>/dev/null || true
           git rm -f .github/workflows/publish-anderson-prebuilt-chunks.yml 2>/dev/null || true
           if [ -d prebuilt ]; then git rm -rf prebuilt; fi
@@ -248,10 +37,11 @@ def compress_page(rendered):
           python - <<'PY'
           import re,subprocess
           from pathlib import Path
-          for s in re.findall(r'<script\b[^>]*>(.*?)</script>',Path('firmware/web/index.html').read_text(),re.S|re.I): subprocess.run(['node','--check'],input=s,text=True,check=True)
+          for script in re.findall(r'<script\b[^>]*>(.*?)</script>',Path('firmware/web/index.html').read_text(),re.S|re.I):
+              subprocess.run(['node','--check'],input=script,text=True,check=True)
           PY
           printf '%s\n' '3.1.40 audit optimization bundle' > .github/trigger-build.txt
-          git rm .github/workflows/apply-audit-3140.yml .github/trigger-audit-3140.txt
+          git rm .github/workflows/apply-audit-3140.yml .github/trigger-audit-3140.txt .github/scripts/apply-audit-3140.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
