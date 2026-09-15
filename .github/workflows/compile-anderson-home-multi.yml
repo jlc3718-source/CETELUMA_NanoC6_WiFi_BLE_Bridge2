@@ -1,8 +1,9 @@
-name: Build Anderson Home Firmware (Manual Fallback Only)
+name: Build Anderson Home Firmware
 
 on:
-  # Anderson production firmware is built and verified locally.
-  # This workflow is retained only as an explicit emergency/manual fallback.
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-build.txt']
   workflow_dispatch:
     inputs:
       full_image:
@@ -11,7 +12,7 @@ on:
         default: false
 
 concurrency:
-  group: anderson-firmware-manual-fallback
+  group: anderson-firmware-build
   cancel-in-progress: true
 
 permissions:
@@ -97,7 +98,7 @@ jobs:
         env:
           FULL_IMAGE: ${{ inputs.full_image }}
         run: |
-          if [ "$FULL_IMAGE" = true ]; then
+          if [ "${FULL_IMAGE:-false}" = true ]; then
             python tools/release.py package --full
           else
             python tools/release.py package
