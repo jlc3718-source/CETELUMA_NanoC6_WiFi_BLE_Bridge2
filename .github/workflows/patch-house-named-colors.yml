@@ -44,30 +44,31 @@ jobs:
           if s.count(old_house) != 1:
               raise SystemExit('house paint anchor mismatch')
           s = s.replace(old_house, new_house, 1)
+
+          if s.count('function namedHouseColor') != 1 or s.count('paint(running,0,t,houseLeds.length,!0)') != 1:
+              raise SystemExit('named-color house patch validation failed')
           p.write_text(s)
 
           old_version = '3.1.38'
           new_version = '3.1.39'
           Path('FIRMWARE_VERSION.txt').write_text(new_version + '\n')
-
           main = Path('firmware/src/main.cpp')
           source = main.read_text()
           old_marker = f'static constexpr const char* ANDERSON_FIRMWARE_VERSION="{old_version}";'
           new_marker = f'static constexpr const char* ANDERSON_FIRMWARE_VERSION="{new_version}";'
           if source.count(old_marker) != 1:
               raise SystemExit('runtime version anchor mismatch')
-          main.write_text(source.replace(old_marker, new_marker, 1))
+          source = source.replace(old_marker, new_marker, 1)
+          if source.count(new_marker) != 1:
+              raise SystemExit('runtime version patch validation failed')
+          main.write_text(source)
 
           readme = Path('README.md')
           if readme.exists():
-              text = readme.read_text()
-              text = text.replace(f'**v{old_version}**', f'**v{new_version}**')
+              text = readme.read_text().replace(f'**v{old_version}**', f'**v{new_version}**')
               readme.write_text(text)
+          print('House preview now uses semantic named display colors; firmware version 3.1.39 prepared.')
           PY
-          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.39"
-          grep -q 'ANDERSON_FIRMWARE_VERSION="3.1.39"' firmware/src/main.cpp
-          grep -q 'paint(running,0,t,houseLeds.length,!0)' firmware/web/index.html
-          grep -q 'function namedHouseColor' firmware/web/index.html
           printf '%s\n' '3.1.39 named-color house preview' > .github/trigger-build.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
