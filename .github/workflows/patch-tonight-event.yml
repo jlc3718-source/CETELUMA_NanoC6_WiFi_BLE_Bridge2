@@ -1,0 +1,75 @@
+name: Patch Tonight Event and Release
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/tonight-patch-trigger.txt']
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: anderson-tonight-event-patch
+  cancel-in-progress: false
+
+jobs:
+  patch-and-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/requirements-build.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+      - name: Install validation dependencies
+        run: |
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+      - name: Add tonight scheduled event to Home
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('firmware/web/v3_mockup.js')
+          s=p.read_text()
+          old='const m=byId("nextEvent").closest(".card");m.classList.add("v3Next"),m.prepend(el("span","v3NextIcon",icon("clock")));'
+          new='''const m=byId("nextEvent").closest(".card"),x=q("strong",m),y=el("strong","small v3TonightLabel","Tonight’s Scheduled Event"),z=el("div","sub v3TonightEvent");x.classList.add("v3NextUpcoming"),z.id="tonightEvent",z.setAttribute("aria-live","polite"),m.insertBefore(y,x),m.insertBefore(z,x),m.classList.add("v3Next"),m.prepend(el("span","v3NextIcon",icon("clock")));const syncTonight=()=>{z.textContent=byId("nowTheme").textContent?.trim()||"—"};new MutationObserver(syncTonight).observe(byId("nowTheme"),{childList:!0,subtree:!0,characterData:!0}),syncTonight();if(!byId("v3TonightEventStyle")){const e=document.createElement("style");e.id="v3TonightEventStyle",e.textContent='.v3NextIcon{grid-row:1/5!important}.v3TonightLabel{grid-column:2}#tonightEvent{grid-column:2;min-width:0;margin-top:0!important;color:#dbe7fc;font-size:12px;line-height:1.65;overflow-wrap:anywhere}.v3NextUpcoming{grid-column:2;margin-top:7px;padding-top:9px;border-top:1px solid #a8c4ff20}@media(max-width:650px){#tonightEvent{font-size:11px}}',document.head.appendChild(e)}'''
+          if old not in s:
+              raise SystemExit('Expected Home next-event hook was not found; refusing blind patch')
+          if 'id="tonightEvent"' in s or 'v3TonightEventStyle' in s:
+              raise SystemExit('Tonight event patch already present; refusing duplicate patch')
+          p.write_text(s.replace(old,new,1))
+          PY
+      - name: Bump Anderson version
+        run: python tools/release.py bump
+      - name: Validate release source
+        run: |
+          python tools/test_maintenance.py
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+          python tools/test_connection_recovery.py
+          python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+          python tools/release.py check
+      - name: Commit clean candidate and dispatch verified build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/patch-tonight-event.yml .github/tonight-patch-trigger.txt
+          git add firmware/web/v3_mockup.js FIRMWARE_VERSION.txt firmware/src/main.cpp README.md
+          git commit -m "Add tonight scheduled event to Home screen"
+          git push origin HEAD:refs/heads/codex/release-current
+          gh workflow run compile-anderson-home-multi.yml --ref codex/release-current -f full_image=false
