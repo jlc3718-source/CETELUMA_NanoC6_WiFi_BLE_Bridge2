@@ -1,0 +1,158 @@
+name: Correct Anderson 3.1.34 to Exact Local Build
+
+on:
+  push:
+    branches: ['staging-upload-3.1.34']
+    paths: ['.github/correct-trigger-3.1.34.txt']
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  correct-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout publisher tools
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: repo
+          fetch-depth: 1
+      - name: Checkout exact staged local payload
+        uses: actions/checkout@v4
+        with:
+          ref: staging-upload-3.1.34
+          path: staged
+          fetch-depth: 1
+      - name: Verify exact local firmware bytes
+        run: |
+          set -euo pipefail
+          xz -dc staged/prebuilt/and_3.1.34.bin.xz > /tmp/and_3.1.34.bin
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          p=Path('/tmp/and_3.1.34.bin'); data=p.read_bytes()
+          m=json.loads(Path('staged/prebuilt/release.json').read_text())
+          assert m['version']=='3.1.34'
+          assert m['commit']=='2015be4747b5c6d09b191be01a7a8d833d3edd0e'
+          assert m['ota_slot_bytes']==1966080
+          assert len(data)==1826112
+          assert data[0]==0xE9
+          sha=hashlib.sha256(data).hexdigest()
+          assert sha=='8c07e9d1630bb7cb73be19e20abb8221118bb1d77dc46cfe6edf626e356301b9'
+          meta=m['files']['and_3.1.34.bin']
+          assert meta['bytes']==len(data) and meta['sha256']==sha
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write('VERSION=3.1.34\n')
+              f.write('LOCAL_SOURCE_COMMIT=2015be4747b5c6d09b191be01a7a8d833d3edd0e\n')
+              f.write('OTA_BYTES=1826112\n')
+              f.write('OTA_SHA256=8c07e9d1630bb7cb73be19e20abb8221118bb1d77dc46cfe6edf626e356301b9\n')
+              f.write('OTA_URL=https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v3.1.34/and_3.1.34.bin\n')
+          print('Exact local Anderson 3.1.34 BIN verified')
+          PY
+      - name: Create and verify signed corrected manifest
+        working-directory: repo
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "${OTA_SIGNING_KEY_B64:-}"
+          mkdir -p publish-input
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > /tmp/anderson-ota-signing-key.pem
+          chmod 600 /tmp/anderson-ota-signing-key.pem
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          Path('/tmp/anderson-ota-payload.txt').write_text(
+              f"version={os.environ['VERSION']}\n"
+              f"bytes={os.environ['OTA_BYTES']}\n"
+              f"sha256={os.environ['OTA_SHA256']}\n"
+              f"commit={os.environ['LOCAL_SOURCE_COMMIT']}\n"
+              f"url={os.environ['OTA_URL']}\n"
+          )
+          PY
+          openssl dgst -sha256 -sign /tmp/anderson-ota-signing-key.pem -out /tmp/anderson-ota-signature.der /tmp/anderson-ota-payload.txt
+          OTA_SIGNATURE="$(base64 -w 0 /tmp/anderson-ota-signature.der)"; export OTA_SIGNATURE
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          payload=Path('/tmp/anderson-ota-payload.txt').read_text()
+          Path('publish-input/latest.json').write_text(json.dumps({'schema':1,'payload':payload,'signature':os.environ['OTA_SIGNATURE']},separators=(',',':')))
+          PY
+          shred -u /tmp/anderson-ota-signing-key.pem 2>/dev/null || rm -f /tmp/anderson-ota-signing-key.pem
+          rm -f /tmp/anderson-ota-signature.der /tmp/anderson-ota-payload.txt
+          python tools/verify_ota_manifest.py --manifest publish-input/latest.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$LOCAL_SOURCE_COMMIT" --url "$OTA_URL"
+          cp publish-input/latest.json publish-input/ota-manifest.json
+      - name: Safety gate existing incorrect 3.1.34 only
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > /tmp/current-live.json
+          gh release view anderson-v3.1.34 --json assets > /tmp/current-assets.json
+          python - <<'PY'
+          import json
+          live=json.load(open('/tmp/current-live.json'))
+          lines=dict(x.split('=',1) for x in live['payload'].splitlines() if '=' in x)
+          assert lines=={
+            'version':'3.1.34',
+            'bytes':'1825904',
+            'sha256':'209f9949d15b2eb5bcae5d1f1e442ece989e36319f87881f4ecaef1bcec867c0',
+            'commit':'90eb409c78b9b9fef05f71730d68acfc4b72555e',
+            'url':'https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/anderson-v3.1.34/and_3.1.34.bin'
+          }, lines
+          a=json.load(open('/tmp/current-assets.json'))['assets']
+          hit=next(x for x in a if x['name']=='and_3.1.34.bin')
+          assert int(hit['size'])==1825904
+          assert (hit.get('digest') or '')=='sha256:209f9949d15b2eb5bcae5d1f1e442ece989e36319f87881f4ecaef1bcec867c0'
+          print('Confirmed only the known incorrect GitHub-built 3.1.34 will be replaced')
+          PY
+      - name: Replace incorrect release with exact local BIN
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          gh release delete anderson-v3.1.34 --yes --cleanup-tag
+          gh release create anderson-v3.1.34 ../staged/prebuilt/release.json publish-input/ota-manifest.json /tmp/and_3.1.34.bin --target main --title "Anderson Home v3.1.34" --notes "Locally built and verified Anderson Home firmware. Local source commit: 2015be4747b5c6d09b191be01a7a8d833d3edd0e. GitHub used only for signed OTA publication and hosting."
+          rm -rf /tmp/release-check; mkdir -p /tmp/release-check
+          gh release download anderson-v3.1.34 --pattern 'and_3.1.34.bin' --pattern release.json --pattern ota-manifest.json --dir /tmp/release-check
+          cmp /tmp/and_3.1.34.bin /tmp/release-check/and_3.1.34.bin
+          cmp ../staged/prebuilt/release.json /tmp/release-check/release.json
+          cmp publish-input/ota-manifest.json /tmp/release-check/ota-manifest.json
+      - name: Promote corrected signed manifest to live OTA channel
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          git fetch origin ota --quiet
+          rm -rf ../ota-work
+          git worktree add -B ota-correct-3134 ../ota-work origin/ota
+          cp publish-input/latest.json ../ota-work/latest.json
+          mkdir -p ../ota-work/remote-update/releases
+          cp publish-input/latest.json ../ota-work/remote-update/latest.json
+          cp publish-input/latest.json ../ota-work/remote-update/releases/3.1.34.json
+          rm -f ../ota-work/remote-update/pending/3.1.34.json
+          cd ../ota-work
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add latest.json remote-update
+          git commit -m 'Correct Anderson Home v3.1.34 to exact local build'
+          git push origin HEAD:refs/heads/ota
+      - name: Verify corrected live OTA exactly
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github.raw+json" "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > /tmp/live.json
+          cmp publish-input/latest.json /tmp/live.json
+          python tools/verify_ota_manifest.py --manifest /tmp/live.json --version "$VERSION" --bytes "$OTA_BYTES" --sha256 "$OTA_SHA256" --commit "$LOCAL_SOURCE_COMMIT" --url "$OTA_URL"
+          gh release view anderson-v3.1.34 --json assets,body > /tmp/final-release.json
+          python - <<'PY'
+          import json,os
+          r=json.load(open('/tmp/final-release.json'))
+          a=r['assets']; hit=next(x for x in a if x['name']=='and_3.1.34.bin')
+          assert int(hit['size'])==1826112
+          assert (hit.get('digest') or '')=='sha256:8c07e9d1630bb7cb73be19e20abb8221118bb1d77dc46cfe6edf626e356301b9'
+          assert 'Locally built and verified' in r['body']
+          print('LIVE EXACT LOCAL 3.1.34 VERIFIED')
+          PY
