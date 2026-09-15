@@ -1,0 +1,55 @@
+name: Patch Anderson House Named Colors
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-house-named-colors.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - name: Patch house preview, bump version, and trigger production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.38"
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('firmware/web/index.html')
+          s = p.read_text()
+          old_helper = 'function semanticColorInk(e,t=""){const n=hexRgb(semanticColorVisual(e,t));return 299*n[0]+587*n[1]+114*n[2]>155e3?"#071019":"#FFFFFF"}'
+          new_helper = old_helper + 'function namedHouseColor(e){const t=normHex(e);if(savedColors.length)for(let e=0;e<savedColors.length;e++)if(normHex(savedColors[e])===t&&savedColorLabels[e]&&SEMANTIC_COLOR_VISUAL[savedColorLabels[e]])return SEMANTIC_COLOR_VISUAL[savedColorLabels[e]];const n=NAMED_COLOR_PALETTE.find(e=>normHex(e.output)===t||normHex(e.reference)===t);return n&&SEMANTIC_COLOR_VISUAL[n.name]||displayColor(e)}'
+          if s.count(old_helper) != 1:
+              raise SystemExit('semanticColorInk anchor mismatch')
+          s = s.replace(old_helper, new_helper, 1)
+          old_paint = 'function paint(e,t,n,o){const a=(e.colors&&e.colors.length?e.colors:["#0D00FF"]).map(displayColor),'
+          new_paint = 'function paint(e,t,n,o,v=!1){const a=(e.colors&&e.colors.length?e.colors:["#0D00FF"]).map(e=>v?namedHouseColor(e):displayColor(e)),'
+          if s.count(old_paint) != 1:
+              raise SystemExit('paint anchor mismatch')
+          s = s.replace(old_paint, new_paint, 1)
+          old_house = 'const e=paint(running,0,t,houseLeds.length),n=JSON.stringify([e,power]);'
+          new_house = 'const e=paint(running,0,t,houseLeds.length,!0),n=JSON.stringify([e,power]);'
+          if s.count(old_house) != 1:
+              raise SystemExit('house paint anchor mismatch')
+          s = s.replace(old_house, new_house, 1)
+          p.write_text(s)
+          PY
+          NEW_VERSION="$(python tools/release.py bump | tail -n1)"
+          test "$NEW_VERSION" = "3.1.39"
+          grep -q 'ANDERSON_FIRMWARE_VERSION="3.1.39"' firmware/src/main.cpp
+          printf '%s\n' '3.1.39 named-color house preview' > .github/trigger-build.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/patch-house-named-colors.yml .github/trigger-house-named-colors.txt
+          git add firmware/web/index.html firmware/src/main.cpp FIRMWARE_VERSION.txt .github/trigger-build.txt README.md || true
+          git commit -m 'Anderson Home v3.1.39: render named colors in house preview'
+          git push origin HEAD:codex/release-current
