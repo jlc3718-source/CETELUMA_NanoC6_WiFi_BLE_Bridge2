@@ -24,6 +24,9 @@ class BleController {
   String address() const;
   String protocolName() const;
   std::vector<BleFound> scan(uint32_t ms=2500);
+  bool startScan(uint32_t ms=2500);
+  bool scanInProgress() const { return asyncScanBusy; }
+  bool consumeScanResults(std::vector<BleFound>& out);
   bool selectAndConnect(const String& address);
   bool removeController(uint8_t slot);
   void setTarget(uint8_t target); // 0=all, 1=slot A, 2=slot B
@@ -61,15 +64,19 @@ class BleController {
   Theme activeTheme;
   uint8_t activeBrightness=0,activeSpeed=0;
   bool activeValid=false;
+  std::vector<BleFound> asyncScanResults;
+  volatile bool asyncScanBusy=false,asyncScanReady=false;
+  uint32_t asyncScanMs=2500;
 #ifndef MOCK_BLE
   struct ConnectRequest { char address[18]; };
   struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; };
   QueueHandle_t connectRequests=nullptr,connectResults=nullptr;
-  TaskHandle_t connectTask=nullptr;
+  TaskHandle_t connectTask=nullptr,scanTask=nullptr;
   bool connectPending=false;
   uint8_t pendingSlot=0;
   uint32_t pendingGeneration=0;
   static void connectionWorker(void* context);
+  static void scanWorker(void* context);
   bool requestConnection(uint8_t slot);
 #endif
   void disconnectSlot(uint8_t slot);

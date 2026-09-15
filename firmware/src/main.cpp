@@ -65,7 +65,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.39";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.40";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -594,7 +594,7 @@ void setupRoutes(){
   });
 
   server.on("/api/ble/scan",HTTP_GET,[]{
-    if(!requireAdmin())return;if(ble.connecting()){server.send(409,"text/plain","Bluetooth connection in progress. Try scanning again shortly.");return;}auto found=ble.scan();JsonDocument d;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);
+    if(!requireAdmin())return;if(ble.connecting()){server.send(409,"text/plain","Bluetooth connection in progress. Try scanning again shortly.");return;}JsonDocument d;std::vector<BleFound> found;if(ble.consumeScanResults(found)){d["scanning"]=false;JsonArray a=d["devices"].to<JsonArray>();for(auto&f:found){JsonObject x=a.add<JsonObject>();x["name"]=f.name;x["address"]=f.address;x["rssi"]=f.rssi;}String out;serializeJson(d,out);sendJson(out);return;}if(ble.scanInProgress()){d["scanning"]=true;String out;serializeJson(d,out);sendJson(out);return;}if(!ble.startScan()){server.send(409,"text/plain","Bluetooth scan could not start. Try again shortly.");return;}d["scanning"]=true;String out;serializeJson(d,out);sendJson(out,202);
   });
   server.on("/api/ble/select",HTTP_POST,[]{
     if(!requireAdmin())return;JsonDocument d;if(!body(d))return;String addr=d["address"].as<String>();bool ok=ble.selectAndConnect(addr);if(ok){if(!store.saveBle()){server.send(500,"text/plain","Controller selected but its saved settings could not be verified");return;}ble.setTarget(0);applyRunning(true);}sendJson(stateJson(),ok?200:500);

@@ -26,6 +26,8 @@ MAIN = ROOT / 'firmware/src/main.cpp'
 BUILD_IDENTITY = ROOT / 'firmware/include/BuildIdentity.h'
 SLOT = 0x1E0000
 ZOPFLI_ITERATIONS = 1000
+WEB_CACHE_DIR = ROOT / ".anderson-web-cache"
+COMPRESSION_ID = f"zopfli-0.2.3.post1-gzip-{ZOPFLI_ITERATIONS}-unlimited-blocks"
 
 
 def sha(data):
@@ -141,6 +143,29 @@ def compress_page(rendered):
     return packed
 
 
+def verified_page_gzip(name, rendered):
+    WEB_CACHE_DIR.mkdir(exist_ok=True)
+    rendered_path=WEB_CACHE_DIR/f'{name}.rendered'
+    gzip_path=WEB_CACHE_DIR/f'{name}.gz'
+    meta_path=WEB_CACHE_DIR/f'{name}.json'
+    rendered_sha=sha(rendered)
+    try:
+        meta=json.loads(meta_path.read_text())
+        cached_rendered=rendered_path.read_bytes()
+        packed=gzip_path.read_bytes()
+        valid=(meta.get('compression')==COMPRESSION_ID and meta.get('rendered_sha256')==rendered_sha and cached_rendered==rendered and meta.get('gzip_sha256')==sha(packed) and gzip.decompress(packed)==rendered)
+        if valid:
+            print(f'{name}: verified same-run gzip reuse ({len(packed)} bytes)')
+            return packed
+    except (OSError,ValueError,KeyError,json.JSONDecodeError):
+        pass
+    packed=compress_page(rendered)
+    rendered_path.write_bytes(rendered); gzip_path.write_bytes(packed)
+    meta_path.write_text(json.dumps({'compression':COMPRESSION_ID,'rendered_sha256':rendered_sha,'gzip_sha256':sha(packed),'rendered_bytes':len(rendered),'gzip_bytes':len(packed)},sort_keys=True)+'\n')
+    print(f'{name}: generated verified gzip ({len(packed)} bytes)')
+    return packed
+
+
 class PageIds(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -187,7 +212,7 @@ def prepare():
     BUILD_IDENTITY.write_text('#pragma once\n#define ANDERSON_BUILD_COMMIT "' + commit + '"\n')
     lines = ['#pragma once', '#include <Arduino.h>']
     for name, rendered in rendered_pages().items():
-        packed = compress_page(rendered)
+        packed = verified_page_gzip(name, rendered)
         lines += [f'static const size_t {name}_GZ_LEN={len(packed)};',
                   f'static const uint8_t {name}_GZ[] PROGMEM = {{']
         lines += ['  ' + ','.join(f'0x{b:02x}' for b in packed[i:i+20]) + ','
@@ -204,7 +229,7 @@ def validate_app(data):
     if not data or data[0] != 0xE9 or len(data) >= SLOT:
         raise ValueError('Invalid or oversized APP-only firmware')
     for name, rendered in rendered_pages().items():
-        if compress_page(rendered) not in data:
+        if verified_page_gzip(name, rendered) not in data:
             raise ValueError(f'Firmware does not contain the exact rendered {name}')
 
 
@@ -221,13 +246,11 @@ def package(full):
     rendered = render_ui().encode()
     manifest = {'version': ver, 'commit': git('rev-parse', 'HEAD'),
                 'ota_slot_bytes': SLOT, 'ui_sha256': sha(rendered), 'files': {}}
-    manifest['web_assets'] = {
-        name: {'bytes': len(page), 'sha256': sha(page),
-               'gzip_bytes': len(compress_page(page)),
-               'gzip_sha256': sha(compress_page(page))}
-        for name, page in rendered_pages().items()
-    }
-    manifest['web_compression'] = f'zopfli-0.2.3.post1-gzip-{ZOPFLI_ITERATIONS}-unlimited-blocks'
+    manifest['web_assets'] = {}
+    for name,page in rendered_pages().items():
+        packed=verified_page_gzip(name,page)
+        manifest['web_assets'][name]={'bytes':len(page),'sha256':sha(page),'gzip_bytes':len(packed),'gzip_sha256':sha(packed)}
+    manifest['web_compression'] = COMPRESSION_ID
     for name, data in files.items():
         (folder / name).write_bytes(data)
         manifest['files'][name] = {'bytes': len(data), 'sha256': sha(data)}
@@ -281,27 +304,45 @@ def payload(base):
                       'tree_elements': entries}))
 
 def deliver(args):
-    """Resume the canonical release-current build/publish path and emit a receipt."""
-    source=args.source_sha or git('rev-parse','HEAD'); receipt=ROOT/'.anderson-delivery.json'
-    state={'source_sha':source,'version':version(),'branch':'codex/release-current'}
-    if receipt.exists():
-        try:
-            prior=json.loads(receipt.read_text())
-            if prior.get('source_sha')==source:state.update(prior)
-        except Exception:pass
-    def gh(*a):return subprocess.check_output(['gh',*a],text=True).strip()
-    if git('rev-parse','HEAD')!=source:raise ValueError('Working tree must be at --source-sha')
-    run=state.get('build_run_id')
+    """Follow the exact source build through stable release, main, and live OTA."""
+    import time
+    source=args.source_sha or git('rev-parse','HEAD'); ver=version(); branch='codex/release-current'; receipt=ROOT/'.anderson-delivery.json'
+    def gh(*a): return subprocess.check_output(['gh',*a],text=True).strip()
+    def gj(*a):
+        raw=gh(*a); return json.loads(raw) if raw else {}
+    if git('rev-parse','HEAD')!=source: raise ValueError('Working tree must be at --source-sha')
+    ref=gj('api',f'/repos/{{owner}}/{{repo}}/git/ref/heads/{branch}')
+    if ref.get('object',{}).get('sha')!=source: raise ValueError('release-current does not match requested source')
+    rows=gj('run','list','--workflow','compile-anderson-home-multi.yml','--branch',branch,'--limit','30','--json','databaseId,headSha,status,conclusion,createdAt')
+    exact=sorted((r for r in rows if r.get('headSha')==source),key=lambda r:r.get('createdAt',''),reverse=True); run=exact[0] if exact else None
     if not run:
-        subprocess.run(['gh','workflow','run','compile-anderson-home-multi.yml','--ref','codex/release-current'],check=True)
-        import time
-        for _ in range(30):
-            time.sleep(2);raw=gh('run','list','--workflow','compile-anderson-home-multi.yml','--branch','codex/release-current','--limit','10','--json','databaseId,headSha,status,conclusion');rows=json.loads(raw);hit=next((x for x in rows if x['headSha']==source),None)
-            if hit:run=hit['databaseId'];break
-        if not run:raise RuntimeError('Could not resolve build run for source SHA')
-        state['build_run_id']=run;receipt.write_text(json.dumps(state,indent=2)+'\n')
-    print(json.dumps(state,indent=2))
-
+        gh('workflow','run','compile-anderson-home-multi.yml','--ref',branch); deadline=time.time()+90
+        while time.time()<deadline and not run:
+            time.sleep(2); rows=gj('run','list','--workflow','compile-anderson-home-multi.yml','--branch',branch,'--limit','20','--json','databaseId,headSha,status,conclusion,createdAt'); run=next((r for r in rows if r.get('headSha')==source),None)
+    if not run: raise RuntimeError('Could not resolve exact-SHA build run')
+    run_id=int(run['databaseId'])
+    if run.get('status')!='completed': subprocess.run(['gh','run','watch',str(run_id),'--exit-status'],check=True)
+    info=gj('run','view',str(run_id),'--json','status,conclusion,headSha')
+    if info.get('conclusion')!='success' or info.get('headSha')!=source: raise RuntimeError('Build did not succeed for exact source')
+    deadline=time.time()+240; release=None; payload={}
+    while time.time()<deadline:
+        try: release=gj('api',f'/repos/{{owner}}/{{repo}}/releases/tags/anderson-v{ver}')
+        except subprocess.CalledProcessError: release=None
+        if release and release.get('target_commitish')==source:
+            try:
+                main=gj('api','/repos/{owner}/{repo}/git/ref/heads/main').get('object',{}).get('sha')
+                live=json.loads(gh('api','-H','Accept: application/vnd.github.raw+json','/repos/{owner}/{repo}/contents/latest.json?ref=ota'))
+                payload=dict(x.split('=',1) for x in live.get('payload','').splitlines() if '=' in x)
+                if main==source and payload.get('version')==ver and payload.get('commit')==source: break
+            except Exception: pass
+        time.sleep(3)
+    else: raise RuntimeError('Release/main/OTA did not converge')
+    assets={a['name']:a for a in release.get('assets',[])}; required=[f'and_{ver}.bin','release.json','ota-manifest.json']; missing=[x for x in required if x not in assets]
+    if missing: raise RuntimeError('Release missing: '+','.join(missing))
+    app=assets[f'and_{ver}.bin']; digest=str(app.get('digest') or '').removeprefix('sha256:')
+    if int(payload.get('bytes','0'))!=int(app.get('size',0)) or payload.get('sha256')!=digest: raise RuntimeError('OTA identity differs from release asset')
+    state={'source_sha':source,'version':ver,'branch':branch,'build_run_id':run_id,'release_url':release.get('html_url'),'main_sha':source,'ota_version':payload.get('version'),'ota_commit':payload.get('commit'),'ota_bytes':int(payload.get('bytes','0')),'ota_sha256':payload.get('sha256'),'release_bytes':int(app.get('size',0)),'release_digest':digest}
+    receipt.write_text(json.dumps(state,indent=2,sort_keys=True)+'\n'); print(json.dumps(state,indent=2,sort_keys=True))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

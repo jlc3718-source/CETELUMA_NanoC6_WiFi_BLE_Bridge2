@@ -1,1 +1,0 @@
-Baseline staging point before binary chunks are added. The ota-staging-chunks/3.1.31 branch is anchored here and advanced only after all local payload chunks are present.

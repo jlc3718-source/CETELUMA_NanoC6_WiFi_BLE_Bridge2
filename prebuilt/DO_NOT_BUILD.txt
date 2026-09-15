@@ -1,1 +1,0 @@
-This staging payload must not be compiled on GitHub. The published BIN must be reconstructed from the uploaded local chunks and match release.json exactly.

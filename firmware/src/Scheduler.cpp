@@ -78,17 +78,8 @@ bool Scheduler::inRunWindow(const tm& l) const{
   if(a==b)return true;if(a<b)return m>=a&&m<b;return m>=a||m<b;
 }
 uint16_t Scheduler::civilDawnMinutes(const tm& l) const{
-  const int n=l.tm_yday+1;const double lngHour=ANDERSON_LONGITUDE_DEG/15.0;
-  const double t=n+((6.0-lngHour)/24.0),M=0.9856*t-3.289;
-  double L=normalizeDegrees(M+1.916*sin(M*RAD_PER_DEG)+0.020*sin(2.0*M*RAD_PER_DEG)+282.634);
-  double RA=normalizeDegrees(atan(0.91764*tan(L*RAD_PER_DEG))/RAD_PER_DEG);
-  const double lQuadrant=floor(L/90.0)*90.0,raQuadrant=floor(RA/90.0)*90.0;RA=(RA+(lQuadrant-raQuadrant))/15.0;
-  const double sinDec=0.39782*sin(L*RAD_PER_DEG),cosDec=cos(asin(sinDec));
-  const double cosH=(cos(CIVIL_DAWN_ZENITH_DEG*RAD_PER_DEG)-sinDec*sin(ANDERSON_LATITUDE_DEG*RAD_PER_DEG))/(cosDec*cos(ANDERSON_LATITUDE_DEG*RAD_PER_DEG));
-  if(cosH>1.0||cosH<-1.0)return 6*60;
-  const double H=(360.0-(acos(cosH)/RAD_PER_DEG))/15.0;
-  const double localHours=normalizeHours(H+RA-(0.06571*t)-6.622-lngHour+(localUtcOffsetMinutes(l)/60.0));
-  int minutes=(int)lround(localHours*60.0);if(minutes>=1440)minutes-=1440;if(minutes<0)minutes+=1440;return (uint16_t)minutes;
+  const int year=l.tm_year+1900,yday=l.tm_yday,offset=localUtcOffsetMinutes(l);struct DawnCache{int year=-1,yday=-1,offset=99999;uint16_t minutes=360;};static DawnCache c;if(c.year==year&&c.yday==yday&&c.offset==offset)return c.minutes;
+  const int n=l.tm_yday+1;const double lngHour=ANDERSON_LONGITUDE_DEG/15.0,t=n+((6.0-lngHour)/24.0),M=0.9856*t-3.289;double L=normalizeDegrees(M+1.916*sin(M*RAD_PER_DEG)+0.020*sin(2.0*M*RAD_PER_DEG)+282.634),RA=normalizeDegrees(atan(0.91764*tan(L*RAD_PER_DEG))/RAD_PER_DEG);const double lq=floor(L/90.0)*90.0,rq=floor(RA/90.0)*90.0;RA=(RA+(lq-rq))/15.0;const double sd=0.39782*sin(L*RAD_PER_DEG),cd=cos(asin(sd)),ch=(cos(CIVIL_DAWN_ZENITH_DEG*RAD_PER_DEG)-sd*sin(ANDERSON_LATITUDE_DEG*RAD_PER_DEG))/(cd*cos(ANDERSON_LATITUDE_DEG*RAD_PER_DEG));uint16_t minutes=360;if(ch<=1.0&&ch>=-1.0){const double H=(360.0-(acos(ch)/RAD_PER_DEG))/15.0,lh=normalizeHours(H+RA-(0.06571*t)-6.622-lngHour+(offset/60.0));int m=(int)lround(lh*60.0);if(m>=1440)m-=1440;if(m<0)m+=1440;minutes=(uint16_t)m;}c.year=year;c.yday=yday;c.offset=offset;c.minutes=minutes;return minutes;
 }
 bool Scheduler::inSchedule2Window(const tm& l) const{
   int m=l.tm_hour*60+l.tm_min,a=cfg->offMinutes,b=civilDawnMinutes(l);
@@ -152,7 +143,5 @@ Theme Scheduler::resolve(const tm& l){
 }
 
 String Scheduler::nextEventLabel(const tm& l) const{
-  int y=l.tm_year+1900;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;
-  for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=y;yy<=y+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}
-  if(bi<0)return "-";tm out{};localtime_r(&best,&out);return String(EVENTS[bi].name)+" - "+eventWhen(bi,out.tm_year+1900);
+  const int year=l.tm_year+1900,offset=localUtcOffsetMinutes(l);const uint32_t stateHash=enabledEventHash();struct NextCache{int year=-1,yday=-1,hour=-1,minute=-1,offset=99999;uint32_t stateHash=0;String value;};static NextCache c;if(c.year==year&&c.yday==l.tm_yday&&c.hour==l.tm_hour&&c.minute==l.tm_min&&c.offset==offset&&c.stateHash==stateHash)return c.value;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=year;yy<=year+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}String value="-";if(bi>=0){tm out{};localtime_r(&best,&out);value=String(EVENTS[bi].name)+" - "+eventWhen(bi,out.tm_year+1900);}c.year=year;c.yday=l.tm_yday;c.hour=l.tm_hour;c.minute=l.tm_min;c.offset=offset;c.stateHash=stateHash;c.value=value;return c.value;
 }

@@ -7,7 +7,7 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
 # Pull the complete cache inventory. The permanent build currently uses the
-# pio-v1 dependency cache and anderson-objects-v2 object cache; Python/npm setup
+# pio-v2 scoped dependency cache and anderson-objects-v2 object cache; Python/npm setup
 # actions also create reusable caches. Keep the newest cache in each active
 # family so a quiet repository does not force a totally cold build, while stale
 # duplicates age out after the configured retention window.
@@ -19,7 +19,7 @@ rows=json.load(open(sys.argv[1],encoding='utf-8'))
 max_age=timedelta(hours=int(sys.argv[2]))
 now=datetime.now(timezone.utc)
 active_prefixes=(
-    'Linux-pio-v1-',
+    'Linux-pio-v2-',
     'Linux-anderson-objects-v2-',
     'setup-python-',
     'node-cache-',
