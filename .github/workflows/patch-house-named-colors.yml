@@ -42,10 +42,27 @@ jobs:
               raise SystemExit('house paint anchor mismatch')
           s = s.replace(old_house, new_house, 1)
           p.write_text(s)
+
+          version = Path('FIRMWARE_VERSION.txt')
+          if version.read_text().strip() != '3.1.38':
+              raise SystemExit('unexpected source version')
+          version.write_text('3.1.39\n')
+
+          main = Path('firmware/src/main.cpp')
+          m = main.read_text()
+          old_v = 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.38";'
+          new_v = 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.39";'
+          if m.count(old_v) != 1:
+              raise SystemExit('runtime version anchor mismatch')
+          main.write_text(m.replace(old_v, new_v, 1))
+
+          readme = Path('README.md')
+          if readme.exists():
+              r = readme.read_text()
+              readme.write_text(r.replace('**v3.1.38**', '**v3.1.39**'))
           PY
-          NEW_VERSION="$(python tools/release.py bump | tail -n1)"
-          test "$NEW_VERSION" = "3.1.39"
           grep -q 'ANDERSON_FIRMWARE_VERSION="3.1.39"' firmware/src/main.cpp
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.39"
           printf '%s\n' '3.1.39 named-color house preview' > .github/trigger-build.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
