@@ -18,9 +18,10 @@ assert 'if(syncTheme.effect==Effect::Breath)' in ble
 assert 'normalized.effect==Effect::Breath' not in ble
 assert 'case Effect::Breath: return "Breath";' in types
 assert 'if (s=="Breath" || s=="Pulse") return Effect::Breath;' in types
-assert '<option value="Breath">Breath</option>' in web and ("['Jump','Breath','Strobe','Solid']" in web or '["Jump","Breath","Strobe","Solid"]' in web)
-assert 'const EFFECT_BUTTON_VALUES=[' in web and ("'Jump','Breath','Strobe','Solid'" in web or '["Jump","Breath","Strobe","Solid"]' in web)
-assert 'effectButtonGroup' in web and 'enhanceEffectSelect' in web and 'effectSelectHidden' in web
+assert '<option value="Breath">Breath</option>' in web
+assert ('const e=["Jump","Breath","Strobe","Solid"]' in mock or "const e=['Jump','Breath','Strobe','Solid']" in mock)
+assert 'v3EffectPicker' in mock and 'v3EffectButton' in mock and 'v3EffectNative' in mock
+assert 'EFFECT_BUTTON_VALUES' not in web and 'enhanceEffectSelect' not in web and 'enhanceEffectButtons' not in web
 assert 'const SEMANTIC_COLOR_VISUAL=' in web and 'semanticColorName' in web and 'semanticColorVisual' in web
 assert re.search(r'Yellow[\"\']?:[\"\']#FFD400',web) and re.search(r'Orange[\"\']?:[\"\']#FF7A00',web)
 assert 'colorNamePill' in web and re.search(r'<span class="colorNamePill"[^>]*>\$\{semanticColorName\([^)]+\)\}</span>', web)
@@ -36,7 +37,7 @@ assert re.search(r'\.max=["\']2["\']', web) and 'id="eventsSpeed" type="range" m
 assert 'savedColorLabels' in web and re.search(r'\.name\|\|NAMED_COLOR_PALETTE\[[^\]]+\]\?\.name', web)
 
 assert web.index('let savedColors=[],savedColorLabels=[];') < web.index('function semanticColorName') < web.index('function renderColorBuilder')
-assert re.search(r'\._syncEffectButtons=sync', web) and re.search(r'setAttribute\(["\']aria-pressed["\']', web)
+assert re.search(r'\._syncEffectButtons=\(\)=>sync\(', mock) and re.search(r'setAttribute\(["\']aria-pressed["\']', mock)
 assert '$("effectSelect")._syncEffectButtons?.()' in web and '$("homeEffect")._syncEffectButtons?.()' in web
 assert re.search(r'\._addEventColor=addColor', web) and re.search(r'["\']function["\']==typeof [A-Za-z_$][\w$]*\._addEventColor', web)
 assert "customLightSummary" in web and re.search(r'\.className=["\']colorNamePill["\']', web)
@@ -58,7 +59,7 @@ assert 'server.on("/api/backup/status"' in main and 'server.on("/api/backup/sett
 assert 'maybeWeeklySettingsBackup();' in main and 'SETTINGS_BACKUP_WEEK_SECONDS=7UL*24UL*60UL*60UL' in main
 assert ("const values=['Jump','Breath','Strobe','Solid'];" in mock or '["Jump","Breath","Strobe","Solid"]' in mock)
 assert re.search(r'("Breath"===|==="Breath"|effect===\'Breath\')', mock) and '__REMOVED_BREATH__' not in mock
-assert '.anderson-no-plain-effect-buttons' in web and 'enhanceEffectButtons' in web
+assert '.anderson-no-plain-effect-buttons' not in web and 'enhanceEffectButtons' not in web
 
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
