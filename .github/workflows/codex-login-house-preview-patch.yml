@@ -1,0 +1,101 @@
+name: Apply Login House Preview Patch
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-login-house-preview.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply login preview and 35 percent visual floor
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('.')
+          js_path=root/'firmware/web/v3_mockup.js'
+          css_path=root/'firmware/web/v3_mockup.css'
+          html_path=root/'firmware/web/index.html'
+          version_path=root/'FIRMWARE_VERSION.txt'
+          main_path=root/'firmware/src/main.cpp'
+
+          js=js_path.read_text()
+          login_re=r'q\("\.v3Welcome"\)\.innerHTML=.*?;const k=q\("\.profileBrand"\);'
+          login_new='''const loginWelcome=q(".v3Welcome");loginWelcome.innerHTML='<span class="ah27Overline">THE ANDERSON LIGHT STUDIO</span><h2>Make an<br><em>entrance.</em></h2>';const loginCard=node("div","v3LiveCard ah27LoginLiveCard"),loginHouse=a.querySelector(".housePreview")?.cloneNode(!0);if(loginHouse){loginHouse.classList.add("ah27LoginHousePreview"),loginHouse.querySelectorAll("[id]").forEach(e=>e.removeAttribute("id")),loginHouse.setAttribute("aria-label","Animated Anderson Home lighting preview"),loginCard.appendChild(loginHouse),loginCard.insertAdjacentHTML("beforeend",'<div class="ah27LoginCaption"><span>LIVE PREVIEW</span><strong>ANDERSON / AFTER DARK</strong></div>'),loginWelcome.appendChild(loginCard),loginWelcome.insertAdjacentHTML("beforeend","<p>Choose your space. Set the mood.</p>"),window.andersonLoginHousePreview={scene:loginHouse,leds:[...loginHouse.querySelectorAll(".houseLed")]}}const k=q(".profileBrand");'''
+          js,count=re.subn(login_re,login_new,js,count=1,flags=re.S)
+          if count!=1:
+              raise SystemExit('Expected exactly one login hero block to replace')
+          js_path.write_text(js)
+
+          css=css_path.read_text()
+          marker='/* ANDERSON_LOGIN_HOUSE_PREVIEW_V1 */'
+          if marker not in css:
+              css += '''\n/* ANDERSON_LOGIN_HOUSE_PREVIEW_V1 */\n.ah27LoginLiveCard{margin:8px auto 5px;max-width:560px;width:100%;}\n.ah27LoginLiveCard .housePreview{width:100%;margin:0;padding:18px 8px 0;min-height:225px;}\n.ah27LoginLiveCard .housePreview svg{transform:rotateY(-13deg) rotateX(5deg);}\n.ah27LoginCaption{display:flex;justify-content:center;gap:12px;align-items:center;margin:-2px 0 10px;color:#91abd9;font-size:7px;letter-spacing:.22em;text-transform:uppercase;}\n.ah27LoginCaption strong{font-weight:550;color:#b8cdf2;}\n.profileGate .v3Welcome{padding:20px 0 25px;}\n.profileGate .v3Welcome h2{margin:13px 0 4px;}\n.profileGate .v3Welcome p{margin-top:2px;}\n@media(max-width:650px){.ah27LoginLiveCard{margin-top:5px}.ah27LoginLiveCard .housePreview{min-height:210px;padding-top:17px}.profileGate .v3Welcome{padding:17px 0 23px}.profileGate .v3Welcome h2{font-size:42px;margin-bottom:0}}\n@media(max-width:350px){.ah27LoginLiveCard .housePreview{min-height:190px}.profileGate .v3Welcome h2{font-size:36px}}\n'''
+          css_path.write_text(css)
+
+          html=html_path.read_text()
+          old_sig='function paint(e,t,n,o,v=!1){'
+          new_sig='function paint(e,t,n,o,v=!1,f=!1){'
+          if html.count(old_sig)!=1:
+              raise SystemExit('Expected one paint() signature')
+          html=html.replace(old_sig,new_sig,1)
+          old_power='if(!power)return{c:"#2a313b",a:.35,s:1};'
+          new_power='if(!power&&!f)return{c:"#2a313b",a:.35,s:1};'
+          if html.count(old_power)!=1:
+              raise SystemExit('Expected one paint power guard')
+          html=html.replace(old_power,new_power,1)
+
+          animate_re=r'function animate\(e\)\{.*?\}function setRunning'
+          animate_new='''function animate(e){requestAnimationFrame(animate);if(document.hidden)return;tick=e/speedInterval(speed);const t=brightness/100,h=Math.max(.35,t);if("none"!==currentRole&&previewPages.lights.classList.contains("active")){const e=paint(preview,0,t,leds.length),n=JSON.stringify([e,power]);if(n!==previousStripPaint){previousStripPaint=n;const t=power?`0 0 ${Math.round(4+12*e.a)}px ${e.c}`:"none";leds.forEach(n=>{n.style.background=e.c,n.style.opacity=Math.max(.08,e.a),n.style.boxShadow=t,n.style.transform=`scale(${e.s})`})}}if("none"!==currentRole&&previewPages.home.classList.contains("active")){const e=paint(running,0,h,houseLeds.length,!0),n=JSON.stringify([e,power]);if(n!==previousHousePaint){previousHousePaint=n;const t=power?`drop-shadow(0 0 ${Math.round(2+7*e.a)}px ${e.c})`:"none";houseScene.style.setProperty("--v3-live-color",e.c),houseScene.style.setProperty("--v3-live-glow",power?.48*Math.max(.02,e.a):0),houseLeds.forEach(n=>{n.setAttribute("fill",e.c),n.setAttribute("opacity",Math.max(.12,e.a)),n.style.filter=t})}}const login=window.andersonLoginHousePreview;if(login&&login.scene&&login.leds&&login.leds.length){const theme=window.andersonLoginPreviewTheme||(window.andersonLoginPreviewTheme={name:"Make an entrance",colors:["#0096FF","#5B00E6","#00BD4C","#FF0024"],effect:"Breath"}),e=paint(theme,0,h,login.leds.length,!0,!0),n=`drop-shadow(0 0 ${Math.round(2+7*e.a)}px ${e.c})`;login.scene.style.setProperty("--v3-live-color",e.c),login.scene.style.setProperty("--v3-live-glow",.48*Math.max(.02,e.a)),login.leds.forEach(t=>{t.setAttribute("fill",e.c),t.setAttribute("opacity",Math.max(.12,e.a)),t.style.filter=n})}}function setRunning'''
+          html,count=re.subn(animate_re,animate_new,html,count=1,flags=re.S)
+          if count!=1:
+              raise SystemExit('Expected exactly one animate() block')
+          html_path.write_text(html)
+
+          old_version=version_path.read_text().strip()
+          if old_version!='3.1.42':
+              raise SystemExit(f'Expected v3.1.42 baseline, found {old_version}')
+          new_version='3.1.43'
+          version_path.write_text(new_version+'\n')
+          main=main_path.read_text()
+          old_marker='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.42";'
+          new_marker='static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.43";'
+          if main.count(old_marker)!=1:
+              raise SystemExit('Expected one firmware version marker')
+          main_path.write_text(main.replace(old_marker,new_marker,1))
+
+          # Focused safety checks for this UI-only revision.
+          check_js=js_path.read_text()
+          check_html=html_path.read_text()
+          assert 'Extraordinary<br>starts <em>at home.</em>' not in check_js
+          assert 'Make an<br><em>entrance.</em>' in check_js
+          assert 'ah27LoginHousePreview' in check_js
+          assert 'Math.max(.35,t)' in check_html
+          assert 'paint(theme,0,h,login.leds.length,!0,!0)' in check_html
+          assert 'ANDERSON_FIRMWARE_VERSION="3.1.43"' in main_path.read_text()
+          print('Login house preview patch checks passed')
+          PY
+      - name: Commit patched 3.1.43 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add firmware/web/v3_mockup.js firmware/web/v3_mockup.css firmware/web/index.html FIRMWARE_VERSION.txt firmware/src/main.cpp
+          git commit -m 'Add animated login house preview and 35 percent visual floor'
+          git push origin HEAD:codex/release-current
