@@ -41,7 +41,9 @@ Scheduler scheduler(&store.get());
 bool manualOverride=false,power=true;
 uint8_t brightness=100,speedLevel=1;
 Theme runningTheme;
-uint32_t buttonDown=0,lastScheduleCheck=0;
+uint32_t buttonDown=0;
+static time_t lastScheduleMinute=-1;
+static uint32_t lastScheduleMinuteProbe=0;
 static uint64_t cpuWindowStartUs=0,cpuBusyUs=0;
 static uint8_t cpuLoadPct=0;
 bool setupAP=false,wifiWasConnected=false;
@@ -65,7 +67,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.44";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.45";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -630,7 +632,7 @@ void setup(){
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
   store.begin();eventStateBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();settingsBackupInitialize();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventColorPresetOverrides();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;
-  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);
+  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
@@ -640,10 +642,10 @@ void loop(){
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
-  if(millis()-lastScheduleCheck>15000){lastScheduleCheck=millis();evaluateSchedule();}
+  uint32_t scheduleProbeNow=millis();if((uint32_t)(scheduleProbeNow-lastScheduleMinuteProbe)>=250UL){lastScheduleMinuteProbe=scheduleProbeNow;if(!manualOverride&&timeValid()){time_t scheduleMinute=time(nullptr)/60;if(scheduleMinute!=lastScheduleMinute){lastScheduleMinute=scheduleMinute;evaluateSchedule();}}else lastScheduleMinute=-1;}
   if(power)applyRunning(false);
   bool pressed=digitalRead(USER_BUTTON)==LOW;if(pressed && !buttonDown)buttonDown=millis();if(!pressed)buttonDown=0;
   if(buttonDown && millis()-buttonDown>5000){buttonDown=0;if(!firmwareOperationBusy()&&store.clearWiFi()){digitalWrite(BLUE_LED,HIGH);delay(500);ESP.restart();}}
   const uint64_t loopEndUs=(uint64_t)esp_timer_get_time();if(cpuWindowStartUs==0)cpuWindowStartUs=loopStartUs;cpuBusyUs+=loopEndUs-loopStartUs;const uint64_t cpuWindowUs=loopEndUs-cpuWindowStartUs;if(cpuWindowUs>=2000000ULL){uint64_t pct=(cpuBusyUs*100ULL+cpuWindowUs/2)/cpuWindowUs;if(pct>100)pct=100;cpuLoadPct=(uint8_t)pct;cpuBusyUs=0;cpuWindowStartUs=loopEndUs;}
-  delay(2);
+  delay(4);
 }

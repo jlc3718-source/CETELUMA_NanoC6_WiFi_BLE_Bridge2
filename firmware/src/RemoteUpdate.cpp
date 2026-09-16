@@ -22,7 +22,7 @@ static constexpr const char* OTA_RELEASE_PREFIX="https://github.com/jlc3718-sour
 static constexpr size_t OTA_SLOT_BYTES=0x1E0000;
 static constexpr const char* OTA_NVS="anderson-ota";
 static constexpr uint32_t OTA_AUTO_FIRST_CHECK_MS=20UL*1000UL;
-static constexpr uint32_t OTA_AUTO_INTERVAL_MS=5UL*60UL*1000UL;
+static constexpr uint32_t OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL;
 static constexpr uint32_t OTA_AUTO_RETRY_BASE_MS=30UL*1000UL;
 static constexpr uint32_t OTA_AUTO_RETRY_MAX_MS=5UL*60UL*1000UL;
 static constexpr uint32_t OTA_MANIFEST_IDLE_MS=8000UL,OTA_MANIFEST_DEADLINE_MS=20000UL;
