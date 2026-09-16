@@ -67,7 +67,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.45";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.46";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -607,6 +607,9 @@ void setupRoutes(){
   });
   server.on("/api/ble/remove",HTTP_POST,[]{
     if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}ble.removeController(slot);if(!store.saveBle()){server.send(500,"text/plain","Controller removal could not be persisted");return;}ble.setTarget(0);sendJson(stateJson());
+  });
+  server.on("/api/ble/rename",HTTP_POST,[]{
+    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;String name=d["name"].as<String>();name.trim();if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}if(!name.length()||name.length()>32){server.send(400,"text/plain","Controller name must be 1-32 characters");return;}if(!ble.renameController((uint8_t)slot,name)){server.send(404,"text/plain","Controller is not configured");return;}if(!store.saveBle()){server.send(500,"text/plain","Controller name could not be persisted");return;}sendJson(stateJson());
   });
   server.on("/api/ble/target",HTTP_POST,[]{
     if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;if(role<ROLE_ADMIN&&t!=0){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can select individual controllers\"}");return;}ble.setTarget(t);applyRunning(true);sendJson(stateJson());

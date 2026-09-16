@@ -29,6 +29,7 @@ class BleController {
   bool consumeScanResults(std::vector<BleFound>& out);
   bool selectAndConnect(const String& address);
   bool removeController(uint8_t slot);
+  bool renameController(uint8_t slot,const String& name);
   void setTarget(uint8_t target); // 0=all, 1=slot A, 2=slot B
   uint8_t getTarget() const { return target; }
   BleSlotInfo slotInfo(uint8_t slot) const;

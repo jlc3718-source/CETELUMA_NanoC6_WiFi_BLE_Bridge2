@@ -92,6 +92,7 @@ void BleController::disconnectSlot(uint8_t i){if(i>1)return;clearPending(i);
 #endif
 }
 bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);++slots[i].generation;slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}
+bool BleController::renameController(uint8_t i,const String& requestedName){if(i>1||!slots[i].address.length())return false;String clean=requestedName;clean.trim();if(!clean.length())return false;if(clean.length()>32)clean=clean.substring(0,32);slots[i].name=clean;saveSlots();return true;}
 
 bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i))return false;
 #ifdef MOCK_BLE
