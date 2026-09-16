@@ -1,0 +1,93 @@
+name: Apply Login Live Preview 3.1.44
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-login-live-preview-3.1.44.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch anonymous live login preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          web = Path('firmware/web/index.html')
+          main = Path('firmware/src/main.cpp')
+          ver = Path('FIRMWARE_VERSION.txt')
+          js = web.read_text()
+          cpp = main.read_text()
+
+          old_login = 'const login=window.andersonLoginHousePreview;if(login&&login.scene&&login.leds&&login.leds.length){const theme=window.andersonLoginPreviewTheme||(window.andersonLoginPreviewTheme={name:"Make an entrance",colors:["#0096FF","#5B00E6","#00BD4C","#FF0024"],effect:"Breath"}),e=paint(theme,0,h,login.leds.length,!0,!0),'
+          new_login = 'const login=window.andersonLoginHousePreview;if(login&&login.scene&&login.leds&&login.leds.length){const e=paint(running,0,h,login.leds.length,!0,!0),'
+          if js.count(old_login) != 1:
+              raise SystemExit(f'Expected one hard-coded login theme, found {js.count(old_login)}')
+          js = js.replace(old_login, new_login, 1)
+
+          poll_anchor = 'requestAnimationFrame(animate);let builderColors=["#0D00FF"];'
+          poll_code = '''async function loadLoginPreviewState(){if(!API_MODE||"none"!==currentRole||document.hidden)return;try{const{response:e,text:t}=await controllerRequest("/api/login-preview?ts="+Date.now(),{cache:"no-store"},4e3);if(!e.ok)return;const n=t?JSON.parse(t):{};power="boolean"==typeof n.power?n.power:power,brightness=Number.isFinite(+n.brightness)?Math.max(1,Math.min(100,+n.brightness)):brightness,speed=Number.isFinite(+n.speed)?Math.max(1,Math.min(5,+n.speed)):speed,n.running&&(running={name:running.name||"Current lights",colors:Array.isArray(n.running.colors)&&n.running.colors.length?[...n.running.colors]:[...running.colors],effect:n.running.effect||running.effect||"Jump"})}catch(e){}}setInterval(()=>{"none"===currentRole&&loadLoginPreviewState()},1500),window.addEventListener("anderson-profile-cleared",()=>loadLoginPreviewState()),setTimeout(loadLoginPreviewState,0);requestAnimationFrame(animate);let builderColors=["#0D00FF"];'''
+          if js.count(poll_anchor) != 1:
+              raise SystemExit(f'Expected one animation anchor, found {js.count(poll_anchor)}')
+          js = js.replace(poll_anchor, poll_code, 1)
+
+          helper_anchor = 'String stateJson(){'
+          helper = '''String loginPreviewJson(){\n  JsonDocument d;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();r["effect"]=effectName(runningTheme.effect);JsonArray a=r["colors"].to<JsonArray>();for(int i=0;i<runningTheme.colorCount;i++)a.add(colorHex(runningTheme.colors[i]));String out;serializeJson(d,out);return out;\n}\nString stateJson(){'''
+          if cpp.count(helper_anchor) != 1:
+              raise SystemExit(f'Expected one stateJson anchor, found {cpp.count(helper_anchor)}')
+          cpp = cpp.replace(helper_anchor, helper, 1)
+
+          route_anchor = 'server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});'
+          route = 'server.on("/api/login-preview",HTTP_GET,[]{sendJson(loginPreviewJson());});\n  ' + route_anchor
+          if cpp.count(route_anchor) != 1:
+              raise SystemExit(f'Expected one state route, found {cpp.count(route_anchor)}')
+          cpp = cpp.replace(route_anchor, route, 1)
+
+          old_runtime = 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.43";'
+          new_runtime = 'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.44";'
+          if cpp.count(old_runtime) != 1:
+              raise SystemExit(f'Expected one 3.1.43 runtime marker, found {cpp.count(old_runtime)}')
+          cpp = cpp.replace(old_runtime, new_runtime, 1)
+
+          web.write_text(js)
+          main.write_text(cpp)
+          ver.write_text('3.1.44\n')
+          PY
+      - name: Verify exact release UI and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+          python tools/release.py check
+          grep -F 'server.on("/api/login-preview",HTTP_GET' firmware/src/main.cpp
+          grep -F 'e=paint(running,0,h,login.leds.length,!0,!0)' firmware/web/index.html
+          grep -F 'Math.max(.35,t)' firmware/web/index.html
+          ! grep -F 'andersonLoginPreviewTheme' firmware/web/index.html
+      - name: Commit verified 3.1.44 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/codex-login-live-preview-3.1.44.yml
+          git add FIRMWARE_VERSION.txt firmware/src/main.cpp firmware/web/index.html
+          git commit -m 'Make login house mirror live running lights in 3.1.44'
+          git push origin HEAD:codex/release-current
