@@ -109,7 +109,7 @@ print('PASS: 00:00/06:00/12:00/18:00 local reboot state machine, no post-boot re
 # Validate asynchronous OTA cadence/backoff without compiling network/RTOS implementation.
 remote=(Path(__file__).resolve().parents[1]/'firmware/src/RemoteUpdate.cpp').read_text()
 assert 'OTA_AUTO_FIRST_CHECK_MS=20UL*1000UL' in remote
-assert 'OTA_AUTO_INTERVAL_MS=5UL*60UL*1000UL' in remote
+assert 'OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL' in remote
 assert 'OTA_AUTO_RETRY_BASE_MS=30UL*1000UL' in remote
 assert 'OTA_AUTO_RETRY_MAX_MS=5UL*60UL*1000UL' in remote
 assert 'completed=millis()' in remote and 'scheduleAutoRetry(completed)' in remote
@@ -123,7 +123,7 @@ assert delays==[30000,60000,120000,240000,300000]
 failures=0;assert min(30000*(2**min(failures,4)),300000)==30000
 # Completion-time scheduling: a 40s operation plus 30s backoff waits until t=70s, not t=30s.
 started=100000;completed=started+40000;assert completed+30000==170000
-print('PASS: 20-second startup, five-minute healthy cadence, 30/60/120/240/300 completion-time backoff, bounded manifest and absolute download deadline')
+print('PASS: 20-second startup, hourly healthy cadence, 30/60/120/240/300 completion-time backoff, bounded manifest and absolute download deadline')
 
 # Focused failure regressions for the v3.0.14 connection recovery changes.
 subprocess.run(['python',str(Path(__file__).with_name('test_connection_recovery.py'))],check=True)
