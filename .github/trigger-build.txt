@@ -1,1 +1,1 @@
-live-edit-controller-alias-3.1.46-production
+single-remote-update-3.1.47-production
