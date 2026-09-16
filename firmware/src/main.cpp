@@ -65,7 +65,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.43";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.44";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -289,6 +289,9 @@ static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_
 static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i);Preferences p;if(!p.begin("anderson-event",false))return false;String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
 
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
+String loginPreviewJson(){
+  JsonDocument d;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();r["effect"]=effectName(runningTheme.effect);JsonArray a=r["colors"].to<JsonArray>();for(int i=0;i<runningTheme.colorCount;i++)a.add(colorHex(runningTheme.colors[i]));String out;serializeJson(d,out);return out;
+}
 String stateJson(){
   JsonDocument d;d["firmwareVersion"]=ANDERSON_FIRMWARE_VERSION;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();addTheme(r,runningTheme);
   auto&s=store.get();JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);cfg["lead"]=s.leadDays;cfg["trail"]=s.trailDays;cfg["overlap"]=s.overlap;cfg["tz"]=s.tz;cfg["scheduler"]=s.schedulerEnabled;cfg["scheduler2"]=s.schedule2Enabled;cfg["schedule1StartAtDusk"]=s.schedule1StartAtDusk;cfg["schedule2End"]=fmtTime(s.schedule2EndMinutes);cfg["schedule2EndAtDawn"]=s.schedule2EndAtDawn;cfg["schedule2Brightness"]=s.schedule2Brightness;
@@ -442,6 +445,7 @@ void setupRoutes(){
     if(!updateSingleProfilePin(profile,pin)){server.send(500,"application/json","{\"ok\":false,\"error\":\"PIN could not be saved and verified\"}");return;}
     JsonDocument out;out["ok"]=true;out["pinEnabled"]=pinProtectionEnabled;out["configured"]=allPinAuthConfigured();out["kellyConfigured"]=kellyPinConfigured();if(profile=="jason")out["token"]=issueAuthSession(ROLE_ADMIN,"jason");String json;serializeJson(out,json);sendJson(json);
   });
+  server.on("/api/login-preview",HTTP_GET,[]{sendJson(loginPreviewJson());});
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
   server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
 
