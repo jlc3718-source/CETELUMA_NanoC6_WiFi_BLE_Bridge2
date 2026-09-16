@@ -1,0 +1,45 @@
+name: Update Maintenance Test 3.1.45
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-maintenance-test-3.1.45.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - name: Update OTA cadence regression expectation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/test_maintenance.py')
+          s=p.read_text()
+          old="assert 'OTA_AUTO_INTERVAL_MS=5UL*60UL*1000UL' in remote"
+          new="assert 'OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL' in remote"
+          if s.count(old)!=1:
+              raise SystemExit(f'Expected one old OTA cadence assertion, found {s.count(old)}')
+          s=s.replace(old,new,1)
+          s=s.replace("PASS: 20-second startup, five-minute healthy cadence, 30/60/120/240/300 completion-time backoff, bounded manifest and absolute download deadline","PASS: 20-second startup, hourly healthy cadence, 30/60/120/240/300 completion-time backoff, bounded manifest and absolute download deadline",1)
+          p.write_text(s)
+          PY
+      - name: Commit test update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/codex-maintenance-test-3.1.45.yml
+          git rm -f .github/trigger-maintenance-test-3.1.45.txt || true
+          git add tools/test_maintenance.py
+          git commit -m 'Update maintenance gate for hourly OTA cadence'
+          git push origin HEAD:codex/release-current
