@@ -5,8 +5,8 @@
 extern Theme applyEventOverrideByIndex(size_t i,const Theme& base);
 extern bool eventAllowedInActiveSchedule(size_t i);
 
-static constexpr double ANDERSON_LATITUDE_DEG=42.16;
-static constexpr double ANDERSON_LONGITUDE_DEG=-78.97;
+static constexpr double ANDERSON_LATITUDE_DEG=42.0529; // ZIP 14738 (Frewsburg, NY) center
+static constexpr double ANDERSON_LONGITUDE_DEG=-79.0576;
 static constexpr double CIVIL_DAWN_ZENITH_DEG=96.0;
 static constexpr double RAD_PER_DEG=3.14159265358979323846/180.0;
 static constexpr size_t MAX_ACTIVE_TIER_EVENTS=64;
@@ -21,9 +21,27 @@ static int localUtcOffsetMinutes(const tm& l){
 }
 static bool localLeapYear(int y){return (y%4==0&&y%100!=0)||y%400==0;}
 static int localDaysInMonth(int y,int m){static const uint8_t days[]={31,28,31,30,31,30,31,31,30,31,30,31};return m==2?days[1]+(localLeapYear(y)?1:0):days[m-1];}
+static uint16_t civilSolarEventMinutes(const tm& l,bool dawn){
+  const int year=l.tm_year+1900,yday=l.tm_yday,offset=localUtcOffsetMinutes(l);
+  struct SolarCache{int year=-1,yday=-1,offset=99999;uint16_t minutes=0;};
+  static SolarCache cache[2];
+  SolarCache& c=cache[dawn?0:1];
+  if(c.year==year&&c.yday==yday&&c.offset==offset)return c.minutes;
+  const int n=l.tm_yday+1;const double lngHour=ANDERSON_LONGITUDE_DEG/15.0,approxHour=dawn?6.0:18.0,t=n+((approxHour-lngHour)/24.0),M=0.9856*t-3.289;
+  double L=normalizeDegrees(M+1.916*sin(M*RAD_PER_DEG)+0.020*sin(2.0*M*RAD_PER_DEG)+282.634),RA=normalizeDegrees(atan(0.91764*tan(L*RAD_PER_DEG))/RAD_PER_DEG);
+  const double lq=floor(L/90.0)*90.0,rq=floor(RA/90.0)*90.0;RA=(RA+(lq-rq))/15.0;
+  const double sd=0.39782*sin(L*RAD_PER_DEG),cd=cos(asin(sd)),ch=(cos(CIVIL_DAWN_ZENITH_DEG*RAD_PER_DEG)-sd*sin(ANDERSON_LATITUDE_DEG*RAD_PER_DEG))/(cd*cos(ANDERSON_LATITUDE_DEG*RAD_PER_DEG));
+  uint16_t minutes=dawn?360:18*60;
+  if(ch<=1.0&&ch>=-1.0){
+    const double hDeg=dawn?360.0-(acos(ch)/RAD_PER_DEG):(acos(ch)/RAD_PER_DEG),H=hDeg/15.0,lh=normalizeHours(H+RA-(0.06571*t)-6.622-lngHour+(offset/60.0));
+    int m=(int)lround(lh*60.0);if(m>=1440)m-=1440;if(m<0)m+=1440;minutes=(uint16_t)m;
+  }
+  c.year=year;c.yday=yday;c.offset=offset;c.minutes=minutes;return minutes;
+}
+static uint16_t schedule1StartMinutes(const tm& l,const AppSettings* cfg){return cfg->schedule1StartAtDusk?civilSolarEventMinutes(l,false):cfg->onMinutes;}
 
 static void schedulePosition(const tm& l,const AppSettings* cfg,int& elapsed,int& span){
-  int nowSec=l.tm_hour*3600+l.tm_min*60+l.tm_sec,onSec=(int)cfg->onMinutes*60,offSec=(int)cfg->offMinutes*60;
+  int nowSec=l.tm_hour*3600+l.tm_min*60+l.tm_sec,onSec=(int)schedule1StartMinutes(l,cfg)*60,offSec=(int)cfg->offMinutes*60;
   span=offSec-onSec;if(span<=0)span+=24*3600;elapsed=nowSec-onSec;if(elapsed<0)elapsed+=24*3600;if(elapsed>=span)elapsed=span-1;if(elapsed<0)elapsed=0;
 }
 static uint16_t tierPickAt(const uint16_t* items,size_t count,int elapsed,int span){
@@ -31,7 +49,7 @@ static uint16_t tierPickAt(const uint16_t* items,size_t count,int elapsed,int sp
   size_t slot=(size_t)(((int64_t)elapsed*(int64_t)count)/(int64_t)span);if(slot>=count)slot=count-1;return items[slot];
 }
 // Split one Schedule-1 night evenly among same-priority events. Schedule 2 clamps
-// to the final Schedule-1 slot, preserving the last scene overnight at 30%.
+// to the final Schedule-1 slot, preserving the last scene at the configured overnight brightness.
 static uint16_t timedTierPick(const uint16_t* items,size_t count,const tm& l,const AppSettings* cfg){int elapsed=0,span=1;schedulePosition(l,cfg,elapsed,span);return tierPickAt(items,count,elapsed,span);}
 
 static uint32_t enabledEventHash(){
@@ -74,15 +92,13 @@ static Theme combinedMonthlyTheme(const uint16_t* monthly,size_t monthlyCount){
 }
 
 bool Scheduler::inRunWindow(const tm& l) const{
-  int m=l.tm_hour*60+l.tm_min,a=cfg->onMinutes,b=cfg->offMinutes;
+  int m=l.tm_hour*60+l.tm_min,a=schedule1StartMinutes(l,cfg),b=cfg->offMinutes;
   if(a==b)return true;if(a<b)return m>=a&&m<b;return m>=a||m<b;
 }
-uint16_t Scheduler::civilDawnMinutes(const tm& l) const{
-  const int year=l.tm_year+1900,yday=l.tm_yday,offset=localUtcOffsetMinutes(l);struct DawnCache{int year=-1,yday=-1,offset=99999;uint16_t minutes=360;};static DawnCache c;if(c.year==year&&c.yday==yday&&c.offset==offset)return c.minutes;
-  const int n=l.tm_yday+1;const double lngHour=ANDERSON_LONGITUDE_DEG/15.0,t=n+((6.0-lngHour)/24.0),M=0.9856*t-3.289;double L=normalizeDegrees(M+1.916*sin(M*RAD_PER_DEG)+0.020*sin(2.0*M*RAD_PER_DEG)+282.634),RA=normalizeDegrees(atan(0.91764*tan(L*RAD_PER_DEG))/RAD_PER_DEG);const double lq=floor(L/90.0)*90.0,rq=floor(RA/90.0)*90.0;RA=(RA+(lq-rq))/15.0;const double sd=0.39782*sin(L*RAD_PER_DEG),cd=cos(asin(sd)),ch=(cos(CIVIL_DAWN_ZENITH_DEG*RAD_PER_DEG)-sd*sin(ANDERSON_LATITUDE_DEG*RAD_PER_DEG))/(cd*cos(ANDERSON_LATITUDE_DEG*RAD_PER_DEG));uint16_t minutes=360;if(ch<=1.0&&ch>=-1.0){const double H=(360.0-(acos(ch)/RAD_PER_DEG))/15.0,lh=normalizeHours(H+RA-(0.06571*t)-6.622-lngHour+(offset/60.0));int m=(int)lround(lh*60.0);if(m>=1440)m-=1440;if(m<0)m+=1440;minutes=(uint16_t)m;}c.year=year;c.yday=yday;c.offset=offset;c.minutes=minutes;return minutes;
-}
+uint16_t Scheduler::civilDawnMinutes(const tm& l) const{return civilSolarEventMinutes(l,true);}
+uint16_t Scheduler::civilDuskMinutes(const tm& l) const{return civilSolarEventMinutes(l,false);}
 bool Scheduler::inSchedule2Window(const tm& l) const{
-  int m=l.tm_hour*60+l.tm_min,a=cfg->offMinutes,b=civilDawnMinutes(l);
+  int m=l.tm_hour*60+l.tm_min,a=cfg->offMinutes,b=cfg->schedule2EndAtDawn?civilDawnMinutes(l):cfg->schedule2EndMinutes;
   if(a==b)return false;if(a<b)return m>=a&&m<b;return m>=a||m<b;
 }
 Theme Scheduler::resolve(const tm& l){

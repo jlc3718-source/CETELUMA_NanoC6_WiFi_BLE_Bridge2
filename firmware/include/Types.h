@@ -40,6 +40,10 @@ struct AppSettings {
   uint8_t overlap = 0;
   bool schedulerEnabled = true;
   bool schedule2Enabled = true;
+  bool schedule1StartAtDusk = false;
+  uint16_t schedule2EndMinutes = 6 * 60;
+  bool schedule2EndAtDawn = true;
+  uint8_t schedule2Brightness = 10;
   uint64_t enabledMask = UINT64_MAX;
   uint64_t favoriteMask = 0;
   String bleAddress;

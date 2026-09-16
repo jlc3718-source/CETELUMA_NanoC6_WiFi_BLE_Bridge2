@@ -9,6 +9,7 @@ class Scheduler {
   bool inRunWindow(const tm& local) const;
   bool inSchedule2Window(const tm& local) const;
   uint16_t civilDawnMinutes(const tm& local) const;
+  uint16_t civilDuskMinutes(const tm& local) const;
   String nextEventLabel(const tm& local) const;
  private:
   AppSettings* cfg;
