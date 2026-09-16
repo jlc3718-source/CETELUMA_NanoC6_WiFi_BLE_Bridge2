@@ -1,0 +1,174 @@
+name: Apply Timer Efficiency 3.1.45
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-timer-efficiency-3.1.45.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply timer and overhead optimizations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def once(text, old, new, label):
+              count=text.count(old)
+              if count!=1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old,new,1)
+
+          root=Path('.')
+          main_p=root/'firmware/src/main.cpp'
+          remote_p=root/'firmware/src/RemoteUpdate.cpp'
+          web_p=root/'firmware/web/index.html'
+          v3_p=root/'firmware/web/v3_mockup.js'
+          ver_p=root/'FIRMWARE_VERSION.txt'
+
+          if ver_p.read_text().strip()!='3.1.44':
+              raise SystemExit('Expected v3.1.44 as the source revision')
+
+          main=main_p.read_text()
+          remote=remote_p.read_text()
+          web=web_p.read_text()
+          v3=v3_p.read_text()
+
+          # 1) Signed OTA: retain the quick first boot check, then check hourly.
+          remote=once(remote,
+              'static constexpr uint32_t OTA_AUTO_INTERVAL_MS=5UL*60UL*1000UL;',
+              'static constexpr uint32_t OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL;',
+              'OTA interval')
+
+          # 2) Scheduler: probe the clock lightly and evaluate once at each epoch-minute edge.
+          main=once(main,
+              'uint32_t buttonDown=0,lastScheduleCheck=0;',
+              'uint32_t buttonDown=0;\nstatic time_t lastScheduleMinute=-1;\nstatic uint32_t lastScheduleMinuteProbe=0;',
+              'scheduler globals')
+          main=once(main,
+              'setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);',
+              'setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);',
+              'scheduler setup seed')
+          main=once(main,
+              'if(millis()-lastScheduleCheck>15000){lastScheduleCheck=millis();evaluateSchedule();}',
+              'uint32_t scheduleProbeNow=millis();if((uint32_t)(scheduleProbeNow-lastScheduleMinuteProbe)>=250UL){lastScheduleMinuteProbe=scheduleProbeNow;if(!manualOverride&&timeValid()){time_t scheduleMinute=time(nullptr)/60;if(scheduleMinute!=lastScheduleMinute){lastScheduleMinute=scheduleMinute;evaluateSchedule();}}else lastScheduleMinute=-1;}',
+              'scheduler loop timer')
+          main=once(main,'  delay(2);','  delay(4);','main loop delay')
+          main=once(main,
+              'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.44";',
+              'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.45";',
+              'runtime version')
+
+          # 3) Browser live-house animation: no continuous 60-FPS loop. Run at the
+          #    cadence actually required by the visible effect and do no login SVG
+          #    work after a profile has been selected.
+          anim_re=re.compile(r'let previousStripPaint="",previousHousePaint="";function animate\(e\)\{requestAnimationFrame\(animate\);.*?\}function setRunning',re.S)
+          match=anim_re.search(web)
+          if not match:
+              raise SystemExit('Could not locate the legacy live-preview animation loop')
+          new_anim=r'''let previousStripPaint="",previousHousePaint="",previousLoginPaint="",animationTimer=null;
+          function animationDelayFor(e){const t=speedInterval(speed);return"Breath"===e?50:"Strobe"===e?Math.max(45,Math.floor(t/2)):"Jump"===e?Math.max(80,t):1000}
+          function nextAnimationDelay(){if(document.hidden)return 1000;let e=1000,t=!1;if("none"===currentRole)t=!0,e=Math.min(e,animationDelayFor(running.effect));else{if(previewPages.home.classList.contains("active")){t=!0;e=Math.min(e,animationDelayFor(running.effect))}if(previewPages.lights.classList.contains("active")){t=!0;e=Math.min(e,animationDelayFor(preview.effect))}}return t?e:1000}
+          function scheduleAnimation(e=nextAnimationDelay()){null===animationTimer&&(animationTimer=setTimeout(()=>{animationTimer=null;animate(performance.now())},Math.max(16,e)))}
+          function kickAnimation(){null!==animationTimer&&(clearTimeout(animationTimer),animationTimer=null);animate(performance.now())}
+          function animate(e){if(document.hidden){scheduleAnimation(1000);return}tick=e/speedInterval(speed);const t=brightness/100,h=Math.max(.35,t);if("none"!==currentRole&&previewPages.lights.classList.contains("active")){const e=paint(preview,0,t,leds.length),n=JSON.stringify([e,power]);if(n!==previousStripPaint){previousStripPaint=n;const t=power?`0 0 ${Math.round(4+12*e.a)}px ${e.c}`:"none";leds.forEach(n=>{n.style.background=e.c,n.style.opacity=Math.max(.08,e.a),n.style.boxShadow=t,n.style.transform=`scale(${e.s})`})}}if("none"!==currentRole&&previewPages.home.classList.contains("active")){const e=paint(running,0,h,houseLeds.length,!0),n=JSON.stringify([e,power]);if(n!==previousHousePaint){previousHousePaint=n;const t=power?`drop-shadow(0 0 ${Math.round(2+7*e.a)}px ${e.c})`:"none";houseScene.style.setProperty("--v3-live-color",e.c),houseScene.style.setProperty("--v3-live-glow",power?.48*Math.max(.02,e.a):0),houseLeds.forEach(n=>{n.setAttribute("fill",e.c),n.setAttribute("opacity",Math.max(.12,e.a)),n.style.filter=t})}}if("none"===currentRole){const login=window.andersonLoginHousePreview;if(login&&login.scene&&login.leds&&login.leds.length){const e=paint(running,0,h,login.leds.length,!0),n=JSON.stringify([e,power]);if(n!==previousLoginPaint){previousLoginPaint=n;const t=power?`drop-shadow(0 0 ${Math.round(2+7*e.a)}px ${e.c})`:"none";login.scene.style.setProperty("--v3-live-color",e.c),login.scene.style.setProperty("--v3-live-glow",power?.48*Math.max(.02,e.a):0),login.leds.forEach(n=>{n.setAttribute("fill",e.c),n.setAttribute("opacity",Math.max(.12,e.a)),n.style.filter=t})}}}scheduleAnimation()}
+          function setRunning'''
+          web=web[:match.start()]+new_anim+web[match.end():]
+
+          # Immediate redraw when state actually changes; otherwise the timer stays idle/slower.
+          web=once(web,
+              'function setRunning(e,t,n){running={name:e,colors:[...t],effect:n},preview={name:e,colors:[...t],effect:n},$("nowTheme").textContent=e,$("previewName").textContent=e,$("previewEffect").textContent=n,$("effectSelect").value=n,$("effectSelect")._syncEffectButtons?.(),$("homeEffect").value=n,$("homeEffect")._syncEffectButtons?.(),setBuilderColors(t,!1)}function setPreview(e,t,n){preview={name:e,colors:[...t],effect:n},$("previewName").textContent=e,$("previewEffect").textContent=n,$("effectSelect").value=n,$("effectSelect")._syncEffectButtons?.(),setBuilderColors(t,!1)}',
+              'function setRunning(e,t,n){running={name:e,colors:[...t],effect:n},preview={name:e,colors:[...t],effect:n},$("nowTheme").textContent=e,$("previewName").textContent=e,$("previewEffect").textContent=n,$("effectSelect").value=n,$("effectSelect")._syncEffectButtons?.(),$("homeEffect").value=n,$("homeEffect")._syncEffectButtons?.(),setBuilderColors(t,!1),kickAnimation()}function setPreview(e,t,n){preview={name:e,colors:[...t],effect:n},$("previewName").textContent=e,$("previewEffect").textContent=n,$("effectSelect").value=n,$("effectSelect")._syncEffectButtons?.(),setBuilderColors(t,!1),kickAnimation()}',
+              'preview state redraw hooks')
+
+          # 4) Login live state: 3 seconds, self-scheduling only while logged out and visible.
+          old_login_poll='''async function loadLoginPreviewState(){if(!API_MODE||"none"!==currentRole||document.hidden)return;try{const{response:e,text:t}=await controllerRequest("/api/login-preview?ts="+Date.now(),{cache:"no-store"},4e3);if(!e.ok)return;const n=t?JSON.parse(t):{};power="boolean"==typeof n.power?n.power:power,brightness=Number.isFinite(+n.brightness)?Math.max(1,Math.min(100,+n.brightness)):brightness,speed=Number.isFinite(+n.speed)?Math.max(1,Math.min(5,+n.speed)):speed,n.running&&(running={name:running.name||"Current lights",colors:Array.isArray(n.running.colors)&&n.running.colors.length?[...n.running.colors]:[...running.colors],effect:n.running.effect||running.effect||"Jump"})}catch(e){}}setInterval(()=>{"none"===currentRole&&loadLoginPreviewState()},1500),window.addEventListener("anderson-profile-cleared",()=>loadLoginPreviewState()),setTimeout(loadLoginPreviewState,0);requestAnimationFrame(animate);let builderColors=["#0D00FF"];'''
+          new_login_poll='''async function loadLoginPreviewState(){if(!API_MODE||"none"!==currentRole||document.hidden)return;try{const{response:e,text:t}=await controllerRequest("/api/login-preview?ts="+Date.now(),{cache:"no-store"},4e3);if(!e.ok)return;const n=t?JSON.parse(t):{};power="boolean"==typeof n.power?n.power:power,brightness=Number.isFinite(+n.brightness)?Math.max(1,Math.min(100,+n.brightness)):brightness,speed=Number.isFinite(+n.speed)?Math.max(1,Math.min(5,+n.speed)):speed,n.running&&(running={name:running.name||"Current lights",colors:Array.isArray(n.running.colors)&&n.running.colors.length?[...n.running.colors]:[...running.colors],effect:n.running.effect||running.effect||"Jump"}),kickAnimation()}catch(e){}}let loginPreviewTimer=null;function stopLoginPreviewPoll(){null!==loginPreviewTimer&&(clearTimeout(loginPreviewTimer),loginPreviewTimer=null)}function scheduleLoginPreviewPoll(){stopLoginPreviewPoll();if(!API_MODE||"none"!==currentRole||document.hidden)return;loginPreviewTimer=setTimeout(async()=>{loginPreviewTimer=null;await loadLoginPreviewState();scheduleLoginPreviewPoll()},3000)}window.addEventListener("anderson-profile-selected",()=>{stopLoginPreviewPoll(),kickAnimation()}),window.addEventListener("anderson-profile-cleared",()=>{loadLoginPreviewState(),scheduleLoginPreviewPoll(),kickAnimation()}),document.addEventListener("visibilitychange",()=>{document.hidden?stopLoginPreviewPoll():(loadLoginPreviewState(),scheduleLoginPreviewPoll(),kickAnimation())}),setTimeout(()=>{loadLoginPreviewState(),scheduleLoginPreviewPoll(),kickAnimation()},0);let builderColors=["#0D00FF"];'''
+          web=once(web,old_login_poll,new_login_poll,'login preview polling')
+
+          # Keep slider/speed changes visually immediate even with the throttled renderer.
+          web=once(web,
+              'function syncSpeedControls(e){speed=+e,["speed","homeSpeed","eventsSpeed"].forEach(e=>{$(e)&&($(e).value=speed);const t=$("speed"===e?"speedVal":e+"Val");t&&(t.textContent=speedNames[speed-1]||"Normal")})}',
+              'function syncSpeedControls(e){speed=+e,["speed","homeSpeed","eventsSpeed"].forEach(e=>{$(e)&&($(e).value=speed);const t=$("speed"===e?"speedVal":e+"Val");t&&(t.textContent=speedNames[speed-1]||"Normal")}),kickAnimation()}',
+              'speed redraw hook')
+          web=once(web,
+              '$("brightness").addEventListener("input",e=>{brightness=+e.target.value,$("brightVal").textContent=e.target.value+"%",$("homeBrightness").value=e.target.value,$("homeBrightVal").textContent=e.target.value+"%"})',
+              '$("brightness").addEventListener("input",e=>{brightness=+e.target.value,$("brightVal").textContent=e.target.value+"%",$("homeBrightness").value=e.target.value,$("homeBrightVal").textContent=e.target.value+"%",kickAnimation()})',
+              'brightness redraw hook')
+          web=once(web,
+              '$("homeBrightness").addEventListener("input",e=>{brightness=+e.target.value,$("homeBrightVal").textContent=e.target.value+"%",$("brightness").value=e.target.value,$("brightVal").textContent=e.target.value+"%"})',
+              '$("homeBrightness").addEventListener("input",e=>{brightness=+e.target.value,$("homeBrightVal").textContent=e.target.value+"%",$("brightness").value=e.target.value,$("brightVal").textContent=e.target.value+"%",kickAnimation()})',
+              'home brightness redraw hook')
+
+          # 5) Routine UI polling intervals.
+          web=once(web,'setInterval(refreshVisibleState,15e3)','setInterval(refreshVisibleState,30e3)','general state refresh')
+          web=once(web,'setInterval(()=>{systemMonitorVisible()&&!wifiScanBusy&&loadSystemMonitor()},2e3)','setInterval(()=>{systemMonitorVisible()&&!wifiScanBusy&&loadSystemMonitor()},5e3)','system monitor refresh')
+
+          # 6) Effect-button previews: use a 20 FPS timer only when an effect picker is actually visible.
+          picker_re=re.compile(r'canAnimate=\(\)=>!document\.hidden&&!!window\.andersonProfile,animate=e=>\{raf=0;.*?\},startAnimation=\(\)=>\{.*?\},stopAnimation=\(\)=>\{.*?\},sync=',re.S)
+          pm=picker_re.search(v3)
+          if not pm:
+              raise SystemExit('Could not locate v3 effect-preview RAF loop')
+          picker='''canAnimate=()=>!document.hidden&&!!window.andersonProfile&&[...previews].some(e=>e.isConnected&&e.offsetParent!==null),animate=()=>{raf=0;if(!canAnimate())return;const e=reduce.matches?0:performance.now();previews.forEach(t=>{t.isConnected?t.offsetParent!==null&&paintPreview(t,e):previews.delete(t)}),reduce.matches||(raf=setTimeout(animate,50))},startAnimation=()=>{canAnimate()&&(reduce.matches?animate():raf||(raf=setTimeout(animate,0)))},stopAnimation=()=>{raf&&(clearTimeout(raf),raf=0)},sync='''
+          v3=v3[:pm.start()]+picker+v3[pm.end():]
+
+          # Revision bump.
+          ver_p.write_text('3.1.45\n')
+          main_p.write_text(main)
+          remote_p.write_text(remote)
+          web_p.write_text(web)
+          v3_p.write_text(v3)
+
+          # Static sanity checks before the full renderer/minifier validation.
+          assert 'OTA_AUTO_INTERVAL_MS=60UL*60UL*1000UL' in remote
+          assert 'lastScheduleCheck' not in main
+          assert 'delay(4);' in main
+          assert 'setInterval(refreshVisibleState,30e3)' in web
+          assert 'loadSystemMonitor()},5e3)' in web
+          assert '},3000)' in web
+          assert 'requestAnimationFrame(animate)' not in web
+          assert '"none"===currentRole){const login=window.andersonLoginHousePreview' in web
+          assert 'paint(running,0,h,login.leds.length,!0)' in web
+          assert 'requestAnimationFrame(animate)' not in v3
+          PY
+      - name: Validate optimized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r tools/requirements-build.txt
+          npm ci --prefix tools --no-audit --no-fund
+          python tools/release.py check
+          python tools/test_maintenance.py
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+          python tools/test_connection_recovery.py
+          python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+      - name: Commit verified 3.1.45 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/codex-timer-efficiency-3.1.45.yml
+          git rm -f .github/trigger-timer-efficiency-3.1.45.txt || true
+          git add FIRMWARE_VERSION.txt firmware/src/main.cpp firmware/src/RemoteUpdate.cpp firmware/web/index.html firmware/web/v3_mockup.js
+          git commit -m 'Reduce timer and polling overhead in Anderson Home 3.1.45'
+          git push origin HEAD:codex/release-current
