@@ -1,0 +1,105 @@
+name: Patch Anderson Live Edit and Controller Alias
+
+on:
+  push:
+    branches: ['codex/release-current']
+    paths: ['.github/trigger-live-edit-controller-alias.txt']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/release-current
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply focused UI and BLE alias changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p=Path(path)
+              text=p.read_text()
+              count=text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:100]!r}')
+              p.write_text(text.replace(old,new,1))
+
+          # Settings sub-tab 4: visible label only.
+          replace_once(
+              'firmware/web/v3_mockup.js',
+              '["preview","Live Preview"]',
+              '["preview","Live Edit"]'
+          )
+
+          # Add persistent display-only controller alias support to the BLE manager.
+          replace_once(
+              'firmware/include/BleController.h',
+              '  bool removeController(uint8_t slot);\n',
+              '  bool removeController(uint8_t slot);\n  bool renameController(uint8_t slot,const String& name);\n'
+          )
+
+          replace_once(
+              'firmware/src/BleController.cpp',
+              'bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);++slots[i].generation;slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}\n',
+              'bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);++slots[i].generation;slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}\n'
+              'bool BleController::renameController(uint8_t i,const String& requestedName){if(i>1||!slots[i].address.length())return false;String clean=requestedName;clean.trim();if(!clean.length())return false;if(clean.length()>32)clean=clean.substring(0,32);slots[i].name=clean;saveSlots();return true;}\n'
+          )
+
+          # Admin-only API: changes saved display name only. BLE identity/address remains untouched.
+          replace_once(
+              'firmware/src/main.cpp',
+              '  server.on("/api/ble/target",HTTP_POST,[]{\n',
+              '  server.on("/api/ble/rename",HTTP_POST,[]{\n'
+              '    if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;String name=d["name"].as<String>();name.trim();if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}if(!name.length()||name.length()>32){server.send(400,"text/plain","Controller name must be 1-32 characters");return;}if(!ble.renameController((uint8_t)slot,name)){server.send(404,"text/plain","Controller is not configured");return;}if(!store.saveBle()){server.send(500,"text/plain","Controller name could not be persisted");return;}sendJson(stateJson());\n'
+              '  });\n'
+              '  server.on("/api/ble/target",HTTP_POST,[]{\n'
+          )
+
+          # Add Rename beside Remove in the Controllers UI. Address remains visible underneath.
+          replace_once(
+              'firmware/web/index.html',
+              'const i=document.createElement("button");i.className="btn",i.textContent="Remove",i.onclick=()=>post("/api/ble/remove",{slot:e.slot}).then(loadState),t.append(o,i),n.appendChild(t)',
+              'const i=document.createElement("div");i.className="row wraprow";const l=document.createElement("button");l.className="btn",l.textContent="Rename",l.onclick=async()=>{const t=prompt("Visible name for controller "+(0===e.slot?"A":"B")+":",e.name||"");if(null===t)return;const n=t.trim();if(!n)return status("Controller name cannot be blank.");if(n.length>32)return status("Controller name must be 32 characters or fewer.");try{await post("/api/ble/rename",{slot:e.slot,name:n}),status("Controller "+(0===e.slot?"A":"B")+" renamed to "+n+"."),await loadState()}catch(e){status("Controller rename failed: "+e.message)}};const c=document.createElement("button");c.className="btn",c.textContent="Remove",c.onclick=()=>post("/api/ble/remove",{slot:e.slot}).then(loadState),i.append(l,c),t.append(o,i),n.appendChild(t)'
+          )
+
+          # Version the firmware change.
+          replace_once('FIRMWARE_VERSION.txt','3.1.45\n','3.1.46\n')
+          replace_once(
+              'firmware/src/main.cpp',
+              'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.45";',
+              'static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.46";'
+          )
+          Path('firmware/RELEASE_NOTES_v3.1.46.md').write_text(
+              '# Anderson Home v3.1.46\n\n'
+              '- Renames Settings section 04 from **Live Preview** to **Live Edit**.\n'
+              '- Adds a **Rename** control for saved BLE light controllers.\n'
+              '- Controller aliases persist in NanoC6 settings while BLE reconnect identity remains the saved hardware address.\n'
+              '- BLE address remains visible beneath the friendly controller name.\n'
+          )
+          PY
+      - name: Run focused regression checks
+        run: |
+          python tools/test_regressions.py
+          python tools/test_connection_recovery.py
+          grep -q 'Live Edit' firmware/web/v3_mockup.js
+          grep -q '/api/ble/rename' firmware/src/main.cpp
+          grep -q 'renameController' firmware/src/BleController.cpp
+          grep -q 'Rename' firmware/web/index.html
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "3.1.46"
+      - name: Commit patch and remove one-shot scaffolding
+        run: |
+          rm -f .github/workflows/patch-live-edit-controller-alias.yml .github/trigger-live-edit-controller-alias.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Anderson Home 3.1.46 live edit and BLE controller aliases"
+          git push origin HEAD:codex/release-current
