@@ -92,14 +92,12 @@ function watchCustomLists(){
 }
 
 async function refreshBuiltInStates(){
-  if(scanBusy){scanQueued=true;return;}if(!expandedSelected()||typeof API_MODE!=="undefined"&&!API_MODE)return;
-  scanBusy=true;scanQueued=false;const year=Number(document.getElementById("yearSelect")?.value)||new Date().getFullYear();const next=new Map();
+  if(scanBusy){scanQueued=true;return;}if(typeof API_MODE!=="undefined"&&!API_MODE)return;
+  scanBusy=true;scanQueued=false;
   try{
-    for(let month=1;month<=12;month++){
-      const response=await api(`/api/events?year=${year}&month=${month}&categoryState=${Date.now()}`);
-      (response.events||[]).forEach(event=>next.set(event.id,!!event.enabled));
-    }
-    if(next.size){eventEnabled.clear();next.forEach((v,k)=>eventEnabled.set(k,v));}
+    const response=await api(`/api/events/state?categoryState=${Date.now()}`),next=new Map();
+    (response.events||[]).forEach(event=>next.set(event.id,!!event.enabled));
+    if(next.size===210){eventEnabled.clear();next.forEach((v,k)=>eventEnabled.set(k,v));}
   }catch(err){console.warn("Unable to refresh Anderson category states",err);}
   finally{scanBusy=false;syncAll();if(scanQueued)setTimeout(refreshBuiltInStates,80);}
 }
@@ -113,15 +111,16 @@ async function refreshCategoryStates(){await refreshBuiltInStates();await refres
 
 async function setBuiltInCategory(cat,wanted){
   if(!expandedSelected()){syncAll();status("Category controls apply to Expanded Basic and Expanded Advanced schedules.");return;}
-  const targets=cat.ids.filter(id=>!eventEnabled.has(id)||eventEnabled.get(id)!==wanted);let done=0,failed=0;
-  for(const id of targets){
-    try{await post("/api/event",{id,enabled:wanted});eventEnabled.set(id,wanted);done++;if(done===targets.length||done%8===0)status(`${wanted?"Enabling":"Disabling"} ${cat.name}… ${done}/${targets.length}`);}
-    catch(err){failed++;console.warn(`Category update failed for ${id}`,err);break;}
-  }
-  if(failed)await refreshBuiltInStates();
-  const generation=typeof invalidateEventRequest==="function"?invalidateEventRequest():undefined;
-  const jobs=[];if(typeof loadEvents==="function")jobs.push(loadEvents(generation));if(typeof loadFavorites==="function")jobs.push(loadFavorites());await Promise.allSettled(jobs);
-  status(failed?`${cat.name} category was only partially changed. Reconnect and try again.`:`${cat.name} category ${wanted?"enabled":"disabled"}.`);
+  const targets=cat.ids.filter(id=>!eventEnabled.has(id)||eventEnabled.get(id)!==wanted);
+  if(!targets.length){status(`${cat.name} is already ${wanted?"enabled":"disabled"}.`);return;}
+  status(`${wanted?"Enabling":"Disabling"} ${cat.name}…`);
+  try{
+    const result=await post("/api/events/bulk",{ids:targets,enabled:wanted});
+    targets.forEach(id=>eventEnabled.set(id,wanted));
+    const generation=typeof invalidateEventRequest==="function"?invalidateEventRequest():undefined;
+    const jobs=[];if(typeof loadEvents==="function")jobs.push(loadEvents(generation));if(typeof loadFavorites==="function")jobs.push(loadFavorites());await Promise.allSettled(jobs);
+    status(`${cat.name} category ${wanted?"enabled":"disabled"} • ${result.updated||targets.length} event${(result.updated||targets.length)===1?"":"s"}.`);
+  }catch(err){await refreshBuiltInStates();status(`${cat.name} category change failed: ${err.message}`);}
 }
 async function setCustomCategory(cat,wanted){
   if(!customEnabled.size)await refreshCustomStates();const targets=[...customEnabled].filter(([,enabled])=>enabled!==wanted).map(([id])=>id);let done=0,failed=0;
@@ -139,13 +138,12 @@ async function setCategoryEnabled(cat,wanted){
   finally{categoryBusy=false;syncAll();}
 }
 
-function scheduleThemeRefresh(){clearTimeout(themeRefreshTimer);themeRefreshTimer=setTimeout(()=>{syncAll();if(expandedSelected())refreshBuiltInStates();},220);}
+function scheduleThemeRefresh(){clearTimeout(themeRefreshTimer);themeRefreshTimer=setTimeout(()=>{syncAll();refreshBuiltInStates();},220);}
 function watchTheme(){
   ["eventColors1","eventColors3028","eventColors3029"].forEach(id=>{const node=document.getElementById(id);if(node)new MutationObserver(scheduleThemeRefresh).observe(node,{attributes:true,attributeFilter:["aria-pressed"]});});
 }
-function watchYear(){document.getElementById("yearSelect")?.addEventListener("change",()=>setTimeout(refreshBuiltInStates,80));}
 
-buildBar();watchCustomLists();watchTheme();watchYear();syncAll();
+buildBar();watchCustomLists();watchTheme();syncAll();
 window.addEventListener("anderson-profile-selected",()=>setTimeout(refreshCategoryStates,120));
 window.addEventListener("anderson-profile-cleared",()=>{eventEnabled.clear();customEnabled.clear();syncAll();});
 setTimeout(refreshCategoryStates,350);
