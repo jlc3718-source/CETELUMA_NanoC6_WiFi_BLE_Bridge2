@@ -5,21 +5,21 @@ static constexpr char EVENT_CATEGORY_NS[] = "anderson-cat";
 static constexpr uint32_t ALL_CATEGORIES_MASK = (1UL << EVENT_CATEGORY_COUNT) - 1UL;
 
 static constexpr EventCategoryDef CATEGORY_DEFS[EVENT_CATEGORY_COUNT] = {
-  {"holiday", "Holiday", "#FFD166"},
-  {"patriotic", "Patriotic / Federal", "#FF6B6B"},
-  {"religious", "Religious", "#C084FC"},
-  {"military", "Military / Veterans", "#60A5FA"},
-  {"firstresponders", "First Responders / Public Safety", "#FB923C"},
-  {"family", "Family / Personal", "#F472B6"},
-  {"cultural", "Cultural / Heritage", "#34D399"},
-  {"civic", "Community / Civic", "#22D3EE"},
-  {"sports", "Sports / Game Days", "#A3E635"},
-  {"health", "Health / Medical Awareness", "#FB7185"},
-  {"memorial", "Memorial / Remembrance", "#CBD5E1"},
-  {"lgbtq", "LGBTQ+ / Pride", "#E879F9"},
-  {"environment", "Environmental", "#2DD4BF"},
-  {"seasonal", "Seasonal", "#F59E0B"},
-  {"social", "Awareness — General / Social", "#A78BFA"},
+  {"holiday", "Holiday", "#FFEA00"},
+  {"patriotic", "Patriotic / Federal", "#FF0040"},
+  {"religious", "Religious", "#BF00FF"},
+  {"military", "Military / Veterans", "#5983FF"},
+  {"firstresponders", "First Responders / Public Safety", "#FF6A00"},
+  {"family", "Family / Personal", "#E65076"},
+  {"cultural", "Cultural / Heritage", "#00FF95"},
+  {"civic", "Community / Civic", "#00D4FF"},
+  {"sports", "Sports / Game Days", "#95FF00"},
+  {"health", "Health / Medical Awareness", "#00C7A6"},
+  {"memorial", "Memorial / Remembrance", "#FFFFFF"},
+  {"lgbtq", "LGBTQ+ / Pride", "#E650B4"},
+  {"environment", "Environmental", "#9CC746"},
+  {"seasonal", "Seasonal", "#FFAA00"},
+  {"social", "Awareness — General / Social", "#C78646"},
 };
 
 // Primary display/scheduling category for evt001..evt210. Values index CATEGORY_DEFS.
