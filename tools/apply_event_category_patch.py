@@ -12,12 +12,6 @@ def once(text,old,new,label):
     if count!=1: raise SystemExit(f'{label}: expected one anchor, found {count}')
     return text.replace(old,new,1)
 
-
-def exact_count(text,old,new,count,label):
-    found=text.count(old)
-    if found!=count: raise SystemExit(f'{label}: expected {count} anchors, found {found}')
-    return text.replace(old,new)
-
 if VER.read_text().strip()!='3.1.48': raise SystemExit('Expected 3.1.48 source baseline')
 main=MAIN.read_text()
 main=once(main,'#include "EventColorThemes.h"\n#include "EventState.h"','#include "EventColorThemes.h"\n#include "EventCategories.h"\n#include "EventState.h"','category include')
@@ -27,8 +21,10 @@ main=once(main,'bool eventAllowedInActiveSchedule(size_t i){return i<EVENT_COUNT
   if(i>=EVENT_COUNT||!eventColorThemeIncludesEvent(activeEventColorTheme,i))return false;
   return activeEventColorTheme==EventColorTheme::MajorUS||eventCategoryAllowsEvent(i);
 }''','active category filter')
-main=exact_count(main,'e["kind"]=kindName(EVENTS[i].kind);e["when"]=',
-'e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["when"]=',2,'event category response fields')
+main=once(main,'e["kind"]=kindName(EVENTS[i].kind);e["when"]=',
+'e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["when"]=', 'month-view category fields')
+main=once(main,'e["when"]=when;e["kind"]=kindName(EVENTS[i].kind);e["effect"]=',
+'e["when"]=when;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["effect"]=', 'search-view category fields')
 main=once(main,'String hay=String(EVENTS[i].name)+" "+when+" "+kindName(EVENTS[i].kind);',
 'String hay=String(EVENTS[i].name)+" "+when+" "+kindName(EVENTS[i].kind)+" "+eventCategoryDef(eventCategoryIndex(i)).name;','category search text')
 route_anchor='''  server.on("/api/favorites",HTTP_GET,[]{'''
