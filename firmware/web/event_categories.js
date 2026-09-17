@@ -2,9 +2,9 @@
 if(typeof renderEvents!=="function"||!document.getElementById("eventSearch"))return;
 
 const fallback=[
-["holiday","Holiday","#FFD166"],["patriotic","Patriotic / Federal","#FF6B6B"],["religious","Religious","#C084FC"],["military","Military / Veterans","#60A5FA"],["firstresponders","First Responders / Public Safety","#FB923C"],["family","Family / Personal","#F472B6"],["cultural","Cultural / Heritage","#34D399"],["civic","Community / Civic","#22D3EE"],["sports","Sports / Game Days","#A3E635"],["health","Health / Medical Awareness","#FB7185"],["memorial","Memorial / Remembrance","#CBD5E1"],["lgbtq","LGBTQ+ / Pride","#E879F9"],["environment","Environmental","#2DD4BF"],["seasonal","Seasonal","#F59E0B"],["social","Awareness — General / Social","#A78BFA"]
+["holiday","Holiday","#FFEA00"],["patriotic","Patriotic / Federal","#FF0040"],["religious","Religious","#BF00FF"],["military","Military / Veterans","#5983FF"],["firstresponders","First Responders / Public Safety","#FF6A00"],["family","Family / Personal","#E65076"],["cultural","Cultural / Heritage","#00FF95"],["civic","Community / Civic","#00D4FF"],["sports","Sports / Game Days","#95FF00"],["health","Health / Medical Awareness","#00C7A6"],["memorial","Memorial / Remembrance","#FFFFFF"],["lgbtq","LGBTQ+ / Pride","#E650B4"],["environment","Environmental","#9CC746"],["seasonal","Seasonal","#FFAA00"],["social","Awareness — General / Social","#C78646"]
 ].map((x,index)=>({index,id:x[0],name:x[1],color:x[2],enabled:true}));
-const custom={id:"custom",name:"Custom Events",color:"#38BDF8",enabled:true,custom:true};
+const custom={id:"custom",name:"Custom Events",color:"#2885C7",enabled:true,custom:true};
 let categories=fallback.map(x=>({...x}));
 const toggleById=new Map(),customEnabled=new Map();
 let categoryBusy=false,customBusy=false,themeTimer=0;
@@ -18,9 +18,10 @@ function syncAll(){allCategories().forEach(syncOne);document.getElementById("eve
 
 function buildBar(){
  const search=document.getElementById("eventSearch"),row=search?.closest(".row");if(!row)return;
+ let hint=document.getElementById("eventCategoryHint");if(hint)hint.remove();hint=document.createElement("div");hint.id="eventCategoryHint";hint.className="andersonCategoryHint";hint.textContent="Unchecked to disable category";
  let bar=document.getElementById("eventCategoryBar");if(bar)bar.remove();toggleById.clear();bar=document.createElement("div");bar.id="eventCategoryBar";bar.className="andersonCategoryBar";bar.setAttribute("aria-label","Event categories");
  allCategories().forEach(cat=>{const label=document.createElement("label");label.className="andersonCategoryToggle";label.style.setProperty("--category-color",cat.color);label.title=cat.custom?"Enable or disable all saved custom events":`Enable or disable the ${cat.name} category in Expanded schedules`;const input=document.createElement("input");input.type="checkbox";input.checked=!!cat.enabled;input.setAttribute("aria-label",`Enable ${cat.name} category`);const pill=document.createElement("span");pill.className="andersonCategoryPill";pill.textContent=shortName(cat);label.append(input,pill);bar.appendChild(label);toggleById.set(cat.id,label);input.addEventListener("change",()=>setCategory(cat,input.checked));});
- row.parentNode.insertBefore(bar,row);syncAll();
+ row.parentNode.insertBefore(hint,row);row.parentNode.insertBefore(bar,row);syncAll();
 }
 
 function decorateEvent(card,event){
