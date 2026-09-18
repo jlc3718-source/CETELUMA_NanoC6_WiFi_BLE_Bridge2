@@ -33,7 +33,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x gradlew
+          chmod +x gradlew scripts/setup-ndk-deps.sh
+          ./scripts/setup-ndk-deps.sh
           ./gradlew :app:assembleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
             -PoalVersionCode=3 \
