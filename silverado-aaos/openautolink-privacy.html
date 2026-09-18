@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenAutoLink Privacy Policy</title>
+  <meta name="description" content="Privacy Policy for OpenAutoLink.">
+  <style>
+    :root { color-scheme: dark; }
+    body { margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#07111f; color:#eaf3ff; line-height:1.65; }
+    main { max-width:900px; margin:0 auto; padding:48px 22px 72px; }
+    h1 { margin-bottom:4px; font-size:2.2rem; }
+    h2 { margin-top:34px; font-size:1.25rem; color:#58b7ff; }
+    p, li { color:#cbd9e8; }
+    a { color:#58b7ff; }
+    .meta { color:#91a4b8; margin-top:0; }
+    .card { background:#0c1b2e; border:1px solid #173654; border-radius:14px; padding:20px; margin-top:24px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>OpenAutoLink Privacy Policy</h1>
+  <p class="meta">Last updated: September 17, 2026</p>
+
+  <div class="card">
+    <p><strong>OpenAutoLink</strong> consists of an Android Automotive OS car app and an Android phone companion. It carries an Android Auto projection session across the local connection between the phone and vehicle. The app does not include advertising or analytics SDKs and does not sell user data.</p>
+  </div>
+
+  <h2>Local projection data</h2>
+  <p>While a projection session is active, OpenAutoLink may process Android Auto video, audio and control messages; microphone audio used for voice commands; touch and steering-wheel input; navigation and media metadata; Bluetooth and Wi-Fi connection information; vehicle properties made available by Android Automotive OS; and head-unit location and motion sensor data used by Android Auto.</p>
+  <p>This information is used to operate the projection session and related vehicle integrations. Live projection media and ordinary vehicle telemetry are not sent to the app developer.</p>
+
+  <h2>Permissions and their purpose</h2>
+  <ul>
+    <li><strong>Microphone:</strong> used to provide the vehicle microphone to Android Auto voice features.</li>
+    <li><strong>Location and Wi-Fi:</strong> used for network discovery, Wi-Fi scanning, connection management, SSID visibility and available vehicle/head-unit location data.</li>
+    <li><strong>Bluetooth:</strong> used for companion auto-start, phone/vehicle identity and wireless projection setup.</li>
+    <li><strong>Vehicle data:</strong> used for available Android Auto sensors, energy estimates, cluster integration, diagnostics and settings. Access is limited by the vehicle platform.</li>
+    <li><strong>Foreground service, notifications, wake lock and boot:</strong> used to keep active projection/connection services running and support configured auto-start behavior.</li>
+  </ul>
+
+  <h2>Data stored locally</h2>
+  <p>The apps may store configuration required for operation, including transport and display preferences, known-phone identity and labels, selected Bluetooth devices, Wi-Fi or wireless-projection connection details, EV-model settings, logging preferences and locally generated diagnostic logs.</p>
+  <p>Sensitive connection credentials are stored in app-private storage and should not be included in public bug reports.</p>
+
+  <h2>Optional external network features</h2>
+  <p>OpenAutoLink may support optional EV-profile refresh and optional diagnostic-log upload. EV-profile refresh downloads an updated profile from a configured HTTPS source only when invoked. Diagnostic upload is off by default and requires a configured HTTPS endpoint and invitation token.</p>
+  <p>Diagnostic logs can contain connection state, device/platform information, relevant app settings, protocol events and vehicle values used by the session. Users should review logs before sharing when practical.</p>
+
+  <h2>Third-party services</h2>
+  <p>OpenAutoLink does not include third-party advertising, analytics or crash-reporting SDKs. Users may independently interact with Google Play, Android Auto, phone applications they select, GitHub, configured EV-profile sources or configured diagnostic endpoints. Those services operate under their own privacy policies.</p>
+
+  <h2>Data security</h2>
+  <p>Live projection communication is intended for the local phone/vehicle network. Optional external profile refresh and diagnostic upload use HTTPS. No system can guarantee absolute security, so users should protect their phone, vehicle account, Play account, signing keys and connection credentials.</p>
+
+  <h2>Children's privacy</h2>
+  <p>OpenAutoLink is not directed at children and does not knowingly collect children's personal information.</p>
+
+  <h2>Changes</h2>
+  <p>Material changes to this policy will be published on this page with an updated date.</p>
+
+  <h2>Contact</h2>
+  <p>For privacy questions, contact the app publisher through the Google Play listing or the associated GitHub repository.</p>
+
+  <p class="meta">This policy is based on the upstream OpenAutoLink privacy disclosures for version 0.1.497.</p>
+</main>
+</body>
+</html>
