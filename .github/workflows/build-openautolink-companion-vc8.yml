@@ -49,21 +49,12 @@ jobs:
           ICON="$GITHUB_WORKSPACE/host/openautolink-assets/icon.png"
           RES="$GITHUB_WORKSPACE/openautolink/companion/src/main/res"
           test -s "$ICON"
-          convert "$ICON" -strip -resize 48x48 PNG32:"$RES/mipmap-mdpi/ic_launcher.png"
-          cp "$RES/mipmap-mdpi/ic_launcher.png" "$RES/mipmap-mdpi/ic_launcher_round.png"
-          convert "$ICON" -strip -resize 108x108 PNG32:"$RES/mipmap-mdpi/ic_launcher_foreground.png"
-          convert "$ICON" -strip -resize 72x72 PNG32:"$RES/mipmap-hdpi/ic_launcher.png"
-          cp "$RES/mipmap-hdpi/ic_launcher.png" "$RES/mipmap-hdpi/ic_launcher_round.png"
-          convert "$ICON" -strip -resize 162x162 PNG32:"$RES/mipmap-hdpi/ic_launcher_foreground.png"
-          convert "$ICON" -strip -resize 96x96 PNG32:"$RES/mipmap-xhdpi/ic_launcher.png"
-          cp "$RES/mipmap-xhdpi/ic_launcher.png" "$RES/mipmap-xhdpi/ic_launcher_round.png"
-          convert "$ICON" -strip -resize 216x216 PNG32:"$RES/mipmap-xhdpi/ic_launcher_foreground.png"
-          convert "$ICON" -strip -resize 144x144 PNG32:"$RES/mipmap-xxhdpi/ic_launcher.png"
-          cp "$RES/mipmap-xxhdpi/ic_launcher.png" "$RES/mipmap-xxhdpi/ic_launcher_round.png"
-          convert "$ICON" -strip -resize 324x324 PNG32:"$RES/mipmap-xxhdpi/ic_launcher_foreground.png"
-          convert "$ICON" -strip -resize 192x192 PNG32:"$RES/mipmap-xxxhdpi/ic_launcher.png"
-          cp "$RES/mipmap-xxxhdpi/ic_launcher.png" "$RES/mipmap-xxxhdpi/ic_launcher_round.png"
-          convert "$ICON" -strip -resize 432x432 PNG32:"$RES/mipmap-xxxhdpi/ic_launcher_foreground.png"
+          file "$ICON"
+          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+            cp "$ICON" "$RES/$dir/ic_launcher.png"
+            cp "$ICON" "$RES/$dir/ic_launcher_round.png"
+            cp "$ICON" "$RES/$dir/ic_launcher_foreground.png"
+          done
 
       - name: Create temporary build signing key
         shell: bash
