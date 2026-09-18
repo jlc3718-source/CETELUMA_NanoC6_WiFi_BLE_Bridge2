@@ -35,6 +35,8 @@ jobs:
           set -euo pipefail
           chmod +x gradlew scripts/setup-ndk-deps.sh
           ./scripts/setup-ndk-deps.sh
+          chmod +x scripts/build-openssl-android.sh
+          ./scripts/build-openssl-android.sh
           ./gradlew :app:assembleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
             -PoalVersionCode=3 \
