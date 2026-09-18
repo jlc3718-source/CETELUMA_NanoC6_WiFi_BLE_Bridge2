@@ -37,6 +37,8 @@ jobs:
           ./scripts/setup-ndk-deps.sh
           chmod +x scripts/build-openssl-android.sh
           ./scripts/build-openssl-android.sh
+          chmod +x scripts/build-aasdk-android.sh
+          ./scripts/build-aasdk-android.sh
           ./gradlew :app:assembleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
             -PoalVersionCode=3 \
