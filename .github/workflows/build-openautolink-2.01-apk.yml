@@ -1,0 +1,56 @@
+name: Build OpenAutoLink 2.01 APK
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-openautolink-2.01-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout OpenAutoLink
+        uses: actions/checkout@v4
+        with:
+          repository: mossyhub/openautolink
+          ref: v0.1.497
+          submodules: recursive
+          path: openautolink
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build release APK
+        working-directory: openautolink
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease \
+            -PappId=jlc3718.openautolink.silveradoev \
+            -PoalVersionCode=3 \
+            -PoalVersionName=2.01 \
+            -PoalBuilderUnsigned=true
+          mkdir -p ../release
+          find app/build/outputs/apk/release -name "*.apk" -type f -exec cp {} ../release/OpenAutoLink_SilveradoEV_2.01_VC3_UNSIGNED.apk \;
+          test -s ../release/OpenAutoLink_SilveradoEV_2.01_VC3_UNSIGNED.apk
+          sha256sum ../release/*.apk > ../release/SHA256SUMS.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAutoLink-SilveradoEV-2.01-APK
+          path: release/*
+          retention-days: 7
+          if-no-files-found: error
