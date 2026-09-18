@@ -1,0 +1,31 @@
+name: Prepare OpenAutoLink APK Tool
+
+on:
+  push:
+    branches:
+      - openautolink-apk-build-vc8
+    paths:
+      - ".github/workflows/openautolink-bundletool.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download verified bundletool
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3             https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar             -o bundletool-all-1.18.3.jar
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  bundletool-all-1.18.3.jar" | sha256sum -c
+
+      - name: Upload tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAutoLink-bundletool-1.18.3
+          path: bundletool-all-1.18.3.jar
+          retention-days: 1
+          if-no-files-found: error
