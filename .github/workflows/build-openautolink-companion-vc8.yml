@@ -34,15 +34,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android 36 tools
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Replace companion launcher icon
         shell: bash
@@ -62,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p openautolink/secrets
-          keytool -genkeypair -noprompt             -keystore openautolink/secrets/upload-key.jks             -storepass temporary123             -keypass temporary123             -alias upload             -keyalg RSA -keysize 2048 -validity 3650             -dname "CN=Temporary Build,O=OpenAutoLink,C=US"
+          keytool -genkeypair -noprompt -keystore openautolink/secrets/upload-key.jks -storepass temporary123 -keypass temporary123 -alias upload -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Temporary Build,O=OpenAutoLink,C=US"
 
       - name: Build companion release APK
         working-directory: openautolink
@@ -74,10 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew :companion:assembleRelease --no-daemon             -PoalVersionCode=8             -PoalVersionName=2.02
+          ./gradlew :companion:assembleRelease --no-daemon -PoalVersionCode=8 -PoalVersionName=2.02
           mkdir -p ../release
-          cp companion/build/outputs/apk/release/companion-release.apk             ../release/OpenAutoLink_Companion_v2.02_VC8_TEMP_SIGNED.apk
-          cp "$ANDROID_SDK_ROOT/build-tools/36.0.0/lib/apksigner.jar"             ../release/apksigner.jar
+          cp companion/build/outputs/apk/release/companion-release.apk ../release/OpenAutoLink_Companion_v2.02_VC8_TEMP_SIGNED.apk
+          cp "$ANDROID_SDK_ROOT/build-tools/36.0.0/lib/apksigner.jar" ../release/apksigner.jar
           sha256sum ../release/* > ../release/SHA256SUMS.txt
 
       - name: Upload companion build
