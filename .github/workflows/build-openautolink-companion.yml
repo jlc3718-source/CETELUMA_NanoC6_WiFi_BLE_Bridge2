@@ -1,0 +1,64 @@
+name: Build OpenAutoLink Companion
+
+on:
+  push:
+    branches:
+      - openautolink-companion-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      OAL_TAG: v0.1.497
+      COMPANION_VERSION_NAME: "2.01"
+      COMPANION_VERSION_CODE: "3"
+
+    steps:
+      - name: Checkout OpenAutoLink source
+        run: |
+          git clone --depth 1 --branch "$OAL_TAG" https://github.com/mossyhub/openautolink.git openautolink
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: openautolink-gradle-${{ runner.os }}-${{ env.OAL_TAG }}
+          restore-keys: |
+            openautolink-gradle-${{ runner.os }}-
+
+      - name: Build companion APK
+        working-directory: openautolink
+        run: |
+          chmod +x gradlew
+          ./gradlew :companion:assembleDebug --no-daemon \
+            -PoalVersionCode=${{ env.COMPANION_VERSION_CODE }} \
+            -PoalVersionName=${{ env.COMPANION_VERSION_NAME }}
+
+      - name: Rename APK
+        run: |
+          mv openautolink/companion/build/outputs/apk/debug/companion-debug.apk \
+             "openautolink-companion-v${{ env.COMPANION_VERSION_NAME }}.apk"
+
+      - name: Upload companion APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openautolink-companion-v${{ env.COMPANION_VERSION_NAME }}
+          path: openautolink-companion-v${{ env.COMPANION_VERSION_NAME }}.apk
+          retention-days: 30
