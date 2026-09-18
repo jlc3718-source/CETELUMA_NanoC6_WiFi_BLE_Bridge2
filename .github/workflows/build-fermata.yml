@@ -23,20 +23,25 @@ jobs:
           submodules: recursive
           path: FermataAuto
 
-      - name: Set up Java 11
+      - name: Set up Java 17 for Android SDK tools
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '11'
+          java-version: '17'
 
       - name: Install Android SDK 33 build tools
         shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-33" "build-tools;33.0.1"
+
+      - name: Switch to Java 11 for Fermata build
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '11'
 
       - name: Build arm64 Fermata Auto universal APK
         working-directory: FermataAuto
