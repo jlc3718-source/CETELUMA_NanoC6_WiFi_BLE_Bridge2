@@ -1,0 +1,89 @@
+name: Build OpenAutoLink Companion 2.02 VC8 New Icon
+
+on:
+  push:
+    branches:
+      - openautolink-apk-build-vc8
+    paths:
+      - ".github/workflows/build-openautolink-companion-vc8.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout host repo
+        uses: actions/checkout@v4
+        with:
+          path: host
+
+      - name: Checkout OpenAutoLink
+        uses: actions/checkout@v4
+        with:
+          repository: mossyhub/openautolink
+          ref: v0.1.497
+          submodules: recursive
+          path: openautolink
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 36 tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Replace companion launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          ICON="$GITHUB_WORKSPACE/host/openautolink-assets/icon.png"
+          RES="$GITHUB_WORKSPACE/openautolink/companion/src/main/res"
+          test -s "$ICON"
+          for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+            cp "$ICON" "$RES/$dir/ic_launcher.png"
+            cp "$ICON" "$RES/$dir/ic_launcher_round.png"
+            cp "$ICON" "$RES/$dir/ic_launcher_foreground.png"
+          done
+
+      - name: Create temporary build signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p openautolink/secrets
+          keytool -genkeypair -noprompt             -keystore openautolink/secrets/upload-key.jks             -storepass temporary123             -keypass temporary123             -alias upload             -keyalg RSA -keysize 2048 -validity 3650             -dname "CN=Temporary Build,O=OpenAutoLink,C=US"
+
+      - name: Build companion release APK
+        working-directory: openautolink
+        env:
+          UPLOAD_STORE_PASSWORD: temporary123
+          UPLOAD_KEY_PASSWORD: temporary123
+          UPLOAD_KEY_ALIAS: upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :companion:assembleRelease --no-daemon             -PoalVersionCode=8             -PoalVersionName=2.02
+          mkdir -p ../release
+          cp companion/build/outputs/apk/release/companion-release.apk             ../release/OpenAutoLink_Companion_v2.02_VC8_TEMP_SIGNED.apk
+          cp "$ANDROID_SDK_ROOT/build-tools/36.0.0/lib/apksigner.jar"             ../release/apksigner.jar
+          sha256sum ../release/* > ../release/SHA256SUMS.txt
+
+      - name: Upload companion build
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAutoLink-Companion-v2.02-VC8-New-Icon
+          path: release/*
+          retention-days: 1
+          if-no-files-found: error
