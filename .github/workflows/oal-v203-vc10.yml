@@ -261,6 +261,20 @@ jobs:
           print('Patch applied successfully')
           PY
 
+      - name: Preserve Silverado tray/service icon behavior
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          s = s.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/ic_logo"', 1)
+          s = s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/ic_logo"', 1)
+          s = s.replace('android:name=".MainActivity"\n            android:exported="true"', 'android:name=".MainActivity"\n            android:icon="@drawable/ic_logo"\n            android:exported="true"', 1)
+          s = s.replace('android:name=".cluster.OalClusterService"\n            android:enabled="true"', 'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/ic_logo"\n            android:enabled="true"', 1)
+          s = s.replace('android:name=".media.OalMediaBrowserService"\n            android:exported="true"', 'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/ic_logo"\n            android:exported="true"', 1)
+          p.write_text(s)
+          PY
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
