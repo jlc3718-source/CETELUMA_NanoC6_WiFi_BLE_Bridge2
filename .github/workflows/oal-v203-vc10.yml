@@ -845,14 +845,20 @@ jobs:
               raise SystemExit('VC15 adoptSessionOwnership anchor not found')
           s = s.replace(old, new, 1)
 
-          old = '''                          alwaysInPark = enabled
-                          parkOverrideKeepAliveJob?.cancel()'''
-          new = '''                          alwaysInPark = enabled
-                          aasdkSession?.setStationaryParkOverride(enabled)
-                          parkOverrideKeepAliveJob?.cancel()'''
-          if old not in s:
-              raise SystemExit('VC15 alwaysInPark collector anchor not found')
-          s = s.replace(old, new, 1)
+          obs_start = s.find('    private fun observeAlwaysInPark() {')
+          obs_end = s.find('\n    @Synchronized', obs_start)
+          if obs_start < 0 or obs_end < 0:
+              raise SystemExit('VC15 observeAlwaysInPark bounds not found')
+          segment = s[obs_start:obs_end]
+          needle = 'alwaysInPark = enabled'
+          rel = segment.find(needle)
+          if rel < 0:
+              raise SystemExit('VC15 alwaysInPark assignment not found')
+          pos = obs_start + rel
+          line_end = s.find('\n', pos)
+          indent_start = s.rfind('\n', 0, pos) + 1
+          indent = s[indent_start:pos]
+          s = s[:line_end + 1] + indent + 'aasdkSession?.setStationaryParkOverride(enabled)\n' + s[line_end + 1:]
 
           old = '''    private fun pushHardParkState(session: AasdkSession) {
                   lastSentGearRaw = 4'''
