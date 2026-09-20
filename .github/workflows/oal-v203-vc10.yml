@@ -1,0 +1,322 @@
+name: Build OpenAutoLink v2.03 VC10
+
+on:
+  push:
+    branches:
+      - oal-v203-vc10-build
+    paths:
+      - '.github/workflows/oal-v203-vc10.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout build host
+        uses: actions/checkout@v4
+
+      - name: Clone OpenAutoLink source
+        run: |
+          git clone --depth 1 --branch v0.1.497 --recurse-submodules https://github.com/mossyhub/openautolink.git oal
+
+      - name: Patch parked-state handling and gear mapping
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/com/openautolink/app/session/SessionManager.kt')
+          s = p.read_text()
+
+          anchor = '''    /**
+           * Observe the "always in park" override. Started from [start] so it is live
+          '''
+          helpers = '''    /** Map AAOS VehicleGear bit values to Android Auto's Gear enum. */
+              private fun vhalGearToAaGear(raw: Int): Int = when (raw) {
+                  0, 1 -> 0
+                  2 -> 102
+                  4 -> 101
+                  8 -> 100
+                  16 -> 1
+                  32 -> 2
+                  64 -> 3
+                  128 -> 4
+                  256 -> 5
+                  512 -> 6
+                  1024 -> 7
+                  2048 -> 8
+                  4096 -> 9
+                  8192 -> 10
+                  else -> 0
+              }
+
+              /**
+               * Test parked override. It is honored only while the real vehicle is stationary.
+               * Any real motion immediately restores live VHAL state.
+               */
+              private fun hardParkOverrideActive(vd: ControlMessage.VehicleData?): Boolean {
+                  if (!alwaysInPark) return false
+                  val speed = vd?.speedKmh
+                  if (speed != null) return kotlin.math.abs(speed) < 1.0f
+                  return vd?.gearRaw in listOf(0, 1, 4)
+              }
+
+              private fun pushHardParkState(session: AasdkSession) {
+                  lastSentGearRaw = 4
+                  lastSentParkingBrake = true
+                  lastSentDriving = false
+                  session.sendSpeed(0)
+                  session.sendGear(101)
+                  session.sendParkingBrake(true)
+                  session.sendDrivingStatus(false)
+              }
+
+          '''
+          if anchor not in s:
+              raise SystemExit('helper insertion anchor not found')
+          s = s.replace(anchor, helpers + anchor, 1)
+
+          old = '''                if (changed) {
+                              val real = _vehicleDataForwarder?.latestVehicleData?.value?.driving ?: false
+                              val driving = if (enabled) false else real
+                              lastSentDriving = driving
+                              aasdkSession?.sendDrivingStatus(driving)
+                              DiagnosticLog.i("vhal", "alwaysInPark=$enabled — re-pushed driving=$driving (real=$real)")
+                          }'''
+          new = '''                if (changed) {
+                              val vd = _vehicleDataForwarder?.latestVehicleData?.value
+                              val session = aasdkSession
+                              if (session != null && hardParkOverrideActive(vd)) {
+                                  pushHardParkState(session)
+                                  DiagnosticLog.i("vhal", "alwaysInPark=$enabled — pushed coherent PARK test state")
+                              } else if (session != null) {
+                                  vd?.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                                  vd?.gearRaw?.let { lastSentGearRaw = it; session.sendGear(vhalGearToAaGear(it)) }
+                                  vd?.parkingBrake?.let { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                                  val realDriving = vd?.driving ?: false
+                                  lastSentDriving = realDriving
+                                  session.sendDrivingStatus(realDriving)
+                                  DiagnosticLog.i("vhal", "alwaysInPark=$enabled — restored live vehicle state")
+                              }
+                          }'''
+          if old not in s:
+              raise SystemExit('observer block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    private fun forwardVehicleData(vd: ControlMessage.VehicleData) {
+                  val session = aasdkSession ?: return
+                  vd.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                  // Edge-trigger low-cadence properties so each transition fires once.
+                  vd.gearRaw?.let {
+                      if (lastSentGearRaw != it) { lastSentGearRaw = it; session.sendGear(it) }
+                  }
+                  vd.parkingBrake?.let {
+                      if (lastSentParkingBrake != it) { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                  }
+                  vd.nightMode?.let {
+                      if (lastSentNightMode != it) { lastSentNightMode = it; session.sendNightMode(it) }
+                  }
+                  vd.driving?.let {
+                      val driving = if (alwaysInPark) false else it
+                      if (lastSentDriving != driving) {
+                          lastSentDriving = driving
+                          session.sendDrivingStatus(driving)
+                      }
+                  }'''
+          new = '''    private fun forwardVehicleData(vd: ControlMessage.VehicleData) {
+                  val session = aasdkSession ?: return
+                  val hardPark = hardParkOverrideActive(vd)
+                  if (hardPark) {
+                      session.sendSpeed(0)
+                      if (lastSentGearRaw != 4) { lastSentGearRaw = 4; session.sendGear(101) }
+                      if (lastSentParkingBrake != true) { lastSentParkingBrake = true; session.sendParkingBrake(true) }
+                      if (lastSentDriving != false) { lastSentDriving = false; session.sendDrivingStatus(false) }
+                  } else {
+                      vd.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                      vd.gearRaw?.let {
+                          if (lastSentGearRaw != it) { lastSentGearRaw = it; session.sendGear(vhalGearToAaGear(it)) }
+                      }
+                      vd.parkingBrake?.let {
+                          if (lastSentParkingBrake != it) { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                      }
+                      vd.driving?.let {
+                          if (lastSentDriving != it) { lastSentDriving = it; session.sendDrivingStatus(it) }
+                      }
+                  }
+                  vd.nightMode?.let {
+                      if (lastSentNightMode != it) { lastSentNightMode = it; session.sendNightMode(it) }
+                  }'''
+          if old not in s:
+              raise SystemExit('forward block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        resetLatchedVehicleSensorState("sensor_subscribe_$sensorType")
+                  when (sensorType) {
+                      SENSOR_TYPE_DRIVING_STATUS -> {
+                          // Default to "parked" when VHAL has not reported a gear yet.
+                          // Being wrong here is strictly safer than silence: silence is
+                          // read by the phone as fully restricted, and a real gear change
+                          // corrects it within one VHAL event.
+                          val driving = if (alwaysInPark) false else (vd?.driving ?: false)
+                          lastSentDriving = driving
+                          session.sendDrivingStatus(driving)
+                          DiagnosticLog.i("vhal", "pushed driving=$driving on subscribe (gear=${vd?.gearRaw})")
+                      }
+                      SENSOR_TYPE_GEAR -> vd?.gearRaw?.let {
+                          lastSentGearRaw = it; session.sendGear(it)
+                      }
+                      SENSOR_TYPE_PARKING_BRAKE -> vd?.parkingBrake?.let {
+                          lastSentParkingBrake = it; session.sendParkingBrake(it)
+                      }
+                      SENSOR_TYPE_NIGHT_MODE -> {
+                          val night = vd?.nightMode ?: lastKnownUiNightMode ?: currentUiNightMode()
+                          night?.let { lastSentNightMode = it; session.sendNightMode(it) }
+                      }
+                      SENSOR_TYPE_SPEED -> vd?.speedKmh?.let {
+                          session.sendSpeed((it / 3.6f * 1000).toInt())
+                      }
+                  }'''
+          new = '''        resetLatchedVehicleSensorState("sensor_subscribe_$sensorType")
+                  val hardPark = hardParkOverrideActive(vd)
+                  when (sensorType) {
+                      SENSOR_TYPE_DRIVING_STATUS -> {
+                          val driving = if (hardPark) false else (vd?.driving ?: false)
+                          lastSentDriving = driving
+                          session.sendDrivingStatus(driving)
+                          DiagnosticLog.i("vhal", "pushed driving=$driving on subscribe (gear=${vd?.gearRaw}, hardPark=$hardPark)")
+                      }
+                      SENSOR_TYPE_GEAR -> {
+                          if (hardPark) {
+                              lastSentGearRaw = 4
+                              session.sendGear(101)
+                          } else {
+                              vd?.gearRaw?.let { lastSentGearRaw = it; session.sendGear(vhalGearToAaGear(it)) }
+                          }
+                      }
+                      SENSOR_TYPE_PARKING_BRAKE -> {
+                          if (hardPark) {
+                              lastSentParkingBrake = true
+                              session.sendParkingBrake(true)
+                          } else {
+                              vd?.parkingBrake?.let { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                          }
+                      }
+                      SENSOR_TYPE_NIGHT_MODE -> {
+                          val night = vd?.nightMode ?: lastKnownUiNightMode ?: currentUiNightMode()
+                          night?.let { lastSentNightMode = it; session.sendNightMode(it) }
+                      }
+                      SENSOR_TYPE_SPEED -> {
+                          if (hardPark) session.sendSpeed(0)
+                          else vd?.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                      }
+                  }'''
+          if old not in s:
+              raise SystemExit('subscribe block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            is ControlMessage.VehicleData -> {
+                      message.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                      // Same edge-trigger discipline as the inline sendMessage path
+                      // in start() — see lastSent* fields. Necessary because both
+                      // paths share these state vars; without it, manual injections
+                      // would force a resend even when value unchanged.
+                      message.gearRaw?.let {
+                          if (lastSentGearRaw != it) { lastSentGearRaw = it; session.sendGear(it) }
+                      }
+                      message.parkingBrake?.let {
+                          if (lastSentParkingBrake != it) { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                      }
+                      message.nightMode?.let {
+                          if (lastSentNightMode != it) { lastSentNightMode = it; session.sendNightMode(it) }
+                      }
+                      message.driving?.let {
+                          val drv = if (alwaysInPark) false else it
+                          if (lastSentDriving != drv) { lastSentDriving = drv; session.sendDrivingStatus(drv) }
+                      }
+                  }'''
+          new = '''            is ControlMessage.VehicleData -> {
+                      val hardPark = hardParkOverrideActive(message)
+                      if (hardPark) {
+                          session.sendSpeed(0)
+                          if (lastSentGearRaw != 4) { lastSentGearRaw = 4; session.sendGear(101) }
+                          if (lastSentParkingBrake != true) { lastSentParkingBrake = true; session.sendParkingBrake(true) }
+                          if (lastSentDriving != false) { lastSentDriving = false; session.sendDrivingStatus(false) }
+                      } else {
+                          message.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                          message.gearRaw?.let {
+                              if (lastSentGearRaw != it) { lastSentGearRaw = it; session.sendGear(vhalGearToAaGear(it)) }
+                          }
+                          message.parkingBrake?.let {
+                              if (lastSentParkingBrake != it) { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                          }
+                          message.driving?.let {
+                              if (lastSentDriving != it) { lastSentDriving = it; session.sendDrivingStatus(it) }
+                          }
+                      }
+                      message.nightMode?.let {
+                          if (lastSentNightMode != it) { lastSentNightMode = it; session.sendNightMode(it) }
+                      }
+                  }'''
+          if old not in s:
+              raise SystemExit('control-message block not found')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          print('Patch applied successfully')
+          PY
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Install Android build packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+
+      - name: Download native dependencies
+        working-directory: oal
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          for ABI in arm64-v8a x86_64; do
+            gh release download native-deps -R mossyhub/openautolink -p "native-deps-${ABI}.tar.gz" -O "/tmp/native-deps-${ABI}.tar.gz"
+            tar xzf "/tmp/native-deps-${ABI}.tar.gz" -C app/src/main/cpp/
+          done
+
+      - name: Build unsigned Silverado AAB
+        working-directory: oal
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:bundleRelease \
+            -PappId=com.jlc3718.openautolink.silveradoev \
+            -PoalVersionCode=10 \
+            -PoalVersionName=2.03 \
+            -PoalBuilderUnsigned=true \
+            --no-daemon
+
+      - name: Verify output
+        working-directory: oal
+        run: |
+          test -s app/build/outputs/bundle/release/app-release.aab
+          sha256sum app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload unsigned AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAutoLink_v2.03_VC10_UNSIGNED
+          path: oal/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 1
