@@ -1,9 +1,9 @@
-name: Build OpenAutoLink v2.03 VC10
+name: Build OpenAutoLink v2.04 VC11
 
 on:
   push:
     branches:
-      - oal-v203-vc10-build
+      - oal-v204-vc11-build
     paths:
       - '.github/workflows/oal-v203-vc10.yml'
   workflow_dispatch:
@@ -275,6 +275,33 @@ jobs:
           s = s.replace('android:name=".media.OalMediaBrowserService"\n            android:exported="true"', 'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/ic_logo"\n            android:exported="true"', 1)
           p.write_text(s)
           PY
+      - name: Fix Play closed-testing manifest blockers
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          for perm in (
+              'android.permission.FOREGROUND_SERVICE',
+              'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+              'android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE',
+          ):
+              s = s.replace(f'    <uses-permission android:name="{perm}" />\n', '')
+          old = '''    <uses-feature
+              android:name="android.hardware.type.automotive"
+              android:required="true" />'''
+          new = '''    <uses-feature
+              android:name="android.hardware.type.automotive"
+              android:required="false" />'''
+          if old not in s:
+              raise SystemExit('automotive feature declaration not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          assert 'android.permission.FOREGROUND_SERVICE' not in s
+          assert 'android:name="android.hardware.type.automotive"\n        android:required="false"' in s
+          print('Play manifest fixes applied')
+          PY
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -321,7 +348,7 @@ jobs:
       - name: Upload unsigned AAB
         uses: actions/upload-artifact@v4
         with:
-          name: OpenAutoLink_v2.03_VC10_UNSIGNED
+          name: OpenAutoLink_v2.04_VC11_UNSIGNED
           path: oal/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 1
