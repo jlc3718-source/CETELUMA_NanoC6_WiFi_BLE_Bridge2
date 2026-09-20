@@ -442,6 +442,49 @@ jobs:
           p.write_text(s.replace(old, new, 1))
           print('VC13 native ACK ordering + preference preload applied')
           PY
+      - name: Fix Android Auto key-binding handshake
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/cpp/jni_channel_handlers.cpp')
+          s = p.read_text()
+
+          resp_inc = '#include <aap_protobuf/service/media/sink/message/KeyBindingResponse.pb.h>'
+          if resp_inc not in s:
+              anchor = '#include <aap_protobuf/service/media/shared/message/Config.pb.h>'
+              if anchor not in s:
+                  raise SystemExit('media sink include anchor not found')
+              s = s.replace(anchor, anchor + '\n' + resp_inc, 1)
+
+          fn_start = s.find('void JniInputHandler::onKeyBindingRequest(')
+          if fn_start < 0:
+              raise SystemExit('onKeyBindingRequest start not found')
+          fn_end = s.find('\nvoid JniInputHandler::onChannelError', fn_start)
+          if fn_end < 0:
+              raise SystemExit('onKeyBindingRequest end not found')
+
+          replacement = '''void JniInputHandler::onKeyBindingRequest(
+              const aap_protobuf::service::media::sink::message::KeyBindingRequest& request)
+          {
+              LOGI("Key binding request");
+              logProtoRaw("KeyBinding", request);
+
+              aap_protobuf::service::media::sink::message::KeyBindingResponse response;
+              response.set_status(0);
+              auto promise = aasdk::channel::SendPromise::defer(strand_);
+              promise->then(
+                  [this]() { LOGI("Key binding response sent OK"); },
+                  [this](const auto& e) { this->onChannelError(e); });
+              channel_->sendKeyBindingResponse(response, std::move(promise));
+              channel_->receive(shared_from_this());
+          }
+          '''
+          s = s[:fn_start] + replacement + s[fn_end:]
+          p.write_text(s)
+          print('AA key-binding response added')
+          PY
       - name: Restore exact VC8 tray/service icon resource
         working-directory: oal
         run: |
