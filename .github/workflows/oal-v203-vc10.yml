@@ -771,6 +771,12 @@ jobs:
           if '@drawable/tray_icon_v14' not in s:
               raise SystemExit('VC14 tray icon wiring failed')
 
+          # Python preserves a leading UTF-8 BOM when read_text/write_text is used.
+          # Kotlin's compiler in this build rejects that BOM, so normalize all patched sources.
+          for kt in Path('app/src/main/java').rglob('*.kt'):
+              data = kt.read_text(encoding='utf-8-sig')
+              kt.write_text(data, encoding='utf-8')
+
           for check_path in [
               'app/src/main/java/com/openautolink/app/session/SessionManager.kt',
               'app/src/main/java/com/openautolink/app/media/OalMediaSessionManager.kt',
