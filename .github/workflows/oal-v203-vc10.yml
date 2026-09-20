@@ -446,33 +446,28 @@ jobs:
         working-directory: oal
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           p = Path('app/src/main/cpp/jni_channel_handlers.cpp')
           s = p.read_text()
 
-          req_inc = '#include <aap_protobuf/service/media/sink/message/KeyBindingRequest.pb.h>'
           resp_inc = '#include <aap_protobuf/service/media/sink/message/KeyBindingResponse.pb.h>'
           if resp_inc not in s:
-              if req_inc not in s:
-                  raise SystemExit('KeyBindingRequest include not found')
-              s = s.replace(req_inc, req_inc + '\n' + resp_inc, 1)
+              anchor = '#include <aap_protobuf/service/media/shared/message/Config.pb.h>'
+              if anchor not in s:
+                  raise SystemExit('media sink include anchor not found')
+              s = s.replace(anchor, anchor + '\n' + resp_inc, 1)
 
-          old = '''void JniInputHandler::onKeyBindingRequest(
+          pattern = r'''void JniInputHandler::onKeyBindingRequest\(
+              \s*const aap_protobuf::service::media::sink::message::KeyBindingRequest& request\)
+          \s*\{.*?\n\}'''.replace('\n','')
+          replacement = '''void JniInputHandler::onKeyBindingRequest(
               const aap_protobuf::service::media::sink::message::KeyBindingRequest& request)
           {
               LOGI("Key binding request");
               logProtoRaw("KeyBinding", request);
-              channel_->receive(shared_from_this());
-          }'''
-          new = '''void JniInputHandler::onKeyBindingRequest(
-              const aap_protobuf::service::media::sink::message::KeyBindingRequest& request)
-          {
-              LOGI("Key binding request: keycodes=%d", request.keycodes_size());
-              logProtoRaw("KeyBinding", request);
 
-              // Android Auto expects an explicit acknowledgement before it will
-              // reliably accept InputReport key events from the head unit.
               aap_protobuf::service::media::sink::message::KeyBindingResponse response;
               response.set_status(0);
               auto promise = aasdk::channel::SendPromise::defer(strand_);
@@ -482,9 +477,9 @@ jobs:
               channel_->sendKeyBindingResponse(response, std::move(promise));
               channel_->receive(shared_from_this());
           }'''
-          if old not in s:
-              raise SystemExit('production KeyBindingRequest handler not found')
-          s = s.replace(old, new, 1)
+          s, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('production KeyBindingRequest handler replacement failed')
           p.write_text(s)
           print('AA key-binding response added')
           PY
