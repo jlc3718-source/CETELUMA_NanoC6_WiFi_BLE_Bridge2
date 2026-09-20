@@ -522,32 +522,26 @@ jobs:
               raise SystemExit('VC14 hardParkOverrideActive anchor not found')
           s = s.replace(old, new, 1)
 
-          old = '''                    prefs.alwaysInPark.collect { enabled ->
-                          val changed = alwaysInPark != enabled
-                          alwaysInPark = enabled
-                          if (changed) {'''
-          new = '''                    prefs.alwaysInPark.collect { enabled ->
-                          val changed = alwaysInPark != enabled
-                          alwaysInPark = enabled
-                          parkOverrideKeepAliveJob?.cancel()
-                          parkOverrideKeepAliveJob = null
-                          if (enabled) {
-                              parkOverrideKeepAliveJob = scope.launch {
-                                  while (alwaysInPark) {
-                                      val currentSession = aasdkSession
-                                      val latest = _vehicleDataForwarder?.latestVehicleData?.value
-                                      if (currentSession != null && hardParkOverrideActive(latest)) {
-                                          pushHardParkState(currentSession)
-                                          DiagnosticLog.i("vhal", "VC14_PARK_OVERRIDE_KEEPALIVE")
-                                      }
-                                      kotlinx.coroutines.delay(500)
+          pattern = r'(prefs\\.alwaysInPark\\.collect \\{ enabled ->\\s*val changed = alwaysInPark != enabled\\s*alwaysInPark = enabled)'
+          replacement = r'''\1
+                      parkOverrideKeepAliveJob?.cancel()
+                      parkOverrideKeepAliveJob = null
+                      if (enabled) {
+                          parkOverrideKeepAliveJob = scope.launch {
+                              while (alwaysInPark) {
+                                  val currentSession = aasdkSession
+                                  val latest = _vehicleDataForwarder?.latestVehicleData?.value
+                                  if (currentSession != null && hardParkOverrideActive(latest)) {
+                                      pushHardParkState(currentSession)
+                                      DiagnosticLog.i("vhal", "VC14_PARK_OVERRIDE_KEEPALIVE")
                                   }
+                                  kotlinx.coroutines.delay(500)
                               }
                           }
-                          if (changed) {'''
-          if old not in s:
-              raise SystemExit('VC14 preference collector anchor not found')
-          s = s.replace(old, new, 1)
+                      }'''
+          s, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('VC14 preference collector regex failed')
           p.write_text(s)
 
           # --- Advertise every keycode exposed by the Input mapping UI ---
