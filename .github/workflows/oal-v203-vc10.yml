@@ -784,7 +784,7 @@ jobs:
           ]:
               head = Path(check_path).read_text()[:220]
               print('VC14_HEAD', check_path, repr(head))
-              if not head.startswith('package '):
+              if not head.lstrip('\ufeff').startswith('package '):
                   raise SystemExit(f'VC14 source head corrupted: {check_path}: {head!r}')
           print('VC14 three-part fix applied')
           PY
