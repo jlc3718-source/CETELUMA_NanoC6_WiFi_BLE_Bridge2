@@ -635,17 +635,16 @@ jobs:
               raise SystemExit('VC14 media callback property anchor not found')
           s = s.replace(old, new, 1)
 
-          old = '''            mediaSession = MediaSessionCompat(context, "OpenAutoLinkMedia").apply {
-                      setCallback(object : MediaSessionCompat.Callback() {'''
-          new = '''            mediaSession = MediaSessionCompat(context, "OpenAutoLinkMedia").apply {
-                      setFlags(
-                          MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                              MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-                      )
-                      setCallback(object : MediaSessionCompat.Callback() {'''
-          if old not in s:
-              raise SystemExit('VC14 MediaSession construction anchor not found')
-          s = s.replace(old, new, 1)
+          needle = 'mediaSession = MediaSessionCompat(context, "OpenAutoLinkMedia").apply {'
+          ms = s.find(needle)
+          if ms < 0:
+              raise SystemExit('VC14 MediaSession construction start not found')
+          line_end = s.find('\\n', ms)
+          s = s[:line_end + 1] + '''                setFlags(
+                      MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                          MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                  )
+          ''' + s[line_end + 1:]
 
           start = s.find('                    override fun onMediaButtonEvent(mediaButtonEvent: android.content.Intent): Boolean {')
           end = s.find('\n                    override fun onCommand(', start)
