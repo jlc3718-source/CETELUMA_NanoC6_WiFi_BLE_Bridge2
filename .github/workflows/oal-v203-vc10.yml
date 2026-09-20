@@ -1,9 +1,9 @@
-name: Build OpenAutoLink v2.06 VC13
+name: Build OpenAutoLink v2.07 VC14
 
 on:
   push:
     branches:
-      - oal-v206-vc13-build
+      - oal-v207-vc14-build
     paths:
       - '.github/workflows/oal-v203-vc10.yml'
   workflow_dispatch:
@@ -485,51 +485,153 @@ jobs:
           p.write_text(s)
           print('AA key-binding response added')
           PY
-      - name: Restore exact VC8 tray/service icon resource
+      - name: VC14 stationary test override, full key map, and icon cache bust
         working-directory: oal
         run: |
           python3 - <<'PY'
+          import re, shutil
           from pathlib import Path
-          import shutil
 
+          # --- Always-in-Park bench/test behavior ---
+          p = Path('app/src/main/java/com/openautolink/app/session/SessionManager.kt')
+          s = p.read_text()
+
+          old = '''    private fun hardParkOverrideActive(vd: ControlMessage.VehicleData?): Boolean {
+                  if (!alwaysInPark) return false
+                  val gear = vd?.gearRaw ?: lastRealGearRaw
+                  val brake = vd?.parkingBrake ?: lastRealParkingBrake
+                  val speed = vd?.speedKmh ?: lastRealSpeedKmh
+
+                  // PARK from VHAL is authoritative even when CAR_SPEED has not been granted.
+                  if (gear == 4) return true
+                  // Neutral is accepted only with the parking brake set.
+                  if (gear == 1 && brake == true) return true
+                  // Final fallback when a speed sample exists.
+                  return speed != null && kotlin.math.abs(speed) < 0.5f && brake == true
+              }'''
+          new = '''    private var parkOverrideKeepAliveJob: kotlinx.coroutines.Job? = null
+
+              private fun hardParkOverrideActive(vd: ControlMessage.VehicleData?): Boolean {
+                  if (!alwaysInPark) return false
+                  val speed = vd?.speedKmh ?: lastRealSpeedKmh
+                  // Bench/test override ignores shifter position, but only while
+                  // a real zero-speed sample confirms the vehicle is stationary.
+                  return speed != null && kotlin.math.abs(speed) < 0.5f
+              }'''
+          if old not in s:
+              raise SystemExit('VC14 hardParkOverrideActive anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''                    prefs.alwaysInPark.collect { enabled ->
+                          val changed = alwaysInPark != enabled
+                          alwaysInPark = enabled
+                          if (changed) {'''
+          new = '''                    prefs.alwaysInPark.collect { enabled ->
+                          val changed = alwaysInPark != enabled
+                          alwaysInPark = enabled
+                          parkOverrideKeepAliveJob?.cancel()
+                          parkOverrideKeepAliveJob = null
+                          if (enabled) {
+                              parkOverrideKeepAliveJob = scope.launch {
+                                  while (alwaysInPark) {
+                                      val currentSession = aasdkSession
+                                      val latest = _vehicleDataForwarder?.latestVehicleData?.value
+                                      if (currentSession != null && hardParkOverrideActive(latest)) {
+                                          pushHardParkState(currentSession)
+                                          DiagnosticLog.i("vhal", "VC14_PARK_OVERRIDE_KEEPALIVE")
+                                      }
+                                      kotlinx.coroutines.delay(500)
+                                  }
+                              }
+                          }
+                          if (changed) {'''
+          if old not in s:
+              raise SystemExit('VC14 preference collector anchor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # --- Advertise every keycode exposed by the Input mapping UI ---
+          p = Path('app/src/main/cpp/jni_session.cpp')
+          s = p.read_text()
+          old = 'for (int kc : {84, 85, 86, 87, 88, 89, 90, 126, 127}) {'
+          new = 'for (int kc : {5, 6, 19, 20, 21, 22, 23, 84, 85, 86, 87, 88, 89, 90, 126, 127}) {'
+          if old not in s:
+              raise SystemExit('VC14 input key advertisement anchor not found')
+          s = s.replace(old, new, 1)
+          s = s.replace(
+              'LOGI("Input touchscreen: %dx%d autoNeg=%d", touchWidth, touchHeight,',
+              'LOGI("VC14_INPUT_KEYS_5_6_19_23");\n      LOGI("Input touchscreen: %dx%d autoNeg=%d", touchWidth, touchHeight,',
+              1
+          )
+          p.write_text(s)
+
+          # --- Make the key-binding ACK unmistakable in the finished native binary ---
+          p = Path('app/src/main/cpp/jni_channel_handlers.cpp')
+          s = p.read_text()
+          s = s.replace('LOGI("Key binding response sent OK");',
+                        'LOGI("VC14_KEY_BINDING_ACK_SENT");', 1)
+          p.write_text(s)
+
+          # --- VC9-style top/tray icon cache bust ---
           res = Path('app/src/main/res')
           src_candidates = [
               res / 'drawable-xxhdpi' / 'ic_logo.png',
               res / 'drawable-xxhdpi-v4' / 'ic_logo.png',
           ]
-          src = next((p for p in src_candidates if p.exists()), None)
+          src = next((x for x in src_candidates if x.exists()), None)
           if src is None:
-              raise SystemExit('ic_logo.png source not found')
-          dst = src.with_name('tray_icon_v8.png')
+              raise SystemExit('VC14 icon source not found')
+          dst = src.with_name('tray_icon_v14.png')
           shutil.copy2(src, dst)
+
+          # New component identities, matching the strategy that fixed the GM/AAOS cache before.
+          p = Path('app/src/main/java/com/openautolink/app/MainActivity.kt')
+          s = p.read_text()
+          if 'open class MainActivity' not in s:
+              s = s.replace('class MainActivity :', 'open class MainActivity :', 1)
+          p.write_text(s)
+          Path('app/src/main/java/com/openautolink/app/MainActivityV14.kt').write_text(
+              'package com.openautolink.app\n\nclass MainActivityV14 : MainActivity()\n'
+          )
+
+          p = Path('app/src/main/java/com/openautolink/app/media/OalMediaBrowserService.kt')
+          s = p.read_text()
+          if 'open class OalMediaBrowserService' not in s:
+              s = s.replace('class OalMediaBrowserService :', 'open class OalMediaBrowserService :', 1)
+          p.write_text(s)
+          Path('app/src/main/java/com/openautolink/app/media/OalMediaBrowserServiceV14.kt').write_text(
+              'package com.openautolink.app.media\n\nclass OalMediaBrowserServiceV14 : OalMediaBrowserService()\n'
+          )
 
           p = Path('app/src/main/AndroidManifest.xml')
           s = p.read_text()
-          s = s.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/tray_icon_v8"', 1)
-          s = s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/tray_icon_v8"', 1)
-          s = s.replace('android:icon="@drawable/ic_logo"', 'android:icon="@drawable/tray_icon_v8"')
-          s = s.replace('android:roundIcon="@drawable/ic_logo"', 'android:roundIcon="@drawable/tray_icon_v8"')
+          s = s.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/tray_icon_v14"', 1)
+          s = s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/tray_icon_v14"', 1)
+          s = s.replace('android:icon="@drawable/tray_icon_v8"', 'android:icon="@drawable/tray_icon_v14"')
+          s = s.replace('android:roundIcon="@drawable/tray_icon_v8"', 'android:roundIcon="@drawable/tray_icon_v14"')
+          s = s.replace('android:name=".MainActivity"', 'android:name=".MainActivityV14"', 1)
+          s = s.replace('android:name=".media.OalMediaBrowserService"', 'android:name=".media.OalMediaBrowserServiceV14"', 1)
 
-          if 'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"' not in s:
-              s = s.replace(
-                  'android:name=".MainActivity"\n            android:exported="true"',
-                  'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1
-              )
-          if 'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"' not in s:
-              s = s.replace(
-                  'android:name=".cluster.OalClusterService"\n            android:enabled="true"',
-                  'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"\n            android:enabled="true"', 1
-              )
-          if 'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"' not in s:
-              s = s.replace(
-                  'android:name=".media.OalMediaBrowserService"\n            android:exported="true"',
-                  'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1
-              )
+          # Explicit icon on every GM/AAOS-visible component.
+          def ensure_icon(component_line, icon='@drawable/tray_icon_v14'):
+              global s
+              if component_line in s:
+                  replacement = component_line + '\n            android:icon="' + icon + '"'
+                  s = s.replace(component_line, replacement, 1)
+
+          ensure_icon('android:name=".MainActivityV14"')
+          ensure_icon('android:name="androidx.car.app.activity.CarAppActivity"')
+          ensure_icon('android:name=".cluster.OalClusterService"')
+          ensure_icon('android:name=".transport.usb.UsbAttachedActivity"')
+          ensure_icon('android:name=".media.OalMediaBrowserServiceV14"')
 
           p.write_text(s)
-          assert '@drawable/tray_icon_v8' in s
-          assert dst.exists()
-          print('Exact VC8 tray_icon_v8 resource restored')
+          if '.MainActivityV14' not in s or '.media.OalMediaBrowserServiceV14' not in s:
+              raise SystemExit('VC14 component cache bust failed')
+          if '@drawable/tray_icon_v14' not in s:
+              raise SystemExit('VC14 tray icon manifest wiring failed')
+
+          print('VC14 stationary override + key map + icon cache bust applied')
           PY
       - name: Fix Play closed-testing manifest blockers
         working-directory: oal
@@ -590,13 +692,26 @@ jobs:
       - name: Verify output
         working-directory: oal
         run: |
-          test -s app/build/outputs/bundle/release/app-release.aab
-          sha256sum app/build/outputs/bundle/release/app-release.aab
+          set -euxo pipefail
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          test -s "$AAB"
+          rm -rf /tmp/vc14check && mkdir -p /tmp/vc14check
+          cd /tmp/vc14check
+          unzip -q "$GITHUB_WORKSPACE/oal/$AAB"
+          strings base/manifest/AndroidManifest.xml | grep -F 'MainActivityV14'
+          strings base/manifest/AndroidManifest.xml | grep -F 'OalMediaBrowserServiceV14'
+          strings base/resources.pb | grep -F 'tray_icon_v14'
+          strings base/dex/classes.dex | grep -F 'VC14_PARK_OVERRIDE_KEEPALIVE'
+          for SO in base/lib/*/libopenautolink-jni.so; do
+            strings "$SO" | grep -F 'VC14_KEY_BINDING_ACK_SENT'
+            strings "$SO" | grep -F 'VC14_INPUT_KEYS_5_6_19_23'
+          done
+          sha256sum "$GITHUB_WORKSPACE/oal/$AAB"
 
       - name: Upload unsigned AAB
         uses: actions/upload-artifact@v4
         with:
-          name: OpenAutoLink_v2.06_VC13_UNSIGNED
+          name: OpenAutoLink_v2.07_VC14_UNSIGNED
           path: oal/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 1
