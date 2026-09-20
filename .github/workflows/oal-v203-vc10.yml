@@ -596,7 +596,7 @@ jobs:
           loc = s.find(needle)
           if loc < 0:
               raise SystemExit('VC14 location listener start not found')
-          line_end = s.find('\\n', loc)
+          line_end = s.find('\n', loc)
           s = s[:line_end + 1] + '            lastGnssSpeedMps = location.speed\\n' + s[line_end + 1:]
           p.write_text(s)
 
@@ -844,7 +844,7 @@ jobs:
           strings base/dex/classes.dex | grep -F 'VC14_PARK_OVERRIDE_KEEPALIVE'
           for SO in base/lib/*/libopenautolink-jni.so; do
             strings "$SO" | grep -F 'VC14_KEY_BINDING_ACK_SENT'
-            strings "$SO" | grep -F 'VC14_INPUT_KEYS_5_6_19_23'
+            strings "$SO" | grep -F 'VC14_INPUT_KEYS_ADVERTISED'
           done
           sha256sum "$GITHUB_WORKSPACE/oal/$AAB"
 
