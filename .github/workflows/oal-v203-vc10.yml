@@ -1176,10 +1176,11 @@ jobs:
         working-directory: oal
         run: |
           chmod +x gradlew
+          echo "Building package jlc3718.openautolink.silveradoev versionCode=15 versionName=v2.08"
           ./gradlew :app:bundleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
-            -PoalVersionCode=14 \
-            -PoalVersionName=v2.07 \
+            -PoalVersionCode=15 \
+            -PoalVersionName=v2.08 \
             -PoalBuilderUnsigned=true \
             --no-daemon
 
