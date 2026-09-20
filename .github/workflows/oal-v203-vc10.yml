@@ -306,9 +306,9 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:bundleRelease \
-            -PappId=com.jlc3718.openautolink.silveradoev \
+            -PappId=jlc3718.openautolink.silveradoev \
             -PoalVersionCode=10 \
-            -PoalVersionName=2.03 \
+            -PoalVersionName=v2.03 \
             -PoalBuilderUnsigned=true \
             --no-daemon
 
