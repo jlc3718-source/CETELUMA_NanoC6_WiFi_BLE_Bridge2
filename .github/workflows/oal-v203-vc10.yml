@@ -414,7 +414,7 @@ jobs:
           old = '''        resetLatchedVehicleSensorState("start_session")
                   observeAlwaysInPark()
                   ensureVehicleDataForwarder()'''
-          new = '''        alwaysInPark = AppPreferences.getInstance(context ?: return).alwaysInPark.first()
+          new = '''        alwaysInPark = AppPreferences.getInstance(requireNotNull(context)).alwaysInPark.first()
                   DiagnosticLog.i("vhal", "startup alwaysInPark=$alwaysInPark")
                   resetLatchedVehicleSensorState("start_session")
                   observeAlwaysInPark()
