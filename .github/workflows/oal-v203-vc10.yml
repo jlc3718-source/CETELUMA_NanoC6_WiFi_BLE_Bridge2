@@ -470,17 +470,17 @@ jobs:
           if 'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"' not in s:
               s = s.replace(
                   'android:name=".MainActivity"\n            android:exported="true"',
-                  'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1)
+                  'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1
               )
           if 'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"' not in s:
               s = s.replace(
                   'android:name=".cluster.OalClusterService"\n            android:enabled="true"',
-                  'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"\n            android:enabled="true"', 1)
+                  'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"\n            android:enabled="true"', 1
               )
           if 'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"' not in s:
               s = s.replace(
                   'android:name=".media.OalMediaBrowserService"\n            android:exported="true"',
-                  'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1)
+                  'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1
               )
 
           p.write_text(s)
