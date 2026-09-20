@@ -279,27 +279,19 @@ jobs:
         working-directory: oal
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
           p = Path('app/src/main/AndroidManifest.xml')
           s = p.read_text()
-          for perm in (
-              'android.permission.FOREGROUND_SERVICE',
-              'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
-              'android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE',
-          ):
-              s = s.replace(f'    <uses-permission android:name="{perm}" />\n', '')
-          old = '''    <uses-feature
-              android:name="android.hardware.type.automotive"
-              android:required="true" />'''
-          new = '''    <uses-feature
-              android:name="android.hardware.type.automotive"
-              android:required="false" />'''
-          if old not in s:
+          s = re.sub(r'^\s*<uses-permission android:name="android\.permission\.FOREGROUND_SERVICE(?:_[A-Z_]+)?"\s*/>\s*$', '', s, flags=re.M)
+          s, n = re.subn(r'(<uses-feature\s+android:name="android\.hardware\.type\.automotive"\s+android:required=")true("\s*/>)', r'\1false\2', s, count=1, flags=re.S)
+          if n != 1:
               raise SystemExit('automotive feature declaration not found')
-          s = s.replace(old, new, 1)
           p.write_text(s)
-          assert 'android.permission.FOREGROUND_SERVICE' not in s
-          assert 'android:name="android.hardware.type.automotive"\n        android:required="false"' in s
+          if 'android.permission.FOREGROUND_SERVICE' in s:
+              raise SystemExit('foreground-service permission still present')
+          if not re.search(r'android:name="android\.hardware\.type\.automotive"\s+android:required="false"', s, flags=re.S):
+              raise SystemExit('automotive feature still required')
           print('Play manifest fixes applied')
           PY
       - name: Set up JDK 21
@@ -334,8 +326,8 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:bundleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
-            -PoalVersionCode=10 \
-            -PoalVersionName=v2.03 \
+            -PoalVersionCode=11 \
+            -PoalVersionName=v2.04 \
             -PoalBuilderUnsigned=true \
             --no-daemon
 
