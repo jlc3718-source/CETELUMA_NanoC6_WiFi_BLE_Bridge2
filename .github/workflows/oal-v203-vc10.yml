@@ -442,6 +442,52 @@ jobs:
           p.write_text(s.replace(old, new, 1))
           print('VC13 native ACK ordering + preference preload applied')
           PY
+      - name: Fix Android Auto key-binding handshake
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/cpp/jni_channel_handlers.cpp')
+          s = p.read_text()
+
+          req_inc = '#include <aap_protobuf/service/media/sink/message/KeyBindingRequest.pb.h>'
+          resp_inc = '#include <aap_protobuf/service/media/sink/message/KeyBindingResponse.pb.h>'
+          if resp_inc not in s:
+              if req_inc not in s:
+                  raise SystemExit('KeyBindingRequest include not found')
+              s = s.replace(req_inc, req_inc + '\n' + resp_inc, 1)
+
+          old = '''void JniInputHandler::onKeyBindingRequest(
+              const aap_protobuf::service::media::sink::message::KeyBindingRequest& request)
+          {
+              LOGI("Key binding request");
+              logProtoRaw("KeyBinding", request);
+              channel_->receive(shared_from_this());
+          }'''
+          new = '''void JniInputHandler::onKeyBindingRequest(
+              const aap_protobuf::service::media::sink::message::KeyBindingRequest& request)
+          {
+              LOGI("Key binding request: keycodes=%d", request.keycodes_size());
+              logProtoRaw("KeyBinding", request);
+
+              // Android Auto expects an explicit acknowledgement before it will
+              // reliably accept InputReport key events from the head unit.
+              aap_protobuf::service::media::sink::message::KeyBindingResponse response;
+              response.set_status(0);
+              auto promise = aasdk::channel::SendPromise::defer(strand_);
+              promise->then(
+                  [this]() { LOGI("Key binding response sent OK"); },
+                  [this](const auto& e) { this->onChannelError(e); });
+              channel_->sendKeyBindingResponse(response, std::move(promise));
+              channel_->receive(shared_from_this());
+          }'''
+          if old not in s:
+              raise SystemExit('production KeyBindingRequest handler not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          print('AA key-binding response added')
+          PY
       - name: Restore exact VC8 tray/service icon resource
         working-directory: oal
         run: |
