@@ -485,88 +485,221 @@ jobs:
           p.write_text(s)
           print('AA key-binding response added')
           PY
-      - name: VC14 stationary test override, full key map, and icon cache bust
+      - name: VC14 stationary Park test, dual-path keys, and icon cache bust
         working-directory: oal
         run: |
           python3 - <<'PY'
           import re, shutil
           from pathlib import Path
 
-          # --- Always-in-Park bench/test behavior ---
+          # 1) ALWAYS-IN-PARK TEST MODE
           p = Path('app/src/main/java/com/openautolink/app/session/SessionManager.kt')
           s = p.read_text()
 
-          old = '''    private fun hardParkOverrideActive(vd: ControlMessage.VehicleData?): Boolean {
-                  if (!alwaysInPark) return false
-                  val gear = vd?.gearRaw ?: lastRealGearRaw
-                  val brake = vd?.parkingBrake ?: lastRealParkingBrake
-                  val speed = vd?.speedKmh ?: lastRealSpeedKmh
+          pattern = r'''    private var lastRealGearRaw: Int\? = null
+              private var lastRealParkingBrake: Boolean\? = null
+              private var lastRealSpeedKmh: Float\? = null
 
-                  // PARK from VHAL is authoritative even when CAR_SPEED has not been granted.
-                  if (gear == 4) return true
-                  // Neutral is accepted only with the parking brake set.
-                  if (gear == 1 && brake == true) return true
-                  // Final fallback when a speed sample exists.
-                  return speed != null && kotlin.math.abs(speed) < 0.5f && brake == true
-              }'''
-          new = '''    private var parkOverrideKeepAliveJob: kotlinx.coroutines.Job? = null
+              private fun hardParkOverrideActive\(vd: ControlMessage\.VehicleData\?\): Boolean \{.*?
+              \}'''
+          replacement = '''    private var lastRealGearRaw: Int? = null
+              private var lastRealParkingBrake: Boolean? = null
+              private var lastRealSpeedKmh: Float? = null
+              @Volatile private var lastGnssSpeedMps: Float? = null
+              private var parkOverrideKeepAliveJob: kotlinx.coroutines.Job? = null
 
               private fun hardParkOverrideActive(vd: ControlMessage.VehicleData?): Boolean {
                   if (!alwaysInPark) return false
-                  val speed = vd?.speedKmh ?: lastRealSpeedKmh
-                  // Bench/test override ignores shifter position, but only while
-                  // a real zero-speed sample confirms the vehicle is stationary.
-                  return speed != null && kotlin.math.abs(speed) < 0.5f
+                  val vhalKmh = vd?.speedKmh ?: lastRealSpeedKmh
+                  if (vhalKmh != null) return kotlin.math.abs(vhalKmh) < 0.5f
+                  val gpsMps = lastGnssSpeedMps
+                  if (gpsMps != null) return kotlin.math.abs(gpsMps) < 0.30f
+                  return (vd?.gearRaw ?: lastRealGearRaw) == 4
               }'''
-          if old not in s:
-              raise SystemExit('VC14 hardParkOverrideActive anchor not found')
-          s = s.replace(old, new, 1)
-
-          pattern = r'(prefs\\.alwaysInPark\\.collect \\{ enabled ->\\s*val changed = alwaysInPark != enabled\\s*alwaysInPark = enabled)'
-          replacement = r'''\1
-                      parkOverrideKeepAliveJob?.cancel()
-                      parkOverrideKeepAliveJob = null
-                      if (enabled) {
-                          parkOverrideKeepAliveJob = scope.launch {
-                              while (alwaysInPark) {
-                                  val currentSession = aasdkSession
-                                  val latest = _vehicleDataForwarder?.latestVehicleData?.value
-                                  if (currentSession != null && hardParkOverrideActive(latest)) {
-                                      pushHardParkState(currentSession)
-                                      DiagnosticLog.i("vhal", "VC14_PARK_OVERRIDE_KEEPALIVE")
-                                  }
-                                  kotlinx.coroutines.delay(500)
-                              }
-                          }
-                      }'''
           s, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
           if n != 1:
-              raise SystemExit('VC14 preference collector regex failed')
+              raise SystemExit('VC14 hardPark block replacement failed')
+
+          obs_start = s.find('    private fun observeAlwaysInPark() {')
+          obs_end = s.find('\n    @Synchronized', obs_start)
+          if obs_start < 0 or obs_end < 0:
+              raise SystemExit('VC14 observeAlwaysInPark bounds not found')
+          observer = '''    private fun observeAlwaysInPark() {
+                  if (alwaysInParkObserverStarted) return
+                  val ctx = context ?: return
+                  alwaysInParkObserverStarted = true
+                  val prefs = AppPreferences.getInstance(ctx)
+                  scope.launch {
+                      prefs.alwaysInPark.collect { enabled ->
+                          val changed = alwaysInPark != enabled
+                          alwaysInPark = enabled
+                          parkOverrideKeepAliveJob?.cancel()
+                          parkOverrideKeepAliveJob = null
+
+                          if (enabled) {
+                              parkOverrideKeepAliveJob = scope.launch {
+                                  while (alwaysInPark) {
+                                      val session = aasdkSession
+                                      val vd = _vehicleDataForwarder?.latestVehicleData?.value
+                                      if (session != null) {
+                                          if (hardParkOverrideActive(vd)) {
+                                              pushHardParkState(session)
+                                              DiagnosticLog.i("vhal", "VC14_PARK_OVERRIDE_KEEPALIVE")
+                                          } else {
+                                              vd?.speedKmh?.let {
+                                                  session.sendSpeed((it / 3.6f * 1000).toInt())
+                                              } ?: lastGnssSpeedMps?.let {
+                                                  session.sendSpeed((it * 1000f).toInt())
+                                              }
+                                              vd?.gearRaw?.let {
+                                                  lastSentGearRaw = it
+                                                  session.sendGear(vhalGearToAaGear(it))
+                                              }
+                                              vd?.parkingBrake?.let {
+                                                  lastSentParkingBrake = it
+                                                  session.sendParkingBrake(it)
+                                              }
+                                              val rawGear = vd?.gearRaw ?: lastRealGearRaw
+                                              val realDriving = vd?.driving ?: (rawGear != null && rawGear !in listOf(0, 1, 4))
+                                              lastSentDriving = realDriving
+                                              session.sendDrivingStatus(realDriving)
+                                          }
+                                      }
+                                      kotlinx.coroutines.delay(500)
+                                  }
+                              }
+                          }
+
+                          if (changed) {
+                              val vd = _vehicleDataForwarder?.latestVehicleData?.value
+                              val session = aasdkSession
+                              if (session != null && hardParkOverrideActive(vd)) {
+                                  pushHardParkState(session)
+                                  DiagnosticLog.i("vhal", "alwaysInPark=$enabled — forced PARK while stationary")
+                              } else if (session != null) {
+                                  vd?.speedKmh?.let { session.sendSpeed((it / 3.6f * 1000).toInt()) }
+                                  vd?.gearRaw?.let { lastSentGearRaw = it; session.sendGear(vhalGearToAaGear(it)) }
+                                  vd?.parkingBrake?.let { lastSentParkingBrake = it; session.sendParkingBrake(it) }
+                                  val realDriving = vd?.driving ?: false
+                                  lastSentDriving = realDriving
+                                  session.sendDrivingStatus(realDriving)
+                                  DiagnosticLog.i("vhal", "alwaysInPark=$enabled — live state active")
+                              }
+                          }
+                      }
+                  }
+              }
+          '''
+          s = s[:obs_start] + observer + s[obs_end:]
+
+          old = '''        val listener = android.location.LocationListener { location ->
+                  session.sendGpsLocation(
+                      location.latitude, location.longitude, location.altitude,
+                      location.speed, location.bearing, location.time
+                  )
+              }'''
+          new = '''        val listener = android.location.LocationListener { location ->
+                  lastGnssSpeedMps = location.speed
+                  session.sendGpsLocation(
+                      location.latitude, location.longitude, location.altitude,
+                      location.speed, location.bearing, location.time
+                  )
+              }'''
+          if old not in s:
+              raise SystemExit('VC14 location listener anchor not found')
+          s = s.replace(old, new, 1)
           p.write_text(s)
 
-          # --- Advertise every keycode exposed by the Input mapping UI ---
+          # 2) BUTTON INPUT
           p = Path('app/src/main/cpp/jni_session.cpp')
           s = p.read_text()
           old = 'for (int kc : {84, 85, 86, 87, 88, 89, 90, 126, 127}) {'
           new = 'for (int kc : {5, 6, 19, 20, 21, 22, 23, 84, 85, 86, 87, 88, 89, 90, 126, 127}) {'
           if old not in s:
-              raise SystemExit('VC14 input key advertisement anchor not found')
+              raise SystemExit('VC14 key advertisement anchor not found')
           s = s.replace(old, new, 1)
           s = s.replace(
               'LOGI("Input touchscreen: %dx%d autoNeg=%d", touchWidth, touchHeight,',
-              'LOGI("VC14_INPUT_KEYS_5_6_19_23");\n      LOGI("Input touchscreen: %dx%d autoNeg=%d", touchWidth, touchHeight,',
-              1
+              'LOGI("VC14_INPUT_KEYS_ADVERTISED");\n      LOGI("Input touchscreen: %dx%d autoNeg=%d", touchWidth, touchHeight,',
+              1,
           )
           p.write_text(s)
 
-          # --- Make the key-binding ACK unmistakable in the finished native binary ---
           p = Path('app/src/main/cpp/jni_channel_handlers.cpp')
           s = p.read_text()
-          s = s.replace('LOGI("Key binding response sent OK");',
-                        'LOGI("VC14_KEY_BINDING_ACK_SENT");', 1)
+          if 'Key binding response sent OK' not in s:
+              raise SystemExit('VC14 native key-binding ACK patch is missing before build')
+          s = s.replace('Key binding response sent OK', 'VC14_KEY_BINDING_ACK_SENT', 1)
           p.write_text(s)
 
-          # --- VC9-style top/tray icon cache bust ---
+          p = Path('app/src/main/java/com/openautolink/app/media/OalMediaSessionManager.kt')
+          s = p.read_text()
+          old = '''    @Volatile
+              var mediaControlCallback: MediaControlCallback? = null'''
+          new = '''    @Volatile
+              var mediaControlCallback: MediaControlCallback? = null
+
+              @Volatile
+              var rawKeyEventCallback: ((android.view.KeyEvent) -> Boolean)? = null'''
+          if old not in s:
+              raise SystemExit('VC14 media callback property anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            mediaSession = MediaSessionCompat(context, "OpenAutoLinkMedia").apply {
+                      setCallback(object : MediaSessionCompat.Callback() {'''
+          new = '''            mediaSession = MediaSessionCompat(context, "OpenAutoLinkMedia").apply {
+                      setFlags(
+                          MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                              MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                      )
+                      setCallback(object : MediaSessionCompat.Callback() {'''
+          if old not in s:
+              raise SystemExit('VC14 MediaSession construction anchor not found')
+          s = s.replace(old, new, 1)
+
+          start = s.find('                    override fun onMediaButtonEvent(mediaButtonEvent: android.content.Intent): Boolean {')
+          end = s.find('\n                    override fun onCommand(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('VC14 onMediaButtonEvent bounds not found')
+          replacement = '''                    override fun onMediaButtonEvent(mediaButtonEvent: android.content.Intent): Boolean {
+                              val ke = mediaButtonEvent.getParcelableExtra<android.view.KeyEvent>(
+                                  android.content.Intent.EXTRA_KEY_EVENT
+                              )
+                              if (ke == null) return super.onMediaButtonEvent(mediaButtonEvent)
+                              Log.i(TAG, "VC14 MediaSession raw key: keycode=${ke.keyCode} action=${ke.action}")
+                              com.openautolink.app.diagnostics.DiagnosticLog.i(
+                                  "input",
+                                  "VC14_MEDIA_SESSION_RAW_KEY keycode=${ke.keyCode} " +
+                                      "(${android.view.KeyEvent.keyCodeToString(ke.keyCode)}) action=${ke.action}"
+                              )
+                              if (com.openautolink.app.input.KeyCaptureBus.handle(ke)) return true
+                              if (rawKeyEventCallback?.invoke(ke) == true) return true
+                              return super.onMediaButtonEvent(mediaButtonEvent)
+                          }
+          '''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/openautolink/app/ui/projection/ProjectionViewModel.kt')
+          s = p.read_text()
+          old = '''    init {
+                  registerTransportNetworkCallback()'''
+          new = '''    init {
+                  com.openautolink.app.media.OalMediaSessionManager.getInstance(application)
+                      .rawKeyEventCallback = { event ->
+                          DiagnosticLog.i(
+                              "input",
+                              "VC14_RAW_KEY_TO_MAPPER keycode=${event.keyCode} action=${event.action}",
+                          )
+                          steeringWheelController.onKeyEvent(event)
+                      }
+                  registerTransportNetworkCallback()'''
+          if old not in s:
+              raise SystemExit('VC14 ProjectionViewModel init anchor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # 3) TOP/TRAY ICON CACHE BUST
           res = Path('app/src/main/res')
           src_candidates = [
               res / 'drawable-xxhdpi' / 'ic_logo.png',
@@ -574,19 +707,9 @@ jobs:
           ]
           src = next((x for x in src_candidates if x.exists()), None)
           if src is None:
-              raise SystemExit('VC14 icon source not found')
-          dst = src.with_name('tray_icon_v14.png')
-          shutil.copy2(src, dst)
-
-          # New component identities, matching the strategy that fixed the GM/AAOS cache before.
-          p = Path('app/src/main/java/com/openautolink/app/MainActivity.kt')
-          s = p.read_text()
-          if 'open class MainActivity' not in s:
-              s = s.replace('class MainActivity :', 'open class MainActivity :', 1)
-          p.write_text(s)
-          Path('app/src/main/java/com/openautolink/app/MainActivityV14.kt').write_text(
-              'package com.openautolink.app\n\nclass MainActivityV14 : MainActivity()\n'
-          )
+              raise SystemExit('VC14 placeholder icon source not found')
+          tray = src.with_name('tray_icon_v14.png')
+          shutil.copy2(src, tray)
 
           p = Path('app/src/main/java/com/openautolink/app/media/OalMediaBrowserService.kt')
           s = p.read_text()
@@ -603,29 +726,63 @@ jobs:
           s = s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/tray_icon_v14"', 1)
           s = s.replace('android:icon="@drawable/tray_icon_v8"', 'android:icon="@drawable/tray_icon_v14"')
           s = s.replace('android:roundIcon="@drawable/tray_icon_v8"', 'android:roundIcon="@drawable/tray_icon_v14"')
-          s = s.replace('android:name=".MainActivity"', 'android:name=".MainActivityV14"', 1)
-          s = s.replace('android:name=".media.OalMediaBrowserService"', 'android:name=".media.OalMediaBrowserServiceV14"', 1)
 
-          # Explicit icon on every GM/AAOS-visible component.
-          def ensure_icon(component_line, icon='@drawable/tray_icon_v14'):
-              global s
-              if component_line in s:
-                  replacement = component_line + '\n            android:icon="' + icon + '"'
-                  s = s.replace(component_line, replacement, 1)
+          launcher = '''            <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+          '''
+          if launcher not in s:
+              raise SystemExit('VC14 original launcher filter not found')
+          s = s.replace(launcher, '', 1)
 
-          ensure_icon('android:name=".MainActivityV14"')
-          ensure_icon('android:name="androidx.car.app.activity.CarAppActivity"')
-          ensure_icon('android:name=".cluster.OalClusterService"')
-          ensure_icon('android:name=".transport.usb.UsbAttachedActivity"')
-          ensure_icon('android:name=".media.OalMediaBrowserServiceV14"')
+          alias = '''
+                  <activity-alias
+                      android:name=".MainActivityV14"
+                      android:targetActivity=".MainActivity"
+                      android:exported="true"
+                      android:icon="@drawable/tray_icon_v14"
+                      android:label="OpenAutoLink">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity-alias>
+
+          '''
+          marker = '        <!-- Hidden CarAppActivity — triggers Templates Host binding for cluster.'
+          if marker not in s:
+              raise SystemExit('VC14 launcher alias insertion marker not found')
+          s = s.replace(marker, alias + marker, 1)
+
+          s = s.replace(
+              'android:name=".media.OalMediaBrowserService"',
+              'android:name=".media.OalMediaBrowserServiceV14"',
+              1,
+          )
+
+          for component in [
+              'android:name=".MainActivity"',
+              'android:name="androidx.car.app.activity.CarAppActivity"',
+              'android:name=".cluster.OalClusterService"',
+              'android:name=".transport.usb.UsbAttachedActivity"',
+              'android:name=".media.OalMediaBrowserServiceV14"',
+          ]:
+              pos = s.find(component)
+              if pos < 0:
+                  raise SystemExit(f'VC14 icon component missing: {component}')
+              line_end = s.find('\n', pos)
+              nearby = s[line_end:line_end + 180]
+              if 'android:icon=' not in nearby:
+                  s = s[:line_end] + '\n            android:icon="@drawable/tray_icon_v14"' + s[line_end:]
 
           p.write_text(s)
           if '.MainActivityV14' not in s or '.media.OalMediaBrowserServiceV14' not in s:
-              raise SystemExit('VC14 component cache bust failed')
+              raise SystemExit('VC14 component identity cache bust failed')
           if '@drawable/tray_icon_v14' not in s:
-              raise SystemExit('VC14 tray icon manifest wiring failed')
+              raise SystemExit('VC14 tray icon wiring failed')
 
-          print('VC14 stationary override + key map + icon cache bust applied')
+          print('VC14 three-part fix applied')
           PY
       - name: Fix Play closed-testing manifest blockers
         working-directory: oal
