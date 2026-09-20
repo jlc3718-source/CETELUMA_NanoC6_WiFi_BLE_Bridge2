@@ -1,9 +1,9 @@
-name: Build OpenAutoLink v2.07 VC14
+name: Build OpenAutoLink v2.08 VC15
 
 on:
   push:
     branches:
-      - oal-v207-vc14-build
+      - oal-v208-vc15-build
     paths:
       - '.github/workflows/oal-v203-vc10.yml'
   workflow_dispatch:
@@ -788,6 +788,247 @@ jobs:
                   raise SystemExit(f'VC14 source head corrupted: {check_path}: {head!r}')
           print('VC14 three-part fix applied')
           PY
+      - name: VC15 native stationary Park gate
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Kotlin JNI declaration.
+          p = Path('app/src/main/java/com/openautolink/app/transport/aasdk/AasdkNative.kt')
+          s = p.read_text()
+          anchor = '''    @JvmStatic
+              external fun nativeSendVehicleSensor(sensorType: Int, data: ByteArray)
+
+          '''
+          insert = '''    @JvmStatic
+              external fun nativeSendVehicleSensor(sensorType: Int, data: ByteArray)
+
+              @JvmStatic
+              external fun nativeSetStationaryParkOverride(enabled: Boolean)
+
+          '''
+          if 'nativeSetStationaryParkOverride' not in s:
+              if anchor not in s:
+                  raise SystemExit('VC15 AasdkNative anchor not found')
+              s = s.replace(anchor, insert, 1)
+          p.write_text(s)
+
+          # Kotlin session wrapper.
+          p = Path('app/src/main/java/com/openautolink/app/transport/aasdk/AasdkSession.kt')
+          s = p.read_text()
+          anchor = '''    fun sendSpeed(speedMmPerS: Int) = AasdkNative.nativeSendSpeed(speedMmPerS)
+              fun sendGear(gear: Int) = AasdkNative.nativeSendGear(gear)'''
+          repl = '''    fun setStationaryParkOverride(enabled: Boolean) =
+                  AasdkNative.nativeSetStationaryParkOverride(enabled)
+
+              fun sendSpeed(speedMmPerS: Int) = AasdkNative.nativeSendSpeed(speedMmPerS)
+              fun sendGear(gear: Int) = AasdkNative.nativeSendGear(gear)'''
+          if 'fun setStationaryParkOverride' not in s:
+              if anchor not in s:
+                  raise SystemExit('VC15 AasdkSession anchor not found')
+              s = s.replace(anchor, repl, 1)
+          p.write_text(s)
+
+          # Make the preference impossible to miss on session replacement and on every forced push.
+          p = Path('app/src/main/java/com/openautolink/app/session/SessionManager.kt')
+          s = p.read_text()
+          old = '''    private fun adoptSessionOwnership(session: AasdkSession) {
+                  synchronized(sessionStateLock) { aasdkSession = session }
+              }'''
+          new = '''    private fun adoptSessionOwnership(session: AasdkSession) {
+                  synchronized(sessionStateLock) { aasdkSession = session }
+                  session.setStationaryParkOverride(alwaysInPark)
+                  DiagnosticLog.i("vhal", "VC15 native park gate adopted enabled=$alwaysInPark")
+              }'''
+          if old not in s:
+              raise SystemExit('VC15 adoptSessionOwnership anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''                          alwaysInPark = enabled
+                          parkOverrideKeepAliveJob?.cancel()'''
+          new = '''                          alwaysInPark = enabled
+                          aasdkSession?.setStationaryParkOverride(enabled)
+                          parkOverrideKeepAliveJob?.cancel()'''
+          if old not in s:
+              raise SystemExit('VC15 alwaysInPark collector anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    private fun pushHardParkState(session: AasdkSession) {
+                  lastSentGearRaw = 4'''
+          new = '''    private fun pushHardParkState(session: AasdkSession) {
+                  session.setStationaryParkOverride(true)
+                  lastSentGearRaw = 4'''
+          if old not in s:
+              raise SystemExit('VC15 pushHardParkState anchor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # C++ public setter + native state.
+          p = Path('app/src/main/cpp/jni_session.h')
+          s = p.read_text()
+          anchor = '''    void sendDrivingStatusSensor(bool moving);
+              void sendFuelSensor(int levelPct, int rangeM, bool lowFuel);'''
+          repl = '''    void sendDrivingStatusSensor(bool moving);
+              void setStationaryParkOverride(bool enabled);
+              void sendFuelSensor(int levelPct, int rangeM, bool lowFuel);'''
+          if 'void setStationaryParkOverride(bool enabled);' not in s:
+              if anchor not in s:
+                  raise SystemExit('VC15 jni_session.h method anchor not found')
+              s = s.replace(anchor, repl, 1)
+
+          anchor = '''    std::atomic<bool> headUnitMuteExplicit_{false};
+              // IO-thread confined; reset only when an async send fails.'''
+          repl = '''    std::atomic<bool> headUnitMuteExplicit_{false};
+              std::atomic<bool> stationaryParkOverride_{false};
+              std::atomic<int> lastObservedSpeedMmPerS_{1000000};
+              // IO-thread confined; reset only when an async send fails.'''
+          if 'stationaryParkOverride_' not in s:
+              if anchor not in s:
+                  raise SystemExit('VC15 jni_session.h state anchor not found')
+              s = s.replace(anchor, repl, 1)
+          p.write_text(s)
+
+          # Native setter and final output clamp. This is the last gate before SensorBatch.
+          p = Path('app/src/main/cpp/jni_session.cpp')
+          s = p.read_text()
+
+          marker = '''void JniSession::sendSpeedSensor(int speedMmPerS)
+          {'''
+          setter = '''void JniSession::setStationaryParkOverride(bool enabled)
+          {
+              stationaryParkOverride_.store(enabled);
+              LOGI("VC15_NATIVE_PARK_GATE enabled=%d", enabled ? 1 : 0);
+          }
+
+          void JniSession::sendSpeedSensor(int speedMmPerS)
+          {'''
+          if 'VC15_NATIVE_PARK_GATE' not in s:
+              if marker not in s:
+                  raise SystemExit('VC15 native setter marker not found')
+              s = s.replace(marker, setter, 1)
+
+          old = '''void JniSession::sendSpeedSensor(int speedMmPerS)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              ioService_->post([this, speedMmPerS]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* sd = batch.add_speed_data();
+                  sd->set_speed_e3(speedMmPerS);'''
+          new = '''void JniSession::sendSpeedSensor(int speedMmPerS)
+          {
+              lastObservedSpeedMmPerS_.store(speedMmPerS);
+              if (!streaming_ || !sensorChannel_) return;
+              const bool forcePark = stationaryParkOverride_.load() &&
+                  speedMmPerS > -500 && speedMmPerS < 500;
+              const int outgoingSpeed = forcePark ? 0 : speedMmPerS;
+              ioService_->post([this, outgoingSpeed]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* sd = batch.add_speed_data();
+                  sd->set_speed_e3(outgoingSpeed);'''
+          if old not in s:
+              raise SystemExit('VC15 speed sender anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''void JniSession::sendGearSensor(int gear)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              ioService_->post([this, gear]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* gd = batch.add_gear_data();
+                  gd->set_gear(static_cast<aap_protobuf::service::sensorsource::message::Gear>(gear));'''
+          new = '''void JniSession::sendGearSensor(int gear)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              const int actualSpeed = lastObservedSpeedMmPerS_.load();
+              const bool forcePark = stationaryParkOverride_.load() &&
+                  actualSpeed > -500 && actualSpeed < 500;
+              const int outgoingGear = forcePark ? 101 : gear;
+              ioService_->post([this, outgoingGear]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* gd = batch.add_gear_data();
+                  gd->set_gear(static_cast<aap_protobuf::service::sensorsource::message::Gear>(outgoingGear));'''
+          if old not in s:
+              raise SystemExit('VC15 gear sender anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''void JniSession::sendParkingBrakeSensor(bool engaged)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              ioService_->post([this, engaged]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* pb = batch.add_parking_brake_data();
+                  pb->set_parking_brake(engaged);'''
+          new = '''void JniSession::sendParkingBrakeSensor(bool engaged)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              const int actualSpeed = lastObservedSpeedMmPerS_.load();
+              const bool forcePark = stationaryParkOverride_.load() &&
+                  actualSpeed > -500 && actualSpeed < 500;
+              const bool outgoingBrake = forcePark ? true : engaged;
+              ioService_->post([this, outgoingBrake]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* pb = batch.add_parking_brake_data();
+                  pb->set_parking_brake(outgoingBrake);'''
+          if old not in s:
+              raise SystemExit('VC15 parking brake sender anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''void JniSession::sendDrivingStatusSensor(bool moving)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              ioService_->post([this, moving]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* ds = batch.add_driving_status_data();
+                  ds->set_status(moving ? 31 : 0);'''
+          new = '''void JniSession::sendDrivingStatusSensor(bool moving)
+          {
+              if (!streaming_ || !sensorChannel_) return;
+              const int actualSpeed = lastObservedSpeedMmPerS_.load();
+              const bool forcePark = stationaryParkOverride_.load() &&
+                  actualSpeed > -500 && actualSpeed < 500;
+              const bool outgoingMoving = forcePark ? false : moving;
+              ioService_->post([this, outgoingMoving]() {
+                  aap_protobuf::service::sensorsource::message::SensorBatch batch;
+                  auto* ds = batch.add_driving_status_data();
+                  ds->set_status(outgoingMoving ? 31 : 0);'''
+          if old not in s:
+              raise SystemExit('VC15 driving-status sender anchor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # JNI entry point.
+          p = Path('app/src/main/cpp/aasdk_jni.cpp')
+          s = p.read_text()
+          marker = '''/*
+           * Class:     com_openautolink_app_transport_aasdk_AasdkNative
+           * Method:    nativeSendVehicleSensor
+           */'''
+          block = '''/*
+           * Class:     com_openautolink_app_transport_aasdk_AasdkNative
+           * Method:    nativeSetStationaryParkOverride
+           */
+          JNIEXPORT void JNICALL
+          Java_com_openautolink_app_transport_aasdk_AasdkNative_nativeSetStationaryParkOverride(
+              JNIEnv* /*env*/, jclass /*clazz*/, jboolean enabled)
+          {
+              auto session = getSession();
+              if (session) session->setStationaryParkOverride(enabled == JNI_TRUE);
+          }
+
+          /*
+           * Class:     com_openautolink_app_transport_aasdk_AasdkNative
+           * Method:    nativeSendVehicleSensor
+           */'''
+          if 'nativeSetStationaryParkOverride(' not in s:
+              if marker not in s:
+                  raise SystemExit('VC15 aasdk_jni marker not found')
+              s = s.replace(marker, block, 1)
+          p.write_text(s)
+
+          print('VC15 native stationary Park gate applied')
+          PY
+
       - name: Fix Play closed-testing manifest blockers
         working-directory: oal
         run: |
@@ -850,23 +1091,25 @@ jobs:
           set -euxo pipefail
           AAB=app/build/outputs/bundle/release/app-release.aab
           test -s "$AAB"
-          rm -rf /tmp/vc14check && mkdir -p /tmp/vc14check
+          rm -rf /tmp/vc15check && mkdir -p /tmp/vc14check
           cd /tmp/vc14check
           unzip -q "$GITHUB_WORKSPACE/oal/$AAB"
           strings base/manifest/AndroidManifest.xml | grep -F 'MainActivityV14'
           strings base/manifest/AndroidManifest.xml | grep -F 'OalMediaBrowserServiceV14'
           strings base/resources.pb | grep -F 'tray_icon_v14'
           strings base/dex/classes.dex | grep -F 'VC14_PARK_OVERRIDE_KEEPALIVE'
+          strings base/dex/classes.dex | grep -F 'nativeSetStationaryParkOverride'
           for SO in base/lib/*/libopenautolink-jni.so; do
             strings "$SO" | grep -F 'VC14_KEY_BINDING_ACK_SENT'
             strings "$SO" | grep -F 'VC14_INPUT_KEYS_ADVERTISED'
+            strings "$SO" | grep -F 'VC15_NATIVE_PARK_GATE'
           done
           sha256sum "$GITHUB_WORKSPACE/oal/$AAB"
 
       - name: Upload unsigned AAB
         uses: actions/upload-artifact@v4
         with:
-          name: OpenAutoLink_v2.07_VC14_UNSIGNED
+          name: OpenAutoLink_v2.08_VC15_UNSIGNED
           path: oal/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 1
