@@ -597,7 +597,7 @@ jobs:
           if loc < 0:
               raise SystemExit('VC14 location listener start not found')
           line_end = s.find('\n', loc)
-          s = s[:line_end + 1] + '            lastGnssSpeedMps = location.speed\\n' + s[line_end + 1:]
+          s = s[:line_end + 1] + '            lastGnssSpeedMps = location.speed\n' + s[line_end + 1:]
           p.write_text(s)
 
           # 2) BUTTON INPUT
@@ -639,7 +639,7 @@ jobs:
           ms = s.find(needle)
           if ms < 0:
               raise SystemExit('VC14 MediaSession construction start not found')
-          line_end = s.find('\\n', ms)
+          line_end = s.find('\n', ms)
           s = s[:line_end + 1] + '''                setFlags(
                       MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
                           MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
@@ -839,8 +839,8 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:bundleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
-            -PoalVersionCode=13 \
-            -PoalVersionName=v2.06 \
+            -PoalVersionCode=14 \
+            -PoalVersionName=v2.07 \
             -PoalBuilderUnsigned=true \
             --no-daemon
 
