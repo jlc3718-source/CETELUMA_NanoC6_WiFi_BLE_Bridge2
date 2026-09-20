@@ -1,9 +1,9 @@
-name: Build OpenAutoLink v2.05 VC12
+name: Build OpenAutoLink v2.06 VC13
 
 on:
   push:
     branches:
-      - oal-v205-vc12-build
+      - oal-v206-vc13-build
     paths:
       - '.github/workflows/oal-v203-vc10.yml'
   workflow_dispatch:
@@ -372,6 +372,76 @@ jobs:
           p.write_text(s.replace(old, new, 1))
           print('VC12 park latch and runtime permission fixes applied')
           PY
+      - name: Fix sensor subscription ACK ordering and pre-load Park preference
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Native race fix: Gearhead must receive SensorStartResponse before
+          # we emit the first SensorBatch for that subscription.
+          p = Path('app/src/main/cpp/jni_channel_handlers.cpp')
+          s = p.read_text()
+          old = '''    auto promise = aasdk::channel::SendPromise::defer(strand_);
+              promise->then([]() {}, [this](const auto& e) { this->onChannelError(e); });
+              channel_->sendSensorStartResponse(response, std::move(promise));
+
+              // Push current vehicle state for this sensor immediately. Gearhead defaults
+              // its driving-status restriction to FULLY_RESTRICTED(31) and only leaves
+              // that state once a real sample arrives (teardown: p000/rqd.java f65655d).
+              // A parked car generates no VHAL change events, so without this the phone
+              // stays restricted for the whole session — no Maps keyboard. Issue #61.
+              session_.notifySensorSubscribed(static_cast<int>(request.type()));'''
+          new = '''    const int sensorType = static_cast<int>(request.type());
+              auto promise = aasdk::channel::SendPromise::defer(strand_);
+              promise->then(
+                  [this, sensorType]() {
+                      LOGI("Sensor start response sent: type=%d; pushing current value", sensorType);
+                      session_.notifySensorSubscribed(sensorType);
+                  },
+                  [this](const auto& e) { this->onChannelError(e); });
+              channel_->sendSensorStartResponse(response, std::move(promise));'''
+          if old not in s:
+              raise SystemExit('native sensor ACK block not found')
+          p.write_text(s.replace(old, new, 1))
+
+          # Make the toggle value available synchronously before any phone
+          # sensor subscriptions can arrive, then issue one delayed insurance
+          # re-push after the post-ACK immediate push.
+          p = Path('app/src/main/java/com/openautolink/app/session/SessionManager.kt')
+          s = p.read_text()
+
+          old = '''        resetLatchedVehicleSensorState("start_session")
+                  observeAlwaysInPark()
+                  ensureVehicleDataForwarder()'''
+          new = '''        alwaysInPark = AppPreferences.getInstance(ctx).alwaysInPark.first()
+                  DiagnosticLog.i("vhal", "startup alwaysInPark=$alwaysInPark")
+                  resetLatchedVehicleSensorState("start_session")
+                  observeAlwaysInPark()
+                  ensureVehicleDataForwarder()'''
+          if old not in s:
+              raise SystemExit('startup park preload anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            pushHardParkState(session)
+                      DiagnosticLog.i("vhal", "re-pushed full PARK state on sensor subscribe type=$sensorType")
+                      return'''
+          new = '''            pushHardParkState(session)
+                      DiagnosticLog.i("vhal", "post-ACK full PARK state pushed type=$sensorType")
+                      scope.launch {
+                          kotlinx.coroutines.delay(250)
+                          val latest = _vehicleDataForwarder?.latestVehicleData?.value
+                          if (aasdkSession === session && hardParkOverrideActive(latest)) {
+                              pushHardParkState(session)
+                              DiagnosticLog.i("vhal", "delayed full PARK state re-pushed type=$sensorType")
+                          }
+                      }
+                      return'''
+          if old not in s:
+              raise SystemExit('post-subscribe retry anchor not found')
+          p.write_text(s.replace(old, new, 1))
+          print('VC13 native ACK ordering + preference preload applied')
+          PY
       - name: Preserve Silverado tray/service icon behavior
         working-directory: oal
         run: |
@@ -451,7 +521,7 @@ jobs:
       - name: Upload unsigned AAB
         uses: actions/upload-artifact@v4
         with:
-          name: OpenAutoLink_v2.05_VC12_UNSIGNED
+          name: OpenAutoLink_v2.06_VC13_UNSIGNED
           path: oal/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 1
