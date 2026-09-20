@@ -1194,7 +1194,9 @@ jobs:
           unzip -q "$GITHUB_WORKSPACE/oal/$AAB"
           strings base/manifest/AndroidManifest.xml | grep -F 'MainActivityV14'
           strings base/manifest/AndroidManifest.xml | grep -F 'OalMediaBrowserServiceV14'
-          strings base/resources.pb | grep -F 'tray_icon_v14'\n          strings base/manifest/AndroidManifest.xml | grep -F 'CAR_MILEAGE_3P'\n          strings base/manifest/AndroidManifest.xml | grep -F 'CAR_TIRES_3P'
+          strings base/resources.pb | grep -F 'tray_icon_v14'
+          strings base/manifest/AndroidManifest.xml | grep -F 'CAR_MILEAGE_3P'
+          strings base/manifest/AndroidManifest.xml | grep -F 'CAR_TIRES_3P'
           strings base/dex/classes.dex | grep -F 'VC14_PARK_OVERRIDE_KEEPALIVE'
           strings base/dex/classes.dex | grep -F 'nativeSetStationaryParkOverride'
           for SO in base/lib/*/libopenautolink-jni.so; do
