@@ -1035,6 +1035,98 @@ jobs:
           print('VC15 native stationary Park gate applied')
           PY
 
+      - name: Fix remaining grantable AAOS vehicle permissions
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Android 15+/newer AAOS exposes third-party dangerous variants for
+          # mileage and tire pressure. The legacy CAR_MILEAGE/CAR_TIRES names are
+          # signature|privileged and cannot be granted to a Play-installed app.
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          insert_after = '<uses-permission android:name="android.car.permission.CAR_TIRES" />'
+          additions = [
+              '<uses-permission android:name="android.car.permission.CAR_MILEAGE_3P" />',
+              '<uses-permission android:name="android.car.permission.CAR_TIRES_3P" />',
+          ]
+          for line in additions:
+              if line not in s:
+                  if insert_after not in s:
+                      raise SystemExit('VC15 car permission manifest anchor not found')
+                  s = s.replace(insert_after, insert_after + '\n    ' + line, 1)
+                  insert_after = line
+          p.write_text(s)
+
+          # Request the dangerous 3P permissions at runtime, but only if this
+          # vehicle's AAOS build actually defines them.
+          p = Path('app/src/main/java/com/openautolink/app/MainActivity.kt')
+          s = p.read_text()
+          anchor = '''        candidates += "android.car.permission.CAR_SPEED"
+                      candidates += "android.car.permission.CAR_ENERGY"'''
+          repl = '''        candidates += "android.car.permission.CAR_SPEED"
+                      candidates += "android.car.permission.CAR_ENERGY"
+                      for (perm in listOf(
+                              "android.car.permission.CAR_MILEAGE_3P",
+                              "android.car.permission.CAR_TIRES_3P",
+                          )) {
+                          val exists = runCatching { packageManager.getPermissionInfo(perm, 0) }.isSuccess
+                          if (exists) candidates += perm
+                      }'''
+          if anchor not in s:
+              raise SystemExit('VC15 runtime vehicle-permission anchor not found')
+          s = s.replace(anchor, repl, 1)
+          p.write_text(s)
+
+          # Probe the VHAL properties with the grantable 3P names. Using the
+          # legacy privileged names here made diagnostics report "No permission"
+          # even on AAOS versions that support the dangerous third-party grant.
+          p = Path('app/src/main/java/com/openautolink/app/input/VehicleDataForwarderImpl.kt')
+          s = p.read_text()
+          s = s.replace(
+              'PropDef("PERF_ODOMETER", "android.car.permission.CAR_MILEAGE")',
+              'PropDef("PERF_ODOMETER", "android.car.permission.CAR_MILEAGE_3P")',
+              1,
+          )
+          s = s.replace(
+              'PropDef("TIRE_PRESSURE", "android.car.permission.CAR_TIRES")',
+              'PropDef("TIRE_PRESSURE", "android.car.permission.CAR_TIRES_3P")',
+              1,
+          )
+          if 'PropDef("PERF_ODOMETER", "android.car.permission.CAR_MILEAGE_3P")' not in s:
+              raise SystemExit('VC15 mileage 3P mapping failed')
+          if 'PropDef("TIRE_PRESSURE", "android.car.permission.CAR_TIRES_3P")' not in s:
+              raise SystemExit('VC15 tires 3P mapping failed')
+          p.write_text(s)
+
+          # Make the one remaining non-grantable category explicit in diagnostics.
+          # ABS_ACTIVE and TRACTION_CONTROL_ACTIVE require signature|privileged
+          # CAR_DYNAMICS_STATE on Android Automotive; a normal Play app cannot
+          # obtain it.
+          p = Path('app/src/main/java/com/openautolink/app/ui/diagnostics/DiagnosticsScreen.kt')
+          s = p.read_text()
+          old = '''                        status.startsWith("permission_denied") -> {
+                              val perm = status.substringAfter(":")
+                                  .substringAfterLast(".")
+                              "✗ No permission ($perm)" to Color(0xFFFF5722)
+                          }'''
+          new = '''                        status.startsWith("permission_denied") -> {
+                              val perm = status.substringAfter(":")
+                                  .substringAfterLast(".")
+                              if (perm == "CAR_DYNAMICS_STATE") {
+                                  "✗ Privileged-only ($perm)" to Color(0xFFFF9800)
+                              } else {
+                                  "✗ No permission ($perm)" to Color(0xFFFF5722)
+                              }
+                          }'''
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          print('VC15 AAOS 3P mileage/tires permissions applied')
+          PY
+
       - name: Fix Play closed-testing manifest blockers
         working-directory: oal
         run: |
@@ -1097,12 +1189,12 @@ jobs:
           set -euxo pipefail
           AAB=app/build/outputs/bundle/release/app-release.aab
           test -s "$AAB"
-          rm -rf /tmp/vc15check && mkdir -p /tmp/vc14check
-          cd /tmp/vc14check
+          rm -rf /tmp/vc15check && mkdir -p /tmp/vc15check
+          cd /tmp/vc15check
           unzip -q "$GITHUB_WORKSPACE/oal/$AAB"
           strings base/manifest/AndroidManifest.xml | grep -F 'MainActivityV14'
           strings base/manifest/AndroidManifest.xml | grep -F 'OalMediaBrowserServiceV14'
-          strings base/resources.pb | grep -F 'tray_icon_v14'
+          strings base/resources.pb | grep -F 'tray_icon_v14'\n          strings base/manifest/AndroidManifest.xml | grep -F 'CAR_MILEAGE_3P'\n          strings base/manifest/AndroidManifest.xml | grep -F 'CAR_TIRES_3P'
           strings base/dex/classes.dex | grep -F 'VC14_PARK_OVERRIDE_KEEPALIVE'
           strings base/dex/classes.dex | grep -F 'nativeSetStationaryParkOverride'
           for SO in base/lib/*/libopenautolink-jni.so; do
