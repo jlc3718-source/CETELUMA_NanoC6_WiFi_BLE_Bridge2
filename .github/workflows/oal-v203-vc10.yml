@@ -1,9 +1,9 @@
-name: Build OpenAutoLink v2.04 VC11
+name: Build OpenAutoLink v2.05 VC12
 
 on:
   push:
     branches:
-      - oal-v204-vc11-build
+      - oal-v205-vc12-build
     paths:
       - '.github/workflows/oal-v203-vc10.yml'
   workflow_dispatch:
@@ -261,6 +261,117 @@ jobs:
           print('Patch applied successfully')
           PY
 
+      - name: Harden Always-in-Park latch and request AAOS runtime permissions
+        working-directory: oal
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          # Make the parked override deterministic from the real gear/parking-brake state.
+          p = Path('app/src/main/java/com/openautolink/app/session/SessionManager.kt')
+          s = p.read_text()
+
+          park_new = '''    private var lastRealGearRaw: Int? = null
+              private var lastRealParkingBrake: Boolean? = null
+              private var lastRealSpeedKmh: Float? = null
+
+              private fun hardParkOverrideActive(vd: ControlMessage.VehicleData?): Boolean {
+                  if (!alwaysInPark) return false
+                  val gear = vd?.gearRaw ?: lastRealGearRaw
+                  val brake = vd?.parkingBrake ?: lastRealParkingBrake
+                  val speed = vd?.speedKmh ?: lastRealSpeedKmh
+
+                  // PARK from VHAL is authoritative even when CAR_SPEED has not been granted.
+                  if (gear == 4) return true
+                  // Neutral is accepted only with the parking brake set.
+                  if (gear == 1 && brake == true) return true
+                  // Final fallback when a speed sample exists.
+                  return speed != null && kotlin.math.abs(speed) < 0.5f && brake == true
+              }'''
+          s, n = re.subn(
+              r'    private fun hardParkOverrideActive\(vd: ControlMessage\.VehicleData\?\): Boolean \{.*?\n    \}',
+              park_new, s, count=1, flags=re.S
+          )
+          if n != 1:
+              raise SystemExit('hardParkOverrideActive replacement failed')
+
+          old = '''    private fun forwardVehicleData(vd: ControlMessage.VehicleData) {
+                  val session = aasdkSession ?: return
+                  val hardPark = hardParkOverrideActive(vd)'''
+          new = '''    private fun forwardVehicleData(vd: ControlMessage.VehicleData) {
+                  val session = aasdkSession ?: return
+                  vd.gearRaw?.let { lastRealGearRaw = it }
+                  vd.parkingBrake?.let { lastRealParkingBrake = it }
+                  vd.speedKmh?.let { lastRealSpeedKmh = it }
+                  val hardPark = hardParkOverrideActive(vd)'''
+          if old not in s:
+              raise SystemExit('forward cache insertion anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            is ControlMessage.VehicleData -> {
+                      val hardPark = hardParkOverrideActive(message)'''
+          new = '''            is ControlMessage.VehicleData -> {
+                      message.gearRaw?.let { lastRealGearRaw = it }
+                      message.parkingBrake?.let { lastRealParkingBrake = it }
+                      message.speedKmh?.let { lastRealSpeedKmh = it }
+                      val hardPark = hardParkOverrideActive(message)'''
+          if old not in s:
+              raise SystemExit('control cache insertion anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        val hardPark = hardParkOverrideActive(vd)
+                  when (sensorType) {'''
+          new = '''        val hardPark = hardParkOverrideActive(vd)
+                  if (hardPark && sensorType in setOf(
+                          SENSOR_TYPE_DRIVING_STATUS, SENSOR_TYPE_GEAR,
+                          SENSOR_TYPE_PARKING_BRAKE, SENSOR_TYPE_SPEED
+                      )) {
+                      // Re-push the complete coherent state whenever Gearhead subscribes
+                      // to any safety-related sensor, regardless of subscription order.
+                      pushHardParkState(session)
+                      DiagnosticLog.i("vhal", "re-pushed full PARK state on sensor subscribe type=$sensorType")
+                      return
+                  }
+                  when (sensorType) {'''
+          if old not in s:
+              raise SystemExit('subscribe repush insertion anchor not found')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+
+          # CAR_SPEED and CAR_ENERGY are dangerous AAOS permissions and must be
+          # requested at runtime, not merely declared in AndroidManifest.xml.
+          p = Path('app/src/main/java/com/openautolink/app/MainActivity.kt')
+          s = p.read_text()
+          old = '''    private fun requestMissingPermissions() {
+                  val missing = requiredPermissions.filter {
+                      ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+                  }
+                  if (missing.isNotEmpty()) {
+                      Log.i("MainActivity", "Requesting permissions: $missing")
+                      permissionLauncher.launch(missing.toTypedArray())
+                  }
+              }'''
+          new = '''    private fun requestMissingPermissions() {
+                  val candidates = requiredPermissions.toMutableList()
+                  if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)) {
+                      candidates += "android.car.permission.CAR_SPEED"
+                      candidates += "android.car.permission.CAR_ENERGY"
+                  }
+                  val missing = candidates.distinct().filter {
+                      ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+                  }
+                  if (missing.isNotEmpty()) {
+                      Log.i("MainActivity", "Requesting permissions: $missing")
+                      permissionLauncher.launch(missing.toTypedArray())
+                  }
+              }'''
+          if old not in s:
+              raise SystemExit('requestMissingPermissions replacement failed')
+          p.write_text(s.replace(old, new, 1))
+          print('VC12 park latch and runtime permission fixes applied')
+          PY
       - name: Preserve Silverado tray/service icon behavior
         working-directory: oal
         run: |
@@ -340,7 +451,7 @@ jobs:
       - name: Upload unsigned AAB
         uses: actions/upload-artifact@v4
         with:
-          name: OpenAutoLink_v2.04_VC11_UNSIGNED
+          name: OpenAutoLink_v2.05_VC12_UNSIGNED
           path: oal/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 1
