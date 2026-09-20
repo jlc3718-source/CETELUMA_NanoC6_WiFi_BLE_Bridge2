@@ -442,19 +442,51 @@ jobs:
           p.write_text(s.replace(old, new, 1))
           print('VC13 native ACK ordering + preference preload applied')
           PY
-      - name: Preserve Silverado tray/service icon behavior
+      - name: Restore exact VC8 tray/service icon resource
         working-directory: oal
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import shutil
+
+          res = Path('app/src/main/res')
+          src_candidates = [
+              res / 'drawable-xxhdpi' / 'ic_logo.png',
+              res / 'drawable-xxhdpi-v4' / 'ic_logo.png',
+          ]
+          src = next((p for p in src_candidates if p.exists()), None)
+          if src is None:
+              raise SystemExit('ic_logo.png source not found')
+          dst = src.with_name('tray_icon_v8.png')
+          shutil.copy2(src, dst)
+
           p = Path('app/src/main/AndroidManifest.xml')
           s = p.read_text()
-          s = s.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/ic_logo"', 1)
-          s = s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/ic_logo"', 1)
-          s = s.replace('android:name=".MainActivity"\n            android:exported="true"', 'android:name=".MainActivity"\n            android:icon="@drawable/ic_logo"\n            android:exported="true"', 1)
-          s = s.replace('android:name=".cluster.OalClusterService"\n            android:enabled="true"', 'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/ic_logo"\n            android:enabled="true"', 1)
-          s = s.replace('android:name=".media.OalMediaBrowserService"\n            android:exported="true"', 'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/ic_logo"\n            android:exported="true"', 1)
+          s = s.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/tray_icon_v8"', 1)
+          s = s.replace('android:roundIcon="@mipmap/ic_launcher_round"', 'android:roundIcon="@drawable/tray_icon_v8"', 1)
+          s = s.replace('android:icon="@drawable/ic_logo"', 'android:icon="@drawable/tray_icon_v8"')
+          s = s.replace('android:roundIcon="@drawable/ic_logo"', 'android:roundIcon="@drawable/tray_icon_v8"')
+
+          if 'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"' not in s:
+              s = s.replace(
+                  'android:name=".MainActivity"\n            android:exported="true"',
+                  'android:name=".MainActivity"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1)
+              )
+          if 'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"' not in s:
+              s = s.replace(
+                  'android:name=".cluster.OalClusterService"\n            android:enabled="true"',
+                  'android:name=".cluster.OalClusterService"\n            android:icon="@drawable/tray_icon_v8"\n            android:enabled="true"', 1)
+              )
+          if 'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"' not in s:
+              s = s.replace(
+                  'android:name=".media.OalMediaBrowserService"\n            android:exported="true"',
+                  'android:name=".media.OalMediaBrowserService"\n            android:icon="@drawable/tray_icon_v8"\n            android:exported="true"', 1)
+              )
+
           p.write_text(s)
+          assert '@drawable/tray_icon_v8' in s
+          assert dst.exists()
+          print('Exact VC8 tray_icon_v8 resource restored')
           PY
       - name: Fix Play closed-testing manifest blockers
         working-directory: oal
@@ -507,8 +539,8 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:bundleRelease \
             -PappId=jlc3718.openautolink.silveradoev \
-            -PoalVersionCode=11 \
-            -PoalVersionName=v2.04 \
+            -PoalVersionCode=13 \
+            -PoalVersionName=v2.06 \
             -PoalBuilderUnsigned=true \
             --no-daemon
 
