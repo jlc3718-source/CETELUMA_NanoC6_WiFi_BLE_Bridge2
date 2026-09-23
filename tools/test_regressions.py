@@ -62,8 +62,12 @@ assert re.search(r'("Breath"===|==="Breath"|effect===\'Breath\')', mock) and '__
 assert '.anderson-no-plain-effect-buttons' not in web and 'enhanceEffectButtons' not in web
 
 assert 'd["scheduledEvent"].to<JsonObject>()' in main and 'scheduled["toggleable"]=true' in main
+assert 'eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)&&scheduledTheme.name==EVENTS[i].name' in main
+assert 'if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue' in main
+assert 'scheduled["upcoming"]=scheduledUpcoming' in main and 'No enabled scheduled event' in main
 assert 'window.andersonScheduledEvent=e.scheduledEvent||null' in web and 'anderson-scheduled-event' in web
-assert 'scheduledEventName' in mock and 'tonightEventEnabled' in mock and 'post("/api/event",{id:e.id,enabled:t})' in mock
+assert 'scheduledEventName' in mock and 'tonightEventEnabled' in mock and 'v3TonightToggleLabel","ENABLE"' in mock
+assert 'Next Enabled Event' in mock and 'post("/api/event",{id:e.id,enabled:t})' in mock
 assert 'syncTonight' not in mock and 'z.textContent=byId("nowTheme")' not in mock
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
