@@ -61,6 +61,10 @@ assert ("const values=['Jump','Breath','Strobe','Solid'];" in mock or '["Jump","
 assert re.search(r'("Breath"===|==="Breath"|effect===\'Breath\')', mock) and '__REMOVED_BREATH__' not in mock
 assert '.anderson-no-plain-effect-buttons' not in web and 'enhanceEffectButtons' not in web
 
+assert 'd["scheduledEvent"].to<JsonObject>()' in main and 'scheduled["toggleable"]=true' in main
+assert 'window.andersonScheduledEvent=e.scheduledEvent||null' in web and 'anderson-scheduled-event' in web
+assert 'scheduledEventName' in mock and 'tonightEventEnabled' in mock and 'post("/api/event",{id:e.id,enabled:t})' in mock
+assert 'syncTonight' not in mock and 'z.textContent=byId("nowTheme")' not in mock
 assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reached (32)' in main
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
 assert '/api/event-color-theme' in main+web and 'eventColors1' in web and 'eventColors3028' in web and 'eventColors3029' in web
