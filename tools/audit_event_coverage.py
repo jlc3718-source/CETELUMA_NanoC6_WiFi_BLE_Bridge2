@@ -28,7 +28,7 @@ class Event:
 EVENT_RE = re.compile(
     r'^\{"(?P<id>evt\d+)","(?P<name>[^"]+)",EventKind::(?P<kind>\w+),RuleType::(?P<rule>\w+),'
     r'(?P<month>-?\d+),(?P<day>-?\d+),(?P<weekday>-?\d+),(?P<nth>-?\d+),(?P<offset>-?\d+),'
-    r'(?P<duration>\d+),Effect::\w+,C\d\([^\n]*\),(?P<colors>\d+)\s*\},?$', re.M
+    r'(?P<duration>\d+),Effect::\w+,(?P<colors>\d+),C\d\([^\n]*\)\s*\},?$', re.M
 )
 SPECIAL_RE = re.compile(r'\{"(?P<id>evt\d+)",(?P<year>\d{4}),(?P<month>\d+),(?P<day>\d+)\}')
 

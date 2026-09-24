@@ -1,1 +1,1 @@
-anderson-home-3.1.52-enabled-event-skip-and-label-production
+Build Anderson Home 3.1.54: solar time, bounded OTA framing, startup recovery, compact events

@@ -14,9 +14,12 @@ static constexpr size_t MAX_ACTIVE_TIER_EVENTS=64;
 static double normalizeDegrees(double v){while(v<0.0)v+=360.0;while(v>=360.0)v-=360.0;return v;}
 static double normalizeHours(double v){while(v<0.0)v+=24.0;while(v>=24.0)v-=24.0;return v;}
 static int localUtcOffsetMinutes(const tm& l){
-  time_t epoch=time(nullptr);tm utc{};gmtime_r(&epoch,&utc);
-  int localMin=l.tm_hour*60+l.tm_min,utcMin=utc.tm_hour*60+utc.tm_min;
-  int dayDiff=l.tm_yday-utc.tm_yday;if(dayDiff>1)dayDiff=-1;else if(dayDiff<-1)dayDiff=1;
+  // Solar events use the requested date's offset, including its DST rules.
+  // Noon avoids using the pre-transition offset for that day's dawn/dusk.
+  tm local=l;local.tm_hour=12;local.tm_min=0;local.tm_sec=0;local.tm_isdst=-1;
+  time_t epoch=mktime(&local);tm utc{};gmtime_r(&epoch,&utc);
+  int localMin=local.tm_hour*60+local.tm_min,utcMin=utc.tm_hour*60+utc.tm_min;
+  int dayDiff=local.tm_yday-utc.tm_yday;if(dayDiff>1)dayDiff=-1;else if(dayDiff<-1)dayDiff=1;
   return constrain(localMin-utcMin+dayDiff*1440,-840,840);
 }
 static bool localLeapYear(int y){return (y%4==0&&y%100!=0)||y%400==0;}

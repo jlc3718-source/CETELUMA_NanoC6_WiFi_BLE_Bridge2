@@ -25,8 +25,8 @@ struct EventDef {
   int16_t offsetDays;
   uint8_t durationDays;
   Effect effect;
-  uint32_t colors[6];
   uint8_t colorCount;
+  uint32_t colors[6];
 };
 
 struct AppSettings {
