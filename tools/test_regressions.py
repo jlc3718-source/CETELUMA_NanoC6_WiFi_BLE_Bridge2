@@ -134,4 +134,10 @@ assert 'OTA_RELEASE_MANIFEST_ASSET="ota-manifest.json"' in remote and 'discoverL
 assert 'OTA_MANIFEST_FALLBACK_URL="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/ota/latest.json"' in remote
 assert '?cb=' in remote and 'esp_random()' in remote and 'OTA_AUTO_RETRY_BASE_MS' in remote
 assert 'publish-input/ota-manifest.json' in publisher and '--pattern ota-manifest.json' in publisher
+assert 'id="profileSolarTimes"' in web and web.index('id="profileSolarTimes"') < web.index('class="profileChoices"')
+assert 'id="homeSolarTimes"' in web and web.index('id="nextEvent"') < web.index('id="homeSolarTimes"')
+assert 'd["dawn"]=fmtTime(scheduler.civilDawnMinutes(l))' in main
+assert 'd["dusk"]=fmtTime(scheduler.civilDuskMinutes(l))' in main
+assert 'Dusk ${n.dusk||"—"} • Dawn ${n.dawn||"—"}' in web
+assert 'Dusk ${e.settings?.dusk||"—"} • Dawn ${e.settings?.dawn||"—"}' in web
 print('Anderson regression source checks passed')
