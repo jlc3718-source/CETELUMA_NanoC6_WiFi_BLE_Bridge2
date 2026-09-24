@@ -68,7 +68,7 @@ static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsi
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.55";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.56";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -296,7 +296,10 @@ static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENT
 
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
 String loginPreviewJson(){
-  JsonDocument d;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();r["effect"]=effectName(runningTheme.effect);JsonArray a=r["colors"].to<JsonArray>();for(int i=0;i<runningTheme.colorCount;i++)a.add(colorHex(runningTheme.colors[i]));String out;serializeJson(d,out);return out;
+  JsonDocument d;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();r["effect"]=effectName(runningTheme.effect);JsonArray a=r["colors"].to<JsonArray>();for(int i=0;i<runningTheme.colorCount;i++)a.add(colorHex(runningTheme.colors[i]));
+  if(timeValid()){time_t n=time(nullptr);tm l{};localtime_r(&n,&l);d["dawn"]=fmtTime(scheduler.civilDawnMinutes(l));d["dusk"]=fmtTime(scheduler.civilDuskMinutes(l));}
+  else{d["dawn"]="";d["dusk"]="";}
+  String out;serializeJson(d,out);return out;
 }
 String stateJson(){
   JsonDocument d;d["firmwareVersion"]=ANDERSON_FIRMWARE_VERSION;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();addTheme(r,runningTheme);
