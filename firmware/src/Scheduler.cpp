@@ -105,7 +105,7 @@ bool Scheduler::inSchedule2Window(const tm& l) const{
   if(a==b)return false;if(a<b)return m>=a&&m<b;return m>=a||m<b;
 }
 Theme Scheduler::resolve(const tm& l){
-  Theme normal;normal.name="Warm White";normal.effect=Effect::Solid;normal.colors[0]=0xFFFFFA;normal.colorCount=1;
+  Theme normal;normal.name="Off";normal.effect=Effect::Solid;normal.colors[0]=0x000000;normal.colorCount=1;
   uint16_t specific[MAX_ACTIVE_TIER_EVENTS],holidayWindows[MAX_ACTIVE_TIER_EVENTS],monthly[MAX_ACTIVE_TIER_EVENTS];
   size_t specificCount=0,holidayWindowCount=0,monthlyCount=0;
   for(size_t i=0;i<EVENT_COUNT;i++){

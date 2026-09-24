@@ -113,6 +113,8 @@ assert 'timedTierPick' in sched and 'monthlyEligiblePosition' in sched and 'MAX_
 assert 'Holiday, awareness, and seasonal dates all share the specific-event tier.' in sched
 assert 'forcedMonthlyCoverage' in sched and 'first third of the least-conflicted' in sched
 assert 'if(specificCount)' in sched and 'if(holidayWindowCount)' in sched
+assert 'normal.name="Off";normal.effect=Effect::Solid;normal.colors[0]=0x000000;normal.colorCount=1' in sched
+assert 'normal.name="Warm White"' not in sched
 assert 'python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full' in build
 assert 'EventColorTheme::MajorUS' in main and 'EventColorTheme::MajorUS' in original
 assert 'eventAllowedInActiveSchedule' in main and 'eventAllowedInActiveSchedule' in sched
