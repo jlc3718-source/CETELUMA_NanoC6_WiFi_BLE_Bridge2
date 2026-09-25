@@ -107,6 +107,28 @@ final class DeviceStore {
         return n.contains("EUFY") ? "Eufy" : "";
     }
 
+    static boolean isInstalledAddress(String address) {
+        if (address == null) return false;
+        switch (address.trim().toUpperCase(Locale.ROOT)) {
+            case "10:2C:B1:0E:C4:01":
+            case "10:2C:B1:AD:CA:7F":
+            case "10:2C:B1:9D:F7:B5":
+            case "10:2C:B1:EB:27:96":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static String[] installedAddresses() {
+        return new String[] {
+            "10:2C:B1:0E:C4:01",
+            "10:2C:B1:AD:CA:7F",
+            "10:2C:B1:9D:F7:B5",
+            "10:2C:B1:EB:27:96"
+        };
+    }
+
     static String friendlyNameFor(String address, String advertisedName) {
         String a = address == null ? "" : address.trim().toUpperCase(Locale.ROOT);
         switch (a) {
