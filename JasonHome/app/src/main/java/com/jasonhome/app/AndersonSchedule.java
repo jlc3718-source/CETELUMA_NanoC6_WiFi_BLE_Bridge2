@@ -48,7 +48,7 @@ final class AndersonSchedule {
         prefs=context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE);
     }
 
-    boolean enabled(){return prefs.getBoolean("enabled",true);}
+    boolean enabled(){return prefs.getBoolean("enabled",false);}
     void setEnabled(boolean v){prefs.edit().putBoolean("enabled",v).apply();}
 
     Mode mode(){
