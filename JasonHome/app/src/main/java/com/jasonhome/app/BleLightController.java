@@ -163,6 +163,40 @@ final class BleLightController {
         enqueue(targets, item -> Job.effect(item,effect,safe,speed,reverse));
     }
 
+    void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
+        if (active != null || !queue.isEmpty()) {
+            listener.onStatus("A light command is already running.");
+            return;
+        }
+        if (store.accountId().length() != 40) {
+            listener.onStatus("The 40-character Eufy account ID is unavailable.");
+            return;
+        }
+        int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
+        int bright = Math.max(1, Math.min(100, brightness));
+        for (FoundLight item : targets) {
+            String serial = store.serialFor(address(item.device), item.name);
+            if (serial.length() != 16) continue;
+            FoundLight ready = new FoundLight(item.device,item.name,item.rssi,item.model,serial);
+            queue.addLast(Job.brightness(ready,bright));
+            if (("Solid".equals(effect) || "Solid / Static".equals(effect)) && safe.length == 1) {
+                queue.addLast(Job.color(ready,safe[0]));
+            } else {
+                queue.addLast(Job.effect(ready,effect,safe,speed,reverse));
+            }
+        }
+        if (queue.isEmpty()) {
+            listener.onStatus("No Eufy lights with a usable 16-character serial are ready.");
+            return;
+        }
+        stopScan();
+        totalJobs=queue.size();
+        processedJobs=0;
+        successfulJobs=0;
+        listener.onProgress(0,totalJobs);
+        runNext();
+    }
+
     private interface Factory { Job make(FoundLight item); }
 
     private void enqueue(List<FoundLight> targets, Factory factory) {
