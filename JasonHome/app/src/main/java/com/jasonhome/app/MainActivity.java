@@ -307,6 +307,17 @@ public class MainActivity extends Activity implements BleLightController.Listene
             slp.topMargin = dp(7);
             box.addView(save, slp);
 
+            Button testConnection = new Button(this);
+            testConnection.setText("TEST CONNECTION");
+            testConnection.setAllCaps(false);
+            testConnection.setTextColor(Color.WHITE);
+            testConnection.setBackground(round(Color.rgb(34, 52, 83), 10, null));
+            testConnection.setEnabled(enabled);
+            testConnection.setOnClickListener(v -> ble.diagnoseSingle(item));
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(45));
+            tlp.topMargin = dp(8);
+            box.addView(testConnection, tlp);
+
             LinearLayout actions = new LinearLayout(this);
             actions.setOrientation(LinearLayout.HORIZONTAL);
             Button on = singlePower(item, "ON", true);
