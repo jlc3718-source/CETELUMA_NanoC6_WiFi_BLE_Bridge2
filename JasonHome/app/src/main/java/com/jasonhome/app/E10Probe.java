@@ -86,9 +86,14 @@ final class E10Probe {
     }
 
     byte[] powerCommand(boolean on) {
-        if (sessionKey == null) throw new IllegalStateException("Complete handshake first");
         byte[] power = new byte[] {(byte)0xA3, 0x01, (byte)(on ? 1 : 0)};
-        return frame(0x0201, encrypt(concat(base(), power), sessionKey), 2, true);
+        return command(0x0201, power);
+    }
+
+    byte[] command(int opcode, byte[] params) {
+        if (sessionKey == null) throw new IllegalStateException("Complete handshake first");
+        if (params == null) params = new byte[0];
+        return frame(opcode, encrypt(concat(base(), params), sessionKey), 2, true);
     }
 
     private byte[] base() {
