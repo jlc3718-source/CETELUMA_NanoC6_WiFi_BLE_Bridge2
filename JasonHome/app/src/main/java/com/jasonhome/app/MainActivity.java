@@ -10,7 +10,9 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
-import android.os.Bundle;\nimport android.os.Handler;\nimport android.os.Looper;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -22,7 +24,8 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import java.util.ArrayList;
-import java.util.List;\nimport java.util.Arrays;
+import java.util.List;
+import java.util.Arrays;
 
 public class MainActivity extends Activity implements BleLightController.Listener {
     private static final int NAVY = Color.rgb(6, 13, 28);
