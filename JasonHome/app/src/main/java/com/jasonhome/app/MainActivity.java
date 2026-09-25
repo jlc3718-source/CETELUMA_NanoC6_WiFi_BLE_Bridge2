@@ -51,6 +51,13 @@ public class MainActivity extends Activity implements BleLightController.Listene
     private int selectedKelvin = 3000;
     private int selectedBrightness = 100;
 
+    private final Runnable scheduleTick = new Runnable() {
+        @Override public void run() {
+            try { applyScheduleNow(false); } catch (Throwable ignored) {}
+            scheduleHandler.postDelayed(this, 60000L);
+        }
+    };
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
