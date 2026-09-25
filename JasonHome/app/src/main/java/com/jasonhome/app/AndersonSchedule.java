@@ -46,6 +46,10 @@ final class AndersonSchedule {
 
     AndersonSchedule(Context context){
         prefs=context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE);
+        // 4.0/4.0.1 accidentally defaulted automation ON. Reset it once on upgrade.
+        if (prefs.getInt("behavior_rev",0) < 402) {
+            prefs.edit().putBoolean("enabled",false).putInt("behavior_rev",402).apply();
+        }
     }
 
     boolean enabled(){return prefs.getBoolean("enabled",false);}
