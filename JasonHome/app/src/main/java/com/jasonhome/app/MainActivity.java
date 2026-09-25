@@ -399,32 +399,41 @@ public class MainActivity extends Activity implements BleLightController.Listene
         colors.addView(more);
         addColorGrid(colors, LightPresetCatalog.QUICK);
 
-        TextView custom = text("Custom RGB — full 24-bit color space", 13, Color.rgb(194, 211, 240), true);
-        custom.setPadding(0, dp(14), 0, dp(3));
+        TextView custom = text("Color wheel — full color range", 13, Color.rgb(194, 211, 240), true);
+        custom.setPadding(0, dp(14), 0, dp(8));
         colors.addView(custom);
 
-        int r = (selectedRgb >> 16) & 0xFF;
-        int g = (selectedRgb >> 8) & 0xFF;
-        int b = selectedRgb & 0xFF;
-        TextView rgbValue = text("R " + r + "   G " + g + "   B " + b, 12, Color.rgb(178, 197, 230), false);
-        colors.addView(rgbValue);
-        SeekBar rs = rgbSlider(r), gs = rgbSlider(g), bs = rgbSlider(b);
-        SeekBar.OnSeekBarChangeListener rgbListener = new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
-                selectedRgb = (rs.getProgress() << 16) | (gs.getProgress() << 8) | bs.getProgress();
-                rgbValue.setText("R " + rs.getProgress() + "   G " + gs.getProgress() + "   B " + bs.getProgress());
-                selected.setText(String.format("#%06X", selectedRgb & 0xFFFFFF));
-                selected.setTextColor(Color.rgb(rs.getProgress(), gs.getProgress(), bs.getProgress()));
-            }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        };
-        rs.setOnSeekBarChangeListener(rgbListener);
-        gs.setOnSeekBarChangeListener(rgbListener);
-        bs.setOnSeekBarChangeListener(rgbListener);
-        colors.addView(text("Red", 10, MUTED, false)); colors.addView(rs);
-        colors.addView(text("Green", 10, MUTED, false)); colors.addView(gs);
-        colors.addView(text("Blue", 10, MUTED, false)); colors.addView(bs);
+        ColorWheelView wheel = new ColorWheelView(this);
+        wheel.setColor(selectedRgb);
+        LinearLayout.LayoutParams wheelLp = new LinearLayout.LayoutParams(-1, dp(300));
+        wheelLp.setMargins(0, dp(2), 0, dp(8));
+        colors.addView(wheel, wheelLp);
+
+        LinearLayout liveColor = new LinearLayout(this);
+        liveColor.setOrientation(LinearLayout.HORIZONTAL);
+        liveColor.setGravity(Gravity.CENTER_VERTICAL);
+        TextView colorChip = text("", 1, Color.TRANSPARENT, false);
+        colorChip.setBackground(round(
+            Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255),
+            99,
+            Color.argb(100, 255, 255, 255)
+        ));
+        TextView colorValue = text(String.format("#%06X", selectedRgb & 0xFFFFFF), 16, Color.WHITE, true);
+        colorValue.setPadding(dp(12), 0, 0, 0);
+        liveColor.addView(colorChip, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        liveColor.addView(colorValue, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        colors.addView(liveColor);
+
+        wheel.setListener(rgb -> {
+            selectedRgb = rgb & 0xFFFFFF;
+            colorValue.setText(String.format("#%06X", selectedRgb));
+            colorChip.setBackground(round(
+                Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255),
+                99,
+                Color.argb(100, 255, 255, 255)
+            ));
+            selected.setText(String.format("#%06X", selectedRgb));
+        });
 
         TextView whites = text("White channels", 13, Color.rgb(194, 211, 240), true);
         whites.setPadding(0, dp(14), 0, dp(4));
@@ -470,13 +479,6 @@ public class MainActivity extends Activity implements BleLightController.Listene
             }
             parent.addView(row);
         }
-    }
-
-    private SeekBar rgbSlider(int value) {
-        SeekBar bar = new SeekBar(this);
-        bar.setMax(255);
-        bar.setProgress(value);
-        return bar;
     }
 
     private Button smallChoice(String label, boolean active) {
