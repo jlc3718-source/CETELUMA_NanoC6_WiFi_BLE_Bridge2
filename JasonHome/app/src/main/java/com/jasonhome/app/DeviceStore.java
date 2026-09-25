@@ -107,6 +107,23 @@ final class DeviceStore {
         return n.contains("EUFY") ? "Eufy" : "";
     }
 
+    static String friendlyNameFor(String address, String advertisedName) {
+        String a = address == null ? "" : address.trim().toUpperCase(Locale.ROOT);
+        switch (a) {
+            case "10:2C:B1:0E:C4:01": return "Pool";
+            case "10:2C:B1:AD:CA:7F": return "House";
+            case "10:2C:B1:9D:F7:B5": return "Garage";
+            case "10:2C:B1:EB:27:96": return "Shed";
+            default: break;
+        }
+        String n = advertisedName == null ? "" : advertisedName.trim().toUpperCase(Locale.ROOT);
+        if (n.endsWith("C401")) return "Pool";
+        if (n.endsWith("CA7F")) return "House";
+        if (n.endsWith("F7B5")) return "Garage";
+        if (n.endsWith("2796")) return "Shed";
+        return advertisedName == null ? "" : advertisedName;
+    }
+
     static boolean isEufyName(String name) {
         return !modelFromName(name).isEmpty();
     }
