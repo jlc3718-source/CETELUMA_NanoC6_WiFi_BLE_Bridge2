@@ -143,4 +143,5 @@ assert 'cfg["on"]=fmtTime(s.onMinutes)' in main and 'cfg["off"]=fmtTime(s.offMin
 assert 'formatClockTime(e)' in web and 'formatClockTime(e.settings.off)' in web and 'formatClockTime(e.settings.schedule2End)' in web
 assert 'Dusk ${n.dusk||"—"} • Dawn ${n.dawn||"—"}' in web
 assert 'Dusk ${e.settings?.dusk||"—"} • Dawn ${e.settings?.dawn||"—"}' in web
+assert 'p.every(e=>"#000000"===normHex(e))' in web and 'if(g)return{c:"#000000",a:0,s:1}' in web
 print('Anderson regression source checks passed')
