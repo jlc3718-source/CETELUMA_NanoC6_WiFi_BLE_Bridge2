@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothStatusCodes;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
@@ -127,9 +128,13 @@ final class BleLightController {
             listener.onStatus("Bluetooth LE is unavailable.");
             return;
         }
-        listener.onStatus("Scanning nearby BLE devices - showing Eufy lights only");
+        listener.onStatus("Scanning only Pool, House, Garage and Shed");
         ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
-        manager.getAdapter().getBluetoothLeScanner().startScan(null, settings, scanCallback);
+        ArrayList<ScanFilter> filters = new ArrayList<>();
+        for (String mac : DeviceStore.installedAddresses()) {
+            filters.add(new ScanFilter.Builder().setDeviceAddress(mac).build());
+        }
+        manager.getAdapter().getBluetoothLeScanner().startScan(filters, settings, scanCallback);
         handler.postDelayed(this::stopScan, 12000L);
     }
 
@@ -140,7 +145,7 @@ final class BleLightController {
                 manager.getAdapter().getBluetoothLeScanner().stopScan(scanCallback);
             }
         } catch (Throwable ignored) {}
-        listener.onStatus("Scan complete - " + found.size() + " Eufy light" + (found.size() == 1 ? "" : "s") + " shown");
+        listener.onStatus("Scan complete - " + found.size() + "/4 installed Eufy lights found");
     }
 
     List<FoundLight> discovered() {
@@ -224,6 +229,7 @@ final class BleLightController {
         for (FoundLight item : targets) {
             if (item == null || item.device == null) continue;
             String addr = address(item.device);
+            if (!DeviceStore.isInstalledAddress(addr)) continue;
             String serial = store.serialFor(addr, item.name);
             if (serial.length() != 16) continue;
             String model = item.model;
@@ -336,6 +342,7 @@ final class BleLightController {
             BluetoothDevice d=result.getDevice();
             if(d==null)return;
             String address=address(d);
+            if (!DeviceStore.isInstalledAddress(address)) return;
             String name="";
             ScanRecord record=result.getScanRecord();
             if(record!=null&&record.getDeviceName()!=null)name=record.getDeviceName();
