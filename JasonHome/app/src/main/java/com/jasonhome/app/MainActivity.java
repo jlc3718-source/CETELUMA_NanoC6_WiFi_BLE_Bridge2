@@ -597,6 +597,159 @@ public class MainActivity extends Activity implements BleLightController.Listene
         return lp;
     }
 
+    private void renderSchedule() {
+        pageTitle("SCHEDULE", "Anderson holiday automation");
+
+        LinearLayout modeCard = card(PANEL2, 18);
+        modeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        modeCard.addView(text("HOLIDAY MODE", 9, Color.rgb(142, 169, 211), true));
+        Button enabled = smallChoice(schedule.enabled() ? "Scheduler enabled" : "Scheduler disabled", schedule.enabled());
+        enabled.setOnClickListener(v -> { schedule.setEnabled(!schedule.enabled()); lastScheduledKey=""; renderPage(); });
+        modeCard.addView(enabled, buttonMargin());
+
+        Button mode = actionButton(schedule.mode().label);
+        mode.setOnClickListener(v -> {
+            AndersonSchedule.Mode[] values = AndersonSchedule.Mode.values();
+            schedule.setMode(values[(schedule.mode().ordinal()+1)%values.length]);
+            lastScheduledKey="";
+            renderPage();
+        });
+        modeCard.addView(mode, buttonMargin());
+
+        TextView leadLabel = text("Holiday lead days  " + schedule.leadDays(), 12, Color.rgb(194,211,240), true);
+        leadLabel.setPadding(0,dp(14),0,0);
+        modeCard.addView(leadLabel);
+        SeekBar lead = new SeekBar(this);
+        lead.setMax(7); lead.setProgress(schedule.leadDays());
+        lead.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar s,int p,boolean fromUser){schedule.setLeadDays(p);leadLabel.setText("Holiday lead days  "+p);lastScheduledKey="";}
+            public void onStartTrackingTouch(SeekBar s){}
+            public void onStopTrackingTouch(SeekBar s){}
+        });
+        modeCard.addView(lead);
+
+        TextView trailLabel = text("Holiday trail days  " + schedule.trailDays(), 12, Color.rgb(194,211,240), true);
+        modeCard.addView(trailLabel);
+        SeekBar trail = new SeekBar(this);
+        trail.setMax(7); trail.setProgress(schedule.trailDays());
+        trail.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar s,int p,boolean fromUser){schedule.setTrailDays(p);trailLabel.setText("Holiday trail days  "+p);lastScheduledKey="";}
+            public void onStartTrackingTouch(SeekBar s){}
+            public void onStopTrackingTouch(SeekBar s){}
+        });
+        modeCard.addView(trail);
+        root.addView(modeCard);
+
+        LinearLayout timeCard = card(PANEL2, 18);
+        timeCard.setPadding(dp(18),dp(18),dp(18),dp(18));
+        timeCard.addView(text("SCHEDULE 1",9,Color.rgb(142,169,211),true));
+        TextView s1 = text("Start  " + (schedule.startAtDusk() ? "Civil dusk" : formatMinutes(schedule.onMinutes())) +
+            "   •   Off  " + formatMinutes(schedule.offMinutes()),15,Color.WHITE,true);
+        s1.setPadding(0,dp(7),0,dp(7));
+        timeCard.addView(s1);
+
+        LinearLayout startRow = new LinearLayout(this); startRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button startMinus = smallChoice("Start -15m",false);
+        Button dusk = smallChoice(schedule.startAtDusk() ? "Use fixed start" : "Start at dusk",schedule.startAtDusk());
+        Button startPlus = smallChoice("Start +15m",false);
+        startMinus.setOnClickListener(v->{schedule.setStartAtDusk(false);schedule.setOnMinutes(schedule.onMinutes()-15);lastScheduledKey="";renderPage();});
+        startPlus.setOnClickListener(v->{schedule.setStartAtDusk(false);schedule.setOnMinutes(schedule.onMinutes()+15);lastScheduledKey="";renderPage();});
+        dusk.setOnClickListener(v->{schedule.setStartAtDusk(!schedule.startAtDusk());lastScheduledKey="";renderPage();});
+        startRow.addView(startMinus,new LinearLayout.LayoutParams(0,dp(46),1f));
+        startRow.addView(dusk,new LinearLayout.LayoutParams(0,dp(46),1.2f));
+        startRow.addView(startPlus,new LinearLayout.LayoutParams(0,dp(46),1f));
+        timeCard.addView(startRow);
+
+        LinearLayout offRow = new LinearLayout(this); offRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button offMinus = smallChoice("Off -15m",false);
+        Button offPlus = smallChoice("Off +15m",false);
+        offMinus.setOnClickListener(v->{schedule.setOffMinutes(schedule.offMinutes()-15);lastScheduledKey="";renderPage();});
+        offPlus.setOnClickListener(v->{schedule.setOffMinutes(schedule.offMinutes()+15);lastScheduledKey="";renderPage();});
+        offRow.addView(offMinus,new LinearLayout.LayoutParams(0,dp(46),1f));
+        offRow.addView(offPlus,new LinearLayout.LayoutParams(0,dp(46),1f));
+        LinearLayout.LayoutParams orp=new LinearLayout.LayoutParams(-1,dp(46));orp.topMargin=dp(6);
+        timeCard.addView(offRow,orp);
+
+        timeCard.addView(text("Civil dusk today: " + formatMinutes(schedule.civilDuskMinutes(java.time.LocalDate.now())) +
+            "   •   Civil dawn: " + formatMinutes(schedule.civilDawnMinutes(java.time.LocalDate.now())),11,MUTED,false), topMargin(10));
+
+        timeCard.addView(text("SCHEDULE 2",9,Color.rgb(142,169,211),true), topMargin(14));
+        Button s2 = smallChoice(schedule.schedule2Enabled() ? "Overnight schedule enabled" : "Overnight schedule disabled",schedule.schedule2Enabled());
+        s2.setOnClickListener(v->{schedule.setSchedule2Enabled(!schedule.schedule2Enabled());lastScheduledKey="";renderPage();});
+        timeCard.addView(s2,buttonMargin());
+
+        Button dawn = smallChoice(schedule.schedule2EndAtDawn() ? "Ends at civil dawn" : "Ends at " + formatMinutes(schedule.schedule2EndMinutes()),schedule.schedule2EndAtDawn());
+        dawn.setOnClickListener(v->{schedule.setSchedule2EndAtDawn(!schedule.schedule2EndAtDawn());lastScheduledKey="";renderPage();});
+        timeCard.addView(dawn,buttonMargin());
+
+        TextView s2bLabel=text("Overnight brightness  "+schedule.schedule2Brightness()+"%",12,Color.rgb(194,211,240),true);
+        s2bLabel.setPadding(0,dp(12),0,0);timeCard.addView(s2bLabel);
+        SeekBar s2b=new SeekBar(this);s2b.setMax(99);s2b.setProgress(schedule.schedule2Brightness()-1);
+        s2b.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar s,int p,boolean fromUser){schedule.setSchedule2Brightness(p+1);s2bLabel.setText("Overnight brightness  "+(p+1)+"%");lastScheduledKey="";}
+            public void onStartTrackingTouch(SeekBar s){}
+            public void onStopTrackingTouch(SeekBar s){}
+        });
+        timeCard.addView(s2b);
+        root.addView(timeCard,topMargin(14));
+
+        LinearLayout nowCard=card(PANEL2,18);
+        nowCard.setPadding(dp(18),dp(18),dp(18),dp(18));
+        AndersonSchedule.Scene scene=schedule.resolveNow();
+        nowCard.addView(text("CURRENT / NEXT",9,Color.rgb(142,169,211),true));
+        nowCard.addView(text(scene==null ? "No scheduled scene right now" :
+            scene.name + (scene.schedule2 ? " • Overnight" : " • Schedule 1"),17,Color.WHITE,true),topMargin(7));
+        if(scene!=null) nowCard.addView(text(scene.effect+"  •  "+scene.brightness+"%  •  "+colorsText(scene.colors),11,MUTED,false),topMargin(5));
+        nowCard.addView(text("Next: "+schedule.nextEventLabel(),11,Color.rgb(183,202,234),false),topMargin(9));
+        Button apply=actionButton("APPLY SCHEDULED SCENE NOW");
+        apply.setOnClickListener(v->applyScheduleNow(true));
+        nowCard.addView(apply,buttonMargin());
+        statusView=text("Foreground automation checks once per minute while Jason Home is open.",11,MUTED,false);
+        statusView.setPadding(0,dp(9),0,0);
+        nowCard.addView(statusView);
+        progressView=text("Idle",11,Color.rgb(174,198,236),true);
+        progressView.setPadding(0,dp(7),0,0);
+        nowCard.addView(progressView);
+        root.addView(nowCard,topMargin(14));
+    }
+
+    private void applyScheduleNow(boolean force) {
+        if (schedule == null || !schedule.enabled()) return;
+        List<BleLightController.FoundLight> targets = readyLights();
+        if (targets.isEmpty()) return;
+        AndersonSchedule.Scene scene = schedule.resolveNow();
+        String key;
+        if (scene == null) {
+            key = "OFF";
+            if (force || !key.equals(lastScheduledKey)) {
+                lastScheduledKey = key;
+                ble.setPower(targets,false);
+            }
+            return;
+        }
+        key = scene.eventIndex+"|"+scene.effect+"|"+Arrays.toString(scene.colors)+"|"+scene.brightness+"|"+scene.schedule2;
+        if (!force && key.equals(lastScheduledKey)) return;
+        lastScheduledKey = key;
+        ble.setScene(targets,scene.effect,scene.colors,scene.speed,false,scene.brightness);
+    }
+
+    private String colorsText(int[] colors) {
+        StringBuilder b=new StringBuilder();
+        for(int i=0;i<colors.length;i++){
+            if(i>0)b.append(" ");
+            b.append(String.format("#%06X",colors[i]&0xFFFFFF));
+        }
+        return b.toString();
+    }
+
+    private String formatMinutes(int minutes) {
+        int m=((minutes%1440)+1440)%1440;
+        int h=m/60, min=m%60;
+        String ap=h>=12?"PM":"AM";
+        int h12=h%12;if(h12==0)h12=12;
+        return String.format("%d:%02d %s",h12,min,ap);
+    }
+
     private void renderSettings() {
         pageTitle("SETTINGS", "Bluetooth & Eufy setup");
         LinearLayout box = card(PANEL2, 18);
