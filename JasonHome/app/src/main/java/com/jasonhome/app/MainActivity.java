@@ -340,6 +340,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
 
     private void renderScenes() {
         pageTitle("CREATE", "Build the light show");
+        if (manualPalette.isEmpty()) manualPalette.add(selectedRgb);
 
         LinearLayout effects = card(PANEL2, 18);
         effects.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -348,23 +349,18 @@ public class MainActivity extends Activity implements BleLightController.Listene
         effectSummary.setPadding(0, dp(6), 0, dp(12));
         effects.addView(effectSummary);
 
-        for (int i = 0; i < LightPresetCatalog.EFFECTS.length; i += 2) {
+        for (int rowStart = 0; rowStart < LightPresetCatalog.EFFECTS.length; rowStart += 2) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int j = i; j < Math.min(i + 2, LightPresetCatalog.EFFECTS.length); j++) {
-                LightPresetCatalog.EffectTemplate preset = LightPresetCatalog.EFFECTS[j];
+            for (int x = rowStart; x < Math.min(rowStart + 2, LightPresetCatalog.EFFECTS.length); x++) {
+                LightPresetCatalog.EffectTemplate preset = LightPresetCatalog.EFFECTS[x];
                 TextView v = text(preset.name + "\n" + preset.family, 11, Color.rgb(207, 220, 246), false);
                 v.setGravity(Gravity.CENTER);
                 v.setPadding(dp(7), dp(6), dp(7), dp(6));
                 v.setBackground(round(
                     preset.name.equals(selectedEffect) ? Color.rgb(42, 83, 151) : Color.rgb(20, 38, 68),
-                    12,
-                    Color.argb(45, 199, 220, 255)
-                ));
-                v.setOnClickListener(x -> {
-                    selectedEffect = preset.name;
-                    renderPage();
-                });
+                    12, Color.argb(45, 199, 220, 255)));
+                v.setOnClickListener(z -> { selectedEffect = preset.name; renderPage(); });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(78), 1f);
                 lp.setMargins(dp(3), dp(3), dp(3), dp(3));
                 row.addView(v, lp);
@@ -394,11 +390,29 @@ public class MainActivity extends Activity implements BleLightController.Listene
         Button reverse = smallChoice("Reverse", selectedReverse);
         forward.setOnClickListener(v -> { selectedReverse = false; renderPage(); });
         reverse.setOnClickListener(v -> { selectedReverse = true; renderPage(); });
-        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(0, dp(46), 1f);
-        dl.setMargins(dp(3), dp(5), dp(3), 0);
-        direction.addView(forward, dl);
-        direction.addView(reverse, dl);
+        LinearLayout.LayoutParams dl1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        dl1.setMargins(dp(3), dp(5), dp(3), 0);
+        LinearLayout.LayoutParams dl2 = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        dl2.setMargins(dp(3), dp(5), dp(3), 0);
+        direction.addView(forward, dl1);
+        direction.addView(reverse, dl2);
         effects.addView(direction);
+
+        TextView brightLabel = text("Brightness  " + selectedBrightness + "%", 12, Color.rgb(188, 207, 239), true);
+        brightLabel.setPadding(0, dp(14), 0, dp(4));
+        effects.addView(brightLabel);
+        SeekBar brightness = new SeekBar(this);
+        brightness.setMax(99);
+        brightness.setProgress(Math.max(0, selectedBrightness - 1));
+        brightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                selectedBrightness = p + 1;
+                brightLabel.setText("Brightness  " + selectedBrightness + "%");
+            }
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        });
+        effects.addView(brightness);
         root.addView(effects);
 
         LinearLayout colors = card(PANEL2, 18);
@@ -429,11 +443,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
         liveColor.setOrientation(LinearLayout.HORIZONTAL);
         liveColor.setGravity(Gravity.CENTER_VERTICAL);
         TextView colorChip = text("", 1, Color.TRANSPARENT, false);
-        colorChip.setBackground(round(
-            Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255),
-            99,
-            Color.argb(100, 255, 255, 255)
-        ));
+        colorChip.setBackground(round(Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255), 99, Color.argb(100, 255, 255, 255)));
         TextView colorValue = text(String.format("#%06X", selectedRgb & 0xFFFFFF), 16, Color.WHITE, true);
         colorValue.setPadding(dp(12), 0, 0, 0);
         liveColor.addView(colorChip, new LinearLayout.LayoutParams(dp(42), dp(42)));
@@ -443,13 +453,35 @@ public class MainActivity extends Activity implements BleLightController.Listene
         wheel.setListener(rgb -> {
             selectedRgb = rgb & 0xFFFFFF;
             colorValue.setText(String.format("#%06X", selectedRgb));
-            colorChip.setBackground(round(
-                Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255),
-                99,
-                Color.argb(100, 255, 255, 255)
-            ));
+            colorChip.setBackground(round(Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255), 99, Color.argb(100, 255, 255, 255)));
             selected.setText(String.format("#%06X", selectedRgb));
         });
+
+        TextView paletteLabel = text("Effect palette  " + paletteText(), 12, Color.rgb(194, 211, 240), true);
+        paletteLabel.setPadding(0, dp(14), 0, dp(7));
+        colors.addView(paletteLabel);
+
+        LinearLayout paletteButtons = new LinearLayout(this);
+        paletteButtons.setOrientation(LinearLayout.HORIZONTAL);
+        Button add = smallChoice("Add current", true);
+        Button clear = smallChoice("Clear palette", false);
+        add.setOnClickListener(v -> {
+            if (manualPalette.size() >= 8) manualPalette.remove(0);
+            if (!manualPalette.contains(selectedRgb)) manualPalette.add(selectedRgb);
+            renderPage();
+        });
+        clear.setOnClickListener(v -> {
+            manualPalette.clear();
+            manualPalette.add(selectedRgb);
+            renderPage();
+        });
+        LinearLayout.LayoutParams pb1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        pb1.setMargins(0,0,dp(4),0);
+        LinearLayout.LayoutParams pb2 = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        pb2.setMargins(dp(4),0,0,0);
+        paletteButtons.addView(add,pb1);
+        paletteButtons.addView(clear,pb2);
+        colors.addView(paletteButtons);
 
         TextView whites = text("White channels", 13, Color.rgb(194, 211, 240), true);
         whites.setPadding(0, dp(14), 0, dp(4));
@@ -469,9 +501,28 @@ public class MainActivity extends Activity implements BleLightController.Listene
         });
         colors.addView(kelvin);
 
-        statusView = text("Preset controls are preloaded. E22 uses native RGB + warm/cool white; E120 uses RGB + fixed 3000 K warm white.", 11, MUTED, false);
+        Button applyColor = actionButton("APPLY SOLID COLOR");
+        applyColor.setOnClickListener(v -> ble.setScene(readyLights(), "Solid / Static", new int[]{selectedRgb}, 1, false, selectedBrightness));
+        colors.addView(applyColor, buttonMargin());
+
+        Button applyEffect = actionButton("APPLY " + selectedEffect.toUpperCase());
+        applyEffect.setOnClickListener(v -> ble.setScene(readyLights(), selectedEffect, currentPalette(), selectedSpeed, selectedReverse, selectedBrightness));
+        colors.addView(applyEffect, buttonMargin());
+
+        Button applyWhite = actionButton("APPLY WHITE");
+        applyWhite.setOnClickListener(v -> ble.setWhite(readyLights(), selectedKelvin));
+        colors.addView(applyWhite, buttonMargin());
+
+        Button applyBrightness = smallChoice("Brightness only", false);
+        applyBrightness.setOnClickListener(v -> ble.setBrightness(readyLights(), selectedBrightness));
+        colors.addView(applyBrightness, buttonMargin());
+
+        statusView = text("E120 uses RGBW transport; E22 uses RGBCW transport. Effect templates use the recovered 0x020D layer engine.", 11, MUTED, false);
         statusView.setPadding(0, dp(10), 0, 0);
         colors.addView(statusView);
+        progressView = text("Idle", 11, Color.rgb(174,198,236), true);
+        progressView.setPadding(0,dp(7),0,0);
+        colors.addView(progressView);
         root.addView(colors, topMargin(14));
     }
 
