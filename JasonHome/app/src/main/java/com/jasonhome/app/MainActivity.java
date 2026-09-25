@@ -564,6 +564,39 @@ public class MainActivity extends Activity implements BleLightController.Listene
         return luminance > 150 ? Color.rgb(12, 24, 44) : Color.WHITE;
     }
 
+    private int[] currentPalette() {
+        if (manualPalette.isEmpty()) return new int[]{selectedRgb};
+        int[] out = new int[manualPalette.size()];
+        for (int i = 0; i < out.length; i++) out[i] = manualPalette.get(i);
+        return out;
+    }
+
+    private String paletteText() {
+        if (manualPalette.isEmpty()) return String.format("#%06X", selectedRgb & 0xFFFFFF);
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < manualPalette.size(); i++) {
+            if (i > 0) b.append("  ");
+            b.append(String.format("#%06X", manualPalette.get(i) & 0xFFFFFF));
+        }
+        return b.toString();
+    }
+
+    private Button actionButton(String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(12);
+        b.setTextColor(Color.WHITE);
+        b.setBackground(round(ACCENT, 11, null));
+        return b;
+    }
+
+    private LinearLayout.LayoutParams buttonMargin() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(50));
+        lp.topMargin = dp(9);
+        return lp;
+    }
+
     private void renderSettings() {
         pageTitle("SETTINGS", "Bluetooth & Eufy setup");
         LinearLayout box = card(PANEL2, 18);
