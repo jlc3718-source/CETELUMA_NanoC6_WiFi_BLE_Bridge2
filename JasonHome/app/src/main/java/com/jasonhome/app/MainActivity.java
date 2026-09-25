@@ -19,6 +19,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +40,11 @@ public class MainActivity extends Activity implements BleLightController.Listene
     private DeviceStore store;
     private List<BleLightController.FoundLight> found = new ArrayList<>();
     private String page = "Home";
+    private String selectedEffect = "Solid / Static";
+    private int selectedRgb = 0xFFFFFF;
+    private int selectedSpeed = 3;
+    private boolean selectedReverse = false;
+    private int selectedKelvin = 3000;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -317,28 +323,176 @@ public class MainActivity extends Activity implements BleLightController.Listene
     }
 
     private void renderScenes() {
-        pageTitle("SCENES", "Anderson-style light building");
-        LinearLayout box = card(PANEL2, 18);
-        box.setPadding(dp(18), dp(18), dp(18), dp(18));
-        box.addView(text("Protocol staging", 18, Color.WHITE, true));
-        TextView note = text("The dashboard is prepared for Solid, Jump, Breath and Strobe. Color/effect transmission stays disabled until E120 0x0206/0x020D is byte-exact and physically verified.", 12, MUTED, false);
-        note.setPadding(0, dp(8), 0, dp(14));
-        box.addView(note);
-        String[] names = {"Solid / Static", "Jump", "Breath", "Strobe"};
-        for (int i = 0; i < names.length; i += 2) {
+        pageTitle("CREATE", "Build the light show");
+
+        LinearLayout effects = card(PANEL2, 18);
+        effects.setPadding(dp(18), dp(18), dp(18), dp(18));
+        effects.addView(text("EFFECT", 9, Color.rgb(142, 169, 211), true));
+        TextView effectSummary = text(selectedEffect + "  •  Speed " + selectedSpeed + "  •  " + (selectedReverse ? "Reverse" : "Forward"), 17, Color.WHITE, true);
+        effectSummary.setPadding(0, dp(6), 0, dp(12));
+        effects.addView(effectSummary);
+
+        for (int i = 0; i < LightPresetCatalog.EFFECTS.length; i += 2) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int j = i; j < Math.min(i + 2, names.length); j++) {
-                TextView v = text(names[j], 12, Color.rgb(187, 205, 239), false);
+            for (int j = i; j < Math.min(i + 2, LightPresetCatalog.EFFECTS.length); j++) {
+                LightPresetCatalog.EffectTemplate preset = LightPresetCatalog.EFFECTS[j];
+                TextView v = text(preset.name + "\n" + preset.family, 11, Color.rgb(207, 220, 246), false);
                 v.setGravity(Gravity.CENTER);
-                v.setBackground(round(Color.rgb(20, 38, 68), 12, Color.argb(45, 199, 220, 255)));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(66), 1f);
+                v.setPadding(dp(7), dp(6), dp(7), dp(6));
+                v.setBackground(round(
+                    preset.name.equals(selectedEffect) ? Color.rgb(42, 83, 151) : Color.rgb(20, 38, 68),
+                    12,
+                    Color.argb(45, 199, 220, 255)
+                ));
+                v.setOnClickListener(x -> {
+                    selectedEffect = preset.name;
+                    renderPage();
+                });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(78), 1f);
                 lp.setMargins(dp(3), dp(3), dp(3), dp(3));
                 row.addView(v, lp);
             }
-            box.addView(row);
+            effects.addView(row);
         }
-        root.addView(box);
+
+        TextView speedLabel = text("Speed  " + selectedSpeed + " / 5", 12, Color.rgb(188, 207, 239), true);
+        speedLabel.setPadding(0, dp(14), 0, dp(4));
+        effects.addView(speedLabel);
+        SeekBar speed = new SeekBar(this);
+        speed.setMax(4);
+        speed.setProgress(selectedSpeed - 1);
+        speed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                selectedSpeed = p + 1;
+                speedLabel.setText("Speed  " + selectedSpeed + " / 5");
+            }
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        });
+        effects.addView(speed);
+
+        LinearLayout direction = new LinearLayout(this);
+        direction.setOrientation(LinearLayout.HORIZONTAL);
+        Button forward = smallChoice("Forward", !selectedReverse);
+        Button reverse = smallChoice("Reverse", selectedReverse);
+        forward.setOnClickListener(v -> { selectedReverse = false; renderPage(); });
+        reverse.setOnClickListener(v -> { selectedReverse = true; renderPage(); });
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        dl.setMargins(dp(3), dp(5), dp(3), 0);
+        direction.addView(forward, dl);
+        direction.addView(reverse, dl);
+        effects.addView(direction);
+        root.addView(effects);
+
+        LinearLayout colors = card(PANEL2, 18);
+        colors.setPadding(dp(18), dp(18), dp(18), dp(18));
+        colors.addView(text("COLOR COLLECTION", 9, Color.rgb(142, 169, 211), true));
+        TextView selected = text(String.format("#%06X", selectedRgb & 0xFFFFFF), 24, Color.WHITE, true);
+        selected.setPadding(0, dp(5), 0, dp(12));
+        colors.addView(selected);
+
+        colors.addView(text("Anderson palette", 13, Color.rgb(194, 211, 240), true));
+        addColorGrid(colors, LightPresetCatalog.ANDERSON);
+        TextView more = text("Expanded RGB quick colors", 13, Color.rgb(194, 211, 240), true);
+        more.setPadding(0, dp(13), 0, 0);
+        colors.addView(more);
+        addColorGrid(colors, LightPresetCatalog.QUICK);
+
+        TextView custom = text("Custom RGB — full 24-bit color space", 13, Color.rgb(194, 211, 240), true);
+        custom.setPadding(0, dp(14), 0, dp(3));
+        colors.addView(custom);
+
+        int r = (selectedRgb >> 16) & 0xFF;
+        int g = (selectedRgb >> 8) & 0xFF;
+        int b = selectedRgb & 0xFF;
+        TextView rgbValue = text("R " + r + "   G " + g + "   B " + b, 12, Color.rgb(178, 197, 230), false);
+        colors.addView(rgbValue);
+        SeekBar rs = rgbSlider(r), gs = rgbSlider(g), bs = rgbSlider(b);
+        SeekBar.OnSeekBarChangeListener rgbListener = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                selectedRgb = (rs.getProgress() << 16) | (gs.getProgress() << 8) | bs.getProgress();
+                rgbValue.setText("R " + rs.getProgress() + "   G " + gs.getProgress() + "   B " + bs.getProgress());
+                selected.setText(String.format("#%06X", selectedRgb & 0xFFFFFF));
+                selected.setTextColor(Color.rgb(rs.getProgress(), gs.getProgress(), bs.getProgress()));
+            }
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        };
+        rs.setOnSeekBarChangeListener(rgbListener);
+        gs.setOnSeekBarChangeListener(rgbListener);
+        bs.setOnSeekBarChangeListener(rgbListener);
+        colors.addView(text("Red", 10, MUTED, false)); colors.addView(rs);
+        colors.addView(text("Green", 10, MUTED, false)); colors.addView(gs);
+        colors.addView(text("Blue", 10, MUTED, false)); colors.addView(bs);
+
+        TextView whites = text("White channels", 13, Color.rgb(194, 211, 240), true);
+        whites.setPadding(0, dp(14), 0, dp(4));
+        colors.addView(whites);
+        TextView kelvinLabel = text("E22  " + selectedKelvin + " K   •   E120 warm white is fixed at 3000 K", 11, MUTED, false);
+        colors.addView(kelvinLabel);
+        SeekBar kelvin = new SeekBar(this);
+        kelvin.setMax(7500);
+        kelvin.setProgress(Math.max(0, Math.min(7500, selectedKelvin - 1500)));
+        kelvin.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                selectedKelvin = 1500 + p;
+                kelvinLabel.setText("E22  " + selectedKelvin + " K   •   E120 warm white is fixed at 3000 K");
+            }
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        });
+        colors.addView(kelvin);
+
+        statusView = text("Preset controls are preloaded. E22 uses native RGB + warm/cool white; E120 uses RGB + fixed 3000 K warm white.", 11, MUTED, false);
+        statusView.setPadding(0, dp(10), 0, 0);
+        colors.addView(statusView);
+        root.addView(colors, topMargin(14));
+    }
+
+    private void addColorGrid(LinearLayout parent, LightPresetCatalog.NamedColor[] palette) {
+        for (int i = 0; i < palette.length; i += 4) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int j = i; j < Math.min(i + 4, palette.length); j++) {
+                LightPresetCatalog.NamedColor color = palette[j];
+                TextView swatch = text(color.name, 8, readableText(color.rgb), true);
+                swatch.setGravity(Gravity.CENTER);
+                swatch.setPadding(dp(2), dp(2), dp(2), dp(2));
+                swatch.setBackground(round(Color.rgb((color.rgb >> 16) & 255, (color.rgb >> 8) & 255, color.rgb & 255), 10, Color.argb(90, 255, 255, 255)));
+                swatch.setOnClickListener(v -> {
+                    selectedRgb = color.rgb;
+                    renderPage();
+                });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(58), 1f);
+                lp.setMargins(dp(3), dp(4), dp(3), 0);
+                row.addView(swatch, lp);
+            }
+            parent.addView(row);
+        }
+    }
+
+    private SeekBar rgbSlider(int value) {
+        SeekBar bar = new SeekBar(this);
+        bar.setMax(255);
+        bar.setProgress(value);
+        return bar;
+    }
+
+    private Button smallChoice(String label, boolean active) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(11);
+        b.setTextColor(Color.WHITE);
+        b.setBackground(round(active ? ACCENT : Color.rgb(42, 58, 86), 10, null));
+        return b;
+    }
+
+    private int readableText(int rgb) {
+        int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+        double luminance = (0.299 * r + 0.587 * g + 0.114 * b);
+        return luminance > 150 ? Color.rgb(12, 24, 44) : Color.WHITE;
     }
 
     private void renderSettings() {
