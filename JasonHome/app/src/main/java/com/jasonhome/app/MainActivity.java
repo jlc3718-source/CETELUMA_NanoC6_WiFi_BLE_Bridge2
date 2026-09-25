@@ -76,8 +76,23 @@ public class MainActivity extends Activity implements BleLightController.Listene
         FrameLayout.LayoutParams nlp = new FrameLayout.LayoutParams(-1, dp(72), Gravity.BOTTOM);
         nlp.setMargins(dp(15), 0, dp(15), dp(17));
         frame.addView(nav, nlp);
+        nav.setElevation(dp(10));
+
+        // Android 15 can draw app content behind the system navigation area.
+        // Lift Jason Home's tab bar above whatever navigation mode the phone uses.
+        frame.setOnApplyWindowInsetsListener((v, insets) -> {
+            int systemBottom = insets.getSystemWindowInsetBottom();
+            FrameLayout.LayoutParams navParams = (FrameLayout.LayoutParams) nav.getLayoutParams();
+            navParams.leftMargin = dp(15);
+            navParams.rightMargin = dp(15);
+            navParams.bottomMargin = dp(17) + systemBottom;
+            nav.setLayoutParams(navParams);
+            root.setPadding(dp(20), dp(10), dp(20), dp(98) + systemBottom);
+            return insets;
+        });
 
         setContentView(frame);
+        frame.requestApplyInsets();
         renderPage();
     }
 
@@ -369,7 +384,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
         LinearLayout diag = card(PANEL2, 18);
         diag.setPadding(dp(18), dp(18), dp(18), dp(18));
         diag.addView(text("Protocol status", 17, Color.WHITE, true));
-        TextView d = text("✓ E120 encrypted session path recovered\n✓ E120 ON/OFF 0x0201 / A3 implemented\n✓ Sequential multi-light queue implemented\n✓ E120/E22 serial derived from BLE advertising name\n○ E120 brightness A4 awaits physical verification\n○ Color/effects 0x0206 and 0x020D remain gated", 12, Color.rgb(183, 202, 234), false);
+        TextView d = text("✓ E120 encrypted session path recovered\n✓ E120 ON/OFF 0x0201 / A3 implemented\n✓ Sequential multi-light queue implemented\n✓ Four installed E120/E22 serials hard-coded\n○ E120 brightness A4 awaits physical verification\n○ Color/effects 0x0206 and 0x020D remain gated", 12, Color.rgb(183, 202, 234), false);
         d.setPadding(0, dp(8), 0, 0);
         d.setLineSpacing(dp(3), 1f);
         diag.addView(d);
