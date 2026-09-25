@@ -54,7 +54,7 @@ final class BleLightController {
         }
     }
 
-    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT }
+    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, SCENE }
 
     private static final class Job {
         final FoundLight light;
@@ -78,6 +78,9 @@ final class BleLightController {
         static Job white(FoundLight l,int kelvin){ return new Job(l,Kind.WHITE,false,kelvin,0,null,null,0,false); }
         static Job effect(FoundLight l,String e,int[] colors,int speed,boolean reverse){
             return new Job(l,Kind.EFFECT,false,0,0,e,colors,speed,reverse);
+        }
+        static Job scene(FoundLight l,String e,int[] colors,int speed,boolean reverse,int brightness){
+            return new Job(l,Kind.SCENE,false,brightness,0,e,colors,speed,reverse);
         }
     }
 
@@ -164,10 +167,7 @@ final class BleLightController {
     }
 
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
-        if (active != null || !queue.isEmpty()) {
-            listener.onStatus("A light command is already running.");
-            return;
-        }
+        beginNewRequest();
         if (store.accountId().length() != 40) {
             listener.onStatus("The 40-character Eufy account ID is unavailable.");
             return;
@@ -178,32 +178,15 @@ final class BleLightController {
             String serial = store.serialFor(address(item.device), item.name);
             if (serial.length() != 16) continue;
             FoundLight ready = new FoundLight(item.device,item.name,item.rssi,item.model,serial);
-            queue.addLast(Job.brightness(ready,bright));
-            if (("Solid".equals(effect) || "Solid / Static".equals(effect)) && safe.length == 1) {
-                queue.addLast(Job.color(ready,safe[0]));
-            } else {
-                queue.addLast(Job.effect(ready,effect,safe,speed,reverse));
-            }
+            queue.addLast(Job.scene(ready,effect,safe,speed,reverse,bright));
         }
-        if (queue.isEmpty()) {
-            listener.onStatus("No Eufy lights with a usable 16-character serial are ready.");
-            return;
-        }
-        stopScan();
-        totalJobs=queue.size();
-        processedJobs=0;
-        successfulJobs=0;
-        listener.onProgress(0,totalJobs);
-        runNext();
+        startQueuedRequest();
     }
 
     private interface Factory { Job make(FoundLight item); }
 
     private void enqueue(List<FoundLight> targets, Factory factory) {
-        if (active != null || !queue.isEmpty()) {
-            listener.onStatus("A light command is already running.");
-            return;
-        }
+        beginNewRequest();
         String account = store.accountId();
         if (account.length() != 40) {
             listener.onStatus("The 40-character Eufy account ID is unavailable.");
@@ -216,6 +199,22 @@ final class BleLightController {
                 queue.addLast(factory.make(ready));
             }
         }
+        startQueuedRequest();
+    }
+
+    boolean isBusy() {
+        return active != null || !queue.isEmpty();
+    }
+
+    private void beginNewRequest() {
+        if (timeout != null) handler.removeCallbacks(timeout);
+        timeout = null;
+        queue.clear();
+        active = null;
+        cleanupGatt();
+    }
+
+    private void startQueuedRequest() {
         if (queue.isEmpty()) {
             listener.onStatus("No Eufy lights with a usable 16-character serial are ready.");
             return;
@@ -389,6 +388,9 @@ final class BleLightController {
                     frame=p.command(EufyLightCommands.OP_SHOW,
                         EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
                     break;
+                case SCENE:
+                    sendSceneSequence(job,g,c,p);
+                    return;
                 default:
                     throw new IllegalStateException("Unknown command");
             }
@@ -403,6 +405,57 @@ final class BleLightController {
         }
         listener.onStatus(displayName(job.light)+": "+commandName(job)+" command written");
         handler.postDelayed(()->finishActive(true,null),650L);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void sendSceneSequence(Job job, BluetoothGatt g, BluetoothGattCharacteristic c, E10Probe p) {
+        try {
+            byte[] on = p.powerCommand(true);
+            int r1 = write(g,c,on);
+            if (Build.VERSION.SDK_INT >= 33 && r1 != BluetoothStatusCodes.SUCCESS) {
+                finishActive(false,"Scene power write failed ("+r1+")");
+                return;
+            }
+            handler.postDelayed(() -> {
+                if (active != job || gatt != g || probe != p) return;
+                try {
+                    byte[] bright = p.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
+                    int r2 = write(g,c,bright);
+                    if (Build.VERSION.SDK_INT >= 33 && r2 != BluetoothStatusCodes.SUCCESS) {
+                        finishActive(false,"Scene brightness write failed ("+r2+")");
+                        return;
+                    }
+                    handler.postDelayed(() -> {
+                        if (active != job || gatt != g || probe != p) return;
+                        try {
+                            byte[] finalFrame;
+                            if (("Solid".equals(job.effect) || "Solid / Static".equals(job.effect)) && job.colors.length == 1) {
+                                finalFrame = p.command(EufyLightCommands.OP_COLOR,
+                                    EufyLightCommands.color(job.light.model,job.colors[0],EufyLightCommands.defaultLampCount(job.light.model)));
+                            } else {
+                                finalFrame = p.command(EufyLightCommands.OP_SHOW,
+                                    EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                            }
+                            int r3 = write(g,c,finalFrame);
+                            if (Build.VERSION.SDK_INT >= 33 && r3 != BluetoothStatusCodes.SUCCESS) {
+                                finishActive(false,"Scene effect write failed ("+r3+")");
+                                return;
+                            }
+                            listener.onStatus(displayName(job.light)+": scene written");
+                            handler.postDelayed(() -> {
+                                if (active == job) finishActive(true,null);
+                            },550L);
+                        } catch (Throwable t) {
+                            finishActive(false,"Scene effect command could not be built");
+                        }
+                    },220L);
+                } catch (Throwable t) {
+                    finishActive(false,"Scene brightness command could not be built");
+                }
+            },220L);
+        } catch (Throwable t) {
+            finishActive(false,"Scene power command could not be built");
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -460,6 +513,7 @@ final class BleLightController {
             case COLOR:return "Setting color";
             case WHITE:return "Setting white";
             case EFFECT:return "Starting "+job.effect;
+            case SCENE:return "Applying "+job.effect;
             default:return "Controlling";
         }
     }
@@ -472,6 +526,7 @@ final class BleLightController {
             case COLOR:return String.format("color #%06X",job.rgb&0xFFFFFF);
             case WHITE:return job.value+" K white";
             case EFFECT:return job.effect;
+            case SCENE:return "scene "+job.effect;
             default:return "command";
         }
     }
