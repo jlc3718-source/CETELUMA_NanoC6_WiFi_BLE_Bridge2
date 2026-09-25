@@ -718,6 +718,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
 
     private void applyScheduleNow(boolean force) {
         if (schedule == null || !schedule.enabled()) return;
+        if (ble != null && ble.isBusy()) return;
         List<BleLightController.FoundLight> targets = readyLights();
         if (targets.isEmpty()) return;
         AndersonSchedule.Scene scene = schedule.resolveNow();
