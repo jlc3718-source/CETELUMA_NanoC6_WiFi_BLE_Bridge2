@@ -307,6 +307,8 @@ public class MainActivity extends Activity implements BleLightController.Listene
             slp.topMargin = dp(7);
             box.addView(save, slp);
 
+            boolean enabled = store.serialFor(address, item.name).length() == 16;
+
             Button testConnection = new Button(this);
             testConnection.setText("TEST CONNECTION");
             testConnection.setAllCaps(false);
@@ -322,7 +324,6 @@ public class MainActivity extends Activity implements BleLightController.Listene
             actions.setOrientation(LinearLayout.HORIZONTAL);
             Button on = singlePower(item, "ON", true);
             Button off = singlePower(item, "OFF", false);
-            boolean enabled = store.serialFor(address, item.name).length() == 16;
             on.setEnabled(enabled);
             off.setEnabled(enabled);
             LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
