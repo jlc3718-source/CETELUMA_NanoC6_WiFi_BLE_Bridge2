@@ -136,8 +136,11 @@ assert '?cb=' in remote and 'esp_random()' in remote and 'OTA_AUTO_RETRY_BASE_MS
 assert 'publish-input/ota-manifest.json' in publisher and '--pattern ota-manifest.json' in publisher
 assert 'id="profileSolarTimes"' in web and web.index('id="profileSolarTimes"') < web.index('class="profileChoices"')
 assert 'id="homeSolarTimes"' in web and web.index('id="nextEvent"') < web.index('id="homeSolarTimes"')
-assert 'd["dawn"]=fmtTime(scheduler.civilDawnMinutes(l))' in main
-assert 'd["dusk"]=fmtTime(scheduler.civilDuskMinutes(l))' in main
+assert 'd["dawn"]=fmtDisplayTime(scheduler.civilDawnMinutes(l))' in main
+assert 'd["dusk"]=fmtDisplayTime(scheduler.civilDuskMinutes(l))' in main
+assert 'static String fmtDisplayTime(uint16_t m)' in main and 'pm?"PM":"AM"' in main
+assert 'cfg["on"]=fmtTime(s.onMinutes)' in main and 'cfg["off"]=fmtTime(s.offMinutes)' in main
+assert 'formatClockTime(e)' in web and 'formatClockTime(e.settings.off)' in web and 'formatClockTime(e.settings.schedule2End)' in web
 assert 'Dusk ${n.dusk||"—"} • Dawn ${n.dawn||"—"}' in web
 assert 'Dusk ${e.settings?.dusk||"—"} • Dawn ${e.settings?.dawn||"—"}' in web
 print('Anderson regression source checks passed')
