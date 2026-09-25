@@ -2,18 +2,22 @@ package com.jasonhome.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
 final class DeviceStore {
     private static final Pattern ACCOUNT = Pattern.compile("[0-9a-fA-F]{40}");
-    // Replaced after CI build, before permanent signing. Never put the real ID in this public repo.
-    private static final String BUILT_IN_ACCOUNT_ID = "0123456789abcdef0123456789abcdef01234567";
+    // The real account ID is injected as an APK asset after the public CI build.
+    private static final String PRIVATE_ID_ASSET = "jason_home_private_id.txt";
     private final SharedPreferences prefs;
     private final SharedPreferences legacy;
+    private final Context context;
 
     DeviceStore(Context context) {
+        this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences("jason_home", Context.MODE_PRIVATE);
         legacy = context.getSharedPreferences("MainActivity", Context.MODE_PRIVATE);
         if (prefs.getString("eufy_user_id", "").isEmpty()) {
@@ -23,9 +27,20 @@ final class DeviceStore {
     }
 
     String accountId() {
+        String privateId = privateAssetAccountId();
+        if (ACCOUNT.matcher(privateId).matches()) return privateId;
         String v = prefs.getString("eufy_user_id", "");
-        if (ACCOUNT.matcher(v).matches()) return v;
-        return ACCOUNT.matcher(BUILT_IN_ACCOUNT_ID).matches() ? BUILT_IN_ACCOUNT_ID : "";
+        return ACCOUNT.matcher(v).matches() ? v : "";
+    }
+
+    private String privateAssetAccountId() {
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(context.getAssets().open(PRIVATE_ID_ASSET)))) {
+            String v = br.readLine();
+            return v == null ? "" : v.trim();
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     boolean setAccountId(String value) {
