@@ -8,6 +8,8 @@ import java.util.regex.Pattern;
 
 final class DeviceStore {
     private static final Pattern ACCOUNT = Pattern.compile("[0-9a-fA-F]{40}");
+    // Replaced after CI build, before permanent signing. Never put the real ID in this public repo.
+    private static final String BUILT_IN_ACCOUNT_ID = "0123456789abcdef0123456789abcdef01234567";
     private final SharedPreferences prefs;
     private final SharedPreferences legacy;
 
@@ -22,7 +24,8 @@ final class DeviceStore {
 
     String accountId() {
         String v = prefs.getString("eufy_user_id", "");
-        return ACCOUNT.matcher(v).matches() ? v : "";
+        if (ACCOUNT.matcher(v).matches()) return v;
+        return ACCOUNT.matcher(BUILT_IN_ACCOUNT_ID).matches() ? BUILT_IN_ACCOUNT_ID : "";
     }
 
     boolean setAccountId(String value) {
