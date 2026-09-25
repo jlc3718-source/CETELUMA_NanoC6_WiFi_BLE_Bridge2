@@ -10,7 +10,7 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
-import android.os.Bundle;
+import android.os.Bundle;\nimport android.os.Handler;\nimport android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -22,7 +22,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.List;\nimport java.util.Arrays;
 
 public class MainActivity extends Activity implements BleLightController.Listener {
     private static final int NAVY = Color.rgb(6, 13, 28);
@@ -38,6 +38,10 @@ public class MainActivity extends Activity implements BleLightController.Listene
     private TextView progressView;
     private BleLightController ble;
     private DeviceStore store;
+    private AndersonSchedule schedule;
+    private final Handler scheduleHandler = new Handler(Looper.getMainLooper());
+    private final ArrayList<Integer> manualPalette = new ArrayList<>();
+    private String lastScheduledKey = "";
     private List<BleLightController.FoundLight> found = new ArrayList<>();
     private String page = "Home";
     private String selectedEffect = "Solid / Static";
@@ -45,6 +49,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
     private int selectedSpeed = 3;
     private boolean selectedReverse = false;
     private int selectedKelvin = 3000;
+    private int selectedBrightness = 100;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -52,9 +57,12 @@ public class MainActivity extends Activity implements BleLightController.Listene
         getWindow().setStatusBarColor(NAVY);
         getWindow().setNavigationBarColor(NAVY);
         store = new DeviceStore(this);
+        schedule = new AndersonSchedule(this);
         ble = new BleLightController(this, store, this);
+        if (manualPalette.isEmpty()) manualPalette.add(selectedRgb);
         buildShell();
         requestBlePermissions();
+        scheduleHandler.postDelayed(scheduleTick, 5000L);
     }
 
     private void buildShell() {
@@ -77,7 +85,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
         nav.setGravity(Gravity.CENTER);
         nav.setPadding(dp(6), dp(6), dp(6), dp(6));
         nav.setBackground(round(PANEL2, 20, Color.argb(70, 189, 213, 255)));
-        String[][] tabs = {{"Home","⌂"}, {"Devices","◉"}, {"Scenes","✦"}, {"Settings","⚙"}};
+        String[][] tabs = {{"Home","⌂"}, {"Devices","◉"}, {"Scenes","✦"}, {"Schedule","◷"}, {"Settings","⚙"}};
         for (String[] tab : tabs) nav.addView(navButton(tab[0], tab[1]), new LinearLayout.LayoutParams(0, -1, 1f));
         FrameLayout.LayoutParams nlp = new FrameLayout.LayoutParams(-1, dp(72), Gravity.BOTTOM);
         nlp.setMargins(dp(15), 0, dp(15), dp(17));
@@ -119,6 +127,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
         header();
         if ("Devices".equals(page)) renderDevices();
         else if ("Scenes".equals(page)) renderScenes();
+        else if ("Schedule".equals(page)) renderSchedule();
         else if ("Settings".equals(page)) renderSettings();
         else renderHome();
     }
@@ -620,6 +629,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
 
     @Override
     protected void onDestroy() {
+        scheduleHandler.removeCallbacks(scheduleTick);
         ble.close();
         super.onDestroy();
     }
