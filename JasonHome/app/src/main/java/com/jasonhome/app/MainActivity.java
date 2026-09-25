@@ -246,7 +246,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
     }
 
     private void renderDevices() {
-        pageTitle("LIGHTS", "Nearby Eufy devices");
+        pageTitle("LIGHTS", "Installed Eufy lights only");
         Button scan = new Button(this);
         scan.setText("SCAN FOR LIGHTS");
         scan.setAllCaps(false);
@@ -254,7 +254,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
         scan.setBackground(round(ACCENT, 12, null));
         scan.setOnClickListener(v -> startScanWithPermissions());
         root.addView(scan, new LinearLayout.LayoutParams(-1, dp(52)));
-        statusView = text("BLE scanning stays broad; only Eufy candidates are displayed.", 12, MUTED, false);
+        statusView = text("BLE scan is restricted to Pool, House, Garage and Shed by exact MAC address.", 12, MUTED, false);
         statusView.setPadding(0, dp(12), 0, 0);
         root.addView(statusView);
         progressView = text(found.size() + " shown", 11, Color.rgb(166, 191, 231), true);
@@ -265,7 +265,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
             LinearLayout empty = card(PANEL2, 18);
             empty.setPadding(dp(18), dp(18), dp(18), dp(18));
             empty.addView(text("No scan results yet", 16, Color.WHITE, true));
-            TextView t = text("Tap Scan for Lights. E120/T8L00 and E22/T8L02 advertising names are recognized automatically.", 12, MUTED, false);
+            TextView t = text("Tap Scan for Lights. Jason Home ignores every Bluetooth device except the four installed Eufy light MAC addresses.", 12, MUTED, false);
             t.setPadding(0, dp(7), 0, 0);
             empty.addView(t);
             root.addView(empty, topMargin(12));
@@ -308,17 +308,6 @@ public class MainActivity extends Activity implements BleLightController.Listene
             box.addView(save, slp);
 
             boolean enabled = store.serialFor(address, item.name).length() == 16;
-
-            Button testConnection = new Button(this);
-            testConnection.setText("TEST CONNECTION");
-            testConnection.setAllCaps(false);
-            testConnection.setTextColor(Color.WHITE);
-            testConnection.setBackground(round(Color.rgb(34, 52, 83), 10, null));
-            testConnection.setEnabled(enabled);
-            testConnection.setOnClickListener(v -> ble.diagnoseSingle(item));
-            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(45));
-            tlp.topMargin = dp(8);
-            box.addView(testConnection, tlp);
 
             LinearLayout actions = new LinearLayout(this);
             actions.setOrientation(LinearLayout.HORIZONTAL);
