@@ -1,1 +1,1 @@
-Build Anderson Home 3.1.57: display user-facing times in 12-hour AM/PM format
+Build Anderson Home 3.1.58: keep Off house preview dark and retain 12-hour AM/PM display
