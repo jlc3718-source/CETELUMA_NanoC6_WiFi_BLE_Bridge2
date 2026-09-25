@@ -69,7 +69,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.57";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.58";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
