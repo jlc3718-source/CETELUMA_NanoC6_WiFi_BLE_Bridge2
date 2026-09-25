@@ -153,33 +153,33 @@ final class BleLightController {
     }
 
     void setPower(List<FoundLight> targets, boolean on) {
-        startParallel(targets, item -> Job.power(item,on));
+        enqueue(targets, item -> Job.power(item,on));
     }
 
     void setBrightness(List<FoundLight> targets, int percent) {
         int v=Math.max(0,Math.min(100,percent));
-        startParallel(targets, item -> Job.brightness(item,v));
+        enqueue(targets, item -> Job.brightness(item,v));
     }
 
     void setColor(List<FoundLight> targets, int rgb) {
         int v=rgb & 0xFFFFFF;
-        startParallel(targets, item -> Job.color(item,v));
+        enqueue(targets, item -> Job.color(item,v));
     }
 
     void setWhite(List<FoundLight> targets, int kelvin) {
         int v=Math.max(1500,Math.min(9000,kelvin));
-        startParallel(targets, item -> Job.white(item,v));
+        enqueue(targets, item -> Job.white(item,v));
     }
 
     void setEffect(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
-        startParallel(targets, item -> Job.effect(item,effect,safe,speed,reverse));
+        enqueue(targets, item -> Job.effect(item,effect,safe,speed,reverse));
     }
 
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
         int bright = Math.max(1, Math.min(100, brightness));
-        startParallel(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
+        enqueue(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
     }
 
     void diagnoseSingle(FoundLight target) {
@@ -203,7 +203,9 @@ final class BleLightController {
             return;
         }
         for (FoundLight item : targets) {
-            String serial = store.serialFor(address(item.device), item.name);
+            String addr = address(item.device);
+            if (!DeviceStore.isInstalledAddress(addr)) continue;
+            String serial = store.serialFor(addr, item.name);
             if (serial.length() == 16) {
                 FoundLight ready = new FoundLight(item.device,item.name,item.rssi,item.model,serial);
                 queue.addLast(factory.make(ready));
@@ -288,6 +290,13 @@ final class BleLightController {
     }
 
     private void beginNewRequest() {
+        ++parallelToken;
+        ArrayList<ParallelWorker> old;
+        synchronized (workers) {
+            old = new ArrayList<>(workers.values());
+            workers.clear();
+        }
+        for (ParallelWorker worker : old) worker.cancel();
         if (timeout != null) handler.removeCallbacks(timeout);
         timeout = null;
         queue.clear();
@@ -377,7 +386,7 @@ final class BleLightController {
                 listener.onStatus("Connected - discovering Eufy service");
                 if(!g.discoverServices())finishActive(false,"Service discovery could not start");
             } else if(newState==BluetoothProfile.STATE_DISCONNECTED&&active!=null){
-                finishActive(false,"Disconnected before command completed");
+                finishActive(false,"Disconnected before command completed (GATT "+status+")");
             }
         }
 
@@ -411,7 +420,7 @@ final class BleLightController {
         @Override
         public void onMtuChanged(BluetoothGatt g,int mtu,int status){
             if(g!=gatt)return;
-            if(status!=BluetoothGatt.GATT_SUCCESS||mtu<100){finishActive(false,"BLE packet size too small ("+mtu+")");return;}
+            if(status!=BluetoothGatt.GATT_SUCCESS||mtu<93){finishActive(false,"BLE packet size too small ("+mtu+")");return;}
             listener.onStatus("BLE ready - starting encrypted E10 handshake");
             sendHandshakeStep(0);
         }
