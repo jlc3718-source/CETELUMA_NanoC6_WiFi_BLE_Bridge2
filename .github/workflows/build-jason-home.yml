@@ -39,17 +39,17 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build debug APK
+      - name: Build unsigned release APK
         shell: bash
         run: |
-          gradle -p JasonHome --no-daemon :app:assembleDebug
-          cp JasonHome/app/build/outputs/apk/debug/app-debug.apk Jason-Home-3.2-debug.apk
-          sha256sum Jason-Home-3.2-debug.apk
+          gradle -p JasonHome --no-daemon :app:assembleRelease
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-3.2-UNSIGNED.apk
+          sha256sum Jason-Home-3.2-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-3.2-debug
-          path: Jason-Home-3.2-debug.apk
+          name: Jason-Home-3.2-UNSIGNED-do-not-install
+          path: Jason-Home-3.2-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
