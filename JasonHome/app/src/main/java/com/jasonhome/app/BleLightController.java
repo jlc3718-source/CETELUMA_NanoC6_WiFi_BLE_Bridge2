@@ -96,6 +96,8 @@ final class BleLightController {
     private final BluetoothManager manager;
     private final Map<String, FoundLight> found = new LinkedHashMap<>();
     private final ArrayDeque<Job> queue = new ArrayDeque<>();
+    private final Map<String, ParallelWorker> workers = new LinkedHashMap<>();
+    private long parallelToken = 0;
 
     private BluetoothGatt gatt;
     private BluetoothGattCharacteristic writeChar;
@@ -143,44 +145,33 @@ final class BleLightController {
     }
 
     void setPower(List<FoundLight> targets, boolean on) {
-        enqueue(targets, item -> Job.power(item,on));
+        startParallel(targets, item -> Job.power(item,on));
     }
 
     void setBrightness(List<FoundLight> targets, int percent) {
         int v=Math.max(0,Math.min(100,percent));
-        enqueue(targets, item -> Job.brightness(item,v));
+        startParallel(targets, item -> Job.brightness(item,v));
     }
 
     void setColor(List<FoundLight> targets, int rgb) {
         int v=rgb & 0xFFFFFF;
-        enqueue(targets, item -> Job.color(item,v));
+        startParallel(targets, item -> Job.color(item,v));
     }
 
     void setWhite(List<FoundLight> targets, int kelvin) {
         int v=Math.max(1500,Math.min(9000,kelvin));
-        enqueue(targets, item -> Job.white(item,v));
+        startParallel(targets, item -> Job.white(item,v));
     }
 
     void setEffect(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse) {
-        int[] safe = colors == null ? new int[]{0xFFFFFF} : colors.clone();
-        enqueue(targets, item -> Job.effect(item,effect,safe,speed,reverse));
+        int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
+        startParallel(targets, item -> Job.effect(item,effect,safe,speed,reverse));
     }
 
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
-        beginNewRequest();
-        if (store.accountId().length() != 40) {
-            listener.onStatus("The 40-character Eufy account ID is unavailable.");
-            return;
-        }
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
         int bright = Math.max(1, Math.min(100, brightness));
-        for (FoundLight item : targets) {
-            String serial = store.serialFor(address(item.device), item.name);
-            if (serial.length() != 16) continue;
-            FoundLight ready = new FoundLight(item.device,item.name,item.rssi,item.model,serial);
-            queue.addLast(Job.scene(ready,effect,safe,speed,reverse,bright));
-        }
-        startQueuedRequest();
+        startParallel(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
     }
 
     private interface Factory { Job make(FoundLight item); }
@@ -203,7 +194,74 @@ final class BleLightController {
     }
 
     boolean isBusy() {
-        return active != null || !queue.isEmpty();
+        synchronized (workers) {
+            return !workers.isEmpty() || active != null || !queue.isEmpty();
+        }
+    }
+
+    private void startParallel(List<FoundLight> targets, Factory factory) {
+        cancelAllWork();
+        if (store.accountId().length() != 40) {
+            listener.onStatus("The 40-character Eufy account ID is unavailable.");
+            return;
+        }
+
+        LinkedHashMap<String, Job> jobs = new LinkedHashMap<>();
+        for (FoundLight item : targets) {
+            if (item == null || item.device == null) continue;
+            String addr = address(item.device);
+            String serial = store.serialFor(addr, item.name);
+            if (serial.length() != 16) continue;
+            String model = item.model;
+            if ((model == null || model.isEmpty()) && serial.startsWith("T8L00")) model = "E120";
+            if ((model == null || model.isEmpty()) && serial.startsWith("T8L02")) model = "E22";
+            FoundLight ready = new FoundLight(item.device,item.name,item.rssi,model,serial);
+            String key = addr.isEmpty() ? serial : addr;
+            jobs.put(key, factory.make(ready));
+        }
+
+        if (jobs.isEmpty()) {
+            listener.onStatus("No Eufy lights with a usable 16-character serial are ready.");
+            return;
+        }
+
+        try {
+            if (manager != null && manager.getAdapter() != null && manager.getAdapter().getBluetoothLeScanner() != null) {
+                manager.getAdapter().getBluetoothLeScanner().stopScan(scanCallback);
+            }
+        } catch (Throwable ignored) {}
+
+        long token = ++parallelToken;
+        totalJobs = jobs.size();
+        processedJobs = 0;
+        successfulJobs = 0;
+        listener.onProgress(0,totalJobs);
+        listener.onStatus("Broadcasting to " + totalJobs + " Eufy light" + (totalJobs == 1 ? "" : "s") + " in parallel");
+
+        ArrayList<ParallelWorker> launch = new ArrayList<>();
+        synchronized (workers) {
+            for (Map.Entry<String, Job> entry : jobs.entrySet()) {
+                ParallelWorker worker = new ParallelWorker(entry.getKey(), entry.getValue(), token);
+                workers.put(entry.getKey(), worker);
+                launch.add(worker);
+            }
+        }
+        for (ParallelWorker worker : launch) worker.start();
+    }
+
+    private void cancelAllWork() {
+        ++parallelToken;
+        ArrayList<ParallelWorker> old;
+        synchronized (workers) {
+            old = new ArrayList<>(workers.values());
+            workers.clear();
+        }
+        for (ParallelWorker worker : old) worker.cancel();
+        if (timeout != null) handler.removeCallbacks(timeout);
+        timeout = null;
+        queue.clear();
+        active = null;
+        cleanupGatt();
     }
 
     private void beginNewRequest() {
@@ -278,7 +336,8 @@ final class BleLightController {
             if(model.isEmpty()&&!serviceMatch&&serial.isEmpty())return;
             if(model.isEmpty() && serial.startsWith("T8L00")) model="E120";
             if(model.isEmpty() && serial.startsWith("T8L02")) model="E22";
-            String shown=name.isEmpty()?(model.isEmpty()?"Eufy light":model):name;
+            String rawShown=name.isEmpty()?(model.isEmpty()?"Eufy light":model):name;
+            String shown=DeviceStore.friendlyNameFor(address,rawShown);
             found.put(address,new FoundLight(d,shown,result.getRssi(),model,serial));
             ArrayList<FoundLight> list=new ArrayList<>(found.values());
             list.sort(Comparator.comparingInt((FoundLight x)->x.rssi).reversed());
@@ -458,6 +517,282 @@ final class BleLightController {
         }
     }
 
+    private final class ParallelWorker extends BluetoothGattCallback {
+        final String key;
+        final Job job;
+        final long token;
+        BluetoothGatt localGatt;
+        BluetoothGattCharacteristic localWrite;
+        E10Probe localProbe;
+        Runnable localTimeout;
+        boolean commandSentLocal;
+        boolean finished;
+
+        ParallelWorker(String key, Job job, long token) {
+            this.key=key; this.job=job; this.token=token;
+        }
+
+        @SuppressLint("MissingPermission")
+        void start() {
+            try {
+                localProbe = new E10Probe(job.light.serial,store.accountId());
+            } catch (Throwable t) {
+                finish(false,displayName(job.light)+": could not prepare handshake");
+                return;
+            }
+            localTimeout = () -> finish(false,displayName(job.light)+": connection/handshake timed out");
+            handler.postDelayed(localTimeout,20000L);
+            try {
+                if (Build.VERSION.SDK_INT >= 23) {
+                    localGatt = job.light.device.connectGatt(context,false,this,BluetoothDevice.TRANSPORT_LE);
+                } else {
+                    localGatt = job.light.device.connectGatt(context,false,this);
+                }
+            } catch (Throwable t) {
+                finish(false,displayName(job.light)+": could not connect");
+            }
+        }
+
+        private boolean current(BluetoothGatt g) {
+            return !finished && token == parallelToken && localGatt == g;
+        }
+
+        @Override @SuppressLint("MissingPermission")
+        public void onConnectionStateChange(BluetoothGatt g,int status,int newState) {
+            if (!current(g)) return;
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                if (!g.discoverServices()) finish(false,displayName(job.light)+": service discovery could not start");
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                finish(false,displayName(job.light)+": disconnected before command completed");
+            }
+        }
+
+        @Override @SuppressLint("MissingPermission")
+        public void onServicesDiscovered(BluetoothGatt g,int status) {
+            if (!current(g)) return;
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                finish(false,displayName(job.light)+": service discovery failed ("+status+")");
+                return;
+            }
+            if (g.getService(SERVICE_ID) == null) {
+                finish(false,displayName(job.light)+": Eufy BLE service not found");
+                return;
+            }
+            localWrite=g.getService(SERVICE_ID).getCharacteristic(WRITE_ID);
+            BluetoothGattCharacteristic notify=g.getService(SERVICE_ID).getCharacteristic(NOTIFY_ID);
+            BluetoothGattDescriptor descriptor=notify==null?null:notify.getDescriptor(CCCD_ID);
+            if (localWrite==null||notify==null||descriptor==null) {
+                finish(false,displayName(job.light)+": required BLE characteristics not found");
+                return;
+            }
+            if (!g.setCharacteristicNotification(notify,true)) {
+                finish(false,displayName(job.light)+": could not enable notifications");
+                return;
+            }
+            if (Build.VERSION.SDK_INT>=33) {
+                int r=g.writeDescriptor(descriptor,BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                if (r!=BluetoothStatusCodes.SUCCESS) finish(false,displayName(job.light)+": notification descriptor write failed ("+r+")");
+            } else {
+                descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                if (!g.writeDescriptor(descriptor)) finish(false,displayName(job.light)+": notification descriptor write failed");
+            }
+        }
+
+        @Override @SuppressLint("MissingPermission")
+        public void onDescriptorWrite(BluetoothGatt g,BluetoothGattDescriptor descriptor,int status) {
+            if (!current(g)||!CCCD_ID.equals(descriptor.getUuid())) return;
+            if (status!=BluetoothGatt.GATT_SUCCESS) {
+                finish(false,displayName(job.light)+": notification setup failed ("+status+")");
+                return;
+            }
+            if (!g.requestMtu(247)) finish(false,displayName(job.light)+": could not request BLE packet size");
+        }
+
+        @Override
+        public void onMtuChanged(BluetoothGatt g,int mtu,int status) {
+            if (!current(g)) return;
+            if (status!=BluetoothGatt.GATT_SUCCESS||mtu<100) {
+                finish(false,displayName(job.light)+": BLE packet size too small ("+mtu+")");
+                return;
+            }
+            sendHandshakeStepLocal(0);
+        }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt g,BluetoothGattCharacteristic characteristic,byte[] value) {
+            if (!current(g)||!NOTIFY_ID.equals(characteristic.getUuid())||commandSentLocal) return;
+            if (localProbe!=null&&localProbe.acceptNotification(value)) {
+                commandSentLocal=true;
+                sendLocalCommand();
+            }
+        }
+
+        @Override @SuppressWarnings("deprecation")
+        public void onCharacteristicChanged(BluetoothGatt g,BluetoothGattCharacteristic characteristic) {
+            byte[] value=characteristic.getValue();
+            if (value!=null) onCharacteristicChanged(g,characteristic,value);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendHandshakeStepLocal(int step) {
+            if (finished||token!=parallelToken||localGatt==null||localWrite==null||localProbe==null) return;
+            if (step>=5) return;
+            byte[] data;
+            try {
+                data=localProbe.step(step);
+            } catch (Throwable t) {
+                finish(false,displayName(job.light)+": handshake frame could not be built");
+                return;
+            }
+            int result=write(localGatt,localWrite,data);
+            if (Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS) {
+                finish(false,displayName(job.light)+": handshake write "+(step+1)+" failed ("+result+")");
+                return;
+            }
+            handler.postDelayed(() -> {
+                if (!finished&&token==parallelToken) sendHandshakeStepLocal(step+1);
+            },170L);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalCommand() {
+            if (finished||token!=parallelToken||localGatt==null||localWrite==null||localProbe==null||!localProbe.sessionEstablished()) return;
+            if (job.kind==Kind.SCENE) {
+                sendLocalScene();
+                return;
+            }
+            byte[] frame;
+            try {
+                switch(job.kind) {
+                    case POWER:
+                        frame=localProbe.powerCommand(job.on);
+                        break;
+                    case BRIGHTNESS:
+                        frame=localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
+                        break;
+                    case COLOR:
+                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.color(job.light.model,job.rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+                        break;
+                    case WHITE:
+                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.white(job.light.model,job.value,EufyLightCommands.defaultLampCount(job.light.model)));
+                        break;
+                    case EFFECT:
+                        frame=localProbe.command(EufyLightCommands.OP_SHOW,
+                            EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                        break;
+                    default:
+                        throw new IllegalStateException("Unknown command");
+                }
+            } catch(Throwable t) {
+                finish(false,displayName(job.light)+": "+commandName(job)+" could not be built");
+                return;
+            }
+            int result=write(localGatt,localWrite,frame);
+            if (Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS) {
+                finish(false,displayName(job.light)+": "+commandName(job)+" write failed ("+result+")");
+                return;
+            }
+            handler.postDelayed(() -> finish(true,null),550L);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalScene() {
+            try {
+                int r1=write(localGatt,localWrite,localProbe.powerCommand(true));
+                if (Build.VERSION.SDK_INT>=33&&r1!=BluetoothStatusCodes.SUCCESS) {
+                    finish(false,displayName(job.light)+": scene power write failed ("+r1+")");
+                    return;
+                }
+                handler.postDelayed(() -> {
+                    if (finished||token!=parallelToken) return;
+                    try {
+                        int r2=write(localGatt,localWrite,
+                            localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value)));
+                        if (Build.VERSION.SDK_INT>=33&&r2!=BluetoothStatusCodes.SUCCESS) {
+                            finish(false,displayName(job.light)+": scene brightness write failed ("+r2+")");
+                            return;
+                        }
+                        handler.postDelayed(() -> {
+                            if (finished||token!=parallelToken) return;
+                            try {
+                                byte[] frame;
+                                if (("Solid".equals(job.effect)||"Solid / Static".equals(job.effect))&&job.colors.length==1) {
+                                    frame=localProbe.command(EufyLightCommands.OP_COLOR,
+                                        EufyLightCommands.color(job.light.model,job.colors[0],EufyLightCommands.defaultLampCount(job.light.model)));
+                                } else {
+                                    frame=localProbe.command(EufyLightCommands.OP_SHOW,
+                                        EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                                }
+                                int r3=write(localGatt,localWrite,frame);
+                                if (Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS) {
+                                    finish(false,displayName(job.light)+": scene effect write failed ("+r3+")");
+                                    return;
+                                }
+                                handler.postDelayed(() -> finish(true,null),550L);
+                            } catch(Throwable t) {
+                                finish(false,displayName(job.light)+": scene effect command could not be built");
+                            }
+                        },220L);
+                    } catch(Throwable t) {
+                        finish(false,displayName(job.light)+": scene brightness command could not be built");
+                    }
+                },220L);
+            } catch(Throwable t) {
+                finish(false,displayName(job.light)+": scene power command could not be built");
+            }
+        }
+
+        void finish(boolean success,String error) {
+            handler.post(() -> finishOnMain(success,error));
+        }
+
+        private void finishOnMain(boolean success,String error) {
+            if (finished) return;
+            finished=true;
+            if (localTimeout!=null) handler.removeCallbacks(localTimeout);
+            localTimeout=null;
+            cleanupLocal();
+
+            if (token!=parallelToken) return;
+            synchronized(workers) {
+                ParallelWorker current=workers.get(key);
+                if (current==this) workers.remove(key);
+            }
+
+            processedJobs++;
+            if (success) successfulJobs++;
+            listener.onProgress(processedJobs,totalJobs);
+            if (processedJobs>=totalJobs) {
+                if (successfulJobs==totalJobs) {
+                    listener.onStatus("Broadcast finished - "+successfulJobs+"/"+totalJobs+" lights updated");
+                } else {
+                    listener.onStatus("Broadcast finished - "+successfulJobs+"/"+totalJobs+" lights updated"+(error==null?"":". "+error));
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        void cancel() {
+            if (finished) return;
+            finished=true;
+            if (localTimeout!=null) handler.removeCallbacks(localTimeout);
+            localTimeout=null;
+            cleanupLocal();
+        }
+
+        @SuppressLint("MissingPermission")
+        private void cleanupLocal() {
+            BluetoothGatt old=localGatt;
+            localGatt=null;
+            localWrite=null;
+            localProbe=null;
+            try { if (old!=null) old.disconnect(); } catch(Throwable ignored) {}
+            try { if (old!=null) old.close(); } catch(Throwable ignored) {}
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private int write(BluetoothGatt g,BluetoothGattCharacteristic c,byte[] data){
         if(Build.VERSION.SDK_INT>=33)return g.writeCharacteristic(c,data,BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
@@ -493,7 +828,7 @@ final class BleLightController {
             if(manager!=null&&manager.getAdapter()!=null&&manager.getAdapter().getBluetoothLeScanner()!=null)
                 manager.getAdapter().getBluetoothLeScanner().stopScan(scanCallback);
         }catch(Throwable ignored){}
-        queue.clear(); active=null; cleanupGatt();
+        cancelAllWork();
     }
 
     private static String address(BluetoothDevice d){
