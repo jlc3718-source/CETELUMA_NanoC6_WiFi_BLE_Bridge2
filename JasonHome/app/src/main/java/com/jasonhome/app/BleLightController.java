@@ -54,7 +54,7 @@ final class BleLightController {
         }
     }
 
-    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, SCENE }
+    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, SCENE, DIAGNOSTIC }
 
     private static final class Job {
         final FoundLight light;
@@ -81,6 +81,9 @@ final class BleLightController {
         }
         static Job scene(FoundLight l,String e,int[] colors,int speed,boolean reverse,int brightness){
             return new Job(l,Kind.SCENE,false,brightness,0,e,colors,speed,reverse);
+        }
+        static Job diagnostic(FoundLight l){
+            return new Job(l,Kind.DIAGNOSTIC,false,0,0,null,null,0,false);
         }
     }
 
@@ -174,6 +177,17 @@ final class BleLightController {
         startParallel(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
     }
 
+    void diagnoseSingle(FoundLight target) {
+        if (target == null || target.device == null) {
+            listener.onStatus("Diagnostic: no light selected.");
+            return;
+        }
+        ArrayList<FoundLight> one = new ArrayList<>();
+        one.add(target);
+        listener.onStatus("Diagnostic: isolating " + displayName(target) + " only");
+        startParallel(one, Job::diagnostic);
+    }
+
     private interface Factory { Job make(FoundLight item); }
 
     private void enqueue(List<FoundLight> targets, Factory factory) {
@@ -236,7 +250,10 @@ final class BleLightController {
         processedJobs = 0;
         successfulJobs = 0;
         listener.onProgress(0,totalJobs);
-        listener.onStatus("Broadcasting to " + totalJobs + " Eufy light" + (totalJobs == 1 ? "" : "s") + " in parallel");
+        boolean diagnostic = jobs.size() == 1 && jobs.values().iterator().next().kind == Kind.DIAGNOSTIC;
+        listener.onStatus(diagnostic
+            ? "Diagnostic: connecting only to " + displayName(jobs.values().iterator().next().light)
+            : "Broadcasting to " + totalJobs + " Eufy light" + (totalJobs == 1 ? "" : "s") + " in parallel");
 
         ArrayList<ParallelWorker> launch = new ArrayList<>();
         synchronized (workers) {
@@ -561,6 +578,7 @@ final class BleLightController {
         public void onConnectionStateChange(BluetoothGatt g,int status,int newState) {
             if (!current(g)) return;
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                if (job.kind == Kind.DIAGNOSTIC) listener.onStatus("Diagnostic " + displayName(job.light) + ": CONNECTED → discovering services");
                 if (!g.discoverServices()) finish(false,displayName(job.light)+": service discovery could not start");
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 finish(false,displayName(job.light)+": disconnected before command completed");
@@ -578,6 +596,7 @@ final class BleLightController {
                 finish(false,displayName(job.light)+": Eufy BLE service not found");
                 return;
             }
+            if (job.kind == Kind.DIAGNOSTIC) listener.onStatus("Diagnostic " + displayName(job.light) + ": service found → enabling notifications");
             localWrite=g.getService(SERVICE_ID).getCharacteristic(WRITE_ID);
             BluetoothGattCharacteristic notify=g.getService(SERVICE_ID).getCharacteristic(NOTIFY_ID);
             BluetoothGattDescriptor descriptor=notify==null?null:notify.getDescriptor(CCCD_ID);
@@ -605,6 +624,7 @@ final class BleLightController {
                 finish(false,displayName(job.light)+": notification setup failed ("+status+")");
                 return;
             }
+            if (job.kind == Kind.DIAGNOSTIC) listener.onStatus("Diagnostic " + displayName(job.light) + ": notifications enabled → MTU 247");
             if (!g.requestMtu(247)) finish(false,displayName(job.light)+": could not request BLE packet size");
         }
 
@@ -615,6 +635,7 @@ final class BleLightController {
                 finish(false,displayName(job.light)+": BLE packet size too small ("+mtu+")");
                 return;
             }
+            if (job.kind == Kind.DIAGNOSTIC) listener.onStatus("Diagnostic " + displayName(job.light) + ": MTU " + mtu + " → starting handshake");
             sendHandshakeStepLocal(0);
         }
 
@@ -623,7 +644,12 @@ final class BleLightController {
             if (!current(g)||!NOTIFY_ID.equals(characteristic.getUuid())||commandSentLocal) return;
             if (localProbe!=null&&localProbe.acceptNotification(value)) {
                 commandSentLocal=true;
-                sendLocalCommand();
+                if (job.kind == Kind.DIAGNOSTIC) {
+                    listener.onStatus("Diagnostic " + displayName(job.light) + ": PASS — encrypted session established");
+                    finish(true,null);
+                } else {
+                    sendLocalCommand();
+                }
             }
         }
 
@@ -644,6 +670,7 @@ final class BleLightController {
                 finish(false,displayName(job.light)+": handshake frame could not be built");
                 return;
             }
+            if (job.kind == Kind.DIAGNOSTIC) listener.onStatus("Diagnostic " + displayName(job.light) + ": handshake " + (step+1) + "/5");
             int result=write(localGatt,localWrite,data);
             if (Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS) {
                 finish(false,displayName(job.light)+": handshake write "+(step+1)+" failed ("+result+")");
@@ -682,6 +709,9 @@ final class BleLightController {
                         frame=localProbe.command(EufyLightCommands.OP_SHOW,
                             EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
                         break;
+                    case DIAGNOSTIC:
+                        finish(true,null);
+                        return;
                     default:
                         throw new IllegalStateException("Unknown command");
                 }
@@ -836,8 +866,8 @@ final class BleLightController {
     }
 
     private static String displayName(FoundLight light){
-        if(light.model!=null&&!light.model.isEmpty())return light.model;
         if(light.name!=null&&!light.name.isEmpty())return light.name;
+        if(light.model!=null&&!light.model.isEmpty())return light.model;
         return "Eufy light";
     }
 
@@ -862,6 +892,7 @@ final class BleLightController {
             case WHITE:return job.value+" K white";
             case EFFECT:return job.effect;
             case SCENE:return "scene "+job.effect;
+            case DIAGNOSTIC:return "diagnostic handshake";
             default:return "command";
         }
     }
