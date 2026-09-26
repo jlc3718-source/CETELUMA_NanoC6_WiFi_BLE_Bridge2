@@ -57,14 +57,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.3-UNSIGNED.apk
-          sha256sum Jason-Home-5.0.3-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.4-UNSIGNED.apk
+          sha256sum Jason-Home-5.0.4-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.0.3-UNSIGNED-do-not-install
-          path: Jason-Home-5.0.3-UNSIGNED.apk
+          name: Jason-Home-5.0.4-UNSIGNED-do-not-install
+          path: Jason-Home-5.0.4-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
