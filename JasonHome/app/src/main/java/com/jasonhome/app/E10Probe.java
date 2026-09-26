@@ -10,7 +10,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * Reconstructed from Jason Home 3.0's working E120 path.
+ * Wire format verified against the actual Jason Home 3.0 Kotlin APK.
  * Keep framing and crypto unchanged without a real-light regression test.
  */
 final class E10Probe {
@@ -55,51 +55,91 @@ final class E10Probe {
         return frame(command, payload, 1, false);
     }
 
-    String notificationSummary(byte[] input) {
-        if (input == null) return "null notification";
-        StringBuilder b = new StringBuilder();
-        b.append("len=").append(input.length);
-        if (input.length >= 9) {
+    enum Reason {
+        NO_INPUT, TOO_SHORT, BAD_MAGIC, DECLARED_LENGTH_MISMATCH, BAD_XOR,
+        INTERMEDIATE_ACK, COMMAND_NOT_4822, CIPHERTEXT_NOT_BLOCK_ALIGNED,
+        AES_DECRYPT_FAILED, BAD_PADDING, SESSION_TLV_NOT_FOUND, SESSION_ACCEPTED
+    }
+
+    static final class NotificationResult {
+        final Reason reason;
+        final String summary;
+        NotificationResult(Reason reason, byte[] input) {
+            this.reason = reason;
+            this.summary = packetSummary(input) + " → " + reason;
+        }
+        boolean accepted() { return reason == Reason.SESSION_ACCEPTED; }
+    }
+
+    // Only the nine framing bytes are safe to display. Bytes 9+ are payload.
+    static String packetSummary(byte[] input) {
+        if (input == null) return "len=0";
+        StringBuilder b = new StringBuilder("len=").append(input.length);
+        if (input.length >= 9 && (input[0] & 0xff) == 0xff && input[1] == 9) {
             b.append(" hdr=");
-            int n = Math.min(input.length, 12);
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i < 9; i++) {
                 if (i > 0) b.append(' ');
-                b.append(String.format("%02X", input[i] & 0xff));
+                b.append(String.format(java.util.Locale.ROOT, "%02X", input[i] & 0xff));
             }
-            b.append(" cmd=")
-             .append(String.format("%02X%02X", input[7] & 0xff, input[8] & 0xff));
+            b.append(String.format(java.util.Locale.ROOT, " cmd=%04X", u16be(input, 7)))
+             .append(" ch=").append(input[6] & 0xff)
+             .append(" seq=").append(u16le(input, 4))
+             .append(" declared=").append(u16le(input, 2))
+             .append(" xor=").append(xor(input) == 0 ? "OK" : "BAD")
+             .append((u16be(input, 7) & 0x4000) != 0 ? " cipher=" : " payload=")
+             .append(Math.max(0, input.length - 10));
         }
         return b.toString();
     }
 
-    boolean acceptNotification(byte[] input) {
-        if (input == null || input.length < 26) return false;
-        if ((input[0] & 0xff) != 0xff || (input[1] & 0xff) != 0x09) return false;
-        if ((input[7] & 0xff) != 0x48 || (input[8] & 0xff) != 0x22) return false;
-        int xor = 0;
-        for (byte b : input) xor ^= b & 0xff;
-        if (xor != 0) return false;
-        int declared = (input[2] & 0xff) | ((input[3] & 0xff) << 8);
-        if (declared != input.length) return false;
+    String notificationSummary(byte[] input) { return packetSummary(input); }
+
+    boolean acceptNotification(byte[] input) { return inspectNotification(input).accepted(); }
+
+    NotificationResult inspectNotification(byte[] input) {
+        if (input == null) return result(Reason.NO_INPUT, input);
+        if (input.length < 10) return result(Reason.TOO_SHORT, input);
+        if ((input[0] & 0xff) != 0xff || input[1] != 9) return result(Reason.BAD_MAGIC, input);
+        if (u16le(input, 2) != input.length) return result(Reason.DECLARED_LENGTH_MISMATCH, input);
+        if (xor(input) != 0) return result(Reason.BAD_XOR, input);
+        int command = u16be(input, 7);
+        if (command == 0x0801 || command == 0x0829 || command == 0x0803 || command == 0x0805)
+            return result(Reason.INTERMEDIATE_ACK, input);
+        if (command != 0x4822) return result(Reason.COMMAND_NOT_4822, input);
+        int cipherLength = input.length - 10;
+        if (cipherLength == 0 || cipherLength % 16 != 0)
+            return result(Reason.CIPHERTEXT_NOT_BLOCK_ALIGNED, input);
         try {
             byte[] encrypted = Arrays.copyOfRange(input, 9, input.length - 1);
             byte[] decrypted = decrypt(encrypted, initialKey);
             int pad = decrypted[decrypted.length - 1] & 0xff;
-            if (pad < 1 || pad > 16) return false;
+            if (pad < 1 || pad > 16) return result(Reason.BAD_PADDING, input);
             for (int i = decrypted.length - pad; i < decrypted.length; i++) {
-                if ((decrypted[i] & 0xff) != pad) return false;
+                if ((decrypted[i] & 0xff) != pad) return result(Reason.BAD_PADDING, input);
             }
             byte[] plain = Arrays.copyOfRange(decrypted, 0, decrypted.length - pad);
             for (int i = 0; i + 18 <= plain.length; i++) {
                 if ((plain[i] & 0xff) == 0xA1 && (plain[i + 1] & 0xff) == 0x10) {
                     sessionKey = Arrays.copyOfRange(plain, i + 2, i + 18);
                     sessionEstablished = true;
-                    return true;
+                    return result(Reason.SESSION_ACCEPTED, input);
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
+            return result(Reason.AES_DECRYPT_FAILED, input);
         }
-        return false;
+        return result(Reason.SESSION_TLV_NOT_FOUND, input);
+    }
+
+    private static NotificationResult result(Reason reason, byte[] input) {
+        return new NotificationResult(reason, input);
+    }
+    private static int u16le(byte[] b, int i) { return (b[i] & 255) | ((b[i + 1] & 255) << 8); }
+    private static int u16be(byte[] b, int i) { return ((b[i] & 255) << 8) | (b[i + 1] & 255); }
+    private static int xor(byte[] input) {
+        int value = 0;
+        for (byte b : input) value ^= b & 255;
+        return value;
     }
 
     byte[] powerCommand(boolean on) {
@@ -117,8 +157,10 @@ final class E10Probe {
         int seconds = (int)(System.currentTimeMillis() / 1000L);
         byte[] ts = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(seconds).array();
         byte[] account = userId.getBytes(StandardCharsets.US_ASCII);
-        byte[] tags = new byte[] {(byte)0xA1, 0x04, (byte)0xA2, 0x28};
-        return concat(ts, tags, account);
+        // 3.0: A1 04 <timestamp LE> A2 28 <40 ASCII account bytes>.
+        // The Java reconstruction incorrectly moved the timestamp ahead of A1.
+        return concat(new byte[] {(byte)0xA1, 0x04}, ts,
+            new byte[] {(byte)0xA2, 0x28}, account);
     }
 
     private byte[] frame(int commandId, byte[] payload, int channel, boolean flagged) {
@@ -159,10 +201,8 @@ final class E10Probe {
 
     private static boolean validAscii(String s, int length) {
         if (s == null || s.length() != length) return false;
-        byte[] b = s.getBytes(StandardCharsets.US_ASCII);
-        if (b.length != length) return false;
-        for (byte x : b) {
-            int u = x & 0xff;
+        for (int i = 0; i < s.length(); i++) {
+            int u = s.charAt(i);
             if (u < 33 || u > 126) return false;
         }
         return true;

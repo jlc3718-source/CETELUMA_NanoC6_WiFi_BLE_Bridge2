@@ -29,6 +29,8 @@ import java.util.Map;
 import java.util.UUID;
 
 final class BleLightController {
+    // Lift only after physical ON/OFF verification on one E120, then E22.
+    static final boolean E120_ON_OFF_TEST_ONLY = true;
     interface Listener {
         void onScanChanged(List<FoundLight> items);
         void onStatus(String message);
@@ -116,6 +118,7 @@ final class BleLightController {
     private String lastFailure = "";
     private int connectionRetryCount = 0;
     private int handshakeResponseRetryCount = 0;
+    private int receivedNotifications = 0;
 
     BleLightController(Context context, DeviceStore store, Listener listener) {
         this.context = context;
@@ -194,12 +197,24 @@ final class BleLightController {
         ArrayList<FoundLight> one = new ArrayList<>();
         one.add(target);
         listener.onStatus("Diagnostic: isolating " + displayName(target) + " only");
-        startParallel(one, Job::diagnostic);
+        enqueue(one, Job::diagnostic);
     }
 
     private interface Factory { Job make(FoundLight item); }
 
     private void enqueue(List<FoundLight> targets, Factory factory) {
+        if (E120_ON_OFF_TEST_ONLY) {
+            if (targets.size() != 1) {
+                listener.onStatus("E120 test: use ON/OFF beside Pool or House on Devices. Select one light only.");
+                return;
+            }
+            Job test = factory.make(targets.get(0));
+            String serial = store.serialFor(address(test.light.device), test.light.name);
+            if (!serial.startsWith("T8L00") || (test.kind != Kind.POWER && test.kind != Kind.DIAGNOSTIC)) {
+                listener.onStatus("E120 test: Pool or House ON/OFF only until physical control is confirmed.");
+                return;
+            }
+        }
         beginNewRequest();
         String account = store.accountId();
         if (account.length() != 40) {
@@ -318,6 +333,7 @@ final class BleLightController {
         processedJobs=0;
         successfulJobs=0;
         lastFailure="";
+        receivedNotifications=0;
         listener.onProgress(0,totalJobs);
         runNext();
     }
@@ -329,7 +345,7 @@ final class BleLightController {
             active=null;
             listener.onProgress(totalJobs,totalJobs);
             if(successfulJobs==totalJobs){
-                listener.onStatus("PASS - "+successfulJobs+"/"+totalJobs+" light commands written");
+                listener.onStatus("SENT - "+successfulJobs+"/"+totalJobs+" • confirm the light physically changed");
             }else{
                 listener.onStatus("FAIL - "+successfulJobs+"/"+totalJobs+" written • "+(lastFailure.isEmpty()?"unknown BLE failure":lastFailure));
             }
@@ -425,6 +441,7 @@ final class BleLightController {
         @Override @SuppressLint("MissingPermission")
         public void onConnectionStateChange(BluetoothGatt g,int status,int newState){
             if(g!=gatt)return;
+            listener.onStatus("GATT status="+status+" state="+newState);
             if(newState==BluetoothProfile.STATE_CONNECTED){
                 legacyStage="service discovery";
                 listener.onStatus(displayName(active.light)+": CONNECTED • discovering Eufy service");
@@ -448,7 +465,7 @@ final class BleLightController {
             BluetoothGattDescriptor descriptor=notify==null?null:notify.getDescriptor(CCCD_ID);
             if(writeChar==null||notify==null||descriptor==null){finishActive(false,"Required Eufy BLE characteristics were not found");return;}
             legacyStage="notification setup";
-            listener.onStatus(displayName(active.light)+": SERVICE FOUND • enabling notifications");
+            listener.onStatus(displayName(active.light)+": SERVICE FOUND • writeProperties="+writeChar.getProperties()+" • enabling notifications");
             if(!g.setCharacteristicNotification(notify,true)){finishActive(false,"Could not enable Eufy notifications");return;}
             if(Build.VERSION.SDK_INT>=33){
                 int result=g.writeDescriptor(descriptor,BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
@@ -485,22 +502,37 @@ final class BleLightController {
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt g,BluetoothGattCharacteristic characteristic,byte[] value){
-            if(g!=gatt||!NOTIFY_ID.equals(characteristic.getUuid())||commandSent)return;
+            byte[] snapshot = value == null ? null : value.clone();
+            handler.post(() -> receiveNotification(g, characteristic, snapshot));
+        }
+
+        private void receiveNotification(BluetoothGatt g,BluetoothGattCharacteristic characteristic,byte[] value){
+            if(g!=gatt||!NOTIFY_ID.equals(characteristic.getUuid()))return;
             E10Probe p=probe;
             if(p==null)return;
-            String summary=p.notificationSummary(value);
-            legacyStage="notification received";
-            if(p.acceptNotification(value)){
+            if(commandSent){
+                listener.onStatus(displayName(active.light)+": RX#"+(++receivedNotifications)+" "+E10Probe.packetSummary(value)+" → POST_SESSION_RESPONSE");
+                return;
+            }
+            E10Probe.NotificationResult result=p.inspectNotification(value);
+            listener.onStatus(displayName(active.light)+": RX#"+(++receivedNotifications)+" "+result.summary);
+            if(result.accepted()){
                 commandSent=true;
                 if(timeout!=null)handler.removeCallbacks(timeout);
                 timeout=null;
                 legacyStage="session established";
-                listener.onStatus(displayName(active.light)+": SESSION RESPONSE ACCEPTED • "+summary+" • sending "+commandName(active));
-                handler.post(this::sendActiveCommandFromCallback);
-            }else{
-                legacyStage="notification rejected: "+summary;
-                listener.onStatus(displayName(active.light)+": NOTIFICATION RECEIVED BUT REJECTED • "+summary);
+                listener.onStatus(displayName(active.light)+": SESSION RESPONSE ACCEPTED • sending "+commandName(active));
+                Job acceptedJob=active;
+                handler.post(() -> {
+                    if(g==gatt && p==probe && active==acceptedJob)sendActiveCommandFromCallback();
+                });
             }
+        }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt g,BluetoothGattCharacteristic characteristic,int status){
+            if(g==gatt && WRITE_ID.equals(characteristic.getUuid()))
+                listener.onStatus("GATT write callback status="+status+" • stage="+legacyStage);
         }
 
         private void sendActiveCommandFromCallback(){
@@ -516,13 +548,17 @@ final class BleLightController {
 
     @SuppressLint("MissingPermission")
     private void sendHandshakeStep(int step){
-        sendHandshakeStepAttempt(step,0);
+        if(probe==null || commandSent)return;
+        byte[] data=null;
+        try { if(step<5)data=probe.step(step); }
+        catch(Exception e){finishActive(false,"Handshake frame could not be built");return;}
+        sendHandshakeStepAttempt(step,0,data);
     }
 
     @SuppressLint("MissingPermission")
-    private void sendHandshakeStepAttempt(int step,int busyAttempt){
+    private void sendHandshakeStepAttempt(int step,int busyAttempt,byte[] data){
         E10Probe p=probe; BluetoothGatt g=gatt; BluetoothGattCharacteristic c=writeChar; Job job=active;
-        if(p==null||g==null||c==null||job==null)return;
+        if(p==null||g==null||c==null||job==null||commandSent)return;
         if(step>=5){
             legacyStage="waiting for encrypted response";
             listener.onStatus(displayName(job.light)+": HANDSHAKE 5/5 SENT • waiting for encrypted response");
@@ -542,22 +578,21 @@ final class BleLightController {
             handler.postDelayed(timeout,5000L);
             return;
         }
-        byte[] data;
-        try{data=p.step(step);}catch(Throwable t){finishActive(false,"Handshake frame could not be built");return;}
         int result=write(g,c,data);
+        listener.onStatus("TX handshake="+(step+1)+" attempt="+(busyAttempt+1)+" writeStatus="+result+" "+E10Probe.packetSummary(data));
         if(Build.VERSION.SDK_INT>=33 && result==BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY){
             if(busyAttempt<6){
                 legacyStage="handshake "+(step+1)+"/5 busy retry "+(busyAttempt+1);
                 listener.onStatus(displayName(job.light)+": GATT busy on handshake "+(step+1)+"/5 • retrying");
                 handler.postDelayed(()->{
-                    if(g==gatt&&p==probe&&active==job)sendHandshakeStepAttempt(step,busyAttempt+1);
+                    if(g==gatt&&p==probe&&active==job)sendHandshakeStepAttempt(step,busyAttempt+1,data);
                 },120L);
             }else{
                 retryOrFailConnection("Handshake write "+(step+1)+" stayed busy (201)");
             }
             return;
         }
-        if(Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS){
+        if(result!=BluetoothStatusCodes.SUCCESS){
             retryOrFailConnection("Handshake write "+(step+1)+" failed ("+result+")");
             return;
         }
@@ -578,6 +613,10 @@ final class BleLightController {
                 case POWER:
                     frame=p.powerCommand(job.on);
                     break;
+                case DIAGNOSTIC:
+                    listener.onStatus(displayName(job.light)+": diagnostic session established; no power command sent");
+                    finishActive(true,null);
+                    return;
                 case BRIGHTNESS:
                     frame=p.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
                     break;
@@ -604,12 +643,15 @@ final class BleLightController {
             return;
         }
         int result=write(g,c,frame);
-        if(Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS){
+        listener.onStatus("TX "+commandName(job)+" writeStatus="+result+" "+E10Probe.packetSummary(frame));
+        if(result!=BluetoothStatusCodes.SUCCESS){
             finishActive(false,commandName(job)+" write failed ("+result+")");
             return;
         }
         listener.onStatus(displayName(job.light)+": "+commandName(job)+" command written");
-        handler.postDelayed(()->finishActive(true,null),650L);
+        handler.postDelayed(()->{
+            if(active==job && g==gatt && p==probe)finishActive(true,null);
+        },650L);
     }
 
     @SuppressLint("MissingPermission")

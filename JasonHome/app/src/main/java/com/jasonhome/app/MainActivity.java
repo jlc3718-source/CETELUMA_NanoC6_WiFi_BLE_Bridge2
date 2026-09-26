@@ -39,6 +39,9 @@ public class MainActivity extends Activity implements BleLightController.Listene
     private LinearLayout root;
     private TextView statusView;
     private TextView progressView;
+    private TextView lastRxView;
+    private String bleTestLog = "";
+    private String lastRxLine = "";
     private BleLightController ble;
     private DeviceStore store;
     private AndersonSchedule schedule;
@@ -67,6 +70,9 @@ public class MainActivity extends Activity implements BleLightController.Listene
         getWindow().setStatusBarColor(NAVY);
         getWindow().setNavigationBarColor(NAVY);
         store = new DeviceStore(this);
+        android.content.SharedPreferences logPrefs = getSharedPreferences("ble_test_log", MODE_PRIVATE);
+        bleTestLog = logPrefs.getString("history", "");
+        lastRxLine = logPrefs.getString("last_rx", "");
         schedule = new AndersonSchedule(this);
         ble = new BleLightController(this, store, this);
         if (manualPalette.isEmpty()) manualPalette.add(selectedRgb);
@@ -134,12 +140,39 @@ public class MainActivity extends Activity implements BleLightController.Listene
 
     private void renderPage() {
         root.removeAllViews();
+        lastRxView = null;
         header();
         if ("Devices".equals(page)) renderDevices();
         else if ("Scenes".equals(page)) renderScenes();
         else if ("Schedule".equals(page)) renderSchedule();
         else if ("Settings".equals(page)) renderSettings();
         else renderHome();
+        if ("Home".equals(page) || "Devices".equals(page)) renderBleTestLog();
+    }
+
+    private void renderBleTestLog() {
+        TextView test = text("4.0.10 E120 test • Use Pool or House ON/OFF on Devices.", 12, MUTED, false);
+        root.addView(test, topMargin(12));
+        lastRxView = text(lastRxLine.isEmpty() ? "No received notification recorded yet." : lastRxLine, 11, MUTED, false);
+        lastRxView.setTextIsSelectable(true);
+        root.addView(lastRxView, topMargin(8));
+        Button logs = actionButton("VIEW / COPY BLE TEST LOG");
+        logs.setOnClickListener(v -> {
+            TextView content = text(bleTestLog.isEmpty() ? "No BLE activity yet." : bleTestLog, 11, Color.DKGRAY, false);
+            content.setPadding(dp(16), dp(12), dp(16), dp(12));
+            content.setTextIsSelectable(true);
+            ScrollView scroll = new ScrollView(this);
+            scroll.addView(content);
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("BLE test log • 4.0.10")
+                .setView(scroll)
+                .setPositiveButton("Close", null)
+                .setNeutralButton("Copy log", (dialog, which) -> {
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Jason Home BLE test", bleTestLog));
+                }).show();
+        });
+        root.addView(logs, topMargin(8));
     }
 
     private void header() {
@@ -608,6 +641,10 @@ public class MainActivity extends Activity implements BleLightController.Listene
         modeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
         modeCard.addView(text("HOLIDAY MODE", 9, Color.rgb(142, 169, 211), true));
         Button enabled = smallChoice(schedule.enabled() ? "Scheduler enabled" : "Scheduler disabled", schedule.enabled());
+        if (BleLightController.E120_ON_OFF_TEST_ONLY) {
+            enabled.setText("Paused during E120 ON/OFF test");
+            enabled.setEnabled(false);
+        }
         enabled.setOnClickListener(v -> { schedule.setEnabled(!schedule.enabled()); lastScheduledKey=""; renderPage(); });
         modeCard.addView(enabled, buttonMargin());
 
@@ -718,6 +755,10 @@ public class MainActivity extends Activity implements BleLightController.Listene
     }
 
     private void applyScheduleNow(boolean force) {
+        if (BleLightController.E120_ON_OFF_TEST_ONLY) {
+            if (force) onStatus("Scheduler paused during E120 ON/OFF test.");
+            return;
+        }
         if (schedule == null || !schedule.enabled()) return;
         if (ble != null && ble.isBusy()) return;
         List<BleLightController.FoundLight> targets = readyLights();
@@ -865,6 +906,18 @@ public class MainActivity extends Activity implements BleLightController.Listene
     @Override
     public void onStatus(String message) {
         runOnUiThread(() -> {
+            String stamp = android.text.format.DateFormat.format("HH:mm:ss", System.currentTimeMillis()).toString();
+            bleTestLog += stamp + " " + message + "\n";
+            if (bleTestLog.length() > 24000) {
+                int cut = bleTestLog.indexOf('\n', bleTestLog.length() - 20000);
+                bleTestLog = bleTestLog.substring(cut + 1);
+            }
+            if (message.contains(": RX#")) {
+                lastRxLine = message;
+                if (lastRxView != null) lastRxView.setText(lastRxLine);
+            }
+            getSharedPreferences("ble_test_log", MODE_PRIVATE).edit()
+                .putString("history", bleTestLog).putString("last_rx", lastRxLine).apply();
             if (statusView != null) statusView.setText(message);
         });
     }
