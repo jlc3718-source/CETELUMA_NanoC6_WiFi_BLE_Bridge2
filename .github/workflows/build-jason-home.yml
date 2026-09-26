@@ -60,18 +60,41 @@ jobs:
           javac -d /tmp/jason-home-light-tests JasonHome/app/src/main/java/com/jasonhome/app/EufyLightCommands.java JasonHome/tests/EufyLightCommandsRegression.java
           java -cp /tmp/jason-home-light-tests com.jasonhome.app.EufyLightCommandsRegression
 
+      - name: Check full Jason Home effect/color option catalog
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path("JasonHome/app/src/main/assets/anderson_home.html").read_text()
+          js = Path("JasonHome/app/src/main/assets/v3_mockup.js").read_text()
+          effects = [
+              "Jump","Breath","Strobe","Solid","Chase","Gradient Sweep",
+              "Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet",
+              "Rainbow Flow","Pulse Wave"
+          ]
+          quick = [
+              "True Orange","Gold","Lime","Emerald","Aqua","Royal Blue",
+              "Indigo","Magenta","Hot Pink","Rose","Warm White RGB","Neutral White RGB"
+          ]
+          missing = [x for x in effects if x not in html or x not in js]
+          missing += [x for x in quick if x not in html]
+          if missing:
+              raise SystemExit("Missing Jason Home UI options: " + ", ".join(missing))
+          print("Jason Home UI catalog regression: PASS")
+          PY
+
       - name: Build unsigned release APK
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.6-UNSIGNED.apk
-          sha256sum Jason-Home-5.0.6-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.7-UNSIGNED.apk
+          sha256sum Jason-Home-5.0.7-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.0.6-UNSIGNED-do-not-install
-          path: Jason-Home-5.0.6-UNSIGNED.apk
+          name: Jason-Home-5.0.7-UNSIGNED-do-not-install
+          path: Jason-Home-5.0.7-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
