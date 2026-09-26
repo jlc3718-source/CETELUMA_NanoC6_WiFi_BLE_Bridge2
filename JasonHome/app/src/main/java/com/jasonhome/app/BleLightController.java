@@ -433,20 +433,37 @@ final class BleLightController {
         public void onMtuChanged(BluetoothGatt g,int mtu,int status){
             if(g!=gatt)return;
             if(status!=BluetoothGatt.GATT_SUCCESS||mtu<93){finishActive(false,"BLE packet size too small ("+mtu+")");return;}
-            legacyStage="handshake 1/5";
-            listener.onStatus(displayName(active.light)+": MTU "+mtu+" READY • starting E10 handshake");
-            sendHandshakeStep(0);
+            legacyStage="MTU ready; handshake queued";
+            listener.onStatus(displayName(active.light)+": MTU "+mtu+" READY • queueing E10 handshake");
+            E10Probe p=probe;
+            handler.post(() -> {
+                if(g==gatt && p==probe && active!=null){
+                    legacyStage="handshake 1/5";
+                    sendHandshakeStep(0);
+                }
+            });
         }
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt g,BluetoothGattCharacteristic characteristic,byte[] value){
             if(g!=gatt||!NOTIFY_ID.equals(characteristic.getUuid())||commandSent)return;
-            if(probe!=null&&probe.acceptNotification(value)){
+            E10Probe p=probe;
+            if(p==null)return;
+            String summary=p.notificationSummary(value);
+            legacyStage="notification received";
+            if(p.acceptNotification(value)){
                 commandSent=true;
                 legacyStage="session established";
-                listener.onStatus(displayName(active.light)+": session established • sending "+commandName(active));
-                sendActiveCommand();
+                listener.onStatus(displayName(active.light)+": SESSION RESPONSE ACCEPTED • "+summary+" • sending "+commandName(active));
+                handler.post(this::sendActiveCommandFromCallback);
+            }else{
+                legacyStage="notification rejected: "+summary;
+                listener.onStatus(displayName(active.light)+": NOTIFICATION RECEIVED BUT REJECTED • "+summary);
             }
+        }
+
+        private void sendActiveCommandFromCallback(){
+            if(active!=null && probe!=null && probe.sessionEstablished()) sendActiveCommand();
         }
 
         @Override @SuppressWarnings("deprecation")
