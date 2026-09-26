@@ -114,6 +114,8 @@ final class BleLightController {
     private boolean commandSent;
     private String legacyStage = "idle";
     private String lastFailure = "";
+    private int connectionRetryCount = 0;
+    private int handshakeResponseRetryCount = 0;
 
     BleLightController(Context context, DeviceStore store, Listener listener) {
         this.context = context;
@@ -336,20 +338,53 @@ final class BleLightController {
         active=job;
         commandSent=false;
         legacyStage="connecting";
+        connectionRetryCount=0;
+        handshakeResponseRetryCount=0;
+        connectActive(0L);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void connectActive(long delayMs) {
+        Job job=active;
+        if(job==null)return;
+        if(timeout!=null)handler.removeCallbacks(timeout);
+        timeout=null;
+        cleanupGatt();
         try {
             probe=new E10Probe(job.light.serial,store.accountId());
         } catch(Throwable t) {
             finishActive(false,"Could not prepare "+displayName(job.light));
             return;
         }
-        listener.onStatus(actionText(job)+" "+displayName(job.light)+" - connecting");
-        timeout=()->finishActive(false,displayName(job.light)+": timed out at "+legacyStage);
-        handler.postDelayed(timeout,20000L);
-        try {
-            if(Build.VERSION.SDK_INT>=23) gatt=job.light.device.connectGatt(context,false,callback,BluetoothDevice.TRANSPORT_LE);
-            else gatt=job.light.device.connectGatt(context,false,callback);
-        } catch(Throwable t) {
-            finishActive(false,"Could not connect to "+displayName(job.light));
+        Runnable connect=()->{
+            if(active!=job)return;
+            legacyStage="connecting";
+            listener.onStatus(actionText(job)+" "+displayName(job.light)+" - connecting"+
+                (connectionRetryCount>0?" • retry "+connectionRetryCount:""));
+            timeout=()->retryOrFailConnection(displayName(job.light)+": timed out at "+legacyStage);
+            handler.postDelayed(timeout,12000L);
+            try {
+                if(Build.VERSION.SDK_INT>=23) gatt=job.light.device.connectGatt(context,false,callback,BluetoothDevice.TRANSPORT_LE);
+                else gatt=job.light.device.connectGatt(context,false,callback);
+            } catch(Throwable t) {
+                retryOrFailConnection("Could not connect to "+displayName(job.light));
+            }
+        };
+        if(delayMs>0)handler.postDelayed(connect,delayMs); else connect.run();
+    }
+
+    private void retryOrFailConnection(String reason) {
+        Job job=active;
+        if(job==null)return;
+        if(connectionRetryCount<2){
+            connectionRetryCount++;
+            if(timeout!=null)handler.removeCallbacks(timeout);
+            timeout=null;
+            legacyStage="retrying connection";
+            listener.onStatus(displayName(job.light)+": transient BLE failure • retrying connection "+connectionRetryCount+"/2");
+            connectActive(700L);
+        }else{
+            finishActive(false,reason);
         }
     }
 
@@ -395,7 +430,11 @@ final class BleLightController {
                 listener.onStatus(displayName(active.light)+": CONNECTED • discovering Eufy service");
                 if(!g.discoverServices())finishActive(false,"Service discovery could not start");
             } else if(newState==BluetoothProfile.STATE_DISCONNECTED&&active!=null){
-                finishActive(false,"Disconnected before command completed (GATT "+status+")");
+                if(status==133 || legacyStage.startsWith("connecting")){
+                    retryOrFailConnection("Disconnected before command completed (GATT "+status+")");
+                }else{
+                    finishActive(false,"Disconnected before command completed (GATT "+status+")");
+                }
             }
         }
 
@@ -436,12 +475,12 @@ final class BleLightController {
             legacyStage="MTU ready; handshake queued";
             listener.onStatus(displayName(active.light)+": MTU "+mtu+" READY • queueing E10 handshake");
             E10Probe p=probe;
-            handler.post(() -> {
+            handler.postDelayed(() -> {
                 if(g==gatt && p==probe && active!=null){
                     legacyStage="handshake 1/5";
                     sendHandshakeStep(0);
                 }
-            });
+            },350L);
         }
 
         @Override
@@ -453,6 +492,8 @@ final class BleLightController {
             legacyStage="notification received";
             if(p.acceptNotification(value)){
                 commandSent=true;
+                if(timeout!=null)handler.removeCallbacks(timeout);
+                timeout=null;
                 legacyStage="session established";
                 listener.onStatus(displayName(active.light)+": SESSION RESPONSE ACCEPTED • "+summary+" • sending "+commandName(active));
                 handler.post(this::sendActiveCommandFromCallback);
@@ -475,16 +516,56 @@ final class BleLightController {
 
     @SuppressLint("MissingPermission")
     private void sendHandshakeStep(int step){
-        E10Probe p=probe; BluetoothGatt g=gatt; BluetoothGattCharacteristic c=writeChar;
-        if(p==null||g==null||c==null)return;
-        if(step>=5){legacyStage="waiting for encrypted response";listener.onStatus(displayName(active.light)+": HANDSHAKE 5/5 SENT • waiting for encrypted response");return;}
+        sendHandshakeStepAttempt(step,0);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void sendHandshakeStepAttempt(int step,int busyAttempt){
+        E10Probe p=probe; BluetoothGatt g=gatt; BluetoothGattCharacteristic c=writeChar; Job job=active;
+        if(p==null||g==null||c==null||job==null)return;
+        if(step>=5){
+            legacyStage="waiting for encrypted response";
+            listener.onStatus(displayName(job.light)+": HANDSHAKE 5/5 SENT • waiting for encrypted response");
+            if(timeout!=null)handler.removeCallbacks(timeout);
+            timeout=()->{
+                if(active!=job || probe!=p || commandSent)return;
+                if(handshakeResponseRetryCount<1){
+                    handshakeResponseRetryCount++;
+                    connectionRetryCount=0;
+                    legacyStage="retrying handshake after no response";
+                    listener.onStatus(displayName(job.light)+": no encrypted response • reconnecting for one clean handshake retry");
+                    connectActive(800L);
+                }else{
+                    finishActive(false,displayName(job.light)+": no encrypted response after handshake retry");
+                }
+            };
+            handler.postDelayed(timeout,5000L);
+            return;
+        }
         byte[] data;
         try{data=p.step(step);}catch(Throwable t){finishActive(false,"Handshake frame could not be built");return;}
         int result=write(g,c,data);
-        if(Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS){finishActive(false,"Handshake write "+(step+1)+" failed ("+result+")");return;}
+        if(Build.VERSION.SDK_INT>=33 && result==BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY){
+            if(busyAttempt<6){
+                legacyStage="handshake "+(step+1)+"/5 busy retry "+(busyAttempt+1);
+                listener.onStatus(displayName(job.light)+": GATT busy on handshake "+(step+1)+"/5 • retrying");
+                handler.postDelayed(()->{
+                    if(g==gatt&&p==probe&&active==job)sendHandshakeStepAttempt(step,busyAttempt+1);
+                },120L);
+            }else{
+                retryOrFailConnection("Handshake write "+(step+1)+" stayed busy (201)");
+            }
+            return;
+        }
+        if(Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS){
+            retryOrFailConnection("Handshake write "+(step+1)+" failed ("+result+")");
+            return;
+        }
         legacyStage="handshake "+(step+1)+"/5";
-        listener.onStatus(displayName(active.light)+": E10 handshake "+(step+1)+"/5");
-        handler.postDelayed(()->{if(g==gatt&&p==probe)sendHandshakeStep(step+1);},170L);
+        listener.onStatus(displayName(job.light)+": E10 handshake "+(step+1)+"/5");
+        handler.postDelayed(()->{
+            if(g==gatt&&p==probe&&active==job)sendHandshakeStep(step+1);
+        },170L);
     }
 
     @SuppressLint("MissingPermission")
