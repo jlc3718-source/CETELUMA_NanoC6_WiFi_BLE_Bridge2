@@ -29,7 +29,7 @@ final class EufyLightCommands {
     static final int OP_COLOR = 0x0206;
     static final int OP_SHOW = 0x020D;
 
-    private static final int LOCAL_COLOR_ID = 20006;
+    private static final int LOCAL_COLOR_ID = 20006;\n    // E120 did not animate with the synthetic 210xx DIY show ids used by E22.\n    // Use a real gallery id as the E120 0x020D carrier while the layer blob defines the effect.\n    private static final int E120_EFFECT_CARRIER_ID = 10474;
 
     static byte[] brightness(int percent) {
         return tlv(0xA4, new byte[]{(byte) clamp(percent, 0, 100)});
@@ -145,7 +145,7 @@ final class EufyLightCommands {
         int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
         int speed = speedValue(speed1to5);
         int effectIndex = effectIndex(effectName);
-        int showId = 21000 + effectIndex;
+        int showId = isE22(model) ? (21000 + effectIndex) : E120_EFFECT_CARRIER_ID;
 
         int layerType = layerType(effectName);
         byte[] layer = encodeLayer(model, layerType, effectName, palette, speed, reverse);
