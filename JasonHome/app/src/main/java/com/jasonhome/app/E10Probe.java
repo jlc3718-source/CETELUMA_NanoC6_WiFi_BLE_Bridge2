@@ -147,6 +147,14 @@ final class E10Probe {
         return command(0x0201, power);
     }
 
+    // Exact 4.0.15 pre-ON E22 state request recovered from the working APK:
+    // opcode 0x0200, payload A3 04 FF 01 00 00.
+    byte[] stateCommand() {
+        return command(0x0200, new byte[] {
+            (byte)0xA3, 0x04, (byte)0xFF, 0x01, 0x00, 0x00
+        });
+    }
+
     byte[] command(int opcode, byte[] params) {
         if (sessionKey == null) throw new IllegalStateException("Complete handshake first");
         if (params == null) params = new byte[0];
