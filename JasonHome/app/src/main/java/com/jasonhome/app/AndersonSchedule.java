@@ -90,6 +90,27 @@ final class AndersonSchedule {
         return resolve(ZonedDateTime.now());
     }
 
+    LocalDate eventStartDate(int index,int year){
+        if(index<0||index>=AndersonEventData.EVENTS.length)return null;
+        return startDate(index,year);
+    }
+
+    boolean eventOccursInMonth(int index,int year,int month){
+        if(index<0||index>=AndersonEventData.EVENTS.length||month<1||month>12)return false;
+        AndersonEventData.Event e=AndersonEventData.EVENTS[index];
+        if("Month".equals(e.rule)) return e.month==month;
+        LocalDate start=startDate(index,year);
+        if(start==null)return false;
+        LocalDate end=start.plusDays(Math.max(1,e.durationDays)-1L);
+        LocalDate first=LocalDate.of(year,month,1);
+        LocalDate last=first.with(TemporalAdjusters.lastDayOfMonth());
+        return !end.isBefore(first)&&!start.isAfter(last);
+    }
+
+    boolean includedByMode(int index){
+        return included(index);
+    }
+
     Scene resolve(ZonedDateTime now){
         if(!enabled()||AndersonEventData.EVENTS.length==0)return null;
         LocalDate day=now.toLocalDate();
