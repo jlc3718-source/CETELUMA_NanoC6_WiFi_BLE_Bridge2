@@ -30,7 +30,7 @@ import java.util.UUID;
 
 final class BleLightController {
     // Test each installed light independently before enabling combined control.
-    static final boolean SINGLE_LIGHT_POWER_TEST_ONLY = true;
+    static final boolean SINGLE_LIGHT_POWER_TEST_ONLY = false;
     interface Listener {
         void onScanChanged(List<FoundLight> items);
         void onStatus(String message);
