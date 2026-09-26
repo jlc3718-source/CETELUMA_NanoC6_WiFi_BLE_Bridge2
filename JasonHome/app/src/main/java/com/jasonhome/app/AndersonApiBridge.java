@@ -288,6 +288,7 @@ final class AndersonApiBridge {
 
     private String resume() throws Exception {
         prefs.edit().putBoolean("manual_override",false).apply();
+        AndersonScheduleService.update(context);
         AndersonSchedule.Scene scene=schedule.resolveNow();
         List<BleLightController.FoundLight> all=allInstalled();
         host.runOnUi(() -> {
@@ -310,6 +311,7 @@ final class AndersonApiBridge {
         if(in.has("schedule2Brightness"))schedule.setSchedule2Brightness(in.optInt("schedule2Brightness",schedule.schedule2Brightness()));
         if(in.has("overlap"))schedule.setOverlap(parseOverlap(in.optString("overlap","rotate")));
         if(in.has("tz"))prefs.edit().putString("tz",in.optString("tz")).apply();
+        AndersonScheduleService.update(context);
         return ok(stateJson());
     }
 
