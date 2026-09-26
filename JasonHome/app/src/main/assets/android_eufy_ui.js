@@ -13,13 +13,13 @@ function installAndroidEufyUi(){
   if(settings){
     const wifiTab=q('.v3SettingsTab[data-settings-tab="wifi"]');
     const wifiPane=q('.v3SettingsPane[data-settings-pane="wifi"]');
-    if(wifiTab)wifiTab.remove();
-    if(wifiPane)wifiPane.remove();
+    if(wifiTab){wifiTab.hidden=true;wifiTab.style.display="none";}
+    if(wifiPane){wifiPane.hidden=true;wifiPane.style.display="none";}
 
     const fwTab=q('.v3SettingsTab[data-settings-tab="firmware"]');
     const fwPane=q('.v3SettingsPane[data-settings-pane="firmware"]');
-    if(fwTab)fwTab.remove();
-    if(fwPane)fwPane.remove();
+    if(fwTab){fwTab.hidden=true;fwTab.style.display="none";}
+    if(fwPane){fwPane.hidden=true;fwPane.style.display="none";}
 
     const ctlTab=q('.v3SettingsTab[data-settings-tab="controllers"]');
     if(ctlTab){
@@ -31,18 +31,26 @@ function installAndroidEufyUi(){
     const generalPane=q('.v3SettingsPane[data-settings-pane="general"]');
     const monitor=$("systemMonitorPanel");
     if(generalPane&&monitor){
-      monitor.innerHTML=
-        '<div class="row between"><div><strong>Eufy Bluetooth Status</strong>'+
-        '<div class="sub">Direct Bluetooth control from this phone • no NanoC6 or device Wi-Fi required</div></div>'+
-        '<span class="badge" id="eufyBleBadge">READY</span></div>'+
-        '<div class="eufyStatusGrid">'+
-        '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
-        '<div class="eufyStatusCard"><span>House</span><strong id="eufyHouseState">Saved</strong><small>E120</small></div>'+
-        '<div class="eufyStatusCard"><span>Garage</span><strong id="eufyGarageState">Saved</strong><small>E22</small></div>'+
-        '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
-        '</div>'+
-        '<div class="card small eufyStatusNote"><strong>Control path</strong><br>'+
-        '<span class="sub">Anderson schedules, scenes, brightness, effects and manual controls are translated directly into the proven Jason Home Eufy E10 Bluetooth commands.</span></div>';
+      monitor.hidden=true;
+      monitor.style.display="none";
+      if(!$("eufyAndroidStatusPanel")){
+        const eufy=document.createElement("div");
+        eufy.id="eufyAndroidStatusPanel";
+        eufy.className="panel";
+        eufy.innerHTML=
+          '<div class="row between"><div><strong>Eufy Bluetooth Status</strong>'+
+          '<div class="sub">Direct Bluetooth control from this phone • no NanoC6 or device Wi-Fi required</div></div>'+
+          '<span class="badge" id="eufyBleBadge">READY</span></div>'+
+          '<div class="eufyStatusGrid">'+
+          '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
+          '<div class="eufyStatusCard"><span>House</span><strong id="eufyHouseState">Saved</strong><small>E120</small></div>'+
+          '<div class="eufyStatusCard"><span>Garage</span><strong id="eufyGarageState">Saved</strong><small>E22</small></div>'+
+          '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
+          '</div>'+
+          '<div class="card small eufyStatusNote"><strong>Control path</strong><br>'+
+          '<span class="sub">Anderson schedules, scenes, brightness, effects and manual controls are translated directly into the proven Jason Home Eufy E10 Bluetooth commands.</span></div>';
+        generalPane.insertBefore(eufy,monitor);
+      }
     }
 
     const pane=q('.v3SettingsPane[data-settings-pane="controllers"]');
@@ -58,8 +66,8 @@ function installAndroidEufyUi(){
 
   // The standalone NanoC6 Wi-Fi page is not part of the Android/Eufy app.
   const wifiPage=q('.page[data-page="wifi"]');
-  if(wifiPage)wifiPage.remove();
-  qa('.v3BottomNav [data-tab="wifi"], .nav [data-tab="wifi"]').forEach(x=>x.remove());
+  if(wifiPage){wifiPage.hidden=true;wifiPage.style.display="none";}
+  qa('.v3BottomNav [data-tab="wifi"], .nav [data-tab="wifi"]').forEach(x=>{x.hidden=true;x.style.display="none";});
 
   // Fixed installed devices should not offer Rename/Remove operations.
   const cleanDeviceActions=()=>{
