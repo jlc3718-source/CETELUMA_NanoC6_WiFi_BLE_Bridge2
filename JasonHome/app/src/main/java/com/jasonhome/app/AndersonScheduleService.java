@@ -51,10 +51,15 @@ public final class AndersonScheduleService extends Service implements BleLightCo
         AndersonSchedule schedule = new AndersonSchedule(context);
         Intent intent = new Intent(context, AndersonScheduleService.class);
         if (schedule.enabled()) {
-            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
-            else context.startService(intent);
+            try {
+                if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
+                else context.startService(intent);
+            } catch (Throwable ignored) {
+                // Android may temporarily reject a background FGS launch.
+                // The next app launch / schedule save / boot receiver will retry.
+            }
         } else {
-            context.stopService(intent);
+            try { context.stopService(intent); } catch (Throwable ignored) {}
         }
     }
 
