@@ -3,1020 +3,202 @@ package com.jasonhome.app;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.RectF;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.text.InputType;
-import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
+import android.view.WindowInsets;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.SeekBar;
-import android.widget.TextView;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Arrays;
 
-public class MainActivity extends Activity implements BleLightController.Listener {
-    private static final int NAVY = Color.rgb(6, 13, 28);
-    private static final int PANEL = Color.rgb(12, 25, 50);
-    private static final int PANEL2 = Color.rgb(17, 30, 54);
-    private static final int ACCENT = Color.rgb(69, 121, 240);
-    private static final int LIGHT = Color.rgb(218, 229, 248);
-    private static final int INK = Color.rgb(22, 43, 79);
-    private static final int MUTED = Color.rgb(151, 171, 207);
+public class MainActivity extends Activity implements BleLightController.Listener, AndersonApiBridge.Host {
+    private static final int BLE_PERMISSION_REQUEST = 71;
 
-    private LinearLayout root;
-    private TextView statusView;
-    private TextView progressView;
-    private TextView lastRxView;
-    private String bleTestLog = "";
-    private String lastRxLine = "";
-    private BleLightController ble;
-    private DeviceStore store;
+    private WebView webView;
+    private DeviceStore deviceStore;
     private AndersonSchedule schedule;
-    private final Handler scheduleHandler = new Handler(Looper.getMainLooper());
-    private final ArrayList<Integer> manualPalette = new ArrayList<>();
-    private String lastScheduledKey = "";
-    private List<BleLightController.FoundLight> found = new ArrayList<>();
-    private String page = "Home";
-    private String selectedEffect = "Solid / Static";
-    private int selectedRgb = 0xFFFFFF;
-    private int selectedSpeed = 3;
-    private boolean selectedReverse = false;
-    private int selectedKelvin = 3000;
-    private int selectedBrightness = 100;
-
-    private final Runnable scheduleTick = new Runnable() {
-        @Override public void run() {
-            try { applyScheduleNow(false); } catch (Throwable ignored) {}
-            scheduleHandler.postDelayed(this, 60000L);
-        }
-    };
+    private BleLightController ble;
+    private AndersonApiBridge bridge;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(NAVY);
-        getWindow().setNavigationBarColor(NAVY);
-        store = new DeviceStore(this);
-        android.content.SharedPreferences logPrefs = getSharedPreferences("ble_test_log", MODE_PRIVATE);
-        bleTestLog = logPrefs.getString("history", "");
-        lastRxLine = logPrefs.getString("last_rx", "");
+
+        getWindow().setStatusBarColor(Color.rgb(4,13,29));
+        getWindow().setNavigationBarColor(Color.rgb(4,13,29));
+
+        deviceStore = new DeviceStore(this);
         schedule = new AndersonSchedule(this);
-        ble = new BleLightController(this, store, this);
-        if (manualPalette.isEmpty()) manualPalette.add(selectedRgb);
-        buildShell();
-        requestBlePermissions();
-        scheduleHandler.postDelayed(scheduleTick, 5000L);
-    }
+        ble = new BleLightController(this, deviceStore, this);
+        bridge = new AndersonApiBridge(this, this, deviceStore, ble, schedule);
 
-    private void buildShell() {
-        statusView = null;
-        progressView = null;
         FrameLayout frame = new FrameLayout(this);
-        frame.setBackgroundColor(NAVY);
+        frame.setBackgroundColor(Color.rgb(4,13,29));
 
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(10), dp(20), dp(98));
+        webView = new WebView(this);
+        webView.setBackgroundColor(Color.rgb(4,13,29));
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.addView(root, new FrameLayout.LayoutParams(-1, -2));
-        frame.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient());
+        webView.addJavascriptInterface(bridge, "AndroidAnderson");
 
-        LinearLayout nav = new LinearLayout(this);
-        nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setGravity(Gravity.CENTER);
-        nav.setPadding(dp(6), dp(6), dp(6), dp(6));
-        nav.setBackground(round(PANEL2, 20, Color.argb(70, 189, 213, 255)));
-        String[][] tabs = {{"Home","⌂"}, {"Devices","◉"}, {"Scenes","✦"}, {"Schedule","◷"}, {"Settings","⚙"}};
-        for (String[] tab : tabs) nav.addView(navButton(tab[0], tab[1]), new LinearLayout.LayoutParams(0, -1, 1f));
-        FrameLayout.LayoutParams nlp = new FrameLayout.LayoutParams(-1, dp(72), Gravity.BOTTOM);
-        nlp.setMargins(dp(15), 0, dp(15), dp(17));
-        frame.addView(nav, nlp);
-        nav.setElevation(dp(10));
+        frame.addView(webView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ));
 
-        // Android 15 can draw app content behind the system navigation area.
-        // Lift Jason Home's tab bar above whatever navigation mode the phone uses.
         frame.setOnApplyWindowInsetsListener((v, insets) -> {
-            int systemBottom = insets.getSystemWindowInsetBottom();
-            FrameLayout.LayoutParams navParams = (FrameLayout.LayoutParams) nav.getLayoutParams();
-            navParams.leftMargin = dp(15);
-            navParams.rightMargin = dp(15);
-            navParams.bottomMargin = dp(17) + systemBottom;
-            nav.setLayoutParams(navParams);
-            root.setPadding(dp(20), dp(10), dp(20), dp(98) + systemBottom);
+            int top = 0, bottom = 0;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                top = bars.top;
+                bottom = bars.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            webView.setPadding(0, top, 0, bottom);
             return insets;
         });
 
         setContentView(frame);
         frame.requestApplyInsets();
-        renderPage();
+        webView.loadUrl("file:///android_asset/anderson_home.html");
+
+        requestBlePermissions(false);
     }
 
-    private TextView navButton(String label, String icon) {
-        TextView v = text(icon + "\n" + label, 11, page.equals(label) ? INK : MUTED, false);
-        v.setGravity(Gravity.CENTER);
-        v.setPadding(dp(4), dp(5), dp(4), dp(5));
-        if (page.equals(label)) v.setBackground(round(Color.rgb(210, 226, 255), 14, null));
-        v.setOnClickListener(x -> {
-            page = label;
-            buildShell();
-        });
-        return v;
+    @Override
+    public void runOnUi(Runnable action) {
+        runOnUiThread(action);
     }
 
-    private void renderPage() {
-        root.removeAllViews();
-        lastRxView = null;
-        header();
-        if ("Devices".equals(page)) renderDevices();
-        else if ("Scenes".equals(page)) renderScenes();
-        else if ("Schedule".equals(page)) renderSchedule();
-        else if ("Settings".equals(page)) renderSettings();
-        else renderHome();
-        if ("Home".equals(page) || "Devices".equals(page)) renderBleTestLog();
+    @Override
+    public void requestBlePermissionsAndScan() {
+        runOnUiThread(() -> requestBlePermissions(true));
     }
 
-    private void renderBleTestLog() {
-        TextView test = text("4.0.11 E120/E22 test • Use individual ON/OFF on Devices.", 12, MUTED, false);
-        root.addView(test, topMargin(12));
-        lastRxView = text(lastRxLine.isEmpty() ? "No received notification recorded yet." : lastRxLine, 11, MUTED, false);
-        lastRxView.setTextIsSelectable(true);
-        root.addView(lastRxView, topMargin(8));
-        Button logs = actionButton("VIEW / COPY BLE TEST LOG");
-        logs.setOnClickListener(v -> {
-            TextView content = text(bleTestLog.isEmpty() ? "No BLE activity yet." : bleTestLog, 11, Color.DKGRAY, false);
-            content.setPadding(dp(16), dp(12), dp(16), dp(12));
-            content.setTextIsSelectable(true);
-            ScrollView scroll = new ScrollView(this);
-            scroll.addView(content);
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("BLE test log • 4.0.11")
-                .setView(scroll)
-                .setPositiveButton("Close", null)
-                .setNeutralButton("Copy log", (dialog, which) -> {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Jason Home BLE test", bleTestLog));
-                }).show();
-        });
-        root.addView(logs, topMargin(8));
-    }
-
-    private void header() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(14), 0, dp(20));
-
-        TextView mark = text("⌂", 31, Color.rgb(169, 194, 255), false);
-        mark.setGravity(Gravity.CENTER);
-        row.addView(mark, new LinearLayout.LayoutParams(dp(50), dp(50)));
-
-        LinearLayout brand = new LinearLayout(this);
-        brand.setOrientation(LinearLayout.VERTICAL);
-        brand.addView(text("Jason Home", 20, Color.WHITE, true));
-        TextView sub = text("EUFY LIGHTING CONTROL", 9, Color.rgb(143, 164, 201), false);
-        sub.setLetterSpacing(.20f);
-        brand.addView(sub);
-        row.addView(brand, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        int ready = readyLights().size();
-        TextView badge = text(ready > 0 ? "● READY" : "● BLE", 10, Color.rgb(189, 210, 248), true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setPadding(dp(10), dp(6), dp(10), dp(6));
-        badge.setBackground(round(Color.rgb(22, 37, 65), 99, Color.argb(50, 121, 153, 199)));
-        row.addView(badge);
-        root.addView(row);
-    }
-
-    private void renderHome() {
-        LinearLayout hero = card(PANEL, 28);
-        hero.setPadding(dp(24), dp(25), dp(24), dp(24));
-        TextView over = text("LIVE LIGHTING", 10, Color.rgb(156, 182, 228), true);
-        over.setLetterSpacing(.16f);
-        hero.addView(over);
-        TextView title = text("Jason\nHome", 52, Color.WHITE, false);
-        title.setLineSpacing(0, .90f);
-        hero.addView(title);
-        TextView tagline = text("Your atmosphere, ready when you are", 13, Color.rgb(177, 198, 233), false);
-        tagline.setPadding(0, dp(12), 0, dp(14));
-        hero.addView(tagline);
-        hero.addView(new HousePreviewView(), new LinearLayout.LayoutParams(-1, dp(185)));
-        statusView = text(readyLights().size() + " light" + (readyLights().size() == 1 ? "" : "s") + " ready nearby", 12, Color.rgb(190, 211, 244), false);
-        statusView.setGravity(Gravity.CENTER);
-        statusView.setPadding(0, dp(8), 0, dp(4));
-        hero.addView(statusView);
-        root.addView(hero);
-
-        LinearLayout master = card(LIGHT, 24);
-        master.setPadding(dp(22), dp(22), dp(22), dp(22));
-        TextView kicker = text("MASTER CONTROL", 9, Color.rgb(87, 113, 154), true);
-        kicker.setLetterSpacing(.16f);
-        master.addView(kicker);
-        TextView atmosphere = text("Your atmosphere.", 29, INK, false);
-        atmosphere.setPadding(0, dp(5), 0, dp(18));
-        master.addView(atmosphere);
-
-        LinearLayout dial = new LinearLayout(this);
-        dial.setOrientation(LinearLayout.VERTICAL);
-        dial.setGravity(Gravity.CENTER);
-        dial.setBackground(round(Color.rgb(237, 243, 255), 100, Color.argb(50, 54, 108, 222)));
-        dial.addView(text("POWER", 9, Color.rgb(97, 117, 153), true));
-        dial.addView(text(readyLights().isEmpty() ? "—" : "READY", 43, INK, false));
-        master.addView(dial, new LinearLayout.LayoutParams(-1, dp(145)));
-
-        LinearLayout power = new LinearLayout(this);
-        power.setOrientation(LinearLayout.HORIZONTAL);
-        power.setPadding(0, dp(16), 0, 0);
-        Button on = powerButton("TURN ON", true);
-        Button off = powerButton("TURN OFF", false);
-        LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, dp(62), 1f);
-        a.setMarginEnd(dp(5));
-        LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(0, dp(62), 1f);
-        b.setMarginStart(dp(5));
-        power.addView(on, a);
-        power.addView(off, b);
-        master.addView(power);
-        TextView note = text("Sequential control: connect → handshake → command → disconnect → next light.", 11, Color.rgb(85, 105, 140), false);
-        note.setPadding(0, dp(14), 0, 0);
-        master.addView(note);
-        root.addView(master, topMargin(16));
-
-        LinearLayout op = card(PANEL2, 18);
-        op.setPadding(dp(18), dp(17), dp(18), dp(17));
-        op.addView(text("CONTROL STATUS", 9, Color.rgb(142, 169, 211), true));
-        progressView = text("Idle", 14, Color.WHITE, true);
-        progressView.setPadding(0, dp(8), 0, 0);
-        op.addView(progressView);
-        TextView info = text("E120 power uses the recovered encrypted 0x0201/A3 path. E22 uses the same session path; color/effects remain gated for later testing.", 11, MUTED, false);
-        info.setPadding(0, dp(7), 0, 0);
-        op.addView(info);
-        root.addView(op, topMargin(16));
-    }
-
-    private Button powerButton(String label, boolean on) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(13);
-        button.setBackground(round(on ? ACCENT : Color.rgb(83, 107, 140), 14, null));
-        button.setOnClickListener(v -> ble.setPower(readyLights(), on));
-        return button;
-    }
-
-    private void renderDevices() {
-        pageTitle("LIGHTS", "Installed Eufy lights only");
-        Button scan = new Button(this);
-        scan.setText("SCAN FOR LIGHTS");
-        scan.setAllCaps(false);
-        scan.setTextColor(Color.WHITE);
-        scan.setBackground(round(ACCENT, 12, null));
-        scan.setOnClickListener(v -> startScanWithPermissions());
-        root.addView(scan, new LinearLayout.LayoutParams(-1, dp(52)));
-        statusView = text("BLE scan is restricted to Pool, House, Garage and Shed by exact MAC address.", 12, MUTED, false);
-        statusView.setPadding(0, dp(12), 0, 0);
-        root.addView(statusView);
-        progressView = text(found.size() + " shown", 11, Color.rgb(166, 191, 231), true);
-        progressView.setPadding(0, dp(8), 0, dp(5));
-        root.addView(progressView);
-
-        if (found.isEmpty()) {
-            LinearLayout empty = card(PANEL2, 18);
-            empty.setPadding(dp(18), dp(18), dp(18), dp(18));
-            empty.addView(text("No scan results yet", 16, Color.WHITE, true));
-            TextView t = text("Tap Scan for Lights. Jason Home ignores every Bluetooth device except the four installed Eufy light MAC addresses.", 12, MUTED, false);
-            t.setPadding(0, dp(7), 0, 0);
-            empty.addView(t);
-            root.addView(empty, topMargin(12));
-            return;
-        }
-
-        for (BleLightController.FoundLight item : found) {
-            String address = safeAddress(item);
-            String serial = store.serialFor(address, item.name);
-            LinearLayout box = card(PANEL2, 18);
-            box.setPadding(dp(18), dp(16), dp(18), dp(16));
-            String title = item.model.isEmpty() ? item.name : item.model + " • " + item.name;
-            box.addView(text(title, 17, Color.WHITE, true));
-            TextView meta = text(item.rssi + " dBm • " + (serial.length() == 16 ? "READY" : "SERIAL NEEDED"), 11, serial.length() == 16 ? Color.rgb(164, 204, 255) : MUTED, false);
-            meta.setPadding(0, dp(4), 0, dp(8));
-            box.addView(meta);
-
-            EditText serialInput = new EditText(this);
-            serialInput.setText(serial);
-            serialInput.setHint("16-character Eufy serial");
-            serialInput.setSingleLine(true);
-            serialInput.setTextColor(Color.WHITE);
-            serialInput.setHintTextColor(Color.rgb(105, 126, 163));
-            serialInput.setTextSize(13);
-            serialInput.setPadding(dp(12), dp(8), dp(12), dp(8));
-            serialInput.setBackground(round(Color.rgb(8, 15, 32), 10, Color.argb(45, 199, 217, 255)));
-            box.addView(serialInput, new LinearLayout.LayoutParams(-1, dp(48)));
-
-            Button save = new Button(this);
-            save.setText(serial.length() == 16 ? "SERIAL SAVED" : "SAVE SERIAL");
-            save.setAllCaps(false);
-            save.setTextColor(Color.WHITE);
-            save.setBackground(round(Color.rgb(42, 65, 105), 10, null));
-            save.setOnClickListener(v -> {
-                if (store.setSerial(address, serialInput.getText().toString())) renderPage();
-                else statusView.setText("Serial must be exactly 16 printable ASCII characters.");
-            });
-            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, dp(45));
-            slp.topMargin = dp(7);
-            box.addView(save, slp);
-
-            boolean enabled = store.serialFor(address, item.name).length() == 16;
-
-            LinearLayout actions = new LinearLayout(this);
-            actions.setOrientation(LinearLayout.HORIZONTAL);
-            Button on = singlePower(item, "ON", true);
-            Button off = singlePower(item, "OFF", false);
-            on.setEnabled(enabled);
-            off.setEnabled(enabled);
-            LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
-            lp1.setMarginEnd(dp(4));
-            LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(0, dp(46), 1f);
-            lp2.setMarginStart(dp(4));
-            actions.addView(on, lp1);
-            actions.addView(off, lp2);
-            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2);
-            alp.topMargin = dp(8);
-            box.addView(actions, alp);
-            root.addView(box, topMargin(10));
-        }
-    }
-
-    private Button singlePower(BleLightController.FoundLight item, String label, boolean on) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextColor(Color.WHITE);
-        b.setBackground(round(on ? ACCENT : Color.rgb(63, 82, 114), 10, null));
-        b.setOnClickListener(v -> {
-            ArrayList<BleLightController.FoundLight> one = new ArrayList<>();
-            one.add(item);
-            ble.setPower(one, on);
-        });
-        return b;
-    }
-
-    private void renderScenes() {
-        pageTitle("CREATE", "Build the light show");
-        if (manualPalette.isEmpty()) manualPalette.add(selectedRgb);
-
-        LinearLayout effects = card(PANEL2, 18);
-        effects.setPadding(dp(18), dp(18), dp(18), dp(18));
-        effects.addView(text("EFFECT", 9, Color.rgb(142, 169, 211), true));
-        TextView effectSummary = text(selectedEffect + "  •  Speed " + selectedSpeed + "  •  " + (selectedReverse ? "Reverse" : "Forward"), 17, Color.WHITE, true);
-        effectSummary.setPadding(0, dp(6), 0, dp(12));
-        effects.addView(effectSummary);
-
-        for (int rowStart = 0; rowStart < LightPresetCatalog.EFFECTS.length; rowStart += 2) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int x = rowStart; x < Math.min(rowStart + 2, LightPresetCatalog.EFFECTS.length); x++) {
-                LightPresetCatalog.EffectTemplate preset = LightPresetCatalog.EFFECTS[x];
-                TextView v = text(preset.name + "\n" + preset.family, 11, Color.rgb(207, 220, 246), false);
-                v.setGravity(Gravity.CENTER);
-                v.setPadding(dp(7), dp(6), dp(7), dp(6));
-                v.setBackground(round(
-                    preset.name.equals(selectedEffect) ? Color.rgb(42, 83, 151) : Color.rgb(20, 38, 68),
-                    12, Color.argb(45, 199, 220, 255)));
-                v.setOnClickListener(z -> { selectedEffect = preset.name; renderPage(); });
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(78), 1f);
-                lp.setMargins(dp(3), dp(3), dp(3), dp(3));
-                row.addView(v, lp);
-            }
-            effects.addView(row);
-        }
-
-        TextView speedLabel = text("Speed  " + selectedSpeed + " / 5", 12, Color.rgb(188, 207, 239), true);
-        speedLabel.setPadding(0, dp(14), 0, dp(4));
-        effects.addView(speedLabel);
-        SeekBar speed = new SeekBar(this);
-        speed.setMax(4);
-        speed.setProgress(selectedSpeed - 1);
-        speed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
-                selectedSpeed = p + 1;
-                speedLabel.setText("Speed  " + selectedSpeed + " / 5");
-            }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        });
-        effects.addView(speed);
-
-        LinearLayout direction = new LinearLayout(this);
-        direction.setOrientation(LinearLayout.HORIZONTAL);
-        Button forward = smallChoice("Forward", !selectedReverse);
-        Button reverse = smallChoice("Reverse", selectedReverse);
-        forward.setOnClickListener(v -> { selectedReverse = false; renderPage(); });
-        reverse.setOnClickListener(v -> { selectedReverse = true; renderPage(); });
-        LinearLayout.LayoutParams dl1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
-        dl1.setMargins(dp(3), dp(5), dp(3), 0);
-        LinearLayout.LayoutParams dl2 = new LinearLayout.LayoutParams(0, dp(46), 1f);
-        dl2.setMargins(dp(3), dp(5), dp(3), 0);
-        direction.addView(forward, dl1);
-        direction.addView(reverse, dl2);
-        effects.addView(direction);
-
-        TextView brightLabel = text("Brightness  " + selectedBrightness + "%", 12, Color.rgb(188, 207, 239), true);
-        brightLabel.setPadding(0, dp(14), 0, dp(4));
-        effects.addView(brightLabel);
-        SeekBar brightness = new SeekBar(this);
-        brightness.setMax(99);
-        brightness.setProgress(Math.max(0, selectedBrightness - 1));
-        brightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
-                selectedBrightness = p + 1;
-                brightLabel.setText("Brightness  " + selectedBrightness + "%");
-            }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        });
-        effects.addView(brightness);
-        root.addView(effects);
-
-        LinearLayout colors = card(PANEL2, 18);
-        colors.setPadding(dp(18), dp(18), dp(18), dp(18));
-        colors.addView(text("COLOR COLLECTION", 9, Color.rgb(142, 169, 211), true));
-        TextView selected = text(String.format("#%06X", selectedRgb & 0xFFFFFF), 24, Color.WHITE, true);
-        selected.setPadding(0, dp(5), 0, dp(12));
-        colors.addView(selected);
-
-        colors.addView(text("Anderson palette", 13, Color.rgb(194, 211, 240), true));
-        addColorGrid(colors, LightPresetCatalog.ANDERSON);
-        TextView more = text("Expanded RGB quick colors", 13, Color.rgb(194, 211, 240), true);
-        more.setPadding(0, dp(13), 0, 0);
-        colors.addView(more);
-        addColorGrid(colors, LightPresetCatalog.QUICK);
-
-        TextView custom = text("Color wheel — full color range", 13, Color.rgb(194, 211, 240), true);
-        custom.setPadding(0, dp(14), 0, dp(8));
-        colors.addView(custom);
-
-        ColorWheelView wheel = new ColorWheelView(this);
-        wheel.setColor(selectedRgb);
-        LinearLayout.LayoutParams wheelLp = new LinearLayout.LayoutParams(-1, dp(300));
-        wheelLp.setMargins(0, dp(2), 0, dp(8));
-        colors.addView(wheel, wheelLp);
-
-        LinearLayout liveColor = new LinearLayout(this);
-        liveColor.setOrientation(LinearLayout.HORIZONTAL);
-        liveColor.setGravity(Gravity.CENTER_VERTICAL);
-        TextView colorChip = text("", 1, Color.TRANSPARENT, false);
-        colorChip.setBackground(round(Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255), 99, Color.argb(100, 255, 255, 255)));
-        TextView colorValue = text(String.format("#%06X", selectedRgb & 0xFFFFFF), 16, Color.WHITE, true);
-        colorValue.setPadding(dp(12), 0, 0, 0);
-        liveColor.addView(colorChip, new LinearLayout.LayoutParams(dp(42), dp(42)));
-        liveColor.addView(colorValue, new LinearLayout.LayoutParams(0, dp(42), 1f));
-        colors.addView(liveColor);
-
-        wheel.setListener(rgb -> {
-            selectedRgb = rgb & 0xFFFFFF;
-            colorValue.setText(String.format("#%06X", selectedRgb));
-            colorChip.setBackground(round(Color.rgb((selectedRgb >> 16) & 255, (selectedRgb >> 8) & 255, selectedRgb & 255), 99, Color.argb(100, 255, 255, 255)));
-            selected.setText(String.format("#%06X", selectedRgb));
-        });
-
-        TextView paletteLabel = text("Effect palette  " + paletteText(), 12, Color.rgb(194, 211, 240), true);
-        paletteLabel.setPadding(0, dp(14), 0, dp(7));
-        colors.addView(paletteLabel);
-
-        LinearLayout paletteButtons = new LinearLayout(this);
-        paletteButtons.setOrientation(LinearLayout.HORIZONTAL);
-        Button add = smallChoice("Add current", true);
-        Button clear = smallChoice("Clear palette", false);
-        add.setOnClickListener(v -> {
-            if (manualPalette.size() >= 8) manualPalette.remove(0);
-            if (!manualPalette.contains(selectedRgb)) manualPalette.add(selectedRgb);
-            renderPage();
-        });
-        clear.setOnClickListener(v -> {
-            manualPalette.clear();
-            manualPalette.add(selectedRgb);
-            renderPage();
-        });
-        LinearLayout.LayoutParams pb1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
-        pb1.setMargins(0,0,dp(4),0);
-        LinearLayout.LayoutParams pb2 = new LinearLayout.LayoutParams(0, dp(46), 1f);
-        pb2.setMargins(dp(4),0,0,0);
-        paletteButtons.addView(add,pb1);
-        paletteButtons.addView(clear,pb2);
-        colors.addView(paletteButtons);
-
-        TextView whites = text("White channels", 13, Color.rgb(194, 211, 240), true);
-        whites.setPadding(0, dp(14), 0, dp(4));
-        colors.addView(whites);
-        TextView kelvinLabel = text("E22  " + selectedKelvin + " K   •   E120 warm white is fixed at 3000 K", 11, MUTED, false);
-        colors.addView(kelvinLabel);
-        SeekBar kelvin = new SeekBar(this);
-        kelvin.setMax(7500);
-        kelvin.setProgress(Math.max(0, Math.min(7500, selectedKelvin - 1500)));
-        kelvin.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
-                selectedKelvin = 1500 + p;
-                kelvinLabel.setText("E22  " + selectedKelvin + " K   •   E120 warm white is fixed at 3000 K");
-            }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        });
-        colors.addView(kelvin);
-
-        Button applyColor = actionButton("APPLY SOLID COLOR");
-        applyColor.setOnClickListener(v -> ble.setScene(readyLights(), "Solid / Static", new int[]{selectedRgb}, 1, false, selectedBrightness));
-        colors.addView(applyColor, buttonMargin());
-
-        Button applyEffect = actionButton("APPLY " + selectedEffect.toUpperCase());
-        applyEffect.setOnClickListener(v -> ble.setScene(readyLights(), selectedEffect, currentPalette(), selectedSpeed, selectedReverse, selectedBrightness));
-        colors.addView(applyEffect, buttonMargin());
-
-        Button applyWhite = actionButton("APPLY WHITE");
-        applyWhite.setOnClickListener(v -> ble.setWhite(readyLights(), selectedKelvin));
-        colors.addView(applyWhite, buttonMargin());
-
-        Button applyBrightness = smallChoice("Brightness only", false);
-        applyBrightness.setOnClickListener(v -> ble.setBrightness(readyLights(), selectedBrightness));
-        colors.addView(applyBrightness, buttonMargin());
-
-        statusView = text("E120 uses RGBW transport; E22 uses RGBCW transport. Effect templates use the recovered 0x020D layer engine.", 11, MUTED, false);
-        statusView.setPadding(0, dp(10), 0, 0);
-        colors.addView(statusView);
-        progressView = text("Idle", 11, Color.rgb(174,198,236), true);
-        progressView.setPadding(0,dp(7),0,0);
-        colors.addView(progressView);
-        root.addView(colors, topMargin(14));
-    }
-
-    private void addColorGrid(LinearLayout parent, LightPresetCatalog.NamedColor[] palette) {
-        for (int i = 0; i < palette.length; i += 4) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            for (int j = i; j < Math.min(i + 4, palette.length); j++) {
-                LightPresetCatalog.NamedColor color = palette[j];
-                TextView swatch = text(color.name, 8, readableText(color.rgb), true);
-                swatch.setGravity(Gravity.CENTER);
-                swatch.setPadding(dp(2), dp(2), dp(2), dp(2));
-                swatch.setBackground(round(Color.rgb((color.rgb >> 16) & 255, (color.rgb >> 8) & 255, color.rgb & 255), 10, Color.argb(90, 255, 255, 255)));
-                swatch.setOnClickListener(v -> {
-                    selectedRgb = color.rgb;
-                    renderPage();
-                });
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(58), 1f);
-                lp.setMargins(dp(3), dp(4), dp(3), 0);
-                row.addView(swatch, lp);
-            }
-            parent.addView(row);
-        }
-    }
-
-    private Button smallChoice(String label, boolean active) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextSize(11);
-        b.setTextColor(Color.WHITE);
-        b.setBackground(round(active ? ACCENT : Color.rgb(42, 58, 86), 10, null));
-        return b;
-    }
-
-    private int readableText(int rgb) {
-        int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
-        double luminance = (0.299 * r + 0.587 * g + 0.114 * b);
-        return luminance > 150 ? Color.rgb(12, 24, 44) : Color.WHITE;
-    }
-
-    private int[] currentPalette() {
-        if (manualPalette.isEmpty()) return new int[]{selectedRgb};
-        int[] out = new int[manualPalette.size()];
-        for (int i = 0; i < out.length; i++) out[i] = manualPalette.get(i);
-        return out;
-    }
-
-    private String paletteText() {
-        if (manualPalette.isEmpty()) return String.format("#%06X", selectedRgb & 0xFFFFFF);
-        StringBuilder b = new StringBuilder();
-        for (int i = 0; i < manualPalette.size(); i++) {
-            if (i > 0) b.append("  ");
-            b.append(String.format("#%06X", manualPalette.get(i) & 0xFFFFFF));
-        }
-        return b.toString();
-    }
-
-    private Button actionButton(String label) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextSize(12);
-        b.setTextColor(Color.WHITE);
-        b.setBackground(round(ACCENT, 11, null));
-        return b;
-    }
-
-    private LinearLayout.LayoutParams buttonMargin() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(50));
-        lp.topMargin = dp(9);
-        return lp;
-    }
-
-    private void renderSchedule() {
-        pageTitle("SCHEDULE", "Anderson holiday automation");
-
-        LinearLayout modeCard = card(PANEL2, 18);
-        modeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        modeCard.addView(text("HOLIDAY MODE", 9, Color.rgb(142, 169, 211), true));
-        Button enabled = smallChoice(schedule.enabled() ? "Scheduler enabled" : "Scheduler disabled", schedule.enabled());
-        if (BleLightController.SINGLE_LIGHT_POWER_TEST_ONLY) {
-            enabled.setText("Paused during individual light tests");
-            enabled.setEnabled(false);
-        }
-        enabled.setOnClickListener(v -> { schedule.setEnabled(!schedule.enabled()); lastScheduledKey=""; renderPage(); });
-        modeCard.addView(enabled, buttonMargin());
-
-        Button mode = actionButton(schedule.mode().label);
-        mode.setOnClickListener(v -> {
-            AndersonSchedule.Mode[] values = AndersonSchedule.Mode.values();
-            schedule.setMode(values[(schedule.mode().ordinal()+1)%values.length]);
-            lastScheduledKey="";
-            renderPage();
-        });
-        modeCard.addView(mode, buttonMargin());
-
-        TextView leadLabel = text("Holiday lead days  " + schedule.leadDays(), 12, Color.rgb(194,211,240), true);
-        leadLabel.setPadding(0,dp(14),0,0);
-        modeCard.addView(leadLabel);
-        SeekBar lead = new SeekBar(this);
-        lead.setMax(7); lead.setProgress(schedule.leadDays());
-        lead.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar s,int p,boolean fromUser){schedule.setLeadDays(p);leadLabel.setText("Holiday lead days  "+p);lastScheduledKey="";}
-            public void onStartTrackingTouch(SeekBar s){}
-            public void onStopTrackingTouch(SeekBar s){}
-        });
-        modeCard.addView(lead);
-
-        TextView trailLabel = text("Holiday trail days  " + schedule.trailDays(), 12, Color.rgb(194,211,240), true);
-        modeCard.addView(trailLabel);
-        SeekBar trail = new SeekBar(this);
-        trail.setMax(7); trail.setProgress(schedule.trailDays());
-        trail.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar s,int p,boolean fromUser){schedule.setTrailDays(p);trailLabel.setText("Holiday trail days  "+p);lastScheduledKey="";}
-            public void onStartTrackingTouch(SeekBar s){}
-            public void onStopTrackingTouch(SeekBar s){}
-        });
-        modeCard.addView(trail);
-        root.addView(modeCard);
-
-        LinearLayout timeCard = card(PANEL2, 18);
-        timeCard.setPadding(dp(18),dp(18),dp(18),dp(18));
-        timeCard.addView(text("SCHEDULE 1",9,Color.rgb(142,169,211),true));
-        TextView s1 = text("Start  " + (schedule.startAtDusk() ? "Civil dusk" : formatMinutes(schedule.onMinutes())) +
-            "   •   Off  " + formatMinutes(schedule.offMinutes()),15,Color.WHITE,true);
-        s1.setPadding(0,dp(7),0,dp(7));
-        timeCard.addView(s1);
-
-        LinearLayout startRow = new LinearLayout(this); startRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button startMinus = smallChoice("Start -15m",false);
-        Button dusk = smallChoice(schedule.startAtDusk() ? "Use fixed start" : "Start at dusk",schedule.startAtDusk());
-        Button startPlus = smallChoice("Start +15m",false);
-        startMinus.setOnClickListener(v->{schedule.setStartAtDusk(false);schedule.setOnMinutes(schedule.onMinutes()-15);lastScheduledKey="";renderPage();});
-        startPlus.setOnClickListener(v->{schedule.setStartAtDusk(false);schedule.setOnMinutes(schedule.onMinutes()+15);lastScheduledKey="";renderPage();});
-        dusk.setOnClickListener(v->{schedule.setStartAtDusk(!schedule.startAtDusk());lastScheduledKey="";renderPage();});
-        startRow.addView(startMinus,new LinearLayout.LayoutParams(0,dp(46),1f));
-        startRow.addView(dusk,new LinearLayout.LayoutParams(0,dp(46),1.2f));
-        startRow.addView(startPlus,new LinearLayout.LayoutParams(0,dp(46),1f));
-        timeCard.addView(startRow);
-
-        LinearLayout offRow = new LinearLayout(this); offRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button offMinus = smallChoice("Off -15m",false);
-        Button offPlus = smallChoice("Off +15m",false);
-        offMinus.setOnClickListener(v->{schedule.setOffMinutes(schedule.offMinutes()-15);lastScheduledKey="";renderPage();});
-        offPlus.setOnClickListener(v->{schedule.setOffMinutes(schedule.offMinutes()+15);lastScheduledKey="";renderPage();});
-        offRow.addView(offMinus,new LinearLayout.LayoutParams(0,dp(46),1f));
-        offRow.addView(offPlus,new LinearLayout.LayoutParams(0,dp(46),1f));
-        LinearLayout.LayoutParams orp=new LinearLayout.LayoutParams(-1,dp(46));orp.topMargin=dp(6);
-        timeCard.addView(offRow,orp);
-
-        timeCard.addView(text("Civil dusk today: " + formatMinutes(schedule.civilDuskMinutes(java.time.LocalDate.now())) +
-            "   •   Civil dawn: " + formatMinutes(schedule.civilDawnMinutes(java.time.LocalDate.now())),11,MUTED,false), topMargin(10));
-
-        timeCard.addView(text("SCHEDULE 2",9,Color.rgb(142,169,211),true), topMargin(14));
-        Button s2 = smallChoice(schedule.schedule2Enabled() ? "Overnight schedule enabled" : "Overnight schedule disabled",schedule.schedule2Enabled());
-        s2.setOnClickListener(v->{schedule.setSchedule2Enabled(!schedule.schedule2Enabled());lastScheduledKey="";renderPage();});
-        timeCard.addView(s2,buttonMargin());
-
-        Button dawn = smallChoice(schedule.schedule2EndAtDawn() ? "Ends at civil dawn" : "Ends at " + formatMinutes(schedule.schedule2EndMinutes()),schedule.schedule2EndAtDawn());
-        dawn.setOnClickListener(v->{schedule.setSchedule2EndAtDawn(!schedule.schedule2EndAtDawn());lastScheduledKey="";renderPage();});
-        timeCard.addView(dawn,buttonMargin());
-
-        TextView s2bLabel=text("Overnight brightness  "+schedule.schedule2Brightness()+"%",12,Color.rgb(194,211,240),true);
-        s2bLabel.setPadding(0,dp(12),0,0);timeCard.addView(s2bLabel);
-        SeekBar s2b=new SeekBar(this);s2b.setMax(99);s2b.setProgress(schedule.schedule2Brightness()-1);
-        s2b.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar s,int p,boolean fromUser){schedule.setSchedule2Brightness(p+1);s2bLabel.setText("Overnight brightness  "+(p+1)+"%");lastScheduledKey="";}
-            public void onStartTrackingTouch(SeekBar s){}
-            public void onStopTrackingTouch(SeekBar s){}
-        });
-        timeCard.addView(s2b);
-        root.addView(timeCard,topMargin(14));
-
-        LinearLayout nowCard=card(PANEL2,18);
-        nowCard.setPadding(dp(18),dp(18),dp(18),dp(18));
-        AndersonSchedule.Scene scene=schedule.resolveNow();
-        nowCard.addView(text("CURRENT / NEXT",9,Color.rgb(142,169,211),true));
-        nowCard.addView(text(scene==null ? "No scheduled scene right now" :
-            scene.name + (scene.schedule2 ? " • Overnight" : " • Schedule 1"),17,Color.WHITE,true),topMargin(7));
-        if(scene!=null) nowCard.addView(text(scene.effect+"  •  "+scene.brightness+"%  •  "+colorsText(scene.colors),11,MUTED,false),topMargin(5));
-        nowCard.addView(text("Next: "+schedule.nextEventLabel(),11,Color.rgb(183,202,234),false),topMargin(9));
-        Button apply=actionButton("APPLY SCHEDULED SCENE NOW");
-        apply.setOnClickListener(v->applyScheduleNow(true));
-        nowCard.addView(apply,buttonMargin());
-        statusView=text("Foreground automation checks once per minute while Jason Home is open.",11,MUTED,false);
-        statusView.setPadding(0,dp(9),0,0);
-        nowCard.addView(statusView);
-        progressView=text("Idle",11,Color.rgb(174,198,236),true);
-        progressView.setPadding(0,dp(7),0,0);
-        nowCard.addView(progressView);
-        root.addView(nowCard,topMargin(14));
-    }
-
-    private void applyScheduleNow(boolean force) {
-        if (BleLightController.SINGLE_LIGHT_POWER_TEST_ONLY) {
-            if (force) onStatus("Scheduler paused during individual light tests.");
-            return;
-        }
-        if (schedule == null || !schedule.enabled()) return;
-        if (ble != null && ble.isBusy()) return;
-        List<BleLightController.FoundLight> targets = readyLights();
-        if (targets.isEmpty()) return;
-        AndersonSchedule.Scene scene = schedule.resolveNow();
-        String key;
-        if (scene == null) {
-            key = "OFF";
-            if (force || !key.equals(lastScheduledKey)) {
-                lastScheduledKey = key;
-                ble.setPower(targets,false);
-            }
-            return;
-        }
-        key = scene.eventIndex+"|"+scene.effect+"|"+Arrays.toString(scene.colors)+"|"+scene.brightness+"|"+scene.schedule2;
-        if (!force && key.equals(lastScheduledKey)) return;
-        lastScheduledKey = key;
-        ble.setScene(targets,scene.effect,scene.colors,scene.speed,false,scene.brightness);
-    }
-
-    private String colorsText(int[] colors) {
-        StringBuilder b=new StringBuilder();
-        for(int i=0;i<colors.length;i++){
-            if(i>0)b.append(" ");
-            b.append(String.format("#%06X",colors[i]&0xFFFFFF));
-        }
-        return b.toString();
-    }
-
-    private String formatMinutes(int minutes) {
-        int m=((minutes%1440)+1440)%1440;
-        int h=m/60, min=m%60;
-        String ap=h>=12?"PM":"AM";
-        int h12=h%12;if(h12==0)h12=12;
-        return String.format("%d:%02d %s",h12,min,ap);
-    }
-
-    private void renderSettings() {
-        pageTitle("SETTINGS", "Bluetooth & Eufy setup");
-        LinearLayout box = card(PANEL2, 18);
-        box.setPadding(dp(18), dp(18), dp(18), dp(18));
-        box.addView(text("Eufy account ID", 17, Color.WHITE, true));
-        TextView explain = text("Stored only in this app's private phone preferences. It is never printed in logs or committed to GitHub.", 11, MUTED, false);
-        explain.setPadding(0, dp(5), 0, dp(12));
-        box.addView(explain);
-
-        EditText account = new EditText(this);
-        account.setText(store.accountId());
-        account.setHint("40 hexadecimal characters");
-        account.setSingleLine(true);
-        account.setTextColor(Color.WHITE);
-        account.setHintTextColor(Color.rgb(105, 126, 163));
-        account.setTextSize(14);
-        account.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        account.setPadding(dp(13), dp(10), dp(13), dp(10));
-        account.setBackground(round(Color.rgb(8, 15, 32), 10, Color.argb(50, 199, 217, 255)));
-        box.addView(account, new LinearLayout.LayoutParams(-1, dp(52)));
-
-        Button save = new Button(this);
-        save.setText("Save on this phone");
-        save.setAllCaps(false);
-        save.setTextColor(Color.WHITE);
-        save.setBackground(round(ACCENT, 11, null));
-        save.setOnClickListener(v -> {
-            if (store.setAccountId(account.getText().toString())) statusView.setText("Eufy ID saved privately on this phone.");
-            else statusView.setText("ID must be exactly 40 hexadecimal characters.");
-        });
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, dp(50));
-        sp.topMargin = dp(10);
-        box.addView(save, sp);
-        statusView = text(store.accountId().isEmpty() ? "Account ID is required before light commands can run." : "Account ID is present and kept local.", 11, MUTED, false);
-        statusView.setPadding(0, dp(10), 0, 0);
-        box.addView(statusView);
-        progressView = text("", 1, Color.TRANSPARENT, false);
-        box.addView(progressView);
-        root.addView(box);
-
-        LinearLayout diag = card(PANEL2, 18);
-        diag.setPadding(dp(18), dp(18), dp(18), dp(18));
-        diag.addView(text("Protocol status", 17, Color.WHITE, true));
-        TextView d = text("✓ E120 encrypted session path recovered\n✓ E120 ON/OFF 0x0201 / A3 implemented\n✓ Sequential multi-light queue implemented\n✓ Four installed E120/E22 serials hard-coded\n○ E120 brightness A4 awaits physical verification\n○ Color/effects 0x0206 and 0x020D remain gated", 12, Color.rgb(183, 202, 234), false);
-        d.setPadding(0, dp(8), 0, 0);
-        d.setLineSpacing(dp(3), 1f);
-        diag.addView(d);
-        root.addView(diag, topMargin(12));
-    }
-
-    private void pageTitle(String overline, String title) {
-        TextView o = text(overline, 9, Color.rgb(142, 171, 219), true);
-        o.setLetterSpacing(.20f);
-        o.setPadding(0, dp(10), 0, 0);
-        root.addView(o);
-        TextView t = text(title, 34, Color.WHITE, false);
-        t.setPadding(0, dp(8), 0, dp(18));
-        root.addView(t);
-    }
-
-    private List<BleLightController.FoundLight> readyLights() {
-        ArrayList<BleLightController.FoundLight> ready = new ArrayList<>();
-        for (BleLightController.FoundLight item : found) {
-            if (store.serialFor(safeAddress(item), item.name).length() == 16) ready.add(item);
-        }
-        return ready;
-    }
-
-    private void requestBlePermissions() {
+    private void requestBlePermissions(boolean scanAfter) {
         ArrayList<String> needed = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= 31) {
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.BLUETOOTH_SCAN);
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.BLUETOOTH_CONNECT);
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)
+                needed.add(Manifest.permission.BLUETOOTH_SCAN);
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
+                needed.add(Manifest.permission.BLUETOOTH_CONNECT);
         } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
         }
-        if (needed.isEmpty()) startScanWithPermissions();
-        else requestPermissions(needed.toArray(new String[0]), 71);
+
+        getPreferences(MODE_PRIVATE).edit().putBoolean("scan_after_permission", scanAfter).apply();
+        if (needed.isEmpty()) {
+            if (scanAfter) startScanSafely();
+        } else {
+            requestPermissions(needed.toArray(new String[0]), BLE_PERMISSION_REQUEST);
+        }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode != 71) return;
-        for (int r : results) if (r != PackageManager.PERMISSION_GRANTED) {
-            if (statusView != null) statusView.setText("Bluetooth permission is required.");
-            return;
+        if (requestCode != BLE_PERMISSION_REQUEST) return;
+        for (int r : results) {
+            if (r != PackageManager.PERMISSION_GRANTED) {
+                onBridgeStatus("Bluetooth permission is required to control the Eufy lights.");
+                return;
+            }
         }
-        startScanWithPermissions();
+        boolean scan = getPreferences(MODE_PRIVATE).getBoolean("scan_after_permission", false);
+        if (scan) startScanSafely();
     }
 
-    private void startScanWithPermissions() {
+    private void startScanSafely() {
         try {
             ble.startScan();
         } catch (SecurityException e) {
-            if (statusView != null) statusView.setText("Bluetooth permission is required.");
+            onBridgeStatus("Bluetooth permission is required.");
+        } catch (Throwable t) {
+            onBridgeStatus("Bluetooth scan could not start: " + t.getMessage());
         }
     }
 
     @Override
     public void onScanChanged(List<BleLightController.FoundLight> items) {
-        runOnUiThread(() -> {
-            found = new ArrayList<>(items);
-            if ("Home".equals(page) || "Devices".equals(page)) renderPage();
-        });
+        bridge.updateDiscovered(items);
     }
 
     @Override
     public void onStatus(String message) {
-        runOnUiThread(() -> {
-            String stamp = android.text.format.DateFormat.format("HH:mm:ss", System.currentTimeMillis()).toString();
-            bleTestLog += stamp + " " + message + "\n";
-            if (bleTestLog.length() > 24000) {
-                int cut = bleTestLog.indexOf('\n', bleTestLog.length() - 20000);
-                bleTestLog = bleTestLog.substring(cut + 1);
-            }
-            if (message.contains(": RX#")) {
-                lastRxLine = message;
-                if (lastRxView != null) lastRxView.setText(lastRxLine);
-            }
-            getSharedPreferences("ble_test_log", MODE_PRIVATE).edit()
-                .putString("history", bleTestLog).putString("last_rx", lastRxLine).apply();
-            if (statusView != null) statusView.setText(message);
-        });
+        bridge.updateBleStatus(message);
+        onBridgeStatus(message);
     }
 
     @Override
     public void onProgress(int done, int total) {
+        // The Anderson UI already displays current state; BLE progress is surfaced through status text.
+    }
+
+    @Override
+    public void onBridgeStatus(String message) {
+        if (webView == null) return;
         runOnUiThread(() -> {
-            if (progressView != null) progressView.setText(total > 0 ? done + " / " + total + " processed" : "Idle");
+            String safe = JSONObjectQuote.quote(message == null ? "" : message);
+            webView.evaluateJavascript(
+                "(function(){var e=document.getElementById('statusMsg');if(e)e.textContent=" + safe + ";})();",
+                null
+            );
         });
     }
 
     @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
+    }
+
+    @Override
     protected void onDestroy() {
-        scheduleHandler.removeCallbacks(scheduleTick);
-        ble.close();
+        try { ble.close(); } catch (Throwable ignored) {}
+        if (webView != null) {
+            webView.removeJavascriptInterface("AndroidAnderson");
+            webView.destroy();
+        }
         super.onDestroy();
     }
 
-    private LinearLayout card(int color, int radius) {
-        LinearLayout v = new LinearLayout(this);
-        v.setOrientation(LinearLayout.VERTICAL);
-        v.setBackground(round(color, radius, Color.argb(28, 195, 213, 255)));
-        return v;
-    }
-
-    private GradientDrawable round(int color, int radius, Integer stroke) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(radius));
-        if (stroke != null) d.setStroke(dp(1), stroke);
-        return d;
-    }
-
-    private TextView text(String value, float size, int color, boolean bold) {
-        TextView v = new TextView(this);
-        v.setText(value);
-        v.setTextSize(size);
-        v.setTextColor(color);
-        if (bold) v.setTypeface(v.getTypeface(), android.graphics.Typeface.BOLD);
-        return v;
-    }
-
-    private LinearLayout.LayoutParams topMargin(int top) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(top);
-        return lp;
-    }
-
-    private int dp(int value) {
-        return (int)(value * getResources().getDisplayMetrics().density + .5f);
-    }
-
-    private String safeAddress(BleLightController.FoundLight item) {
-        try { return item.device.getAddress(); } catch (Throwable t) { return ""; }
-    }
-
-    private final class HousePreviewView extends View {
-        private final Paint wall = paint(Color.rgb(28, 55, 84), Paint.Style.FILL);
-        private final Paint roof = paint(Color.rgb(67, 91, 124), Paint.Style.FILL);
-        private final Paint line = paint(Color.rgb(152, 184, 232), Paint.Style.STROKE);
-        private final Paint glow = paint(Color.rgb(112, 150, 255), Paint.Style.FILL);
-
-        HousePreviewView() {
-            super(MainActivity.this);
-            line.setStrokeWidth(dp(1));
-            line.setAlpha(150);
-        }
-
-        @Override
-        protected void onDraw(Canvas c) {
-            super.onDraw(c);
-            float w = getWidth(), h = getHeight();
-            glow.setAlpha(28);
-            c.drawOval(w * .10f, h * .68f, w * .90f, h * .96f, glow);
-            RectF body = new RectF(w * .20f, h * .38f, w * .80f, h * .82f);
-            c.drawRoundRect(body, dp(4), dp(4), wall);
-            c.drawRoundRect(body, dp(4), dp(4), line);
-            Path p = new Path();
-            p.moveTo(w * .14f, h * .40f);
-            p.lineTo(w * .50f, h * .10f);
-            p.lineTo(w * .86f, h * .40f);
-            p.close();
-            c.drawPath(p, roof);
-            c.drawPath(p, line);
-            Paint led = paint(Color.rgb(183, 207, 255), Paint.Style.FILL);
-            for (int i = 0; i <= 12; i++) {
-                float x = w * .18f + i * (w * .64f / 12f);
-                c.drawCircle(x, h * .43f, dp(2), led);
+    /** Minimal JSON string quoting without adding a dependency to the WebView shell. */
+    private static final class JSONObjectQuote {
+        static String quote(String value) {
+            if (value == null) return "\"\"";
+            StringBuilder b = new StringBuilder("\"");
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                switch (c) {
+                    case '\\': b.append("\\\\"); break;
+                    case '\"': b.append("\\\""); break;
+                    case '\n': b.append("\\n"); break;
+                    case '\r': b.append("\\r"); break;
+                    case '\t': b.append("\\t"); break;
+                    default:
+                        if (c < 32) b.append(String.format(java.util.Locale.ROOT, "\\u%04x", (int)c));
+                        else b.append(c);
+                }
             }
-            c.drawRect(w * .43f, h * .55f, w * .57f, h * .82f, line);
-            c.drawRect(w * .26f, h * .55f, w * .36f, h * .67f, line);
-            c.drawRect(w * .64f, h * .55f, w * .74f, h * .67f, line);
-        }
-
-        private Paint paint(int color, Paint.Style style) {
-            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-            p.setColor(color);
-            p.setStyle(style);
-            return p;
+            return b.append('\"').toString();
         }
     }
 }
