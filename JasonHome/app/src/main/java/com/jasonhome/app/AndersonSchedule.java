@@ -131,11 +131,17 @@ final class AndersonSchedule {
         if(schedule2Enabled()){
             int s2end=schedule2EndAtDawn()?civilSolarMinutes(day,true,now.getZone()):schedule2EndMinutes();
             if(inWindow(minute,end,s2end)){
-                Scene custom=customScene(day,true,schedule2Brightness());
+                LocalDate themeDay=day;
+                int themeStart=start;
+                if(minute<start){
+                    themeDay=day.minusDays(1);
+                    themeStart=startAtDusk()?civilSolarMinutes(themeDay,false,now.getZone()):onMinutes();
+                }
+                Scene custom=customScene(themeDay,true,schedule2Brightness());
                 if(custom!=null)return custom;
-                // Preserve the final Schedule-1 scene into Schedule 2.
+                // Preserve the final Schedule-1 scene from the evening that started this overnight window.
                 int last=(end+1439)%1440;
-                return resolveFor(day,last,start,end,true,schedule2Brightness());
+                return resolveFor(themeDay,last,themeStart,end,true,schedule2Brightness());
             }
         }
         return null;
@@ -150,8 +156,7 @@ final class AndersonSchedule {
             if(!included(i)||"Month".equals(AndersonEventData.EVENTS[i].rule))continue;
             for(int y=today.getYear();y<=today.getYear()+2;y++){
                 LocalDate s=startDate(i,y);
-                if(s!=null&&!s.isBefore(today)&&(best==null||s.isBefore(best))){
-                    if(s.equals(today)&&now.toLocalTime().isAfter(LocalTime.of(23,59)))continue;
+                if(s!=null&&s.isAfter(today)&&(best==null||s.isBefore(best))){
                     best=s;bestIndex=i;
                 }
             }
