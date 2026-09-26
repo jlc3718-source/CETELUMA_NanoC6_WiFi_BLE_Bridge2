@@ -113,6 +113,7 @@ final class BleLightController {
     private int successfulJobs;
     private boolean commandSent;
     private String legacyStage = "idle";
+    private String lastFailure = "";
 
     BleLightController(Context context, DeviceStore store, Listener listener) {
         this.context = context;
@@ -314,6 +315,7 @@ final class BleLightController {
         totalJobs=queue.size();
         processedJobs=0;
         successfulJobs=0;
+        lastFailure="";
         listener.onProgress(0,totalJobs);
         runNext();
     }
@@ -324,7 +326,11 @@ final class BleLightController {
         if(job==null){
             active=null;
             listener.onProgress(totalJobs,totalJobs);
-            listener.onStatus("Finished - "+successfulJobs+"/"+totalJobs+" light commands written");
+            if(successfulJobs==totalJobs){
+                listener.onStatus("PASS - "+successfulJobs+"/"+totalJobs+" light commands written");
+            }else{
+                listener.onStatus("FAIL - "+successfulJobs+"/"+totalJobs+" written • "+(lastFailure.isEmpty()?"unknown BLE failure":lastFailure));
+            }
             return;
         }
         active=job;
@@ -386,7 +392,7 @@ final class BleLightController {
             if(g!=gatt)return;
             if(newState==BluetoothProfile.STATE_CONNECTED){
                 legacyStage="service discovery";
-                listener.onStatus(displayName(active.light)+": connected • discovering Eufy service");
+                listener.onStatus(displayName(active.light)+": CONNECTED • discovering Eufy service");
                 if(!g.discoverServices())finishActive(false,"Service discovery could not start");
             } else if(newState==BluetoothProfile.STATE_DISCONNECTED&&active!=null){
                 finishActive(false,"Disconnected before command completed (GATT "+status+")");
@@ -403,6 +409,7 @@ final class BleLightController {
             BluetoothGattDescriptor descriptor=notify==null?null:notify.getDescriptor(CCCD_ID);
             if(writeChar==null||notify==null||descriptor==null){finishActive(false,"Required Eufy BLE characteristics were not found");return;}
             legacyStage="notification setup";
+            listener.onStatus(displayName(active.light)+": SERVICE FOUND • enabling notifications");
             if(!g.setCharacteristicNotification(notify,true)){finishActive(false,"Could not enable Eufy notifications");return;}
             if(Build.VERSION.SDK_INT>=33){
                 int result=g.writeDescriptor(descriptor,BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
@@ -418,7 +425,7 @@ final class BleLightController {
             if(g!=gatt||!CCCD_ID.equals(descriptor.getUuid()))return;
             if(status!=BluetoothGatt.GATT_SUCCESS){finishActive(false,"Notification setup failed ("+status+")");return;}
             legacyStage="MTU negotiation";
-            listener.onStatus(displayName(active.light)+": notifications ready • requesting MTU 247");
+            listener.onStatus(displayName(active.light)+": NOTIFICATIONS READY • requesting MTU 247");
             if(!g.requestMtu(247))finishActive(false,"Could not request BLE packet size");
         }
 
@@ -427,7 +434,7 @@ final class BleLightController {
             if(g!=gatt)return;
             if(status!=BluetoothGatt.GATT_SUCCESS||mtu<93){finishActive(false,"BLE packet size too small ("+mtu+")");return;}
             legacyStage="handshake 1/5";
-            listener.onStatus(displayName(active.light)+": MTU "+mtu+" • starting E10 handshake");
+            listener.onStatus(displayName(active.light)+": MTU "+mtu+" READY • starting E10 handshake");
             sendHandshakeStep(0);
         }
 
@@ -453,7 +460,7 @@ final class BleLightController {
     private void sendHandshakeStep(int step){
         E10Probe p=probe; BluetoothGatt g=gatt; BluetoothGattCharacteristic c=writeChar;
         if(p==null||g==null||c==null)return;
-        if(step>=5){listener.onStatus("Handshake sent - waiting for encrypted Eufy response");return;}
+        if(step>=5){legacyStage="waiting for encrypted response";listener.onStatus(displayName(active.light)+": HANDSHAKE 5/5 SENT • waiting for encrypted response");return;}
         byte[] data;
         try{data=p.step(step);}catch(Throwable t){finishActive(false,"Handshake frame could not be built");return;}
         int result=write(g,c,data);
@@ -862,7 +869,10 @@ final class BleLightController {
         processedJobs++;
         if(success)successfulJobs++;
         listener.onProgress(processedJobs,totalJobs);
-        if(error!=null)listener.onStatus(error+" - moving to next light");
+        if(error!=null){
+            lastFailure=error+" • stage="+legacyStage;
+            listener.onStatus("FAIL • "+lastFailure);
+        }
         active=null;
         legacyStage="idle";
         cleanupGatt();
