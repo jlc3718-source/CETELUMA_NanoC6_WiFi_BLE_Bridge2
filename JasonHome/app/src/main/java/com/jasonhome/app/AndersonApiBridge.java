@@ -192,7 +192,7 @@ final class AndersonApiBridge {
         settings.put("off",clockMinutes(schedule.offMinutes()));
         settings.put("lead",schedule.leadDays());
         settings.put("trail",schedule.trailDays());
-        settings.put("overlap",overlapString(schedule.overlap()));
+        settings.put("overlap",schedule.overlap());
         settings.put("tz",prefs.getString("tz","EST5EDT,M3.2.0,M11.1.0"));
         settings.put("scheduler",schedule.enabled());
         settings.put("scheduler2",schedule.schedule2Enabled());
@@ -524,7 +524,10 @@ final class AndersonApiBridge {
 
     private JSONObject bleScan() throws Exception {
         long now=System.currentTimeMillis();
-        if(now>=scanUntilMs){
+        // First request starts a 12-second scan. Polls during the scan return
+        // scanning=true; the first polls immediately after completion return false
+        // rather than accidentally starting a second scan.
+        if(scanUntilMs==0L || now>scanUntilMs+3000L){
             scanUntilMs=now+12000L;
             host.requestBlePermissionsAndScan();
         }
