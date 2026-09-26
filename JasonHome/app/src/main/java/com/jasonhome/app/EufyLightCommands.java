@@ -36,6 +36,14 @@ final class EufyLightCommands {
     }
 
     static byte[] color(String model, int rgb, int lampCount) {
+        // Preserve the physically working T8L02/E22 serializer exactly.
+        // T8L00/E120 is RGBWIC and does not accept that shortened T8L02-style
+        // field run, so give it its own complete LightTransportNewCmd payload.
+        if (isE22(model)) return colorE22(model, rgb, lampCount);
+        return colorE120(rgb, lampCount);
+    }
+
+    private static byte[] colorE22(String model, int rgb, int lampCount) {
         int lamps = clamp(lampCount, 1, 120);
         byte[] nativeColor = nativeColor(model, rgb);
 
@@ -58,6 +66,43 @@ final class EufyLightCommands {
         write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
         write(out, tlv(0xAA, new byte[]{0}));
         write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    private static byte[] colorE120(int rgb, int lampCount) {
+        int lamps = clamp(lampCount, 1, 120);
+        int r=(rgb >>> 16)&255, g=(rgb >>> 8)&255, b=rgb&255;
+
+        // T8L00's official implementation selects getColorData for this
+        // RGBW family. Keep the foreground as RGBW (R,G,B,W) and use the
+        // complete non-catalog local-color field run instead of the abbreviated
+        // payload that T8L02 happened to accept.
+        byte[] rgbw = new byte[]{(byte)r,(byte)g,(byte)b,0};
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le16(LOCAL_COLOR_ID)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{5}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(1);
+        write(palette, rgbw);
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i = 0; i < lamps; i++) positions[i + 1] = (byte) i;
+        write(out, tlv(0xA7, positions));
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, new byte[]{(byte)0xFF,(byte)0xFF,(byte)0xFF,(byte)0xFF}));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
         write(out, tlv(0xB0, new byte[]{0}));
         return out.toByteArray();
     }
