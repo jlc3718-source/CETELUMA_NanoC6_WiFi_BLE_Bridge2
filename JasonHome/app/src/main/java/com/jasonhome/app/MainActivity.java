@@ -151,7 +151,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
     }
 
     private void renderBleTestLog() {
-        TextView test = text("4.0.10 E120 test • Use Pool or House ON/OFF on Devices.", 12, MUTED, false);
+        TextView test = text("4.0.11 E120/E22 test • Use individual ON/OFF on Devices.", 12, MUTED, false);
         root.addView(test, topMargin(12));
         lastRxView = text(lastRxLine.isEmpty() ? "No received notification recorded yet." : lastRxLine, 11, MUTED, false);
         lastRxView.setTextIsSelectable(true);
@@ -164,7 +164,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
             ScrollView scroll = new ScrollView(this);
             scroll.addView(content);
             new android.app.AlertDialog.Builder(this)
-                .setTitle("BLE test log • 4.0.10")
+                .setTitle("BLE test log • 4.0.11")
                 .setView(scroll)
                 .setPositiveButton("Close", null)
                 .setNeutralButton("Copy log", (dialog, which) -> {
@@ -641,8 +641,8 @@ public class MainActivity extends Activity implements BleLightController.Listene
         modeCard.setPadding(dp(18), dp(18), dp(18), dp(18));
         modeCard.addView(text("HOLIDAY MODE", 9, Color.rgb(142, 169, 211), true));
         Button enabled = smallChoice(schedule.enabled() ? "Scheduler enabled" : "Scheduler disabled", schedule.enabled());
-        if (BleLightController.E120_ON_OFF_TEST_ONLY) {
-            enabled.setText("Paused during E120 ON/OFF test");
+        if (BleLightController.SINGLE_LIGHT_POWER_TEST_ONLY) {
+            enabled.setText("Paused during individual light tests");
             enabled.setEnabled(false);
         }
         enabled.setOnClickListener(v -> { schedule.setEnabled(!schedule.enabled()); lastScheduledKey=""; renderPage(); });
@@ -755,8 +755,8 @@ public class MainActivity extends Activity implements BleLightController.Listene
     }
 
     private void applyScheduleNow(boolean force) {
-        if (BleLightController.E120_ON_OFF_TEST_ONLY) {
-            if (force) onStatus("Scheduler paused during E120 ON/OFF test.");
+        if (BleLightController.SINGLE_LIGHT_POWER_TEST_ONLY) {
+            if (force) onStatus("Scheduler paused during individual light tests.");
             return;
         }
         if (schedule == null || !schedule.enabled()) return;

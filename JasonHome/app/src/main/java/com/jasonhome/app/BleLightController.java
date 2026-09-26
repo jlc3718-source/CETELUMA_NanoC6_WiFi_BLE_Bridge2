@@ -29,8 +29,8 @@ import java.util.Map;
 import java.util.UUID;
 
 final class BleLightController {
-    // Lift only after physical ON/OFF verification on one E120, then E22.
-    static final boolean E120_ON_OFF_TEST_ONLY = true;
+    // Test each installed light independently before enabling combined control.
+    static final boolean SINGLE_LIGHT_POWER_TEST_ONLY = true;
     interface Listener {
         void onScanChanged(List<FoundLight> items);
         void onStatus(String message);
@@ -203,15 +203,16 @@ final class BleLightController {
     private interface Factory { Job make(FoundLight item); }
 
     private void enqueue(List<FoundLight> targets, Factory factory) {
-        if (E120_ON_OFF_TEST_ONLY) {
+        if (SINGLE_LIGHT_POWER_TEST_ONLY) {
             if (targets.size() != 1) {
-                listener.onStatus("E120 test: use ON/OFF beside Pool or House on Devices. Select one light only.");
+                listener.onStatus("BLE test: use ON/OFF beside one light on Devices.");
                 return;
             }
             Job test = factory.make(targets.get(0));
             String serial = store.serialFor(address(test.light.device), test.light.name);
-            if (!serial.startsWith("T8L00") || (test.kind != Kind.POWER && test.kind != Kind.DIAGNOSTIC)) {
-                listener.onStatus("E120 test: Pool or House ON/OFF only until physical control is confirmed.");
+            if ((!serial.startsWith("T8L00") && !serial.startsWith("T8L02"))
+                    || (test.kind != Kind.POWER && test.kind != Kind.DIAGNOSTIC)) {
+                listener.onStatus("BLE test: individual Pool, House, Garage or Shed ON/OFF only.");
                 return;
             }
         }
