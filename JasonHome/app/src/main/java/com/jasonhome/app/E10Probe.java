@@ -55,6 +55,23 @@ final class E10Probe {
         return frame(command, payload, 1, false);
     }
 
+    String notificationSummary(byte[] input) {
+        if (input == null) return "null notification";
+        StringBuilder b = new StringBuilder();
+        b.append("len=").append(input.length);
+        if (input.length >= 9) {
+            b.append(" hdr=");
+            int n = Math.min(input.length, 12);
+            for (int i = 0; i < n; i++) {
+                if (i > 0) b.append(' ');
+                b.append(String.format("%02X", input[i] & 0xff));
+            }
+            b.append(" cmd=")
+             .append(String.format("%02X%02X", input[7] & 0xff, input[8] & 0xff));
+        }
+        return b.toString();
+    }
+
     boolean acceptNotification(byte[] input) {
         if (input == null || input.length < 26) return false;
         if ((input[0] & 0xff) != 0xff || (input[1] & 0xff) != 0x09) return false;
