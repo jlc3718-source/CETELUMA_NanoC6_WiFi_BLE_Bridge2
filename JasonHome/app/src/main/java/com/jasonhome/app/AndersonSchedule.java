@@ -169,24 +169,118 @@ final class AndersonSchedule {
         for(int i=0;i<AndersonEventData.EVENTS.length;i++){
             if(!included(i))continue;
             AndersonEventData.Event e=AndersonEventData.EVENTS[i];
-            if("Month".equals(e.rule)){
-                if(day.getMonthValue()==e.month)monthly.add(i);
+            if(activeOn(i,day)){
+                if("Month".equals(e.rule)) monthly.add(i);
+                else specific.add(i);
                 continue;
             }
-            if(activeOn(i,day)){specific.add(i);continue;}
-            if("Holiday".equals(e.kind)&&windowActive(i,day,leadDays(),trailDays()))windows.add(i);
+            if("Holiday".equals(e.kind)&&(leadDays()!=0||trailDays()!=0)&&windowActive(i,day,leadDays(),trailDays()))
+                windows.add(i);
         }
 
-        int pick=-1;
-        if(!specific.isEmpty())pick=timedPick(specific,minute,start,end);
-        else if(!windows.isEmpty())pick=timedPick(windows,minute,start,end);
-        else if(!monthly.isEmpty()){
-            if(overlap()==2)return combinedMonthly(monthly,brightness,schedule2);
-            if(overlap()==1)pick=timedPick(monthly,minute,start,end);
-            else pick=monthly.get((day.getDayOfMonth()-1)%monthly.size());
+        int span=windowSpan(start,end);
+        int elapsed=windowElapsed(minute,start,span);
+
+        MonthlyPosition mp=monthlyPosition(day);
+        boolean forcedMonthlyCoverage=!monthly.isEmpty()&&mp.total==0&&mp.forcedDay==day.getDayOfMonth()
+            &&(!specific.isEmpty()||!windows.isEmpty());
+
+        if(forcedMonthlyCoverage){
+            int monthlySpan=Math.max(1,span/3);
+            if(elapsed<monthlySpan){
+                if(overlap()==2)return combinedMonthly(monthly,brightness,schedule2);
+                int pick=tierPick(monthly,elapsed,monthlySpan);
+                return sceneFor(pick,brightness,schedule2);
+            }
+
+            int highElapsed=elapsed-monthlySpan;
+            int highSpan=Math.max(1,span-monthlySpan);
+            if(!windows.isEmpty()&&!specific.isEmpty()){
+                int windowSpan=Math.max(1,highSpan/3);
+                if(highElapsed<windowSpan)
+                    return sceneFor(tierPick(windows,highElapsed,windowSpan),brightness,schedule2);
+                return sceneFor(tierPick(specific,highElapsed-windowSpan,Math.max(1,highSpan-windowSpan)),brightness,schedule2);
+            }
+            if(!specific.isEmpty())
+                return sceneFor(tierPick(specific,highElapsed,highSpan),brightness,schedule2);
+            return sceneFor(tierPick(windows,highElapsed,highSpan),brightness,schedule2);
         }
-        if(pick<0)return null;
-        return sceneFor(pick,brightness,schedule2);
+
+        if(!specific.isEmpty())return sceneFor(tierPick(specific,elapsed,span),brightness,schedule2);
+        if(!windows.isEmpty())return sceneFor(tierPick(windows,elapsed,span),brightness,schedule2);
+
+        if(!monthly.isEmpty()){
+            if(overlap()==0){
+                if(mp.total==0)return sceneFor(monthly.get(0),brightness,schedule2);
+                if(mp.total>=monthly.size())
+                    return sceneFor(monthly.get(mp.ordinal%monthly.size()),brightness,schedule2);
+
+                int groupStart=(mp.ordinal*monthly.size())/mp.total;
+                int groupEnd=((mp.ordinal+1)*monthly.size())/mp.total;
+                if(groupEnd<=groupStart)groupEnd=Math.min(monthly.size(),groupStart+1);
+                ArrayList<Integer> subset=new ArrayList<>();
+                for(int i=groupStart;i<groupEnd;i++)subset.add(monthly.get(i));
+                return sceneFor(tierPick(subset,elapsed,span),brightness,schedule2);
+            }
+            if(overlap()==1)return sceneFor(tierPick(monthly,elapsed,span),brightness,schedule2);
+            return combinedMonthly(monthly,brightness,schedule2);
+        }
+        return null;
+    }
+
+    private static final class MonthlyPosition {
+        final int ordinal,total,forcedDay;
+        MonthlyPosition(int ordinal,int total,int forcedDay){this.ordinal=ordinal;this.total=total;this.forcedDay=forcedDay;}
+    }
+
+    private MonthlyPosition monthlyPosition(LocalDate day){
+        int total=0,ordinal=0,forcedDay=0,lowest=Integer.MAX_VALUE;
+        int days=day.lengthOfMonth();
+        for(int d=1;d<=days;d++){
+            LocalDate probe=day.withDayOfMonth(d);
+            int high=higherPriorityCountOn(probe);
+            boolean eligible=high==0;
+            if(eligible){
+                if(d<day.getDayOfMonth())ordinal++;
+                total++;
+            }
+            if(high<lowest){lowest=high;forcedDay=d;}
+        }
+        return new MonthlyPosition(ordinal,total,forcedDay);
+    }
+
+    private int higherPriorityCountOn(LocalDate day){
+        int count=0;
+        for(int i=0;i<AndersonEventData.EVENTS.length;i++){
+            if(!included(i))continue;
+            AndersonEventData.Event e=AndersonEventData.EVENTS[i];
+            if("Month".equals(e.rule))continue;
+            if(activeOn(i,day)){count++;continue;}
+            if("Holiday".equals(e.kind)&&(leadDays()!=0||trailDays()!=0)&&windowActive(i,day,leadDays(),trailDays()))count++;
+        }
+        return count;
+    }
+
+    private static int windowSpan(int start,int end){
+        int span=end-start;
+        if(span<=0)span+=1440;
+        return Math.max(1,span);
+    }
+
+    private static int windowElapsed(int minute,int start,int span){
+        int elapsed=minute-start;
+        if(elapsed<0)elapsed+=1440;
+        if(elapsed>=span)elapsed=span-1;
+        return Math.max(0,elapsed);
+    }
+
+    private static int tierPick(List<Integer> items,int elapsed,int span){
+        if(items.isEmpty())return -1;
+        if(items.size()==1)return items.get(0);
+        elapsed=Math.max(0,Math.min(Math.max(0,span-1),elapsed));
+        int slot=(int)(((long)elapsed*items.size())/Math.max(1,span));
+        if(slot>=items.size())slot=items.size()-1;
+        return items.get(slot);
     }
 
     private Scene combinedMonthly(List<Integer> indices,int brightness,boolean schedule2){
