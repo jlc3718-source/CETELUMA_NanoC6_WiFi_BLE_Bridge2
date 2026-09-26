@@ -119,6 +119,10 @@ final class BleLightController {
     private int connectionRetryCount = 0;
     private int handshakeResponseRetryCount = 0;
     private int receivedNotifications = 0;
+    private byte[] e22PowerFrame;
+    private int e22PowerAttempts;
+    private boolean waitForE22PowerReply;
+    private Runnable e22PowerContinuation;
 
     BleLightController(Context context, DeviceStore store, Listener listener) {
         this.context = context;
@@ -354,6 +358,10 @@ final class BleLightController {
         }
         active=job;
         commandSent=false;
+        e22PowerFrame=null;
+        e22PowerAttempts=0;
+        waitForE22PowerReply=false;
+        e22PowerContinuation=null;
         legacyStage="connecting";
         connectionRetryCount=0;
         handshakeResponseRetryCount=0;
@@ -513,6 +521,17 @@ final class BleLightController {
             if(p==null)return;
             if(commandSent){
                 listener.onStatus(displayName(active.light)+": RX#"+(++receivedNotifications)+" "+E10Probe.packetSummary(value)+" → POST_SESSION_RESPONSE");
+                if(waitForE22PowerReply && e22PowerFrame!=null && validPowerReply(value,e22PowerFrame)){
+                    waitForE22PowerReply=false;
+                    if(timeout!=null)handler.removeCallbacks(timeout);
+                    timeout=null;
+                    listener.onStatus(displayName(active.light)+": power response received • confirm the light physically changed");
+                    Runnable next=e22PowerContinuation;
+                    e22PowerContinuation=null;
+                    e22PowerFrame=null;
+                    if(next!=null)handler.postDelayed(next,120L);
+                    else finishActive(true,null);
+                }
                 return;
             }
             E10Probe.NotificationResult result=p.inspectNotification(value);
@@ -612,6 +631,10 @@ final class BleLightController {
         try{
             switch(job.kind){
                 case POWER:
+                    if(isE22(job.light)){
+                        startE22Power(job.on,job,g,c,p,()->finishActive(true,null));
+                        return;
+                    }
                     frame=p.powerCommand(job.on);
                     break;
                 case DIAGNOSTIC:
@@ -634,7 +657,11 @@ final class BleLightController {
                         EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
                     break;
                 case SCENE:
-                    sendSceneSequence(job,g,c,p);
+                    if(isE22(job.light)){
+                        startE22Power(true,job,g,c,p,()->sendSceneAfterPower(job,g,c,p));
+                    }else{
+                        sendSceneSequence(job,g,c,p);
+                    }
                     return;
                 default:
                     throw new IllegalStateException("Unknown command");
@@ -653,6 +680,122 @@ final class BleLightController {
         handler.postDelayed(()->{
             if(active==job && g==gatt && p==probe)finishActive(true,null);
         },650L);
+    }
+
+    private static boolean isE22(FoundLight light){
+        if(light==null)return false;
+        if("E22".equalsIgnoreCase(light.model))return true;
+        return light.serial!=null && light.serial.startsWith("T8L02");
+    }
+
+    private static boolean validPowerReply(byte[] reply,byte[] sent){
+        if(reply==null||reply.length<11||sent==null||sent.length<10)return false;
+        if((reply[0]&0xff)!=0xff||(reply[1]&0xff)!=0x09)return false;
+        int declared=(reply[2]&0xff)|((reply[3]&0xff)<<8);
+        if(declared!=reply.length)return false;
+        if((reply[6]&0xff)!=2)return false;
+        if((reply[7]&0xff)!=0x4a||(reply[8]&0xff)!=0x01)return false;
+        if(reply[4]!=sent[4]||reply[5]!=sent[5])return false;
+        int xor=0;
+        for(byte b:reply)xor^=b&0xff;
+        return xor==0;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void startE22Power(boolean on,Job job,BluetoothGatt g,BluetoothGattCharacteristic c,E10Probe p,Runnable continuation){
+        if(active!=job||gatt!=g||probe!=p)return;
+        e22PowerContinuation=continuation;
+        Runnable sendPower=()->{
+            if(active!=job||gatt!=g||probe!=p)return;
+            try{
+                e22PowerFrame=p.powerCommand(on);
+            }catch(Throwable t){
+                finishActive(false,"E22 power command could not be built");
+                return;
+            }
+            e22PowerAttempts=1;
+            waitForE22PowerReply=true;
+            int result=writeWithResponse(g,c,e22PowerFrame);
+            listener.onStatus(displayName(job.light)+": TX "+(on?"ON":"OFF")+" writeStatus="+result+" writeType=WITH_RESPONSE "+E10Probe.packetSummary(e22PowerFrame));
+            if(result!=BluetoothStatusCodes.SUCCESS){
+                finishActive(false,"E22 power write failed ("+result+")");
+                return;
+            }
+            waitForE22PowerReply(job,g,c,p);
+        };
+
+        if(on){
+            try{
+                byte[] state=p.stateCommand();
+                int status=writeWithResponse(g,c,state);
+                listener.onStatus(displayName(job.light)+": pre-ON state request writeStatus="+status);
+                handler.postDelayed(sendPower,260L);
+            }catch(Throwable t){
+                listener.onStatus(displayName(job.light)+": pre-ON state request unavailable");
+                handler.postDelayed(sendPower,180L);
+            }
+        }else{
+            sendPower.run();
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void waitForE22PowerReply(Job job,BluetoothGatt g,BluetoothGattCharacteristic c,E10Probe p){
+        if(timeout!=null)handler.removeCallbacks(timeout);
+        timeout=()->{
+            if(active!=job||gatt!=g||probe!=p||!waitForE22PowerReply)return;
+            if(e22PowerAttempts<3){
+                e22PowerAttempts++;
+                int result=writeWithResponse(g,c,e22PowerFrame);
+                listener.onStatus(displayName(job.light)+": power retry "+e22PowerAttempts+"/3 writeStatus="+result+" writeType=WITH_RESPONSE");
+                if(result!=BluetoothStatusCodes.SUCCESS){
+                    finishActive(false,"power retry write failed ("+result+")");
+                    return;
+                }
+                waitForE22PowerReply(job,g,c,p);
+            }else{
+                waitForE22PowerReply=false;
+                finishActive(false,displayName(job.light)+": no device power response after 3 writes");
+            }
+        };
+        handler.postDelayed(timeout,1800L);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void sendSceneAfterPower(Job job,BluetoothGatt g,BluetoothGattCharacteristic c,E10Probe p){
+        if(active!=job||gatt!=g||probe!=p)return;
+        try{
+            byte[] bright=p.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
+            int r2=write(g,c,bright);
+            if(r2!=BluetoothStatusCodes.SUCCESS){
+                finishActive(false,"Scene brightness write failed ("+r2+")");
+                return;
+            }
+            handler.postDelayed(()->{
+                if(active!=job||gatt!=g||probe!=p)return;
+                try{
+                    byte[] finalFrame;
+                    if(("Solid".equals(job.effect)||"Solid / Static".equals(job.effect))&&job.colors.length==1){
+                        finalFrame=p.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.color(job.light.model,job.colors[0],EufyLightCommands.defaultLampCount(job.light.model)));
+                    }else{
+                        finalFrame=p.command(EufyLightCommands.OP_SHOW,
+                            EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                    }
+                    int r3=write(g,c,finalFrame);
+                    if(r3!=BluetoothStatusCodes.SUCCESS){
+                        finishActive(false,"Scene effect write failed ("+r3+")");
+                        return;
+                    }
+                    listener.onStatus(displayName(job.light)+": scene written");
+                    handler.postDelayed(()->{if(active==job)finishActive(true,null);},550L);
+                }catch(Throwable t){
+                    finishActive(false,"Scene effect command could not be built");
+                }
+            },220L);
+        }catch(Throwable t){
+            finishActive(false,"Scene brightness command could not be built");
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -996,6 +1139,14 @@ final class BleLightController {
     }
 
     @SuppressLint("MissingPermission")
+    private int writeWithResponse(BluetoothGatt g,BluetoothGattCharacteristic c,byte[] data){
+        if(Build.VERSION.SDK_INT>=33)return g.writeCharacteristic(c,data,BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        c.setValue(data);
+        c.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        return g.writeCharacteristic(c)?BluetoothStatusCodes.SUCCESS:-1;
+    }
+
+    @SuppressLint("MissingPermission")
     private int write(BluetoothGatt g,BluetoothGattCharacteristic c,byte[] data){
         if(Build.VERSION.SDK_INT>=33)return g.writeCharacteristic(c,data,BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
         c.setValue(data);
@@ -1024,6 +1175,7 @@ final class BleLightController {
     private void cleanupGatt(){
         BluetoothGatt old=gatt;
         gatt=null; writeChar=null; probe=null; commandSent=false;
+        e22PowerFrame=null; e22PowerAttempts=0; waitForE22PowerReply=false; e22PowerContinuation=null;
         try{if(old!=null)old.disconnect();}catch(Throwable ignored){}
         try{if(old!=null)old.close();}catch(Throwable ignored){}
     }
