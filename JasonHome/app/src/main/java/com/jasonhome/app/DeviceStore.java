@@ -77,7 +77,7 @@ final class DeviceStore {
             case "10:2C:B1:0E:C4:01": return "T8L006102353014B";
             case "10:2C:B1:AD:CA:7F": return "T8L00610243503A2";
             case "10:2C:B1:9D:F7:B5": return "T8L028102427474A";
-            case "10:2C:B1:EB:27:96": return "T8L0281024470193";
+            case "10:2C:B1:EB:27:96": return "T8L0291024470193";
             default: break;
         }
 
@@ -86,7 +86,7 @@ final class DeviceStore {
             case "T8L00_C401": return "T8L006102353014B";
             case "T8L00_CA7F": return "T8L00610243503A2";
             case "T8L02_F7B5": return "T8L028102427474A";
-            case "T8L02_2796": return "T8L0281024470193";
+            case "T8L02_2796": return "T8L0291024470193";
             default: return "";
         }
     }
