@@ -1,0 +1,49 @@
+package com.jasonhome.app;
+
+public final class EufyLightCommandsRegression {
+    public static void main(String[] args) {
+        assertShow("E120", "Breath", 10474, 4);
+        assertShow("T8L00", "Strobe", 10474, 4);
+        assertShow("E22", "Breath", 21002, 5);
+        assertShow("T8L02", "Strobe", 21003, 5);
+        System.out.println("EufyLightCommands regression: PASS");
+    }
+
+    private static void assertShow(String model, String effect, int expectedId, int expectedColorWidth) {
+        byte[] payload = EufyLightCommands.show(model, effect, new int[]{0xFF0000}, 3, false);
+        int a3 = find(payload, 0xA3);
+        if (a3 < 0 || (payload[a3 + 1] & 0xFF) != 4) fail(model + " missing A3/u32 show id");
+        int id = (payload[a3 + 2] & 0xFF)
+            | ((payload[a3 + 3] & 0xFF) << 8)
+            | ((payload[a3 + 4] & 0xFF) << 16)
+            | ((payload[a3 + 5] & 0xFF) << 24);
+        if (id != expectedId) fail(model + " " + effect + " id=" + id + " expected=" + expectedId);
+
+        int a9 = find(payload, 0xA9);
+        if (a9 < 0) fail(model + " missing A9 layer");
+        int len = payload[a9 + 1] & 0xFF;
+        int layer = a9 + 2;
+        if (len < 11 + expectedColorWidth) fail(model + " A9 layer too short");
+        if ((payload[layer + 10] & 0xFF) != 1) fail(model + " expected one layer color");
+        if ((payload[layer + 11] & 0xFF) != 0xFF) fail(model + " red channel mismatch");
+        for (int i = 1; i < expectedColorWidth; i++) {
+            if ((payload[layer + 11 + i] & 0xFF) != 0) fail(model + " native color width/content mismatch");
+        }
+    }
+
+    private static int find(byte[] payload, int tag) {
+        int i = 0;
+        while (i + 1 < payload.length) {
+            int len = payload[i + 1] & 0xFF;
+            if ((payload[i] & 0xFF) == tag) return i;
+            i += 2 + len;
+        }
+        return -1;
+    }
+
+    private static void fail(String message) {
+        throw new AssertionError(message);
+    }
+
+    private EufyLightCommandsRegression() {}
+}
