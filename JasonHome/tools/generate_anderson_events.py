@@ -5,6 +5,7 @@ import re
 ROOT=Path(__file__).resolve().parents[2]
 catalog=(ROOT/"firmware/src/EventCatalog.cpp").read_text()
 colors=(ROOT/"firmware/src/EventColorThemes.cpp").read_text()
+categories=(ROOT/"firmware/src/EventCategories.cpp").read_text()
 out=ROOT/"JasonHome/app/src/main/java/com/jasonhome/app/AndersonEventData.java"
 
 block=catalog[catalog.index("const EventDef EVENTS[]"):catalog.index("const size_t EVENT_COUNT")]
@@ -46,6 +47,16 @@ specials=[]
 for m in re.finditer(r'\{"(evt\d+)",(\d+),(\d+),(\d+)\}',catalog[special_start:special_end]):
     specials.append((m.group(1),int(m.group(2)),int(m.group(3)),int(m.group(4))))
 
+cat_defs=[]
+for m in re.finditer(r'\{"([^"]+)",\s*"([^"]+)",\s*"(#[0-9A-Fa-f]{6})"\}',categories):
+    cat_defs.append((m.group(1),m.group(2),m.group(3)))
+cat_start=categories.index("static constexpr uint8_t EVENT_CATEGORY_INDEX")
+cat_open=categories.index("{",cat_start)
+cat_close=categories.index("};",cat_open)
+cat_index=[int(x) for x in re.findall(r'\d+',categories[cat_open+1:cat_close])]
+if len(cat_defs)!=15:
+    raise SystemExit("Expected 15 Anderson event categories")
+
 def jstr(s):
     return s.replace("\\","\\\\").replace('"','\\"')
 
@@ -69,6 +80,9 @@ for i,line in enumerate(lines):
     events.append((eid,name,kind,rule,int(month),int(day),int(weekday),int(nth),int(offset),int(duration),effect,speeds[i],modern,basic,major_cols))
     id_to_index[eid]=i
 
+if len(cat_index)!=len(events):
+    raise SystemExit("Anderson event category map count does not match event count")
+
 java=[]
 java.append("package com.jasonhome.app;\n")
 java.append("final class AndersonEventData {")
@@ -80,6 +94,15 @@ java.append("    Event(String id,String name,String kind,String rule,int month,i
 java.append("      this.id=id;this.name=name;this.kind=kind;this.rule=rule;this.month=month;this.day=day;this.weekday=weekday;this.nth=nth;this.offsetDays=offsetDays;this.durationDays=durationDays;this.effect=effect;this.speed=speed;this.modernColors=modernColors;this.basicColors=basicColors;this.majorColors=majorColors;")
 java.append("    }")
 java.append("  }")
+java.append("  static final class Category {")
+java.append("    final String id,name,color;")
+java.append("    Category(String id,String name,String color){this.id=id;this.name=name;this.color=color;}")
+java.append("  }")
+java.append("  static final Category[] CATEGORIES=new Category[]{")
+for cid,cname,ccolor in cat_defs:
+    java.append('    new Category("%s","%s","%s"),' % (jstr(cid),jstr(cname),ccolor))
+java.append("  };")
+java.append("  static final int[] CATEGORY_INDEX=new int[]{"+",".join(map(str,cat_index))+"};")
 java.append("  static final Event[] EVENTS=new Event[]{")
 for e in events:
     eid,name,kind,rule,month,day,weekday,nth,offset,duration,effect,speed,modern,basic,major_cols=e
