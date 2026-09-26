@@ -12,6 +12,8 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /** Anderson Home scheduling engine ported for Jason Home. */
 final class AndersonSchedule {
@@ -43,9 +45,11 @@ final class AndersonSchedule {
     private static final SharedPreferences.OnSharedPreferenceChangeListener NOOP=(p,k)->{};
 
     private final SharedPreferences prefs;
+    private final SharedPreferences appPrefs;
 
     AndersonSchedule(Context context){
         prefs=context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE);
+        appPrefs=context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE);
         // 4.0/4.0.1 accidentally defaulted automation ON. Reset it once on upgrade.
         if (prefs.getInt("behavior_rev",0) < 402) {
             prefs.edit().putBoolean("enabled",false).putInt("behavior_rev",402).apply();
@@ -119,12 +123,16 @@ final class AndersonSchedule {
         int end=offMinutes();
 
         if(inWindow(minute,start,end)){
+            Scene custom=customScene(day,false,100);
+            if(custom!=null)return custom;
             return resolveFor(day,minute,start,end,false,100);
         }
 
         if(schedule2Enabled()){
             int s2end=schedule2EndAtDawn()?civilSolarMinutes(day,true,now.getZone()):schedule2EndMinutes();
             if(inWindow(minute,end,s2end)){
+                Scene custom=customScene(day,true,schedule2Brightness());
+                if(custom!=null)return custom;
                 // Preserve the final Schedule-1 scene into Schedule 2.
                 int last=(end+1439)%1440;
                 return resolveFor(day,last,start,end,true,schedule2Brightness());
@@ -197,11 +205,29 @@ final class AndersonSchedule {
 
     private Scene sceneFor(int index,int brightness,boolean schedule2){
         AndersonEventData.Event e=AndersonEventData.EVENTS[index];
-        return new Scene(index,e.name,e.effect,colorsFor(index),Math.max(1,Math.min(5,e.speed)),brightness,schedule2);
+        String p="event_"+e.id+"_";
+        String effect=appPrefs.getString(p+"effect",e.effect);
+        int speed=appPrefs.getInt(p+"speed",e.speed);
+        return new Scene(index,e.name,effect,colorsFor(index),Math.max(1,Math.min(5,speed)),brightness,schedule2);
     }
 
     private int[] colorsFor(int index){
         AndersonEventData.Event e=AndersonEventData.EVENTS[index];
+        String key="event_"+e.id+"_colors";
+        if(appPrefs.contains(key)){
+            try{
+                JSONArray a=new JSONArray(appPrefs.getString(key,"[]"));
+                if(a.length()>0){
+                    int n=Math.min(8,a.length());
+                    int[] out=new int[n];
+                    for(int i=0;i<n;i++){
+                        String h=a.optString(i,"#FFFFFF").replace("#","");
+                        out[i]=(int)Long.parseLong(h,16)&0xffffff;
+                    }
+                    return out;
+                }
+            }catch(Throwable ignored){}
+        }
         switch(mode()){
             case MAJOR_BASIC:return e.majorColors.clone();
             case EXPANDED_BASIC:return e.basicColors.clone();
@@ -210,6 +236,12 @@ final class AndersonSchedule {
     }
 
     private boolean included(int index){
+        if(index<0||index>=AndersonEventData.EVENTS.length)return false;
+        AndersonEventData.Event e=AndersonEventData.EVENTS[index];
+        if(!appPrefs.getBoolean("event_"+e.id+"_enabled",true))return false;
+        int cat=index<AndersonEventData.CATEGORY_INDEX.length?AndersonEventData.CATEGORY_INDEX[index]:9;
+        long mask=appPrefs.getLong("category_mask",(1L<<15)-1L);
+        if((mask&(1L<<cat))==0)return false;
         if(mode()!=Mode.MAJOR_BASIC)return true;
         for(int v:AndersonEventData.MAJOR)if(v==index)return true;
         return false;
@@ -283,6 +315,31 @@ final class AndersonSchedule {
         for(int[] v:AndersonEventData.SPECIAL){
             if(v.length>=4&&v[0]==index&&v[1]==year)return LocalDate.of(year,v[2],v[3]);
         }
+        return null;
+    }
+
+    private Scene customScene(LocalDate day,boolean schedule2,int scheduleBrightness){
+        try{
+            JSONArray a=new JSONArray(appPrefs.getString("custom_schedules","[]"));
+            for(int i=0;i<a.length();i++){
+                JSONObject x=a.optJSONObject(i);
+                if(x==null||!x.optBoolean("enabled",true))continue;
+                int month=x.optInt("month",-1),date=x.optInt("day",-1);
+                boolean annual=x.optBoolean("annual",true);
+                if(month!=day.getMonthValue()||date!=day.getDayOfMonth())continue;
+                if(!annual&&x.optInt("year",-1)!=day.getYear())continue;
+                JSONArray ca=x.optJSONArray("colors");
+                int[] colors=new int[Math.max(1,Math.min(8,ca==null?0:ca.length()))];
+                if(ca==null||ca.length()==0)colors[0]=0xFFFFFF;
+                else for(int j=0;j<colors.length;j++){
+                    String h=ca.optString(j,"#FFFFFF").replace("#","");
+                    colors[j]=(int)Long.parseLong(h,16)&0xffffff;
+                }
+                int b=schedule2?scheduleBrightness:Math.max(1,Math.min(100,x.optInt("brightness",100)));
+                return new Scene(-1,x.optString("name","Custom Light"),x.optString("effect","Jump"),colors,
+                    Math.max(1,Math.min(5,x.optInt("speed",3))),b,schedule2);
+            }
+        }catch(Throwable ignored){}
         return null;
     }
 
