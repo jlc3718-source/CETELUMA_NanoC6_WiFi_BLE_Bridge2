@@ -1,1 +1,1 @@
-Deploy broker discovery without unsupported TLS callback and probe Pool status.
+Deploy net-socket wrapped TLS broker discovery and run Pool status probe.
