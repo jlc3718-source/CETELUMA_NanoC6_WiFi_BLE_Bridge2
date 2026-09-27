@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { allowedApi } from "../dist/eufy/client.js";
-import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields } from "../dist/eufy/factory-presets.js";
+import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName } from "../dist/eufy/factory-presets.js";
 
 assert.equal(allowedApi("app-light-us-pr.eufy.com"),true);
 assert.equal(allowedApi("app-light-eu-pr.eufy.com"),true);
@@ -49,6 +49,12 @@ assert.equal(p.brightness,90);
 assert.equal(p.layers.length,1);
 assert.equal(p.buildableE22,true);
 assert.equal(p.buildableE120Experimental,true);
+const p2={...p,lightId:10475};
+const p3={...p,lightId:10476,name:"Different Scene"};
+const deduped=dedupeFactoryPresetsByName([p2,p3,p]);
+assert.equal(deduped.length,2);
+assert.equal(deduped.find(x=>x.name==="Presidents Day")?.lightId,10474);
+
 const e22=buildFactoryFields("T8L02",p),e120=buildFactoryFields("T8L00",p);
 assert.ok(e22.length>0);
 assert.ok(e120.length>0);
