@@ -41,9 +41,10 @@ jobs:
         run: |
           grep -q 'certificate_pem' src/eufy/mqtt.ts
           grep -q 'private_key' src/eufy/mqtt.ts
-          grep -q 'android-eufy_life-' src/eufy/mqtt.ts
-          grep -q 'md5(installId).slice(0,16)' src/eufy/mqtt.ts
-          grep -q 'Date.now()%100000' src/eufy/mqtt.ts
+          grep -q 'android-' src/eufy/mqtt.ts
+          grep -q 'sha256(installId).slice(0,16)' src/eufy/mqtt.ts
+          grep -q 'Math.floor(Date.now()/1000)' src/eufy/mqtt.ts
+          grep -q 'dns.resolve4' src/eufy/mqtt.ts
           grep -q 'T8L006102353014B' src/eufy/client.ts
           grep -q 'T8L00610243503A2' src/eufy/client.ts
           grep -q 'T8L028102427474A' src/eufy/client.ts
