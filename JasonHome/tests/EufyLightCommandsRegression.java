@@ -29,6 +29,8 @@ public final class EufyLightCommandsRegression {
         assertProductionE120Effect("Meteor / Comet",30012,4,false);
         assertProductionE120Effect("Solid / Static",30014,2,false);
         assertRgbParity();
+        assertE22Speeds();
+        assertE120MultiPalette();
         System.out.println("EufyLightCommands regression: PASS");
     }
 
@@ -56,9 +58,12 @@ public final class EufyLightCommandsRegression {
 
     private static void assertRgbParity() {
         int[] colors={
-            0xFF0000,0xFF0D00,0xFF0024,0xE08700,0x28FF00,0x00BD4C,
-            0x0D00FF,0x5B00E6,0xFFFFFA,0x00B4B4,0x0096FF,0xFFA000,
-            0xB464FF,0x001478,0x87002D,0xA0A5AF
+            0xFF0000,0xDC143C,0x87002D,0xFF0D00,0xFF7A00,0xFF6F61,
+            0xFF0024,0xFF4FA3,0xFF507A,0xFF00FF,0xE08700,0xFFA000,
+            0xFFD700,0xCD7F32,0x8B4513,0x28FF00,0x7CFF00,0x00C875,
+            0x0B6623,0x00BD4C,0x00B4B4,0x40E0D0,0x00FFFF,0x0096FF,
+            0x0D00FF,0x245BFF,0x001478,0x4B0082,0x5B00E6,0x6A0DAD,
+            0xB464FF,0xFFFFFA,0xFFD6A1,0xFFF4E5,0xA0A5AF,0x000000
         };
         for(int rgb:colors){
             byte[] e22=EufyLightCommands.color("E22",rgb,60);
@@ -71,6 +76,29 @@ public final class EufyLightCommandsRegression {
                 if(a!=b) fail(String.format("RGB parity mismatch #%06X channel %d: %d vs %d",rgb,i,a,b));
             }
         }
+    }
+
+    private static void assertE22Speeds() {
+        int[] expected={8,25,50,78,100};
+        for(int speed=1;speed<=5;speed++){
+            byte[] payload=EufyLightCommands.show("E22","Breath",new int[]{0xFF0000},speed,false);
+            int a4=find(payload,0xA4);
+            if(a4<0 || (payload[a4+2]&255)!=expected[speed-1])
+                fail("E22 A4 speed "+speed+" mismatch");
+            int a9=find(payload,0xA9);
+            if(a9<0 || (payload[a9+3]&255)!=expected[speed-1])
+                fail("E22 layer speed "+speed+" mismatch");
+        }
+    }
+
+    private static void assertE120MultiPalette() {
+        int[] six={0xFF0000,0xFF7A00,0xFFD700,0x28FF00,0x0096FF,0x5B00E6};
+        byte[] payload=EufyLightCommands.effectE120("Rainbow Flow",six,3,false,60);
+        int a6=find(payload,0xA6);
+        if(a6<0 || (payload[a6+2]&255)!=6) fail("E120 six-color palette count mismatch");
+        if((payload[a6+1]&255)!=(1+6*4)) fail("E120 six-color RGBW palette length mismatch");
+        int a7=find(payload,0xA7);
+        if(a7<0 || (payload[a7+1]&255)!=(60+6)) fail("E120 six-group A7 layout mismatch");
     }
 
     private static void assertNativeE120Modes() {
@@ -97,7 +125,7 @@ public final class EufyLightCommandsRegression {
         int a5=find(payload,0xA5);
         if(a5<0 || (payload[a5+2]&255)!=speed) fail(effect+" production raw speed mismatch");
         int a6=find(payload,0xA6);
-        if(a6<0 || (payload[a6+2]&255)!=2) fail(effect+" production palette should use proven two-color path");
+        if(a6<0 || (payload[a6+2]&255)!=3) fail(effect+" production palette should preserve three selected colors");
         int ac=find(payload,0xAC);
         if(ac<0) fail(effect+" production missing AC");
     }
