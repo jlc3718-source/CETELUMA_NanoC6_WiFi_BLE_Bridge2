@@ -70,8 +70,8 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Craumer Home • 5.4.5 Oracle' not in bridge:
-              raise SystemExit('Bridge version is not 5.4.5 Oracle')
+          if 'Craumer Home • 5.4.6 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not 5.4.6 Oracle')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
           if 'cloud.setScene(0, scene.effect' not in schedule_service:
@@ -265,6 +265,31 @@ jobs:
           for marker in ['1 · Lighting','2 · Schedules','3 · Eufy Devices','4 · Backup & Restore']:
               if marker not in Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text():
                   raise SystemExit('Settings tab renumbering missing '+marker)
+          audit_files = {
+              'bridge': bridge,
+              'main': main,
+              'cloud_client': Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudClient.java').read_text(),
+              'schedule_service': schedule_service,
+              'manifest': manifest,
+              'settings_js': Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text(),
+              'factory_js': classic_js,
+          }
+          required_audit_markers = {
+              'bridge': ['/api/automation/ownership','direct_scheduler_owned','Malformed JSON request body'],
+              'main': ['setAllowUniversalAccessFromFileURLs(false)','shouldOverrideUrlLoading'],
+              'cloud_client': ['MQTT PUBACK timeout','waiting for broker acknowledgment'],
+              'schedule_service': ['pendingSceneKey','onCloudCommandResult'],
+              'settings_js': ['jason-home-settings-tab'],
+              'factory_js': ['Scheduled holiday playback uses the normal Schedule 1 brightness'],
+              'manifest': ['@xml/backup_rules','@xml/data_extraction_rules'],
+          }
+          for key,markers in required_audit_markers.items():
+              for audit_marker in markers:
+                  if audit_marker not in audit_files[key]:
+                      raise SystemExit('Audit repair missing '+key+' marker '+audit_marker)
+          if Path('JasonHome/app/src/main/assets/scheduled_factory_promotions.js').exists():
+              raise SystemExit('Obsolete second Factory promotion system returned')
+          print("Audit repair regression: PASS")
           print("Oracle identity + editable Factory Lab + cleaned Settings routing regression: PASS")
 
           PY
@@ -279,14 +304,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.5-Oracle-UNSIGNED.apk
-          sha256sum Jason-Home-5.4.5-Oracle-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.6-Oracle-UNSIGNED.apk
+          sha256sum Jason-Home-5.4.6-Oracle-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.4.5-Oracle-UNSIGNED-do-not-install
-          path: Jason-Home-5.4.5-Oracle-UNSIGNED.apk
+          name: Jason-Home-5.4.6-Oracle-UNSIGNED-do-not-install
+          path: Jason-Home-5.4.6-Oracle-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
