@@ -7,6 +7,7 @@ import android.net.Network;
 import org.json.JSONObject;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.*;
 import java.util.concurrent.*;
 
