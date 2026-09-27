@@ -11,7 +11,6 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -194,11 +193,6 @@ final class AndersonApiBridge {
                 if ("/api/schedules".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("ok",true).put("schedules",new JSONArray()));
             }
 
-            if ("/api/auth/status".equals(path)) return ok(authStatus());
-            if ("/api/auth/unlock".equals(path) && "POST".equals(m)) return authUnlock(input);
-            if ("/api/auth/logout".equals(path)) return response(204, "");
-            if ("/api/auth/config".equals(path) && "POST".equals(m)) return authConfig(input);
-            if ("/api/auth/pin".equals(path) && "POST".equals(m)) return authPin(input);
 
             if ("/api/login-preview".equals(path)) return ok(loginPreview());
             if ("/api/state".equals(path)) return ok(stateJson());
@@ -819,47 +813,6 @@ final class AndersonApiBridge {
         return ok(stateJson());
     }
 
-    private JSONObject authStatus() throws Exception {
-        boolean enabled=prefs.getBoolean("pin_enabled",false);
-        boolean configured=hasPin("shirley")&&hasPin("kelly")&&hasPin("jason");
-        return new JSONObject().put("pinEnabled",enabled).put("configured",configured).put("kellyConfigured",hasPin("kelly"));
-    }
-
-    private String authUnlock(JSONObject in) throws Exception {
-        String profile=in.optString("profile","").toLowerCase(Locale.ROOT);
-        String pin=in.optString("pin","");
-        if(!prefs.getBoolean("pin_enabled",false)){
-            return ok(new JSONObject().put("ok",true).put("pinEnabled",false).put("role","jason".equals(profile)?"admin":"user").put("name",displayProfile(profile)));
-        }
-        if(!hashPin(profile,pin).equals(prefs.getString("pin_"+profile,"")))return error(401,"Incorrect four-digit PIN");
-        return ok(new JSONObject().put("ok",true).put("pinEnabled",true).put("token",UUID.randomUUID().toString())
-            .put("role","jason".equals(profile)?"admin":"user").put("name",displayProfile(profile)).put("expiresIn",3600));
-    }
-
-    private String authConfig(JSONObject in) throws Exception {
-        if(!in.optBoolean("enabled",true)){
-            prefs.edit().putBoolean("pin_enabled",false).apply();
-            return ok(new JSONObject().put("ok",true).put("pinEnabled",false));
-        }
-        String s=in.optString("shirleyPin",""),k=in.optString("kellyPin",""),j=in.optString("jasonPin","");
-        if(!fourDigits(s)||!fourDigits(k)||!fourDigits(j)||s.equals(k)||s.equals(j)||k.equals(j))
-            return error(400,"All three PINs must be different four-digit values");
-        prefs.edit().putString("pin_shirley",hashPin("shirley",s)).putString("pin_kelly",hashPin("kelly",k))
-            .putString("pin_jason",hashPin("jason",j)).putBoolean("pin_enabled",true).apply();
-        return ok(new JSONObject().put("ok",true).put("pinEnabled",true).put("configured",true).put("kellyConfigured",true).put("token",UUID.randomUUID().toString()));
-    }
-
-    private String authPin(JSONObject in) throws Exception {
-        String profile=in.optString("profile","").toLowerCase(Locale.ROOT);
-        String pin=in.optString("pin","");
-        if(!Arrays.asList("shirley","kelly","jason").contains(profile)||!fourDigits(pin))return error(400,"PIN must contain exactly four digits");
-        prefs.edit().putString("pin_"+profile,hashPin(profile,pin)).apply();
-        JSONObject o=new JSONObject().put("ok",true).put("pinEnabled",prefs.getBoolean("pin_enabled",false))
-            .put("configured",hasPin("shirley")&&hasPin("kelly")&&hasPin("jason")).put("kellyConfigured",hasPin("kelly"));
-        if("jason".equals(profile))o.put("token",UUID.randomUUID().toString());
-        return ok(o);
-    }
-
     private JSONObject backupStatus() throws Exception {
         SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
         String snapshot=bp.getString("snapshot","");
@@ -1180,9 +1133,6 @@ final class AndersonApiBridge {
     private static int parseOverlap(String v){return "combine".equals(v)?2:"rotate".equals(v)?1:0;}
     private static String themeName(String t){return "1".equals(t)?"Major U.S. Holidays — Basic Colors":"3.0.28".equals(t)?"Expanded Holidays — Basic Colors":"Expanded Holidays — Expanded Colors";}
     private static int indexOfAddress(String address){for(int i=0;i<ADDRESSES.length;i++)if(ADDRESSES[i].equalsIgnoreCase(address))return i;return -1;}
-    private static boolean fourDigits(String s){return s!=null&&s.matches("\\d{4}");}
-    private boolean hasPin(String p){return !prefs.getString("pin_"+p,"").isEmpty();}
-    private static String displayProfile(String p){return "shirley".equals(p)?"Shirley":"kelly".equals(p)?"Kelly":"Jason";}
 
     private static String hashPin(String profile,String pin) {
         try{
