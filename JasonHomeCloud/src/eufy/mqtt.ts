@@ -23,20 +23,26 @@ function pubAck(packetId:number):Buffer{return Buffer.from([0x40,0x02,(packetId>
 
 interface ParsedPacket{header:number;data:Buffer;type:number;qos:number;}
 class Reader{
-  private buf=Buffer.alloc(0);private queue:ParsedPacket[]=[];private waits:Array<(p:ParsedPacket)=>void>=[];
-  push(data:Buffer){this.buf=Buffer.concat([this.buf,data]);this.parse();}
+  private buf=Buffer.alloc(0);private queue:ParsedPacket[]=[];private waits:Array<{resolve:(p:ParsedPacket)=>void;reject:(e:any)=>void;timer:any}>=[];private failed:any=null;
+  push(data:Buffer){if(this.failed)return;this.buf=Buffer.concat([this.buf,data]);this.parse();}
+  fail(err:any){if(this.failed)return;this.failed=err instanceof Error?err:new Error(String(err||"MQTT socket closed"));for(const w of this.waits){clearTimeout(w.timer);w.reject(this.failed);}this.waits=[];}
   private parse(){
     while(this.buf.length>=2){
       const header=this.buf[0];let mul=1,len=0,pos=1,done=false;
       for(let i=0;i<4;i++){if(pos>=this.buf.length)return;const x=this.buf[pos++];len+=(x&127)*mul;if((x&128)===0){done=true;break;}mul*=128;}
       if(!done||this.buf.length<pos+len)return;
       const data=this.buf.subarray(pos,pos+len);this.buf=this.buf.subarray(pos+len);
-      const p={header,data,type:header>>>4,qos:(header>>>1)&3};const w=this.waits.shift();if(w)w(p);else this.queue.push(p);
+      const p={header,data,type:header>>>4,qos:(header>>>1)&3};const w=this.waits.shift();if(w){clearTimeout(w.timer);w.resolve(p);}else this.queue.push(p);
     }
   }
-  next(timeoutMs=12000):Promise<ParsedPacket>{
+  next(timeoutMs=12000,label="MQTT read"):Promise<ParsedPacket>{
     const q=this.queue.shift();if(q)return Promise.resolve(q);
-    return new Promise((resolve,reject)=>{let settled=false;const fn=(p:ParsedPacket)=>{if(settled)return;settled=true;clearTimeout(timer);resolve(p);};this.waits.push(fn);const timer=setTimeout(()=>{if(settled)return;settled=true;const i=this.waits.indexOf(fn);if(i>=0)this.waits.splice(i,1);reject(new Error("MQTT read timeout"));},timeoutMs);});
+    if(this.failed)return Promise.reject(this.failed);
+    return new Promise((resolve,reject)=>{
+      const entry:any={resolve,reject,timer:null};
+      entry.timer=setTimeout(()=>{const i=this.waits.indexOf(entry);if(i>=0)this.waits.splice(i,1);reject(new Error(label+" timeout"));},timeoutMs);
+      this.waits.push(entry);
+    });
   }
 }
 function topics(t:MqttTarget){const b=`eufy_life/${t.model}/${t.serial}`;return [`cmd/${b}/app/res`,`cmd/${b}/res`,`synq/${b}/state_info`,`cmd/${b}/app/ota/res`];}
@@ -62,16 +68,31 @@ function handlePublish(socket:any,p:ParsedPacket,target:MqttTarget):Record<strin
 export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs=2500):Promise<{published:number;report?:Record<string,unknown>}>{
   const host=creds.endpoint_addr,port=creds.endpoint_port||8883;
   if(!host||!creds.certificate_pem||!creds.private_key||!creds.aws_root_ca1_pem)throw new Error("Incomplete Eufy MQTT credentials");
-  const clientId=`cf-eufy_life-${creds.user_id||"u"}-${md5(installId).slice(0,12)}-${target.serial.slice(-4)}-${randomId(3)}`;
+  const clientId=`android-eufy_life-${creds.user_id||"u"}-${md5(installId).slice(0,16)}-${target.serial.slice(-4)}-${Date.now()%100000}`;
   const socket:any=tlsConnect({host,port,servername:host,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
-  const reader=new Reader();socket.on("data",(d:any)=>reader.push(Buffer.from(d)));
+  const reader=new Reader();
+  try{socket.setNoDelay?.(true);}catch{}
+  socket.on("data",(d:any)=>reader.push(Buffer.from(d)));
+  socket.on("error",(e:any)=>reader.fail(new Error("MQTT socket error: "+(e?.message||String(e)))));
+  socket.on("end",()=>reader.fail(new Error("MQTT broker ended connection")));
+  socket.on("close",()=>reader.fail(new Error("MQTT broker closed connection")));
   await new Promise<void>((resolve,reject)=>{socket.once("secureConnect",()=>resolve());socket.once("error",reject);});
   try{
     socket.write(connectPacket(clientId));
-    let p=await reader.next();if(p.type!==2||p.data.length!==2)throw new Error("Invalid MQTT CONNACK");
+    let p=await reader.next(12000,"MQTT CONNACK");if(p.type!==2||p.data.length!==2)throw new Error("Invalid MQTT CONNACK");
     const rc=p.data[1];if(rc!==0)throw new Error(`MQTT CONNACK refused with code ${rc}${rc===2?" (client identifier rejected)":""}`);
-    socket.write(subscribePacket(topics(target)));let sub=false;
-    for(let n=0;n<10&&!sub;n++){p=await reader.next();if(p.type===9){sub=true;break;}if(p.type===3)handlePublish(socket,p,target);}
+    socket.write(subscribePacket(topics(target)));let sub=false;const subDeadline=Date.now()+15000;
+    while(Date.now()<subDeadline&&!sub){
+      p=await reader.next(Math.min(12000,Math.max(50,subDeadline-Date.now())),"MQTT SUBACK");
+      if(p.type===9){
+        if(p.data.length!==6||p.data[0]!==0||p.data[1]!==1)throw new Error("Malformed MQTT SUBACK");
+        let granted=0;for(let i=0;i<4;i++){const q=p.data[i+2];if(q!==128&&q<=2)granted++;}
+        if(granted===0)throw new Error("All MQTT subscriptions denied");
+        if(p.data[2]===128)throw new Error(target.name+" state topic denied; writes blocked");
+        sub=true;break;
+      }
+      if(p.type===3)handlePublish(socket,p,target);
+    }
     if(!sub)throw new Error("No MQTT SUBACK received");
     let packetId=2;
     for(let i=0;i<frames.length;i++){
@@ -80,10 +101,10 @@ export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:Co
       const head={version:"1.0.0.1",client_id:clientId,sess_id:"0000",msg_seq:i+1,seed:"",timestamp:ts,cmd_status:1,cmd:17,sign_code:0};
       const payload=Buffer.from(JSON.stringify({head,payload:JSON.stringify(inner)}),"utf8");
       socket.write(publishPacket(`cmd/eufy_life/${target.model}/${target.serial}/req`,packetId++,payload));
-      if(i+1<frames.length)await new Promise(r=>setTimeout(r,160));
+      if(i+1<frames.length)await new Promise(r=>setTimeout(r,180));
     }
     const deadline=Date.now()+waitMs;let report:Record<string,unknown>|undefined;
-    while(Date.now()<deadline){try{p=await reader.next(Math.min(800,Math.max(50,deadline-Date.now())));}catch{continue;}if(p.type===3){const r=handlePublish(socket,p,target);if(r)report=r;}}
+    while(Date.now()<deadline){try{p=await reader.next(Math.min(800,Math.max(50,deadline-Date.now())),"MQTT response");}catch(e:any){if(String(e?.message||e).includes("timeout"))continue;throw e;}if(p.type===3){const r=handlePublish(socket,p,target);if(r)report=r;}}
     return {published:frames.length,report};
   }finally{try{socket.end();}catch{}try{socket.destroy();}catch{}}
 }
