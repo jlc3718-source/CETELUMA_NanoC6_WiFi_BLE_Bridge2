@@ -120,15 +120,88 @@ final class CloudClient {
  }
  String[] topics(){String b="eufy_life/"+selectedSpec.model+"/"+selected.optString("device_sn");return new String[]{"cmd/"+b+"/app/res","cmd/"+b+"/res","synq/"+b+"/state_info","cmd/"+b+"/app/ota/res"};}
  void mqtt(String lightName,int command)throws Exception{
-  requireTarget(lightName);if(creds==null)throw new IOException("Get lighting certificate first.");h.check();String host=creds.getString("endpoint_addr");int port=creds.optInt("endpoint_port",8883);if(!allowedBroker(host)||port<1||port>65535)throw new IOException("Invalid broker endpoint");
+  if(command==-2){mqttFrames(lightName,null,null,"LISTEN",25000);return;}
+  if(command==0){mqttFrames(lightName,new int[]{0x0200},new byte[][]{new byte[]{(byte)0xA3,2,(byte)0xFF,0x1F}},"STATUS",10000);return;}
+  if(command==1||command==2){mqttFrames(lightName,new int[]{EufyLightCommands.OP_SETUP},new byte[][]{new byte[]{(byte)0xA3,1,(byte)(command==1?1:0)}},command==1?"ON":"OFF",10000);return;}
+  throw new IOException("Unknown cloud command");
+ }
+ void mqttBrightness(String lightName,int percent)throws Exception{
+  int v=Math.max(0,Math.min(100,percent));
+  mqttFrames(lightName,new int[]{EufyLightCommands.OP_SETUP},new byte[][]{EufyLightCommands.brightness(v)},"BRIGHTNESS "+v+"%",10000);
+ }
+ void mqttColor(String lightName,int rgb)throws Exception{
+  String model=spec(lightName).model;
+  byte[] fields=EufyLightCommands.color(model,rgb&0xffffff,EufyLightCommands.defaultLampCount(model));
+  mqttFrames(lightName,new int[]{EufyLightCommands.OP_COLOR},new byte[][]{fields},"COLOR",10000);
+ }
+ void mqttEffect(String lightName,String effect,int[] colors,int speed,boolean reverse)throws Exception{
+  String model=spec(lightName).model;
+  int[] safe=colors==null||colors.length==0?new int[]{0xFFFFFF}:colors.clone();
+  int opcode;
+  byte[] fields;
+  if(model.startsWith("T8L02")){
+   if(EufyLightCommands.isSolidEffect(effect)){
+    opcode=EufyLightCommands.OP_COLOR;
+    fields=EufyLightCommands.color(model,safe[0],EufyLightCommands.defaultLampCount(model));
+   }else{
+    opcode=EufyLightCommands.OP_SHOW;
+    fields=EufyLightCommands.show(model,effect,safe,speed,reverse);
+   }
+  }else{
+   opcode=EufyLightCommands.OP_COLOR;
+   fields=EufyLightCommands.isSolidEffect(effect)
+    ?EufyLightCommands.color(model,safe[0],EufyLightCommands.defaultLampCount(model))
+    :EufyLightCommands.effectE120(effect,safe,speed,reverse,EufyLightCommands.defaultLampCount(model));
+  }
+  mqttFrames(lightName,new int[]{opcode},new byte[][]{fields},"EFFECT "+effect,10000);
+ }
+ void mqttScene(String lightName,String effect,int[] colors,int speed,boolean reverse,int brightness)throws Exception{
+  String model=spec(lightName).model;
+  int[] safe=colors==null||colors.length==0?new int[]{0xFFFFFF}:colors.clone();
+  int effectOpcode;
+  byte[] effectFields;
+  if(model.startsWith("T8L02")){
+   if(EufyLightCommands.isSolidEffect(effect)){
+    effectOpcode=EufyLightCommands.OP_COLOR;
+    effectFields=EufyLightCommands.color(model,safe[0],EufyLightCommands.defaultLampCount(model));
+   }else{
+    effectOpcode=EufyLightCommands.OP_SHOW;
+    effectFields=EufyLightCommands.show(model,effect,safe,speed,reverse);
+   }
+  }else{
+   effectOpcode=EufyLightCommands.OP_COLOR;
+   effectFields=EufyLightCommands.isSolidEffect(effect)
+    ?EufyLightCommands.color(model,safe[0],EufyLightCommands.defaultLampCount(model))
+    :EufyLightCommands.effectE120(effect,safe,speed,reverse,EufyLightCommands.defaultLampCount(model));
+  }
+  mqttFrames(lightName,
+   new int[]{EufyLightCommands.OP_SETUP,EufyLightCommands.OP_SETUP,effectOpcode},
+   new byte[][]{new byte[]{(byte)0xA3,1,1},EufyLightCommands.brightness(Math.max(1,Math.min(100,brightness))),effectFields},
+   "SCENE "+effect,12000);
+ }
+ private void mqttFrames(String lightName,int[] opcodes,byte[][] fields,String label,long responseWait)throws Exception{
+  requireTarget(lightName);if(creds==null)throw new IOException("Get lighting certificate first.");h.check();
+  if((opcodes==null)!=(fields==null)||opcodes!=null&&opcodes.length!=fields.length)throw new IOException("Invalid cloud command frame set");
+  String host=creds.getString("endpoint_addr");int port=creds.optInt("endpoint_port",8883);if(!allowedBroker(host)||port<1||port>65535)throw new IOException("Invalid broker endpoint");
   Network network=h.network();if(network==null)throw new IOException("No active network");
   Socket raw=new Socket();h.track(raw);try{network.bindSocket(raw);raw.connect(new InetSocketAddress(network.getAllByName(host)[0],port),12000);SSLSocket ssl=(SSLSocket)context().getSocketFactory().createSocket(raw,host,port,true);h.track(ssl);
-   try{ssl.setSoTimeout(12000);SSLParameters p=ssl.getSSLParameters();p.setEndpointIdentificationAlgorithm("HTTPS");ssl.setSSLParameters(p);ssl.startHandshake();h.log("Broker mutual TLS established.");InputStream in=ssl.getInputStream();OutputStream out=ssl.getOutputStream();
-    String clientId="android-eufy_life-"+creds.optString("user_id",uid)+"-"+md5(installId).substring(0,16)+"-"+(System.currentTimeMillis()/1000);ByteArrayOutputStream b=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(b);utf(d,"MQTT");d.writeByte(4);d.writeByte(2);d.writeShort(45);utf(d,clientId);packet(out,0x10,b.toByteArray());Packet response=read(in);if(response.type()!=2||response.data.length!=2)throw new IOException("Invalid MQTT CONNACK");int rc=response.data[1]&255;if(rc!=0)throw new IOException("MQTT CONNACK refused with code "+rc);h.log("MQTT authenticated connection accepted.");
-    b.reset();d=new DataOutputStream(b);d.writeShort(1);String[] requested=topics();for(String topic:requested){utf(d,topic);d.writeByte(1);}packet(out,0x82,b.toByteArray());long deadline=System.currentTimeMillis()+15000;boolean subscribed=false;while(System.currentTimeMillis()<deadline){h.check();response=read(in);if(response.type()==9){if(response.data.length!=6||response.data[0]!=0||response.data[1]!=1)throw new IOException("Malformed subscription acknowledgment");int granted=0;for(int i=0;i<4;i++){int q=response.data[i+2]&255;if(q!=128&&q<=2)granted++;}if(granted==0)throw new IOException("All subscriptions denied");if(command>=0&&(response.data[2]&255)==128)throw new IOException(selectedSpec.name+" state topic denied; writes blocked.");subscribed=true;break;}handle(response,out);}
+   try{ssl.setSoTimeout(12000);SSLParameters p=ssl.getSSLParameters();p.setEndpointIdentificationAlgorithm("HTTPS");ssl.setSSLParameters(p);ssl.startHandshake();h.log(selectedSpec.name+": broker TLS ready.");InputStream in=ssl.getInputStream();OutputStream out=ssl.getOutputStream();
+    String clientId="android-eufy_life-"+creds.optString("user_id",uid)+"-"+md5(installId).substring(0,16)+"-"+(System.currentTimeMillis()/1000);ByteArrayOutputStream b=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(b);utf(d,"MQTT");d.writeByte(4);d.writeByte(2);d.writeShort(45);utf(d,clientId);packet(out,0x10,b.toByteArray());Packet response=read(in);if(response.type()!=2||response.data.length!=2)throw new IOException("Invalid MQTT CONNACK");int rc=response.data[1]&255;if(rc!=0)throw new IOException("MQTT CONNACK refused with code "+rc);
+    b.reset();d=new DataOutputStream(b);d.writeShort(1);String[] requested=topics();for(String topic:requested){utf(d,topic);d.writeByte(1);}packet(out,0x82,b.toByteArray());long deadline=System.currentTimeMillis()+15000;boolean subscribed=false;while(System.currentTimeMillis()<deadline){h.check();response=read(in);if(response.type()==9){if(response.data.length!=6||response.data[0]!=0||response.data[1]!=1)throw new IOException("Malformed subscription acknowledgment");int granted=0;for(int i=0;i<4;i++){int q=response.data[i+2]&255;if(q!=128&&q<=2)granted++;}if(granted==0)throw new IOException("All subscriptions denied");if(opcodes!=null&&(response.data[2]&255)==128)throw new IOException(selectedSpec.name+" state topic denied; writes blocked.");subscribed=true;break;}handle(response,out);}
     if(!subscribed)throw new IOException("No MQTT SUBACK received");
-    if(command>=0){int subtype=command==0?0:1;byte[] value=command==0?new byte[]{(byte)0xff,0x1f}:new byte[]{(byte)(command==1?1:0)};byte[] frame=dp(subtype,account(),0xa3,value,System.currentTimeMillis()/1000);JSONObject inner=new JSONObject().put("account_id",account()).put("device_sn",selected.optString("device_sn")).put("data",Base64.getEncoder().encodeToString(frame)).put("trans","");JSONObject head=new JSONObject().put("version","1.0.0.1").put("client_id",clientId).put("sess_id","0000").put("msg_seq",1).put("seed","").put("timestamp",System.currentTimeMillis()/1000).put("cmd_status",1).put("cmd",17).put("sign_code",0);byte[] payload=bytes(new JSONObject().put("head",head).put("payload",inner.toString()).toString());h.check();b.reset();d=new DataOutputStream(b);utf(d,"cmd/eufy_life/"+selectedSpec.model+"/"+selected.optString("device_sn")+"/req");d.writeShort(2);d.write(payload);packet(out,0x32,b.toByteArray());h.log(command==0?selectedSpec.name+" STATUS published.":selectedSpec.name+" "+(command==1?"ON":"OFF")+" published.");}
-    long until=System.currentTimeMillis()+(command==-2?25000:10000);while(System.currentTimeMillis()<until){h.check();ssl.setSoTimeout(800);int first;try{first=in.read();}catch(SocketTimeoutException e){continue;}ssl.setSoTimeout(12000);response=readAfterHeader(first,in);handle(response,out);}
+    if(opcodes!=null){
+     for(int i=0;i<opcodes.length;i++){
+      long ts=System.currentTimeMillis()/1000;
+      byte[] frame=dpCommand(opcodes[i],account(),fields[i],ts);
+      JSONObject inner=new JSONObject().put("account_id",account()).put("device_sn",selected.optString("device_sn")).put("data",Base64.getEncoder().encodeToString(frame)).put("trans","");
+      JSONObject head=new JSONObject().put("version","1.0.0.1").put("client_id",clientId).put("sess_id","0000").put("msg_seq",i+1).put("seed","").put("timestamp",ts).put("cmd_status",1).put("cmd",17).put("sign_code",0);
+      byte[] payload=bytes(new JSONObject().put("head",head).put("payload",inner.toString()).toString());
+      h.check();b.reset();d=new DataOutputStream(b);utf(d,"cmd/eufy_life/"+selectedSpec.model+"/"+selected.optString("device_sn")+"/req");d.writeShort(2+i);d.write(payload);packet(out,0x32,b.toByteArray());
+      if(i+1<opcodes.length)Thread.sleep(180);
+     }
+     h.log(selectedSpec.name+" "+label+" published over Wi-Fi.");
+    }
+    long until=System.currentTimeMillis()+responseWait;while(System.currentTimeMillis()<until){h.check();ssl.setSoTimeout(800);int first;try{first=in.read();}catch(SocketTimeoutException e){continue;}ssl.setSoTimeout(12000);response=readAfterHeader(first,in);handle(response,out);}
     packet(out,0xe0,new byte[0]);
    }finally{h.untrack(ssl);ssl.close();}
   }finally{h.untrack(raw);raw.close();}
