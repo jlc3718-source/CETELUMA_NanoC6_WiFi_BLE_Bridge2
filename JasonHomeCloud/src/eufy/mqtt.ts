@@ -68,7 +68,8 @@ function handlePublish(socket:any,p:ParsedPacket,target:MqttTarget):Record<strin
 export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs=2500):Promise<{published:number;report?:Record<string,unknown>}>{
   const host=creds.endpoint_addr,port=creds.endpoint_port||8883;
   if(!host||!creds.certificate_pem||!creds.private_key||!creds.aws_root_ca1_pem)throw new Error("Incomplete Eufy MQTT credentials");
-  const clientId=`android-eufy_life-${creds.user_id||"u"}-${md5(installId).slice(0,16)}-${target.serial.slice(-4)}-${Date.now()%100000}`;
+  const brokerUser=creds.user_id===undefined||creds.user_id===null?"u":creds.user_id;
+  const clientId=`android-eufy_life-${brokerUser}-${md5(installId).slice(0,16)}-${target.serial.slice(-4)}-${Date.now()%100000}`;
   const socket:any=tlsConnect({host,port,servername:host,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
   const reader=new Reader();
   try{socket.setNoDelay?.(true);}catch{}
