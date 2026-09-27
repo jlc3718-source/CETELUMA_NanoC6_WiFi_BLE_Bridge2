@@ -140,6 +140,7 @@ final class BleLightController {
     private Runnable e22PowerContinuation;
     private boolean waitForStateReply;
     private volatile String lastStateSummary = "";
+    private volatile String lastStateDetails = "";
 
     BleLightController(Context context, DeviceStore store, Listener listener) {
         this.context = context;
@@ -225,11 +226,16 @@ final class BleLightController {
 
     void readE120State(List<FoundLight> targets) {
         lastStateSummary = "Reading E120 state…";
+        lastStateDetails = "";
         enqueue(targets, Job::status);
     }
 
     String lastStateSummary() {
         return lastStateSummary;
+    }
+
+    String lastStateDetails() {
+        return lastStateDetails;
     }
 
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
@@ -569,9 +575,11 @@ final class BleLightController {
                 listener.onStatus(displayName(active.light)+": RX#"+(++receivedNotifications)+" "+E10Probe.packetSummary(value)+" → POST_SESSION_RESPONSE");
                 if(waitForStateReply && active!=null && active.kind==Kind.STATUS){
                     String summary=p.stateSummary(value);
+                    String details=p.stateDetails(value);
                     if(summary!=null){
                         waitForStateReply=false;
                         lastStateSummary=displayName(active.light)+" • "+summary;
+                        lastStateDetails=details==null?"":details;
                         if(timeout!=null)handler.removeCallbacks(timeout);
                         timeout=null;
                         listener.onStatus(lastStateSummary);
@@ -759,6 +767,7 @@ final class BleLightController {
                 if(active==job && waitForStateReply){
                     waitForStateReply=false;
                     lastStateSummary=displayName(job.light)+" • no E120 state reply received";
+                    lastStateDetails="";
                     finishActive(false,lastStateSummary);
                 }
             };
