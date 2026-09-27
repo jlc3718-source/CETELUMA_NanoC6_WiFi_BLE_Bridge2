@@ -54,6 +54,13 @@ const p3={...p,lightId:10476,name:"Different Scene"};
 const deduped=dedupeFactoryPresetsByName([p2,p3,p]);
 assert.equal(deduped.length,2);
 assert.equal(deduped.find(x=>x.name==="Presidents Day")?.lightId,10474);
+const spaced=dedupeFactoryPresetsByName([
+  {...p,lightId:11001,name:"Party Night"},
+  {...p,lightId:11002,name:"Party  Night"},
+  {...p,lightId:11003,name:"Party\tNight"}
+]);
+assert.equal(spaced.length,1);
+assert.equal(spaced[0].lightId,11001);
 
 const e22=buildFactoryFields("T8L02",p),e120=buildFactoryFields("T8L00",p);
 assert.ok(e22.length>0);
