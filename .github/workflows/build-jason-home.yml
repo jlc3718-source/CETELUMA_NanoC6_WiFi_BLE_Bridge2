@@ -51,17 +51,23 @@ jobs:
               if color not in catalog or color not in html:
                   raise SystemExit('Missing expanded color '+color)
 
-          if 'speedValueE22' not in commands or 'case 1: return 8;' not in commands or 'default: return 100;' not in commands:
+          if 'speedValueE22' not in commands or 'case 1: return 2;' not in commands or 'case 3: return 8;' not in commands or 'default: return 50;' not in commands:
               raise SystemExit('E22 five-speed calibration missing')
           if 'groupedCatalogPresetE120Multi' not in commands:
               raise SystemExit('E120 multi-color grouped serializer missing')
           if controller.count('startParallel(targets') < 6:
               raise SystemExit('Normal multi-light commands are not using parallel workers')
+          if 'i*125L' not in controller:
+              raise SystemExit('Parallel connection staggering is missing')
+          if 'sendLocalCommandPass(true)' not in controller or 'sendLocalScenePass(true)' not in controller:
+              raise SystemExit('Fresh-sequence command replay is missing')
+          if 'retryCount<1' not in controller:
+              raise SystemExit('Per-light reconnect retry is missing')
 
           if 'connectionMode","On-demand BLE"' not in bridge or '.put("seenCount",snap.size())' not in bridge:
               raise SystemExit('On-demand BLE status model missing')
-          if 'Craumer Home • 5.1.1' not in bridge:
-              raise SystemExit('Bridge version is not 5.1.1')
+          if 'Craumer Home • 5.1.2' not in bridge:
+              raise SystemExit('Bridge version is not 5.1.2')
 
           if 'data-tab="favorites"' in html:
               raise SystemExit('Favorites navigation still visible')
@@ -184,14 +190,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.1.1-UNSIGNED.apk
-          sha256sum Craumer-Home-5.1.1-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.1.2-UNSIGNED.apk
+          sha256sum Craumer-Home-5.1.2-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Home-5.1.1-UNSIGNED-do-not-install
-          path: Craumer-Home-5.1.1-UNSIGNED.apk
+          name: Craumer-Home-5.1.2-UNSIGNED-do-not-install
+          path: Craumer-Home-5.1.2-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
