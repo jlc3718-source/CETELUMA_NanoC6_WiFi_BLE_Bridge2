@@ -59,8 +59,8 @@ for i in $(seq 1 90); do
   COUNT="$(printf '%s' "$CATALOG" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("totalCount",0))' 2>/dev/null || echo 0)"
   STATE="$(printf '%s' "$CATALOG" | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("refresh") or {}).get("state",""))' 2>/dev/null || true)"
   if [ "$COUNT" -gt 0 ] && [ "$STATE" != "running" ]; then
-    printf '%s' "$CATALOG" | python3 -m json.tool | head -40
-    echo "Factory catalog ready: $COUNT presets."
+    FOUND_10474="$(printf '%s' "$CATALOG" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if any(int(x.get("lightId",0))==10474 for x in d.get("presets",[])) else "no")' 2>/dev/null || echo no)"
+    echo "Factory catalog ready: $COUNT presets. Presidents Day 10474: $FOUND_10474."
     break
   fi
   sleep 2
