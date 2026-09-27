@@ -151,6 +151,19 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
     }
 
     @Override
+    public void onBridgeResponse(String requestId, String responseJson) {
+        if (webView == null) return;
+        runOnUiThread(() -> {
+            String id=JSONObjectQuote.quote(requestId==null?"":requestId);
+            String payload=JSONObjectQuote.quote(responseJson==null?"":responseJson);
+            webView.evaluateJavascript(
+                "(function(){if(window.__andersonBridgeResolve)window.__andersonBridgeResolve("+id+","+payload+");})();",
+                null
+            );
+        });
+    }
+
+    @Override
     public void onBridgeStatus(String message) {
         if (webView == null) return;
         runOnUiThread(() -> {
