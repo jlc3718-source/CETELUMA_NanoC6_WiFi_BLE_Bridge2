@@ -51,6 +51,17 @@ export class JasonHomeController {
       if(method==="POST"&&(path==="/api/resume-schedule"||path==="/api/resume")){this.delMeta("override");await this.reconcile(true,true);return json({ok:true,resumed:true});}
       if(method==="POST"&&path==="/api/reconcile"){await this.reconcile(false,true);return json({ok:true});}
       if(method==="POST"&&path==="/api/reconnect"){this.eufy=null;this.eufyReady=false;await this.ensureEufy(true);return json({ok:true,eufy:this.eufyStatus});}
+      if(method==="POST"&&path==="/api/provision-device"){
+        const input:any=await request.json().catch(()=>({})),installId=String(input?.installId||"").trim().toLowerCase();
+        if(!/^[0-9a-f]{32}$/.test(installId))throw new Error("Android install identity must be 32 hexadecimal characters");
+        const changed=this.meta("install_id")!==installId;
+        if(changed){
+          this.setMeta("install_id",installId);this.delMeta("eufy_session");
+          this.eufy=null;this.eufyReady=false;this.eufyStatus="Android identity synchronized";
+        }
+        await this.ensureEufy(changed);
+        return json({ok:true,changed,eufy:this.eufyStatus,readyNames:this.eufy?.readyNames()||[]});
+      }
       if(method==="POST"&&path==="/api/mqtt-probe"){
         const input:any=await request.json().catch(()=>({})),target=String(input?.target||"Pool");
         if(!DEVICE_NAMES.includes(target))throw new Error("Probe target must be Pool, House, Garage, or Shed");
