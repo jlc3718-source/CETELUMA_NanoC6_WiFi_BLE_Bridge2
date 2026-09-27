@@ -233,6 +233,8 @@ jobs:
           for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller','Test Oracle','factoryTab','Factory preset editor','Save & Apply','Advanced Layer Data','/api/eufy/factory-test','/api/eufy/factory-presets','/api/eufy/factory-presets/save','/api/eufy/factory-promotions' ,'installFactorySchedulePromotions','#factoryPresetList{display:grid']:
               if marker not in classic_js:
                   raise SystemExit('Classic Cloudflare integration missing '+marker)
+          if 'page.hidden=false;' not in classic_js:
+              raise SystemExit('Factory tab must unhide its dynamically-created page before activating it')
           print("Classic Jason Home Oracle layout regression: PASS")
           event_categories = Path('JasonHome/app/src/main/assets/event_categories.js').read_text()
           for marker in ['id:"eufyfactory"','name:"Eufy Factory"','color:"#31D89B"','/api/eufy/factory-promotions/group','setFactoryCategory']:

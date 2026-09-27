@@ -356,6 +356,7 @@ function installAndroidEufyUi(){
 
     tab.addEventListener("click",()=>{
       if(tab.hidden)return;
+      page.hidden=false;
       qa(".v3BottomNav .tab").forEach(x=>x.classList.toggle("active",x===tab));qa(".page").forEach(x=>x.classList.toggle("active",x===page));document.body.dataset.page="factory";window.scrollTo({top:0,behavior:"smooth"});loadFactoryPromotions(false);loadFactoryCatalog(false);
     });
     $("factorySearch")?.addEventListener("input",renderFactory);
