@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate Craumer Home 5.1 overhaul
+      - name: Validate Craumer Home 5.2 Wi-Fi transport
         shell: bash
         run: |
           python3 - <<'PY'
@@ -31,6 +31,12 @@ jobs:
           commands=Path('JasonHome/app/src/main/java/com/jasonhome/app/EufyLightCommands.java').read_text()
           controller=Path('JasonHome/app/src/main/java/com/jasonhome/app/BleLightController.java').read_text()
           bridge=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
+          main=Path('JasonHome/app/src/main/java/com/jasonhome/app/MainActivity.java').read_text()
+          schedule_service=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonScheduleService.java').read_text()
+          cloud=Path('JasonHome/app/src/main/java/com/jasonhome/app/EufyCloudController.java').read_text()
+          cloud_client=Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudClient.java').read_text()
+          secure_store=Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudSessionStore.java').read_text()
+          manifest=Path('JasonHome/app/src/main/AndroidManifest.xml').read_text()
           html=Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
           js=Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text()
           generator=Path('JasonHome/tools/generate_anderson_events.py').read_text()
@@ -64,10 +70,20 @@ jobs:
           if 'retryCount<1' not in controller:
               raise SystemExit('Per-light reconnect retry is missing')
 
-          if 'connectionMode","On-demand BLE"' not in bridge or '.put("seenCount",snap.size())' not in bridge:
-              raise SystemExit('On-demand BLE status model missing')
-          if 'Craumer Home • 5.1.2' not in bridge:
-              raise SystemExit('Bridge version is not 5.1.2')
+          if 'Wi-Fi / Internet' not in bridge or 'Eufy Cloud MQTT' not in bridge:
+              raise SystemExit('Wi-Fi cloud status model missing')
+          if 'Craumer Home • 5.2.0 Wi-Fi' not in bridge:
+              raise SystemExit('Bridge version is not 5.2.0 Wi-Fi')
+          if 'new BleLightController' in main or 'BleLightController' in schedule_service:
+              raise SystemExit('Bluetooth transport is still active in app startup or scheduler')
+          if 'android.permission.BLUETOOTH' in manifest or 'android.hardware.bluetooth_le' in manifest:
+              raise SystemExit('Bluetooth manifest permissions/features still enabled')
+          for marker in ['class EufyCloudController','CloudSessionStore','setPower(int target,boolean on)']:
+              if marker not in cloud + secure_store:
+                  raise SystemExit('Cloud controller/persistence missing '+marker)
+          for marker in ['T8L006102353014B','T8L00610243503A2','T8L028102427474A','T8L0291024470193','get_user_mqtt_info']:
+              if marker not in cloud_client:
+                  raise SystemExit('Validated Eufy cloud identity/transport missing '+marker)
 
           if 'data-tab="favorites"' in html:
               raise SystemExit('Favorites navigation still visible')
@@ -101,7 +117,7 @@ jobs:
           scripts=re.findall(r'<script[^>]*>(.*?)</script>',html,re.S)
           for i,script in enumerate(scripts):
               Path(f'/tmp/craumer-inline-{i}.js').write_text(script)
-          print(f'Craumer Home 5.1 source validation: PASS ({len(scripts)} inline scripts)')
+          print(f'Craumer Home 5.2 Wi-Fi source validation: PASS ({len(scripts)} inline scripts)')
           PY
           node --check JasonHome/app/src/main/assets/v3_mockup.js
           for f in /tmp/craumer-inline-*.js; do node --check "$f"; done
@@ -156,6 +172,13 @@ jobs:
           javac -d /tmp/jason-home-protocol-tests JasonHome/app/src/main/java/com/jasonhome/app/E10Probe.java JasonHome/tests/E10ProbeRegression.java
           java -cp /tmp/jason-home-protocol-tests com.jasonhome.app.E10ProbeRegression
 
+      - name: Check Eufy cloud wire fixtures
+        shell: bash
+        run: |
+          mkdir -p /tmp/jason-home-cloud-tests
+          javac -d /tmp/jason-home-cloud-tests JasonHome/app/src/main/java/com/jasonhome/app/CloudWire.java JasonHome/tests/CloudWireTest.java
+          java -cp /tmp/jason-home-cloud-tests com.jasonhome.app.CloudWireTest
+
       - name: Check E120/E22 effect serialization
         shell: bash
         run: |
@@ -190,14 +213,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.1.2-UNSIGNED.apk
-          sha256sum Craumer-Home-5.1.2-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.2.0-WiFi-UNSIGNED.apk
+          sha256sum Craumer-Home-5.2.0-WiFi-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Home-5.1.2-UNSIGNED-do-not-install
-          path: Craumer-Home-5.1.2-UNSIGNED.apk
+          name: Craumer-Home-5.2.0-WiFi-UNSIGNED-do-not-install
+          path: Craumer-Home-5.2.0-WiFi-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
