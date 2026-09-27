@@ -37,8 +37,12 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
     };
 
     static void update(Context context) {
-        AndersonSchedule schedule = new AndersonSchedule(context);
         Intent intent = new Intent(context, AndersonScheduleService.class);
+        if (new CloudflareConfigStore(context).isCloudMode()) {
+            try { context.stopService(intent); } catch (Throwable ignored) {}
+            return;
+        }
+        AndersonSchedule schedule = new AndersonSchedule(context);
         if (schedule.enabled()) {
             try {
                 if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
@@ -55,6 +59,10 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
     @Override
     public void onCreate() {
         super.onCreate();
+        if (new CloudflareConfigStore(this).isCloudMode()) {
+            stopSelf();
+            return;
+        }
         schedule = new AndersonSchedule(this);
         appPrefs = getSharedPreferences("anderson_android", MODE_PRIVATE);
         cloud = new EufyCloudController(this, this);
