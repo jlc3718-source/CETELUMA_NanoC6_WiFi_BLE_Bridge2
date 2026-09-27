@@ -110,6 +110,40 @@ final class EufyLightCommands {
         return out.toByteArray();
     }
 
+    static byte[] localEffectE120(int localId, int[] colors, int speed1to5, int lampCount) {
+        int lamps = clamp(lampCount, 1, 120);
+        int[] paletteColors = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        // Test-only T8L00 hypothesis: its custom animations may live in the same
+        // LightTransportNewCmd (0x0206) local-20xxx family as the physically
+        // verified E120 solid-colour command, rather than the T8L02-style 0x020D path.
+        write(out, tlv(0xA3, le16(localId)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{(byte)speedValue(speed1to5)}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(Math.min(255,paletteColors.length));
+        for (int color : paletteColors) write(palette, nativeColor("E120", color));
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i = 0; i < lamps; i++) positions[i + 1] = (byte) i;
+        write(out, tlv(0xA7, positions));
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, new byte[]{(byte)0xFF,(byte)0xFF,(byte)0xFF,(byte)0xFF}));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
     static byte[] white(String model, int kelvin, int lampCount) {
         if (!isE22(model)) {
             // E120 exposes one warm-white channel; use its nominal 3000 K white.
