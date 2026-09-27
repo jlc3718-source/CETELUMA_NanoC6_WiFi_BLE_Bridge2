@@ -1,10 +1,10 @@
 const $=id=>document.getElementById(id);
-const state={target:'All',brightness:75,speed:3,effect:'Solid / Static',colors:['#FFFFFF'],mode:'direct',configured:false};
+const state={target:'All',brightness:75,speed:3,effect:'Solid / Static',colors:['#FFFFFF'],mode:'direct',configured:false,profile:null,role:null,authToken:'',pendingProfile:null};
 const effects=['Solid / Static','Jump','Breath','Strobe','Chase','Gradient Sweep','Candy Cane','Twinkle / Sparkle','Wipe / Fill','Meteor / Comet','Rainbow Flow','Pulse Wave'];
 const palette=['#FFFFFF','#FF0D00','#E08700','#FFD000','#28FF00','#00B4B4','#245BFF','#0D00FF','#5B00E6','#D000FF','#FF1493','#FF6B6B'];
 
 function native(method,path,body){
-  const raw=AndroidAnderson.request(method,path,body?JSON.stringify(body):'' ,'');
+  const raw=AndroidAnderson.request(method,path,body?JSON.stringify(body):'',state.authToken||'');
   const outer=JSON.parse(raw||'{}');let data={};
   try{data=outer.body?JSON.parse(outer.body):{};}catch{data={raw:outer.body};}
   if((outer.status||500)<200||(outer.status||500)>=300)throw new Error(data.error||outer.statusText||'Request failed');
@@ -15,7 +15,73 @@ function fmtTime(iso){if(!iso)return '—';try{return new Date(iso).toLocaleTime
 function rgbText(hex){return hex.toUpperCase();}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
+const profileNames={jason:'Jason',shirley:'Shirley',kelly:'Kelly'};
+function allowedTabs(){
+  return state.role==='admin'?['home','create','schedules','settings']:['home','schedules'];
+}
+function applyProfile(profile,result){
+  state.profile=profile;state.role=result.role||((profile==='jason')?'admin':'user');state.authToken=result.token||'';
+  state.pendingProfile=null;
+  $('profileGate').hidden=true;$('pinPanel').hidden=true;$('profilePin').value='';$('profilePinError').textContent='';
+  $('activeProfile').textContent=result.name||profileNames[profile]||profile;
+  $('profileTools').hidden=false;
+  const allowed=allowedTabs();
+  document.querySelectorAll('.navBtn').forEach(b=>b.hidden=!allowed.includes(b.dataset.tab));
+  const current=document.querySelector('.navBtn.active')?.dataset.tab||'home';
+  if(!allowed.includes(current))nav('home');
+  document.body.dataset.profile=profile;
+  if(state.role==='admin')loadConfig();
+  loadStatus();
+}
+async function chooseProfile(profile){
+  state.pendingProfile=profile;
+  $('profilePinError').textContent='';$('profilePin').value='';
+  try{
+    const a=native('GET','/api/auth/status','');
+    if(a.pinEnabled){
+      $('pinTitle').textContent=`${profileNames[profile]} PIN`;
+      $('pinPanel').hidden=false;
+      setTimeout(()=>$('profilePin').focus(),50);
+      return;
+    }
+    const r=native('POST','/api/auth/unlock',{profile,pin:''});
+    applyProfile(profile,r);
+  }catch(e){$('profileGateStatus').textContent=e.message;}
+}
+async function submitProfilePin(){
+  const pin=$('profilePin').value.replace(/\D/g,'').slice(0,4);$('profilePin').value=pin;
+  if(pin.length!==4){$('profilePinError').textContent='Enter the four-digit PIN.';return;}
+  try{
+    const r=native('POST','/api/auth/unlock',{profile:state.pendingProfile,pin});
+    applyProfile(state.pendingProfile,r);
+  }catch(e){$('profilePinError').textContent=e.message;$('profilePin').select();}
+}
+function logoutProfile(){
+  state.profile=null;state.role=null;state.authToken='';state.pendingProfile=null;document.body.removeAttribute('data-profile');
+  $('profileTools').hidden=true;showProfileGate();
+}
+async function loadGateSolar(){
+  try{
+    const r=native('GET','/api/status','');
+    $('profileSolarTimes').textContent=`Dusk ${r.astronomy?.dusk||'—'} • Dawn ${r.astronomy?.dawn||'—'}`;
+  }catch{$('profileSolarTimes').textContent='Dusk — • Dawn —';}
+}
+function showProfileGate(){
+  $('profileGate').hidden=false;$('pinPanel').hidden=true;$('profilePin').value='';$('profilePinError').textContent='';
+  $('profileGateStatus').textContent='Choose a profile to continue.';
+  loadGateSolar();
+}
+function bindProfiles(){
+  document.querySelectorAll('.profileChoice').forEach(b=>b.onclick=()=>chooseProfile(b.dataset.profile));
+  $('profilePin').oninput=e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,4);};
+  $('profilePin').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submitProfilePin();}};
+  $('unlockProfile').onclick=submitProfilePin;
+  $('cancelPin').onclick=()=>{state.pendingProfile=null;$('pinPanel').hidden=true;$('profilePin').value='';$('profilePinError').textContent='';};
+  $('logoutProfile').onclick=logoutProfile;
+}
+
 function nav(tab){
+  if(state.profile&&!allowedTabs().includes(tab))tab='home';
   document.querySelectorAll('.screen').forEach(x=>x.classList.toggle('active',x.id===`screen-${tab}`));
   document.querySelectorAll('.navBtn').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   if(tab==='schedules')loadSchedules();if(tab==='settings')loadConfig();
@@ -91,5 +157,5 @@ async function loadSchedules(){
   }catch(e){$('scheduleList').innerHTML=`<div class="empty">${esc(e.message)}</div>`;}
 }
 function bindSchedules(){$('saveSchedule').onclick=saveSchedule;$('newSchedule').onclick=()=>{$('scheduleEditor').classList.toggle('open');};}
-function init(){bindNav();renderEffects();renderPalette();renderTargets();bindControls();bindSettings();bindSchedules();clearScheduleForm();loadConfig().then(loadStatus);setInterval(()=>{if(document.visibilityState==='visible')loadStatus();},15000);}
+function init(){bindNav();bindProfiles();renderEffects();renderPalette();renderTargets();bindControls();bindSettings();bindSchedules();clearScheduleForm();showProfileGate();setInterval(()=>{if(document.visibilityState==='visible'&&state.profile)loadStatus();},15000);}
 window.addEventListener('DOMContentLoaded',init);
