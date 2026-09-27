@@ -1,0 +1,79 @@
+name: Audit Jason Home Runtime
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - '.github/workflows/audit-jason-home-runtime.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Audit live catalog and calendar
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          test -n "$TOKEN"
+          curl -fsS -H "Authorization: Bearer $TOKEN"             'http://127.0.0.1:8080/api/eufy/factory-presets?raw=0' >/tmp/factory.json
+          curl -fsS -H "Authorization: Bearer $TOKEN"             'http://127.0.0.1:8080/api/calendar' >/tmp/calendar.json
+          python3 - <<'PY'
+          import json, collections, hashlib
+
+          f=json.load(open('/tmp/factory.json'))
+          presets=f.get('presets') or []
+          print('FACTORY total', len(presets))
+          print('FACTORY unique lightId', len({p.get('lightId') for p in presets}))
+          names=[str(p.get('name') or '').strip() for p in presets]
+          print('FACTORY unique exact names', len(set(names)))
+          norm=lambda s:' '.join(s.lower().split())
+          print('FACTORY unique normalized names', len({norm(x) for x in names}))
+
+          byname=collections.defaultdict(list)
+          for p in presets:
+              byname[norm(str(p.get('name') or ''))].append(p.get('lightId'))
+          dups=sorted(((k,v) for k,v in byname.items() if len(v)>1), key=lambda kv:(-len(kv[1]),kv[0]))
+          print('FACTORY duplicate-name groups', len(dups))
+          print('FACTORY top duplicate-name groups:')
+          for k,v in dups[:40]:
+              print(f'  {len(v):3d}x {k!r}: {v[:12]}'+(' ...' if len(v)>12 else ''))
+
+          def semantic(p):
+              # Exclude identity/raw transport metadata; keep visible/serializable scene behavior.
+              keep={
+                  'name':norm(str(p.get('name') or '')),
+                  'colors':str(p.get('colors') or '').upper(),
+                  'brightness':p.get('brightness'),
+                  'speed':p.get('speed'),
+                  'layerExecutionMode':p.get('layerExecutionMode'),
+                  'layers':p.get('layers') or [],
+              }
+              return json.dumps(keep, sort_keys=True, separators=(',',':'))
+          sem=collections.defaultdict(list)
+          for p in presets: sem[semantic(p)].append(p.get('lightId'))
+          print('FACTORY unique semantic layouts', len(sem))
+          semdups=sorted((v for v in sem.values() if len(v)>1), key=lambda v:-len(v))
+          print('FACTORY semantic duplicate groups', len(semdups))
+          print('FACTORY semantic duplicate records removed if collapsed', sum(len(v)-1 for v in semdups))
+
+          c=json.load(open('/tmp/calendar.json')).get('calendar') or {}
+          events=c.get('events') or []
+          print('CALENDAR events', len(events))
+          ids=[str(e.get('id') or '') for e in events]
+          enames=[str(e.get('name') or '').strip() for e in events]
+          print('CALENDAR unique ids', len(set(ids)))
+          print('CALENDAR unique names', len(set(enames)))
+          iddups=[(k,v) for k,v in collections.Counter(ids).items() if v>1]
+          namedups=[(k,v) for k,v in collections.Counter(enames).items() if v>1]
+          print('CALENDAR duplicate ids', iddups[:20])
+          print('CALENDAR duplicate names', namedups[:20])
+          print('CALENDAR enabled', bool((c.get('settings') or {}).get('enabled')))
+          print('CALENDAR custom schedules', len(c.get('customSchedules') or []))
+          PY
