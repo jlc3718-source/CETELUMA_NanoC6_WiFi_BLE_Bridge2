@@ -70,8 +70,8 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Craumer Home • 5.4.2 Oracle' not in bridge:
-              raise SystemExit('Bridge version is not 5.4.2 Oracle')
+          if 'Craumer Home • 5.4.3 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not 5.4.3 Oracle')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
           if 'cloud.setScene(0, scene.effect' not in schedule_service:
@@ -91,15 +91,10 @@ jobs:
               raise SystemExit('Favorites navigation still visible')
           if 'E120 command tests — Pool or House only' in html:
               raise SystemExit('Legacy E120 diagnostic panel still visible')
-          if '<strong>Profile PINs</strong>' in html:
-              raise SystemExit('Users & Security panel still visible')
           if cloud_ui.exists():
-              for marker in ['Jason Home','Cloudflare','Direct Eufy','Pool','House','Garage','Shed','Apply Scene','Schedules','Jason','Shirley','Kelly','Home + Schedules']:
+              for marker in ['Jason Home','Cloudflare','Direct Eufy','Pool','House','Garage','Shed','Apply Scene','Schedules']:
                   if marker not in html:
                       raise SystemExit('Rebuilt cloud UI missing '+marker)
-              for marker in ['chooseProfile','submitProfilePin','allowedTabs',"['home','schedules']",'logoutProfile']:
-                  if marker not in js:
-                      raise SystemExit('Profile/access control missing '+marker)
           elif 'Refresh Eufy Cloud Lights' not in html or 'only authorized lights' not in html:
               raise SystemExit('Fixed Eufy cloud device UI missing')
           if 'max="2"' in html and 'eventsSpeed' in html:
@@ -253,6 +248,11 @@ jobs:
               raise SystemExit('Oracle round-trip suppression missing')
           if 'Live Color Tuning' in classic or 'liveColorTunerPanel' in classic or 'loadLiveColorPresets' in classic:
               raise SystemExit('Removed Live Test code is still present')
+          login_markers=['profileGate','profilePin','switchProfile','anderson-profile-selected','anderson-profile-cleared','/api/login-preview','hashPin','currentRole']
+          combined_login_surface=classic+classic_js+bridge
+          for obsolete in login_markers:
+              if obsolete in combined_login_surface:
+                  raise SystemExit('Removed login/profile code returned: '+obsolete)
           for marker in ['1 · Lighting','2 · Schedules','3 · Eufy Devices','4 · Backup & Restore']:
               if marker not in Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text():
                   raise SystemExit('Settings tab renumbering missing '+marker)
@@ -270,14 +270,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.2-Oracle-UNSIGNED.apk
-          sha256sum Jason-Home-5.4.2-Oracle-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.3-Oracle-UNSIGNED.apk
+          sha256sum Jason-Home-5.4.3-Oracle-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.4.2-Oracle-UNSIGNED-do-not-install
-          path: Jason-Home-5.4.2-Oracle-UNSIGNED.apk
+          name: Jason-Home-5.4.3-Oracle-UNSIGNED-do-not-install
+          path: Jason-Home-5.4.3-Oracle-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
