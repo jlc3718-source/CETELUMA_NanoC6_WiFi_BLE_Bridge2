@@ -75,7 +75,7 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Craumer Home • 5.2.1 Wi-Fi' not in bridge:
+          if 'Craumer Home • 5.2.2 Wi-Fi' not in bridge:
               raise SystemExit('Bridge version is not 5.2.2 Wi-Fi')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
@@ -89,10 +89,6 @@ jobs:
               if marker not in cloud + secure_store:
                   raise SystemExit('Cloud controller/persistence missing '+marker)
           for marker in ['T8L006102353014B','T8L00610243503A2','T8L028102427474A','T8L0291024470193','get_user_mqtt_info','snTail','System.currentTimeMillis()%100000']:
-              if marker not in cloud_client:
-                  raise SystemExit('Validated Eufy cloud identity/transport missing '+marker)
-          # already validated above; keep next block from duplicating checks
-          for marker in []:
               if marker not in cloud_client:
                   raise SystemExit('Validated Eufy cloud identity/transport missing '+marker)
 
