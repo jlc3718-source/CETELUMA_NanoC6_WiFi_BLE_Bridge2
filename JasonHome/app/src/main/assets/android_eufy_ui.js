@@ -74,12 +74,12 @@ function installAndroidEufyUi(){
       '<div class="v3PageTitle"><span>EUFY FACTORY LAB</span><h2>Factory preset editor</h2></div>'+
       '<div class="panel">'+
         '<div class="row between wraprow"><div><strong>Editable Eufy factory catalog</strong><div class="sub">Factory scenes stay isolated from normal effects and schedules until you deliberately apply them.</div></div><span id="factoryCatalogBadge" class="badge">Not loaded</span></div>'+
-        '<div class="note">Pattern shows what each Eufy layer actually does. Edit opens the complete recipe. Pool and House are E120; Garage and Shed are E22. You can apply to one string or all four.</div>'+
+        '<div class="note">Pattern shows what each Eufy layer actually does. Edit opens the complete recipe. Apply uses the reliable compatible renderer by default; the editor also keeps an Exact Native Factory mode for full multi-layer testing. Pool and House are E120; Garage and Shed are E22.</div>'+
         '<div class="grid2" style="margin-top:12px"><input id="factorySearch" class="field" type="search" placeholder="Search preset name, ID, or pattern"><button id="factoryRefresh" class="btn" type="button">Refresh Catalog</button></div>'+
         '<div id="factoryCatalogStatus" class="status">Open this tab to load the Eufy factory catalog.</div>'+
       '</div>'+
       '<div class="panel">'+
-        '<div class="row between wraprow"><div><strong>Factory layouts</strong><div class="sub">Edit the recipe or test the current saved version on all four strings.</div></div><button id="factoryResume" class="btn" type="button">Resume Schedule</button></div>'+
+        '<div class="row between wraprow"><div><strong>Factory layouts</strong><div class="sub">Edit the recipe or apply its compatible pattern to all four strings.</div></div><button id="factoryResume" class="btn" type="button">Resume Schedule</button></div>'+
         '<div id="factoryPresetList" class="presetList"></div>'+
       '</div>';
     wrap.appendChild(page);
@@ -132,10 +132,10 @@ function installAndroidEufyUi(){
         info.append(name,meta,pattern,swatches,flags);
         const buttons=document.createElement("div");buttons.className="factoryButtons";
         const edit=document.createElement("button");edit.className="btn";edit.type="button";edit.textContent="Edit";
-        const test=document.createElement("button");test.className="btn primary";test.type="button";test.textContent="Test All 4";
+        const test=document.createElement("button");test.className="btn primary";test.type="button";test.textContent="Apply All 4";
         const result=document.createElement("div");result.className="factoryTestResult";
         edit.addEventListener("click",()=>openFactoryEditor(p));
-        test.addEventListener("click",()=>runFactoryTest(p,test,result,"All"));
+        test.addEventListener("click",()=>runFactoryTest(p,test,result,"All","compatible"));
         buttons.append(edit,test);card.append(info,buttons,result);root.appendChild(card);
       }
     }
@@ -177,11 +177,11 @@ function installAndroidEufyUi(){
       const brightness=numInput(editorPreset.brightness??75,1,100);brightness.addEventListener("input",()=>editorPreset.brightness=Number(brightness.value));
       const speed=numInput(editorPreset.speed??0,0,255);speed.addEventListener("input",()=>editorPreset.speed=Number(speed.value));
       const exec=numInput(editorPreset.layerExecutionMode??0,0,255);exec.addEventListener("input",()=>editorPreset.layerExecutionMode=Number(exec.value));
-      const target=document.createElement("select");target.id="factoryEditorTarget";target.className="field";["All","Pool","House","Garage","Shed"].forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v==="All"?"All four strings":v+" only";target.appendChild(o);});
-      grid.append(labeled("Preset name",name),labeled("Brightness %",brightness),labeled("Factory speed byte (0–255)",speed),labeled("Layer execution mode (0–255)",exec),labeled("Apply target",target));
+      const target=document.createElement("select");target.id="factoryEditorTarget";target.className="field";["All","Pool","House","Garage","Shed"].forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v==="All"?"All four strings":v+" only";target.appendChild(o);});\n      const applyMode=document.createElement("select");applyMode.id="factoryEditorApplyMode";applyMode.className="field";[["compatible","Compatible Pattern — recommended"],["native","Exact Native Factory — experimental"]].forEach(([v,n])=>{const o=document.createElement("option");o.value=v;o.textContent=n;applyMode.appendChild(o);});
+      grid.append(labeled("Preset name",name),labeled("Brightness %",brightness),labeled("Factory speed byte (0–255)",speed),labeled("Layer execution mode (0–255)",exec),labeled("Apply target",target),labeled("Apply method",applyMode));
       body.appendChild(grid);
 
-      const explain=document.createElement("div");explain.className="note";explain.style.marginTop="12px";explain.textContent="Layer types: Flow / Movement controls traveling patterns; Color Transition / Sequence controls ordered color changes; Blink / Twinkle controls flash/sparkle behavior. Advanced Layer Data exposes every raw Eufy parameter.";
+      const explain=document.createElement("div");explain.className="note";explain.style.marginTop="12px";explain.textContent="Layer types: Flow / Movement controls traveling patterns; Color Transition / Sequence controls ordered color changes; Blink / Twinkle controls flash/sparkle behavior. Compatible Pattern translates the dominant layer through the proven Jason Home effect engine. Exact Native Factory sends Eufy’s full multi-layer recipe and remains experimental, especially on E120. Advanced Layer Data exposes every raw Eufy parameter.";
       body.appendChild(explain);
 
       (editorPreset.layers||[]).forEach((layer,index)=>{
@@ -245,10 +245,10 @@ function installAndroidEufyUi(){
       try{await post("/api/eufy/factory-presets/reset",{lightId:id});await loadFactoryCatalog(false);const fresh=presets.find(x=>Number(x.lightId)===id);if(fresh){editorPreset=deep(fresh);renderEditor();}out.textContent="Original Eufy factory recipe restored.";}catch(e){out.textContent="Restore failed: "+e.message;}
     });
 
-    async function runFactoryTest(p,btn,result,target="All"){
-      btn.disabled=true;result.textContent="Sending "+(p.name||("factory "+p.lightId))+" to "+(target==="All"?"Pool, House, Garage, and Shed":target)+"…";
+    async function runFactoryTest(p,btn,result,target="All",mode="compatible"){
+      btn.disabled=true;result.textContent=(mode==="native"?"Sending exact native recipe ":"Applying compatible pattern ")+(p.name||("factory "+p.lightId))+" to "+(target==="All"?"Pool, House, Garage, and Shed":target)+"…";
       try{
-        const queued=await post("/api/eufy/factory-test",{lightId:Number(p.lightId),target},12000),job=queued.jobId;
+        const queued=await post("/api/eufy/factory-test",{lightId:Number(p.lightId),target,mode},12000),job=queued.jobId;
         if(!job)throw new Error("Oracle did not return a factory test job");
         for(let i=0;i<90;i++){
           await new Promise(r=>setTimeout(r,800));
@@ -256,7 +256,7 @@ function installAndroidEufyUi(){
           if(j.state==="failed")throw new Error(j.error||"Factory test failed");
           if(j.state==="complete"){
             const r=j.result||{},parts=(r.results||[]).map(x=>x.name+" "+(x.ok?"✓":"✕"+(x.error?" "+x.error:"")));
-            result.textContent=parts.join(" • ")+" • "+r.sent+"/"+r.attempted+" commands accepted by Oracle/Eufy transport. Verify the physical pattern.";
+            result.textContent=parts.join(" • ")+" • "+r.sent+"/"+r.attempted+" applied"+(r.mode==="compatible"&&r.compatible?" • Output: "+r.compatible.effect+" • speed "+r.compatible.speed:"")+(r.mode==="native"?" • Exact native recipe; verify the physical multi-layer result.":"");
             return r;
           }
         }
