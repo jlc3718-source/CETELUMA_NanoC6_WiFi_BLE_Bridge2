@@ -108,7 +108,10 @@ final class AndersonApiBridge {
                 if(!cloudMode)cloud.start();
             }
         }
-        if(write&&store.hasToken())provisionCloudIdentity();
+        if(write&&store.hasToken()){
+            provisionCloudIdentity();
+            syncCalendarToOracleAsync();
+        }
         JSONObject out=cloudApi.configJson();
         out.put("directReady",cloud.isReady()).put("directStatus",cloud.status());
         return ok(out);
@@ -154,11 +157,12 @@ final class AndersonApiBridge {
             if ("/api/cloud/test".equals(path) && "GET".equals(m)) {
                 if(!cloudApi.configured())return error(400,"Oracle API token is not configured");
                 provisionCloudIdentity();
+                syncCalendarToOracleAsync();
                 return forwardCloud("GET","/api/status?refresh=1","");
             }
 
             if (cloudApi.isCloudMode()) {
-                if ("/api/status".equals(path) || "/api/devices".equals(path) || "/api/schedules".equals(path) || "/api/events".equals(path)
+                if ("/api/status".equals(path) || "/api/devices".equals(path) || "/api/schedules".equals(path)
                     || "/api/reconcile".equals(path) || "/api/reconnect".equals(path)) {
                     return forwardCloud(m,cloudPath,body);
                 }
@@ -332,7 +336,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.3.5 Oracle");
+        d.put("firmwareVersion","Craumer Home • 5.3.6 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -399,8 +403,8 @@ final class AndersonApiBridge {
                 JSONArray rn=eu==null?null:eu.optJSONArray("readyNames");
                 if(rn!=null)for(int i=0;i<rn.length();i++)readyNames.add(rn.optString(i));
                 cloudCount=readyNames.size();
-                statusText=eu==null?"Cloudflare online":eu.optString("status","Cloudflare online");
-                transportText="Cloudflare Worker → Eufy MQTT";
+                statusText=eu==null?"Oracle online":eu.optString("status","Oracle online");
+                transportText="Oracle Linux → Eufy MQTT";
                 JSONObject next=server.optJSONObject("nextEvent");
                 if(next!=null&&next.optString("name","").length()>0){
                     String n=next.optString("name");
@@ -410,7 +414,7 @@ final class AndersonApiBridge {
                 JSONObject ov=server.optJSONObject("override");
                 if(ov!=null)d.put("manualOverride",ov.optBoolean("active",prefs.getBoolean("manual_override",false)));
             }catch(Throwable t){
-                statusText="Cloudflare unavailable";
+                statusText="Oracle unavailable";
                 transportText=t.getMessage()==null?t.getClass().getSimpleName():t.getMessage();
             }
         }else{
@@ -426,15 +430,15 @@ final class AndersonApiBridge {
         b.put("seenCount",cloudCount);
         b.put("name","Saved Eufy lights");
         b.put("address","");
-        b.put("protocol",useServer?"Cloudflare + Eufy MQTT":"Eufy Cloud MQTT");
-        b.put("connectionMode",useServer?"Cloudflare / Internet":"Wi-Fi / Internet");
+        b.put("protocol",useServer?"Oracle + Eufy MQTT":"Eufy Cloud MQTT");
+        b.put("connectionMode",useServer?"Oracle / Internet":"Wi-Fi / Internet");
         b.put("target",prefs.getInt("ble_target",0));
         JSONArray controllers=new JSONArray();
         for(int i=0;i<NAMES.length;i++){
             boolean seen=readyNames.contains(NAMES[i]);
             JSONObject x=new JSONObject();
             x.put("slot",i).put("name",NAMES[i]).put("address",ADDRESSES[i])
-             .put("model",MODELS[i]).put("protocol",MODELS[i]+(useServer?" / Cloudflare":" / Cloud MQTT"))
+             .put("model",MODELS[i]).put("protocol",MODELS[i]+(useServer?" / Oracle":" / Cloud MQTT"))
              .put("seen",seen).put("connected",seen).put("saved",true);
             controllers.put(x);
         }
@@ -503,6 +507,7 @@ final class AndersonApiBridge {
         if(in.has("overlap"))schedule.setOverlap(parseOverlap(in.optString("overlap","rotate")));
         if(in.has("tz"))prefs.edit().putString("tz",in.optString("tz")).apply();
         AndersonScheduleService.update(context);
+        syncCalendarToOracleAsync();
         return ok(stateJson());
     }
 
@@ -551,6 +556,7 @@ final class AndersonApiBridge {
             if(in.has("colors"))ed.putString(p+"colors",normalizeColors(in.optJSONArray("colors")).toString());
         }
         ed.apply();
+        syncCalendarToOracleAsync();
         return ok(new JSONObject().put("ok",true));
     }
 
@@ -578,6 +584,7 @@ final class AndersonApiBridge {
         mask=in.optBoolean("enabled",true)?(mask|bit):(mask&~bit);
         prefs.edit().putLong("category_mask",mask).apply();
         AndersonEventData.Category d=AndersonEventData.CATEGORIES[idx];
+        syncCalendarToOracleAsync();
         return ok(new JSONObject().put("ok",true).put("index",idx).put("id",d.id).put("name",d.name).put("color",d.color)
             .put("enabled",(mask&bit)!=0).put("mask",mask));
     }
@@ -593,6 +600,7 @@ final class AndersonApiBridge {
         else if("3.0.28".equals(t))schedule.setMode(AndersonSchedule.Mode.EXPANDED_BASIC);
         else {t="3.0.29";schedule.setMode(AndersonSchedule.Mode.EXPANDED_COLORS);}
         prefs.edit().putString("event_theme",t).apply();
+        syncCalendarToOracleAsync();
         return ok(new JSONObject().put("theme",t).put("name",themeName(t)));
     }
 
@@ -668,11 +676,13 @@ final class AndersonApiBridge {
         String id=in.optString("id","");
         if(!id.isEmpty()&&in.optBoolean("remove",false)){
             writeArray("custom_schedules",removeById(a,id));
+            syncCalendarToOracleAsync();
             return ok(new JSONObject().put("ok",true));
         }
         if(!id.isEmpty()&&in.has("enabled")){
             JSONObject x=findById(a,id); if(x==null)return error(404,"Unknown custom schedule");
             x.put("enabled",in.optBoolean("enabled",true)); writeArray("custom_schedules",a);
+            syncCalendarToOracleAsync();
             return ok(new JSONObject().put("ok",true));
         }
         String presetId=in.optString("presetId","");
@@ -687,6 +697,7 @@ final class AndersonApiBridge {
         x.put("annual",in.optBoolean("annual",true));
         x.put("enabled",true);
         a.put(x); writeArray("custom_schedules",a);
+        syncCalendarToOracleAsync();
         return ok(new JSONObject().put("ok",true).put("id",x.getString("id")));
     }
 
@@ -721,7 +732,7 @@ final class AndersonApiBridge {
             JSONObject eu=st.optJSONObject("eufy");JSONArray rn=eu==null?null:eu.optJSONArray("readyNames");
             if(rn!=null)for(int i=0;i<rn.length();i++)ready.add(rn.optString(i));
             for(int i=0;i<NAMES.length;i++)devices.put(new JSONObject().put("name",NAMES[i]).put("address",ADDRESSES[i]).put("rssi",0).put("model",MODELS[i]).put("serial",deviceStore.serialFor(ADDRESSES[i],"")).put("connected",ready.contains(NAMES[i])));
-            return new JSONObject().put("scanning",false).put("transport","cloudflare").put("devices",devices);
+            return new JSONObject().put("scanning",false).put("transport","oracle").put("devices",devices);
         }
         cloud.refresh();
         for(int i=0;i<NAMES.length;i++){
@@ -973,6 +984,81 @@ final class AndersonApiBridge {
         if(e.startsWith("Breath"))return "Breath";
         if(e.startsWith("Strobe"))return "Strobe";
         return e;
+    }
+
+    void syncCalendarToOracleAsync() {
+        if(!cloudApi.isCloudMode()||!cloudApi.configured())return;
+        new Thread(() -> {
+            try{
+                syncCalendarToOracle();
+                invalidateCloudSnapshot();
+                host.onBridgeStatus("Oracle holiday calendar synchronized");
+            }catch(Throwable t){
+                host.onBridgeStatus("Oracle calendar sync failed: "+(t.getMessage()==null?t.getClass().getSimpleName():t.getMessage()));
+            }
+        },"JasonHomeCalendarSync").start();
+    }
+
+    private void syncCalendarToOracle() throws Exception {
+        JSONObject root=new JSONObject();
+        root.put("version",1);
+
+        JSONObject st=new JSONObject();
+        st.put("enabled",schedule.enabled());
+        st.put("mode",schedule.mode().ordinal());
+        st.put("lead",schedule.leadDays());
+        st.put("trail",schedule.trailDays());
+        st.put("on",schedule.onMinutes());
+        st.put("off",schedule.offMinutes());
+        st.put("startAtDusk",schedule.startAtDusk());
+        st.put("schedule2Enabled",schedule.schedule2Enabled());
+        st.put("schedule2EndAtDawn",schedule.schedule2EndAtDawn());
+        st.put("schedule2End",schedule.schedule2EndMinutes());
+        st.put("schedule2Brightness",schedule.schedule2Brightness());
+        st.put("overlap",schedule.overlap());
+        st.put("categoryMask",prefs.getLong("category_mask",(1L<<15)-1L));
+        root.put("settings",st);
+
+        java.util.HashSet<Integer> major=new java.util.HashSet<>();
+        for(int v:AndersonEventData.MAJOR)major.add(v);
+
+        JSONArray events=new JSONArray();
+        for(int i=0;i<AndersonEventData.EVENTS.length;i++){
+            AndersonEventData.Event e=AndersonEventData.EVENTS[i];
+            JSONObject x=new JSONObject();
+            x.put("id",e.id).put("name",e.name).put("kind",e.kind).put("rule",e.rule)
+             .put("month",e.month).put("day",e.day).put("weekday",e.weekday).put("nth",e.nth)
+             .put("offsetDays",e.offsetDays).put("durationDays",e.durationDays)
+             .put("effect",eventEffect(i)).put("speed",eventSpeed(i))
+             .put("colors",jsonColorsAsInts(eventColors(i)))
+             .put("enabled",eventEnabled(i)).put("favorite",eventFavorite(i))
+             .put("categoryIndex",i<AndersonEventData.CATEGORY_INDEX.length?AndersonEventData.CATEGORY_INDEX[i]:9)
+             .put("major",major.contains(i));
+            events.put(x);
+        }
+        root.put("events",events);
+
+        JSONArray special=new JSONArray();
+        for(int[] v:AndersonEventData.SPECIAL){
+            if(v.length<4||v[0]<0||v[0]>=AndersonEventData.EVENTS.length)continue;
+            special.put(new JSONObject().put("id",AndersonEventData.EVENTS[v[0]].id)
+                .put("year",v[1]).put("month",v[2]).put("day",v[3]));
+        }
+        root.put("special",special);
+        root.put("customSchedules",readArray("custom_schedules"));
+
+        CloudflareApiClient.Result r=cloudApi.request("POST","/api/calendar/sync",root.toString());
+        if(r.status<200||r.status>=300){
+            String msg="Oracle calendar sync HTTP "+r.status;
+            try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
+            throw new IOException(msg);
+        }
+    }
+
+    private JSONArray jsonColorsAsInts(int[] colors){
+        JSONArray a=new JSONArray();
+        if(colors!=null)for(int c:colors)a.put(c&0xffffff);
+        return a;
     }
 
     private JSONObject parseBody(String body) {
