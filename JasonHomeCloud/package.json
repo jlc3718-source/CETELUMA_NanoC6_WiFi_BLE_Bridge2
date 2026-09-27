@@ -6,10 +6,13 @@
   "scripts": {
     "check": "tsc --noEmit",
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+    "dev": "wrangler dev",
+    "test": "tsx tests/scheduler.test.ts",
+    "bundle": "wrangler deploy --dry-run --outdir dist"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "wrangler": "^4.42.0"
+    "wrangler": "^4.42.0",
+    "tsx": "^4.20.6"
   }
 }
