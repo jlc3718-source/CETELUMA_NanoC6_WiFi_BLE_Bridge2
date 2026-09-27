@@ -176,7 +176,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.14");
+        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.15");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -614,7 +614,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Jason Home 5.0.14").put("buildCommit","Craumer Home UI")
+            .put("version","Jason Home 5.0.15").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -648,12 +648,12 @@ final class AndersonApiBridge {
             case "blue": host.runOnUi(()->ble.setColor(one,0x0000FF)); break;
             case "breath": host.runOnUi(()->ble.setEffect(one,"Breath",new int[]{0xFF0000},3,false)); break;
             case "status": host.runOnUi(()->ble.readE120State(one)); break;
-            case "palette-r": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000},2,false)); break;
-            case "palette-g": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0x00FF00},2,false)); break;
-            case "palette-b": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0x0000FF},2,false)); break;
-            case "palette-rg": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,false)); break;
-            case "palette-rb": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x0000FF},2,false)); break;
-            case "palette-gb": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0x00FF00,0x0000FF},2,false)); break;
+            case "group-1": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,1)); break;
+            case "group-2": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
+            case "group-3": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,3)); break;
+            case "group-4": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,4)); break;
+            case "group-5": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,5)); break;
+            case "group-6": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0x00FF00,0xFF0000},2,6)); break;
             case "show-10034-id": host.runOnUi(()->ble.testE120ShowIdOnly(one,10034)); break;
             case "show-10034-full": host.runOnUi(()->ble.testE120ShowIdFull(one,10034,new int[]{0xFF0000,0x0000FF},3)); break;
             case "captured-30010-10034": host.runOnUi(()->ble.testE120CapturedPair(one,30010,10034,new int[]{0xFF0000,0x0000FF},3)); break;
