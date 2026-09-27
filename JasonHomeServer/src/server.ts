@@ -186,6 +186,11 @@ async function serializedForDevice<T>(name:string,fn:()=>Promise<T>):Promise<T>{
   }
 }
 
+function markEufyDegraded(error:any){
+  const msg=error?.message||String(error||"Eufy transport failure");
+  eufyReady=false;readyNames=[];eufyStatus="Degraded: "+msg;
+  if(/auth|login|certificate|session|token|401/i.test(msg))eufy=null;
+}
 async function ensureEufy(force=false){
   if(force){eufy=null;eufyReady=false;readyNames=[];preparing=null;}
   if(eufy&&eufyReady&&readyNames.length===4)return eufy;
@@ -220,10 +225,12 @@ async function ensureEufy(force=false){
 
 async function sendScene(name:string,scene:Scene){
   return serializedForDevice(name,async()=>{
-    const c=await ensureEufy(false);
-    return scene.power
-      ? c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
-      : c.power(name,false);
+    try{
+      const c=await ensureEufy(false);
+      return scene.power
+        ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
+        : await c.power(name,false);
+    }catch(e){markEufyDegraded(e);throw e;}
   });
 }
 
@@ -233,12 +240,14 @@ const latestManualSequence=new Map<string,number>();
 async function sendSceneLatest(name:string,scene:Scene,sequence:number){
   return serializedForDevice(name,async()=>{
     if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
-    const c=await ensureEufy(false);
-    if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
-    const result=scene.power
-      ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
-      : await c.power(name,false);
-    return {...result,skipped:false};
+    try{
+      const c=await ensureEufy(false);
+      if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
+      const result=scene.power
+        ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
+        : await c.power(name,false);
+      return {...result,skipped:false};
+    }catch(e){markEufyDegraded(e);throw e;}
   });
 }
 
@@ -543,32 +552,50 @@ function queueFactoryTest(lightId:number,target="All",mode="compatible"){
 }
 async function factoryTestAll(lightId:number,target="All",mode="compatible"){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
-  const c=await ensureEufy(false);
   let preset:any=null;
   const raw=meta("factory_catalog");
   if(raw){try{preset=(JSON.parse(raw)?.presets||[]).find((p:any)=>Number(p?.lightId)===lightId)||null;}catch{}}
-  if(!preset)preset=await c.factoryPreset(lightId);
-  preset=applyFactoryEdit(preset);
-  const names=targetNames(target);
-  const results:any[]=[];let sent=0;
-  for(const name of names){
-    try{
-      const compatible=factoryCompatibleScene(preset);
-      const native=mode==="native";
-      const r=await serializedForDevice(name,()=>native?c.factoryScene(name,preset):c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness));
-      sent++;
-      results.push({name,ok:true,model:DEVICE_MODELS[name],strategy:native?((r as any).strategy||"native-factory-020d"):"compatible-production-effect",compatible:native?null:compatible,published:(r as any).published,instance:(r as any).instance||null,report:(r as any).report||null});
-      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
-    }catch(e:any){
-      const msg=e?.message||String(e);
-      results.push({name,ok:false,model:DEVICE_MODELS[name],strategy:mode==="native"?(DEVICE_MODELS[name]==="E22"?"native-t8l02-020d":"experimental-t8l00-020d"):"compatible-production-effect",error:msg});
-      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
-    }
+  if(!preset){
+    try{preset=await (await ensureEufy(false)).factoryPreset(lightId);}
+    catch(e){markEufyDegraded(e);throw e;}
   }
+  preset=applyFactoryEdit(preset);
+  const names=targetNames(target),sequence=++manualSequence;
+  for(const name of names)latestManualSequence.set(name,sequence);
   const expiresAt=nextOverrideExpiry(new Date());
-  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,createdAt:Date.now(),expiresAt}));
-  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,mode,sent,total:names.length,results}));
-  return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode,customized:!!preset?.customized,compatible:factoryCompatibleScene(preset),attempted:names.length,sent,results,note:mode==="native"?"Exact native 0x020D factory recipe sent; physical pattern verification is still required.":"Factory recipe translated to the production Jason Home effect engine for reliable visible output."};
+  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode,sequence,createdAt:Date.now(),expiresAt}));
+
+  const compatible=factoryCompatibleScene(preset),native=mode==="native";
+  const results=await Promise.all(names.map(async name=>{
+    try{
+      const r:any=await serializedForDevice(name,async()=>{
+        if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
+        const client=await ensureEufy(false);
+        if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
+        const out=native?await client.factoryScene(name,preset):await client.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
+        return {...out,skipped:false};
+      });
+      if(r?.skipped)return {name,ok:true,skipped:true,model:DEVICE_MODELS[name]};
+      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+      // A Factory preview is a temporary override, not proof that the prior
+      // scheduled scene is still physically present. Invalidating this cache
+      // forces the scheduler to reapply its scene after Resume/expiry.
+      db.prepare("DELETE FROM desired_state WHERE name=?").run(name);
+      return {name,ok:true,model:DEVICE_MODELS[name],strategy:native?(r.strategy||"native-factory-020d"):"compatible-production-effect",compatible:native?null:compatible,published:r.published,brokerAccepted:r.brokerAccepted===true,deviceReported:r.deviceReported===true,instance:r.instance||null,report:r.report||null};
+    }catch(e:any){
+      markEufyDegraded(e);
+      const msg=e?.message||String(e);
+      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+      return {name,ok:false,model:DEVICE_MODELS[name],strategy:mode==="native"?(DEVICE_MODELS[name]==="E22"?"native-t8l02-020d":"experimental-t8l00-020d"):"compatible-production-effect",error:msg};
+    }
+  }));
+  const sent=results.filter((x:any)=>x.ok&&!x.skipped).length,skipped=results.filter((x:any)=>x.skipped).length;
+  if(sent===0&&skipped===0){
+    const current=meta("override");
+    try{if(current&&JSON.parse(current)?.sequence===sequence)delMeta("override");}catch{}
+  }
+  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,mode,sequence,sent,skipped,total:names.length,results}));
+  return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode,sequence,customized:!!preset?.customized,compatible,attempted:names.length,sent,skipped,results,note:mode==="native"?"Exact native 0x020D factory recipe sent; physical pattern verification is still required.":"Factory recipe translated to the production Jason Home effect engine for reliable visible output."};
 }
 
 async function statusPayload(refresh=false){
@@ -614,7 +641,7 @@ async function manualControl(input:any,sequence?:number){
       if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-      return {name,ok:true,report:r?.report||null,instance:r?.instance||null};
+      return {name,ok:true,brokerAccepted:r?.brokerAccepted===true,deviceReported:r?.deviceReported===true,report:r?.report||null,instance:r?.instance||null};
     }catch(e:any){
       const msg=e?.message||String(e);
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
@@ -827,7 +854,7 @@ const server=http.createServer(async(req,res)=>{
     }
     if(method==="POST"&&path==="/api/reconcile")return json(res,200,await reconcile(false,true));
     if(method==="POST"&&path==="/api/reconnect"){
-      const c=await ensureEufy(true);return json(res,200,{ok:true,eufy:eufyStatus,readyNames:c.readyNames()});
+      const c=await ensureEufy(true);const reapplied=await reconcile(false,true);return json(res,200,{ok:true,eufy:eufyStatus,readyNames:c.readyNames(),reapplied});
     }
     if(method==="POST"&&path==="/api/provision-device"){
       const input:any=await readJson(req),installId=String(input?.installId||"").trim().toLowerCase();
@@ -840,8 +867,8 @@ const server=http.createServer(async(req,res)=>{
     if(method==="POST"&&path==="/api/mqtt-probe"){
       const input:any=await readJson(req),target=String(input?.target||"Pool");
       if(!DEVICE_NAMES.includes(target as any))throw new Error("Probe target must be Pool, House, Garage, or Shed");
-      const result=await serializedForDevice(target,async()=>{const c=await ensureEufy(false);return c.status(target);});
-      return json(res,200,{ok:true,target,published:result.published,report:result.report||null,instance:(result as any).instance||null});
+      let result:any;try{result=await serializedForDevice(target,async()=>{const c=await ensureEufy(false);return c.status(target);});}catch(e){markEufyDegraded(e);throw e;}
+      return json(res,200,{ok:true,target,published:result.published,brokerAccepted:result.brokerAccepted===true,deviceReported:result.deviceReported===true,report:result.report||null,instance:result.instance||null});
     }
     return json(res,404,{ok:false,error:"Not found",path});
   }catch(e:any){
@@ -856,6 +883,6 @@ server.keepAliveTimeout=65000;
 server.listen(PORT,"0.0.0.0",()=>{
   console.log(`Jason Home Oracle server listening on 0.0.0.0:${PORT}`);
   console.log(`Scheduler timezone: ${TZ}; coordinates: ${LAT}, ${LON}`);
-  setTimeout(()=>void reconcile(false,false).catch(e=>console.error("[startup reconcile]",e?.message||e)),5000);
+  setTimeout(()=>void reconcile(false,true).catch(e=>console.error("[startup reconcile]",e?.message||e)),5000);
   setInterval(()=>void reconcile(false,false).catch(e=>console.error("[scheduler]",e?.message||e)),30000);
 });
