@@ -1,6 +1,6 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
-import { sendMqtt } from "./mqtt";
+import { sendMqtt } from "./mqtt.js";
 import { OP_SETUP, buildEffect, brightness as brightnessFields } from "./light-commands.js";
 import { powerFields, statusFields } from "./wire.js";
 
