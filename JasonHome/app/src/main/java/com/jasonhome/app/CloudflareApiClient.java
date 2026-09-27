@@ -27,7 +27,7 @@ final class CloudflareApiClient {
         URL url=new URL(CloudflareConfigStore.ENDPOINT+path);
         HttpsURLConnection c=(HttpsURLConnection)url.openConnection();
         try{
-            c.setInstanceFollowRedirects(false);c.setConnectTimeout(10000);c.setReadTimeout(25000);
+            c.setInstanceFollowRedirects(false);c.setConnectTimeout(4000);c.setReadTimeout(9000);
             c.setRequestMethod(method==null?"GET":method.toUpperCase(java.util.Locale.ROOT));
             c.setRequestProperty("Accept","application/json");
             if(auth)c.setRequestProperty("Authorization","Bearer "+store.token());
