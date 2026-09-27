@@ -390,14 +390,7 @@ final class AndersonApiBridge {
         if(hadColors)payload.put("colors",normalizeColors(in.optJSONArray("colors")));
         if(in.has("name"))payload.put("name",in.optString("name","Manual"));
 
-        // Old UI often sends one changed field at a time. Supply the current full scene
-        // when Oracle needs to turn on/apply a visual change.
-        if(!payload.has("power")||payload.optBoolean("power",true)){
-            if(!payload.has("brightness"))payload.put("brightness",prefs.getInt("brightness",75));
-            if(!payload.has("speed"))payload.put("speed",prefs.getInt("speed",3));
-            if(!payload.has("effect"))payload.put("effect",prefs.getString("effect","Jump"));
-            if(!payload.has("colors"))payload.put("colors",new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
-        }
+        // Send only changed fields. Oracle merges each patch against the target string's accepted/override state.
 
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/control",payload.toString());
         if(r.status<200||r.status>=300){
