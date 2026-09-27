@@ -5,6 +5,7 @@ export const SERVER_PUBLIC_HEX = "04c5c00c4f8d1197cc7c3167c52bf7acb054d722f0ef08
 
 export function randomId(bytes=16): string { return randomBytes(bytes).toString("hex"); }
 export function md5(value: string): string { return createHash("md5").update(value, "utf8").digest("hex"); }
+export function sha256(value: string): string { return createHash("sha256").update(value, "utf8").digest("hex"); }
 export function sign(keyHex:string,ts:string,once:string,body:string):string{
   return createHmac("sha256",Buffer.from(keyHex.slice(0,32),"utf8"))
     .update(`${ts}+${once}+${body}`,"utf8").digest("hex");
