@@ -735,8 +735,17 @@ final class BleLightController {
                         EufyLightCommands.white(job.light.model,job.value,EufyLightCommands.defaultLampCount(job.light.model)));
                     break;
                 case EFFECT:
-                    frame=p.command(EufyLightCommands.OP_SHOW,
-                        EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                    if(isE22(job.light)){
+                        frame=p.command(EufyLightCommands.OP_SHOW,
+                            EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                    }else if(EufyLightCommands.isSolidEffect(job.effect)){
+                        sendE120Static(job,g,c,p);
+                        return;
+                    }else{
+                        frame=p.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse,
+                                EufyLightCommands.defaultLampCount(job.light.model)));
+                    }
                     break;
                 case E120_LOCAL_EFFECT:
                     frame=p.command(EufyLightCommands.OP_COLOR,
@@ -821,6 +830,39 @@ final class BleLightController {
         int xor=0;
         for(byte b:reply)xor^=b&0xff;
         return xor==0;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void sendE120Static(Job job,BluetoothGatt g,BluetoothGattCharacteristic c,E10Probe p){
+        int rgb=(job.colors==null||job.colors.length==0)?0xFFFFFF:job.colors[0];
+        try{
+            byte[] colorFrame=p.command(EufyLightCommands.OP_COLOR,
+                EufyLightCommands.color(job.light.model,rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+            int first=write(g,c,colorFrame);
+            if(first!=BluetoothStatusCodes.SUCCESS){
+                finishActive(false,"E120 static color write failed ("+first+")");
+                return;
+            }
+            handler.postDelayed(()->{
+                if(active!=job||gatt!=g||probe!=p)return;
+                try{
+                    byte[] holdFrame=p.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.effectE120("Solid / Static",new int[]{rgb},job.speed,false,
+                            EufyLightCommands.defaultLampCount(job.light.model)));
+                    int second=write(g,c,holdFrame);
+                    if(second!=BluetoothStatusCodes.SUCCESS){
+                        finishActive(false,"E120 static hold write failed ("+second+")");
+                        return;
+                    }
+                    listener.onStatus(displayName(job.light)+": static color + hold written");
+                    handler.postDelayed(()->{if(active==job)finishActive(true,null);},550L);
+                }catch(Throwable t){
+                    finishActive(false,"E120 static hold command could not be built");
+                }
+            },220L);
+        }catch(Throwable t){
+            finishActive(false,"E120 static color command could not be built");
+        }
     }
 
     @SuppressLint("MissingPermission")
