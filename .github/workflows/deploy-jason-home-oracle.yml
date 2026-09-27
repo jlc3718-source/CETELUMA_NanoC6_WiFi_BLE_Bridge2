@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2' && github.actor == 'jlc3718-source'
     runs-on: [self-hosted, linux, ARM64, jason-home-oracle]
     timeout-minutes: 25
     steps:
