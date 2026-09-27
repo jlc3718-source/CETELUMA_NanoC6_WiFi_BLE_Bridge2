@@ -178,6 +178,28 @@ final class EufyLightCommands {
         return out.toByteArray();
     }
 
+    static byte[] showIdOnly(int showId) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le32(showId)));
+        return out.toByteArray();
+    }
+
+    static byte[] showWithId(String model, int showId, String effectName, int[] colors, int speed1to5, boolean reverse) {
+        int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        int speed = speedValue(speed1to5);
+        int layerType = layerType(effectName);
+        byte[] layer = encodeLayer(model, layerType, effectName, palette, speed, reverse);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le32(showId)));
+        write(out, tlv(0xA4, new byte[]{(byte)speed}));
+        write(out, tlv(0xA5, new byte[]{1}));
+        write(out, tlv(0xA6, new byte[]{0}));
+        write(out, tlv(0xA8, new byte[]{0}));
+        write(out, tlv(0xA9, layer));
+        return out.toByteArray();
+    }
+
     static byte[] show(String model, String effectName, int[] colors, int speed1to5, boolean reverse) {
         int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
         int speed = speedValue(speed1to5);
