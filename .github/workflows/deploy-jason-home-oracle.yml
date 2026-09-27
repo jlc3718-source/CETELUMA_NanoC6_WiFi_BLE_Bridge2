@@ -1,34 +1,58 @@
 name: Deploy Jason Home to Oracle
 
 on:
-  push:
-    branches:
-      - jason-home-cloudflare-rebuild
-    paths:
-      - 'JasonHomeServer/**'
-      - '.github/workflows/deploy-jason-home-oracle.yml'
+  workflow_run:
+    workflows:
+      - Build Jason Home Oracle Server
+    types:
+      - completed
   workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact tested commit SHA to deploy
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
   group: jason-home-oracle-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2' && github.ref == 'refs/heads/jason-home-cloudflare-rebuild'
+    if: >-
+      github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2' &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'jason-home-cloudflare-rebuild'
+        ) ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 20
+    env:
+      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
     steps:
-      - name: Update production checkout
+      - name: Validate immutable deploy revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SHA"
+          test "${#DEPLOY_SHA}" -ge 7
+          echo "Deploying tested commit: $DEPLOY_SHA"
+
+      - name: Update production checkout to exact tested commit
         shell: bash
         run: |
           set -euo pipefail
           cd /home/ubuntu/repo
-          git fetch origin jason-home-cloudflare-rebuild
-          git reset --hard origin/jason-home-cloudflare-rebuild
+          git fetch origin "$DEPLOY_SHA"
+          git reset --hard "$DEPLOY_SHA"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$DEPLOY_SHA^{commit}")"
 
       - name: Protect production secrets
         shell: bash
@@ -36,10 +60,18 @@ jobs:
           set -euo pipefail
           cd /home/ubuntu/repo/JasonHomeServer
           test -s .env
-          # One-time scheduler migration from the former ZIP 14738 defaults to ZIP 14772.
           sed -i 's/^HOME_LAT=42\.0529$/HOME_LAT=42.1507/' .env
           sed -i 's/^HOME_LON=-79\.0576$/HOME_LON=-78.9452/' .env
           chmod 600 .env
+
+      - name: Preserve rollback image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          if sudo docker image inspect jasonhomeserver-jason-home:latest >/dev/null 2>&1; then
+            sudo docker tag jasonhomeserver-jason-home:latest jasonhomeserver-jason-home:rollback || true
+          fi
 
       - name: Build and restart Jason Home
         shell: bash
@@ -72,9 +104,10 @@ jobs:
           TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
           test -n "$TOKEN"
           STATUS="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1')"
-          python3 - "$STATUS" <<'PY'
+          python3 - "$STATUS" "$DEPLOY_SHA" <<'PY'
           import json,sys
           d=json.loads(sys.argv[1])
+          deploy_sha=sys.argv[2]
           e=d.get("eufy",{})
           names=set(e.get("readyNames",[]))
           expected={"Pool","House","Garage","Shed"}
@@ -94,6 +127,7 @@ jobs:
               "eventCount": cal.get("eventCount"),
               "customCount": cal.get("customCount")
           }))
+          print("Deployed commit:", deploy_sha)
           PY
 
       - name: Container status
