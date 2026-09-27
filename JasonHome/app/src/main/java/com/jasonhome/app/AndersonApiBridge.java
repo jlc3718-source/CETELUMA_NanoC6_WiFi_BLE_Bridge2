@@ -1,13 +1,7 @@
 package com.jasonhome.app;
 
-import android.Manifest;
-import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.webkit.JavascriptInterface;
@@ -38,7 +32,6 @@ import java.util.UUID;
 final class AndersonApiBridge {
     interface Host {
         void runOnUi(Runnable action);
-        void requestBlePermissionsAndScan();
         void onBridgeStatus(String message);
     }
 
@@ -54,100 +47,24 @@ final class AndersonApiBridge {
     private final Context context;
     private final Host host;
     private final DeviceStore deviceStore;
-    private final BleLightController ble;
+    private final EufyCloudController cloud;
     private final AndersonSchedule schedule;
     private final SharedPreferences prefs;
-
-    private final Object scanLock = new Object();
-    private List<BleLightController.FoundLight> discovered = new ArrayList<>();
-    private volatile long scanUntilMs = 0L;
-    private volatile String bleStatus = "Ready";
+    private volatile String cloudStatus = "Wi-Fi cloud starting";
 
     AndersonApiBridge(Context context, Host host, DeviceStore deviceStore,
-                      BleLightController ble, AndersonSchedule schedule) {
+                      EufyCloudController cloud, AndersonSchedule schedule) {
         this.context = context.getApplicationContext();
         this.host = host;
         this.deviceStore = deviceStore;
-        this.ble = ble;
+        this.cloud = cloud;
         this.schedule = schedule;
         this.prefs = this.context.getSharedPreferences("anderson_android", Context.MODE_PRIVATE);
         ensureDefaults();
     }
 
-    void updateDiscovered(List<BleLightController.FoundLight> items) {
-        synchronized (scanLock) {
-            discovered = items == null ? new ArrayList<>() : new ArrayList<>(items);
-        }
-    }
-
-    void updateBleStatus(String message) {
-        bleStatus = message == null ? "" : message;
-    }
-
-    @JavascriptInterface
-    public String request(String method, String url, String body, String token) {
-        try {
-            String m = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
-            String raw = url == null ? "/" : url;
-            Uri uri = Uri.parse(raw.startsWith("http") ? raw : "http://local" + raw);
-            String path = uri.getPath() == null ? "/" : uri.getPath();
-            JSONObject input = parseBody(body);
-
-            if ("/api/auth/status".equals(path)) return ok(authStatus());
-            if ("/api/auth/unlock".equals(path) && "POST".equals(m)) return authUnlock(input);
-            if ("/api/auth/logout".equals(path)) return response(204, "");
-            if ("/api/auth/config".equals(path) && "POST".equals(m)) return authConfig(input);
-            if ("/api/auth/pin".equals(path) && "POST".equals(m)) return authPin(input);
-
-            if ("/api/login-preview".equals(path)) return ok(loginPreview());
-            if ("/api/state".equals(path)) return ok(stateJson());
-            if ("/api/control".equals(path) && "POST".equals(m)) return control(input);
-            if ("/api/resume".equals(path) && "POST".equals(m)) return resume();
-            if ("/api/settings".equals(path) && "POST".equals(m)) return saveSettings(input);
-            if ("/api/backup/status".equals(path) && "GET".equals(m)) return ok(backupStatus());
-            if ("/api/backup/manual".equals(path) && "POST".equals(m)) return backupAll();
-            if ("/api/backup/restore".equals(path) && "POST".equals(m)) return restoreBackup();
-            if ("/api/backup/settings".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("mode","all"));
-
-            if ("/api/events".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), intQuery(uri,"month",LocalDate.now().getMonthValue()), null));
-            if ("/api/events/search".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), 0, uri.getQueryParameter("q")));
-            if ("/api/event".equals(path) && "POST".equals(m)) return updateEvent(input);
-            if ("/api/event-categories".equals(path) && "GET".equals(m)) return ok(eventCategories());
-            if ("/api/event-categories".equals(path) && "POST".equals(m)) return updateEventCategory(input);
-            if ("/api/event-color-theme".equals(path) && "GET".equals(m)) return ok(eventColorTheme());
-            if ("/api/event-color-theme".equals(path) && "POST".equals(m)) return setEventColorTheme(input);
-            if ("/api/favorites".equals(path)) return ok(favorites());
-
-            if ("/api/presets".equals(path) && "GET".equals(m)) return ok(presetsJson());
-            if ("/api/preset".equals(path) && "POST".equals(m)) return updatePreset(input);
-            if ("/api/custom-schedules".equals(path) && "GET".equals(m)) return ok(customSchedules(uri));
-            if ("/api/custom-schedules".equals(path) && "POST".equals(m)) return updateCustomSchedule(input);
-            if ("/api/colors".equals(path) && "GET".equals(m)) return ok(colorsJson());
-            if ("/api/colors".equals(path) && "POST".equals(m)) return updateColor(input);
-
-            if ("/api/ble/scan".equals(path)) return ok(bleScan());
-            if ("/api/ble/select".equals(path) && "POST".equals(m)) return bleSelect(input);
-            if ("/api/ble/remove".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
-            if ("/api/ble/rename".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
-            if ("/api/ble/target".equals(path) && "POST".equals(m)) return bleTarget(input);
-            if ("/api/ble/e120-test".equals(path) && "POST".equals(m)) return e120Test(input);
-            if ("/api/ble/e120-state".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("summary",ble.lastStateSummary()).put("details",ble.lastStateDetails()));
-
-            if ("/api/system".equals(path)) return ok(systemJson());
-            if ("/api/firmware".equals(path)) return ok(firmwareJson());
-            if ("/api/remote-update".equals(path)) return ok(remoteUpdateJson());
-            if ("/api/remote-update/check".equals(path) || "/api/remote-update/install".equals(path))
-                return ok(new JSONObject().put("ok",true).put("operationId",1).put("operationComplete",true).put("message","Android app updates are installed as signed APK upgrades."));
-            if ("/api/wifi/scan".equals(path)) return ok(new JSONObject().put("scanning",false).put("networks",new JSONArray()));
-            if ("/api/wifi".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("message","Android manages Wi-Fi."));
-            if ("/api/reboot".equals(path) || "/api/rollback".equals(path) || "/api/update".equals(path))
-                return error(409,"This control belongs to the NanoC6 firmware and is not used by Jason Home Android.");
-
-            // Keep the complete Anderson UI alive even for firmware-only panels.
-            return ok(new JSONObject().put("ok",true).put("android",true));
-        } catch (Throwable t) {
-            return error(500, t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
-        }
+    void updateCloudStatus(String message) {
+        cloudStatus = message == null ? "" : message;
     }
 
     private void ensureDefaults() {
@@ -182,7 +99,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.1.2");
+        d.put("firmwareVersion","Craumer Home • 5.2.0 Wi-Fi");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -234,31 +151,30 @@ final class AndersonApiBridge {
         d.put("wifi",wifi);
 
         JSONObject b=new JSONObject();
-        List<BleLightController.FoundLight> snap=snapshotDiscovered();
-        boolean bleBusy=ble.isBusy();
-        boolean ready=deviceStore.accountId().length()==40;
-        b.put("ready",ready);
-        b.put("busy",bleBusy);
-        b.put("connected",bleBusy);
-        b.put("connectedCount",0);
-        b.put("knownCount",ADDRESSES.length);
-        b.put("seenCount",snap.size());
+        boolean cloudReady=cloud.isReady();
+        int cloudCount=cloud.readyCount();
+        b.put("ready",cloudReady);
+        b.put("busy",cloud.isBusy());
+        b.put("connected",cloudReady);
+        b.put("connectedCount",cloudCount);
+        b.put("knownCount",NAMES.length);
+        b.put("seenCount",cloudCount);
         b.put("name","Saved Eufy lights");
         b.put("address","");
-        b.put("protocol","Eufy E10");
-        b.put("connectionMode","On-demand BLE");
+        b.put("protocol","Eufy Cloud MQTT");
+        b.put("connectionMode","Wi-Fi / Internet");
         b.put("target",prefs.getInt("ble_target",0));
         JSONArray controllers=new JSONArray();
-        for(int i=0;i<ADDRESSES.length;i++){
+        for(int i=0;i<NAMES.length;i++){
             JSONObject x=new JSONObject();
             x.put("slot",i).put("name",NAMES[i]).put("address",ADDRESSES[i])
-             .put("model",MODELS[i]).put("protocol",MODELS[i]+" / E10")
-             .put("seen",isDiscovered(ADDRESSES[i])).put("saved",true);
+             .put("model",MODELS[i]).put("protocol",MODELS[i]+" / Cloud MQTT")
+             .put("seen",cloud.isDeviceReady(NAMES[i])).put("connected",cloud.isDeviceReady(NAMES[i])).put("saved",true);
             controllers.put(x);
         }
         b.put("controllers",controllers);
-        b.put("status",bleBusy?"BLE command in progress":"Ready — connects to saved lights on demand");
-        b.put("transportStatus",bleStatus);
+        b.put("status",cloud.status());
+        b.put("transportStatus",cloudStatus);
         d.put("ble",b);
         d.put("manualOverride",prefs.getBoolean("manual_override",false));
         return d;
@@ -279,28 +195,11 @@ final class AndersonApiBridge {
         if(hadColors)e.putString("colors",normalizeColors(in.optJSONArray("colors")).toString());
         e.apply();
 
-        boolean power=prefs.getBoolean("power",false);
-        int brightness=prefs.getInt("brightness",75);
-        int speed=prefs.getInt("speed",3);
-        String effect=prefs.getString("effect","Jump");
-        int[] colors=rgbArray(new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
-        List<BleLightController.FoundLight> targets=targets();
-
-        host.runOnUi(() -> {
-            try {
-                if(hadPower && !power){
-                    ble.setPower(targets,false);
-                }else if(hadColors || hadEffect || (hadPower && power)){
-                    ble.setScene(targets,effect,colors,speed,false,brightness);
-                }else if(hadBrightness){
-                    ble.setBrightness(targets,brightness);
-                }else if(hadSpeed){
-                    ble.setEffect(targets,effect,colors,speed,false);
-                }
-            } catch(Throwable t) {
-                host.onBridgeStatus("Eufy control failed: "+t.getMessage());
-            }
-        });
+        if(hadPower){
+            cloud.setPower(prefs.getInt("ble_target",0),prefs.getBoolean("power",false));
+        } else if(hadBrightness||hadEffect||hadColors||hadSpeed){
+            host.onBridgeStatus("Wi-Fi power control is active. Cloud color/effect/brightness commands are temporarily held until those DPs are verified.");
+        }
         return ok(stateJson());
     }
 
@@ -308,11 +207,7 @@ final class AndersonApiBridge {
         prefs.edit().putBoolean("manual_override",false).apply();
         AndersonScheduleService.update(context);
         AndersonSchedule.Scene scene=schedule.resolveNow();
-        List<BleLightController.FoundLight> all=allInstalled();
-        host.runOnUi(() -> {
-            if(scene==null) ble.setPower(all,false);
-            else ble.setScene(all,scene.effect,scene.colors,scene.speed,false,scene.brightness);
-        });
+        cloud.setPower(0,scene!=null);
         return ok(stateJson());
     }
 
@@ -541,21 +436,18 @@ final class AndersonApiBridge {
     }
 
     private JSONObject bleScan() throws Exception {
-        long now=System.currentTimeMillis();
-        // First request starts a 12-second scan. Polls during the scan return
-        // scanning=true; the first polls immediately after completion return false
-        // rather than accidentally starting a second scan.
-        if(scanUntilMs==0L || now>scanUntilMs+3000L){
-            scanUntilMs=now+12000L;
-            host.requestBlePermissionsAndScan();
-        }
+        cloud.refresh();
         JSONArray devices=new JSONArray();
-        for(BleLightController.FoundLight f:snapshotDiscovered()){
-            String address=safeAddress(f.device);
-            if(!DeviceStore.isInstalledAddress(address))continue;
-            devices.put(new JSONObject().put("name",f.name).put("address",address).put("rssi",f.rssi).put("model",f.model).put("serial",f.serial));
+        for(int i=0;i<NAMES.length;i++){
+            devices.put(new JSONObject()
+                .put("name",NAMES[i])
+                .put("address",ADDRESSES[i])
+                .put("rssi",0)
+                .put("model",MODELS[i])
+                .put("serial",deviceStore.serialFor(ADDRESSES[i],""))
+                .put("connected",cloud.isDeviceReady(NAMES[i])));
         }
-        return new JSONObject().put("scanning",System.currentTimeMillis()<scanUntilMs).put("devices",devices);
+        return new JSONObject().put("scanning",false).put("transport","wifi-cloud").put("devices",devices);
     }
 
     private String bleSelect(JSONObject in) throws Exception {
@@ -704,8 +596,8 @@ final class AndersonApiBridge {
             .put("cpuLoad",0).put("cpuMhz",0).put("wifiConnected",true).put("rssi",0)
             .put("heapFree",free).put("heapMin",free).put("heapLargest",free)
             .put("slotBytes",0).put("appBytes",0).put("appFreeBytes",0)
-            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.1.2")
-            .put("bleCount",0).put("bleSeen",snapshotDiscovered().size()).put("bleKnown",ADDRESSES.length).put("bleBusy",ble.isBusy())
+            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.2.0")
+            .put("bleCount",0).put("bleSeen",cloud.readyCount()).put("bleKnown",NAMES.length).put("bleBusy",false).put("cloudReady",cloud.isReady()).put("cloudBusy",cloud.isBusy())
             .put("ssid","Android").put("ip","Local")
             .put("resetReason","Android app launch").put("loopWatchdog",true).put("networkRestarts",0)
             .put("nextReboot","—").put("nextRebootSeconds",-1)
@@ -714,7 +606,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Craumer Home 5.1.2").put("buildCommit","Craumer Home UI")
+            .put("version","Craumer Home 5.2.0 Wi-Fi").put("buildCommit","Wi-Fi cloud transport")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -723,93 +615,8 @@ final class AndersonApiBridge {
             .put("updateHold",false).put("operationId",0).put("operationComplete",true).put("phase","APK upgrades");
     }
 
-    private List<BleLightController.FoundLight> targets() {
-        int t=prefs.getInt("ble_target",0);
-        if(t<=0)return allInstalled();
-        int idx=t-1;
-        ArrayList<BleLightController.FoundLight> a=new ArrayList<>();
-        if(idx>=0&&idx<4)a.add(installed(idx));
-        return a;
-    }
-
     private String e120Test(JSONObject in) throws Exception {
-        int target=prefs.getInt("ble_target",0);
-        if(target!=1 && target!=2) return error(400,"Select Pool or House for E120 tests.");
-        BleLightController.FoundLight light=installed(target-1);
-        ArrayList<BleLightController.FoundLight> one=new ArrayList<>();
-        one.add(light);
-        String command=in.optString("command","");
-        switch(command) {
-            case "power-on": host.runOnUi(()->ble.setPower(one,true)); break;
-            case "power-off": host.runOnUi(()->ble.setPower(one,false)); break;
-            case "brightness": host.runOnUi(()->ble.setBrightness(one,50)); break;
-            case "red": host.runOnUi(()->ble.setColor(one,0xFF0000)); break;
-            case "green": host.runOnUi(()->ble.setColor(one,0x00FF00)); break;
-            case "blue": host.runOnUi(()->ble.setColor(one,0x0000FF)); break;
-            case "breath": host.runOnUi(()->ble.setEffect(one,"Breath",new int[]{0xFF0000},3,false)); break;
-            case "status": host.runOnUi(()->ble.readE120State(one)); break;
-            case "master-1-a": host.runOnUi(()->ble.testE120PresetPair(one,30006,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-1-b": host.runOnUi(()->ble.testE120Group(one,30006,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-1-c": host.runOnUi(()->ble.testE120Group(one,30006,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-2-a": host.runOnUi(()->ble.testE120PresetPair(one,30007,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-2-b": host.runOnUi(()->ble.testE120Group(one,30007,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-2-c": host.runOnUi(()->ble.testE120Group(one,30007,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-3-a": host.runOnUi(()->ble.testE120PresetPair(one,30008,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-3-b": host.runOnUi(()->ble.testE120Group(one,30008,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-3-c": host.runOnUi(()->ble.testE120Group(one,30008,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-4-a": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-4-b": host.runOnUi(()->ble.testE120Group(one,30009,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-4-c": host.runOnUi(()->ble.testE120Group(one,30009,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-5-a": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-5-b": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-5-c": host.runOnUi(()->ble.testE120Group(one,30010,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-6-a": host.runOnUi(()->ble.testE120PresetPair(one,30011,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-6-b": host.runOnUi(()->ble.testE120Group(one,30011,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-6-c": host.runOnUi(()->ble.testE120Group(one,30011,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-7-a": host.runOnUi(()->ble.testE120PresetPair(one,30012,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-7-b": host.runOnUi(()->ble.testE120Group(one,30012,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-7-c": host.runOnUi(()->ble.testE120Group(one,30012,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-8-a": host.runOnUi(()->ble.testE120PresetPair(one,30013,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-8-b": host.runOnUi(()->ble.testE120Group(one,30013,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-8-c": host.runOnUi(()->ble.testE120Group(one,30013,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "master-9-a": host.runOnUi(()->ble.testE120PresetPair(one,30014,10034,new int[]{0xFF0000},2,false)); break;
-            case "master-9-b": host.runOnUi(()->ble.testE120Group(one,30014,10034,new int[]{0xFF0000,0x00FF00},2,2)); break;
-            case "master-9-c": host.runOnUi(()->ble.testE120Group(one,30014,10034,new int[]{0xFF0000,0x00FF00},4,2)); break;
-            case "show-10034-id": host.runOnUi(()->ble.testE120ShowIdOnly(one,10034)); break;
-            case "show-10034-full": host.runOnUi(()->ble.testE120ShowIdFull(one,10034,new int[]{0xFF0000,0x0000FF},3)); break;
-            case "captured-30010-10034": host.runOnUi(()->ble.testE120CapturedPair(one,30010,10034,new int[]{0xFF0000,0x0000FF},3)); break;
-            default: return error(400,"Unknown E120 test command.");
-        }
-        return ok(new JSONObject().put("ok",true).put("device",target==1?"Pool":"House").put("command",command));
-    }
-
-    private List<BleLightController.FoundLight> allInstalled() {
-        ArrayList<BleLightController.FoundLight> a=new ArrayList<>();
-        for(int i=0;i<4;i++)a.add(installed(i));
-        return a;
-    }
-
-    @SuppressLint("MissingPermission")
-    private BleLightController.FoundLight installed(int i) {
-        BluetoothManager bm=(BluetoothManager)context.getSystemService(Context.BLUETOOTH_SERVICE);
-        BluetoothAdapter adapter=bm==null?null:bm.getAdapter();
-        BluetoothDevice d=adapter==null?null:adapter.getRemoteDevice(ADDRESSES[i]);
-        String serial=deviceStore.serialFor(ADDRESSES[i],"");
-        return new BleLightController.FoundLight(d,NAMES[i],-100,MODELS[i],serial);
-    }
-
-    private List<BleLightController.FoundLight> snapshotDiscovered() {
-        synchronized(scanLock){return new ArrayList<>(discovered);}
-    }
-
-    private boolean isDiscovered(String address) {
-        for(BleLightController.FoundLight f:snapshotDiscovered())if(address.equalsIgnoreCase(safeAddress(f.device)))return true;
-        return false;
-    }
-
-    @SuppressLint("MissingPermission")
-    private static String safeAddress(BluetoothDevice d) {
-        try{return d==null?"":d.getAddress();}catch(Throwable t){return "";}
+        return error(409,"Bluetooth diagnostics are temporarily disabled in Craumer Home 5.2.0 Wi-Fi mode.");
     }
 
     private int[] eventColors(int i) throws Exception {
