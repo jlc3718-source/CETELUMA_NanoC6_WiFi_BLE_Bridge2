@@ -31,10 +31,25 @@ jobs:
           test "${#DEPLOY_SHA}" -ge 7
           echo "Deploying tested commit: $DEPLOY_SHA"
 
-      - name: Update production checkout to exact tested commit
+      - name: Preserve rollback state and checkout exact tested commit
         shell: bash
         run: |
           set -euo pipefail
+          cd /home/ubuntu/repo
+          git rev-parse HEAD >/tmp/jason-home-prev-sha
+          cd JasonHomeServer
+          if sudo docker image inspect jasonhomeserver-jason-home:latest >/dev/null 2>&1; then
+            sudo docker tag jasonhomeserver-jason-home:latest jasonhomeserver-jason-home:rollback
+          fi
+          if [ -f data/jason-home.sqlite ]; then
+            python3 - <<'PY'
+          import sqlite3
+          src=sqlite3.connect('data/jason-home.sqlite')
+          dst=sqlite3.connect('/tmp/jason-home.rollback.sqlite')
+          with dst: src.backup(dst)
+          dst.close(); src.close()
+          PY
+          fi
           cd /home/ubuntu/repo
           git fetch origin "$DEPLOY_SHA"
           git reset --hard "$DEPLOY_SHA"
@@ -50,22 +65,14 @@ jobs:
           sed -i 's/^HOME_LON=-79\.0576$/HOME_LON=-78.9452/' .env
           chmod 600 .env
 
-      - name: Preserve rollback image
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd /home/ubuntu/repo/JasonHomeServer
-          if sudo docker image inspect jasonhomeserver-jason-home:latest >/dev/null 2>&1; then
-            sudo docker tag jasonhomeserver-jason-home:latest jasonhomeserver-jason-home:rollback || true
-          fi
-
       - name: Build and restart Jason Home
         shell: bash
         run: |
           set -euo pipefail
           cd /home/ubuntu/repo/JasonHomeServer
-          sudo docker compose build
-          sudo docker compose up -d --remove-orphans
+          export JASON_HOME_BUILD_SHA="$DEPLOY_SHA"
+          sudo --preserve-env=JASON_HOME_BUILD_SHA docker compose build
+          sudo --preserve-env=JASON_HOME_BUILD_SHA docker compose up -d --remove-orphans
 
       - name: Wait for health
         shell: bash
@@ -113,8 +120,38 @@ jobs:
               "eventCount": cal.get("eventCount"),
               "customCount": cal.get("customCount")
           }))
+          build=d.get("build",{})
+          if build.get("sha") != deploy_sha:
+              raise SystemExit("Build provenance mismatch: "+json.dumps(build))
           print("Deployed commit:", deploy_sha)
           PY
+
+      - name: Roll back failed candidate
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREV="$(cat /tmp/jason-home-prev-sha 2>/dev/null || true)"
+          if [ -n "$PREV" ]; then
+            cd /home/ubuntu/repo
+            git reset --hard "$PREV"
+          fi
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose stop || true
+          if [ -f /tmp/jason-home.rollback.sqlite ]; then
+            python3 - <<'PY'
+          import sqlite3, os
+          src=sqlite3.connect('/tmp/jason-home.rollback.sqlite')
+          os.makedirs('data',exist_ok=True)
+          dst=sqlite3.connect('data/jason-home.sqlite')
+          with dst: src.backup(dst)
+          dst.close(); src.close()
+          PY
+          fi
+          if sudo docker image inspect jasonhomeserver-jason-home:rollback >/dev/null 2>&1; then
+            sudo docker tag jasonhomeserver-jason-home:rollback jasonhomeserver-jason-home:latest
+            sudo docker compose up -d --no-build --force-recreate
+          fi
 
       - name: Container status
         if: always()
