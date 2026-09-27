@@ -447,6 +447,27 @@ function saveFactoryPromotion(input:any){
   setMeta("factory_promotions",JSON.stringify(state));
   return {...row,enabled:state[String(lightId)].enabled!==false};
 }
+function factoryPromotionGroupState(rows=factoryPromotionRows(calendarConfig())){
+  const total=rows.length;
+  const enabledCount=rows.filter((x:any)=>x.enabled!==false).length;
+  return {
+    total,
+    enabledCount,
+    disabledCount:Math.max(0,total-enabledCount),
+    allEnabled:total>0&&enabledCount===total,
+    allDisabled:total>0&&enabledCount===0,
+    mixed:enabledCount>0&&enabledCount<total
+  };
+}
+function saveFactoryPromotionGroup(input:any){
+  const enabled=input?.enabled!==false;
+  const rows=factoryPromotionRows(calendarConfig());
+  const state=factoryPromotionState();
+  for(const row of rows)state[String(row.lightId)]={...(state[String(row.lightId)]||{}),enabled};
+  setMeta("factory_promotions",JSON.stringify(state));
+  const updated=factoryPromotionRows(calendarConfig());
+  return {enabled,group:factoryPromotionGroupState(updated),promotions:updated};
+}
 function effectiveCalendarConfig(base:CalendarConfig|null=calendarConfig()):CalendarConfig|null{
   if(!base)return null;
   const cfg=JSON.parse(JSON.stringify(base)) as CalendarConfig;
@@ -699,17 +720,23 @@ const server=http.createServer(async(req,res)=>{
     }
     if(method==="GET"&&path==="/api/eufy/factory-promotions"){
       const base=calendarConfig();
-      const promotions=factoryPromotionRows(base).map((x:any)=>{
+      const rows=factoryPromotionRows(base);
+      const promotions=rows.map((x:any)=>{
         const {raw,...preset}=x.preset||{};
         return {...x,preset};
       });
-      return json(res,200,{ok:true,count:promotions.length,promotions});
+      return json(res,200,{ok:true,count:promotions.length,group:factoryPromotionGroupState(rows),promotions});
     }
     if(method==="POST"&&path==="/api/eufy/factory-promotions"){
       const updated=saveFactoryPromotion(await readJson(req));
       void reconcile(false,true).catch(e=>console.error("[factory promotion reconcile]",e?.message||e));
       const {raw,...preset}=updated.preset||{};
       return json(res,200,{ok:true,promotion:{...updated,preset}});
+    }
+    if(method==="POST"&&path==="/api/eufy/factory-promotions/group"){
+      const updated=saveFactoryPromotionGroup(await readJson(req));
+      void reconcile(false,true).catch(e=>console.error("[factory promotion group reconcile]",e?.message||e));
+      return json(res,200,{ok:true,enabled:updated.enabled,group:updated.group,count:updated.promotions.length});
     }
     if(method==="GET"&&path==="/api/eufy/factory-presets"){
       const includeRaw=url.searchParams.get("raw")==="1";
