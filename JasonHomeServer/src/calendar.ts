@@ -19,6 +19,7 @@ export interface CalendarSettings {
 }
 export interface CalendarConfig {
   version?:number;
+  revision?:number;
   syncedAt?:number;
   settings:CalendarSettings;
   events:CalendarEvent[];
@@ -232,7 +233,9 @@ function astroMinute(now:Date,lat:number,lon:number,tz:string,dawn:boolean){
 export function normalizeCalendarConfig(input:any):CalendarConfig{
   const s=input?.settings||{};
   const cfg:CalendarConfig={
-    version:1,syncedAt:Date.now(),
+    version:1,
+    revision:Math.max(0,Math.floor(finiteOr(input?.revision,0))),
+    syncedAt:Date.now(),
     settings:{
       enabled:!!s.enabled,
       mode:clamp(finiteOr(s.mode,0),0,2),
