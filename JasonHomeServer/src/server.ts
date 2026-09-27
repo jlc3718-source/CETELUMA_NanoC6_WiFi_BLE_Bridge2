@@ -362,8 +362,8 @@ const server=http.createServer(async(req,res)=>{
 });
 
 server.keepAliveTimeout=65000;
-server.listen(PORT,"127.0.0.1",()=>{
-  console.log(`Jason Home Oracle server listening on 127.0.0.1:${PORT}`);
+server.listen(PORT,"0.0.0.0",()=>{
+  console.log(`Jason Home Oracle server listening on 0.0.0.0:${PORT}`);
   console.log(`Scheduler timezone: ${TZ}; coordinates: ${LAT}, ${LON}`);
   setTimeout(()=>void reconcile(false,false).catch(e=>console.error("[startup reconcile]",e?.message||e)),5000);
   setInterval(()=>void reconcile(false,false).catch(e=>console.error("[scheduler]",e?.message||e)),30000);
