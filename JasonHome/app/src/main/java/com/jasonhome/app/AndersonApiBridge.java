@@ -176,7 +176,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.9");
+        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.10");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -614,7 +614,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Jason Home 5.0.9").put("buildCommit","Craumer Home UI")
+            .put("version","Jason Home 5.0.10").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
