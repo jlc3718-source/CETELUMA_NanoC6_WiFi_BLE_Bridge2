@@ -74,6 +74,10 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (new CloudflareConfigStore(this).isCloudMode() || schedule == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (!schedule.enabled()) {
             stopSelf();
             return START_NOT_STICKY;
