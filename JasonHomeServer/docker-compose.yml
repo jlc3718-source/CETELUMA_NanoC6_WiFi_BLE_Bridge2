@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      JASON_HOME_BUILD_SHA: ${JASON_HOME_BUILD_SHA:-unknown}
     volumes:
       - ./data:/data
     ports:
