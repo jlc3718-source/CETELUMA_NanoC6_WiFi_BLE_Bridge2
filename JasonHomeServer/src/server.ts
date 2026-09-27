@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { EufyClient, type EufySession } from "./eufy/client.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
+import { currentCalendarInfo, nextCalendarEvent, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
 
 const PORT=Math.max(1,Number(process.env.PORT||"8080"));
@@ -82,6 +83,19 @@ function setMeta(key:string,value:string){
   db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,value);
 }
 function delMeta(key:string){db.prepare("DELETE FROM meta WHERE key=?").run(key);}
+function calendarConfig():CalendarConfig|null{
+  const raw=meta("calendar_config");
+  if(!raw)return null;
+  try{return JSON.parse(raw) as CalendarConfig;}catch{return null;}
+}
+function nextAutomationEvent(now=new Date()){
+  const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
+  const calendar=nextCalendarEvent(calendarConfig(),now,LAT,LON,TZ);
+  if(generic&&calendar)return generic.at<=calendar.at?{at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"}:{...calendar,phase:"start" as const,source:"calendar"};
+  if(generic)return {at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"};
+  if(calendar)return {...calendar,phase:"start" as const,source:"calendar"};
+  return null;
+}
 if(!meta("install_id"))setMeta("install_id",DEFAULT_INSTALL);
 
 function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
@@ -124,7 +138,7 @@ async function readJson(req:http.IncomingMessage){
   const chunks:Buffer[]=[];let total=0;
   for await(const chunk of req){
     const b=Buffer.from(chunk);total+=b.length;
-    if(total>131072)throw new Error("Request body too large");
+    if(total>1048576)throw new Error("Request body too large");
     chunks.push(b);
   }
   if(!chunks.length)return {};
@@ -199,8 +213,11 @@ async function statusPayload(refresh=false){
   if(refresh){
     try{await ensureEufy(false);}catch{}
   }
-  const astro=astronomy(new Date(),LAT,LON,TZ);
-  const next=nextScheduleEvent(scheduleRows(),new Date(),LAT,LON,TZ);
+  const now=new Date();
+  const astro=astronomy(now,LAT,LON,TZ);
+  const next=nextAutomationEvent(now);
+  const calendar=calendarConfig();
+  const currentCalendar=currentCalendarInfo(calendar,now,LAT,LON,TZ);
   let override:any=null;const raw=meta("override");
   try{override=raw?JSON.parse(raw):null;}catch{}
   const devices=(db.prepare("SELECT name,model,enabled,last_ok,last_error FROM devices ORDER BY CASE name WHEN 'Pool' THEN 1 WHEN 'House' THEN 2 WHEN 'Garage' THEN 3 ELSE 4 END").all() as any[])
@@ -213,7 +230,8 @@ async function statusPayload(refresh=false){
     devices,
     override,
     astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:TZ},
-    nextEvent:next?{at:new Date(next.at).toISOString(),name:next.row.name,phase:next.phase,target:next.row.target}:null,
+    nextEvent:next?{at:new Date(next.at).toISOString(),name:next.name,phase:next.phase,target:next.target,source:next.source}:null,
+    calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,eventCount:calendar?.events?.length||0,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
     lastCommand:meta("last_command"),
     desired:db.prepare("SELECT * FROM desired_state ORDER BY name").all()
   };
@@ -233,7 +251,7 @@ async function manualControl(input:any){
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
     }
   }
-  const next=nextScheduleEvent(scheduleRows(),new Date(),LAT,LON,TZ);
+  const next=nextAutomationEvent(new Date());
   const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
   setMeta("override",JSON.stringify(override));
   const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail,transport:"linux-mqtt"};
@@ -256,7 +274,7 @@ async function reconcile(ignoreOverride=false,forceSend=false){
   if(reconciling)return {ok:true,busy:true};
   reconciling=true;
   try{
-    const now=Date.now(),rows=scheduleRows();
+    const now=Date.now(),rows=scheduleRows(),calendar=calendarConfig();
     let override:any=null;const raw=meta("override");
     if(raw){try{override=JSON.parse(raw);}catch{delMeta("override");}}
     if(override?.active&&override.expiresAt&&Number(override.expiresAt)<=now){delMeta("override");override=null;}
@@ -265,14 +283,19 @@ async function reconcile(ignoreOverride=false,forceSend=false){
       for(const name of targetNames(String(override.target||"All")))skipped.add(name);
     }
     const changes:{name:string;scene:Scene;reason:string}[]=[];
-    if(rows.length){
-      const resolved=resolveScheduleState(rows,new Date(now),LAT,LON,TZ,[...DEVICE_NAMES]);
+    const automationEnabled=rows.length>0||!!calendar?.settings?.enabled;
+    if(automationEnabled){
+      const resolved=rows.length?resolveScheduleState(rows,new Date(now),LAT,LON,TZ,[...DEVICE_NAMES]):{} as Record<string,any>;
+      const cal=resolveCalendar(calendar,new Date(now),LAT,LON,TZ);
       for(const name of DEVICE_NAMES){
         if(skipped.has(name))continue;
-        const active=resolved[name],scene=active?active.scene:offScene(),stored=storedScene(name);
-        if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene)){
-          changes.push({name,scene,reason:active?`${active.row.name} • active ${new Date(active.start).toISOString()}–${new Date(active.end).toISOString()}`:"No active schedule"});
-        }
+        const active=resolved[name];
+        const scene:Scene=active?active.scene:(cal?cal.scene:offScene());
+        const reason=active
+          ?`${active.row.name} • active ${new Date(active.start).toISOString()}–${new Date(active.end).toISOString()}`
+          :(cal?`${cal.name} • ${cal.schedule2?"Schedule 2":"Schedule 1"}`:"No active holiday/custom schedule");
+        const stored=storedScene(name);
+        if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene))changes.push({name,scene,reason});
       }
     }
     const errors:string[]=[];
@@ -329,7 +352,22 @@ const server=http.createServer(async(req,res)=>{
       void reconcile(false,true).catch(e=>console.error("[schedule delete reconcile]",e?.message||e));
       return json(res,200,{ok:true});
     }
-    if(method==="GET"&&path==="/api/events")return json(res,200,{ok:true,events:allSchedules().filter((x:any)=>x.enabled)});
+    if(method==="GET"&&path==="/api/calendar"){
+      const cfg=calendarConfig();
+      return json(res,200,{ok:true,synced:!!cfg,calendar:cfg});
+    }
+    if(method==="POST"&&path==="/api/calendar/sync"){
+      const cfg=normalizeCalendarConfig(await readJson(req));
+      if(cfg.events.length<1)throw new Error("Holiday calendar is empty");
+      setMeta("calendar_config",JSON.stringify(cfg));
+      setMeta("calendar_sync",new Date().toISOString());
+      void reconcile(false,true).catch(e=>console.error("[calendar reconcile]",e?.message||e));
+      return json(res,200,{ok:true,eventCount:cfg.events.length,customCount:cfg.customSchedules.length,enabled:cfg.settings.enabled,syncedAt:cfg.syncedAt});
+    }
+    if(method==="GET"&&path==="/api/events"){
+      const cfg=calendarConfig();
+      return json(res,200,{ok:true,events:cfg?.events||[],synced:!!cfg});
+    }
     if(method==="POST"&&path==="/api/control")return json(res,200,await manualControl(await readJson(req)));
     if(method==="POST"&&(path==="/api/resume"||path==="/api/resume-schedule")){
       delMeta("override");return json(res,200,{ok:true,resumed:true,reconcile:await reconcile(true,true)});
