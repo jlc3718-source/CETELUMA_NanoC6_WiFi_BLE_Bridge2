@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { EufyClient, type EufySession } from "./eufy/client.js";
 import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
-import { currentCalendarInfo, nextCalendarEvent, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
+import { currentCalendarInfo, nextCalendarBoundary, nextCalendarEvent, nextCalendarTransition, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
 
 const PORT=Math.max(1,Number(process.env.PORT||"8080"));
@@ -91,11 +91,21 @@ function calendarConfig():CalendarConfig|null{
 }
 function nextAutomationEvent(now=new Date()){
   const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
-  const calendar=nextCalendarEvent(effectiveCalendarConfig(),now,LAT,LON,TZ);
-  if(generic&&calendar)return generic.at<=calendar.at?{at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"}:{...calendar,phase:"start" as const,source:"calendar"};
-  if(generic)return {at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"};
-  if(calendar)return {...calendar,phase:"start" as const,source:"calendar"};
-  return null;
+  const cfg=effectiveCalendarConfig();
+  const transition=nextCalendarTransition(cfg,now,LAT,LON,TZ);
+  const named=nextCalendarEvent(cfg,now,LAT,LON,TZ);
+  const candidates:any[]=[];
+  if(generic)candidates.push({at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"});
+  if(transition)candidates.push({...transition,source:"calendar"});
+  if(!transition&&named)candidates.push({...named,phase:"start",source:"calendar"});
+  candidates.sort((a,b)=>a.at-b.at);
+  return candidates[0]||null;
+}
+function nextOverrideExpiry(now=new Date()){
+  const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
+  const calendar=nextCalendarBoundary(effectiveCalendarConfig(),now,LAT,LON,TZ);
+  const at=Math.min(generic?.at??Number.POSITIVE_INFINITY,calendar?.at??Number.POSITIVE_INFINITY);
+  return Number.isFinite(at)?at:null;
 }
 if(!meta("install_id"))setMeta("install_id",DEFAULT_INSTALL);
 
@@ -555,8 +565,8 @@ async function factoryTestAll(lightId:number,target="All",mode="compatible"){
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
     }
   }
-  const next=nextAutomationEvent(new Date());
-  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,createdAt:Date.now(),expiresAt:next?.at||null}));
+  const expiresAt=nextOverrideExpiry(new Date());
+  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,createdAt:Date.now(),expiresAt}));
   setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,mode,sent,total:names.length,results}));
   return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode,customized:!!preset?.customized,compatible:factoryCompatibleScene(preset),attempted:names.length,sent,results,note:mode==="native"?"Exact native 0x020D factory recipe sent; physical pattern verification is still required.":"Factory recipe translated to the production Jason Home effect engine for reliable visible output."};
 }
@@ -594,8 +604,8 @@ async function statusPayload(refresh=false){
 async function manualControl(input:any,sequence?:number){
   const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
 
-  const next=nextAutomationEvent(new Date());
-  const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
+  const expiresAt=nextOverrideExpiry(new Date());
+  const override={active:true,target,scene,createdAt:Date.now(),expiresAt};
   setMeta("override",JSON.stringify(override));
 
   const detail=await Promise.all(names.map(async name=>{
@@ -626,8 +636,8 @@ function queueManualControl(input:any){
   const sequence=++manualSequence;
   for(const name of names)latestManualSequence.set(name,sequence);
 
-  const next=nextAutomationEvent(new Date());
-  const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
+  const expiresAt=nextOverrideExpiry(new Date());
+  const override={active:true,target,scene,createdAt:Date.now(),expiresAt};
   setMeta("override",JSON.stringify(override));
   setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:true,sequence,scene,transport:"linux-mqtt"}));
 
