@@ -5,7 +5,7 @@ on:
     branches:
       - jason-home-3.1-build
       - jason-home-anderson-eufy
-      - jason-home-wifi-5.2.0-build
+      - jason-home-wifi-5.2.1-build
     paths:
       - 'JasonHome/**'
       - '.github/workflows/build-jason-home.yml'
@@ -73,8 +73,10 @@ jobs:
 
           if 'Wi-Fi / Internet' not in bridge or 'Eufy Cloud MQTT' not in bridge:
               raise SystemExit('Wi-Fi cloud status model missing')
-          if 'Craumer Home • 5.2.0 Wi-Fi' not in bridge:
-              raise SystemExit('Bridge version is not 5.2.0 Wi-Fi')
+          if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
+              raise SystemExit('Android WebView API bridge entry point missing')
+          if 'Craumer Home • 5.2.1 Wi-Fi' not in bridge:
+              raise SystemExit('Bridge version is not 5.2.1 Wi-Fi')
           if 'new BleLightController' in main or 'BleLightController' in schedule_service:
               raise SystemExit('Bluetooth transport is still active in app startup or scheduler')
           if 'android.permission.BLUETOOTH' in manifest or 'android.hardware.bluetooth_le' in manifest:
@@ -214,14 +216,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.2.0-WiFi-UNSIGNED.apk
-          sha256sum Craumer-Home-5.2.0-WiFi-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.2.1-WiFi-UNSIGNED.apk
+          sha256sum Craumer-Home-5.2.1-WiFi-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Home-5.2.0-WiFi-UNSIGNED-do-not-install
-          path: Craumer-Home-5.2.0-WiFi-UNSIGNED.apk
+          name: Craumer-Home-5.2.1-WiFi-UNSIGNED-do-not-install
+          path: Craumer-Home-5.2.1-WiFi-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
