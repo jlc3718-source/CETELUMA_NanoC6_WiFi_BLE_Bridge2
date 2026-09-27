@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import json
 
 ROOT=Path(__file__).resolve().parents[2]
 catalog=(ROOT/"firmware/src/EventCatalog.cpp").read_text()
@@ -81,7 +82,7 @@ for i,line in enumerate(lines):
     id_to_index[eid]=i
 
 
-# Craumer Home Expanded Colors (3.0.29+) curation.
+# Legacy 5.4.8 effect/speed defaults, retained verbatim for both Basic profiles.
 # The original/basic tables remain untouched. These defaults combine documented
 # awareness/observance colors with the now-supported motion families. Explicit
 # entries cover the major holidays and campaigns; the fallback gives every
@@ -243,6 +244,24 @@ def curate_expanded_event(e):
 
 events=[curate_expanded_event(e) for e in events]
 
+# A separate, complete design catalog belongs ONLY to profile 3.0.29 / 16.
+# Palette indices can reorder/repeat existing colors, never invent new hues.
+# Keep legacy effect/speed above: both Basic profiles used those values in 5.4.8.
+designs=json.loads((Path(__file__).with_name("expanded_holiday_designs.json")).read_text())
+if set(designs)!={e[0] for e in events}:
+    raise SystemExit("Expanded designs must cover exactly the existing event IDs")
+supported_effects={"Solid / Static","Jump","Breath","Strobe","Chase","Gradient Sweep",
+    "Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet","Rainbow Flow","Pulse Wave"}
+for e in events:
+    d=designs[e[0]]
+    order=d["paletteOrder"]
+    if d["name"]!=e[1] or d["effect"] not in supported_effects or type(d["speed"]) is not int or not 1<=d["speed"]<=5:
+        raise SystemExit("Invalid expanded design: "+e[0])
+    if not 1<=len(order)<=8 or any(type(i) is not int or i<0 or i>=len(e[12]) for i in order):
+        raise SystemExit("Invalid expanded palette order: "+e[0])
+    if set(order)!=set(range(len(e[12]))):
+        raise SystemExit("Expanded design must preserve every original event color: "+e[0])
+
 if len(cat_index)!=len(events):
     raise SystemExit("Anderson event category map count does not match event count")
 
@@ -250,12 +269,15 @@ java=[]
 java.append("package com.jasonhome.app;\n")
 java.append("final class AndersonEventData {")
 java.append("  static final class Event {")
-java.append("    final String id,name,kind,rule,effect;")
-java.append("    final int month,day,weekday,nth,offsetDays,durationDays,speed;")
+java.append("    final String id,name,kind,rule,effect,expandedEffect;")
+java.append("    final int month,day,weekday,nth,offsetDays,durationDays,speed,expandedSpeed;")
 java.append("    final int[] modernColors,basicColors,majorColors;")
-java.append("    Event(String id,String name,String kind,String rule,int month,int day,int weekday,int nth,int offsetDays,int durationDays,String effect,int speed,int[] modernColors,int[] basicColors,int[] majorColors){")
+java.append("    Event(String id,String name,String kind,String rule,int month,int day,int weekday,int nth,int offsetDays,int durationDays,String effect,int speed,int[] modernColors,int[] basicColors,int[] majorColors,String expandedEffect,int expandedSpeed){")
 java.append("      this.id=id;this.name=name;this.kind=kind;this.rule=rule;this.month=month;this.day=day;this.weekday=weekday;this.nth=nth;this.offsetDays=offsetDays;this.durationDays=durationDays;this.effect=effect;this.speed=speed;this.modernColors=modernColors;this.basicColors=basicColors;this.majorColors=majorColors;")
+java.append("      this.expandedEffect=expandedEffect;this.expandedSpeed=expandedSpeed;")
 java.append("    }")
+java.append("    String defaultEffect(boolean expanded){return expanded?expandedEffect:effect;}")
+java.append("    int defaultSpeed(boolean expanded){return expanded?expandedSpeed:speed;}")
 java.append("  }")
 java.append("  static final class Category {")
 java.append("    final String id,name,color;")
@@ -269,8 +291,10 @@ java.append("  static final int[] CATEGORY_INDEX=new int[]{"+",".join(map(str,ca
 java.append("  static final Event[] EVENTS=new Event[]{")
 for e in events:
     eid,name,kind,rule,month,day,weekday,nth,offset,duration,effect,speed,modern,basic,major_cols=e
-    java.append('    new Event("%s","%s","%s","%s",%d,%d,%d,%d,%d,%d,"%s",%d,%s,%s,%s),' % (
-        eid,jstr(name),kind,rule,month,day,weekday,nth,offset,duration,effect,speed,iarr(modern),iarr(basic),iarr(major_cols)))
+    d=designs[eid]
+    expanded_colors=[modern[i] for i in d["paletteOrder"]]
+    java.append('    new Event("%s","%s","%s","%s",%d,%d,%d,%d,%d,%d,"%s",%d,%s,%s,%s,"%s",%d),' % (
+        eid,jstr(name),kind,rule,month,day,weekday,nth,offset,duration,effect,speed,iarr(expanded_colors),iarr(basic),iarr(major_cols),d["effect"],d["speed"]))
 java.append("  };")
 java.append("  static final int[] MAJOR=new int[]{"+",".join(map(str,major))+"};")
 java.append("  static final int[][] SPECIAL=new int[][]{")

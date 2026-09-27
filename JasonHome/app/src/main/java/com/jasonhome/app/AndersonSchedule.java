@@ -313,8 +313,9 @@ final class AndersonSchedule {
     private Scene sceneFor(int index,int brightness,boolean schedule2){
         AndersonEventData.Event e=AndersonEventData.EVENTS[index];
         String p="event_"+e.id+"_";
-        String effect=appPrefs.getString(p+"effect",e.effect);
-        int speed=appPrefs.getInt(p+"speed",e.speed);
+        boolean expanded=mode()==Mode.EXPANDED_COLORS;
+        String effect=appPrefs.getString(p+"effect",e.defaultEffect(expanded));
+        int speed=appPrefs.getInt(p+"speed",e.defaultSpeed(expanded));
         return new Scene(index,e.name,effect,colorsFor(index),Math.max(1,Math.min(5,speed)),brightness,schedule2);
     }
 

@@ -456,7 +456,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.4.6 Oracle");
+        d.put("firmwareVersion","Craumer Home • 5.4.9 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -1114,8 +1114,14 @@ final class AndersonApiBridge {
         return src.clone();
     }
 
-    private String eventEffect(int i){return prefs.getString("event_"+AndersonEventData.EVENTS[i].id+"_effect",AndersonEventData.EVENTS[i].effect);}
-    private int eventSpeed(int i){return prefs.getInt("event_"+AndersonEventData.EVENTS[i].id+"_speed",AndersonEventData.EVENTS[i].speed);}
+    private String eventEffect(int i){
+        AndersonEventData.Event e=AndersonEventData.EVENTS[i];
+        return prefs.getString("event_"+e.id+"_effect",e.defaultEffect(schedule.mode()==AndersonSchedule.Mode.EXPANDED_COLORS));
+    }
+    private int eventSpeed(int i){
+        AndersonEventData.Event e=AndersonEventData.EVENTS[i];
+        return prefs.getInt("event_"+e.id+"_speed",e.defaultSpeed(schedule.mode()==AndersonSchedule.Mode.EXPANDED_COLORS));
+    }
     private boolean eventEnabled(int i){return prefs.getBoolean("event_"+AndersonEventData.EVENTS[i].id+"_enabled",true);}
     private boolean eventFavorite(int i){return prefs.getBoolean("event_"+AndersonEventData.EVENTS[i].id+"_favorite",false);}
     private boolean eventCustomized(int i){
