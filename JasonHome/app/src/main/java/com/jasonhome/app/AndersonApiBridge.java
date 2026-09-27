@@ -313,7 +313,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.3.1 Cloud");
+        d.put("firmwareVersion","Craumer Home • 5.3.2 Cloud");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -863,7 +863,7 @@ final class AndersonApiBridge {
             .put("cpuLoad",0).put("cpuMhz",0).put("wifiConnected",true).put("rssi",0)
             .put("heapFree",free).put("heapMin",free).put("heapLargest",free)
             .put("slotBytes",0).put("appBytes",0).put("appFreeBytes",0)
-            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.3.1")
+            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.3.2")
             .put("bleCount",0).put("bleSeen",cloud.readyCount()).put("bleKnown",NAMES.length).put("bleBusy",false).put("cloudReady",cloud.isReady()).put("cloudBusy",cloud.isBusy())
             .put("ssid","Android").put("ip","Local")
             .put("resetReason","Android app launch").put("loopWatchdog",true).put("networkRestarts",0)
@@ -873,7 +873,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Craumer Home 5.3.1 Cloud").put("buildCommit","Wi-Fi cloud transport")
+            .put("version","Craumer Home 5.3.2 Cloud").put("buildCommit","Wi-Fi cloud transport")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -883,7 +883,7 @@ final class AndersonApiBridge {
     }
 
     private String e120Test(JSONObject in) throws Exception {
-        return error(409,"Bluetooth diagnostics are temporarily disabled in Craumer Home 5.3.1 Cloud mode.");
+        return error(409,"Bluetooth diagnostics are temporarily disabled in Craumer Home 5.3.2 Cloud mode.");
     }
 
     private int[] eventColors(int i) throws Exception {
