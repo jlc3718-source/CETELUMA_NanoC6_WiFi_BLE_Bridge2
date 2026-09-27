@@ -38,8 +38,8 @@ function installAndroidEufyUi(){
         eufy.id="eufyAndroidStatusPanel";
         eufy.className="panel";
         eufy.innerHTML=
-          '<div class="row between"><div><strong>Eufy Wi-Fi / Cloud Status</strong>'+
-          '<div class="sub">Authenticated Eufy cloud MQTT control over this phone's active Internet connection</div></div>'+
+          '<div class="row between"><div><strong>Eufy / Cloud Controller</strong>'+
+          '<div class="sub">Same Jason Home controls with either direct Eufy access or the Cloudflare controller behind them.</div></div>'+
           '<span class="badge" id="eufyBleBadge">READY</span></div>'+
           '<div class="eufyStatusGrid">'+
           '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
@@ -47,8 +47,15 @@ function installAndroidEufyUi(){
           '<div class="eufyStatusCard"><span>Garage</span><strong id="eufyGarageState">Saved</strong><small>E22</small></div>'+
           '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
           '</div>'+
-          '<div class="card small eufyStatusNote"><strong>Control path</strong><br>'+
-          '<span class="sub">Bluetooth is temporarily disabled. Power, brightness, colors, speed and effects are routed through the Eufy cloud MQTT path.</span></div>';
+          '<div class="card small eufyStatusNote"><strong>Controller path</strong><br>'+
+          '<span id="cloudControllerSummary" class="sub">Loading controller mode…</span></div>'+
+          '<div class="label">Controller mode</div>'+
+          '<select id="cloudControllerMode" class="field"><option value="direct">Direct Eufy — phone fallback</option><option value="cloud">Cloudflare — Internet controller</option></select>'+
+          '<div class="label">Jason Home Cloud API token</div>'+
+          '<input id="cloudControllerToken" type="password" class="field" autocomplete="off" placeholder="Only needed when enabling Cloudflare">'+
+          '<div id="cloudControllerTokenMeta" class="sub" style="margin-top:6px">Token status loading…</div>'+
+          '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Cloud</button></div>'+
+          '<div id="cloudControllerResult" class="sub" style="margin-top:7px"></div>';
         generalPane.insertBefore(eufy,monitor);
       }
     }
@@ -81,6 +88,45 @@ function installAndroidEufyUi(){
   new MutationObserver(cleanDeviceActions).observe($("selectedControllers")||document.body,{childList:true,subtree:true});
   cleanDeviceActions();
 
+  async function loadCloudControllerConfig(){
+    const summary=$("cloudControllerSummary"),mode=$("cloudControllerMode"),meta=$("cloudControllerTokenMeta");
+    if(!summary||!mode)return;
+    try{
+      const cfg=typeof api==="function"?await api("/api/cloud/config?ts="+Date.now()):null;
+      if(!cfg)return;
+      mode.value=cfg.mode||"direct";
+      summary.textContent=(cfg.mode==="cloud"?"Cloudflare Worker → Eufy MQTT":"Android → Eufy MQTT")+" • "+(cfg.mode==="cloud"?"server controller":"known-good direct fallback");
+      if(meta)meta.textContent=cfg.configured?"Cloud API token saved securely on this phone.":"Cloud API token not saved on this phone.";
+      const result=$("cloudControllerResult");
+      if(result&&cfg.directStatus)result.textContent="Direct fallback: "+cfg.directStatus;
+    }catch(e){summary.textContent="Controller configuration unavailable: "+e.message;}
+  }
+
+  async function saveCloudControllerConfig(){
+    const mode=$("cloudControllerMode"),token=$("cloudControllerToken"),result=$("cloudControllerResult");
+    if(!mode)return;
+    try{
+      const payload={mode:mode.value};
+      if(token&&token.value.trim())payload.token=token.value.trim();
+      const cfg=await post("/api/cloud/config",payload);
+      if(token)token.value="";
+      if(result)result.textContent="Controller saved: "+(cfg.mode==="cloud"?"Cloudflare":"Direct Eufy")+".";
+      await loadCloudControllerConfig();
+      await refreshEufyStatus();
+      if(typeof loadState==="function")await loadState();
+    }catch(e){if(result)result.textContent="Controller save failed: "+e.message;}
+  }
+
+  async function testCloudController(){
+    const result=$("cloudControllerResult");
+    if(result)result.textContent="Testing Cloudflare and Eufy…";
+    try{
+      const st=await api("/api/cloud/test?ts="+Date.now(),{},30000);
+      const eu=st.eufy||{},names=Array.isArray(eu.readyNames)?eu.readyNames:[];
+      if(result)result.textContent="Cloud test: "+(eu.status||"Online")+" • "+names.length+"/4 strings ready.";
+    }catch(e){if(result)result.textContent="Cloud test failed: "+e.message;}
+  }
+
   async function refreshEufyStatus(){
     try{
       const data=typeof api==="function"?await api("/api/state?eufy="+Date.now()):null;
@@ -93,20 +139,28 @@ function installAndroidEufyUi(){
       });
       const connected=Number(data.ble?.connectedCount||0);
       const badge=$("eufyBleBadge");
-      if(badge)badge.textContent=connected?connected+" SEEN":"READY";
+      if(badge)badge.textContent=connected?connected+"/4 READY":"READY";
+      const summary=$("cloudControllerSummary");
+      if(summary)summary.textContent=(data.ble?.connectionMode||"Internet")+" • "+(data.ble?.status||data.ble?.transportStatus||"");
       cleanDeviceActions();
     }catch(_){}
   }
 
   // Make Eufy hardware immediately obvious the first time Settings is opened.
   const settingsTab=q('.v3BottomNav [data-tab="settings"]');
-  settingsTab?.addEventListener("click",()=>setTimeout(refreshEufyStatus,60));
+  settingsTab?.addEventListener("click",()=>setTimeout(()=>{refreshEufyStatus();loadCloudControllerConfig();},60));
 
   const scan=$("scanBle");
   if(scan){
     scan.textContent="Refresh Eufy Cloud Lights";
     scan.addEventListener("click",()=>setTimeout(refreshEufyStatus,13000));
   }
+
+  const saveCloud=$("saveCloudController");
+  if(saveCloud)saveCloud.addEventListener("click",saveCloudControllerConfig);
+  const testCloud=$("testCloudController");
+  if(testCloud)testCloud.addEventListener("click",testCloudController);
+  loadCloudControllerConfig();
 
   const meta=$("bleMeta");
   if(meta&&!meta.textContent.includes("Eufy"))meta.textContent="Eufy Cloud MQTT • Manual target: All";
