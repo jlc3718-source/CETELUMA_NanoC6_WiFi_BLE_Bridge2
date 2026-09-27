@@ -1,7 +1,8 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
 import { sendMqtt } from "./mqtt.js";
-import { OP_SETUP, buildEffect, brightness as brightnessFields } from "./light-commands.js";
+import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields } from "./light-commands.js";
+import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
 
 export interface EufySession { region:string; bootstrap:string; token:string; uid:string; accountUid:string; }
@@ -12,7 +13,7 @@ const LIGHTS:LightSpec[]=[
   {name:"Garage",model:"T8L02",serials:["T8L028102427474A"]},
   {name:"Shed",model:"T8L02",serials:["T8L0281024470193","T8L0291024470193"]}
 ];
-function allowedApi(host:string){return /^(?:mega|app-(?:openapi|passport|push|house|devicemanage))-(?:us|eu)-pr\.eufy\.com$/.test(host);}
+export function allowedApi(host:string){return /^(?:mega|app-(?:openapi|passport|push|house|devicemanage|light))-(?:us|eu)-pr\.eufy\.com$/.test(host);}
 function allowedBroker(host:string){return /^[a-zA-Z0-9.-]+$/.test(host)&&(host.endsWith(".anker.com")||host.endsWith(".eufy.com")||host.endsWith(".amazonaws.com"));}
 function nowSec(){return Math.floor(Date.now()/1000);}
 
@@ -90,6 +91,47 @@ export class EufyClient {
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
     const s=this.spec(name),fx=buildEffect(s.model,effect,colors,speed,false);
     return this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}],3200);
+  }
+  async factoryPresets():Promise<{presets:EufyFactoryPreset[];rawDiscover:unknown;scanned:number}>{
+    this.requireLogin();
+    const rawDiscover=await this.signed("light","/app/light/discover/list",{},true);
+    const ids=collectFactoryEffectIds(rawDiscover);
+    for(let id=10001;id<=10999;id++)ids.add(id);
+    const all=[...ids].sort((a,b)=>a-b),seen=new Set<number>(),presets:EufyFactoryPreset[]=[];
+    for(let i=0;i<all.length;i+=100){
+      const batch=await this.signed("light","/app/light/lighteffect/batchget",{light_id:all.slice(i,i+100)},true);
+      const list=Array.isArray(batch?.list)?batch.list:[];
+      for(const raw of list){
+        if(!raw||typeof raw!=="object")continue;
+        const p=normalizeFactoryEntry(raw as Record<string,unknown>);
+        if(p&&!seen.has(p.lightId)){seen.add(p.lightId);presets.push(p);}
+      }
+    }
+    presets.sort((a,b)=>a.lightId-b.lightId);
+    return {presets,rawDiscover,scanned:all.length};
+  }
+  async factoryPreset(lightId:number):Promise<EufyFactoryPreset>{
+    this.requireLogin();
+    if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
+    const batch=await this.signed("light","/app/light/lighteffect/batchget",{light_id:[lightId]},true);
+    const list=Array.isArray(batch?.list)?batch.list:[];
+    const raw=list.find((x:any)=>Number(x?.light_id)===lightId);
+    if(!raw)throw new Error(`Factory preset ${lightId} was not returned by Eufy`);
+    const preset=normalizeFactoryEntry(raw as Record<string,unknown>);
+    if(!preset)throw new Error(`Factory preset ${lightId} is malformed`);
+    return preset;
+  }
+  async factoryScene(name:string,preset:EufyFactoryPreset){
+    const s=this.spec(name);
+    const fields=buildFactoryFields(s.model,preset);
+    const brightness=typeof preset.brightness==="number"?Math.max(1,Math.min(100,Math.round(preset.brightness))):75;
+    const strategy=s.model==="T8L02"?"verified-t8l02-020d":"experimental-t8l00-020d";
+    const r=await this.command(name,[
+      {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
+      {opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},
+      {opcode:OP_SHOW,fields,label:`FACTORY ${preset.lightId}`}
+    ],3600);
+    return {...r,strategy,model:s.model};
   }
   readyNames(){return [...this.lights.keys()];}
 }
