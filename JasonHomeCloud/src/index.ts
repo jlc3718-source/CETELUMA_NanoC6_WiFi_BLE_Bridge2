@@ -18,7 +18,7 @@ export default {
     if(!env.JASON_HOME_API_TOKEN||bearer(request)!==env.JASON_HOME_API_TOKEN){
       return json({ok:false,error:"Unauthorized"},401);
     }
-    const id=env.HOME.idFromName("home");
+    const id=env.HOME.idFromName("home-v2");
     const stub=env.HOME.get(id);
     return stub.fetch(request);
   }
