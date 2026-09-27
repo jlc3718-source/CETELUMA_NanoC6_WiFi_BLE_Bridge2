@@ -87,6 +87,33 @@ const hanukkah=normalizeCalendarConfig({
 r=resolveCalendar(hanukkah,new Date("2026-12-05T00:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.name,"Hanukkah Factory");
 
+const overnightSchedule1=normalizeCalendarConfig({
+  settings:{...base.settings,on:23*60,off:60,startAtDusk:false,schedule2Enabled:false},
+  special:[],
+  customSchedules:[],
+  events:[
+    base.events[0],
+    {id:"boxing",name:"Boxing Day Test",kind:"Holiday",rule:"Fixed",month:12,day:26,weekday:0,nth:0,offsetDays:0,durationDays:1,effect:"Breath",speed:1,colors:[0x0000ff],enabled:true,categoryIndex:0,major:true}
+  ]
+});
+r=resolveCalendar(overnightSchedule1,new Date("2026-12-26T05:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Christmas Day","Schedule 1 after midnight must retain the prior evening's theme");
+r=resolveCalendar(overnightSchedule1,new Date("2026-12-26T06:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"Cross-midnight Schedule 1 must end at its configured end time");
+
+const splitNight=normalizeCalendarConfig({
+  settings:{...base.settings,on:17*60,off:23*60,startAtDusk:false,schedule2Enabled:false},
+  special:[],
+  customSchedules:[],
+  events:[
+    base.events[0],
+    {id:"xmas-alt",name:"Christmas Alternate",kind:"Holiday",rule:"Fixed",month:12,day:25,weekday:0,nth:0,offsetDays:0,durationDays:1,effect:"Breath",speed:1,colors:[0xffffff],enabled:true,categoryIndex:0,major:true}
+  ]
+});
+const midSceneTransition=nextCalendarTransition(splitNight,new Date("2026-12-25T23:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(midSceneTransition?.name,"Christmas Alternate","Next transition must detect a real scene change inside Schedule 1");
+assert.equal(new Date(midSceneTransition.at).toISOString(),"2026-12-26T01:00:00.000Z");
+
 const summer=astronomy(new Date("2026-06-21T16:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.ok(summer.duskMs!=null);
 const duskLocal=localParts(new Date(summer.duskMs),"America/New_York");
