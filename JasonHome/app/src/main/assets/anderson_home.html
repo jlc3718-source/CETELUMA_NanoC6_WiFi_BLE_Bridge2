@@ -40,7 +40,46 @@
   </div>
 </main>
 
-<script>async function controllerRequest(e,t={},o=12e3){if(window.AndroidAnderson){try{const n=JSON.parse(window.AndroidAnderson.request(t.method||"GET",e,t.body||"",window.andersonAuthToken||"")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};return{response:r,text:null==n.body?"":String(n.body)}}catch(e){throw new Error(e&&e.message?e.message:"Android controller bridge failed.")}}const n=new AbortController,i=setTimeout(()=>n.abort(),o);try{const o=await fetch(e,{...t,signal:n.signal}),i=await o.text();return{response:o,text:i}}catch(e){if("AbortError"===e.name)throw new Error("Controller response timed out.");throw e}finally{clearTimeout(i)}}!function(){
+<script>
+window.__andersonBridgePending=window.__andersonBridgePending||new Map();
+window.__andersonBridgeResolve=function(id,raw){
+  const p=window.__andersonBridgePending.get(String(id));
+  if(!p)return;
+  window.__andersonBridgePending.delete(String(id));
+  clearTimeout(p.timer);
+  try{
+    const n=JSON.parse(String(raw||"{}")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};
+    p.resolve({response:r,text:null==n.body?"":String(n.body)});
+  }catch(e){p.reject(new Error(e&&e.message?e.message:"Android controller bridge failed."));}
+};
+async function controllerRequest(e,t={},o=12e3){
+  if(window.AndroidAnderson){
+    if(typeof window.AndroidAnderson.requestAsync==="function"){
+      return new Promise((resolve,reject)=>{
+        const id="jh-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+        const timer=setTimeout(()=>{
+          window.__andersonBridgePending.delete(id);
+          reject(new Error("Controller response timed out."));
+        },o);
+        window.__andersonBridgePending.set(id,{resolve,reject,timer});
+        try{window.AndroidAnderson.requestAsync(id,t.method||"GET",e,t.body||"",window.andersonAuthToken||"");}
+        catch(err){
+          clearTimeout(timer);window.__andersonBridgePending.delete(id);
+          reject(new Error(err&&err.message?err.message:"Android controller bridge failed."));
+        }
+      });
+    }
+    try{
+      const n=JSON.parse(window.AndroidAnderson.request(t.method||"GET",e,t.body||"",window.andersonAuthToken||"")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};
+      return{response:r,text:null==n.body?"":String(n.body)};
+    }catch(e){throw new Error(e&&e.message?e.message:"Android controller bridge failed.")}
+  }
+  const n=new AbortController,i=setTimeout(()=>n.abort(),o);
+  try{const o=await fetch(e,{...t,signal:n.signal}),i=await o.text();return{response:o,text:i}}
+  catch(e){if("AbortError"===e.name)throw new Error("Controller response timed out.");throw e}
+  finally{clearTimeout(i)}
+}
+!function(){
 window.andersonAuthToken="";
 const byId=e=>document.getElementById(e);
 function chooseJason(){
