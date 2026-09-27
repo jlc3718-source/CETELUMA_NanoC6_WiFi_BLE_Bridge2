@@ -1,0 +1,45 @@
+name: Build Jason Home Oracle Server
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeServer/**'
+      - '.github/workflows/build-jason-home-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: JasonHomeServer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install
+      - name: Type check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Build Docker image
+        run: docker build -t jason-home-server:test .
+      - name: Verify Oracle API surface
+        run: |
+          grep -q '"/api/health"' src/server.ts
+          grep -q '"/api/status"' src/server.ts
+          grep -q '"/api/control"' src/server.ts
+          grep -q '"/api/schedules"' src/server.ts
+          grep -q '"/api/reconcile"' src/server.ts
+          grep -q '"/api/reconnect"' src/server.ts
+          grep -q 'setInterval' src/server.ts
+          grep -q 'node:sqlite' src/server.ts
+          grep -q 'linux-mqtt' src/server.ts
