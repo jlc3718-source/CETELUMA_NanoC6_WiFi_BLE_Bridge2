@@ -202,7 +202,6 @@ final class AndersonApiBridge {
             if ("/api/backup/status".equals(path) && "GET".equals(m)) return ok(backupStatus());
             if ("/api/backup/manual".equals(path) && "POST".equals(m)) return backupAll();
             if ("/api/backup/restore".equals(path) && "POST".equals(m)) return restoreBackup();
-            if ("/api/backup/settings".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("mode","all"));
 
             if ("/api/events".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), intQuery(uri,"month",LocalDate.now().getMonthValue()), null));
             if ("/api/events/search".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), 0, uri.getQueryParameter("q")));
@@ -220,27 +219,11 @@ final class AndersonApiBridge {
             if ("/api/colors".equals(path) && "GET".equals(m)) return ok(colorsJson());
             if ("/api/colors".equals(path) && "POST".equals(m)) return updateColor(input);
 
-            // Keep the original Anderson/Jason Home API routes so the existing UI
-            // continues to work unchanged. In 5.2.x these routes are compatibility
-            // aliases backed by Eufy Wi-Fi/cloud instead of Android Bluetooth.
+            // The visible Eufy device controls retain their historical /api/ble path
+            // names, but all transport is Wi-Fi/Oracle; no Android Bluetooth code runs.
             if ("/api/ble/scan".equals(path)) return ok(bleScan());
-            if ("/api/ble/select".equals(path) && "POST".equals(m)) return bleSelect(input);
-            if ("/api/ble/remove".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
-            if ("/api/ble/rename".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
             if ("/api/ble/target".equals(path) && "POST".equals(m)) return bleTarget(input);
-            if ("/api/ble/e120-test".equals(path) && "POST".equals(m)) return e120Test(input);
-            if ("/api/ble/e120-state".equals(path) && "GET".equals(m))
-                return ok(new JSONObject().put("summary","Bluetooth diagnostics disabled in Wi-Fi mode").put("details",cloud.status()));
 
-            if ("/api/system".equals(path)) return ok(systemJson());
-            if ("/api/firmware".equals(path)) return ok(firmwareJson());
-            if ("/api/remote-update".equals(path)) return ok(remoteUpdateJson());
-            if ("/api/remote-update/check".equals(path) || "/api/remote-update/install".equals(path))
-                return ok(new JSONObject().put("ok",true).put("operationId",1).put("operationComplete",true).put("message","Android app updates are installed as signed APK upgrades."));
-            if ("/api/wifi/scan".equals(path)) return ok(new JSONObject().put("scanning",false).put("networks",new JSONArray()));
-            if ("/api/wifi".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("message","Android manages Wi-Fi."));
-            if ("/api/reboot".equals(path) || "/api/rollback".equals(path) || "/api/update".equals(path))
-                return error(409,"This control belongs to the NanoC6 firmware and is not used by Jason Home Android.");
 
             return ok(new JSONObject().put("ok",true).put("android",true));
         } catch (Throwable t) {
@@ -408,10 +391,6 @@ final class AndersonApiBridge {
             scheduled.put("name",schedule.enabled()?"No event active right now":"Schedule disabled").put("id","").put("enabled",schedule.enabled()).put("toggleable",false).put("custom",false).put("upcoming",false);
         }
         d.put("scheduledEvent",scheduled);
-
-        JSONObject wifi=new JSONObject();
-        wifi.put("ssid","Android device").put("rssi",0).put("ip","Local WebView");
-        d.put("wifi",wifi);
 
         JSONObject b=new JSONObject();
         boolean useServer=cloudApi.isCloudMode();
@@ -798,14 +777,6 @@ final class AndersonApiBridge {
         return new JSONObject().put("scanning",false).put("transport","wifi-cloud").put("devices",devices);
     }
 
-    private String bleSelect(JSONObject in) throws Exception {
-        String address=in.optString("address","").toUpperCase(Locale.ROOT);
-        int index=indexOfAddress(address);
-        if(index<0)return error(400,"Only Pool, House, Garage and Shed are supported");
-        prefs.edit().putInt("ble_target",index+1).apply();
-        return ok(new JSONObject().put("ok",true).put("target",index+1));
-    }
-
     private String bleTarget(JSONObject in) throws Exception {
         int target=in.optInt("target",0);
         if(target<0||target>4)target=0;
@@ -894,36 +865,6 @@ final class AndersonApiBridge {
             }
         }
         ed.apply();
-    }
-
-    private JSONObject systemJson() throws Exception {
-        Runtime rt=Runtime.getRuntime();
-        long free=rt.freeMemory(),total=rt.totalMemory();
-        return new JSONObject()
-            .put("cpuLoad",0).put("cpuMhz",0).put("wifiConnected",true).put("rssi",0)
-            .put("heapFree",free).put("heapMin",free).put("heapLargest",free)
-            .put("slotBytes",0).put("appBytes",0).put("appFreeBytes",0)
-            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.3.4")
-            .put("bleCount",0).put("bleSeen",cloud.readyCount()).put("bleKnown",NAMES.length).put("bleBusy",false).put("cloudReady",cloud.isReady()).put("cloudBusy",cloud.isBusy())
-            .put("ssid","Android").put("ip","Local")
-            .put("resetReason","Android app launch").put("loopWatchdog",true).put("networkRestarts",0)
-            .put("nextReboot","—").put("nextRebootSeconds",-1)
-            .put("rebootSchedule","Android managed");
-    }
-
-    private JSONObject firmwareJson() throws Exception {
-        return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Craumer Home 5.4.0 Oracle").put("buildCommit","Oracle + Eufy Wi-Fi transport")
-            .put("slotSize",0).put("previousAvailable",false);
-    }
-
-    private JSONObject remoteUpdateJson() throws Exception {
-        return new JSONObject().put("autoCheckSecondsRemaining",0).put("autoCheckMinutes",0)
-            .put("updateHold",false).put("operationId",0).put("operationComplete",true).put("phase","APK upgrades");
-    }
-
-    private String e120Test(JSONObject in) throws Exception {
-        return error(409,"Bluetooth diagnostics are not used by Craumer Home 5.4.0 Oracle mode.");
     }
 
     private int[] eventColors(int i) throws Exception {
