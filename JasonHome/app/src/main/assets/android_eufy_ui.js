@@ -11,25 +11,12 @@ function installAndroidEufyUi(){
 
   const settings=q('.page[data-page="settings"]');
   if(settings){
-    const wifiTab=q('.v3SettingsTab[data-settings-tab="wifi"]');
-    const wifiPane=q('.v3SettingsPane[data-settings-pane="wifi"]');
-    if(wifiTab){wifiTab.hidden=true;wifiTab.style.display="none";}
-    if(wifiPane){wifiPane.hidden=true;wifiPane.style.display="none";}
-
-    const fwTab=q('.v3SettingsTab[data-settings-tab="firmware"]');
-    const fwPane=q('.v3SettingsPane[data-settings-pane="firmware"]');
-    if(fwTab){fwTab.hidden=true;fwTab.style.display="none";}
-    if(fwPane){fwPane.hidden=true;fwPane.style.display="none";}
-
     const ctlTab=q('.v3SettingsTab[data-settings-tab="controllers"]');
     if(ctlTab){
       const label=ctlTab.querySelector(".ah27SectionLabel")||ctlTab;
       label.textContent="Eufy Devices";
       ctlTab.setAttribute("aria-label","Eufy Devices");
     }
-
-    const monitor=$("systemMonitorPanel");
-    if(monitor){monitor.hidden=true;monitor.style.display="none";}
 
     const controllerPane=q('.v3SettingsPane[data-settings-pane="controllers"]');
     if(controllerPane&&!$("eufyAndroidStatusPanel")){
@@ -69,11 +56,6 @@ function installAndroidEufyUi(){
       }
     }
   }
-
-  // The standalone NanoC6 Wi-Fi page is not part of the Android/Eufy app.
-  const wifiPage=q('.page[data-page="wifi"]');
-  if(wifiPage){wifiPage.hidden=true;wifiPage.style.display="none";}
-  qa('.v3BottomNav [data-tab="wifi"], .nav [data-tab="wifi"]').forEach(x=>{x.hidden=true;x.style.display="none";});
 
   function installFactoryLab(){
     if($("factoryTab"))return;
