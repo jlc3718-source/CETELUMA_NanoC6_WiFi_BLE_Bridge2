@@ -369,7 +369,7 @@ final class EufyLightCommands {
 
     static byte[] show(String model, String effectName, int[] colors, int speed1to5, boolean reverse) {
         int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
-        int speed = speedValue(speed1to5);
+        int speed = isE22(model) ? speedValueE22(speed1to5) : speedValue(speed1to5);
         int effectIndex = effectIndex(effectName);
         int showId = isE22(model) ? (21000 + effectIndex) : E120_EFFECT_CARRIER_ID;
 
