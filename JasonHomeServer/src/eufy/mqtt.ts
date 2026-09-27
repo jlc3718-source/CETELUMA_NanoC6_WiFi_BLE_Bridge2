@@ -73,7 +73,7 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
   const brokerUser=creds.user_id===undefined||creds.user_id===null?"u":String(creds.user_id);
   const appName=(creds.app_name&&String(creds.app_name).trim())||"eufy_life";
   const mqttUuid=sha256(installId).slice(0,16);
-  const clientId=`android-${appName}-${brokerUser}-${mqttUuid}-${Math.floor(Date.now()/1000)}`;
+  const clientId=`android-${appName}-${brokerUser}-${mqttUuid}-${target.serial.slice(-6)}-${Date.now()%1000000}-${Math.floor(Math.random()*65536).toString(16)}`;
   const isIp=/^\d{1,3}(?:\.\d{1,3}){3}$/.test(connectHost);
   let socket:any;
   if(isIp){
@@ -110,19 +110,34 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
     }
     if(!sub)throw new Error("No MQTT SUBACK received");
     let packetId=2;
+    const publishedIds:number[]=[];
     for(let i=0;i<frames.length;i++){
       const ts=Math.floor(Date.now()/1000),f=frames[i],dp=dpCommand(f.opcode,target.account,f.fields,ts);
       const inner={account_id:target.account,device_sn:target.serial,data:Buffer.from(dp).toString("base64"),trans:""};
       const head={version:"1.0.0.1",client_id:clientId,sess_id:"0000",msg_seq:i+1,seed:"",timestamp:ts,cmd_status:1,cmd:17,sign_code:0};
       const payload=Buffer.from(JSON.stringify({head,payload:JSON.stringify(inner)}),"utf8");
+      publishedIds.push(packetId);
       socket.write(publishPacket(`cmd/eufy_life/${target.model}/${target.serial}/req`,packetId++,payload));
-      if(i+1<frames.length)await new Promise(r=>setTimeout(r,180));
+      if(i+1<frames.length)await new Promise(r=>setTimeout(r,120));
     }
+
+    // Status requests need a real device report. Normal control requests only need
+    // the broker to acknowledge all QoS1 publishes; waiting the old fixed 2.5-3.6s
+    // after that made every button press feel frozen even though the command had
+    // already been accepted.
+    const requireReport=frames.some(f=>f.opcode===0x0200);
+    const expected=new Set(publishedIds),acked=new Set<number>();
     const deadline=Date.now()+waitMs;let report:Record<string,unknown>|undefined;
     while(Date.now()<deadline){
-      try{p=await reader.next(Math.min(800,Math.max(50,deadline-Date.now())),"MQTT response");}
+      try{p=await reader.next(Math.min(500,Math.max(50,deadline-Date.now())),"MQTT response");}
       catch(e:any){if(String(e?.message||e).includes("timeout"))continue;throw e;}
-      if(p.type===3){const r=handlePublish(socket,p,target);if(r)report=r;}
+      if(p.type===4&&p.data.length>=2){
+        acked.add(p.data.readUInt16BE(0));
+        if(!requireReport&&[...expected].every(id=>acked.has(id)))break;
+      }else if(p.type===3){
+        const r=handlePublish(socket,p,target);
+        if(r){report=r;if(requireReport)break;}
+      }
     }
     return {published:frames.length,report,instance:connectHost};
   }finally{try{socket.end();}catch{}try{socket.destroy();}catch{}}
