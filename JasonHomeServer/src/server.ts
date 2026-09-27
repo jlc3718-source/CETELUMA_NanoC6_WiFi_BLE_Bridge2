@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { EufyClient, type EufySession } from "./eufy/client.js";
+import { dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
 import { currentCalendarInfo, nextCalendarEvent, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
@@ -257,12 +258,13 @@ async function factoryCatalog(refresh=false){
 }
 function factorySummary(catalog:any,includeRaw=false,id?:number){
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
-  const list=(id==null?src:src.filter((p:any)=>Number(p?.lightId)===id)).map((p:any)=>{
+  const canonical=id==null?dedupeFactoryPresetsByName(src):src.filter((p:any)=>Number(p?.lightId)===id);
+  const list=canonical.map((p:any)=>{
     if(includeRaw)return p;
     const {raw,...summary}=p||{};
     return summary;
   });
-  return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:src.length,scanned:Number(catalog?.scanned)||0,presets:list};
+  return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:canonical.length,rawTotalCount:src.length,duplicatesCollapsed:Math.max(0,src.length-canonical.length),scanned:Number(catalog?.scanned)||0,presets:list};
 }
 const factoryJobs=new Map<string,any>();
 function pruneFactoryJobs(){
