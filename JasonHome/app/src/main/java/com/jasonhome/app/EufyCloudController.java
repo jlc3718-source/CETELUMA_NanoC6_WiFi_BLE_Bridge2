@@ -59,6 +59,7 @@ final class EufyCloudController {
     int readyCount(){return readyNames.size();}
     boolean isDeviceReady(String name){return readyNames.contains(name);}
     String status(){return status;}
+    String installId(){return installId;}
     boolean hasRememberedSignIn(){return store.hasSavedAuth();}
 
     void login(String email,String password){
