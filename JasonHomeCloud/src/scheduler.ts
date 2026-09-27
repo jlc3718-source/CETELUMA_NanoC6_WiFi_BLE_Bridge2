@@ -1,4 +1,4 @@
-import type { ScheduleRow } from "./types";
+import type { ScheduleRow, Scene } from "./types";
 
 function rad(v:number){return v*Math.PI/180;}
 function deg(v:number){return v*180/Math.PI;}
@@ -43,13 +43,58 @@ function eventTime(row:ScheduleRow,day:Date,kind:string,value:string,lat:number,
   const astro=astronomy(new Date(localToUtcMs(lp.year,lp.month,lp.day,12,0,tz)),lat,lon,tz),base=kind==="dawn"?astro.dawnMs:kind==="dusk"?astro.duskMs:null;
   if(base==null)return null;const offset=parseInt(value||"0",10)||0;return base+offset*60000;
 }
+function localDayShift(day:Date,delta:number,tz:string){
+  const lp=localParts(day,tz);return new Date(localToUtcMs(lp.year,lp.month,lp.day+delta,12,0,tz));
+}
+export interface ScheduleOccurrence { row:ScheduleRow; start:number; end:number; }
+export interface ResolvedScheduleState { scene:Scene; row:ScheduleRow; start:number; end:number; }
+
+export function scheduleOccurrences(rows:ScheduleRow[],now:Date,lat:number,lon:number,tz:string,lookBackDays=2,lookForwardDays=8):ScheduleOccurrence[]{
+  const out:ScheduleOccurrence[]=[];
+  for(let add=-lookBackDays;add<=lookForwardDays;add++){
+    const day=localDayShift(now,add,tz),lp=localParts(day,tz);
+    for(const row of rows){
+      if(!row.enabled||!dayAllowed(row,lp.weekday))continue;
+      const start=eventTime(row,day,row.start_kind,row.start_value,lat,lon,tz);
+      let end=eventTime(row,day,row.end_kind,row.end_value,lat,lon,tz);
+      if(start==null||end==null)continue;
+      if(end<=start){
+        const nextDay=localDayShift(day,1,tz);
+        end=eventTime(row,nextDay,row.end_kind,row.end_value,lat,lon,tz);
+      }
+      if(end==null||end<=start)continue;
+      out.push({row,start,end});
+    }
+  }
+  out.sort((a,b)=>a.start-b.start||a.end-b.end||b.row.priority-a.row.priority);
+  return out;
+}
 export function nextScheduleEvent(rows:ScheduleRow[],now:Date,lat:number,lon:number,tz:string):{at:number;row:ScheduleRow;phase:"start"|"end"}|null{
-  let best:any=null;
-  for(let add=0;add<9;add++){
-    const day=new Date(now.getTime()+add*86400000),lp=localParts(day,tz);
-    for(const row of rows){if(!row.enabled||!dayAllowed(row,lp.weekday))continue;
-      for(const phase of ["start","end"] as const){const at=eventTime(row,day,phase==="start"?row.start_kind:row.end_kind,phase==="start"?row.start_value:row.end_value,lat,lon,tz);if(at!=null&&at>now.getTime()+500&&(!best||at<best.at))best={at,row,phase};}
+  let best:{at:number;row:ScheduleRow;phase:"start"|"end"}|null=null;
+  for(const occ of scheduleOccurrences(rows,now,lat,lon,tz,1,9)){
+    for(const phase of ["start","end"] as const){
+      const at=phase==="start"?occ.start:occ.end;
+      if(at>now.getTime()+500&&(!best||at<best.at))best={at,row:occ.row,phase};
     }
   }
   return best;
+}
+function rowScene(row:ScheduleRow):Scene{
+  let colors:number[]=[0xffffff];
+  try{const parsed=JSON.parse(row.colors||"[]");if(Array.isArray(parsed)){const safe=parsed.map((x:any)=>Number(x)&0xffffff).filter((x:any)=>Number.isFinite(x)).slice(0,8);if(safe.length)colors=safe;}}catch{}
+  return {power:true,brightness:Math.max(1,Math.min(100,Number(row.brightness)||75)),effect:row.effect||"Solid / Static",colors,speed:Math.max(1,Math.min(5,Number(row.speed)||3))};
+}
+export function resolveScheduleState(rows:ScheduleRow[],now:Date,lat:number,lon:number,tz:string,devices:string[]):Record<string,ResolvedScheduleState|null>{
+  const result:Record<string,ResolvedScheduleState|null>={};for(const d of devices)result[d]=null;
+  const active=scheduleOccurrences(rows,now,lat,lon,tz,2,1).filter(o=>o.start<=now.getTime()&&now.getTime()<o.end);
+  for(const occ of active){
+    const targets=occ.row.target.toLowerCase()==="all"?devices:devices.includes(occ.row.target)?[occ.row.target]:[];
+    for(const d of targets){
+      const cur=result[d];
+      if(!cur||occ.row.priority>cur.row.priority||(occ.row.priority===cur.row.priority&&occ.start>=cur.start)){
+        result[d]={scene:rowScene(occ.row),row:occ.row,start:occ.start,end:occ.end};
+      }
+    }
+  }
+  return result;
 }
