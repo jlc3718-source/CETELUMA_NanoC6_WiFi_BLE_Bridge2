@@ -1,8 +1,8 @@
-import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto";
-import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt";
+import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
+import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
 import { sendMqtt } from "./mqtt";
-import { OP_SETUP, buildEffect, brightness as brightnessFields } from "./light-commands";
-import { powerFields, statusFields } from "./wire";
+import { OP_SETUP, buildEffect, brightness as brightnessFields } from "./light-commands.js";
+import { powerFields, statusFields } from "./wire.js";
 
 export interface EufySession { region:string; bootstrap:string; token:string; uid:string; accountUid:string; }
 interface LightSpec { name:string; model:string; serials:string[]; }
