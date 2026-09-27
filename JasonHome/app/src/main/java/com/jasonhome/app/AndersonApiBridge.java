@@ -11,7 +11,6 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -195,7 +194,6 @@ final class AndersonApiBridge {
             }
 
 
-            if ("/api/login-preview".equals(path)) return ok(loginPreview());
             if ("/api/state".equals(path)) return ok(stateJson());
             if ("/api/control".equals(path) && "POST".equals(m)) return control(input);
             if ("/api/resume".equals(path) && "POST".equals(m)) return resume();
@@ -327,21 +325,6 @@ final class AndersonApiBridge {
             .putString("event_theme","3.0.29")
             .putLong("category_mask",(1L<<15)-1L)
             .apply();
-    }
-
-    private JSONObject loginPreview() throws Exception {
-        JSONObject o=new JSONObject();
-        o.put("power",prefs.getBoolean("power",false));
-        o.put("brightness",prefs.getInt("brightness",75));
-        o.put("speed",prefs.getInt("speed",3));
-        JSONObject running=new JSONObject();
-        running.put("effect",prefs.getString("effect","Jump"));
-        running.put("colors",new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
-        o.put("running",running);
-        LocalDate today=LocalDate.now();
-        o.put("dawn",displayMinutes(schedule.civilDawnMinutes(today)));
-        o.put("dusk",displayMinutes(schedule.civilDuskMinutes(today)));
-        return o;
     }
 
     private JSONObject stateJson() throws Exception {
@@ -824,7 +807,6 @@ final class AndersonApiBridge {
         JSONObject out=new JSONObject();
         for(Map.Entry<String,?> entry:source.getAll().entrySet()){
             String key=entry.getKey();
-            if(appPrefs&&(key.startsWith("pin_")||"pin_enabled".equals(key)))continue;
             Object value=entry.getValue();
             JSONObject v=new JSONObject();
             if(value instanceof String){v.put("t","s").put("v",value);}
@@ -847,7 +829,6 @@ final class AndersonApiBridge {
         SharedPreferences.Editor ed=target.edit().clear();
         for(java.util.Iterator<String> it=data.keys();it.hasNext();){
             String key=it.next();
-            if(appPrefs&&(key.startsWith("pin_")||"pin_enabled".equals(key)))continue;
             JSONObject v=data.optJSONObject(key);
             if(v==null)continue;
             String type=v.optString("t","");
@@ -1076,11 +1057,4 @@ final class AndersonApiBridge {
     private static String themeName(String t){return "1".equals(t)?"Major U.S. Holidays — Basic Colors":"3.0.28".equals(t)?"Expanded Holidays — Basic Colors":"Expanded Holidays — Expanded Colors";}
     private static int indexOfAddress(String address){for(int i=0;i<ADDRESSES.length;i++)if(ADDRESSES[i].equalsIgnoreCase(address))return i;return -1;}
 
-    private static String hashPin(String profile,String pin) {
-        try{
-            MessageDigest d=MessageDigest.getInstance("SHA-256");
-            byte[] b=d.digest(("JasonHomeAnderson|"+profile+"|"+pin).getBytes(StandardCharsets.UTF_8));
-            StringBuilder s=new StringBuilder();for(byte x:b)s.append(String.format(Locale.ROOT,"%02x",x&255));return s.toString();
-        }catch(Throwable t){return profile+"|"+pin;}
-    }
 }
