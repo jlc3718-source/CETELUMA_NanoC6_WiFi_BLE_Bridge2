@@ -288,8 +288,19 @@ export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:
   const start=cfg.settings.startAtDusk?astroMinute(now,lat,lon,tz,false):cfg.settings.on;
   const end=cfg.settings.off;
   if(inWindow(minute,start,end)){
-    const custom=customScene(cfg,day,false,100);if(custom)return custom;
-    return resolveFor(cfg,day,minute,start,end,false,100);
+    // If Schedule 1 crosses midnight, the post-midnight portion belongs to the
+    // prior evening's calendar theme. Otherwise a Dec 25 11 PM–1 AM window,
+    // for example, can switch to Dec 26's event at midnight.
+    let themeDay=day,themeStart=start;
+    if(start>end&&minute<end){
+      themeDay=addDays(day,-1);
+      if(cfg.settings.startAtDusk){
+        const themeNoon=new Date(localToUtcMs(themeDay.year,themeDay.month,themeDay.day,12,0,tz));
+        themeStart=astroMinute(themeNoon,lat,lon,tz,false);
+      }
+    }
+    const custom=customScene(cfg,themeDay,false,100);if(custom)return custom;
+    return resolveFor(cfg,themeDay,minute,themeStart,end,false,100);
   }
   if(cfg.settings.schedule2Enabled){
     const s2end=cfg.settings.schedule2EndAtDawn?astroMinute(now,lat,lon,tz,true):cfg.settings.schedule2End;
