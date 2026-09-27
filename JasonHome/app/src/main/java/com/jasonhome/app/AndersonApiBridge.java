@@ -9,6 +9,7 @@ import android.webkit.JavascriptInterface;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
@@ -52,6 +53,8 @@ final class AndersonApiBridge {
     private final AndersonSchedule schedule;
     private final SharedPreferences prefs;
     private volatile String cloudStatus = "Wi-Fi cloud starting";
+    private JSONObject cloudSnapshotCache;
+    private long cloudSnapshotAt=0L;
 
     AndersonApiBridge(Context context, Host host, DeviceStore deviceStore,
                       EufyCloudController cloud, CloudflareApiClient cloudApi, AndersonSchedule schedule) {
