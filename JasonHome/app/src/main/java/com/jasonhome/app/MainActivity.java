@@ -3,12 +3,15 @@ package com.jasonhome.app;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.Color;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -49,13 +52,34 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
+        if (Build.VERSION.SDK_INT >= 21) settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
 
         webView.setWebChromeClient(new WebChromeClient());
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            private boolean handle(String url) {
+                if (url != null && url.startsWith("file:///android_asset/")) return false;
+                try {
+                    Uri u=Uri.parse(url);
+                    String scheme=u.getScheme();
+                    if ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme)) {
+                        startActivity(new Intent(Intent.ACTION_VIEW,u));
+                    }
+                } catch (Throwable ignored) {}
+                return true;
+            }
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return handle(request==null||request.getUrl()==null?"":request.getUrl().toString());
+            }
+            @Override @SuppressWarnings("deprecation") public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return handle(url);
+            }
+        });
         webView.addJavascriptInterface(bridge, "AndroidAnderson");
 
         frame.addView(webView, new FrameLayout.LayoutParams(
