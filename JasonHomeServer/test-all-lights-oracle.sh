@@ -14,10 +14,15 @@ if [ -z "$TOKEN" ]; then
 fi
 
 call_control() {
-  local target="$1" color="$2" label="$3"
+  local target="$1" color="$2" label="$3" payload
   echo
   echo "=== $target -> $label ==="
-  curl -fsS -X POST     -H "Authorization: Bearer $TOKEN"     -H "Content-Type: application/json"     --data "{"target":"$target","power":true,"brightness":75,"effect":"Solid / Static","colors":[$color],"speed":3}"     http://127.0.0.1:8080/api/control | python3 -m json.tool
+  printf -v payload '{"target":"%s","power":true,"brightness":75,"effect":"Solid / Static","colors":[%s],"speed":3}' "$target" "$color"
+  curl -fsS -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "$payload" \
+    http://127.0.0.1:8080/api/control | python3 -m json.tool
 }
 
 echo
