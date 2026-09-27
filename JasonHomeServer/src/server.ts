@@ -209,6 +209,54 @@ async function sendScene(name:string,scene:Scene){
   });
 }
 
+async function factoryCatalog(refresh=false){
+  if(!refresh){
+    const raw=meta("factory_catalog");
+    if(raw){try{return JSON.parse(raw);}catch{delMeta("factory_catalog");}}
+  }
+  const c=await ensureEufy(false);
+  const fetched=await c.factoryPresets();
+  const value={ok:true,fetchedAt:new Date().toISOString(),count:fetched.presets.length,scanned:fetched.scanned,presets:fetched.presets,rawDiscover:fetched.rawDiscover};
+  setMeta("factory_catalog",JSON.stringify(value));
+  setMeta("factory_catalog_at",String(Date.now()));
+  console.log(`Eufy factory catalog: scanned ${fetched.scanned} ids; ${fetched.presets.length} valid records returned`);
+  return value;
+}
+function factorySummary(catalog:any,includeRaw=false,id?:number){
+  const src=Array.isArray(catalog?.presets)?catalog.presets:[];
+  const list=(id==null?src:src.filter((p:any)=>Number(p?.lightId)===id)).map((p:any)=>{
+    if(includeRaw)return p;
+    const {raw,...summary}=p||{};
+    return summary;
+  });
+  return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:src.length,scanned:Number(catalog?.scanned)||0,presets:list};
+}
+async function factoryTestAll(lightId:number){
+  if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
+  const c=await ensureEufy(false);
+  let preset:any=null;
+  const raw=meta("factory_catalog");
+  if(raw){try{preset=(JSON.parse(raw)?.presets||[]).find((p:any)=>Number(p?.lightId)===lightId)||null;}catch{}}
+  if(!preset)preset=await c.factoryPreset(lightId);
+  const results:any[]=[];let sent=0;
+  for(const name of DEVICE_NAMES){
+    try{
+      const r=await serialized(()=>c.factoryScene(name,preset));
+      sent++;
+      results.push({name,ok:true,model:DEVICE_MODELS[name],strategy:(r as any).strategy,published:(r as any).published,instance:(r as any).instance||null,report:(r as any).report||null});
+      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+    }catch(e:any){
+      const msg=e?.message||String(e);
+      results.push({name,ok:false,model:DEVICE_MODELS[name],strategy:DEVICE_MODELS[name]==="E22"?"verified-t8l02-020d":"experimental-t8l00-020d",error:msg});
+      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+    }
+  }
+  const next=nextAutomationEvent(new Date());
+  setMeta("override",JSON.stringify({active:true,target:"All",factory:true,lightId,createdAt:Date.now(),expiresAt:next?.at||null}));
+  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,sent,total:DEVICE_NAMES.length,results}));
+  return {ok:sent===DEVICE_NAMES.length,lightId,name:preset?.name||null,attempted:DEVICE_NAMES.length,sent,results,note:"Factory command sent to all four strings. T8L02/E22 uses the verified 0x020D layout; T8L00/E120 uses the isolated experimental family adaptation and must be verified visually."};
+}
+
 async function statusPayload(refresh=false){
   if(refresh){
     try{await ensureEufy(false);}catch{}
@@ -367,6 +415,16 @@ const server=http.createServer(async(req,res)=>{
     if(method==="GET"&&path==="/api/events"){
       const cfg=calendarConfig();
       return json(res,200,{ok:true,events:cfg?.events||[],synced:!!cfg});
+    }
+    if(method==="GET"&&path==="/api/eufy/factory-presets"){
+      const refresh=url.searchParams.get("refresh")==="1",includeRaw=url.searchParams.get("raw")==="1";
+      const idRaw=url.searchParams.get("id"),id=idRaw==null?undefined:Number(idRaw);
+      const catalog=await factoryCatalog(refresh);
+      return json(res,200,factorySummary(catalog,includeRaw,id));
+    }
+    if(method==="POST"&&path==="/api/eufy/factory-test"){
+      const input:any=await readJson(req);
+      return json(res,200,await factoryTestAll(Number(input?.lightId)));
     }
     if(method==="POST"&&path==="/api/control")return json(res,200,await manualControl(await readJson(req)));
     if(method==="POST"&&(path==="/api/resume"||path==="/api/resume-schedule")){
