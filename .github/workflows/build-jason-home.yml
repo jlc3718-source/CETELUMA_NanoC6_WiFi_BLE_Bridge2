@@ -21,34 +21,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate 5.0.19 U-series color slots
+      - name: Validate 5.0.20 V-series grouped fill
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
           html = Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
-          expected = [
-              ('slot-r','U1 · Red only','new int[]{0xFF0000}'),
-              ('slot-g','U2 · Green only','new int[]{0x00FF00}'),
-              ('slot-b','U3 · Blue only','new int[]{0x0000FF}'),
-              ('slot-rg','U4 · Red + Green','new int[]{0xFF0000,0x00FF00}'),
-              ('slot-gr','U5 · Green + Red','new int[]{0x00FF00,0xFF0000}'),
-              ('slot-rb','U6 · Red + Blue','new int[]{0xFF0000,0x0000FF}'),
-              ('slot-br','U7 · Blue + Red','new int[]{0x0000FF,0xFF0000}'),
-              ('slot-gb','U8 · Green + Blue','new int[]{0x00FF00,0x0000FF}'),
-              ('slot-bg','U9 · Blue + Green','new int[]{0x0000FF,0x00FF00}'),
-          ]
-          for action,label,palette in expected:
-              if f'case "{action}"' not in bridge:
-                  raise SystemExit(f'Missing {action} bridge action')
-              if label not in html:
-                  raise SystemExit(f'Missing {label} UI label')
-              if f'30009,10034,{palette},2,false' not in bridge:
-                  raise SystemExit(f'Missing steady-mode palette for {action}')
-          if 'Craumer Home • Jason Home 5.0.19' not in bridge:
-              raise SystemExit('Bridge version is not 5.0.19')
-          print('5.0.19 U-series source validation: PASS')
+          for n in range(1,6):
+              if f'case "fill-group-{n}"' not in bridge:
+                  raise SystemExit(f'Missing fill-group-{n} bridge action')
+              if f'V{n} · ' not in html:
+                  raise SystemExit(f'Missing V{n} UI label')
+              needle = f'testE120Group(one,30009,10034,new int[]{{0xFF0000,0x00FF00}},2,{n})'
+              if needle not in bridge:
+                  raise SystemExit(f'Missing V{n} grouped fill call')
+          if 'Craumer Home • Jason Home 5.0.20' not in bridge:
+              raise SystemExit('Bridge version is not 5.0.20')
+          print('5.0.20 V-series source validation: PASS')
           PY
 
       - name: Set up Java 17
