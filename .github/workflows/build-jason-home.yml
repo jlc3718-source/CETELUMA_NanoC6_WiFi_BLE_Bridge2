@@ -133,6 +133,7 @@ jobs:
             node --check JasonHome/app/src/main/assets/jason_cloud_home.js
           else
             node --check JasonHome/app/src/main/assets/v3_mockup.js
+          node --check JasonHome/app/src/main/assets/event_categories.js
           fi
           for f in /tmp/craumer-inline-*.js; do node --check "$f"; done
 
@@ -229,10 +230,18 @@ jobs:
           for marker in ['data-page="home"','data-page="lights"','data-page="events"','data-page="settings"','housePreview','Jason','Scheduling Rules','Eufy Devices']:
               if marker not in classic:
                   raise SystemExit('Classic Jason Home layout missing '+marker)
-          for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller','Test Oracle','factoryTab','Factory preset editor','Save & Apply','Advanced Layer Data','/api/eufy/factory-test','/api/eufy/factory-presets','/api/eufy/factory-presets/save','/api/eufy/factory-promotions','/api/eufy/factory-promotions/group','installFactorySchedulePromotions','eufyfactory','#factoryPresetList{display:grid']:
+          for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller','Test Oracle','factoryTab','Factory preset editor','Save & Apply','Advanced Layer Data','/api/eufy/factory-test','/api/eufy/factory-presets','/api/eufy/factory-presets/save','/api/eufy/factory-promotions','/api/eufy/factory-promotions/group','installFactorySchedulePromotions','#factoryPresetList{display:grid']:
               if marker not in classic_js:
                   raise SystemExit('Classic Cloudflare integration missing '+marker)
           print("Classic Jason Home Oracle layout regression: PASS")
+          event_categories = Path('JasonHome/app/src/main/assets/event_categories.js').read_text()
+          for marker in ['id:"eufyfactory"','name:"Eufy Factory"','color:"#31D89B"','/api/eufy/factory-promotions/group','setFactoryCategory']:
+              if marker not in event_categories:
+                  raise SystemExit('Eufy Factory category-row toggle missing '+marker)
+          for obsolete in ['factoryPromotionMaster','factoryPromotionMasterCheck']:
+              if obsolete in classic_js:
+                  raise SystemExit('Standalone Eufy Factory master box returned: '+obsolete)
+          print("Factory category-row toggle regression: PASS")
           if 'controllerPane.prepend(eufy)' not in classic_js or 'data-settings-pane="controllers"' not in classic_js:
               raise SystemExit('Cloudflare controller must live under Eufy Devices')
           print("Oracle Eufy Devices placement regression: PASS")
