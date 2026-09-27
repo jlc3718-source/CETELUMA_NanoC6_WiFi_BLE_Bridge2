@@ -1,1 +1,1 @@
-Deploy fresh controller with current app-shaped client ID and broker-instance discovery.
+Deploy broker discovery without unsupported TLS callback and probe Pool status.
