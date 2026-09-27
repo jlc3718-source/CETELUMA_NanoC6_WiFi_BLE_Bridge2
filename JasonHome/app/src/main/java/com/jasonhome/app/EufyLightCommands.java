@@ -148,6 +148,70 @@ final class EufyLightCommands {
         return out.toByteArray();
     }
 
+    static byte[] groupedCatalogPresetE120(int localId, int catalogId, int rawA5, int[] colors, int lampCount, int mode) {
+        int lamps = clamp(lampCount, 2, 120);
+        int[] paletteColors = colors == null || colors.length < 2 ? new int[]{0xFF0000,0x00FF00} : colors;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        write(out, tlv(0xA3, le16(localId)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{(byte) clamp(rawA5, 1, 5)}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(2);
+        write(palette, nativeColor("E120", paletteColors[0]));
+        write(palette, nativeColor("E120", paletteColors[1]));
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        int half = lamps / 2;
+        byte[] g1 = new byte[half + 1];
+        byte[] g2 = new byte[(lamps - half) + 1];
+        g1[0] = (byte) half;
+        g2[0] = (byte) (lamps - half);
+
+        boolean alternating = mode == 2 || mode == 4;
+        if (alternating) {
+            int a=1,b=1;
+            for (int i=0;i<lamps;i++) {
+                if ((i & 1)==0 && a<g1.length) g1[a++] = (byte)i;
+                else if ((i & 1)==1 && b<g2.length) g2[b++] = (byte)i;
+            }
+        } else {
+            for (int i=0;i<half;i++) g1[i+1]=(byte)i;
+            for (int i=half;i<lamps;i++) g2[i-half+1]=(byte)i;
+        }
+
+        if (mode == 1 || mode == 2) {
+            ByteArrayOutputStream groups = new ByteArrayOutputStream();
+            write(groups,g1); write(groups,g2);
+            write(out, tlv(0xA7, groups.toByteArray()));
+        } else if (mode == 3 || mode == 4) {
+            write(out, tlv(0xA7, g1));
+            write(out, tlv(0xA7, g2));
+        } else if (mode == 5) {
+            ByteArrayOutputStream groups = new ByteArrayOutputStream();
+            groups.write(2); write(groups,g1); write(groups,g2);
+            write(out, tlv(0xA7, groups.toByteArray()));
+        } else {
+            // Control: the current one-group encoding, but with the palette reversed.
+            byte[] positions = new byte[lamps + 1];
+            positions[0] = (byte) lamps;
+            for (int i=0;i<lamps;i++) positions[i+1]=(byte)i;
+            write(out, tlv(0xA7, positions));
+        }
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, le32(catalogId)));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
     static byte[] localEffectE120(int localId, int[] colors, int speed1to5, int lampCount) {
         int lamps = clamp(lampCount, 1, 120);
         int[] paletteColors = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors;
