@@ -289,6 +289,8 @@ final class AndersonApiBridge {
 
 
             return error(404,"Unknown API route: "+path);
+        } catch (BadRequest t) {
+            return error(400,t.getMessage());
         } catch (Throwable t) {
             return error(500, t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
         }
@@ -1235,9 +1237,11 @@ final class AndersonApiBridge {
         return a;
     }
 
-    private JSONObject parseBody(String body) {
-        try{return body==null||body.trim().isEmpty()?new JSONObject():new JSONObject(body);}
-        catch(Throwable t){return new JSONObject();}
+    private JSONObject parseBody(String body) throws BadRequest {
+        if(body==null||body.trim().isEmpty())return new JSONObject();
+        if(body.getBytes(StandardCharsets.UTF_8).length>1024*1024)throw new BadRequest("Request body too large");
+        try{return new JSONObject(body);}
+        catch(Throwable t){throw new BadRequest("Malformed JSON request body");}
     }
 
     private String ok(JSONObject body) {
@@ -1275,6 +1279,8 @@ final class AndersonApiBridge {
         for(int i=0;i<AndersonEventData.EVENTS.length;i++)if(AndersonEventData.EVENTS[i].id.equals(id))return i;
         return -1;
     }
+
+    private static final class BadRequest extends Exception { BadRequest(String message){super(message);} }
 
     private static int intQuery(Uri u,String key,int def){try{String v=u.getQueryParameter(key);return v==null?def:Integer.parseInt(v);}catch(Throwable t){return def;}}
     private static int clamp(int v,int lo,int hi){return Math.max(lo,Math.min(hi,v));}
