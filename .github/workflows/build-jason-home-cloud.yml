@@ -1,0 +1,46 @@
+name: Build Jason Home Cloudflare
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeCloud/**'
+      - '.github/workflows/build-jason-home-cloud.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: JasonHomeCloud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: JasonHomeCloud/package-lock.json
+      - name: Install
+        run: npm install
+      - name: Type check
+        run: npm run check
+      - name: Verify production worker identity
+        run: |
+          grep -q '"name": "jason-home-cloud"' wrangler.jsonc
+          grep -q '"new_sqlite_classes": \["JasonHomeController"\]' wrangler.jsonc
+          grep -q 'nodejs_compat' wrangler.jsonc
+      - name: Verify Eufy transport protections
+        run: |
+          grep -q 'certificate_pem' src/eufy/mqtt.ts
+          grep -q 'private_key' src/eufy/mqtt.ts
+          grep -q 'randomId(3)' src/eufy/mqtt.ts
+          grep -q 'T8L006102353014B' src/eufy/client.ts
+          grep -q 'T8L00610243503A2' src/eufy/client.ts
+          grep -q 'T8L028102427474A' src/eufy/client.ts
+          grep -q 'T8L0291024470193' src/eufy/client.ts
