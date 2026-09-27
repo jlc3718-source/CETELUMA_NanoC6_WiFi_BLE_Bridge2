@@ -91,7 +91,7 @@ function calendarConfig():CalendarConfig|null{
 }
 function nextAutomationEvent(now=new Date()){
   const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
-  const calendar=nextCalendarEvent(calendarConfig(),now,LAT,LON,TZ);
+  const calendar=nextCalendarEvent(effectiveCalendarConfig(),now,LAT,LON,TZ);
   if(generic&&calendar)return generic.at<=calendar.at?{at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"}:{...calendar,phase:"start" as const,source:"calendar"};
   if(generic)return {at:generic.at,name:generic.row.name,target:generic.row.target,phase:generic.phase,source:"schedule"};
   if(calendar)return {...calendar,phase:"start" as const,source:"calendar"};
@@ -315,13 +315,15 @@ function resetFactoryEdit(lightId:number){
 function factorySummary(catalog:any,includeRaw=false,id?:number){
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
   const edited=src.map(applyFactoryEdit);
-  const canonical=id==null?dedupeFactoryPresetsByName(edited):edited.filter((p:any)=>Number(p?.lightId)===id);
+  const allCanonical=id==null?dedupeFactoryPresetsByName(edited):edited.filter((p:any)=>Number(p?.lightId)===id);
+  const promoted=id==null?new Set(factoryPromotionRows(calendarConfig()).map((x:any)=>Number(x.lightId))):new Set<number>();
+  const canonical=id==null?allCanonical.filter((p:any)=>!promoted.has(Number(p?.lightId))):allCanonical;
   const list=canonical.map((p:any)=>{
     if(includeRaw)return p;
     const {raw,...summary}=p||{};
     return summary;
   });
-  return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:canonical.length,rawTotalCount:src.length,duplicatesCollapsed:Math.max(0,src.length-canonical.length),scanned:Number(catalog?.scanned)||0,presets:list};
+  return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:canonical.length,rawTotalCount:src.length,duplicatesCollapsed:Math.max(0,src.length-allCanonical.length),promotedCount:promoted.size,scanned:Number(catalog?.scanned)||0,presets:list};
 }
 function factoryHexColors(preset:any):number[]{
   const out:number[]=[];
@@ -367,6 +369,103 @@ function factoryCompatibleScene(preset:any):Scene{
     colors:factoryHexColors(preset).length?factoryHexColors(preset):[0xffffff],
     speed:factorySpeed5(preset)
   };
+}
+const FACTORY_EVENT_MATCHES:Record<string,string>={
+  "mardi gras":"evt027",
+  "valentine s day":"evt025",
+  "presidents day":"evt026",
+  "flag day":"evt105",
+  "labor day":"evt144",
+  "halloween":"evt179",
+  "halloween 2":"evt179",
+  "halloween 3":"evt179",
+  "hanukkah":"evt202",
+  "new year s day":"evt006",
+  "new year s day 2":"evt006",
+  "new year s day 3":"evt006",
+  "easter":"evt065",
+  "mother s day":"evt087",
+  "fourth of july":"evt118",
+  "christmas day":"evt208",
+  "christmas day 2":"evt208",
+  "christmas day 3":"evt208",
+  "st patrick s day":"evt046",
+  "father s day":"evt109",
+  "thanksgiving day":"evt197",
+  "april fool s day":"evt061"
+};
+function promotionNameKey(v:any){
+  return String(v??"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
+}
+function factoryPromotionState():Record<string,{enabled?:boolean}>{
+  const raw=meta("factory_promotions");
+  if(!raw)return {};
+  try{
+    const x=JSON.parse(raw);
+    return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
+  }catch{return {};}
+}
+function factoryPromotionRows(base:CalendarConfig|null=calendarConfig()){
+  if(!base)return [] as any[];
+  const raw=meta("factory_catalog");
+  if(!raw)return [] as any[];
+  let catalog:any=null;
+  try{catalog=JSON.parse(raw);}catch{return [] as any[];}
+  const src=Array.isArray(catalog?.presets)?catalog.presets:[];
+  const presets=dedupeFactoryPresetsByName(src.map(applyFactoryEdit));
+  const state=factoryPromotionState();
+  const out:any[]=[];
+  for(const preset of presets){
+    const eventId=FACTORY_EVENT_MATCHES[promotionNameKey(preset?.name)];
+    if(!eventId)continue;
+    const event=(base.events||[]).find(e=>e.id===eventId);
+    if(!event)continue;
+    const enabled=state[String(preset.lightId)]?.enabled!==false;
+    const scene=factoryCompatibleScene(preset);
+    out.push({
+      lightId:Number(preset.lightId),
+      name:String(preset.name||("Factory "+preset.lightId)),
+      eventId,eventName:event.name,enabled,
+      scheduling:event.rule==="Month"
+        ?"Rotates across eligible days with the matching monthly event."
+        :"Shares and splits the active event window with the matching scheduled event.",
+      preset,
+      scene,
+      event
+    });
+  }
+  out.sort((a,b)=>a.eventId.localeCompare(b.eventId)||a.name.localeCompare(b.name,undefined,{numeric:true}));
+  return out;
+}
+function saveFactoryPromotion(input:any){
+  const lightId=Number(input?.lightId);
+  const rows=factoryPromotionRows(calendarConfig());
+  const row=rows.find(x=>x.lightId===lightId);
+  if(!row)throw new Error("Factory preset is not promoted into the schedule");
+  const state=factoryPromotionState();
+  state[String(lightId)]={...(state[String(lightId)]||{}),enabled:input?.enabled!==false};
+  setMeta("factory_promotions",JSON.stringify(state));
+  return {...row,enabled:state[String(lightId)].enabled!==false};
+}
+function effectiveCalendarConfig(base:CalendarConfig|null=calendarConfig()):CalendarConfig|null{
+  if(!base)return null;
+  const cfg=JSON.parse(JSON.stringify(base)) as CalendarConfig;
+  cfg.events=(cfg.events||[]).filter((e:any)=>!String(e.id||"").includes("::factory:"));
+  for(const row of factoryPromotionRows(base)){
+    const e:any=row.event;
+    const scene:Scene=row.scene;
+    cfg.events.push({
+      ...e,
+      id:e.id+"::factory:"+row.lightId,
+      name:row.name,
+      effect:scene.effect,
+      speed:scene.speed,
+      colors:[...scene.colors],
+      enabled:row.enabled,
+      favorite:false
+    });
+  }
+  return cfg;
 }
 
 const factoryJobs=new Map<string,any>();
@@ -420,7 +519,8 @@ async function statusPayload(refresh=false){
   const astro=astronomy(now,LAT,LON,TZ);
   const next=nextAutomationEvent(now);
   const calendar=calendarConfig();
-  const currentCalendar=currentCalendarInfo(calendar,now,LAT,LON,TZ);
+  const effectiveCalendar=effectiveCalendarConfig(calendar);
+  const currentCalendar=currentCalendarInfo(effectiveCalendar,now,LAT,LON,TZ);
   let override:any=null;const raw=meta("override");
   try{override=raw?JSON.parse(raw):null;}catch{}
   const devices=(db.prepare("SELECT name,model,enabled,last_ok,last_error FROM devices ORDER BY CASE name WHEN 'Pool' THEN 1 WHEN 'House' THEN 2 WHEN 'Garage' THEN 3 ELSE 4 END").all() as any[])
@@ -435,7 +535,7 @@ async function statusPayload(refresh=false){
     astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:TZ},
     nextEvent:next?{at:new Date(next.at).toISOString(),id:(next as any).id||null,name:next.name,phase:next.phase,target:next.target,source:next.source}:null,
     location:{zip:"14772",lat:LAT,lon:LON,timeZone:TZ},
-    calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,eventCount:calendar?.events?.length||0,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
+    calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,eventCount:calendar?.events?.length||0,promotedFactoryCount:factoryPromotionRows(calendar).length,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
     lastCommand:meta("last_command"),
     desired:db.prepare("SELECT * FROM desired_state ORDER BY name").all()
   };
@@ -502,7 +602,7 @@ async function reconcile(ignoreOverride=false,forceSend=false){
   if(reconciling)return {ok:true,busy:true};
   reconciling=true;
   try{
-    const now=Date.now(),rows=scheduleRows(),calendar=calendarConfig();
+    const now=Date.now(),rows=scheduleRows(),calendar=effectiveCalendarConfig();
     let override:any=null;const raw=meta("override");
     if(raw){try{override=JSON.parse(raw);}catch{delMeta("override");}}
     if(override?.active&&override.expiresAt&&Number(override.expiresAt)<=now){delMeta("override");override=null;}
@@ -596,6 +696,20 @@ const server=http.createServer(async(req,res)=>{
     if(method==="GET"&&path==="/api/events"){
       const cfg=calendarConfig();
       return json(res,200,{ok:true,events:cfg?.events||[],synced:!!cfg});
+    }
+    if(method==="GET"&&path==="/api/eufy/factory-promotions"){
+      const base=calendarConfig();
+      const promotions=factoryPromotionRows(base).map((x:any)=>{
+        const {raw,...preset}=x.preset||{};
+        return {...x,preset};
+      });
+      return json(res,200,{ok:true,count:promotions.length,promotions});
+    }
+    if(method==="POST"&&path==="/api/eufy/factory-promotions"){
+      const updated=saveFactoryPromotion(await readJson(req));
+      void reconcile(false,true).catch(e=>console.error("[factory promotion reconcile]",e?.message||e));
+      const {raw,...preset}=updated.preset||{};
+      return json(res,200,{ok:true,promotion:{...updated,preset}});
     }
     if(method==="GET"&&path==="/api/eufy/factory-presets"){
       const includeRaw=url.searchParams.get("raw")==="1";
