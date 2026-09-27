@@ -47,3 +47,70 @@ jobs:
           grep -q 'setInterval' src/server.ts
           grep -q 'node:sqlite' src/server.ts
           grep -q 'linux-mqtt' src/server.ts
+
+  deploy:
+    name: Deploy tested commit to Oracle
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/jason-home-cloudflare-rebuild'
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    concurrency:
+      group: jason-home-oracle-production
+      cancel-in-progress: true
+    env:
+      DEPLOY_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout exact tested revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo
+          git fetch origin "$DEPLOY_SHA"
+          git reset --hard "$DEPLOY_SHA"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$DEPLOY_SHA^{commit}")"
+
+      - name: Protect production secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          test -s .env
+          sed -i 's/^HOME_LAT=42\.0529$/HOME_LAT=42.1507/' .env
+          sed -i 's/^HOME_LON=-79\.0576$/HOME_LON=-78.9452/' .env
+          chmod 600 .env
+
+      - name: Build and restart exact tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose build
+          sudo docker compose up -d --remove-orphans
+
+      - name: Verify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8080/api/health >/tmp/jason-home-health.json && break
+            sleep 2
+          done
+          cat /tmp/jason-home-health.json
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          test -n "$TOKEN"
+          STATUS="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1')"
+          python3 - "$STATUS" "$DEPLOY_SHA" <<'PY'
+          import json,sys
+          d=json.loads(sys.argv[1]); sha=sys.argv[2]
+          e=d.get("eufy",{}); names=set(e.get("readyNames",[]))
+          if not e.get("ready") or names != {"Pool","House","Garage","Shed"}:
+              raise SystemExit("Eufy validation failed: "+json.dumps(e))
+          loc=d.get("location",{})
+          if loc.get("zip")!="14772":
+              raise SystemExit("Location validation failed: "+json.dumps(loc))
+          cal=d.get("calendar",{})
+          if not cal.get("synced") or not cal.get("enabled") or int(cal.get("eventCount") or 0)<1:
+              raise SystemExit("Calendar validation failed: "+json.dumps(cal))
+          print("Oracle exact-commit deploy PASS",sha)
+          PY
