@@ -163,7 +163,7 @@ public final class AndersonScheduleService extends Service implements BleLightCo
     private void createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel c = new NotificationChannel(CHANNEL, "Jason Home schedules", NotificationManager.IMPORTANCE_LOW);
-            c.setDescription("Keeps Anderson Home lighting schedules active in the background.");
+            c.setDescription("Keeps Craumer Home lighting schedules active in the background.");
             ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(c);
         }
     }
