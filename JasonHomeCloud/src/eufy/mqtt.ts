@@ -1,6 +1,6 @@
 import { connect as tlsConnect, checkServerIdentity } from "node:tls";
 import { promises as dns } from "node:dns";
-import { md5, randomId } from "./crypto";
+import { sha256 } from "./crypto";
 import { dpCommand } from "./wire";
 
 export interface MqttCredentials {
@@ -69,9 +69,10 @@ function handlePublish(socket:any,p:ParsedPacket,target:MqttTarget):Record<strin
 
 async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs:number,connectHost:string):Promise<{published:number;report?:Record<string,unknown>;instance:string}>{
   const brokerHost=creds.endpoint_addr,port=creds.endpoint_port||8883;
-  const brokerUser=creds.user_id===undefined||creds.user_id===null?"u":creds.user_id;
-  const appClientId=`android-eufy_life-${brokerUser}-${md5(installId).slice(0,16)}-${target.serial.slice(-4)}-${Date.now()%100000}`;
-  const clientId=(creds.thing_name&&String(creds.thing_name).trim())||appClientId;
+  const brokerUser=creds.user_id===undefined||creds.user_id===null?"u":String(creds.user_id);
+  const appName=(creds.app_name&&String(creds.app_name).trim())||"eufy_life";
+  const mqttUuid=sha256(installId).slice(0,16);
+  const clientId=`android-${appName}-${brokerUser}-${mqttUuid}-${Math.floor(Date.now()/1000)}`;
   const socket:any=tlsConnect({
     host:connectHost,port,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,
     rejectUnauthorized:true,checkServerIdentity:(_hostname:string,cert:any)=>checkServerIdentity(brokerHost,cert)
