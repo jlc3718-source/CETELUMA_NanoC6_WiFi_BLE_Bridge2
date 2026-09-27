@@ -28,6 +28,7 @@ public final class EufyLightCommandsRegression {
         assertProductionE120Effect("Wipe / Fill",30007,1,false);
         assertProductionE120Effect("Meteor / Comet",30012,4,false);
         assertProductionE120Effect("Solid / Static",30014,2,false);
+        assertRgbParity();
         System.out.println("EufyLightCommands regression: PASS");
     }
 
@@ -50,6 +51,25 @@ public final class EufyLightCommandsRegression {
         if ((payload[layer + 11] & 0xFF) != 0xFF) fail(model + " red channel mismatch");
         for (int i = 1; i < expectedColorWidth; i++) {
             if ((payload[layer + 11 + i] & 0xFF) != 0) fail(model + " native color width/content mismatch");
+        }
+    }
+
+    private static void assertRgbParity() {
+        int[] colors={
+            0xFF0000,0xFF0D00,0xFF0024,0xE08700,0x28FF00,0x00BD4C,
+            0x0D00FF,0x5B00E6,0xFFFFFA,0x00B4B4,0x0096FF,0xFFA000,
+            0xB464FF,0x001478,0x87002D,0xA0A5AF
+        };
+        for(int rgb:colors){
+            byte[] e22=EufyLightCommands.color("E22",rgb,60);
+            byte[] e120=EufyLightCommands.color("E120",rgb,60);
+            int p22=find(e22,0xA6), p120=find(e120,0xA6);
+            if(p22<0||p120<0) fail("RGB parity missing A6");
+            if((e22[p22+2]&255)!=1||(e120[p120+2]&255)!=1) fail("RGB parity palette count mismatch");
+            for(int i=0;i<3;i++){
+                int a=e22[p22+3+i]&255,b=e120[p120+3+i]&255;
+                if(a!=b) fail(String.format("RGB parity mismatch #%06X channel %d: %d vs %d",rgb,i,a,b));
+            }
         }
     }
 
