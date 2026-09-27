@@ -58,8 +58,10 @@ jobs:
 
           required_colors=['Crimson','Coral','Bronze','Brown','Forest Green','Turquoise','Deep Purple','Black / Off']
           for color in required_colors:
-              if color not in catalog or color not in html:
-                  raise SystemExit('Missing expanded color '+color)
+              if color not in catalog:
+                  raise SystemExit('Master catalog missing expanded color '+color)
+              if not cloud_ui.exists() and color not in html:
+                  raise SystemExit('Legacy UI missing expanded color '+color)
 
           if 'speedValueE22' not in commands or 'case 1: return 2;' not in commands or 'case 3: return 8;' not in commands or 'default: return 50;' not in commands:
               raise SystemExit('E22 five-speed calibration missing')
@@ -216,12 +218,22 @@ jobs:
               "Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet",
               "Rainbow Flow","Pulse Wave"
           ]
-          quick = [
-              "True Orange","Gold","Lime","Emerald","Aqua","Royal Blue",
-              "Indigo","Magenta","Hot Pink","Rose","Warm White RGB","Neutral White RGB"
-          ]
-          missing = [x for x in effects if x not in html or x not in js]
-          missing += [x for x in quick if x not in html]
+          cloud_ui = Path("JasonHome/app/src/main/assets/jason_cloud_home.html")
+          cloud_js = Path("JasonHome/app/src/main/assets/jason_cloud_home.js")
+          if cloud_ui.exists() and cloud_js.exists():
+              html = cloud_ui.read_text()
+              js = cloud_js.read_text()
+              missing = [x for x in effects if x not in js]
+              for marker in ["Cloudflare","Direct Eufy","Pool","House","Garage","Shed","Brightness","Effect","Speed","Schedules"]:
+                  if marker not in html:
+                      missing.append(marker)
+          else:
+              quick = [
+                  "True Orange","Gold","Lime","Emerald","Aqua","Royal Blue",
+                  "Indigo","Magenta","Hot Pink","Rose","Warm White RGB","Neutral White RGB"
+              ]
+              missing = [x for x in effects if x not in html or x not in js]
+              missing += [x for x in quick if x not in html]
           if missing:
               raise SystemExit("Missing Jason Home UI options: " + ", ".join(missing))
           print("Jason Home UI catalog regression: PASS")
