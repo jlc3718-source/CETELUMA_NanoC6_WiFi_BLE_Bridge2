@@ -804,7 +804,7 @@ final class BleLightController {
                 if(active!=job||gatt!=g||probe!=p)return;
                 try{
                     byte[] run=p.command(EufyLightCommands.OP_SHOW,
-                        EufyLightCommands.showWithId(job.light.model,job.rgb,job.effect,job.colors,job.speed,false));
+                        EufyLightCommands.showIdOnly(job.rgb));
                     int second=write(g,c,run);
                     listener.onStatus(displayName(job.light)+": captured E120 run "+job.rgb+" writeStatus="+second);
                     if(second!=BluetoothStatusCodes.SUCCESS) finishActive(false,"E120 running-effect write failed ("+second+")");
