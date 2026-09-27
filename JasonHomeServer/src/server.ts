@@ -260,13 +260,32 @@ async function ensureEufy(force=false){
   return preparing;
 }
 
+function nativeFactoryLightId(scene:Scene):number|null{
+  const m=/^Exact Native Factory #(\d+)$/.exec(String(scene?.effect||""));
+  if(!m)return null;
+  const id=Number(m[1]);
+  return Number.isInteger(id)&&id>0?id:null;
+}
+function cachedFactoryPreset(lightId:number){
+  const raw=meta("factory_catalog");
+  if(!raw)return null;
+  try{
+    const base=(JSON.parse(raw)?.presets||[]).find((p:any)=>Number(p?.lightId)===lightId);
+    return base?applyFactoryEdit(base):null;
+  }catch{return null;}
+}
 async function sendScene(name:string,scene:Scene){
   return serializedForDevice(name,async()=>{
     try{
       const c=await ensureEufy(false);
-      return scene.power
-        ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
-        : await c.power(name,false);
+      if(!scene.power)return await c.power(name,false);
+      const factoryLightId=nativeFactoryLightId(scene);
+      if(factoryLightId!=null){
+        const preset=cachedFactoryPreset(factoryLightId);
+        if(!preset)throw new Error("Exact Native Factory preset "+factoryLightId+" is not available in the cached Eufy catalog");
+        return await c.factoryScene(name,preset,scene.brightness);
+      }
+      return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
     }catch(e){markEufyDegraded(e);throw e;}
   });
 }
@@ -423,6 +442,12 @@ function factoryCompatibleScene(preset:any):Scene{
     speed:factorySpeed5(preset)
   };
 }
+function factoryScheduledNativeScene(preset:any):Scene{
+  const visual=factoryCompatibleScene(preset);
+  const lightId=Number(preset?.lightId);
+  if(!Number.isInteger(lightId)||lightId<1)throw new Error("Factory preset has an invalid native light id");
+  return {...visual,effect:"Exact Native Factory #"+lightId};
+}
 const FACTORY_EVENT_MATCHES:Record<string,string>={
   "mardi gras":"evt027",
   "valentine s day":"evt025",
@@ -488,7 +513,7 @@ function factoryPromotionRows(base:CalendarConfig|null=calendarConfig()){
     if(!event)continue;
     const preset=applyFactoryEdit(basePreset);
     const enabled=state[key]?.enabled!==false;
-    const scene=factoryCompatibleScene(preset);
+    const scene=factoryScheduledNativeScene(preset);
     out.push({
       lightId,
       name:String(preset.name||("Factory "+lightId)),
@@ -565,7 +590,7 @@ function pruneFactoryJobs(){
   const cutoff=Date.now()-60*60*1000;
   for(const [id,j] of factoryJobs)if(Number(j?.createdAt||0)<cutoff)factoryJobs.delete(id);
 }
-function queueFactoryTest(lightId:number,target="All",mode="compatible"){
+function queueFactoryTest(lightId:number,target="All",mode="native"){
   pruneFactoryJobs();
   const jobId=crypto.randomUUID();
   factoryJobs.set(jobId,{jobId,state:"running",lightId,target,mode,createdAt:Date.now()});
@@ -573,7 +598,7 @@ function queueFactoryTest(lightId:number,target="All",mode="compatible"){
     .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,target,mode,createdAt:Date.now(),error:e?.message||String(e)}));
   return {ok:true,queued:true,jobId,lightId,target,mode};
 }
-async function factoryTestAll(lightId:number,target="All",mode="compatible"){
+async function factoryTestAll(lightId:number,target="All",mode="native"){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
   let preset:any=null;
   const raw=meta("factory_catalog");
@@ -993,10 +1018,10 @@ const server=http.createServer(async(req,res)=>{
       return json(res,202,{ok:true,queued:true,refresh:queueFactoryRefresh()});
     }
     if(method==="POST"&&path==="/api/eufy/factory-test"){
-      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All"),mode=String(input?.mode||"compatible");
+      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All"),requestedMode=String(input?.mode||"native"),mode="native";
       if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
       targetNames(target);
-      if(mode!=="compatible"&&mode!=="native")throw new Error("Factory apply mode must be compatible or native");
+      if(requestedMode!=="compatible"&&requestedMode!=="native")throw new Error("Factory apply mode must be native");
       return json(res,202,queueFactoryTest(lightId,target,mode));
     }
     if(method==="GET"&&path==="/api/eufy/factory-test"){
