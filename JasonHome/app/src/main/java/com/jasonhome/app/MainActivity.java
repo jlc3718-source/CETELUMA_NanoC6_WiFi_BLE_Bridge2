@@ -183,6 +183,7 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
 
     @Override
     protected void onDestroy() {
+        try { if(bridge!=null)bridge.close(); } catch (Throwable ignored) {}
         try { cloud.close(); } catch (Throwable ignored) {}
         if (webView != null) {
             webView.removeJavascriptInterface("AndroidAnderson");
