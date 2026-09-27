@@ -67,6 +67,75 @@ final class AndersonApiBridge {
         cloudStatus = message == null ? "" : message;
     }
 
+    @JavascriptInterface
+    public String request(String method, String url, String body, String token) {
+        try {
+            String m = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+            String raw = url == null ? "/" : url;
+            Uri uri = Uri.parse(raw.startsWith("http") ? raw : "http://local" + raw);
+            String path = uri.getPath() == null ? "/" : uri.getPath();
+            JSONObject input = parseBody(body);
+
+            if ("/api/auth/status".equals(path)) return ok(authStatus());
+            if ("/api/auth/unlock".equals(path) && "POST".equals(m)) return authUnlock(input);
+            if ("/api/auth/logout".equals(path)) return response(204, "");
+            if ("/api/auth/config".equals(path) && "POST".equals(m)) return authConfig(input);
+            if ("/api/auth/pin".equals(path) && "POST".equals(m)) return authPin(input);
+
+            if ("/api/login-preview".equals(path)) return ok(loginPreview());
+            if ("/api/state".equals(path)) return ok(stateJson());
+            if ("/api/control".equals(path) && "POST".equals(m)) return control(input);
+            if ("/api/resume".equals(path) && "POST".equals(m)) return resume();
+            if ("/api/settings".equals(path) && "POST".equals(m)) return saveSettings(input);
+            if ("/api/backup/status".equals(path) && "GET".equals(m)) return ok(backupStatus());
+            if ("/api/backup/manual".equals(path) && "POST".equals(m)) return backupAll();
+            if ("/api/backup/restore".equals(path) && "POST".equals(m)) return restoreBackup();
+            if ("/api/backup/settings".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("mode","all"));
+
+            if ("/api/events".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), intQuery(uri,"month",LocalDate.now().getMonthValue()), null));
+            if ("/api/events/search".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), 0, uri.getQueryParameter("q")));
+            if ("/api/event".equals(path) && "POST".equals(m)) return updateEvent(input);
+            if ("/api/event-categories".equals(path) && "GET".equals(m)) return ok(eventCategories());
+            if ("/api/event-categories".equals(path) && "POST".equals(m)) return updateEventCategory(input);
+            if ("/api/event-color-theme".equals(path) && "GET".equals(m)) return ok(eventColorTheme());
+            if ("/api/event-color-theme".equals(path) && "POST".equals(m)) return setEventColorTheme(input);
+            if ("/api/favorites".equals(path)) return ok(favorites());
+
+            if ("/api/presets".equals(path) && "GET".equals(m)) return ok(presetsJson());
+            if ("/api/preset".equals(path) && "POST".equals(m)) return updatePreset(input);
+            if ("/api/custom-schedules".equals(path) && "GET".equals(m)) return ok(customSchedules(uri));
+            if ("/api/custom-schedules".equals(path) && "POST".equals(m)) return updateCustomSchedule(input);
+            if ("/api/colors".equals(path) && "GET".equals(m)) return ok(colorsJson());
+            if ("/api/colors".equals(path) && "POST".equals(m)) return updateColor(input);
+
+            // Keep the original Anderson/Jason Home API routes so the existing UI
+            // continues to work unchanged. In 5.2.x these routes are compatibility
+            // aliases backed by Eufy Wi-Fi/cloud instead of Android Bluetooth.
+            if ("/api/ble/scan".equals(path)) return ok(bleScan());
+            if ("/api/ble/select".equals(path) && "POST".equals(m)) return bleSelect(input);
+            if ("/api/ble/remove".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
+            if ("/api/ble/rename".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
+            if ("/api/ble/target".equals(path) && "POST".equals(m)) return bleTarget(input);
+            if ("/api/ble/e120-test".equals(path) && "POST".equals(m)) return e120Test(input);
+            if ("/api/ble/e120-state".equals(path) && "GET".equals(m))
+                return ok(new JSONObject().put("summary","Bluetooth diagnostics disabled in Wi-Fi mode").put("details",cloud.status()));
+
+            if ("/api/system".equals(path)) return ok(systemJson());
+            if ("/api/firmware".equals(path)) return ok(firmwareJson());
+            if ("/api/remote-update".equals(path)) return ok(remoteUpdateJson());
+            if ("/api/remote-update/check".equals(path) || "/api/remote-update/install".equals(path))
+                return ok(new JSONObject().put("ok",true).put("operationId",1).put("operationComplete",true).put("message","Android app updates are installed as signed APK upgrades."));
+            if ("/api/wifi/scan".equals(path)) return ok(new JSONObject().put("scanning",false).put("networks",new JSONArray()));
+            if ("/api/wifi".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("message","Android manages Wi-Fi."));
+            if ("/api/reboot".equals(path) || "/api/rollback".equals(path) || "/api/update".equals(path))
+                return error(409,"This control belongs to the NanoC6 firmware and is not used by Jason Home Android.");
+
+            return ok(new JSONObject().put("ok",true).put("android",true));
+        } catch (Throwable t) {
+            return error(500, t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
+        }
+    }
+
     private void ensureDefaults() {
         if (!prefs.contains("brightness")) prefs.edit()
             .putBoolean("power",false)
@@ -99,7 +168,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.2.0 Wi-Fi");
+        d.put("firmwareVersion","Craumer Home • 5.2.1 Wi-Fi");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -596,7 +665,7 @@ final class AndersonApiBridge {
             .put("cpuLoad",0).put("cpuMhz",0).put("wifiConnected",true).put("rssi",0)
             .put("heapFree",free).put("heapMin",free).put("heapLargest",free)
             .put("slotBytes",0).put("appBytes",0).put("appFreeBytes",0)
-            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.2.0")
+            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.2.1")
             .put("bleCount",0).put("bleSeen",cloud.readyCount()).put("bleKnown",NAMES.length).put("bleBusy",false).put("cloudReady",cloud.isReady()).put("cloudBusy",cloud.isBusy())
             .put("ssid","Android").put("ip","Local")
             .put("resetReason","Android app launch").put("loopWatchdog",true).put("networkRestarts",0)
@@ -606,7 +675,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Craumer Home 5.2.0 Wi-Fi").put("buildCommit","Wi-Fi cloud transport")
+            .put("version","Craumer Home 5.2.1 Wi-Fi").put("buildCommit","Wi-Fi cloud transport")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -616,7 +685,7 @@ final class AndersonApiBridge {
     }
 
     private String e120Test(JSONObject in) throws Exception {
-        return error(409,"Bluetooth diagnostics are temporarily disabled in Craumer Home 5.2.0 Wi-Fi mode.");
+        return error(409,"Bluetooth diagnostics are temporarily disabled in Craumer Home 5.2.1 Wi-Fi mode.");
     }
 
     private int[] eventColors(int i) throws Exception {
