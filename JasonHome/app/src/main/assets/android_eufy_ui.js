@@ -53,7 +53,7 @@ function installAndroidEufyUi(){
         '<div class="label">Jason Home Oracle API token</div>'+
         '<input id="cloudControllerToken" type="password" class="field" autocomplete="off" placeholder="Enter only to set or replace the saved token">'+
         '<div id="cloudControllerTokenMeta" class="sub" style="margin-top:6px">Token status loading…</div>'+
-        '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Cloud</button></div>'+
+        '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Oracle</button></div>'+
         '<div class="grid2" style="margin-top:8px"><button id="reconnectCloudController" class="btn" type="button">Reconnect Eufy</button><button id="reconcileCloudController" class="btn" type="button">Reconcile Schedule</button></div>'+
         '<div id="cloudControllerResult" class="sub" style="margin-top:7px"></div>';
       controllerPane.prepend(eufy);
