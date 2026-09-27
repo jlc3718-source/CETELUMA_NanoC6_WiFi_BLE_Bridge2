@@ -1,30 +1,29 @@
 package com.jasonhome.app;
 
-import android.Manifest;
 import android.app.Activity;
-import android.content.pm.PackageManager;
+import android.app.AlertDialog;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
-import java.util.ArrayList;
-import java.util.List;
-
-public class MainActivity extends Activity implements BleLightController.Listener, AndersonApiBridge.Host {
-    private static final int BLE_PERMISSION_REQUEST = 71;
-
+public class MainActivity extends Activity implements AndersonApiBridge.Host, EufyCloudController.Listener {
     private WebView webView;
     private DeviceStore deviceStore;
     private AndersonSchedule schedule;
-    private BleLightController ble;
+    private EufyCloudController cloud;
     private AndersonApiBridge bridge;
+    private volatile boolean cloudLoginShowing=false;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -35,8 +34,8 @@ public class MainActivity extends Activity implements BleLightController.Listene
 
         deviceStore = new DeviceStore(this);
         schedule = new AndersonSchedule(this);
-        ble = new BleLightController(this, deviceStore, this);
-        bridge = new AndersonApiBridge(this, this, deviceStore, ble, schedule);
+        cloud = new EufyCloudController(this, this);
+        bridge = new AndersonApiBridge(this, this, deviceStore, cloud, schedule);
 
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.rgb(4,13,29));
@@ -80,7 +79,8 @@ public class MainActivity extends Activity implements BleLightController.Listene
         frame.requestApplyInsets();
         webView.loadUrl("file:///android_asset/anderson_home.html");
 
-        requestBlePermissions(false);
+        // Wi-Fi/cloud is the only active Eufy transport in this build.
+        cloud.start();
     }
 
     @Override
@@ -89,67 +89,60 @@ public class MainActivity extends Activity implements BleLightController.Listene
     }
 
     @Override
-    public void requestBlePermissionsAndScan() {
-        runOnUiThread(() -> requestBlePermissions(true));
-    }
-
-    private void requestBlePermissions(boolean scanAfter) {
-        ArrayList<String> needed = new ArrayList<>();
-        if (Build.VERSION.SDK_INT >= 31) {
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)
-                needed.add(Manifest.permission.BLUETOOTH_SCAN);
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
-                needed.add(Manifest.permission.BLUETOOTH_CONNECT);
-        } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        }
-
-        getPreferences(MODE_PRIVATE).edit().putBoolean("scan_after_permission", scanAfter).apply();
-        if (needed.isEmpty()) {
-            if (scanAfter) startScanSafely();
-        } else {
-            requestPermissions(needed.toArray(new String[0]), BLE_PERMISSION_REQUEST);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode != BLE_PERMISSION_REQUEST) return;
-        for (int r : results) {
-            if (r != PackageManager.PERMISSION_GRANTED) {
-                onBridgeStatus("Bluetooth permission is required to control the Eufy lights.");
-                return;
-            }
-        }
-        boolean scan = getPreferences(MODE_PRIVATE).getBoolean("scan_after_permission", false);
-        if (scan) startScanSafely();
-    }
-
-    private void startScanSafely() {
-        try {
-            ble.startScan();
-        } catch (SecurityException e) {
-            onBridgeStatus("Bluetooth permission is required.");
-        } catch (Throwable t) {
-            onBridgeStatus("Bluetooth scan could not start: " + t.getMessage());
-        }
-    }
-
-    @Override
-    public void onScanChanged(List<BleLightController.FoundLight> items) {
-        bridge.updateDiscovered(items);
-    }
-
-    @Override
-    public void onStatus(String message) {
-        bridge.updateBleStatus(message);
+    public void onCloudStatus(String message) {
+        if (bridge != null) bridge.updateCloudStatus(message);
         onBridgeStatus(message);
     }
 
     @Override
-    public void onProgress(int done, int total) {
-        // The Anderson UI already displays current state; BLE progress is surfaced through status text.
+    public void onCloudLoginRequired(String reason) {
+        runOnUiThread(() -> showCloudLogin(reason));
+    }
+
+    private void showCloudLogin(String reason) {
+        if (isFinishing() || cloudLoginShowing) return;
+        cloudLoginShowing=true;
+
+        int pad=(int)(18*getResources().getDisplayMetrics().density);
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad,pad/2,pad,pad/2);
+
+        TextView note=new TextView(this);
+        note.setText((reason==null||reason.isEmpty()?"One-time Eufy Wi-Fi sign-in required":reason)
+            +"\n\nAfter a successful sign-in, Jason Home stores the session and credentials encrypted in this app's private storage and signs in automatically on future launches.");
+        note.setTextSize(14);
+        box.addView(note);
+
+        EditText email=new EditText(this);
+        email.setHint("Eufy email");
+        email.setSingleLine(true);
+        email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        box.addView(email);
+
+        EditText password=new EditText(this);
+        password.setHint("Eufy password");
+        password.setSingleLine(true);
+        password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        box.addView(password);
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("Connect Jason Home to Eufy Wi-Fi")
+            .setView(box)
+            .setNegativeButton("Not now",(d,w)->{})
+            .setPositiveButton("Sign in",null)
+            .create();
+
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String e=email.getText().toString().trim();
+            String p=password.getText().toString();
+            if(e.isEmpty()){email.setError("Enter your Eufy email");return;}
+            if(p.isEmpty()){password.setError("Enter your Eufy password");return;}
+            cloud.login(e,p);
+            dialog.dismiss();
+        }));
+        dialog.setOnDismissListener(x -> cloudLoginShowing=false);
+        dialog.show();
     }
 
     @Override
@@ -172,7 +165,7 @@ public class MainActivity extends Activity implements BleLightController.Listene
 
     @Override
     protected void onDestroy() {
-        try { ble.close(); } catch (Throwable ignored) {}
+        try { cloud.close(); } catch (Throwable ignored) {}
         if (webView != null) {
             webView.removeJavascriptInterface("AndroidAnderson");
             webView.destroy();
