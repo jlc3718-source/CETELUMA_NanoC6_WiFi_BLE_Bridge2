@@ -1,1 +1,1 @@
-Deploy and verify MQTT using the certificate thing_name as client ID.
+Deploy broker-instance discovery and run the Pool status-only MQTT probe.
