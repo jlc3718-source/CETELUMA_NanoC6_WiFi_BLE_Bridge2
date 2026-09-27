@@ -1,0 +1,35 @@
+name: Audit Factory Promotion Matches
+
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['.github/workflows/audit-factory-promotions.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Dump factory and calendar names
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose exec -T jason-home node --input-type=module - <<'NODE'
+          const get=async path=>{
+            const r=await fetch('http://127.0.0.1:8080'+path,{headers:{Authorization:'Bearer '+process.env.JASON_HOME_API_TOKEN}});
+            if(!r.ok)throw new Error(path+' HTTP '+r.status);
+            return r.json();
+          };
+          const f=await get('/api/eufy/factory-presets');
+          const c=await get('/api/calendar');
+          console.log('FACTORY_NAMES_BEGIN');
+          for(const p of f.presets||[]) console.log(String(p.lightId)+'\t'+String(p.name||''));
+          console.log('FACTORY_NAMES_END');
+          console.log('CALENDAR_NAMES_BEGIN');
+          for(const e of c.calendar?.events||[]) console.log([e.id,e.name,e.kind,e.rule].map(x=>String(x??'')).join('\t'));
+          console.log('CALENDAR_NAMES_END');
+          NODE
