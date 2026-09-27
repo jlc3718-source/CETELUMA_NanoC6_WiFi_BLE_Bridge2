@@ -648,6 +648,9 @@ final class AndersonApiBridge {
             case "blue": host.runOnUi(()->ble.setColor(one,0x0000FF)); break;
             case "breath": host.runOnUi(()->ble.setEffect(one,"Breath",new int[]{0xFF0000},3,false)); break;
             case "status": host.runOnUi(()->ble.readE120State(one)); break;
+            case "show-10034-id": host.runOnUi(()->ble.testE120ShowIdOnly(one,10034)); break;
+            case "show-10034-full": host.runOnUi(()->ble.testE120ShowIdFull(one,10034,new int[]{0xFF0000,0x0000FF},3)); break;
+            case "captured-30010-10034": host.runOnUi(()->ble.testE120CapturedPair(one,30010,10034,new int[]{0xFF0000,0x0000FF},3)); break;
             default: return error(400,"Unknown E120 test command.");
         }
         return ok(new JSONObject().put("ok",true).put("device",target==1?"Pool":"House").put("command",command));
