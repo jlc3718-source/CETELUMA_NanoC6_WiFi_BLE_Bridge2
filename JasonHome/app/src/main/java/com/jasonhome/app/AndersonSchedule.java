@@ -115,6 +115,13 @@ final class AndersonSchedule {
         return included(index);
     }
 
+    boolean visibleByMode(int index){
+        if(index<0||index>=AndersonEventData.EVENTS.length)return false;
+        if(mode()!=Mode.MAJOR_BASIC)return true;
+        for(int v:AndersonEventData.MAJOR)if(v==index)return true;
+        return false;
+    }
+
     Scene resolve(ZonedDateTime now){
         if(!enabled()||AndersonEventData.EVENTS.length==0)return null;
         LocalDate day=now.toLocalDate();
