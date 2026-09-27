@@ -57,7 +57,7 @@ final class BleLightController {
         }
     }
 
-    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, SCENE, DIAGNOSTIC }
+    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, STATUS, SCENE, DIAGNOSTIC }
 
     private static final class Job {
         final FoundLight light;
@@ -84,6 +84,9 @@ final class BleLightController {
         }
         static Job e120LocalEffect(FoundLight l,int localId,int[] colors,int speed){
             return new Job(l,Kind.E120_LOCAL_EFFECT,false,localId,0,"E120 local 0206",colors,speed,false);
+        }
+        static Job status(FoundLight l){
+            return new Job(l,Kind.STATUS,false,0,0,null,null,0,false);
         }
         static Job scene(FoundLight l,String e,int[] colors,int speed,boolean reverse,int brightness){
             return new Job(l,Kind.SCENE,false,brightness,0,e,colors,speed,reverse);
@@ -126,6 +129,8 @@ final class BleLightController {
     private int e22PowerAttempts;
     private boolean waitForE22PowerReply;
     private Runnable e22PowerContinuation;
+    private boolean waitForStateReply;
+    private volatile String lastStateSummary = "";
 
     BleLightController(Context context, DeviceStore store, Listener listener) {
         this.context = context;
@@ -193,6 +198,15 @@ final class BleLightController {
     void setE120LocalEffect(List<FoundLight> targets, int localId, int[] colors, int speed) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors.clone();
         enqueue(targets, item -> Job.e120LocalEffect(item,localId,safe,speed));
+    }
+
+    void readE120State(List<FoundLight> targets) {
+        lastStateSummary = "Reading E120 state…";
+        enqueue(targets, Job::status);
+    }
+
+    String lastStateSummary() {
+        return lastStateSummary;
     }
 
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
@@ -369,6 +383,7 @@ final class BleLightController {
         e22PowerFrame=null;
         e22PowerAttempts=0;
         waitForE22PowerReply=false;
+        waitForStateReply=false;
         e22PowerContinuation=null;
         legacyStage="connecting";
         connectionRetryCount=0;
@@ -529,6 +544,18 @@ final class BleLightController {
             if(p==null)return;
             if(commandSent){
                 listener.onStatus(displayName(active.light)+": RX#"+(++receivedNotifications)+" "+E10Probe.packetSummary(value)+" → POST_SESSION_RESPONSE");
+                if(waitForStateReply && active!=null && active.kind==Kind.STATUS){
+                    String summary=p.stateSummary(value);
+                    if(summary!=null){
+                        waitForStateReply=false;
+                        lastStateSummary=displayName(active.light)+" • "+summary;
+                        if(timeout!=null)handler.removeCallbacks(timeout);
+                        timeout=null;
+                        listener.onStatus(lastStateSummary);
+                        finishActive(true,null);
+                        return;
+                    }
+                }
                 if(waitForE22PowerReply && e22PowerFrame!=null && validPowerReply(value,e22PowerFrame)){
                     waitForE22PowerReply=false;
                     if(timeout!=null)handler.removeCallbacks(timeout);
@@ -668,6 +695,10 @@ final class BleLightController {
                     frame=p.command(EufyLightCommands.OP_COLOR,
                         EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
                     break;
+                case STATUS:
+                    frame=p.stateCommand();
+                    waitForStateReply=true;
+                    break;
                 case SCENE:
                     if(isE22(job.light)){
                         startE22Power(true,job,g,c,p,()->sendSceneAfterPower(job,g,c,p));
@@ -689,6 +720,18 @@ final class BleLightController {
             return;
         }
         listener.onStatus(displayName(job.light)+": "+commandName(job)+" command written");
+        if(job.kind==Kind.STATUS){
+            if(timeout!=null)handler.removeCallbacks(timeout);
+            timeout=()->{
+                if(active==job && waitForStateReply){
+                    waitForStateReply=false;
+                    lastStateSummary=displayName(job.light)+" • no E120 state reply received";
+                    finishActive(false,lastStateSummary);
+                }
+            };
+            handler.postDelayed(timeout,2500L);
+            return;
+        }
         handler.postDelayed(()->{
             if(active==job && g==gatt && p==probe)finishActive(true,null);
         },650L);
@@ -1223,6 +1266,7 @@ final class BleLightController {
             case WHITE:return "Setting white";
             case EFFECT:return "Starting "+job.effect;
             case E120_LOCAL_EFFECT:return "Testing E120 local effect "+job.value;
+            case STATUS:return "Reading E120 state";
             case SCENE:return "Applying "+job.effect;
             default:return "Controlling";
         }
@@ -1237,6 +1281,7 @@ final class BleLightController {
             case WHITE:return job.value+" K white";
             case EFFECT:return job.effect;
             case E120_LOCAL_EFFECT:return "E120 0206 local "+job.value;
+            case STATUS:return "E120 state";
             case SCENE:return "scene "+job.effect;
             case DIAGNOSTIC:return "diagnostic handshake";
             default:return "command";
