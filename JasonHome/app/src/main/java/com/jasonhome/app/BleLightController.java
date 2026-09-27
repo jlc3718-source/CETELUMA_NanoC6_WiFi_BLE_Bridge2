@@ -1227,11 +1227,18 @@ final class BleLightController {
                 sendLocalScene();
                 return;
             }
+            if (job.kind==Kind.EFFECT && !isE22(job.light) && EufyLightCommands.isSolidEffect(job.effect)) {
+                sendLocalE120Static();
+                return;
+            }
+
             byte[] frame;
+            boolean withResponse=false;
             try {
                 switch(job.kind) {
                     case POWER:
                         frame=localProbe.powerCommand(job.on);
+                        withResponse=isE22(job.light);
                         break;
                     case BRIGHTNESS:
                         frame=localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
@@ -1245,8 +1252,14 @@ final class BleLightController {
                             EufyLightCommands.white(job.light.model,job.value,EufyLightCommands.defaultLampCount(job.light.model)));
                         break;
                     case EFFECT:
-                        frame=localProbe.command(EufyLightCommands.OP_SHOW,
-                            EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                        if (isE22(job.light)) {
+                            frame=localProbe.command(EufyLightCommands.OP_SHOW,
+                                EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                        } else {
+                            frame=localProbe.command(EufyLightCommands.OP_COLOR,
+                                EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse,
+                                    EufyLightCommands.defaultLampCount(job.light.model)));
+                        }
                         break;
                     case E120_LOCAL_EFFECT:
                         frame=localProbe.command(EufyLightCommands.OP_COLOR,
@@ -1262,18 +1275,51 @@ final class BleLightController {
                 finish(false,displayName(job.light)+": "+commandName(job)+" could not be built");
                 return;
             }
-            int result=write(localGatt,localWrite,frame);
+            int result=withResponse?writeWithResponse(localGatt,localWrite,frame):write(localGatt,localWrite,frame);
             if (Build.VERSION.SDK_INT>=33&&result!=BluetoothStatusCodes.SUCCESS) {
                 finish(false,displayName(job.light)+": "+commandName(job)+" write failed ("+result+")");
                 return;
             }
-            handler.postDelayed(() -> finish(true,null),550L);
+            handler.postDelayed(() -> finish(true,null),withResponse?700L:550L);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalE120Static() {
+            int rgb=(job.colors==null||job.colors.length==0)?0xFFFFFF:job.colors[0];
+            try {
+                byte[] color=localProbe.command(EufyLightCommands.OP_COLOR,
+                    EufyLightCommands.color(job.light.model,rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+                int r1=write(localGatt,localWrite,color);
+                if (Build.VERSION.SDK_INT>=33&&r1!=BluetoothStatusCodes.SUCCESS) {
+                    finish(false,displayName(job.light)+": static color write failed ("+r1+")");
+                    return;
+                }
+                handler.postDelayed(() -> {
+                    if (finished||token!=parallelToken) return;
+                    try {
+                        byte[] hold=localProbe.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.effectE120("Solid / Static",new int[]{rgb},job.speed,false,
+                                EufyLightCommands.defaultLampCount(job.light.model)));
+                        int r2=write(localGatt,localWrite,hold);
+                        if (Build.VERSION.SDK_INT>=33&&r2!=BluetoothStatusCodes.SUCCESS) {
+                            finish(false,displayName(job.light)+": static hold write failed ("+r2+")");
+                            return;
+                        }
+                        handler.postDelayed(() -> finish(true,null),550L);
+                    } catch(Throwable t) {
+                        finish(false,displayName(job.light)+": static hold command could not be built");
+                    }
+                },220L);
+            } catch(Throwable t) {
+                finish(false,displayName(job.light)+": static color command could not be built");
+            }
         }
 
         @SuppressLint("MissingPermission")
         private void sendLocalScene() {
             try {
-                int r1=write(localGatt,localWrite,localProbe.powerCommand(true));
+                byte[] power=localProbe.powerCommand(true);
+                int r1=isE22(job.light)?writeWithResponse(localGatt,localWrite,power):write(localGatt,localWrite,power);
                 if (Build.VERSION.SDK_INT>=33&&r1!=BluetoothStatusCodes.SUCCESS) {
                     finish(false,displayName(job.light)+": scene power write failed ("+r1+")");
                     return;
@@ -1289,31 +1335,78 @@ final class BleLightController {
                         }
                         handler.postDelayed(() -> {
                             if (finished||token!=parallelToken) return;
-                            try {
-                                byte[] frame;
-                                if (("Solid".equals(job.effect)||"Solid / Static".equals(job.effect))&&job.colors.length==1) {
-                                    frame=localProbe.command(EufyLightCommands.OP_COLOR,
-                                        EufyLightCommands.color(job.light.model,job.colors[0],EufyLightCommands.defaultLampCount(job.light.model)));
-                                } else {
-                                    frame=localProbe.command(EufyLightCommands.OP_SHOW,
-                                        EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
-                                }
-                                int r3=write(localGatt,localWrite,frame);
-                                if (Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS) {
-                                    finish(false,displayName(job.light)+": scene effect write failed ("+r3+")");
-                                    return;
-                                }
-                                handler.postDelayed(() -> finish(true,null),550L);
-                            } catch(Throwable t) {
-                                finish(false,displayName(job.light)+": scene effect command could not be built");
-                            }
+                            sendLocalSceneEffect();
                         },220L);
                     } catch(Throwable t) {
                         finish(false,displayName(job.light)+": scene brightness command could not be built");
                     }
-                },220L);
+                },isE22(job.light)?320L:220L);
             } catch(Throwable t) {
                 finish(false,displayName(job.light)+": scene power command could not be built");
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalSceneEffect() {
+            try {
+                if (isE22(job.light)) {
+                    byte[] frame;
+                    if (EufyLightCommands.isSolidEffect(job.effect)) {
+                        int rgb=(job.colors==null||job.colors.length==0)?0xFFFFFF:job.colors[0];
+                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.color(job.light.model,rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+                    } else {
+                        frame=localProbe.command(EufyLightCommands.OP_SHOW,
+                            EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                    }
+                    int r3=write(localGatt,localWrite,frame);
+                    if (Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS) {
+                        finish(false,displayName(job.light)+": scene effect write failed ("+r3+")");
+                        return;
+                    }
+                    handler.postDelayed(() -> finish(true,null),550L);
+                    return;
+                }
+
+                if (EufyLightCommands.isSolidEffect(job.effect)) {
+                    int rgb=(job.colors==null||job.colors.length==0)?0xFFFFFF:job.colors[0];
+                    byte[] color=localProbe.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.color(job.light.model,rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+                    int r3=write(localGatt,localWrite,color);
+                    if (Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS) {
+                        finish(false,displayName(job.light)+": scene static color write failed ("+r3+")");
+                        return;
+                    }
+                    handler.postDelayed(() -> {
+                        if (finished||token!=parallelToken) return;
+                        try {
+                            byte[] hold=localProbe.command(EufyLightCommands.OP_COLOR,
+                                EufyLightCommands.effectE120("Solid / Static",new int[]{rgb},job.speed,false,
+                                    EufyLightCommands.defaultLampCount(job.light.model)));
+                            int r4=write(localGatt,localWrite,hold);
+                            if (Build.VERSION.SDK_INT>=33&&r4!=BluetoothStatusCodes.SUCCESS) {
+                                finish(false,displayName(job.light)+": scene static hold write failed ("+r4+")");
+                                return;
+                            }
+                            handler.postDelayed(() -> finish(true,null),550L);
+                        } catch(Throwable t) {
+                            finish(false,displayName(job.light)+": scene static hold command could not be built");
+                        }
+                    },220L);
+                    return;
+                }
+
+                byte[] effect=localProbe.command(EufyLightCommands.OP_COLOR,
+                    EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse,
+                        EufyLightCommands.defaultLampCount(job.light.model)));
+                int r3=write(localGatt,localWrite,effect);
+                if (Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS) {
+                    finish(false,displayName(job.light)+": scene E120 effect write failed ("+r3+")");
+                    return;
+                }
+                handler.postDelayed(() -> finish(true,null),550L);
+            } catch(Throwable t) {
+                finish(false,displayName(job.light)+": scene effect command could not be built");
             }
         }
 
