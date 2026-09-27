@@ -14,6 +14,12 @@ public final class EufyLightCommandsRegression {
         assertCatalogPreset(20005,418507,0,false);
         assertCatalogPreset(30010,10034,50,false);
         assertCatalogPreset(20005,418507,0,true);
+        assertGroupedPreset(1);
+        assertGroupedPreset(2);
+        assertGroupedPreset(3);
+        assertGroupedPreset(4);
+        assertGroupedPreset(5);
+        assertGroupedPreset(6);
         System.out.println("EufyLightCommands regression: PASS");
     }
 
@@ -37,6 +43,18 @@ public final class EufyLightCommandsRegression {
         for (int i = 1; i < expectedColorWidth; i++) {
             if ((payload[layer + 11 + i] & 0xFF) != 0) fail(model + " native color width/content mismatch");
         }
+    }
+
+    private static void assertGroupedPreset(int mode) {
+        byte[] payload=EufyLightCommands.groupedCatalogPresetE120(30010,10034,2,new int[]{0xFF0000,0x00FF00},60,mode);
+        int a3=find(payload,0xA3);
+        if(a3<0) fail("grouped preset missing A3");
+        int a6=find(payload,0xA6);
+        if(a6<0 || (payload[a6+1]&255)!=9 || (payload[a6+2]&255)!=2) fail("grouped palette malformed mode "+mode);
+        int a7=find(payload,0xA7);
+        if(a7<0) fail("grouped preset missing A7 mode "+mode);
+        int ac=find(payload,0xAC);
+        if(ac<0) fail("grouped preset missing AC mode "+mode);
     }
 
     private static void assertCatalogPreset(int localId,int catalogId,int a5,boolean minimal) {
