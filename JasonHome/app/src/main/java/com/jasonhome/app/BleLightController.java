@@ -57,7 +57,7 @@ final class BleLightController {
         }
     }
 
-    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, SCENE, DIAGNOSTIC }
+    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, SCENE, DIAGNOSTIC }
 
     private static final class Job {
         final FoundLight light;
@@ -81,6 +81,9 @@ final class BleLightController {
         static Job white(FoundLight l,int kelvin){ return new Job(l,Kind.WHITE,false,kelvin,0,null,null,0,false); }
         static Job effect(FoundLight l,String e,int[] colors,int speed,boolean reverse){
             return new Job(l,Kind.EFFECT,false,0,0,e,colors,speed,reverse);
+        }
+        static Job e120LocalEffect(FoundLight l,int localId,int[] colors,int speed){
+            return new Job(l,Kind.E120_LOCAL_EFFECT,false,localId,0,"E120 local 0206",colors,speed,false);
         }
         static Job scene(FoundLight l,String e,int[] colors,int speed,boolean reverse,int brightness){
             return new Job(l,Kind.SCENE,false,brightness,0,e,colors,speed,reverse);
@@ -185,6 +188,11 @@ final class BleLightController {
     void setEffect(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
         enqueue(targets, item -> Job.effect(item,effect,safe,speed,reverse));
+    }
+
+    void setE120LocalEffect(List<FoundLight> targets, int localId, int[] colors, int speed) {
+        int[] safe = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors.clone();
+        enqueue(targets, item -> Job.e120LocalEffect(item,localId,safe,speed));
     }
 
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
@@ -656,6 +664,10 @@ final class BleLightController {
                     frame=p.command(EufyLightCommands.OP_SHOW,
                         EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
                     break;
+                case E120_LOCAL_EFFECT:
+                    frame=p.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
+                    break;
                 case SCENE:
                     if(isE22(job.light)){
                         startE22Power(true,job,g,c,p,()->sendSceneAfterPower(job,g,c,p));
@@ -1024,6 +1036,10 @@ final class BleLightController {
                         frame=localProbe.command(EufyLightCommands.OP_SHOW,
                             EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
                         break;
+                    case E120_LOCAL_EFFECT:
+                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
+                        break;
                     case DIAGNOSTIC:
                         finish(true,null);
                         return;
@@ -1206,6 +1222,7 @@ final class BleLightController {
             case COLOR:return "Setting color";
             case WHITE:return "Setting white";
             case EFFECT:return "Starting "+job.effect;
+            case E120_LOCAL_EFFECT:return "Testing E120 local effect "+job.value;
             case SCENE:return "Applying "+job.effect;
             default:return "Controlling";
         }
@@ -1219,6 +1236,7 @@ final class BleLightController {
             case COLOR:return String.format("color #%06X",job.rgb&0xFFFFFF);
             case WHITE:return job.value+" K white";
             case EFFECT:return job.effect;
+            case E120_LOCAL_EFFECT:return "E120 0206 local "+job.value;
             case SCENE:return "scene "+job.effect;
             case DIAGNOSTIC:return "diagnostic handshake";
             default:return "command";
