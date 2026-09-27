@@ -323,20 +323,66 @@ function factorySummary(catalog:any,includeRaw=false,id?:number){
   });
   return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:canonical.length,rawTotalCount:src.length,duplicatesCollapsed:Math.max(0,src.length-canonical.length),scanned:Number(catalog?.scanned)||0,presets:list};
 }
+function factoryHexColors(preset:any):number[]{
+  const out:number[]=[];
+  const add=(v:any)=>{
+    const s=String(v??"").replace(/^#/,"");
+    if(/^[0-9a-fA-F]{6}$/.test(s)){
+      const n=parseInt(s,16)&0xffffff;
+      if(!out.includes(n))out.push(n);
+    }
+  };
+  for(const layer of Array.isArray(preset?.layers)?preset.layers:[]){
+    for(const x of String(layer?.colors||"").split("|"))add(x);
+  }
+  for(const x of String(preset?.colors||"").split("|"))add(x);
+  return out.slice(0,8);
+}
+function factorySpeed5(preset:any):number{
+  const layers=Array.isArray(preset?.layers)?preset.layers:[];
+  const raw=Number(preset?.speed??layers[0]?.layer_speed??25);
+  if(!Number.isFinite(raw))return 3;
+  if(raw<=5)return 1;if(raw<=20)return 2;if(raw<=40)return 3;if(raw<=70)return 4;return 5;
+}
+function factoryDominantLayer(preset:any){
+  const layers=Array.isArray(preset?.layers)?preset.layers:[];
+  return layers.map((x:any,i:number)=>({x,i,p:Number(x?.layer_priority)||0})).sort((a:any,b:any)=>b.p-a.p||a.i-b.i)[0]?.x||null;
+}
+function factoryCompatibleScene(preset:any):Scene{
+  const layer=factoryDominantLayer(preset),type=Number(layer?.current_layer_type);
+  let effect="Breath";
+  if(type===0){
+    const gradient=Number(layer?.gradient_value)||0;
+    const meteor=Number(layer?.length_range)||0;
+    effect=meteor>0?"Meteor / Comet":gradient>0?"Gradient Sweep":"Chase";
+  }else if(type===2)effect="Twinkle / Sparkle";
+  else if(type===1){
+    const transition=Number(layer?.transition_mode)||0;
+    effect=transition===0?"Breath":transition===2?"Gradient Sweep":"Jump";
+  }
+  return {
+    power:true,
+    brightness:clamp(Math.round(Number(preset?.brightness)||75),1,100),
+    effect,
+    colors:factoryHexColors(preset).length?factoryHexColors(preset):[0xffffff],
+    speed:factorySpeed5(preset)
+  };
+}
+
 const factoryJobs=new Map<string,any>();
 function pruneFactoryJobs(){
   const cutoff=Date.now()-60*60*1000;
   for(const [id,j] of factoryJobs)if(Number(j?.createdAt||0)<cutoff)factoryJobs.delete(id);
 }
-function queueFactoryTest(lightId:number,target="All"){
+function queueFactoryTest(lightId:number,target="All",mode="compatible"){
   pruneFactoryJobs();
   const jobId=crypto.randomUUID();
-  factoryJobs.set(jobId,{jobId,state:"running",lightId,target,createdAt:Date.now()});
-  void factoryTestAll(lightId,target).then(result=>factoryJobs.set(jobId,{jobId,state:"complete",lightId,target,createdAt:Date.now(),result}))
-    .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,target,createdAt:Date.now(),error:e?.message||String(e)}));
-  return {ok:true,queued:true,jobId,lightId,target};
+  factoryJobs.set(jobId,{jobId,state:"running",lightId,target,mode,createdAt:Date.now()});
+  void factoryTestAll(lightId,target,mode).then(result=>factoryJobs.set(jobId,{jobId,state:"complete",lightId,target,mode,createdAt:Date.now(),result}))
+    .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,target,mode,createdAt:Date.now(),error:e?.message||String(e)}));
+  return {ok:true,queued:true,jobId,lightId,target,mode};
 }
-async function factoryTestAll(lightId:number,target="All"){
+async function factoryTestAll(lightId:number,target="All",mode="compatible"){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
   const c=await ensureEufy(false);
   let preset:any=null;
@@ -348,20 +394,22 @@ async function factoryTestAll(lightId:number,target="All"){
   const results:any[]=[];let sent=0;
   for(const name of names){
     try{
-      const r=await serializedForDevice(name,()=>c.factoryScene(name,preset));
+      const compatible=factoryCompatibleScene(preset);
+      const native=mode==="native";
+      const r=await serializedForDevice(name,()=>native?c.factoryScene(name,preset):c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness));
       sent++;
-      results.push({name,ok:true,model:DEVICE_MODELS[name],strategy:(r as any).strategy,published:(r as any).published,instance:(r as any).instance||null,report:(r as any).report||null});
+      results.push({name,ok:true,model:DEVICE_MODELS[name],strategy:native?((r as any).strategy||"native-factory-020d"):"compatible-production-effect",compatible:native?null:compatible,published:(r as any).published,instance:(r as any).instance||null,report:(r as any).report||null});
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
     }catch(e:any){
       const msg=e?.message||String(e);
-      results.push({name,ok:false,model:DEVICE_MODELS[name],strategy:DEVICE_MODELS[name]==="E22"?"verified-t8l02-020d":"experimental-t8l00-020d",error:msg});
+      results.push({name,ok:false,model:DEVICE_MODELS[name],strategy:mode==="native"?(DEVICE_MODELS[name]==="E22"?"native-t8l02-020d":"experimental-t8l00-020d"):"compatible-production-effect",error:msg});
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
     }
   }
   const next=nextAutomationEvent(new Date());
   setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,createdAt:Date.now(),expiresAt:next?.at||null}));
-  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,sent,total:names.length,results}));
-  return {ok:sent===names.length,lightId,name:preset?.name||null,target,customized:!!preset?.customized,attempted:names.length,sent,results,note:"Factory command sent through the Eufy factory scene path. T8L02/E22 uses the verified 0x020D layout; T8L00/E120 uses the isolated experimental family adaptation and must be verified visually."};
+  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,mode,sent,total:names.length,results}));
+  return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode,customized:!!preset?.customized,compatible:factoryCompatibleScene(preset),attempted:names.length,sent,results,note:mode==="native"?"Exact native 0x020D factory recipe sent; physical pattern verification is still required.":"Factory recipe translated to the production Jason Home effect engine for reliable visible output."};
 }
 
 async function statusPayload(refresh=false){
@@ -578,10 +626,11 @@ const server=http.createServer(async(req,res)=>{
       return json(res,202,{ok:true,queued:true,refresh:queueFactoryRefresh()});
     }
     if(method==="POST"&&path==="/api/eufy/factory-test"){
-      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All");
+      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All"),mode=String(input?.mode||"compatible");
       if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
       targetNames(target);
-      return json(res,202,queueFactoryTest(lightId,target));
+      if(mode!=="compatible"&&mode!=="native")throw new Error("Factory apply mode must be compatible or native");
+      return json(res,202,queueFactoryTest(lightId,target,mode));
     }
     if(method==="GET"&&path==="/api/eufy/factory-test"){
       const jobId=url.searchParams.get("job")||"";
