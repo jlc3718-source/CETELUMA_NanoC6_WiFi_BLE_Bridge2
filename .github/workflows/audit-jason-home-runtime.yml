@@ -31,6 +31,9 @@ jobs:
           s=json.load(open('/tmp/status.json'))
           print('STATUS location', json.dumps(s.get('location') or {}, sort_keys=True))
           print('STATUS astronomy', json.dumps(s.get('astronomy') or {}, sort_keys=True))
+          print('STATUS override', json.dumps(s.get('override'), sort_keys=True))
+          print('STATUS current calendar', json.dumps((s.get('calendar') or {}).get('current'), sort_keys=True))
+          print('STATUS next event', json.dumps(s.get('nextEvent'), sort_keys=True))
           f=json.load(open('/tmp/factory.json'))
           presets=f.get('presets') or []
           print('FACTORY total', len(presets))
@@ -69,6 +72,7 @@ jobs:
 
           c=json.load(open('/tmp/calendar.json')).get('calendar') or {}
           events=c.get('events') or []
+          print('CALENDAR settings', json.dumps(c.get('settings') or {}, sort_keys=True))
           print('CALENDAR events', len(events))
           ids=[str(e.get('id') or '') for e in events]
           enames=[str(e.get('name') or '').strip() for e in events]
@@ -80,4 +84,20 @@ jobs:
           print('CALENDAR duplicate names', namedups[:20])
           print('CALENDAR enabled', bool((c.get('settings') or {}).get('enabled')))
           print('CALENDAR custom schedules', len(c.get('customSchedules') or []))
+          PY
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { resolveCalendar } from '/home/ubuntu/repo/JasonHomeServer/dist/calendar.js';
+          const c=JSON.parse(fs.readFileSync('/tmp/calendar.json','utf8')).calendar;
+          const lat=42.1507,lon=-78.9452,tz='America/New_York';
+          for (const [label,iso] of [
+            ['FUTURE Sep29 7:45pm ET','2026-09-29T23:45:00.000Z'],
+            ['FUTURE Sep29 11:30pm ET','2026-09-30T03:30:00.000Z'],
+            ['FUTURE Sep30 1:00am ET','2026-09-30T05:00:00.000Z'],
+            ['FUTURE Sep30 7:00am ET','2026-09-30T11:00:00.000Z']
+          ]){
+            const r=resolveCalendar(c,new Date(iso),lat,lon,tz);
+            console.log(label,JSON.stringify(r));
+          }
+          NODE
           PY
