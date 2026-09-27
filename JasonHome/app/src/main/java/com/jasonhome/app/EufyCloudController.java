@@ -113,6 +113,62 @@ final class EufyCloudController {
         },false);
     }
 
+    void setBrightness(int target,int percent){
+        int value=Math.max(0,Math.min(100,percent));
+        fanOut(target,"Brightness "+value+"%",fork->fork.mqttBrightness(fork.targetName,value));
+    }
+
+    void setEffect(int target,String effect,int[] colors,int speed,boolean reverse){
+        int[] safe=colors==null||colors.length==0?new int[]{0xFFFFFF}:colors.clone();
+        String fx=effect==null||effect.isEmpty()?"Jump":effect;
+        int sp=Math.max(1,Math.min(5,speed));
+        fanOut(target,"Effect "+fx,fork->fork.mqttEffect(fork.targetName,fx,safe,sp,reverse));
+    }
+
+    void setScene(int target,String effect,int[] colors,int speed,boolean reverse,int brightness){
+        int[] safe=colors==null||colors.length==0?new int[]{0xFFFFFF}:colors.clone();
+        String fx=effect==null||effect.isEmpty()?"Jump":effect;
+        int sp=Math.max(1,Math.min(5,speed));
+        int br=Math.max(1,Math.min(100,brightness));
+        fanOut(target,"Scene "+fx,fork->fork.mqttScene(fork.targetName,fx,safe,sp,reverse,br));
+    }
+
+    private interface ForkAction{void run(TargetFork fork)throws Exception;}
+    private static final class TargetFork{
+        final CloudClient client; final String targetName;
+        TargetFork(CloudClient client,String targetName){this.client=client;this.targetName=targetName;}
+        void mqttBrightness(String name,int value)throws Exception{client.mqttBrightness(name,value);}
+        void mqttEffect(String name,String effect,int[] colors,int speed,boolean reverse)throws Exception{client.mqttEffect(name,effect,colors,speed,reverse);}
+        void mqttScene(String name,String effect,int[] colors,int speed,boolean reverse,int brightness)throws Exception{client.mqttScene(name,effect,colors,speed,reverse,brightness);}
+    }
+
+    private void fanOut(int target,String action,ForkAction fn){
+        submit(()->{
+            ensureReady();
+            String[] names=target<=0?NAMES:new String[]{NAMES[Math.max(0,Math.min(3,target-1))]};
+            setStatus(action+" • "+(target<=0?"all four strings":names[0])+" over Wi-Fi…");
+            List<Future<String>> futures=new ArrayList<>();
+            for(String name:names){
+                futures.add(mqttPool.submit(()->{
+                    TargetFork fork=new TargetFork(forkClient(),name);
+                    fn.run(fork);
+                    return name;
+                }));
+            }
+            int ok=0;StringBuilder failures=new StringBuilder();
+            for(Future<String> future:futures){
+                try{future.get(45,TimeUnit.SECONDS);ok++;}
+                catch(Throwable t){
+                    Throwable cause=t instanceof ExecutionException&&t.getCause()!=null?t.getCause():t;
+                    if(failures.length()>0)failures.append("; ");
+                    failures.append(cause.getMessage()==null?cause.getClass().getSimpleName():cause.getMessage());
+                }
+            }
+            if(ok==0){ready=false;throw new IOException("No Wi-Fi light command completed"+(failures.length()>0?": "+failures:""));}
+            setStatus(action+" sent over Wi-Fi to "+ok+"/"+names.length+" string"+(names.length==1?"":"s")+(failures.length()>0?" • "+failures:""));
+        },false);
+    }
+
     void close(){
         closed=true;
         ready=false;
