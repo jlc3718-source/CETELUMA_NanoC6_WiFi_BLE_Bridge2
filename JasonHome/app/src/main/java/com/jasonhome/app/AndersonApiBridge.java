@@ -22,6 +22,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Native Android implementation of the Anderson Home HTTP API contract.
@@ -56,6 +59,11 @@ final class AndersonApiBridge {
     private JSONObject cloudSnapshotCache;
     private long cloudSnapshotAt=0L;
     private volatile boolean cloudIdentityProvisioned=false;
+    private final ExecutorService apiExecutor=Executors.newFixedThreadPool(4);
+    private final ExecutorService calendarSyncExecutor=Executors.newSingleThreadExecutor();
+    private final AtomicBoolean calendarSyncQueued=new AtomicBoolean(false);
+    private final AtomicBoolean calendarSyncDirty=new AtomicBoolean(false);
+    private final AtomicBoolean statusRefreshInFlight=new AtomicBoolean(false);
 
     AndersonApiBridge(Context context, Host host, DeviceStore deviceStore,
                       EufyCloudController cloud, CloudflareApiClient cloudApi, AndersonSchedule schedule) {
@@ -146,13 +154,13 @@ final class AndersonApiBridge {
     @JavascriptInterface
     public void requestAsync(String requestId, String method, String url, String body, String token) {
         final String id=requestId==null?"":requestId;
-        new Thread(() -> {
+        apiExecutor.execute(() -> {
             String result;
             try{result=request(method,url,body,token);}
             catch(Throwable t){result=error(500,t.getMessage()==null?t.getClass().getSimpleName():t.getMessage());}
             final String out=result;
             host.onBridgeResponse(id,out);
-        },"JasonHomeApi").start();
+        });
     }
 
     @JavascriptInterface
@@ -225,7 +233,7 @@ final class AndersonApiBridge {
             if ("/api/ble/target".equals(path) && "POST".equals(m)) return bleTarget(input);
 
 
-            return ok(new JSONObject().put("ok",true).put("android",true));
+            return error(404,"Unknown API route: "+path);
         } catch (Throwable t) {
             return error(500, t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
         }
@@ -245,10 +253,11 @@ final class AndersonApiBridge {
     private void invalidateCloudSnapshot(){synchronized(this){cloudSnapshotCache=null;cloudSnapshotAt=0L;}}
     private void touchCloudSnapshot(){synchronized(this){if(cloudSnapshotCache!=null)cloudSnapshotAt=System.currentTimeMillis();}}
     private void refreshCloudSnapshotAsync(){
-        if(!cloudApi.isCloudMode()||!cloudApi.configured())return;
-        new Thread(() -> {
+        if(!cloudApi.isCloudMode()||!cloudApi.configured()||!statusRefreshInFlight.compareAndSet(false,true))return;
+        apiExecutor.execute(() -> {
             try{cloudStatusSnapshot(true);}catch(Throwable ignored){}
-        },"JasonHomeStatusRefresh").start();
+            finally{statusRefreshInFlight.set(false);}
+        });
     }
 
     private String targetName(int target){
@@ -518,11 +527,7 @@ final class AndersonApiBridge {
         if(in.has("overlap"))schedule.setOverlap(parseOverlap(in.optString("overlap","rotate")));
         if(in.has("tz"))prefs.edit().putString("tz",in.optString("tz")).apply();
         AndersonScheduleService.update(context);
-        if(cloudApi.isCloudMode()&&cloudApi.configured()){
-            provisionCloudIdentity();
-            syncCalendarToOracle();
-            invalidateCloudSnapshot();
-        }else syncCalendarToOracleAsync();
+        syncCalendarToOracleAsync();
         return ok(stateJson());
     }
 
@@ -950,21 +955,38 @@ final class AndersonApiBridge {
 
     void syncCalendarToOracleAsync() {
         if(!cloudApi.isCloudMode()||!cloudApi.configured())return;
-        new Thread(() -> {
+        long next=Math.max(1L,prefs.getLong("calendar_revision",0L)+1L);
+        prefs.edit().putLong("calendar_revision",next).apply();
+        calendarSyncDirty.set(true);
+        queueCalendarSyncWorker();
+    }
+
+    private void queueCalendarSyncWorker(){
+        if(!calendarSyncQueued.compareAndSet(false,true))return;
+        calendarSyncExecutor.execute(() -> {
             try{
-                provisionCloudIdentity();
-                syncCalendarToOracle();
-                invalidateCloudSnapshot();
-                host.onBridgeStatus("Oracle holiday calendar synchronized");
-            }catch(Throwable t){
-                host.onBridgeStatus("Oracle calendar sync failed: "+(t.getMessage()==null?t.getClass().getSimpleName():t.getMessage()));
+                while(calendarSyncDirty.getAndSet(false)){
+                    try{
+                        provisionCloudIdentity();
+                        syncCalendarToOracle();
+                        invalidateCloudSnapshot();
+                        host.onBridgeStatus("Oracle holiday calendar synchronized");
+                    }catch(Throwable t){
+                        host.onBridgeStatus("Oracle calendar sync failed: "+(t.getMessage()==null?t.getClass().getSimpleName():t.getMessage()));
+                    }
+                }
+            }finally{
+                calendarSyncQueued.set(false);
+                if(calendarSyncDirty.get())queueCalendarSyncWorker();
             }
-        },"JasonHomeCalendarSync").start();
+        });
     }
 
     private void syncCalendarToOracle() throws Exception {
         JSONObject root=new JSONObject();
         root.put("version",1);
+        long revision=Math.max(1L,prefs.getLong("calendar_revision",1L));
+        root.put("revision",revision);
 
         JSONObject st=new JSONObject();
         st.put("enabled",schedule.enabled());
@@ -1013,9 +1035,23 @@ final class AndersonApiBridge {
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/calendar/sync",root.toString());
         if(r.status<200||r.status>=300){
             String msg="Oracle calendar sync HTTP "+r.status;
-            try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
+            try{
+                JSONObject err=new JSONObject(r.body);
+                msg=err.optString("error",msg);
+                long current=err.optLong("currentRevision",0L);
+                if(current>prefs.getLong("calendar_revision",0L))prefs.edit().putLong("calendar_revision",current).apply();
+            }catch(Throwable ignored){}
             throw new IOException(msg);
         }
+        try{
+            long accepted=new JSONObject(r.body).optLong("revision",revision);
+            if(accepted>prefs.getLong("calendar_revision",0L))prefs.edit().putLong("calendar_revision",accepted).apply();
+        }catch(Throwable ignored){}
+    }
+
+    void close(){
+        apiExecutor.shutdownNow();
+        calendarSyncExecutor.shutdownNow();
     }
 
     private JSONArray jsonColorsAsInts(int[] colors){
