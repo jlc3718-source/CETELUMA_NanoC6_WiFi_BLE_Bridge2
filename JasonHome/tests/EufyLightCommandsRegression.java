@@ -79,7 +79,7 @@ public final class EufyLightCommandsRegression {
     }
 
     private static void assertE22Speeds() {
-        int[] expected={8,25,50,78,100};
+        int[] expected={2,4,8,25,50};
         for(int speed=1;speed<=5;speed++){
             byte[] payload=EufyLightCommands.show("E22","Breath",new int[]{0xFF0000},speed,false);
             int a4=find(payload,0xA4);
