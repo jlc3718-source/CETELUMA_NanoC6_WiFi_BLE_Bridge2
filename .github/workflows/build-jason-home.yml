@@ -259,6 +259,7 @@ jobs:
               raise SystemExit('Cloudflare controller must live under Eufy Devices')
           print("Oracle Eufy Devices placement regression: PASS")
           bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
+          main = Path('JasonHome/app/src/main/java/com/jasonhome/app/MainActivity.java').read_text()
           if 'provisionCloudIdentity' not in bridge or '/api/provision-device' not in bridge or 'syncCalendarToOracleAsync' not in bridge or '/api/calendar/sync' not in bridge or '/api/eufy/factory-' not in bridge:
               raise SystemExit('Android Cloudflare identity provisioning missing')
           if 'requestAsync' not in bridge or 'onBridgeResponse' not in main:
