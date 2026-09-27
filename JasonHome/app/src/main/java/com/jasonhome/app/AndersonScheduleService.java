@@ -105,8 +105,8 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
             lastStatus = "Scheduled OFF • Wi-Fi";
             cloud.setPower(0, false);
         } else {
-            lastStatus = scene.name + (scene.schedule2 ? " • Schedule 2" : " • Schedule 1") + " • Wi-Fi power";
-            cloud.setPower(0, true);
+            lastStatus = scene.name + (scene.schedule2 ? " • Schedule 2" : " • Schedule 1") + " • Wi-Fi scene";
+            cloud.setScene(0, scene.effect, scene.colors, scene.speed, false, scene.brightness);
         }
         updateNotification();
     }
