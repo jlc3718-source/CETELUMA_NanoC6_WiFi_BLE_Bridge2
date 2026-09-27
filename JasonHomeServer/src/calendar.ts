@@ -5,7 +5,7 @@ export interface CalendarEvent {
   id:string; name:string; kind:string; rule:string;
   month:number; day:number; weekday:number; nth:number; offsetDays:number; durationDays:number;
   effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean;
-  categoryIndex:number; major:boolean;
+  categoryIndex:number; major:boolean; dateRuleSourceId?:string;
 }
 export interface SpecialDate { id:string; year:number; month:number; day:number; }
 export interface CustomCalendarItem {
@@ -35,6 +35,7 @@ export interface CalendarResolution {
 type Ymd={year:number;month:number;day:number};
 
 function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
+function finiteOr(v:any,fallback:number){const n=Number(v);return Number.isFinite(n)?n:fallback;}
 function colorValue(v:any){
   if(typeof v==="number"&&Number.isFinite(v))return v&0xffffff;
   if(typeof v==="string"){
@@ -82,7 +83,8 @@ function startDate(e:CalendarEvent,year:number,special:SpecialDate[]):Ymd|null{
       case "MonthEnd": d={year,month:e.month,day:monthDays(year,e.month)}; break;
       case "YearTable":
       case "Hanukkah":{
-        const hit=special.find(x=>x.id===e.id&&x.year===year);
+        const sourceId=e.dateRuleSourceId||e.id;
+        const hit=special.find(x=>x.id===sourceId&&x.year===year);
         return hit?{year:hit.year,month:hit.month,day:hit.day}:null;
       }
       default:return null;
@@ -98,11 +100,12 @@ function included(cfg:CalendarConfig,e:CalendarEvent){
 }
 function activeOn(cfg:CalendarConfig,e:CalendarEvent,day:Ymd){
   if(e.rule==="Month")return day.month===e.month;
-  let s=startDate(e,day.year,cfg.special||[]);
-  if(!s&&day.month===1)s=startDate(e,day.year-1,cfg.special||[]);
-  if(!s)return false;
-  const end=addDays(s,Math.max(1,e.durationDays||1)-1);
-  return cmp(day,s)>=0&&cmp(day,end)<=0;
+  for(let y=day.year-1;y<=day.year;y++){
+    const s=startDate(e,y,cfg.special||[]);if(!s)continue;
+    const end=addDays(s,Math.max(1,e.durationDays||1)-1);
+    if(cmp(day,s)>=0&&cmp(day,end)<=0)return true;
+  }
+  return false;
 }
 function windowActive(cfg:CalendarConfig,e:CalendarEvent,day:Ymd,lead:number,trail:number){
   for(let y=day.year-1;y<=day.year+1;y++){
@@ -232,18 +235,18 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
     version:1,syncedAt:Date.now(),
     settings:{
       enabled:!!s.enabled,
-      mode:clamp(Number(s.mode)||0,0,2),
-      lead:clamp(Number(s.lead)||0,0,14),
-      trail:clamp(Number(s.trail)||0,0,14),
-      on:clamp(Number(s.on)||1020,0,1439),
-      off:clamp(Number(s.off)||1380,0,1439),
+      mode:clamp(finiteOr(s.mode,0),0,2),
+      lead:clamp(finiteOr(s.lead,0),0,14),
+      trail:clamp(finiteOr(s.trail,0),0,14),
+      on:clamp(finiteOr(s.on,1020),0,1439),
+      off:clamp(finiteOr(s.off,1380),0,1439),
       startAtDusk:!!s.startAtDusk,
       schedule2Enabled:s.schedule2Enabled!==false,
       schedule2EndAtDawn:s.schedule2EndAtDawn!==false,
-      schedule2End:clamp(Number(s.schedule2End)||360,0,1439),
-      schedule2Brightness:clamp(Number(s.schedule2Brightness)||10,1,100),
-      overlap:clamp(Number(s.overlap)||0,0,2),
-      categoryMask:clamp(Number(s.categoryMask)||32767,0,32767)
+      schedule2End:clamp(finiteOr(s.schedule2End,360),0,1439),
+      schedule2Brightness:clamp(finiteOr(s.schedule2Brightness,10),1,100),
+      overlap:clamp(finiteOr(s.overlap,0),0,2),
+      categoryMask:clamp(finiteOr(s.categoryMask,32767),0,32767)
     },
     events:[],
     special:[],
@@ -257,7 +260,8 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       offsetDays:Number(raw.offsetDays)||0,durationDays:Math.max(1,Number(raw.durationDays)||1),
       effect:String(raw.effect||"Solid / Static"),speed:clamp(Number(raw.speed)||3,1,5),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
-      enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(Number(raw.categoryIndex)||0,0,14),major:!!raw.major
+      enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
+      dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined
     });
   }
   for(const raw of Array.isArray(input?.special)?input.special:[]){
