@@ -368,7 +368,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.3.9 Oracle");
+        d.put("firmwareVersion","Craumer Home • 5.4.0 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -411,7 +411,7 @@ final class AndersonApiBridge {
             scheduled.put("id",scene.eventIndex>=0&&scene.eventIndex<AndersonEventData.EVENTS.length?AndersonEventData.EVENTS[scene.eventIndex].id:"");
             scheduled.put("enabled",true).put("toggleable",scene.eventIndex>=0).put("custom",false).put("upcoming",false);
         }else{
-            scheduled.put("name","No enabled scheduled event").put("id","").put("enabled",false).put("toggleable",false).put("custom",false).put("upcoming",false);
+            scheduled.put("name",schedule.enabled()?"No event active right now":"Schedule disabled").put("id","").put("enabled",schedule.enabled()).put("toggleable",false).put("custom",false).put("upcoming",false);
         }
         d.put("scheduledEvent",scheduled);
 
@@ -437,12 +437,33 @@ final class AndersonApiBridge {
                 cloudCount=readyNames.size();
                 statusText=eu==null?"Oracle online":eu.optString("status","Oracle online");
                 transportText="Oracle Linux → Eufy MQTT";
-                JSONObject next=server.optJSONObject("nextEvent");
-                if(next!=null&&next.optString("name","").length()>0){
-                    String n=next.optString("name");
-                    String at=next.optString("at","");
-                    d.put("nextEvent",at.isEmpty()?n:n+" • "+at);
+                JSONObject astro=server.optJSONObject("astronomy");
+                if(astro!=null){
+                    String cloudDawn=astro.optString("dawn","");
+                    String cloudDusk=astro.optString("dusk","");
+                    if(!cloudDawn.isEmpty())settings.put("dawn",cloudDawn);
+                    if(!cloudDusk.isEmpty())settings.put("dusk",cloudDusk);
                 }
+                JSONObject calendar=server.optJSONObject("calendar");
+                JSONObject next=server.optJSONObject("nextEvent");
+                if(calendar!=null){
+                    boolean calendarEnabled=calendar.optBoolean("enabled",schedule.enabled());
+                    settings.put("scheduler",calendarEnabled);
+                    JSONObject current=calendar.optJSONObject("current");
+                    if(current!=null&&current.optString("name","").length()>0){
+                        String id=current.optString("id","");
+                        scheduled.put("name",current.optString("name","Scheduled event"));
+                        scheduled.put("id",id).put("enabled",true).put("toggleable",!id.isEmpty()).put("custom",false).put("upcoming",false);
+                    }else if(next!=null&&"calendar".equals(next.optString("source"))&&next.optString("name","").length()>0){
+                        String id=next.optString("id","");
+                        scheduled.put("name",next.optString("name"));
+                        scheduled.put("id",id).put("enabled",true).put("toggleable",!id.isEmpty()).put("custom",false).put("upcoming",true);
+                    }else{
+                        scheduled.put("name",calendarEnabled?"Schedule active • waiting for next event":"Schedule disabled");
+                        scheduled.put("id","").put("enabled",calendarEnabled).put("toggleable",false).put("custom",false).put("upcoming",false);
+                    }
+                }
+                if(next!=null&&next.optString("name","").length()>0)d.put("nextEvent",cloudNextEventLabel(next));
                 JSONObject ov=server.optJSONObject("override");
                 if(ov!=null)d.put("manualOverride",ov.optBoolean("active",prefs.getBoolean("manual_override",false)));
             }catch(Throwable t){
@@ -539,7 +560,11 @@ final class AndersonApiBridge {
         if(in.has("overlap"))schedule.setOverlap(parseOverlap(in.optString("overlap","rotate")));
         if(in.has("tz"))prefs.edit().putString("tz",in.optString("tz")).apply();
         AndersonScheduleService.update(context);
-        syncCalendarToOracleAsync();
+        if(cloudApi.isCloudMode()&&cloudApi.configured()){
+            provisionCloudIdentity();
+            syncCalendarToOracle();
+            invalidateCloudSnapshot();
+        }else syncCalendarToOracleAsync();
         return ok(stateJson());
     }
 
@@ -935,7 +960,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Craumer Home 5.3.4 Cloud").put("buildCommit","Wi-Fi cloud transport")
+            .put("version","Craumer Home 5.4.0 Oracle").put("buildCommit","Oracle + Eufy Wi-Fi transport")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -945,7 +970,7 @@ final class AndersonApiBridge {
     }
 
     private String e120Test(JSONObject in) throws Exception {
-        return error(409,"Bluetooth diagnostics are temporarily disabled in Craumer Home 5.3.4 Cloud mode.");
+        return error(409,"Bluetooth diagnostics are not used by Craumer Home 5.4.0 Oracle mode.");
     }
 
     private int[] eventColors(int i) throws Exception {
@@ -1138,6 +1163,17 @@ final class AndersonApiBridge {
     private static int intQuery(Uri u,String key,int def){try{String v=u.getQueryParameter(key);return v==null?def:Integer.parseInt(v);}catch(Throwable t){return def;}}
     private static int clamp(int v,int lo,int hi){return Math.max(lo,Math.min(hi,v));}
     private static int parseMinutes(String s,int def){try{String[] p=s.split(":");return clamp(Integer.parseInt(p[0])*60+Integer.parseInt(p[1]),0,1439);}catch(Throwable t){return def;}}
+    private static String cloudNextEventLabel(JSONObject next){
+        String name=next==null?"":next.optString("name","");
+        String at=next==null?"":next.optString("at","");
+        if(name.isEmpty())return "—";
+        if(at.isEmpty())return name;
+        try{
+            ZonedDateTime z=java.time.Instant.parse(at).atZone(ZoneId.of("America/New_York"));
+            return name+" • "+DateTimeFormatter.ofPattern("EEE MMM d • h:mm a",Locale.US).format(z);
+        }catch(Throwable ignored){return name;}
+    }
+
     private static String clockMinutes(int v){v=((v%1440)+1440)%1440;return String.format(Locale.ROOT,"%02d:%02d",v/60,v%60);}
     private static String displayMinutes(int v){v=((v%1440)+1440)%1440;int h=v/60,m=v%60;String ap=h>=12?"PM":"AM";h%=12;if(h==0)h=12;return String.format(Locale.ROOT,"%d:%02d %s",h,m,ap);}
     private static String overlapString(int v){return v==2?"combine":v==1?"rotate":"priority";}
