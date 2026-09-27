@@ -55,6 +55,7 @@ final class AndersonApiBridge {
     private volatile String cloudStatus = "Wi-Fi cloud starting";
     private JSONObject cloudSnapshotCache;
     private long cloudSnapshotAt=0L;
+    private volatile boolean cloudIdentityProvisioned=false;
 
     AndersonApiBridge(Context context, Host host, DeviceStore deviceStore,
                       EufyCloudController cloud, CloudflareApiClient cloudApi, AndersonSchedule schedule) {
@@ -81,7 +82,8 @@ final class AndersonApiBridge {
         return response(r.status,r.body);
     }
 
-    private void provisionCloudIdentity() throws Exception {
+    private synchronized void provisionCloudIdentity() throws Exception {
+        if(cloudIdentityProvisioned)return;
         if(!cloudApi.configured())throw new IOException("Oracle API token is not configured");
         JSONObject payload=new JSONObject().put("installId",cloud.installId());
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/provision-device",payload.toString());
@@ -90,6 +92,7 @@ final class AndersonApiBridge {
             try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
             throw new IOException(msg);
         }
+        cloudIdentityProvisioned=true;
         invalidateCloudSnapshot();
     }
 
@@ -99,6 +102,7 @@ final class AndersonApiBridge {
             if(in.has("token")){
                 String token=in.optString("token","").trim();
                 if(token.isEmpty())store.clearToken(); else store.saveToken(token);
+                cloudIdentityProvisioned=false;
             }
             if(in.has("mode")){
                 boolean cloudMode="cloud".equalsIgnoreCase(in.optString("mode","direct"));
@@ -249,6 +253,13 @@ final class AndersonApiBridge {
     }
 
     private void invalidateCloudSnapshot(){synchronized(this){cloudSnapshotCache=null;cloudSnapshotAt=0L;}}
+    private void touchCloudSnapshot(){synchronized(this){if(cloudSnapshotCache!=null)cloudSnapshotAt=System.currentTimeMillis();}}
+    private void refreshCloudSnapshotAsync(){
+        if(!cloudApi.isCloudMode()||!cloudApi.configured())return;
+        new Thread(() -> {
+            try{cloudStatusSnapshot(true);}catch(Throwable ignored){}
+        },"JasonHomeStatusRefresh").start();
+    }
 
     private String targetName(int target){
         return target<=0?"All":NAMES[Math.max(0,Math.min(NAMES.length-1,target-1))];
@@ -290,7 +301,11 @@ final class AndersonApiBridge {
             try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
             throw new IOException(msg);
         }
-        invalidateCloudSnapshot();
+        // The control response already proves Oracle accepted the command. Keep
+        // the last good status snapshot hot so the classic UI can repaint without
+        // waiting on a second HTTPS round-trip, then refresh status in background.
+        touchCloudSnapshot();
+        refreshCloudSnapshotAsync();
         return ok(stateJson());
     }
 
@@ -303,7 +318,8 @@ final class AndersonApiBridge {
             try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
             throw new IOException(msg);
         }
-        invalidateCloudSnapshot();
+        touchCloudSnapshot();
+        refreshCloudSnapshotAsync();
         return ok(stateJson());
     }
 
@@ -993,6 +1009,7 @@ final class AndersonApiBridge {
         if(!cloudApi.isCloudMode()||!cloudApi.configured())return;
         new Thread(() -> {
             try{
+                provisionCloudIdentity();
                 syncCalendarToOracle();
                 invalidateCloudSnapshot();
                 host.onBridgeStatus("Oracle holiday calendar synchronized");
