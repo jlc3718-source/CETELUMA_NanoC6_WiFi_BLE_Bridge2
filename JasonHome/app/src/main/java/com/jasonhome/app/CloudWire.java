@@ -31,7 +31,27 @@ public final class CloudWire {
     static byte[] secret(KeyPair k,String server)throws Exception{byte[] p=unhex(server);if(p.length!=65||p[0]!=4)throw new IOException("Invalid server EC point");ECParameterSpec params=((ECPublicKey)k.getPublic()).getParams();PublicKey pub=KeyFactory.getInstance("EC").generatePublic(new ECPublicKeySpec(new ECPoint(new BigInteger(1,Arrays.copyOfRange(p,1,33)),new BigInteger(1,Arrays.copyOfRange(p,33,65))),params));KeyAgreement agreement=KeyAgreement.getInstance("ECDH");agreement.init(k.getPrivate());agreement.doPhase(pub,true);return agreement.generateSecret();}
     static String[] password(String password)throws Exception{KeyPair k=pair();byte[] s=secret(k,SERVER);Cipher c=Cipher.getInstance("AES/CBC/PKCS5Padding");c.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(s,"AES"),new IvParameterSpec(s,0,16));return new String[]{publicHex(k),Base64.getEncoder().encodeToString(c.doFinal(bytes(password)))};}
     static void tlv(ByteArrayOutputStream b,int tag,byte[] v)throws Exception{if(v.length>255)throw new IOException("TLV too long");b.write(tag);b.write(v.length);b.write(v);}
-    static byte[] dp(int subtype,String account,int tag,byte[] value,long timestamp)throws Exception{if(account==null||account.isEmpty())throw new IOException("Account identity missing");ByteArrayOutputStream fields=new ByteArrayOutputStream();tlv(fields,0xa1,new byte[]{(byte)timestamp,(byte)(timestamp>>8),(byte)(timestamp>>16),(byte)(timestamp>>24)});tlv(fields,0xa2,bytes(account));tlv(fields,tag,value);byte[] f=fields.toByteArray();int size=10+f.length;ByteArrayOutputStream b=new ByteArrayOutputStream();b.write(new byte[]{(byte)0xff,9,(byte)size,(byte)(size>>8),3,0,2,2,(byte)subtype});b.write(f);int xor=0;for(byte v:b.toByteArray())xor^=v&255;b.write(xor);return b.toByteArray();}
+    static byte[] dp(int subtype,String account,int tag,byte[] value,long timestamp)throws Exception{
+        ByteArrayOutputStream payload=new ByteArrayOutputStream();
+        tlv(payload,tag,value);
+        return dpCommand(0x0200|(subtype&0xff),account,payload.toByteArray(),timestamp);
+    }
+    static byte[] dpCommand(int opcode,String account,byte[] commandFields,long timestamp)throws Exception{
+        if(account==null||account.isEmpty())throw new IOException("Account identity missing");
+        if((opcode&0xff00)!=0x0200)throw new IOException("Unsupported lighting opcode");
+        ByteArrayOutputStream fields=new ByteArrayOutputStream();
+        tlv(fields,0xa1,new byte[]{(byte)timestamp,(byte)(timestamp>>8),(byte)(timestamp>>16),(byte)(timestamp>>24)});
+        tlv(fields,0xa2,bytes(account));
+        if(commandFields!=null&&commandFields.length>0)fields.write(commandFields);
+        byte[] f=fields.toByteArray();
+        int size=10+f.length;
+        ByteArrayOutputStream b=new ByteArrayOutputStream();
+        b.write(new byte[]{(byte)0xff,9,(byte)size,(byte)(size>>8),3,0,2,(byte)(opcode>>8),(byte)opcode});
+        b.write(f);
+        int xor=0;for(byte v:b.toByteArray())xor^=v&255;
+        b.write(xor);
+        return b.toByteArray();
+    }
     static void utf(DataOutputStream d,String s)throws IOException{byte[] b=bytes(s);if(b.length>65535)throw new IOException("MQTT string too long");d.writeShort(b.length);d.write(b);}
     static void packet(OutputStream out,int header,byte[] body)throws IOException{if(body.length>1048576)throw new IOException("MQTT packet too large");out.write(header);int n=body.length;do{int x=n%128;n/=128;out.write(n>0?x|128:x);}while(n>0);out.write(body);out.flush();}
     static final class Packet{final int header;final byte[] data;Packet(int h,byte[] b){header=h;data=b;}int type(){return header>>4;}}
