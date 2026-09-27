@@ -206,6 +206,23 @@ final class AndersonApiBridge {
     }
 
     @JavascriptInterface
+    public void copyBackupText(String text) {
+        if(text==null)return;
+        android.content.ClipboardManager cm=(android.content.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if(cm!=null)cm.setPrimaryClip(android.content.ClipData.newPlainText("Jason Home backup",text));
+    }
+
+    @JavascriptInterface
+    public String readBackupText() {
+        try{
+            android.content.ClipboardManager cm=(android.content.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+            if(cm==null||!cm.hasPrimaryClip()||cm.getPrimaryClip()==null||cm.getPrimaryClip().getItemCount()<1)return "";
+            CharSequence v=cm.getPrimaryClip().getItemAt(0).coerceToText(context);
+            return v==null?"":v.toString();
+        }catch(Throwable ignored){return "";}
+    }
+
+    @JavascriptInterface
     public void requestAsync(String requestId, String method, String url, String body, String token) {
         final String id=requestId==null?"":requestId;
         apiExecutor.execute(() -> {
@@ -264,6 +281,8 @@ final class AndersonApiBridge {
             if ("/api/backup/status".equals(path) && "GET".equals(m)) return ok(backupStatus());
             if ("/api/backup/manual".equals(path) && "POST".equals(m)) return backupAll();
             if ("/api/backup/restore".equals(path) && "POST".equals(m)) return restoreBackup();
+            if ("/api/backup/export-portable".equals(path) && "GET".equals(m)) return portableBackupExport();
+            if ("/api/backup/import-portable".equals(path) && "POST".equals(m)) return portableBackupImport(input);
 
             if ("/api/events".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), intQuery(uri,"month",LocalDate.now().getMonthValue()), null));
             if ("/api/events/search".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), 0, uri.getQueryParameter("q")));
@@ -922,6 +941,42 @@ final class AndersonApiBridge {
             .put("mode","complete");
     }
 
+    private void validateBackupRoot(JSONObject root) throws Exception {
+        if(root==null)throw new IOException("Backup JSON is missing");
+        int schema=root.optInt("schema",0);
+        if(schema<1||schema>2)throw new IOException("Unsupported Craumer Home backup schema");
+        validatePreferenceSnapshot(root.optJSONObject("app"));
+        validatePreferenceSnapshot(root.optJSONObject("schedule"));
+        JSONObject oracle=root.optJSONObject("oracle");
+        if(oracle!=null&&oracle.optInt("schema",0)!=1)throw new IOException("Unsupported Oracle backup schema");
+    }
+
+    private String portableBackupExport() throws Exception {
+        SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
+        String raw=bp.getString("snapshot","");
+        if(raw.isEmpty())return error(404,"Create a Craumer Home backup first");
+        JSONObject root=new JSONObject(raw);
+        validateBackupRoot(root);
+        return ok(new JSONObject().put("ok",true).put("backup",root).put("portable",true).put("containsCredentials",false));
+    }
+
+    private String portableBackupImport(JSONObject in) throws Exception {
+        JSONObject root=in==null?null:in.optJSONObject("backup");
+        validateBackupRoot(root);
+        SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
+        String prior=bp.getString("snapshot","");
+        long priorTime=bp.getLong("last_backup",0L);
+        try{
+            bp.edit().putString("snapshot",root.toString()).putLong("last_backup",System.currentTimeMillis()/1000L).apply();
+            return restoreBackup();
+        }catch(Throwable t){
+            SharedPreferences.Editor e=bp.edit();
+            if(prior.isEmpty())e.remove("snapshot");else e.putString("snapshot",prior);
+            e.putLong("last_backup",priorTime).apply();
+            throw t;
+        }
+    }
+
     private String backupAll() throws Exception {
         JSONObject root=new JSONObject();
         root.put("schema",2);
@@ -950,11 +1005,8 @@ final class AndersonApiBridge {
         String raw=bp.getString("snapshot","");
         if(raw.isEmpty())return error(404,"No Craumer Home backup is available");
         JSONObject root=new JSONObject(raw);
-        int schema=root.optInt("schema",0);
-        if(schema<1||schema>2)return error(400,"Unsupported Craumer Home backup schema");
+        validateBackupRoot(root);
         JSONObject app=root.optJSONObject("app"),scheduleData=root.optJSONObject("schedule");
-        validatePreferenceSnapshot(app);
-        validatePreferenceSnapshot(scheduleData);
 
         JSONObject previousLocal=new JSONObject()
             .put("schema",2)
