@@ -37,8 +37,8 @@ function installAndroidEufyUi(){
       eufy.id="eufyAndroidStatusPanel";
       eufy.className="panel";
       eufy.innerHTML=
-        '<div class="row between"><div><strong>Eufy / Cloud Controller</strong>'+
-        '<div class="sub">Choose whether Jason Home controls the lights through Cloudflare or directly from this phone.</div></div>'+
+        '<div class="row between"><div><strong>Eufy / Oracle Controller</strong>'+
+        '<div class="sub">Choose whether Jason Home controls the lights through Oracle or directly from this phone.</div></div>'+
         '<span class="badge" id="eufyBleBadge">READY</span></div>'+
         '<div class="eufyStatusGrid">'+
         '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
@@ -49,8 +49,8 @@ function installAndroidEufyUi(){
         '<div class="card small eufyStatusNote"><strong>Controller path</strong><br>'+
         '<span id="cloudControllerSummary" class="sub">Loading controller mode…</span></div>'+
         '<div class="label">Controller mode</div>'+
-        '<select id="cloudControllerMode" class="field"><option value="cloud">Cloudflare — Internet controller</option><option value="direct">Direct Eufy — phone fallback</option></select>'+
-        '<div class="label">Jason Home Cloud API token</div>'+
+        '<select id="cloudControllerMode" class="field"><option value="cloud">Oracle — Internet controller</option><option value="direct">Direct Eufy — phone fallback</option></select>'+
+        '<div class="label">Jason Home Oracle API token</div>'+
         '<input id="cloudControllerToken" type="password" class="field" autocomplete="off" placeholder="Enter only to set or replace the saved token">'+
         '<div id="cloudControllerTokenMeta" class="sub" style="margin-top:6px">Token status loading…</div>'+
         '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Cloud</button></div>'+
@@ -94,8 +94,8 @@ function installAndroidEufyUi(){
       const cfg=typeof api==="function"?await api("/api/cloud/config?ts="+Date.now()):null;
       if(!cfg)return;
       mode.value=cfg.mode||"direct";
-      summary.textContent=(cfg.mode==="cloud"?"Cloudflare Worker → Eufy MQTT":"Android → Eufy MQTT")+" • "+(cfg.mode==="cloud"?"server controller":"known-good direct fallback");
-      if(meta)meta.textContent=cfg.configured?"Cloud API token saved securely on this phone.":"Cloud API token not saved on this phone.";
+      summary.textContent=(cfg.mode==="cloud"?"Oracle Linux → Eufy MQTT":"Android → Eufy MQTT")+" • "+(cfg.mode==="cloud"?"Oracle server controller":"known-good direct fallback");
+      if(meta)meta.textContent=cfg.configured?"Oracle API token saved securely on this phone.":"Oracle API token not saved on this phone.";
       const result=$("cloudControllerResult");
       if(result&&cfg.directStatus)result.textContent="Direct fallback: "+cfg.directStatus;
     }catch(e){summary.textContent="Controller configuration unavailable: "+e.message;}
@@ -109,7 +109,7 @@ function installAndroidEufyUi(){
       if(token&&token.value.trim())payload.token=token.value.trim();
       const cfg=await post("/api/cloud/config",payload);
       if(token)token.value="";
-      if(result)result.textContent="Controller saved: "+(cfg.mode==="cloud"?"Cloudflare":"Direct Eufy")+".";
+      if(result)result.textContent="Controller saved: "+(cfg.mode==="cloud"?"Oracle":"Direct Eufy")+".";
       await loadCloudControllerConfig();
       await refreshEufyStatus();
       if(typeof loadState==="function")await loadState();
@@ -118,17 +118,17 @@ function installAndroidEufyUi(){
 
   async function testCloudController(){
     const result=$("cloudControllerResult");
-    if(result)result.textContent="Testing Cloudflare and Eufy…";
+    if(result)result.textContent="Testing Oracle and Eufy…";
     try{
       const st=await api("/api/cloud/test?ts="+Date.now(),{},30000);
       const eu=st.eufy||{},names=Array.isArray(eu.readyNames)?eu.readyNames:[];
-      if(result)result.textContent="Cloud test: "+(eu.status||"Online")+" • "+names.length+"/4 strings ready.";
-    }catch(e){if(result)result.textContent="Cloud test failed: "+e.message;}
+      if(result)result.textContent="Oracle test: "+(eu.status||"Online")+" • "+names.length+"/4 strings ready.";
+    }catch(e){if(result)result.textContent="Oracle test failed: "+e.message;}
   }
 
   async function reconnectCloudController(){
     const result=$("cloudControllerResult");
-    if(result)result.textContent="Reconnecting Cloudflare to Eufy…";
+    if(result)result.textContent="Reconnecting Oracle to Eufy…";
     try{
       const r=await post("/api/reconnect",{});
       if(result)result.textContent="Eufy reconnect complete"+(r.eufy?.status?" • "+r.eufy.status:".");
@@ -138,10 +138,10 @@ function installAndroidEufyUi(){
 
   async function reconcileCloudController(){
     const result=$("cloudControllerResult");
-    if(result)result.textContent="Reconciling the cloud schedule…";
+    if(result)result.textContent="Reconciling the Oracle schedule…";
     try{
       await post("/api/reconcile",{});
-      if(result)result.textContent="Cloud schedule reconciled.";
+      if(result)result.textContent="Oracle schedule reconciled.";
       await refreshEufyStatus();
     }catch(e){if(result)result.textContent="Reconcile failed: "+e.message;}
   }
