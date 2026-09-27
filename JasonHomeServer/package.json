@@ -6,7 +6,8 @@
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "npm run build && node tests/calendar.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
