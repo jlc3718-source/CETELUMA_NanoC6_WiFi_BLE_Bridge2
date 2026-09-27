@@ -51,6 +51,12 @@ export class JasonHomeController {
       if(method==="POST"&&(path==="/api/resume-schedule"||path==="/api/resume")){this.delMeta("override");await this.reconcile(true,true);return json({ok:true,resumed:true});}
       if(method==="POST"&&path==="/api/reconcile"){await this.reconcile(false,true);return json({ok:true});}
       if(method==="POST"&&path==="/api/reconnect"){this.eufy=null;this.eufyReady=false;await this.ensureEufy(true);return json({ok:true,eufy:this.eufyStatus});}
+      if(method==="POST"&&path==="/api/mqtt-probe"){
+        const input:any=await request.json().catch(()=>({})),target=String(input?.target||"Pool");
+        if(!DEVICE_NAMES.includes(target))throw new Error("Probe target must be Pool, House, Garage, or Shed");
+        const eufy=await this.ensureEufy(false),result=await eufy.status(target);
+        return json({ok:true,target,published:result.published,report:result.report||null});
+      }
       return json({ok:false,error:"Not found",path},404);
     }catch(e:any){this.eufyStatus=e?.message||String(e);return json({ok:false,error:this.eufyStatus},500);}
   }
