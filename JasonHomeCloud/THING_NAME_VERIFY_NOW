@@ -1,1 +1,1 @@
-Deploy broker-instance discovery and run the Pool status-only MQTT probe.
+Deploy fresh controller with current app-shaped client ID and broker-instance discovery.
