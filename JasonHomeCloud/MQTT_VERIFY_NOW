@@ -1,1 +1,1 @@
-Deploy and verify corrected MQTT handshake with authenticated Eufy user ID fallback.
+Deploy and verify exact Android MQTT client-ID semantics.
