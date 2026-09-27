@@ -225,16 +225,15 @@ function installAndroidEufyUi(){
 
     async function saveFactoryEditor(apply=false){
       if(!editorPreset)return;
+      const selectedTarget=$("factoryEditorTarget")?.value||"All";
+      const selectedMode=$("factoryEditorApplyMode")?.value||"compatible";
       const out=$("factoryEditorResult"),save=$("factoryEditorSave"),applyBtn=$("factoryEditorApply");
       save.disabled=applyBtn.disabled=true;out.textContent="Validating and saving factory recipe on Oracle…";
       try{
         const r=await post("/api/eufy/factory-presets/save",{lightId:Number(editorPreset.lightId),preset:editorPreset},12000);
         editorPreset=deep(r.preset);const idx=presets.findIndex(x=>Number(x.lightId)===Number(editorPreset.lightId));if(idx>=0)presets[idx]=deep(editorPreset);renderFactory();renderEditor();
         out.textContent="Factory preset saved on Oracle.";
-        if(apply){
-          const target=$("factoryEditorTarget")?.value||"All";
-          await runFactoryTest(editorPreset,applyBtn,out,target);
-        }
+        if(apply)await runFactoryTest(editorPreset,applyBtn,out,selectedTarget,selectedMode);
       }catch(e){out.textContent="Factory save failed: "+e.message;}
       finally{save.disabled=applyBtn.disabled=false;}
     }
@@ -262,7 +261,7 @@ function installAndroidEufyUi(){
           }
         }
         throw new Error("Factory test did not finish in time");
-      }catch(e){result.textContent="Factory test failed: "+e.message;throw e;}
+      }catch(e){result.textContent="Factory test failed: "+e.message;return null;}
       finally{btn.disabled=false;}
     }
 
