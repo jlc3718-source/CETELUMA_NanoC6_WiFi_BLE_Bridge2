@@ -85,10 +85,10 @@ jobs:
           print('CALENDAR enabled', bool((c.get('settings') or {}).get('enabled')))
           print('CALENDAR custom schedules', len(c.get('customSchedules') or []))
           PY
-          node --input-type=module - <<'NODE'
-          import fs from 'node:fs';
-          import { resolveCalendar } from '/home/ubuntu/repo/JasonHomeServer/dist/calendar.js';
-          const c=JSON.parse(fs.readFileSync('/tmp/calendar.json','utf8')).calendar;
+          sudo docker compose exec -T jason-home node --input-type=module - <<'NODE'
+          import { resolveCalendar } from '/app/dist/calendar.js';
+          const res=await fetch('http://127.0.0.1:8080/api/calendar',{headers:{Authorization:'Bearer '+process.env.JASON_HOME_API_TOKEN}});
+          const c=(await res.json()).calendar;
           const lat=42.1507,lon=-78.9452,tz='America/New_York';
           for (const [label,iso] of [
             ['FUTURE Sep29 7:45pm ET','2026-09-29T23:45:00.000Z'],
@@ -100,4 +100,3 @@ jobs:
             console.log(label,JSON.stringify(r));
           }
           NODE
-          PY
