@@ -57,7 +57,7 @@ final class BleLightController {
         }
     }
 
-    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, STATUS, SCENE, DIAGNOSTIC }
+    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, E120_SHOW_ID_ONLY, E120_SHOW_ID_FULL, E120_CAPTURED_PAIR, STATUS, SCENE, DIAGNOSTIC }
 
     private static final class Job {
         final FoundLight light;
@@ -84,6 +84,15 @@ final class BleLightController {
         }
         static Job e120LocalEffect(FoundLight l,int localId,int[] colors,int speed){
             return new Job(l,Kind.E120_LOCAL_EFFECT,false,localId,0,"E120 local 0206",colors,speed,false);
+        }
+        static Job e120ShowIdOnly(FoundLight l,int showId){
+            return new Job(l,Kind.E120_SHOW_ID_ONLY,false,showId,0,"E120 show id only",null,0,false);
+        }
+        static Job e120ShowIdFull(FoundLight l,int showId,int[] colors,int speed){
+            return new Job(l,Kind.E120_SHOW_ID_FULL,false,showId,0,"Breath",colors,speed,false);
+        }
+        static Job e120CapturedPair(FoundLight l,int selectedId,int runningId,int[] colors,int speed){
+            return new Job(l,Kind.E120_CAPTURED_PAIR,false,selectedId,runningId,"Breath",colors,speed,false);
         }
         static Job status(FoundLight l){
             return new Job(l,Kind.STATUS,false,0,0,null,null,0,false);
@@ -198,6 +207,20 @@ final class BleLightController {
     void setE120LocalEffect(List<FoundLight> targets, int localId, int[] colors, int speed) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors.clone();
         enqueue(targets, item -> Job.e120LocalEffect(item,localId,safe,speed));
+    }
+
+    void testE120ShowIdOnly(List<FoundLight> targets, int showId) {
+        enqueue(targets, item -> Job.e120ShowIdOnly(item,showId));
+    }
+
+    void testE120ShowIdFull(List<FoundLight> targets, int showId, int[] colors, int speed) {
+        int[] safe = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors.clone();
+        enqueue(targets, item -> Job.e120ShowIdFull(item,showId,safe,speed));
+    }
+
+    void testE120CapturedPair(List<FoundLight> targets, int selectedId, int runningId, int[] colors, int speed) {
+        int[] safe = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors.clone();
+        enqueue(targets, item -> Job.e120CapturedPair(item,selectedId,runningId,safe,speed));
     }
 
     void readE120State(List<FoundLight> targets) {
@@ -695,6 +718,16 @@ final class BleLightController {
                     frame=p.command(EufyLightCommands.OP_COLOR,
                         EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
                     break;
+                case E120_SHOW_ID_ONLY:
+                    frame=p.command(EufyLightCommands.OP_SHOW,EufyLightCommands.showIdOnly(job.value));
+                    break;
+                case E120_SHOW_ID_FULL:
+                    frame=p.command(EufyLightCommands.OP_SHOW,
+                        EufyLightCommands.showWithId(job.light.model,job.value,job.effect,job.colors,job.speed,false));
+                    break;
+                case E120_CAPTURED_PAIR:
+                    sendE120CapturedPair(job,g,c,p);
+                    return;
                 case STATUS:
                     frame=p.stateCommand();
                     waitForStateReply=true;
@@ -754,6 +787,33 @@ final class BleLightController {
         int xor=0;
         for(byte b:reply)xor^=b&0xff;
         return xor==0;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void sendE120CapturedPair(Job job,BluetoothGatt g,BluetoothGattCharacteristic c,E10Probe p){
+        try{
+            byte[] select=p.command(EufyLightCommands.OP_COLOR,
+                EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
+            int first=write(g,c,select);
+            listener.onStatus(displayName(job.light)+": captured E120 select "+job.value+" writeStatus="+first);
+            if(first!=BluetoothStatusCodes.SUCCESS){
+                finishActive(false,"E120 selected-effect write failed ("+first+")");
+                return;
+            }
+            handler.postDelayed(()->{
+                if(active!=job||gatt!=g||probe!=p)return;
+                try{
+                    byte[] run=p.command(EufyLightCommands.OP_SHOW,
+                        EufyLightCommands.showWithId(job.light.model,job.rgb,job.effect,job.colors,job.speed,false));
+                    int second=write(g,c,run);
+                    listener.onStatus(displayName(job.light)+": captured E120 run "+job.rgb+" writeStatus="+second);
+                    if(second!=BluetoothStatusCodes.SUCCESS) finishActive(false,"E120 running-effect write failed ("+second+")");
+                    else handler.postDelayed(()->{ if(active==job&&gatt==g&&probe==p) finishActive(true,null); },700L);
+                }catch(Throwable t){ finishActive(false,"E120 running-effect frame could not be built"); }
+            },260L);
+        }catch(Throwable t){
+            finishActive(false,"E120 captured-pair frame could not be built");
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -1266,6 +1326,9 @@ final class BleLightController {
             case WHITE:return "Setting white";
             case EFFECT:return "Starting "+job.effect;
             case E120_LOCAL_EFFECT:return "Testing E120 local effect "+job.value;
+            case E120_SHOW_ID_ONLY:return "Testing E120 show "+job.value+" (ID only)";
+            case E120_SHOW_ID_FULL:return "Testing E120 show "+job.value+" (full)";
+            case E120_CAPTURED_PAIR:return "Testing E120 captured "+job.value+" → "+job.rgb;
             case STATUS:return "Reading E120 state";
             case SCENE:return "Applying "+job.effect;
             default:return "Controlling";
@@ -1281,6 +1344,9 @@ final class BleLightController {
             case WHITE:return job.value+" K white";
             case EFFECT:return job.effect;
             case E120_LOCAL_EFFECT:return "E120 0206 local "+job.value;
+            case E120_SHOW_ID_ONLY:return "E120 020D id "+job.value;
+            case E120_SHOW_ID_FULL:return "E120 020D full "+job.value;
+            case E120_CAPTURED_PAIR:return "E120 captured "+job.value+" -> "+job.rgb;
             case STATUS:return "E120 state";
             case SCENE:return "scene "+job.effect;
             case DIAGNOSTIC:return "diagnostic handshake";
