@@ -70,4 +70,10 @@ echo
 echo "=== ORACLE UPDATE COMPLETE ==="
 echo "Install/open Jason Home 5.3.7 next."
 echo "Holiday scheduling remains on Oracle."
+# ZIP 14772 coordinate migration: update only the previous Jason Home defaults.
+if [ -f .env ]; then
+  sed -i 's/^HOME_LAT=42\.0529$/HOME_LAT=42.1507/' .env
+  sed -i 's/^HOME_LON=-79\.0576$/HOME_LON=-78.9452/' .env
+fi
+
 echo "Factory Lab stays isolated in its own tab and sends test presets to all four strings."
