@@ -243,11 +243,11 @@ final class E10Probe {
             out.append(String.format(java.util.Locale.ROOT," • reply %04X",command));
             if(power!=null)out.append(" • power=").append(power);
             if(brightness!=null)out.append(" • brightness=").append(brightness).append("%");
-            if(length!=null)out.append(" • length=").append(length);
-            if(selected!=null)out.append(" • selectedEffect=").append(selected);
-            if(running!=null)out.append(" • runningEffect=").append(running);
-            if(gradient!=null)out.append(" • gradient=").append(gradient);
-            if(mode!=null)out.append(" • mode=").append(mode);
+            if(length!=null)out.append(" • A3=").append(length);
+            if(selected!=null)out.append(" • A4=").append(selected);
+            if(gradient!=null)out.append(" • A5=").append(gradient);
+            if(running!=null)out.append(" • A6=").append(running);
+            if(mode!=null)out.append(" • A8/A7=").append(mode);
             return out.toString();
         } catch (Throwable ignored) {
             return null;
