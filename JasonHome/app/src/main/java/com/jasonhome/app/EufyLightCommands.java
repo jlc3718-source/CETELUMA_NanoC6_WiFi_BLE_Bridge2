@@ -302,6 +302,34 @@ final class EufyLightCommands {
         return out.toByteArray();
     }
 
+    static boolean isSolidEffect(String effectName) {
+        return "Solid".equals(effectName) || "Solid / Static".equals(effectName);
+    }
+
+    static int e120ModeId(String effectName, boolean reverse) {
+        if (isSolidEffect(effectName)) return 30014;
+        if (contains(effectName,"Breath")) return 30011;
+        if (contains(effectName,"Twinkle") || contains(effectName,"Strobe")) return 30006;
+        if (contains(effectName,"Meteor")) return 30012;
+        if (contains(effectName,"Rainbow") || contains(effectName,"Pulse")) return 30013;
+        if (contains(effectName,"Gradient") || contains(effectName,"Wipe")) return 30007;
+        if (contains(effectName,"Jump")) return 30009;
+        if (contains(effectName,"Candy")) return 30010;
+        if (contains(effectName,"Chase")) return reverse ? 30008 : 30010;
+        return 30010;
+    }
+
+    static byte[] effectE120(String effectName, int[] colors, int speed1to5, boolean reverse, int lampCount) {
+        int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        int modeId = e120ModeId(effectName, reverse);
+        int speed = clamp(speed1to5,1,5);
+
+        if (palette.length > 1) {
+            return groupedCatalogPresetE120(modeId,10034,speed,palette,lampCount,2);
+        }
+        return catalogPresetE120(modeId,10034,speed,palette,lampCount,false);
+    }
+
     static byte[] show(String model, String effectName, int[] colors, int speed1to5, boolean reverse) {
         int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
         int speed = speedValue(speed1to5);
