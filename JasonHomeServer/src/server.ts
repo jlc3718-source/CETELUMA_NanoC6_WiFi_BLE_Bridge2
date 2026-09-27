@@ -314,8 +314,9 @@ function resetFactoryEdit(lightId:number){
 
 function factorySummary(catalog:any,includeRaw=false,id?:number){
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
-  const edited=src.map(applyFactoryEdit);
-  const allCanonical=id==null?dedupeFactoryPresetsByName(edited):edited.filter((p:any)=>Number(p?.lightId)===id);
+  const baseCanonical=dedupeFactoryPresetsByName(src);
+  const edited=baseCanonical.map(applyFactoryEdit);
+  const allCanonical=id==null?edited:edited.filter((p:any)=>Number(p?.lightId)===id);
   const promoted=id==null?new Set(factoryPromotionRows(calendarConfig()).map((x:any)=>Number(x.lightId))):new Set<number>();
   const canonical=id==null?allCanonical.filter((p:any)=>!promoted.has(Number(p?.lightId))):allCanonical;
   const list=canonical.map((p:any)=>{
@@ -405,6 +406,17 @@ function factoryPromotionState():Record<string,{enabled?:boolean}>{
     return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
   }catch{return {};}
 }
+function factoryPromotionMap():Record<string,{eventId:string;sourceNameKey:string}>{
+  const raw=meta("factory_promotion_map");
+  if(!raw)return {};
+  try{
+    const x=JSON.parse(raw);
+    return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
+  }catch{return {};}
+}
+function persistFactoryPromotionMap(value:Record<string,{eventId:string;sourceNameKey:string}>){
+  setMeta("factory_promotion_map",JSON.stringify(value));
+}
 function factoryPromotionRows(base:CalendarConfig|null=calendarConfig()){
   if(!base)return [] as any[];
   const raw=meta("factory_catalog");
@@ -412,20 +424,34 @@ function factoryPromotionRows(base:CalendarConfig|null=calendarConfig()){
   let catalog:any=null;
   try{catalog=JSON.parse(raw);}catch{return [] as any[];}
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
-  const presets=dedupeFactoryPresetsByName(src.map(applyFactoryEdit));
+  const bases=dedupeFactoryPresetsByName(src);
   const state=factoryPromotionState();
+  const map=factoryPromotionMap();
+  let mapChanged=false,stateChanged=false;
   const out:any[]=[];
-  for(const preset of presets){
-    const eventId=FACTORY_EVENT_MATCHES[promotionNameKey(preset?.name)];
-    if(!eventId)continue;
-    const event=(base.events||[]).find(e=>e.id===eventId);
+  for(const basePreset of bases){
+    const lightId=Number(basePreset.lightId),key=String(lightId),sourceNameKey=promotionNameKey(basePreset?.name);
+    let binding=map[key];
+    if(!binding){
+      const eventId=FACTORY_EVENT_MATCHES[sourceNameKey];
+      if(!eventId)continue;
+      const prior=Object.entries(map).find(([,v])=>v?.sourceNameKey===sourceNameKey);
+      binding={eventId,sourceNameKey};
+      map[key]=binding;mapChanged=true;
+      if(prior&&state[key]===undefined&&state[prior[0]]!==undefined){
+        state[key]={...state[prior[0]]};stateChanged=true;
+      }
+    }
+    const event=(base.events||[]).find(e=>e.id===binding.eventId);
     if(!event)continue;
-    const enabled=state[String(preset.lightId)]?.enabled!==false;
+    const preset=applyFactoryEdit(basePreset);
+    const enabled=state[key]?.enabled!==false;
     const scene=factoryCompatibleScene(preset);
     out.push({
-      lightId:Number(preset.lightId),
-      name:String(preset.name||("Factory "+preset.lightId)),
-      eventId,eventName:event.name,enabled,
+      lightId,
+      name:String(preset.name||("Factory "+lightId)),
+      eventId:binding.eventId,eventName:event.name,enabled,
+      sourceNameKey:binding.sourceNameKey,
       scheduling:event.rule==="Month"
         ?"Rotates across eligible days with the matching monthly event."
         :"Shares and splits the active event window with the matching scheduled event.",
@@ -434,6 +460,8 @@ function factoryPromotionRows(base:CalendarConfig|null=calendarConfig()){
       event
     });
   }
+  if(mapChanged)persistFactoryPromotionMap(map);
+  if(stateChanged)setMeta("factory_promotions",JSON.stringify(state));
   out.sort((a,b)=>a.eventId.localeCompare(b.eventId)||a.name.localeCompare(b.name,undefined,{numeric:true}));
   return out;
 }
@@ -478,6 +506,7 @@ function effectiveCalendarConfig(base:CalendarConfig|null=calendarConfig()):Cale
     cfg.events.push({
       ...e,
       id:e.id+"::factory:"+row.lightId,
+      dateRuleSourceId:e.id,
       name:row.name,
       effect:scene.effect,
       speed:scene.speed,
