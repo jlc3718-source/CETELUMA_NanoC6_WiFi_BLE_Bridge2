@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Jason Home</title>
+<style>
+:root{--bg:#071225;--panel:#0c1a31;--panel2:#10223f;--line:#21385d;--text:#f1f6ff;--muted:#9eb0cc;--blue:#6f9dff;--good:#67d99a;--bad:#ff7d7d;--shadow:0 16px 42px #0007}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#071225,#050d1b 65%);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+.app{max-width:760px;margin:auto;padding:18px 16px 104px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:8px 2px 18px}
+.brand h1{font-size:26px;margin:0}.brand p{margin:3px 0 0;color:var(--muted);font-size:13px}.modePill{background:#14294b;border:1px solid #294c7f;border-radius:999px;padding:8px 12px;font-weight:700}
+.screen{display:none}.screen.active{display:block}.card{background:linear-gradient(180deg,var(--panel),#09172c);border:1px solid #183050;border-radius:24px;padding:18px;margin:0 0 14px;box-shadow:var(--shadow)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:14px}.stat b{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}.stat span{font-size:17px;font-weight:700}
+.sectionTitle{display:flex;justify-content:space-between;align-items:center;margin:0 0 14px}.sectionTitle h2{font-size:17px;margin:0}.sub{color:var(--muted);font-size:13px}
+.targets{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.targetBtn,.btn,.navBtn,.smallDanger{border:1px solid var(--line);background:#12223d;color:var(--text);border-radius:16px;padding:12px 10px;font-weight:700}
+.targetBtn.active,.btn.primary{background:linear-gradient(180deg,#5e8ff9,#3768d4);border-color:#8db1ff;box-shadow:0 0 0 2px #6e9cff33}.powerRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.btn.off{background:#311827;border-color:#663047}
+.controlLabel{display:flex;justify-content:space-between;margin:15px 2px 7px;color:var(--muted);font-weight:700}.slider{width:100%;accent-color:#6f9dff}
+select,input[type=text],input[type=password],input[type=time],input[type=number]{width:100%;background:#0a172c;color:var(--text);border:1px solid var(--line);border-radius:14px;padding:12px 13px;font:inherit}
+.palette{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:10px}.swatch{aspect-ratio:1;border-radius:50%;border:3px solid #ffffff1d;background:var(--c);box-shadow:inset 0 0 0 1px #0005}.swatch.active{outline:3px solid #91b2ff;outline-offset:2px}
+.devices{display:grid;gap:10px}.deviceCard,.scheduleCard{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:#0b1930;border:1px solid var(--line);border-radius:18px;padding:14px}
+.deviceCard strong,.scheduleCard strong{display:block;font-size:16px}.deviceCard span,.scheduleCard span,.scheduleCard small{display:block;color:var(--muted);margin-top:3px}.deviceState{border:1px solid var(--line);padding:8px 11px;border-radius:12px;font-weight:800}.deviceState.ok{color:var(--good);border-color:#2e7650}.deviceState.idle{color:var(--muted)}
+.statusMsg{position:sticky;bottom:84px;background:#091426e8;backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:16px;padding:10px 13px;margin:16px 0;color:var(--muted);z-index:4}.statusMsg.bad{color:var(--bad)}
+.nav{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);width:min(720px,calc(100% - 22px));display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#0a172bd9;border:1px solid #29405f;border-radius:24px;padding:7px;backdrop-filter:blur(15px);z-index:10}
+.navBtn{padding:12px 5px;background:transparent;border-color:transparent;color:var(--muted)}.navBtn.active{background:#d9e6ff;color:#0d2445}
+.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{margin:10px 0}.field label{display:block;color:var(--muted);font-size:12px;font-weight:800;margin:0 0 6px}.row{display:flex;gap:10px;align-items:center}.row .btn{flex:1}
+.scheduleEditor{display:none;margin-top:14px}.scheduleEditor.open{display:block}.empty{color:var(--muted);padding:16px;text-align:center}.smallDanger{padding:9px 12px;color:#ffadad;background:#321b27}
+.settingsLine{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #1b3150}.settingsLine:last-child{border-bottom:0}.radioRow{display:grid;grid-template-columns:1fr 1fr;gap:10px}.radioBox{display:flex;gap:8px;align-items:center;background:#0a172c;border:1px solid var(--line);padding:12px;border-radius:14px}
+.hero{background:radial-gradient(circle at 90% 0,#274d8a66,transparent 50%),linear-gradient(180deg,#102648,#0a172c)}.heroTitle{font-size:22px;font-weight:800;margin:2px 0 4px}.heroSub{color:var(--muted)}
+@media(max-width:520px){.targets{grid-template-columns:repeat(3,1fr)}.palette{grid-template-columns:repeat(6,1fr)}.formGrid,.grid2{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="top"><div class="brand"><h1>Jason Home</h1><p>Cloud controller</p></div><div class="modePill" id="controllerStatus">Starting…</div></div>
+
+<section class="screen active" id="screen-home">
+  <div class="card hero">
+    <div class="heroTitle">Home lighting</div><div class="heroSub" id="architecture">Loading controller…</div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="stat"><b>Eufy</b><span id="eufyStatus">—</span></div>
+      <div class="stat"><b>Schedule</b><span id="override">—</span></div>
+      <div class="stat"><b>Dusk</b><span id="dusk">—</span></div>
+      <div class="stat"><b>Dawn</b><span id="dawn">—</span></div>
+    </div>
+    <div class="stat" style="margin-top:12px"><b>Next event</b><span id="nextEvent">—</span></div>
+  </div>
+
+  <div class="card">
+    <div class="sectionTitle"><h2>Lights</h2><span class="sub">Choose target</span></div>
+    <div class="targets">
+      <button class="targetBtn active" data-target="All">All</button><button class="targetBtn" data-target="Pool">Pool</button><button class="targetBtn" data-target="House">House</button><button class="targetBtn" data-target="Garage">Garage</button><button class="targetBtn" data-target="Shed">Shed</button>
+    </div>
+    <div class="powerRow"><button class="btn primary" id="powerOn">ON</button><button class="btn off" id="powerOff">OFF</button></div>
+    <div class="controlLabel"><span>Brightness</span><span id="brightnessValue">75%</span></div><input class="slider" id="brightness" type="range" min="1" max="100" value="75">
+    <div class="controlLabel"><span>Effect</span><span></span></div><select id="effect"></select>
+    <div class="controlLabel"><span>Speed</span><span id="speedValue">Normal</span></div><input class="slider" id="speed" type="range" min="1" max="5" value="3">
+    <div class="controlLabel"><span>Color</span><span id="colorLabel">#FFFFFF</span></div><div class="palette" id="palette"></div>
+    <button class="btn primary" id="applyScene" style="width:100%;margin-top:16px">Apply Scene</button>
+    <button class="btn" id="resume" style="width:100%;margin-top:10px">Resume Schedule</button>
+  </div>
+
+  <div class="card"><div class="sectionTitle"><h2>Installed strings</h2><span class="sub">Pool · House · Garage · Shed</span></div><div class="devices" id="devices"></div></div>
+</section>
+
+<section class="screen" id="screen-create">
+  <div class="card">
+    <div class="sectionTitle"><h2>Create scene</h2><span class="sub">Up to 8 colors</span></div>
+    <div class="field"><label>Effect</label><select id="createEffect"></select></div>
+    <div class="controlLabel"><span>Brightness</span><span id="createBrightnessValue">75%</span></div><input class="slider" id="createBrightness" type="range" min="1" max="100" value="75">
+    <div class="controlLabel"><span>Speed</span><span id="createSpeedValue">Normal</span></div><input class="slider" id="createSpeed" type="range" min="1" max="5" value="3">
+    <div class="controlLabel"><span>Colors</span><span></span></div><div class="palette" id="createPalette"></div>
+    <button class="btn primary" id="previewScene" style="width:100%;margin-top:18px">Apply to Selected Target</button>
+  </div>
+</section>
+
+<section class="screen" id="screen-schedules">
+  <div class="card">
+    <div class="sectionTitle"><h2>Schedules</h2><button class="btn" id="newSchedule">Add</button></div>
+    <div id="scheduleList"></div>
+    <div class="scheduleEditor" id="scheduleEditor">
+      <input type="hidden" id="scheduleId">
+      <div class="field"><label>Name</label><input id="scheduleName" type="text" placeholder="Evening lights"></div>
+      <div class="formGrid">
+        <div class="field"><label>Target</label><select id="scheduleTarget"><option>All</option><option>Pool</option><option>House</option><option>Garage</option><option>Shed</option></select></div>
+        <div class="field"><label>Days</label><input id="scheduleDays" type="text" value="*" placeholder="* or Mon,Tue,Wed"></div>
+        <div class="field"><label>Start</label><select id="scheduleStartKind"><option value="clock">Time</option><option value="dusk">Dusk</option><option value="dawn">Dawn</option></select></div>
+        <div class="field"><label>Time / offset min</label><input id="scheduleStartValue" type="text" value="0"></div>
+        <div class="field"><label>End</label><select id="scheduleEndKind"><option value="clock">Time</option><option value="dusk">Dusk</option><option value="dawn">Dawn</option></select></div>
+        <div class="field"><label>Time / offset min</label><input id="scheduleEndValue" type="text" value="23:00"></div>
+        <div class="field"><label>Effect</label><select id="scheduleEffect"></select></div>
+        <div class="field"><label>Color</label><input id="scheduleColor" type="text" value="#FFFFFF"></div>
+        <div class="field"><label>Brightness</label><input id="scheduleBrightness" type="number" min="1" max="100" value="75"></div>
+        <div class="field"><label>Speed 1–5</label><input id="scheduleSpeed" type="number" min="1" max="5" value="3"></div>
+      </div>
+      <label class="radioBox" style="margin:10px 0"><input id="scheduleEnabled" type="checkbox" checked> Enabled</label>
+      <button class="btn primary" id="saveSchedule" style="width:100%">Save Schedule</button>
+    </div>
+  </div>
+</section>
+
+<section class="screen" id="screen-settings">
+  <div class="card">
+    <div class="sectionTitle"><h2>Controller mode</h2><span class="sub">Cloud first · Direct fallback</span></div>
+    <div class="radioRow"><label class="radioBox"><input type="radio" name="mode" id="cloudMode"> Cloudflare</label><label class="radioBox"><input type="radio" name="mode" id="directMode"> Direct Eufy</label></div>
+    <div class="settingsLine"><div><strong>Production endpoint</strong><div class="sub" id="endpoint"></div></div></div>
+    <div class="field"><label>Jason Home Cloud API token</label><input id="apiToken" type="password" placeholder="Enter only when setting/changing token"><div class="sub" id="tokenConfigured" style="margin-top:6px"></div></div>
+    <button class="btn primary" id="saveCloud" style="width:100%">Save Controller Settings</button>
+  </div>
+  <div class="card">
+    <div class="sectionTitle"><h2>Cloud diagnostics</h2></div>
+    <div class="row"><button class="btn" id="testCloud">Test Cloud</button><button class="btn" id="reconnectCloud">Reconnect Eufy</button></div>
+    <button class="btn" id="reconcileCloud" style="width:100%;margin-top:10px">Reconcile Schedule Now</button>
+    <div class="sub" id="directFallback" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<div class="statusMsg" id="statusMsg">Starting Jason Home…</div>
+</div>
+
+<nav class="nav">
+  <button class="navBtn active" data-tab="home">Home</button><button class="navBtn" data-tab="create">Create</button><button class="navBtn" data-tab="schedules">Schedules</button><button class="navBtn" data-tab="settings">Settings</button>
+</nav>
+<script src="jason_cloud_home.js"></script>
+</body>
+</html>
