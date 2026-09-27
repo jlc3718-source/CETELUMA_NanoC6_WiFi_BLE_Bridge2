@@ -125,6 +125,7 @@ final class AndersonApiBridge {
             if ("/api/ble/rename".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
             if ("/api/ble/target".equals(path) && "POST".equals(m)) return bleTarget(input);
             if ("/api/ble/e120-test".equals(path) && "POST".equals(m)) return e120Test(input);
+            if ("/api/ble/e120-state".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("summary",ble.lastStateSummary()));
 
             if ("/api/system".equals(path)) return ok(systemJson());
             if ("/api/firmware".equals(path)) return ok(firmwareJson());
@@ -646,11 +647,7 @@ final class AndersonApiBridge {
             case "green": host.runOnUi(()->ble.setColor(one,0x00FF00)); break;
             case "blue": host.runOnUi(()->ble.setColor(one,0x0000FF)); break;
             case "breath": host.runOnUi(()->ble.setEffect(one,"Breath",new int[]{0xFF0000},3,false)); break;
-            case "local-20001": host.runOnUi(()->ble.setE120LocalEffect(one,20001,new int[]{0xFF0000,0x0000FF},3)); break;
-            case "local-20002": host.runOnUi(()->ble.setE120LocalEffect(one,20002,new int[]{0xFF0000,0x0000FF},3)); break;
-            case "local-20003": host.runOnUi(()->ble.setE120LocalEffect(one,20003,new int[]{0xFF0000,0x0000FF},3)); break;
-            case "local-20004": host.runOnUi(()->ble.setE120LocalEffect(one,20004,new int[]{0xFF0000,0x0000FF},3)); break;
-            case "local-20005": host.runOnUi(()->ble.setE120LocalEffect(one,20005,new int[]{0xFF0000,0x0000FF},3)); break;
+            case "status": host.runOnUi(()->ble.readE120State(one)); break;
             default: return error(400,"Unknown E120 test command.");
         }
         return ok(new JSONObject().put("ok",true).put("device",target==1?"Pool":"House").put("command",command));
