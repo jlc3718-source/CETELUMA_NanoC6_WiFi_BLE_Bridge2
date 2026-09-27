@@ -34,6 +34,7 @@ final class AndersonApiBridge {
     interface Host {
         void runOnUi(Runnable action);
         void onBridgeStatus(String message);
+        void onBridgeResponse(String requestId, String responseJson);
     }
 
     private static final String[] ADDRESSES = {
@@ -141,6 +142,18 @@ final class AndersonApiBridge {
         JSONArray a=new JSONArray();
         for(int i=0;i<NAMES.length;i++)a.put(new JSONObject().put("name",NAMES[i]).put("model",MODELS[i]).put("enabled",true).put("ready",cloud.isDeviceReady(NAMES[i])));
         return a;
+    }
+
+    @JavascriptInterface
+    public void requestAsync(String requestId, String method, String url, String body, String token) {
+        final String id=requestId==null?"":requestId;
+        new Thread(() -> {
+            String result;
+            try{result=request(method,url,body,token);}
+            catch(Throwable t){result=error(500,t.getMessage()==null?t.getClass().getSimpleName():t.getMessage());}
+            final String out=result;
+            host.onBridgeResponse(id,out);
+        },"JasonHomeApi").start();
     }
 
     @JavascriptInterface
