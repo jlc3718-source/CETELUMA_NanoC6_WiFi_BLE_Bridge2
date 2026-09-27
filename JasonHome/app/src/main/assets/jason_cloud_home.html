@@ -26,12 +26,31 @@ select,input[type=text],input[type=password],input[type=time],input[type=number]
 .scheduleEditor{display:none;margin-top:14px}.scheduleEditor.open{display:block}.empty{color:var(--muted);padding:16px;text-align:center}.smallDanger{padding:9px 12px;color:#ffadad;background:#321b27}
 .settingsLine{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #1b3150}.settingsLine:last-child{border-bottom:0}.radioRow{display:grid;grid-template-columns:1fr 1fr;gap:10px}.radioBox{display:flex;gap:8px;align-items:center;background:#0a172c;border:1px solid var(--line);padding:12px;border-radius:14px}
 .hero{background:radial-gradient(circle at 90% 0,#274d8a66,transparent 50%),linear-gradient(180deg,#102648,#0a172c)}.heroTitle{font-size:22px;font-weight:800;margin:2px 0 4px}.heroSub{color:var(--muted)}
-@media(max-width:520px){.targets{grid-template-columns:repeat(3,1fr)}.palette{grid-template-columns:repeat(6,1fr)}.formGrid,.grid2{grid-template-columns:1fr 1fr}}
+.profileGate{position:fixed;inset:0;z-index:1000;background:linear-gradient(155deg,#071225,#0b2442 55%,#050d1b);padding:max(24px,env(safe-area-inset-top)) 16px max(28px,env(safe-area-inset-bottom));overflow:auto}.profileGate[hidden]{display:none}.profileShell{width:min(680px,100%);margin:0 auto}.profileBrand{text-align:center;margin:18px 0 10px}.profileBrand h1{margin:0;font-size:30px}.profileBrand p{color:var(--muted);margin:7px 0}.profileSolar{text-align:center;color:#c7d6ec;margin:0 0 18px;font-weight:700}.profileChoices{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.profileChoice{min-height:128px;border:1px solid #31507e;border-radius:20px;padding:16px;background:linear-gradient(180deg,#122744,#0b1a30);color:var(--text);text-align:left}.profileChoice:active{transform:translateY(1px)}.profileAvatar{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:linear-gradient(180deg,#6f9dff,#3e6ed1);font-size:20px;font-weight:900;margin-bottom:11px}.profileName{display:block;font-size:19px;font-weight:900}.profileAccess{display:block;color:var(--muted);font-size:12px;margin-top:4px}.profileGateStatus{text-align:center;color:var(--muted);margin:14px 0;min-height:20px}.pinPanel{background:#0b1930;border:1px solid #31507e;border-radius:20px;padding:16px;margin-top:14px}.pinPanel[hidden]{display:none}.pinPanel h2{margin:0 0 10px;font-size:18px}.pinError{color:var(--bad);min-height:20px;margin:7px 0}.topRight{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.profileTools{display:flex;gap:7px;align-items:center}.profileTools[hidden]{display:none}.profilePill{background:#0c1a31;border:1px solid #294c7f;border-radius:999px;padding:7px 10px;font-weight:800}.logoutBtn{padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:#12223d;color:var(--text);font-weight:800}
+@media(max-width:520px){.targets{grid-template-columns:repeat(3,1fr)}.palette{grid-template-columns:repeat(6,1fr)}.formGrid,.grid2{grid-template-columns:1fr 1fr}.profileChoices{grid-template-columns:1fr}.profileChoice{min-height:100px}}
 </style>
 </head>
 <body>
+<div class="profileGate" id="profileGate">
+  <div class="profileShell">
+    <div class="profileBrand"><h1>Jason Home</h1><p>Lighting control</p></div>
+    <div class="profileSolar" id="profileSolarTimes">Dusk — • Dawn —</div>
+    <div class="profileChoices">
+      <button class="profileChoice" type="button" data-profile="jason"><span class="profileAvatar">J</span><span class="profileName">Jason</span><span class="profileAccess">All controls</span></button>
+      <button class="profileChoice" type="button" data-profile="shirley"><span class="profileAvatar">S</span><span class="profileName">Shirley</span><span class="profileAccess">Home + Schedules</span></button>
+      <button class="profileChoice" type="button" data-profile="kelly"><span class="profileAvatar">K</span><span class="profileName">Kelly</span><span class="profileAccess">Home + Schedules</span></button>
+    </div>
+    <div class="profileGateStatus" id="profileGateStatus">Choose a profile to continue.</div>
+    <div class="pinPanel" id="pinPanel" hidden>
+      <h2 id="pinTitle">PIN</h2>
+      <input id="profilePin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4-digit PIN">
+      <div class="pinError" id="profilePinError"></div>
+      <div class="row"><button class="btn primary" id="unlockProfile" type="button">Unlock</button><button class="btn" id="cancelPin" type="button">Cancel</button></div>
+    </div>
+  </div>
+</div>
 <div class="app">
-<div class="top"><div class="brand"><h1>Jason Home</h1><p>Cloud controller</p></div><div class="modePill" id="controllerStatus">Starting…</div></div>
+<div class="top"><div class="brand"><h1>Jason Home</h1><p>Cloud controller</p></div><div class="topRight"><div class="profileTools" id="profileTools" hidden><span class="profilePill" id="activeProfile"></span><button class="logoutBtn" id="logoutProfile" type="button">Logout</button></div><div class="modePill" id="controllerStatus">Starting…</div></div></div>
 
 <section class="screen active" id="screen-home">
   <div class="card hero">
