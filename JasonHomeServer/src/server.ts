@@ -326,7 +326,8 @@ async function statusPayload(refresh=false){
     devices,
     override,
     astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:TZ},
-    nextEvent:next?{at:new Date(next.at).toISOString(),id:(next as any).id||null,name:next.name,phase:next.phase,target:next.target,source:next.source}:null,\n    location:{zip:"14772",lat:LAT,lon:LON,timeZone:TZ},
+    nextEvent:next?{at:new Date(next.at).toISOString(),id:(next as any).id||null,name:next.name,phase:next.phase,target:next.target,source:next.source}:null,
+    location:{zip:"14772",lat:LAT,lon:LON,timeZone:TZ},
     calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,eventCount:calendar?.events?.length||0,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
     lastCommand:meta("last_command"),
     desired:db.prepare("SELECT * FROM desired_state ORDER BY name").all()
