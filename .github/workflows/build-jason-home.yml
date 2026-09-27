@@ -92,8 +92,8 @@ jobs:
               raise SystemExit('Legacy E120 diagnostic panel still visible')
           if '<strong>Profile PINs</strong>' in html:
               raise SystemExit('Users & Security panel still visible')
-          if 'Scan Known Eufy Lights' not in html or 'only authorized lights' not in html:
-              raise SystemExit('Fixed Eufy device UI missing')
+          if 'Refresh Eufy Cloud Lights' not in html or 'only authorized lights' not in html:
+              raise SystemExit('Fixed Eufy cloud device UI missing')
           if 'max="2"' in html and 'eventsSpeed' in html:
               raise SystemExit('Legacy event speed restriction remains')
           if 'Complete Craumer Home Backup' not in js or 'Back Up Everything Now' not in js:
