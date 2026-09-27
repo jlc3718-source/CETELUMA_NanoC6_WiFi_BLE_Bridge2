@@ -13,8 +13,8 @@ const EMAIL=process.env.EUFY_EMAIL||"";
 const PASSWORD=process.env.EUFY_PASSWORD||"";
 const TOKEN=process.env.JASON_HOME_API_TOKEN||"";
 const DB_PATH=process.env.JASON_HOME_DB||"/data/jason-home.sqlite";
-const LAT=Number(process.env.HOME_LAT||"42.0529");
-const LON=Number(process.env.HOME_LON||"-79.0576");
+const LAT=Number(process.env.HOME_LAT||"42.1507");
+const LON=Number(process.env.HOME_LON||"-78.9452");
 const TZ=process.env.HOME_TZ||"America/New_York";
 const DEFAULT_INSTALL=(process.env.EUFY_INSTALL_ID||createHash("sha256").update("jason-home-server:"+EMAIL).digest("hex").slice(0,32)).toLowerCase();
 
