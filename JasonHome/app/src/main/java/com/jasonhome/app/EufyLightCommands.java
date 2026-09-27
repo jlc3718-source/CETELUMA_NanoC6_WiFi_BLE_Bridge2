@@ -504,15 +504,18 @@ final class EufyLightCommands {
         }
     }
 
-    // T8L02/E22 carries speed on a 0-100 show/layer field. Use a wider
-    // five-point calibration so every UI step is distinct on the E22s.
+    // T8L02/E22 and T8L00/E120 use very different physical speed curves.
+    // Field testing found E120 A5=3 visually near the old E22 raw=8 point,
+    // while E120 A5=5 is near the old E22 raw=50 point. Keep the E120's
+    // proven 1..5 values and compress the E22 0..100 field so one UI speed
+    // label produces a much closer real-world rate on both model families.
     static int speedValueE22(int speed1to5) {
         switch (clamp(speed1to5,1,5)) {
-            case 1: return 8;
-            case 2: return 25;
-            case 3: return 50;
-            case 4: return 78;
-            default: return 100;
+            case 1: return 2;
+            case 2: return 4;
+            case 3: return 8;
+            case 4: return 25;
+            default: return 50;
         }
     }
 
