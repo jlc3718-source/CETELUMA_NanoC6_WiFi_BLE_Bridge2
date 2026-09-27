@@ -80,8 +80,8 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Craumer Home • 5.3.7 Oracle' not in bridge:
-              raise SystemExit('Bridge version is not 5.3.7 Cloud')
+          if 'Craumer Home • 5.3.8 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not 5.3.8 Oracle')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
           if 'cloud.setScene(0, scene.effect' not in schedule_service:
@@ -269,14 +269,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.3.7-Oracle-UNSIGNED.apk
-          sha256sum Jason-Home-5.3.7-Oracle-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.3.8-Oracle-UNSIGNED.apk
+          sha256sum Jason-Home-5.3.8-Oracle-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.3.7-Oracle-UNSIGNED-do-not-install
-          path: Jason-Home-5.3.7-Oracle-UNSIGNED.apk
+          name: Jason-Home-5.3.8-Oracle-UNSIGNED-do-not-install
+          path: Jason-Home-5.3.8-Oracle-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
