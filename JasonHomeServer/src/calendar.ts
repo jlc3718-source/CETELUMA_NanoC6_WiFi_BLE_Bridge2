@@ -280,7 +280,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
 }
 
 export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string):CalendarResolution|null{
-  if(!cfg?.settings?.enabled||!cfg.events?.length)return null;
+  if(!cfg?.settings?.enabled||(!(cfg.events?.length)&&!(cfg.customSchedules?.length)))return null;
   const lp=localParts(now,tz),day={year:lp.year,month:lp.month,day:lp.day},minute=lp.hour*60+lp.minute;
   const start=cfg.settings.startAtDusk?astroMinute(now,lat,lon,tz,false):cfg.settings.on;
   const end=cfg.settings.off;
