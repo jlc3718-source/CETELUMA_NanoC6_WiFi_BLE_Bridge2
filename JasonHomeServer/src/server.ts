@@ -314,7 +314,8 @@ function resetFactoryEdit(lightId:number){
 
 function factorySummary(catalog:any,includeRaw=false,id?:number){
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
-  const edited=src.map(applyFactoryEdit);\n  const canonical=id==null?dedupeFactoryPresetsByName(edited):edited.filter((p:any)=>Number(p?.lightId)===id);
+  const edited=src.map(applyFactoryEdit);
+  const canonical=id==null?dedupeFactoryPresetsByName(edited):edited.filter((p:any)=>Number(p?.lightId)===id);
   const list=canonical.map((p:any)=>{
     if(includeRaw)return p;
     const {raw,...summary}=p||{};
@@ -330,10 +331,10 @@ function pruneFactoryJobs(){
 function queueFactoryTest(lightId:number,target="All"){
   pruneFactoryJobs();
   const jobId=crypto.randomUUID();
-  factoryJobs.set(jobId,{jobId,state:"running",lightId,createdAt:Date.now()});
-  void factoryTestAll(lightId).then(result=>factoryJobs.set(jobId,{jobId,state:"complete",lightId,createdAt:Date.now(),result}))
-    .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,createdAt:Date.now(),error:e?.message||String(e)}));
-  return {ok:true,queued:true,jobId,lightId};
+  factoryJobs.set(jobId,{jobId,state:"running",lightId,target,createdAt:Date.now()});
+  void factoryTestAll(lightId,target).then(result=>factoryJobs.set(jobId,{jobId,state:"complete",lightId,target,createdAt:Date.now(),result}))
+    .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,target,createdAt:Date.now(),error:e?.message||String(e)}));
+  return {ok:true,queued:true,jobId,lightId,target};
 }
 async function factoryTestAll(lightId:number,target="All"){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
@@ -342,8 +343,10 @@ async function factoryTestAll(lightId:number,target="All"){
   const raw=meta("factory_catalog");
   if(raw){try{preset=(JSON.parse(raw)?.presets||[]).find((p:any)=>Number(p?.lightId)===lightId)||null;}catch{}}
   if(!preset)preset=await c.factoryPreset(lightId);
+  preset=applyFactoryEdit(preset);
+  const names=targetNames(target);
   const results:any[]=[];let sent=0;
-  for(const name of DEVICE_NAMES){
+  for(const name of names){
     try{
       const r=await serializedForDevice(name,()=>c.factoryScene(name,preset));
       sent++;
@@ -357,8 +360,8 @@ async function factoryTestAll(lightId:number,target="All"){
   }
   const next=nextAutomationEvent(new Date());
   setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,createdAt:Date.now(),expiresAt:next?.at||null}));
-  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,sent,total:DEVICE_NAMES.length,results}));
-  return {ok:sent===DEVICE_NAMES.length,lightId,name:preset?.name||null,attempted:DEVICE_NAMES.length,sent,results,note:"Factory command sent to all four strings. T8L02/E22 uses the verified 0x020D layout; T8L00/E120 uses the isolated experimental family adaptation and must be verified visually."};
+  setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,sent,total:names.length,results}));
+  return {ok:sent===names.length,lightId,name:preset?.name||null,target,customized:!!preset?.customized,attempted:names.length,sent,results,note:"Factory command sent through the Eufy factory scene path. T8L02/E22 uses the verified 0x020D layout; T8L00/E120 uses the isolated experimental family adaptation and must be verified visually."};
 }
 
 async function statusPayload(refresh=false){
