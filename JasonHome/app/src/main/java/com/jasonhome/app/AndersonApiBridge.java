@@ -148,7 +148,7 @@ final class AndersonApiBridge {
             .putBoolean("power",false)
             .putInt("brightness",75)
             .putInt("speed",3)
-            .putString("running_name","Anderson Home")
+            .putString("running_name","Craumer Home")
             .putString("effect","Jump")
             .putString("colors","[\"#FF0D00\",\"#FFFFFA\"]")
             .putBoolean("manual_override",false)
@@ -175,13 +175,13 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Jason Home • Anderson 3.1.58");
+        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.9");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
 
         JSONObject running=new JSONObject();
-        running.put("name",prefs.getString("running_name","Anderson Home"));
+        running.put("name",prefs.getString("running_name","Craumer Home"));
         running.put("effect",prefs.getString("effect","Jump"));
         running.put("colors",new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
         d.put("running",running);
@@ -342,7 +342,7 @@ final class AndersonApiBridge {
         }
         out.put("events",arr);
         out.put("truncated",month==0&&arr.length()>=96);
-        out.put("overlap","Anderson priority and overlap rules are active.");
+        out.put("overlap","Craumer priority and overlap rules are active.");
         return out;
     }
 
@@ -613,7 +613,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Jason Home 5.0.0").put("buildCommit","Anderson 3.1.58 UI")
+            .put("version","Jason Home 5.0.9").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
