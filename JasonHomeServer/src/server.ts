@@ -729,6 +729,97 @@ async function reconcile(ignoreOverride=false,forceSend=false){
   }finally{reconciling=false;}
 }
 
+function plainObject(value:any){
+  return value&&typeof value==="object"&&!Array.isArray(value)?value:{};
+}
+function settingsBackupExport(){
+  const calendar=calendarConfig();
+  const edits=plainObject((()=>{try{return JSON.parse(meta("factory_edits")||"{}");}catch{return {};}})());
+  const promotions=plainObject((()=>{try{return JSON.parse(meta("factory_promotions")||"{}");}catch{return {};}})());
+  const promotionMap=plainObject((()=>{try{return JSON.parse(meta("factory_promotion_map")||"{}");}catch{return {};}})());
+  const ids=new Set<number>([
+    ...Object.keys(edits).map(Number),
+    ...Object.keys(promotions).map(Number),
+    ...Object.keys(promotionMap).map(Number)
+  ].filter(Number.isFinite));
+  let referencedFactoryPresets:any[]=[];
+  try{
+    const catalog=JSON.parse(meta("factory_catalog")||"{}");
+    referencedFactoryPresets=(Array.isArray(catalog?.presets)?catalog.presets:[]).filter((p:any)=>ids.has(Number(p?.lightId)));
+  }catch{}
+  return {
+    schema:1,
+    createdAt:new Date().toISOString(),
+    calendar,
+    calendarRevision:Math.max(0,Number(meta("calendar_revision")||calendar?.revision||0)||0),
+    schedules:allSchedules(),
+    factoryEdits:edits,
+    factoryPromotions:promotions,
+    factoryPromotionMap:promotionMap,
+    referencedFactoryPresets
+  };
+}
+function validateSettingsBackup(input:any){
+  if(!input||typeof input!=="object"||Number(input.schema)!==1)throw new Error("Unsupported Oracle backup schema");
+  const calendar=input.calendar?normalizeCalendarConfig(input.calendar):null;
+  if(calendar&&calendar.events.length<1)throw new Error("Backup calendar is empty");
+  if(!Array.isArray(input.schedules))throw new Error("Backup schedules are missing");
+  for(const row of input.schedules){
+    if(!row||typeof row!=="object"||!String(row.id||"")||!String(row.name||""))throw new Error("Backup contains an invalid schedule row");
+    targetNames(String(row.target||"All"));
+  }
+  for(const key of ["factoryEdits","factoryPromotions","factoryPromotionMap"]){
+    if(input[key]!=null&&(typeof input[key]!=="object"||Array.isArray(input[key])))throw new Error("Backup "+key+" is invalid");
+  }
+  if(input.referencedFactoryPresets!=null&&!Array.isArray(input.referencedFactoryPresets))throw new Error("Backup Factory recipe list is invalid");
+  return {calendar,schedules:input.schedules,factoryEdits:plainObject(input.factoryEdits),factoryPromotions:plainObject(input.factoryPromotions),factoryPromotionMap:plainObject(input.factoryPromotionMap),referencedFactoryPresets:Array.isArray(input.referencedFactoryPresets)?input.referencedFactoryPresets:[]};
+}
+function mergeReferencedFactoryPresets(presets:any[]){
+  if(!presets.length)return;
+  let catalog:any={ok:true,fetchedAt:null,count:0,scanned:0,presets:[]};
+  try{catalog=JSON.parse(meta("factory_catalog")||JSON.stringify(catalog));}catch{}
+  const current=Array.isArray(catalog?.presets)?catalog.presets:[],byId=new Map<number,any>();
+  for(const p of current)if(Number.isFinite(Number(p?.lightId)))byId.set(Number(p.lightId),p);
+  for(const p of presets)if(Number.isFinite(Number(p?.lightId)))byId.set(Number(p.lightId),p);
+  catalog.presets=[...byId.values()];
+  catalog.count=catalog.presets.length;
+  setMeta("factory_catalog",JSON.stringify(catalog));
+}
+function restoreSettingsBackup(input:any){
+  const value=validateSettingsBackup(input);
+  const previous=settingsBackupExport();
+  const currentRevision=Math.max(0,Number(meta("calendar_revision")||0)||0);
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    setMeta("settings_backup_previous",JSON.stringify(previous));
+    if(value.calendar){
+      const revision=Math.max(currentRevision+1,Number(input.calendarRevision||value.calendar.revision||0)+1);
+      value.calendar.revision=revision;value.calendar.syncedAt=Date.now();
+      setMeta("calendar_config",JSON.stringify(value.calendar));
+      setMeta("calendar_revision",String(revision));
+      setMeta("calendar_sync",new Date().toISOString());
+    }
+    db.prepare("DELETE FROM schedules").run();
+    for(const row of value.schedules){
+      db.prepare(`INSERT INTO schedules(id,name,enabled,days,start_kind,start_value,end_kind,end_value,target,effect,colors,brightness,speed,priority)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          String(row.id),String(row.name).slice(0,80),row.enabled===0?0:1,String(row.days||"*"),
+          ["clock","dawn","dusk"].includes(row.start_kind)?row.start_kind:"clock",String(row.start_value||"18:00"),
+          ["clock","dawn","dusk"].includes(row.end_kind)?row.end_kind:"clock",String(row.end_value||"23:00"),
+          String(row.target||"All"),String(row.effect||"Solid / Static"),typeof row.colors==="string"?row.colors:JSON.stringify(row.colors||[16777215]),
+          clamp(Number(row.brightness)||75,1,100),clamp(Number(row.speed)||3,1,5),clamp(Number(row.priority)||0,-100,100)
+        );
+    }
+    setMeta("factory_edits",JSON.stringify(value.factoryEdits));
+    setMeta("factory_promotions",JSON.stringify(value.factoryPromotions));
+    setMeta("factory_promotion_map",JSON.stringify(value.factoryPromotionMap));
+    mergeReferencedFactoryPresets(value.referencedFactoryPresets);
+    db.exec("COMMIT");
+  }catch(e){try{db.exec("ROLLBACK");}catch{}throw e;}
+  void reconcile(false,true).catch(e=>console.error("[backup restore reconcile]",e?.message||e));
+  return {ok:true,restoredAt:new Date().toISOString(),revision:Number(meta("calendar_revision")||0),scheduleCount:value.schedules.length,factoryEditCount:Object.keys(value.factoryEdits).length,factoryPromotionCount:Object.keys(value.factoryPromotions).length};
+}
+
 function saveSchedule(input:any){
   const id=String(input?.id||crypto.randomUUID());
   const name=String(input?.name||"Schedule").slice(0,80);
@@ -759,6 +850,11 @@ const server=http.createServer(async(req,res)=>{
 
     if(method==="GET"&&path==="/api/status")return json(res,200,await statusPayload(url.searchParams.get("refresh")==="1"));
     if(method==="GET"&&path==="/api/devices")return json(res,200,{ok:true,devices:(await statusPayload(false)).devices});
+    if(method==="GET"&&path==="/api/backup/export")return json(res,200,{ok:true,backup:settingsBackupExport()});
+    if(method==="POST"&&path==="/api/backup/restore"){
+      const input:any=await readJson(req);
+      return json(res,200,restoreSettingsBackup(input?.backup||input));
+    }
     if(method==="GET"&&path==="/api/schedules")return json(res,200,{ok:true,schedules:allSchedules()});
     if(method==="POST"&&path==="/api/schedules")return json(res,200,saveSchedule(await readJson(req)));
     if(method==="DELETE"&&path==="/api/schedules"){
