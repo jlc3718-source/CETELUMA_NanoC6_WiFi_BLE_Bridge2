@@ -60,8 +60,8 @@ jobs:
 
           if 'connectionMode","On-demand BLE"' not in bridge or '.put("seenCount",snap.size())' not in bridge:
               raise SystemExit('On-demand BLE status model missing')
-          if 'Craumer Home • 5.1.0' not in bridge:
-              raise SystemExit('Bridge version is not 5.1.0')
+          if 'Craumer Home • 5.1.1' not in bridge:
+              raise SystemExit('Bridge version is not 5.1.1')
 
           if 'data-tab="favorites"' in html:
               raise SystemExit('Favorites navigation still visible')
@@ -77,6 +77,8 @@ jobs:
               raise SystemExit('Complete backup UI missing')
           if 'Users & Security' in js:
               raise SystemExit('Users & Security settings tab still present')
+          if '[\"general\",\"General\"]' in js or 'systemMonitorPanel' in html:
+              raise SystemExit('General settings tab still present')
 
           holiday_checks={
               '"Pride Month": ("Rainbow Flow",3':'Pride',
@@ -182,14 +184,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.1.0-UNSIGNED.apk
-          sha256sum Craumer-Home-5.1.0-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.1.1-UNSIGNED.apk
+          sha256sum Craumer-Home-5.1.1-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Craumer-Home-5.1.0-UNSIGNED-do-not-install
-          path: Craumer-Home-5.1.0-UNSIGNED.apk
+          name: Craumer-Home-5.1.1-UNSIGNED-do-not-install
+          path: Craumer-Home-5.1.1-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
