@@ -21,24 +21,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate 5.0.20 V-series grouped fill
+      - name: Validate 5.0.21 W-series master matrix
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
           html = Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
-          for n in range(1,6):
-              if f'case "fill-group-{n}"' not in bridge:
-                  raise SystemExit(f'Missing fill-group-{n} bridge action')
-              if f'V{n} · ' not in html:
-                  raise SystemExit(f'Missing V{n} UI label')
-              needle = f'testE120Group(one,30009,10034,new int[]{{0xFF0000,0x00FF00}},2,{n})'
-              if needle not in bridge:
-                  raise SystemExit(f'Missing V{n} grouped fill call')
-          if 'Craumer Home • Jason Home 5.0.20' not in bridge:
-              raise SystemExit('Bridge version is not 5.0.20')
-          print('5.0.20 V-series source validation: PASS')
+          for idx,a3 in enumerate(range(30006,30015),1):
+              a=f'case "master-{idx}-a"'
+              b=f'case "master-{idx}-b"'
+              c=f'case "master-{idx}-c"'
+              for token in (a,b,c):
+                  if token not in bridge:
+                      raise SystemExit(f'Missing {token}')
+              if f'W{idx}A · Red control' not in html or f'W{idx}B · R/G alt · S2' not in html or f'W{idx}C · R/G alt · S4' not in html:
+                  raise SystemExit(f'Missing W{idx} UI labels')
+              if f'testE120PresetPair(one,{a3},10034,new int[]{{0xFF0000}},2,false)' not in bridge:
+                  raise SystemExit(f'Missing W{idx}A control')
+              if f'testE120Group(one,{a3},10034,new int[]{{0xFF0000,0x00FF00}},2,2)' not in bridge:
+                  raise SystemExit(f'Missing W{idx}B grouped S2')
+              if f'testE120Group(one,{a3},10034,new int[]{{0xFF0000,0x00FF00}},4,2)' not in bridge:
+                  raise SystemExit(f'Missing W{idx}C grouped S4')
+          if 'Craumer Home • Jason Home 5.0.21' not in bridge:
+              raise SystemExit('Bridge version is not 5.0.21')
+          print('5.0.21 W-series source validation: PASS')
           PY
 
       - name: Set up Java 17
