@@ -2,11 +2,6 @@ name: Deploy Jason Home Cloud
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - jason-home-cloudflare-rebuild
-    paths:
-      - 'JasonHomeCloud/MQTT_VERIFY_NOW'
 
 permissions:
   contents: read
