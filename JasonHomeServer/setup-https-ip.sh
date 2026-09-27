@@ -18,10 +18,26 @@ curl -fsS "$APP/api/health" >/tmp/jh-health.json
 python3 -m json.tool </tmp/jh-health.json
 
 echo
-echo "2) Installing nginx + snapd..."
+echo "2) Installing nginx + snapd + persistent firewall support..."
 sudo apt update
-sudo apt install -y nginx snapd
+sudo DEBIAN_FRONTEND=noninteractive apt install -y nginx snapd iptables-persistent
 sudo systemctl enable --now snapd.socket
+
+echo
+echo "2a) Opening HTTP/HTTPS in the VM firewall..."
+if command -v ufw >/dev/null 2>&1; then
+  sudo ufw allow 80/tcp >/dev/null || true
+  sudo ufw allow 443/tcp >/dev/null || true
+  sudo ufw reload >/dev/null 2>&1 || true
+fi
+
+sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
+sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || sudo iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save >/dev/null
+
+echo "Listening/firewall status:"
+sudo ss -ltnp | grep -E ':(80|443)[[:space:]]' || true
+sudo iptables -L INPUT -n --line-numbers | grep -E 'dpt:(80|443)|tcp dpt:(80|443)' || true
 
 if ! command -v certbot >/dev/null 2>&1; then
   echo
@@ -71,9 +87,10 @@ sudo systemctl enable --now nginx
 sudo systemctl reload nginx
 
 echo
-echo "5) Verifying HTTP from the public address..."
-curl -fsS "http://$IP/api/health" >/tmp/jh-public-http.json
-python3 -m json.tool </tmp/jh-public-http.json
+echo "5) Verifying nginx locally..."
+curl -fsS -H "Host: $IP" http://127.0.0.1/api/health >/tmp/jh-nginx-http.json
+python3 -m json.tool </tmp/jh-nginx-http.json
+echo "Local nginx proxy PASS. Let’s Encrypt will now perform the external HTTP-01 reachability check."
 
 echo
 echo "6) Requesting trusted Let's Encrypt IP certificate..."
@@ -139,7 +156,7 @@ sudo systemctl enable --now snap.certbot.renew.timer 2>/dev/null || true
 
 echo
 echo "10) Final HTTPS health test..."
-curl -fsS "https://$IP/api/health" >/tmp/jh-public-https.json
+curl -fsS --resolve "$IP:443:127.0.0.1" "https://$IP/api/health" >/tmp/jh-public-https.json
 python3 -m json.tool </tmp/jh-public-https.json
 
 echo
