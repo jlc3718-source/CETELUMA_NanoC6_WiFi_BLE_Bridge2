@@ -11,6 +11,9 @@ public final class EufyLightCommandsRegression {
         assertLocalE120(30010);
         assertShowIdOnly(10034);
         assertShowWithId(10034);
+        assertCatalogPreset(20005,418507,0,false);
+        assertCatalogPreset(30010,10034,50,false);
+        assertCatalogPreset(20005,418507,0,true);
         System.out.println("EufyLightCommands regression: PASS");
     }
 
@@ -33,6 +36,22 @@ public final class EufyLightCommandsRegression {
         if ((payload[layer + 11] & 0xFF) != 0xFF) fail(model + " red channel mismatch");
         for (int i = 1; i < expectedColorWidth; i++) {
             if ((payload[layer + 11 + i] & 0xFF) != 0) fail(model + " native color width/content mismatch");
+        }
+    }
+
+    private static void assertCatalogPreset(int localId,int catalogId,int a5,boolean minimal) {
+        byte[] payload=EufyLightCommands.catalogPresetE120(localId,catalogId,a5,new int[]{0xFF0000,0x00FF00},60,minimal);
+        int a3=find(payload,0xA3);
+        if(a3<0 || (payload[a3+1]&255)!=2) fail("catalog preset missing A3");
+        int id=(payload[a3+2]&255)|((payload[a3+3]&255)<<8);
+        if(id!=localId) fail("catalog local id mismatch");
+        int ac=find(payload,0xAC);
+        if(ac<0 || (payload[ac+1]&255)!=4) fail("catalog preset missing AC");
+        int cloud=(payload[ac+2]&255)|((payload[ac+3]&255)<<8)|((payload[ac+4]&255)<<16)|((payload[ac+5]&255)<<24);
+        if(cloud!=catalogId) fail("catalog id mismatch");
+        if(!minimal){
+            int p=find(payload,0xA5);
+            if(p<0 || (payload[p+2]&255)!=(a5&255)) fail("catalog A5 mismatch");
         }
     }
 
