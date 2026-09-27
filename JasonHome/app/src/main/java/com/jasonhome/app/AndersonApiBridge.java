@@ -263,6 +263,52 @@ final class AndersonApiBridge {
     private String targetName(int target){
         return target<=0?"All":NAMES[Math.max(0,Math.min(NAMES.length-1,target-1))];
     }
+    private void annotateScheduledIdentity(JSONObject scheduled,String id) throws Exception {
+        String type="builtin";
+        if(id!=null&&id.contains("::factory:")){
+            type="factoryPromotion";
+            String tail=id.substring(id.lastIndexOf("::factory:")+"::factory:".length());
+            try{scheduled.put("factoryLightId",Integer.parseInt(tail));}catch(Throwable ignored){}
+        }else if(id!=null&&id.startsWith("schedule-"))type="customSchedule";
+        scheduled.put("type",type);
+        scheduled.put("custom","customSchedule".equals(type));
+    }
+
+    private void applyOracleScene(JSONObject d,JSONObject running,JSONObject scene,String name) throws Exception {
+        if(scene==null)return;
+        d.put("power",scene.optBoolean("power",true));
+        d.put("brightness",clamp(scene.optInt("brightness",d.optInt("brightness",75)),1,100));
+        d.put("speed",clamp(scene.optInt("speed",d.optInt("speed",3)),1,5));
+        running.put("name",name==null||name.isEmpty()?"Oracle scene":name);
+        running.put("effect",scene.optString("effect",running.optString("effect","Jump")));
+        JSONArray colors=scene.optJSONArray("colors");
+        if(colors!=null){
+            JSONArray hex=new JSONArray();
+            for(int i=0;i<colors.length();i++){
+                Object raw=colors.opt(i);
+                if(raw instanceof Number)hex.put(String.format(Locale.ROOT,"#%06X",((Number)raw).intValue()&0xffffff));
+                else {
+                    String h=normalizeHex(String.valueOf(raw));
+                    if(h!=null)hex.put(h);
+                }
+            }
+            if(hex.length()>0)running.put("colors",hex);
+        }
+    }
+
+    private JSONObject commonOracleDesired(JSONObject server) {
+        JSONArray desired=server==null?null:server.optJSONArray("desired");
+        if(desired==null||desired.length()==0)return null;
+        String key=null;
+        for(int i=0;i<desired.length();i++){
+            JSONObject row=desired.optJSONObject(i);if(row==null)continue;
+            String scene=row.optString("scene","");
+            if(scene.isEmpty())continue;
+            if(key==null)key=scene; else if(!key.equals(scene))return null;
+        }
+        if(key==null)return null;
+        try{return new JSONObject(key);}catch(Throwable ignored){return null;}
+    }
 
     private String cloudControlCompat(JSONObject in) throws Exception {
         provisionCloudIdentity();
@@ -380,9 +426,10 @@ final class AndersonApiBridge {
         if(scene!=null){
             scheduled.put("name",scene.name);
             scheduled.put("id",scene.eventIndex>=0&&scene.eventIndex<AndersonEventData.EVENTS.length?AndersonEventData.EVENTS[scene.eventIndex].id:"");
-            scheduled.put("enabled",true).put("toggleable",scene.eventIndex>=0).put("custom",false).put("upcoming",false);
+            scheduled.put("enabled",true).put("toggleable",scene.eventIndex>=0).put("upcoming",false);
+            annotateScheduledIdentity(scheduled,scheduled.optString("id",""));
         }else{
-            scheduled.put("name",schedule.enabled()?"No event active right now":"Schedule disabled").put("id","").put("enabled",schedule.enabled()).put("toggleable",false).put("custom",false).put("upcoming",false);
+            scheduled.put("name",schedule.enabled()?"No event active right now":"Schedule disabled").put("id","").put("enabled",schedule.enabled()).put("toggleable",false).put("custom",false).put("type","none").put("upcoming",false);
         }
         d.put("scheduledEvent",scheduled);
 
@@ -420,19 +467,28 @@ final class AndersonApiBridge {
                     if(current!=null&&current.optString("name","").length()>0){
                         String id=current.optString("id","");
                         scheduled.put("name",current.optString("name","Scheduled event"));
-                        scheduled.put("id",id).put("enabled",true).put("toggleable",!id.isEmpty()).put("custom",false).put("upcoming",false);
+                        scheduled.put("id",id).put("enabled",true).put("toggleable",!id.isEmpty()).put("upcoming",false);
+                        annotateScheduledIdentity(scheduled,id);
+                        applyOracleScene(d,running,current.optJSONObject("scene"),current.optString("name","Scheduled event"));
                     }else if(next!=null&&"calendar".equals(next.optString("source"))&&next.optString("name","").length()>0){
                         String id=next.optString("id","");
                         scheduled.put("name",next.optString("name"));
-                        scheduled.put("id",id).put("enabled",true).put("toggleable",!id.isEmpty()).put("custom",false).put("upcoming",true);
+                        scheduled.put("id",id).put("enabled",true).put("toggleable",!id.isEmpty()).put("upcoming",true);
+                        annotateScheduledIdentity(scheduled,id);
                     }else{
                         scheduled.put("name",calendarEnabled?"Schedule active • waiting for next event":"Schedule disabled");
-                        scheduled.put("id","").put("enabled",calendarEnabled).put("toggleable",false).put("custom",false).put("upcoming",false);
+                        scheduled.put("id","").put("enabled",calendarEnabled).put("toggleable",false).put("custom",false).put("type","none").put("upcoming",false);
                     }
                 }
                 if(next!=null&&next.optString("name","").length()>0)d.put("nextEvent",cloudNextEventLabel(next));
+                JSONObject commonDesired=commonOracleDesired(server);
+                if(commonDesired!=null)applyOracleScene(d,running,commonDesired,running.optString("name","Oracle desired"));
                 JSONObject ov=server.optJSONObject("override");
-                if(ov!=null)d.put("manualOverride",ov.optBoolean("active",prefs.getBoolean("manual_override",false)));
+                if(ov!=null){
+                    d.put("manualOverride",ov.optBoolean("active",prefs.getBoolean("manual_override",false)));
+                    if(ov.optBoolean("active",false)&&ov.optJSONObject("scene")!=null)
+                        applyOracleScene(d,running,ov.optJSONObject("scene"),"Manual override");
+                }
             }catch(Throwable t){
                 statusText="Oracle unavailable";
                 transportText=t.getMessage()==null?t.getClass().getSimpleName():t.getMessage();
@@ -466,6 +522,7 @@ final class AndersonApiBridge {
         b.put("status",statusText);
         b.put("transportStatus",transportText);
         d.put("ble",b);
+        d.put("stateAuthority",useServer?"oracle":"android-direct");
         if(!d.has("manualOverride"))d.put("manualOverride",prefs.getBoolean("manual_override",false));
         return d;
     }
