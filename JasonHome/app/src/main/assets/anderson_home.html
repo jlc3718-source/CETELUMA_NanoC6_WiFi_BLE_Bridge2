@@ -26,25 +26,48 @@
   <div class="profileShell">
     <div class="profileBrand"><div class="ahBrand"><svg class="ahMark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M7 22 24 8l17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 21v19h24V21M21 40V29h6v11" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="12" cy="22" r="2" fill="currentColor"/><circle cx="24" cy="12" r="2" fill="currentColor"/><circle cx="36" cy="22" r="2" fill="currentColor"/></svg><div><span class="ahBrandName">Craumer <b>Home</b></span><span class="ahBrandSub">LIGHTING, BEAUTIFULLY SIMPLE</span></div></div></div>
     <div id="profileSolarTimes" class="profileGateStatus" style="margin:0 0 12px">Dusk — • Dawn —</div>
-    <div class="profileChoices">
-      <button class="profileChoice" type="button" data-profile="shirley" disabled><span class="profileAvatar">S</span><span class="profileName">Shirley</span><span class="profileAccess">Home &amp; Events</span></button>
-      <button class="profileChoice" type="button" data-profile="kelly" disabled><span class="profileAvatar">K</span><span class="profileName">Kelly</span><span class="profileAccess">Home &amp; Events</span></button>
-      <button class="profileChoice" type="button" data-profile="jason" disabled><span class="profileAvatar">J</span><span class="profileName">Jason</span><span class="profileAccess">All controls</span></button>
+    <div class="profileChoices profileChoicesSingle">
+      <button class="profileChoice" type="button" data-profile="jason"><span class="profileAvatar">J</span><span class="profileName">Jason</span><span class="profileAccess">All controls</span></button>
     </div>
-    <div class="profileRecoveryWrap"><a class="profileRecoveryButton" href="/recovery" aria-label="Open recovery page">Recovery</a></div>
-    <div id="profileGateStatus" class="profileGateStatus" aria-live="polite">Checking PIN protection…</div>
-    <form id="profilePinForm" class="pinPanel" hidden novalidate>
-      <strong id="profilePinTitle">Enter four-digit PIN</strong>
-      <div class="sub" style="margin-top:4px">Enter your PIN to open your home.</div>
-      <div class="label">Four-digit PIN</div><input id="profilePin" class="field pinDigits" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" aria-label="Four-digit PIN">
-      <div id="profilePinError" class="pinError" aria-live="polite"></div>
-      <div class="grid2"><button id="cancelProfilePin" class="btn" type="button">Cancel</button><button id="submitProfilePin" class="btn primary" type="submit">Continue</button></div>
-    </form>
+    <div id="profileGateStatus" class="profileGateStatus" aria-live="polite">Tap Jason to continue.</div>
+    <form id="profilePinForm" hidden><input id="profilePin" type="hidden"><span id="profilePinTitle"></span><span id="profilePinError"></span><button id="cancelProfilePin" type="button" hidden></button><button id="submitProfilePin" type="submit" hidden></button></form>
   </div>
 </main>
 
-<script>async function controllerRequest(e,t={},o=12e3){if(window.AndroidAnderson){try{const n=JSON.parse(window.AndroidAnderson.request(t.method||"GET",e,t.body||"",window.andersonAuthToken||"")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};return{response:r,text:null==n.body?"":String(n.body)}}catch(e){throw new Error(e&&e.message?e.message:"Android controller bridge failed.")}}const n=new AbortController,i=setTimeout(()=>n.abort(),o);try{const o=await fetch(e,{...t,signal:n.signal}),i=await o.text();return{response:o,text:i}}catch(e){if("AbortError"===e.name)throw new Error("Controller response timed out.");throw e}finally{clearTimeout(i)}}!function(){let e=!1,t=!1,o="";window.andersonAuthToken="";const byId=e=>document.getElementById(e);async function loadPinStatus(o=""){const n=byId("profileGateStatus");document.querySelectorAll(".profileChoice").forEach(e=>e.disabled=!0);try{const{response:i,text:r}=await controllerRequest("/api/auth/status?gate="+Date.now(),{cache:"no-store"});if(!i.ok)throw new Error("unavailable");const a=JSON.parse(r);e=!0===a.pinEnabled,t=!0===a.kellyConfigured,n.textContent=o||(e&&!t?"PIN protection is on. Jason must add Kelly’s PIN in Settings.":e?"Four-digit PIN protection is on.":"PIN protection is off. Jason can configure it in Settings.")}catch(i){e="file:"!==location.protocol,t=!0,n.textContent=o||(e?"PIN status could not be checked. You can retry the PIN.":"Preview mode — PIN protection is simulated as off.")}document.querySelectorAll(".profileChoice").forEach(o=>o.disabled="kelly"===o.dataset.profile&&e&&!t)}async function submitProfilePin(t){t.preventDefault();const n=byId("profilePin").value,i=byId("submitProfilePin");if(/^\d{4}$/.test(n)){i.disabled=!0,byId("profilePinError").textContent="Checking PIN…";try{const{response:t,text:i}=await controllerRequest("/api/auth/unlock",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profile:o,pin:n})});let r={};try{r=i?JSON.parse(i):{}}catch(e){r={error:i}}if(!t.ok)throw new Error(r.error||(429===t.status?"Please wait before trying again.":"PIN was not accepted."));e=!0===r.pinEnabled,chooseProfile(o,r.token||"",r.role||"")}catch(e){byId("profilePin").value="",byId("profilePinError").textContent=e.message||"PIN could not be checked.",byId("profilePin").focus()}finally{i.disabled=!1}}else byId("profilePinError").textContent="Enter exactly four digits."}function chooseProfile(e,t="",o=""){const n="jason"!==e||o&&"admin"!==o,i="shirley"===e?"Shirley":"kelly"===e?"Kelly":"Jason",r=n?["home","events","favorites"]:["home","lights","events","favorites","wifi","settings"];document.querySelectorAll(".tab").forEach(e=>{e.hidden=!r.includes(e.dataset.tab),e.classList.toggle("active","home"===e.dataset.tab)}),document.querySelectorAll(".page").forEach(e=>{e.hidden=!r.includes(e.dataset.page),e.classList.toggle("active","home"===e.dataset.page)}),window.andersonAuthToken=t,document.body.dataset.profile=e,document.body.classList.remove("profile-locked"),byId("profileGate").hidden=!0,byId("activeProfile").textContent=i,byId("activeProfile").hidden=!1,byId("switchProfile").hidden=!1,window.andersonProfile={id:e,name:i,role:o||(n?"user":"admin")},window.dispatchEvent(new CustomEvent("anderson-profile-selected",{detail:window.andersonProfile}))}function showProfileGate(e="",t=!0){const n=window.andersonAuthToken||"";t&&n&&controllerRequest("/api/auth/logout",{method:"POST",headers:{"X-Anderson-Session":n}}).catch(()=>{}),window.andersonAuthToken="",window.andersonProfile=null,o="",document.body.classList.add("profile-locked"),document.body.removeAttribute("data-profile"),byId("profileGate").hidden=!1,byId("profilePinForm").hidden=!0,byId("activeProfile").hidden=!0,byId("switchProfile").hidden=!0,document.querySelectorAll(".rgbPickerOverlay,.scheduleOverlay").forEach(e=>e.classList.remove("open")),window.dispatchEvent(new Event("anderson-profile-cleared")),loadPinStatus(e)}document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("[data-profile]").forEach(t=>t.addEventListener("click",()=>function requestProfile(t){e?function showPinPrompt(e){o=e;const t="shirley"===e?"Shirley":"kelly"===e?"Kelly":"Jason";byId("profilePinTitle").textContent="Enter "+t+"’s four-digit PIN",byId("profilePin").value="",byId("profilePinError").textContent="",byId("profilePinForm").hidden=!1,setTimeout(()=>byId("profilePin").focus(),0)}(t):chooseProfile(t,"","jason"===t?"admin":"user")}(t.dataset.profile))),byId("profilePin").addEventListener("input",e=>e.target.value=e.target.value.replace(/\D/g,"").slice(0,4)),byId("profilePinForm").addEventListener("submit",submitProfilePin),byId("cancelProfilePin").addEventListener("click",()=>{o="",byId("profilePinForm").hidden=!0}),byId("switchProfile").addEventListener("click",()=>showProfileGate()),window.addEventListener("anderson-auth-required",()=>showProfileGate("Your session ended. Enter the profile PIN again.",!1)),loadPinStatus()}),window.addEventListener("pageshow",e=>{e.persisted&&showProfileGate()})}();</script>
-
+<script>async function controllerRequest(e,t={},o=12e3){if(window.AndroidAnderson){try{const n=JSON.parse(window.AndroidAnderson.request(t.method||"GET",e,t.body||"",window.andersonAuthToken||"")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};return{response:r,text:null==n.body?"":String(n.body)}}catch(e){throw new Error(e&&e.message?e.message:"Android controller bridge failed.")}}const n=new AbortController,i=setTimeout(()=>n.abort(),o);try{const o=await fetch(e,{...t,signal:n.signal}),i=await o.text();return{response:o,text:i}}catch(e){if("AbortError"===e.name)throw new Error("Controller response timed out.");throw e}finally{clearTimeout(i)}}!function(){
+window.andersonAuthToken="";
+const byId=e=>document.getElementById(e);
+function chooseJason(){
+  const allowed=["home","lights","events","wifi","settings"];
+  document.querySelectorAll(".tab").forEach(el=>{el.hidden=!allowed.includes(el.dataset.tab);el.classList.toggle("active",el.dataset.tab==="home")});
+  document.querySelectorAll(".page").forEach(el=>{el.hidden=!allowed.includes(el.dataset.page);el.classList.toggle("active",el.dataset.page==="home")});
+  window.andersonProfile={id:"jason",name:"Jason",role:"admin"};
+  document.body.dataset.profile="jason";
+  document.body.classList.remove("profile-locked");
+  byId("profileGate").hidden=true;
+  byId("activeProfile").textContent="Jason";
+  byId("activeProfile").hidden=false;
+  byId("switchProfile").hidden=false;
+  window.dispatchEvent(new CustomEvent("anderson-profile-selected",{detail:window.andersonProfile}));
+}
+function showProfileGate(){
+  window.andersonAuthToken="";
+  window.andersonProfile=null;
+  document.body.classList.add("profile-locked");
+  document.body.removeAttribute("data-profile");
+  byId("profileGate").hidden=false;
+  byId("activeProfile").hidden=true;
+  byId("switchProfile").hidden=true;
+  document.querySelectorAll(".rgbPickerOverlay,.scheduleOverlay").forEach(el=>el.classList.remove("open"));
+  window.dispatchEvent(new Event("anderson-profile-cleared"));
+}
+document.addEventListener("DOMContentLoaded",()=>{
+  const j=document.querySelector('[data-profile="jason"]');
+  if(j){j.disabled=false;j.addEventListener("click",chooseJason)}
+  byId("switchProfile").addEventListener("click",showProfileGate);
+});
+window.addEventListener("pageshow",e=>{if(e.persisted)showProfileGate()});
+}();</script>
 <div class="wrap">
   <div class="header">
     <div class="ahBrand"><svg class="ahMark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M7 22 24 8l17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 21v19h24V21M21 40V29h6v11" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="12" cy="22" r="2" fill="currentColor"/><circle cx="24" cy="12" r="2" fill="currentColor"/><circle cx="36" cy="22" r="2" fill="currentColor"/></svg><div><span class="ahBrandName">Craumer <b>Home</b></span><span class="ahBrandSub">LIGHTING, BEAUTIFULLY SIMPLE</span></div></div>
