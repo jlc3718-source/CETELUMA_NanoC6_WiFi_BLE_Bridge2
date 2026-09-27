@@ -6,6 +6,7 @@ on:
       - jason-home-3.1-build
       - jason-home-anderson-eufy
       - jason-home-wifi-5.2.0-build
+      - jason-home-cloudflare-rebuild
     paths:
       - 'JasonHome/**'
       - '.github/workflows/build-jason-home.yml'
@@ -38,8 +39,10 @@ jobs:
           cloud_client=Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudClient.java').read_text()
           secure_store=Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudSessionStore.java').read_text()
           manifest=Path('JasonHome/app/src/main/AndroidManifest.xml').read_text()
-          html=Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
-          js=Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text()
+          cloud_ui=Path('JasonHome/app/src/main/assets/jason_cloud_home.html')
+          html=(cloud_ui if cloud_ui.exists() else Path('JasonHome/app/src/main/assets/anderson_home.html')).read_text()
+          cloud_js=Path('JasonHome/app/src/main/assets/jason_cloud_home.js')
+          js=(cloud_js if cloud_js.exists() else Path('JasonHome/app/src/main/assets/v3_mockup.js')).read_text()
           generator=Path('JasonHome/tools/generate_anderson_events.py').read_text()
 
           effects=['Solid / Static','Jump','Breath','Strobe','Chase','Gradient Sweep',
@@ -98,7 +101,11 @@ jobs:
               raise SystemExit('Legacy E120 diagnostic panel still visible')
           if '<strong>Profile PINs</strong>' in html:
               raise SystemExit('Users & Security panel still visible')
-          if 'Refresh Eufy Cloud Lights' not in html or 'only authorized lights' not in html:
+          if cloud_ui.exists():
+              for marker in ['Jason Home','Cloudflare','Direct Eufy','Pool','House','Garage','Shed','Apply Scene','Schedules']:
+                  if marker not in html:
+                      raise SystemExit('Rebuilt cloud UI missing '+marker)
+          elif 'Refresh Eufy Cloud Lights' not in html or 'only authorized lights' not in html:
               raise SystemExit('Fixed Eufy cloud device UI missing')
           if 'max="2"' in html and 'eventsSpeed' in html:
               raise SystemExit('Legacy event speed restriction remains')
@@ -126,7 +133,11 @@ jobs:
               Path(f'/tmp/craumer-inline-{i}.js').write_text(script)
           print(f'Craumer Home 5.2 Wi-Fi source validation: PASS ({len(scripts)} inline scripts)')
           PY
-          node --check JasonHome/app/src/main/assets/v3_mockup.js
+          if [ -f JasonHome/app/src/main/assets/jason_cloud_home.js ]; then
+            node --check JasonHome/app/src/main/assets/jason_cloud_home.js
+          else
+            node --check JasonHome/app/src/main/assets/v3_mockup.js
+          fi
           for f in /tmp/craumer-inline-*.js; do node --check "$f"; done
 
       - name: Set up Java 17
