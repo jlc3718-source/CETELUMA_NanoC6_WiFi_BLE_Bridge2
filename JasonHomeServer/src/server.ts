@@ -209,6 +209,17 @@ async function sendScene(name:string,scene:Scene){
   });
 }
 
+let factoryRefreshState:any={state:"idle",startedAt:null,finishedAt:null,error:null};
+function queueFactoryRefresh(){
+  if(factoryRefreshState?.state==="running")return factoryRefreshState;
+  factoryRefreshState={state:"running",startedAt:new Date().toISOString(),finishedAt:null,error:null};
+  void factoryCatalog(true).then((catalog:any)=>{
+    factoryRefreshState={state:"complete",startedAt:factoryRefreshState.startedAt,finishedAt:new Date().toISOString(),error:null,count:Number(catalog?.count)||0};
+  }).catch((e:any)=>{
+    factoryRefreshState={state:"failed",startedAt:factoryRefreshState.startedAt,finishedAt:new Date().toISOString(),error:e?.message||String(e)};
+  });
+  return factoryRefreshState;
+}
 async function factoryCatalog(refresh=false){
   if(!refresh){
     const raw=meta("factory_catalog");
@@ -430,10 +441,20 @@ const server=http.createServer(async(req,res)=>{
       return json(res,200,{ok:true,events:cfg?.events||[],synced:!!cfg});
     }
     if(method==="GET"&&path==="/api/eufy/factory-presets"){
-      const refresh=url.searchParams.get("refresh")==="1",includeRaw=url.searchParams.get("raw")==="1";
+      const includeRaw=url.searchParams.get("raw")==="1";
       const idRaw=url.searchParams.get("id"),id=idRaw==null?undefined:Number(idRaw);
-      const catalog=await factoryCatalog(refresh);
-      return json(res,200,factorySummary(catalog,includeRaw,id));
+      if(url.searchParams.get("refresh")==="1")queueFactoryRefresh();
+      const raw=meta("factory_catalog");
+      if(!raw){
+        const refresh=queueFactoryRefresh();
+        return json(res,202,{ok:true,loading:true,refresh});
+      }
+      let catalog:any;
+      try{catalog=JSON.parse(raw);}catch{delMeta("factory_catalog");return json(res,202,{ok:true,loading:true,refresh:queueFactoryRefresh()});}
+      return json(res,200,{...factorySummary(catalog,includeRaw,id),refresh:factoryRefreshState});
+    }
+    if(method==="POST"&&path==="/api/eufy/factory-presets/refresh"){
+      return json(res,202,{ok:true,queued:true,refresh:queueFactoryRefresh()});
     }
     if(method==="POST"&&path==="/api/eufy/factory-test"){
       const input:any=await readJson(req),lightId=Number(input?.lightId);
