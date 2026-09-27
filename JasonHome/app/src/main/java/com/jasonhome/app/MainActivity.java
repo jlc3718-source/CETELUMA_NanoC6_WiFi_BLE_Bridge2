@@ -79,7 +79,7 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
 
         setContentView(frame);
         frame.requestApplyInsets();
-        webView.loadUrl("file:///android_asset/jason_cloud_home.html");
+        webView.loadUrl("file:///android_asset/anderson_home.html");
 
         // Cloudflare mode leaves Eufy transport and schedules to the server.
         // Direct mode preserves the known-good 5.2.2 Android -> Eufy fallback.
