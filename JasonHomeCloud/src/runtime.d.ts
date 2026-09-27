@@ -8,6 +8,10 @@ declare module "node:crypto" {
 }
 declare module "node:tls" {
   export function connect(options:any, callback?:()=>void): any;
+  export function checkServerIdentity(hostname:string, cert:any): Error | undefined;
+}
+declare module "node:dns" {
+  export const promises:any;
 }
 declare const Buffer: any;
 type Buffer = any;
