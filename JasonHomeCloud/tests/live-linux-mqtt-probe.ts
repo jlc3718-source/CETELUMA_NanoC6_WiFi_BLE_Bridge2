@@ -4,12 +4,11 @@ const email=process.env.EUFY_EMAIL||"";
 const password=process.env.EUFY_PASSWORD||"";
 if(!email||!password)throw new Error("EUFY_EMAIL/EUFY_PASSWORD secrets required");
 
-const env:any={EUFY_EMAIL:email,EUFY_PASSWORD:password};
 const installId="7f2e4a0b1c3d5e6f8091a2b3c4d5e6f7";
-const client=new EufyClient(env,installId);
+const client=new EufyClient(installId);
 
 console.log("LINUX PROBE: authenticating and discovering Eufy devices");
-await client.login();
+await client.login(email,password);
 await client.prepare();
 const names=client.readyNames();
 console.log("LINUX PROBE READY:",names.join(", "));
