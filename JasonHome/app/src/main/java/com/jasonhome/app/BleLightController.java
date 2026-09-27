@@ -1092,6 +1092,7 @@ final class BleLightController {
         Runnable localTimeout;
         boolean commandSentLocal;
         boolean finished;
+        int retryCount;
 
         ParallelWorker(String key, Job job, long token) {
             this.key=key; this.job=job; this.token=token;
@@ -1099,6 +1100,9 @@ final class BleLightController {
 
         @SuppressLint("MissingPermission")
         void start() {
+            if (finished || token != parallelToken) return;
+            commandSentLocal=false;
+            localWrite=null;
             try {
                 localProbe = new E10Probe(job.light.serial,store.accountId());
             } catch (Throwable t) {
@@ -1425,6 +1429,21 @@ final class BleLightController {
 
         private void finishOnMain(boolean success,String error) {
             if (finished) return;
+
+            // A successful Android GATT setup is not the same thing as a reliable
+            // over-the-air delivery. If this worker fails anywhere from connect
+            // through command write, rebuild the E10 session once and try again.
+            if (!success && token==parallelToken && retryCount<1 && job.kind!=Kind.DIAGNOSTIC) {
+                if (localTimeout!=null) handler.removeCallbacks(localTimeout);
+                localTimeout=null;
+                cleanupLocal();
+                commandSentLocal=false;
+                retryCount++;
+                listener.onStatus(displayName(job.light)+": retrying BLE connection ("+(retryCount+1)+"/2)");
+                handler.postDelayed(this::start,350L);
+                return;
+            }
+
             finished=true;
             if (localTimeout!=null) handler.removeCallbacks(localTimeout);
             localTimeout=null;
