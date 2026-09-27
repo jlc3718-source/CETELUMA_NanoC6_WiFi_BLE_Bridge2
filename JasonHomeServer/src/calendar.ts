@@ -35,6 +35,15 @@ export interface CalendarResolution {
 type Ymd={year:number;month:number;day:number};
 
 function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
+function colorValue(v:any){
+  if(typeof v==="number"&&Number.isFinite(v))return v&0xffffff;
+  if(typeof v==="string"){
+    const t=v.trim().replace(/^#/,"");
+    if(/^[0-9a-fA-F]{6}$/.test(t))return parseInt(t,16)&0xffffff;
+    const n=Number(v);if(Number.isFinite(n))return n&0xffffff;
+  }
+  return 0xffffff;
+}
 function ymdMs(d:Ymd){return Date.UTC(d.year,d.month-1,d.day);}
 function fromMs(ms:number):Ymd{const d=new Date(ms);return {year:d.getUTCFullYear(),month:d.getUTCMonth()+1,day:d.getUTCDate()};}
 function addDays(d:Ymd,n:number):Ymd{return fromMs(ymdMs(d)+n*86400000);}
@@ -247,7 +256,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       month:Number(raw.month)||0,day:Number(raw.day)||0,weekday:Number(raw.weekday)||0,nth:Number(raw.nth)||0,
       offsetDays:Number(raw.offsetDays)||0,durationDays:Math.max(1,Number(raw.durationDays)||1),
       effect:String(raw.effect||"Solid / Static"),speed:clamp(Number(raw.speed)||3,1,5),
-      colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map((x:any)=>Number(x)&0xffffff):[0xffffff],
+      colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
       enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(Number(raw.categoryIndex)||0,0,14),major:!!raw.major
     });
   }
@@ -260,7 +269,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       id:String(raw.id),name:String(raw.name||"Custom Light"),enabled:raw.enabled!==false,annual:raw.annual!==false,
       year:Number(raw.year)||0,month:Number(raw.month)||0,day:Number(raw.day)||0,effect:String(raw.effect||"Solid / Static"),
       speed:clamp(Number(raw.speed)||3,1,5),brightness:clamp(Number(raw.brightness)||100,1,100),
-      colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map((x:any)=>Number(x)&0xffffff):[0xffffff]
+      colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff]
     });
   }
   return cfg;
