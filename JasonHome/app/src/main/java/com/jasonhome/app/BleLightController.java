@@ -1304,6 +1304,12 @@ final class BleLightController {
 
         @SuppressLint("MissingPermission")
         private void sendLocalE120Static() {
+            sendLocalE120StaticPass(false);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalE120StaticPass(boolean secondPass) {
+            if (finished||token!=parallelToken||localGatt==null||localWrite==null||localProbe==null) return;
             int rgb=(job.colors==null||job.colors.length==0)?0xFFFFFF:job.colors[0];
             try {
                 byte[] color=localProbe.command(EufyLightCommands.OP_COLOR,
@@ -1324,7 +1330,11 @@ final class BleLightController {
                             finish(false,displayName(job.light)+": static hold write failed ("+r2+")");
                             return;
                         }
-                        handler.postDelayed(() -> finish(true,null),550L);
+                        if (!secondPass) {
+                            handler.postDelayed(() -> sendLocalE120StaticPass(true),280L);
+                        } else {
+                            handler.postDelayed(() -> finish(true,null),350L);
+                        }
                     } catch(Throwable t) {
                         finish(false,displayName(job.light)+": static hold command could not be built");
                     }
@@ -1336,6 +1346,12 @@ final class BleLightController {
 
         @SuppressLint("MissingPermission")
         private void sendLocalScene() {
+            sendLocalScenePass(false);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalScenePass(boolean secondPass) {
+            if (finished||token!=parallelToken||localGatt==null||localWrite==null||localProbe==null) return;
             try {
                 byte[] power=localProbe.powerCommand(true);
                 int r1=isE22(job.light)?writeWithResponse(localGatt,localWrite,power):write(localGatt,localWrite,power);
@@ -1346,27 +1362,39 @@ final class BleLightController {
                 handler.postDelayed(() -> {
                     if (finished||token!=parallelToken) return;
                     try {
-                        int r2=write(localGatt,localWrite,
-                            localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value)));
+                        byte[] brightness=localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
+                        int r2=write(localGatt,localWrite,brightness);
                         if (Build.VERSION.SDK_INT>=33&&r2!=BluetoothStatusCodes.SUCCESS) {
                             finish(false,displayName(job.light)+": scene brightness write failed ("+r2+")");
                             return;
                         }
                         handler.postDelayed(() -> {
                             if (finished||token!=parallelToken) return;
-                            sendLocalSceneEffect();
+                            sendLocalSceneEffect(secondPass);
                         },220L);
                     } catch(Throwable t) {
                         finish(false,displayName(job.light)+": scene brightness command could not be built");
                     }
-                },isE22(job.light)?320L:220L);
+                },isE22(job.light)?360L:240L);
             } catch(Throwable t) {
                 finish(false,displayName(job.light)+": scene power command could not be built");
             }
         }
 
+        private void completeScenePass(boolean secondPass) {
+            if (finished||token!=parallelToken) return;
+            if (!secondPass) {
+                // Replay the complete scene once in the established session. Every
+                // packet is rebuilt, so the E10 sequence advances rather than
+                // retransmitting stale encrypted bytes.
+                handler.postDelayed(() -> sendLocalScenePass(true),300L);
+            } else {
+                handler.postDelayed(() -> finish(true,null),350L);
+            }
+        }
+
         @SuppressLint("MissingPermission")
-        private void sendLocalSceneEffect() {
+        private void sendLocalSceneEffect(boolean secondPass) {
             try {
                 if (isE22(job.light)) {
                     byte[] frame;
@@ -1383,7 +1411,7 @@ final class BleLightController {
                         finish(false,displayName(job.light)+": scene effect write failed ("+r3+")");
                         return;
                     }
-                    handler.postDelayed(() -> finish(true,null),550L);
+                    handler.postDelayed(() -> completeScenePass(secondPass),280L);
                     return;
                 }
 
@@ -1407,7 +1435,7 @@ final class BleLightController {
                                 finish(false,displayName(job.light)+": scene static hold write failed ("+r4+")");
                                 return;
                             }
-                            handler.postDelayed(() -> finish(true,null),550L);
+                            handler.postDelayed(() -> completeScenePass(secondPass),280L);
                         } catch(Throwable t) {
                             finish(false,displayName(job.light)+": scene static hold command could not be built");
                         }
@@ -1423,7 +1451,7 @@ final class BleLightController {
                     finish(false,displayName(job.light)+": scene E120 effect write failed ("+r3+")");
                     return;
                 }
-                handler.postDelayed(() -> finish(true,null),550L);
+                handler.postDelayed(() -> completeScenePass(secondPass),280L);
             } catch(Throwable t) {
                 finish(false,displayName(job.light)+": scene effect command could not be built");
             }
