@@ -125,7 +125,7 @@ final class AndersonApiBridge {
             if ("/api/ble/rename".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true));
             if ("/api/ble/target".equals(path) && "POST".equals(m)) return bleTarget(input);
             if ("/api/ble/e120-test".equals(path) && "POST".equals(m)) return e120Test(input);
-            if ("/api/ble/e120-state".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("summary",ble.lastStateSummary()));
+            if ("/api/ble/e120-state".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("summary",ble.lastStateSummary()).put("details",ble.lastStateDetails()));
 
             if ("/api/system".equals(path)) return ok(systemJson());
             if ("/api/firmware".equals(path)) return ok(firmwareJson());
@@ -176,7 +176,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.10");
+        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.11");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -614,7 +614,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Jason Home 5.0.10").put("buildCommit","Craumer Home UI")
+            .put("version","Jason Home 5.0.11").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
