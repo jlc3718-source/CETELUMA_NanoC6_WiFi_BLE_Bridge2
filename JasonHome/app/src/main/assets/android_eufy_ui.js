@@ -231,7 +231,7 @@ function installAndroidEufyUi(){
       save.disabled=applyBtn.disabled=true;out.textContent="Validating and saving factory recipe on Oracle…";
       try{
         const r=await post("/api/eufy/factory-presets/save",{lightId:Number(editorPreset.lightId),preset:editorPreset},12000);
-        editorPreset=deep(r.preset);const idx=presets.findIndex(x=>Number(x.lightId)===Number(editorPreset.lightId));if(idx>=0)presets[idx]=deep(editorPreset);renderFactory();renderEditor();await loadFactoryPromotions(false);
+        editorPreset=deep(r.preset);const idx=presets.findIndex(x=>Number(x.lightId)===Number(editorPreset.lightId));if(idx>=0)presets[idx]=deep(editorPreset);renderFactory();renderEditor();await loadFactoryPromotions(true);
         out.textContent="Factory preset saved on Oracle.";
         if(apply)await runFactoryTest(editorPreset,applyBtn,out,selectedTarget,selectedMode);
       }catch(e){out.textContent="Factory save failed: "+e.message;}
@@ -242,7 +242,7 @@ function installAndroidEufyUi(){
     $("factoryEditorReset").addEventListener("click",async()=>{
       if(!editorPreset||!confirm("Restore this preset to the original Eufy factory recipe?"))return;
       const id=Number(editorPreset.lightId),out=$("factoryEditorResult");out.textContent="Restoring original Eufy recipe…";
-      try{await post("/api/eufy/factory-presets/reset",{lightId:id});await loadFactoryCatalog(false);await loadFactoryPromotions(false);const fresh=presets.find(x=>Number(x.lightId)===id);if(fresh){editorPreset=deep(fresh);renderEditor();}out.textContent="Original Eufy factory recipe restored.";}catch(e){out.textContent="Restore failed: "+e.message;}
+      try{await post("/api/eufy/factory-presets/reset",{lightId:id});await loadFactoryCatalog(false);await loadFactoryPromotions(true);const fresh=presets.find(x=>Number(x.lightId)===id);if(fresh){editorPreset=deep(fresh);renderEditor();}out.textContent="Original Eufy factory recipe restored.";}catch(e){out.textContent="Restore failed: "+e.message;}
     });
 
     function factorySceneColorPills(colors){
