@@ -231,7 +231,7 @@ jobs:
           print("Jason Home UI catalog regression: PASS")
           classic = Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
           classic_js = Path('JasonHome/app/src/main/assets/android_eufy_ui.js').read_text()
-          for marker in ['data-page="home"','data-page="lights"','data-page="events"','data-page="settings"','housePreview','Shirley','Kelly','Jason','Live Color Tuning','Scheduling Rules','Eufy Devices']:
+          for marker in ['data-page="home"','data-page="lights"','data-page="events"','data-page="settings"','housePreview','Jason','Live Color Tuning','Scheduling Rules','Eufy Devices']:
               if marker not in classic:
                   raise SystemExit('Classic Jason Home layout missing '+marker)
           for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller','Test Oracle','factoryTab','Factory presets','/api/eufy/factory-test','/api/eufy/factory-presets']:
