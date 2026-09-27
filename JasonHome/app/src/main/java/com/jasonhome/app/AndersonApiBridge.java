@@ -82,11 +82,11 @@ final class AndersonApiBridge {
     }
 
     private void provisionCloudIdentity() throws Exception {
-        if(!cloudApi.configured())throw new IOException("Cloud API token is not configured");
+        if(!cloudApi.configured())throw new IOException("Oracle API token is not configured");
         JSONObject payload=new JSONObject().put("installId",cloud.installId());
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/provision-device",payload.toString());
         if(r.status<200||r.status>=300){
-            String msg="Cloudflare identity provisioning HTTP "+r.status;
+            String msg="Oracle identity provisioning HTTP "+r.status;
             try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
             throw new IOException(msg);
         }
@@ -102,7 +102,7 @@ final class AndersonApiBridge {
             }
             if(in.has("mode")){
                 boolean cloudMode="cloud".equalsIgnoreCase(in.optString("mode","direct"));
-                if(cloudMode&&!store.hasToken())return error(400,"Enter the Jason Home Cloud API token before enabling Cloudflare mode");
+                if(cloudMode&&!store.hasToken())return error(400,"Enter the Jason Home Oracle API token before enabling Oracle mode");
                 store.setCloudMode(cloudMode);
                 AndersonScheduleService.update(context);
                 if(!cloudMode)cloud.start();
@@ -152,7 +152,7 @@ final class AndersonApiBridge {
                 CloudflareApiClient.Result r=cloudApi.health(); return response(r.status,r.body);
             }
             if ("/api/cloud/test".equals(path) && "GET".equals(m)) {
-                if(!cloudApi.configured())return error(400,"Cloud API token is not configured");
+                if(!cloudApi.configured())return error(400,"Oracle API token is not configured");
                 provisionCloudIdentity();
                 return forwardCloud("GET","/api/status?refresh=1","");
             }
@@ -234,9 +234,9 @@ final class AndersonApiBridge {
         long now=System.currentTimeMillis();
         if(!refresh&&cloudSnapshotCache!=null&&now-cloudSnapshotAt<4000L)return new JSONObject(cloudSnapshotCache.toString());
         CloudflareApiClient.Result r=cloudApi.request("GET",refresh?"/api/status?refresh=1":"/api/status","");
-        if(r.status<200||r.status>=300)throw new IOException("Cloudflare status HTTP "+r.status);
+        if(r.status<200||r.status>=300)throw new IOException("Oracle status HTTP "+r.status);
         JSONObject o=new JSONObject(r.body);
-        if(!o.optBoolean("ok",false))throw new IOException(o.optString("error","Cloudflare status failed"));
+        if(!o.optBoolean("ok",false))throw new IOException(o.optString("error","Oracle status failed"));
         cloudSnapshotCache=o;cloudSnapshotAt=now;
         return new JSONObject(o.toString());
     }
@@ -269,7 +269,7 @@ final class AndersonApiBridge {
         if(in.has("name"))payload.put("name",in.optString("name","Manual"));
 
         // Old UI often sends one changed field at a time. Supply the current full scene
-        // when Cloudflare needs to turn on/apply a visual change.
+        // when Oracle needs to turn on/apply a visual change.
         if(!payload.has("power")||payload.optBoolean("power",true)){
             if(!payload.has("brightness"))payload.put("brightness",prefs.getInt("brightness",75));
             if(!payload.has("speed"))payload.put("speed",prefs.getInt("speed",3));
@@ -279,7 +279,7 @@ final class AndersonApiBridge {
 
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/control",payload.toString());
         if(r.status<200||r.status>=300){
-            String msg="Cloudflare control HTTP "+r.status;
+            String msg="Oracle control HTTP "+r.status;
             try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
             throw new IOException(msg);
         }
@@ -292,7 +292,7 @@ final class AndersonApiBridge {
         prefs.edit().putBoolean("manual_override",false).apply();
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/resume-schedule","{}");
         if(r.status<200||r.status>=300){
-            String msg="Cloudflare resume HTTP "+r.status;
+            String msg="Oracle resume HTTP "+r.status;
             try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
             throw new IOException(msg);
         }
@@ -332,7 +332,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.3.4 Cloud");
+        d.put("firmwareVersion","Craumer Home • 5.3.5 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
