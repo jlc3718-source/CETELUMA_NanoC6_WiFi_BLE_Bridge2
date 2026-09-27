@@ -2,6 +2,11 @@ name: Deploy Jason Home Cloud
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeCloud/THING_NAME_VERIFY_NOW'
 
 permissions:
   contents: read
@@ -79,4 +84,19 @@ jobs:
           if names!=expected:
               raise SystemExit(f'Expected 4 ready strings, got {sorted(names)}')
           print('AUTHENTICATED EUFY STATUS PASS 4/4')
+          PY
+
+      - name: Verify Pool MQTT thing-name probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/mqtt.json -w '%{http_code}' -X POST -H "Authorization: Bearer $JASON_HOME_API_TOKEN" -H "Content-Type: application/json" --data '{"target":"Pool"}' "https://jason-home-cloud.jlc3718.workers.dev/api/mqtt-probe")"
+          python - "$code" <<'PY'
+          import json,sys
+          code=int(sys.argv[1]); d=json.load(open('/tmp/mqtt.json'))
+          print('MQTT PROBE HTTP',code)
+          print('MQTT PROBE BODY',d)
+          if code!=200 or d.get('ok') is not True:
+              raise SystemExit(d.get('error') or f'MQTT probe HTTP {code}')
+          print('POOL MQTT THING-NAME PROBE PASS')
           PY
