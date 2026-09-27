@@ -157,6 +157,19 @@ function storedScene(name:string):Scene|null{
   const row=db.prepare("SELECT scene FROM desired_state WHERE name=?").get(name) as any;
   try{return row?.scene?JSON.parse(row.scene):null;}catch{return null;}
 }
+function activeOverrideScene(name:string):Scene|null{
+  try{
+    const raw=meta("override");if(!raw)return null;
+    const o=JSON.parse(raw);if(!o?.active||!o?.scene)return null;
+    if(!targetNames(String(o.target||"All")).includes(name))return null;
+    return safeScene(o.scene,DEFAULT_SCENE);
+  }catch{return null;}
+}
+function manualScenes(input:any,names:string[]){
+  const out:Record<string,Scene>={};
+  for(const name of names)out[name]=safeScene(input,activeOverrideScene(name)||storedScene(name)||DEFAULT_SCENE);
+  return out;
+}
 function json(res:http.ServerResponse,status:number,value:unknown){
   const body=JSON.stringify(value);
   res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body)});
@@ -566,10 +579,9 @@ async function factoryTestAll(lightId:number,target="All",mode="compatible"){
   preset=applyFactoryEdit(preset);
   const names=targetNames(target),sequence=++manualSequence;
   for(const name of names)latestManualSequence.set(name,sequence);
-  const expiresAt=nextOverrideExpiry(new Date());
-  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode,sequence,createdAt:Date.now(),expiresAt}));
-
   const compatible=factoryCompatibleScene(preset),native=mode==="native";
+  const expiresAt=nextOverrideExpiry(new Date());
+  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode,sequence,scene:native?undefined:compatible,createdAt:Date.now(),expiresAt}));
   const results=await Promise.all(names.map(async name=>{
     try{
       const r:any=await serializedForDevice(name,async()=>{
@@ -638,29 +650,30 @@ async function statusPayload(refresh=false){
 }
 
 async function manualControl(input:any,sequence?:number){
-  const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
-
+  const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
+  const firstScene=scenes[names[0]]||DEFAULT_SCENE;
   const expiresAt=nextOverrideExpiry(new Date());
-  const override={active:true,target,scene,createdAt:Date.now(),expiresAt};
+  const override={active:true,target,scene:firstScene,scenes,createdAt:Date.now(),expiresAt};
   setMeta("override",JSON.stringify(override));
 
   const detail=await Promise.all(names.map(async name=>{
+    const scene=scenes[name];
     try{
       const r:any=sequence==null?await sendScene(name,scene):await sendSceneLatest(name,scene,sequence);
       if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-      return {name,ok:true,brokerAccepted:r?.brokerAccepted===true,deviceReported:r?.deviceReported===true,report:r?.report||null,instance:r?.instance||null};
+      return {name,ok:true,scene,brokerAccepted:r?.brokerAccepted===true,deviceReported:r?.deviceReported===true,report:r?.report||null,instance:r?.instance||null};
     }catch(e:any){
       const msg=e?.message||String(e);
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
-      return {name,ok:false,error:msg};
+      return {name,ok:false,scene,error:msg};
     }
   }));
   const completed=detail.filter((x:any)=>x.ok&&!x.skipped).length;
   const skipped=detail.filter((x:any)=>x.skipped).length;
   const failed=detail.filter((x:any)=>!x.ok).length;
-  const summary={at:new Date().toISOString(),target,ok:completed,skipped,failed,total:names.length,scene,detail,transport:"linux-mqtt"};
+  const summary={at:new Date().toISOString(),target,ok:completed,skipped,failed,total:names.length,scenes,detail,transport:"linux-mqtt"};
   setMeta("last_command",JSON.stringify(summary));
   logCommand(Date.now(),target,"manual",failed===0,detail);
   if(failed===names.length)throw new Error(detail.map((x:any)=>x.error).filter(Boolean).join("; ")||"No light command completed");
@@ -668,19 +681,19 @@ async function manualControl(input:any,sequence?:number){
 }
 
 function queueManualControl(input:any){
-  const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
+  const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
   const sequence=++manualSequence;
   for(const name of names)latestManualSequence.set(name,sequence);
 
   const expiresAt=nextOverrideExpiry(new Date());
-  const override={active:true,target,scene,createdAt:Date.now(),expiresAt};
+  const override={active:true,target,scene:scenes[names[0]]||DEFAULT_SCENE,scenes,createdAt:Date.now(),expiresAt};
   setMeta("override",JSON.stringify(override));
-  setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:true,sequence,scene,transport:"linux-mqtt"}));
+  setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:true,sequence,scenes,transport:"linux-mqtt"}));
 
   void manualControl(input,sequence).catch((e:any)=>{
     const msg=e?.message||String(e);
     console.error("[manual queued]",target,msg);
-    setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:false,sequence,error:msg,scene,transport:"linux-mqtt"}));
+    setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:false,sequence,error:msg,scenes,transport:"linux-mqtt"}));
   });
   return {ok:true,queued:true,sequence,target,total:names.length,override};
 }
