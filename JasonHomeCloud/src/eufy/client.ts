@@ -74,7 +74,7 @@ export class EufyClient {
   async certificate(){
     this.requireLogin();if(!this.lights.size)await this.findLights();const c=await this.signed("devicemanage","/app/devicemanage/get_user_mqtt_info",{},true,"eufy_life") as MqttCredentials;
     for(const k of ["endpoint_addr","certificate_pem","private_key","aws_root_ca1_pem"] as const)if(!(c as any)[k])throw new Error(`Eufy MQTT certificate missing ${k}`);
-    if(!c.user_id)c.user_id=this.uid;
+    if(c.user_id===undefined||c.user_id===null)c.user_id=this.uid;
     if(!allowedBroker(c.endpoint_addr)||((c.app_name||"eufy_life")!=="eufy_life"))throw new Error("Unexpected Eufy broker/certificate scope");this.creds=c;
   }
   async prepare(){if(!this.authed)throw new Error("Eufy authentication required");await this.findLights();await this.certificate();}
