@@ -22,18 +22,18 @@ final class LightPresetCatalog {
     // Human-facing templates built from Eufy's native 0x020D layer engine.
     // Names are Jason Home UI names; the device wire uses layer types/parameters, not these labels.
     static final EffectTemplate[] EFFECTS = {
-        new EffectTemplate("Solid / Static", "Cycle / Solid", "One steady color or white tone."),
-        new EffectTemplate("Jump", "Cycle", "Hard color-to-color changes with no fade."),
-        new EffectTemplate("Breath", "Cycle + brightness", "Smooth brightness rise/fall through the selected palette."),
-        new EffectTemplate("Strobe", "Blink", "Fast full-output flashes; speed adjustable."),
-        new EffectTemplate("Chase", "Flow / Insert", "Moving blocks of color along the roofline."),
-        new EffectTemplate("Gradient Sweep", "Flow / Gradient", "Blended colors moving through the run."),
-        new EffectTemplate("Candy Cane", "Flow / Insert", "Alternating repeating color blocks; ideal red/white or custom pairs."),
-        new EffectTemplate("Twinkle / Sparkle", "Twinkle / Blink", "Scattered lamps blink asynchronously."),
-        new EffectTemplate("Wipe / Fill", "Flow / Fill", "Color progressively fills the run, then repeats."),
-        new EffectTemplate("Meteor / Comet", "Flow / Insert", "Bright moving block with a dark gap/trail."),
-        new EffectTemplate("Rainbow Flow", "Flow / Gradient", "Multi-color spectrum moving continuously."),
-        new EffectTemplate("Pulse Wave", "Flow + brightness", "Moving color layer with brightness modulation.")
+        new EffectTemplate("Solid / Static", "Static", "Applies Color 1 and holds it with no motion."),
+        new EffectTemplate("Jump", "Full-string color cycle", "The entire string changes from one selected color to the next with no fade."),
+        new EffectTemplate("Breath", "Brightness cycle", "The string fades up and down smoothly while stepping through the selected colors."),
+        new EffectTemplate("Strobe", "Blink", "Rapid light/dark flashes using the selected color palette."),
+        new EffectTemplate("Chase", "Chase", "A moving chase pattern travels along the string using the selected colors."),
+        new EffectTemplate("Gradient Sweep", "Color sweep", "Selected colors blend and sweep progressively along the string."),
+        new EffectTemplate("Candy Cane", "Alternating chase", "Alternating color bands travel as a repeating chase pattern."),
+        new EffectTemplate("Twinkle / Sparkle", "Random blink", "Individual lamps blink or sparkle asynchronously across the string."),
+        new EffectTemplate("Wipe / Fill", "Grow / fill", "One color grows across the string, then the next selected color takes over."),
+        new EffectTemplate("Meteor / Comet", "Travel", "A repeating moving highlight or gap travels along the string like a comet."),
+        new EffectTemplate("Rainbow Flow", "Spectrum flow", "A multi-color spectrum flows continuously along the string."),
+        new EffectTemplate("Pulse Wave", "Brightness wave", "A moving color pattern rises and falls in brightness like a traveling pulse.")
     };
 
     // Anderson Home approved named palette, preserved exactly as its calibrated RGB values.
