@@ -26,9 +26,9 @@ import java.util.UUID;
 
 /**
  * Native Android implementation of the Anderson Home HTTP API contract.
- * The Anderson 3.1.58 web UI runs unchanged in a WebView and calls this bridge
- * instead of an ESP32 web server. Hardware writes are delegated to the proven
- * Jason Home Eufy E10 BLE transport.
+ * The Jason Home web UI runs in a WebView and calls this bridge instead of an
+ * ESP32 web server. Hardware writes are routed through Oracle/Eufy MQTT, with
+ * the direct Android Eufy cloud path retained only as the phone fallback.
  */
 final class AndersonApiBridge {
     interface Host {
@@ -346,7 +346,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.4.1 Oracle");
+        d.put("firmwareVersion","Craumer Home • 5.4.2 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
