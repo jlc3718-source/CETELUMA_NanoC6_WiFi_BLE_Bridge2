@@ -103,12 +103,13 @@ final class AndersonSchedule {
         if(index<0||index>=AndersonEventData.EVENTS.length||month<1||month>12)return false;
         AndersonEventData.Event e=AndersonEventData.EVENTS[index];
         if("Month".equals(e.rule)) return e.month==month;
-        LocalDate start=startDate(index,year);
-        if(start==null)return false;
-        LocalDate end=start.plusDays(Math.max(1,e.durationDays)-1L);
-        LocalDate first=LocalDate.of(year,month,1);
-        LocalDate last=first.with(TemporalAdjusters.lastDayOfMonth());
-        return !end.isBefore(first)&&!start.isAfter(last);
+        LocalDate first=LocalDate.of(year,month,1),last=first.with(TemporalAdjusters.lastDayOfMonth());
+        for(int y=year-1;y<=year;y++){
+            LocalDate start=startDate(index,y);if(start==null)continue;
+            LocalDate end=start.plusDays(Math.max(1,e.durationDays)-1L);
+            if(!end.isBefore(first)&&!start.isAfter(last))return true;
+        }
+        return false;
     }
 
     boolean includedByMode(int index){
@@ -356,11 +357,12 @@ final class AndersonSchedule {
     private boolean activeOn(int index,LocalDate day){
         AndersonEventData.Event e=AndersonEventData.EVENTS[index];
         if("Month".equals(e.rule))return day.getMonthValue()==e.month;
-        LocalDate s=startDate(index,day.getYear());
-        if(s==null&&day.getMonthValue()==1)s=startDate(index,day.getYear()-1);
-        if(s==null)return false;
-        LocalDate end=s.plusDays(Math.max(1,e.durationDays)-1L);
-        return !day.isBefore(s)&&!day.isAfter(end);
+        for(int y=day.getYear()-1;y<=day.getYear();y++){
+            LocalDate s=startDate(index,y);if(s==null)continue;
+            LocalDate end=s.plusDays(Math.max(1,e.durationDays)-1L);
+            if(!day.isBefore(s)&&!day.isAfter(end))return true;
+        }
+        return false;
     }
 
     private boolean windowActive(int index,LocalDate day,int lead,int trail){
