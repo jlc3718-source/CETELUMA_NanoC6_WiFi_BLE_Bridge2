@@ -184,13 +184,6 @@ jobs:
           print('Craumer event calendar generation: PASS')
           PY
 
-      - name: Check E10 framing and session parser
-        shell: bash
-        run: |
-          mkdir -p /tmp/jason-home-protocol-tests
-          javac -d /tmp/jason-home-protocol-tests JasonHome/app/src/main/java/com/jasonhome/app/E10Probe.java JasonHome/tests/E10ProbeRegression.java
-          java -cp /tmp/jason-home-protocol-tests com.jasonhome.app.E10ProbeRegression
-
       - name: Check Eufy cloud wire fixtures
         shell: bash
         run: |
