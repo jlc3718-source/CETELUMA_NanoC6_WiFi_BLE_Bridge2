@@ -1,0 +1,370 @@
+import http from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { EufyClient, type EufySession } from "./eufy/client.js";
+import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
+import type { Scene, ScheduleRow } from "./types.js";
+
+const PORT=Math.max(1,Number(process.env.PORT||"8080"));
+const EMAIL=process.env.EUFY_EMAIL||"";
+const PASSWORD=process.env.EUFY_PASSWORD||"";
+const TOKEN=process.env.JASON_HOME_API_TOKEN||"";
+const DB_PATH=process.env.JASON_HOME_DB||"/data/jason-home.sqlite";
+const LAT=Number(process.env.HOME_LAT||"42.0529");
+const LON=Number(process.env.HOME_LON||"-79.0576");
+const TZ=process.env.HOME_TZ||"America/New_York";
+const DEFAULT_INSTALL=(process.env.EUFY_INSTALL_ID||createHash("sha256").update("jason-home-server:"+EMAIL).digest("hex").slice(0,32)).toLowerCase();
+
+if(!EMAIL||!PASSWORD)throw new Error("EUFY_EMAIL and EUFY_PASSWORD are required");
+if(!TOKEN)throw new Error("JASON_HOME_API_TOKEN is required");
+if(!/^[0-9a-f]{32}$/.test(DEFAULT_INSTALL))throw new Error("EUFY_INSTALL_ID must be 32 hex characters when supplied");
+
+const DEVICE_NAMES=["Pool","House","Garage","Shed"] as const;
+const DEVICE_MODELS:Record<string,string>={Pool:"E120",House:"E120",Garage:"E22",Shed:"E22"};
+const DEFAULT_SCENE:Scene={power:true,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
+
+mkdirSync(dirname(DB_PATH),{recursive:true});
+const db=new DatabaseSync(DB_PATH);
+db.exec(`
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS devices (
+  name TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_ok INTEGER,
+  last_error TEXT
+);
+CREATE TABLE IF NOT EXISTS desired_state (
+  name TEXT PRIMARY KEY,
+  scene TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS schedules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  days TEXT NOT NULL DEFAULT '*',
+  start_kind TEXT NOT NULL DEFAULT 'clock',
+  start_value TEXT NOT NULL DEFAULT '18:00',
+  end_kind TEXT NOT NULL DEFAULT 'clock',
+  end_value TEXT NOT NULL DEFAULT '23:00',
+  target TEXT NOT NULL DEFAULT 'All',
+  effect TEXT NOT NULL DEFAULT 'Solid / Static',
+  colors TEXT NOT NULL DEFAULT '[16777215]',
+  brightness INTEGER NOT NULL DEFAULT 75,
+  speed INTEGER NOT NULL DEFAULT 3,
+  priority INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS command_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  target TEXT NOT NULL,
+  action TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  detail TEXT
+);
+`);
+for(const [name,model] of Object.entries(DEVICE_MODELS)){
+  db.prepare("INSERT OR IGNORE INTO devices(name,model,enabled) VALUES(?,?,1)").run(name,model);
+}
+
+function meta(key:string):string|null{
+  const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key) as any;
+  return row?.value??null;
+}
+function setMeta(key:string,value:string){
+  db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,value);
+}
+function delMeta(key:string){db.prepare("DELETE FROM meta WHERE key=?").run(key);}
+if(!meta("install_id"))setMeta("install_id",DEFAULT_INSTALL);
+
+function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
+function parseColor(v:any):number|null{
+  if(typeof v==="number"&&Number.isFinite(v))return v&0xffffff;
+  if(typeof v==="string"&&/^#?[0-9a-fA-F]{6}$/.test(v))return parseInt(v.replace("#",""),16);
+  return null;
+}
+function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
+  const colors=Array.isArray(input?.colors)?input.colors.map(parseColor).filter((x:any)=>x!=null).slice(0,8) as number[]:base.colors;
+  return {
+    power:input?.power==null?base.power:!!input.power,
+    brightness:clamp(Number(input?.brightness??base.brightness)||base.brightness,1,100),
+    effect:String(input?.effect||base.effect).slice(0,64),
+    colors:colors.length?colors:[...base.colors],
+    speed:clamp(Number(input?.speed??base.speed)||base.speed,1,5)
+  };
+}
+function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,brightness:scene.brightness,effect:scene.effect,colors:scene.colors,speed:scene.speed});}
+function offScene():Scene{return {power:false,brightness:DEFAULT_SCENE.brightness,effect:DEFAULT_SCENE.effect,colors:[...DEFAULT_SCENE.colors],speed:DEFAULT_SCENE.speed};}
+function scheduleRows():ScheduleRow[]{
+  return db.prepare("SELECT * FROM schedules WHERE enabled=1 ORDER BY priority DESC,name ASC").all() as unknown as ScheduleRow[];
+}
+function allSchedules(){return db.prepare("SELECT * FROM schedules ORDER BY name ASC").all() as any[];}
+function targetNames(target:string):string[]{
+  if(!target||target.toLowerCase()==="all")return [...DEVICE_NAMES];
+  if(!(target in DEVICE_MODELS))throw new Error("Unknown target "+target);
+  return [target];
+}
+function storedScene(name:string):Scene|null{
+  const row=db.prepare("SELECT scene FROM desired_state WHERE name=?").get(name) as any;
+  try{return row?.scene?JSON.parse(row.scene):null;}catch{return null;}
+}
+function json(res:http.ServerResponse,status:number,value:unknown){
+  const body=JSON.stringify(value);
+  res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body)});
+  res.end(body);
+}
+async function readJson(req:http.IncomingMessage){
+  const chunks:Buffer[]=[];let total=0;
+  for await(const chunk of req){
+    const b=Buffer.from(chunk);total+=b.length;
+    if(total>131072)throw new Error("Request body too large");
+    chunks.push(b);
+  }
+  if(!chunks.length)return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+function secureEqual(a:string,b:string){
+  const aa=Buffer.from(a),bb=Buffer.from(b);
+  return aa.length===bb.length&&timingSafeEqual(aa,bb);
+}
+function authorized(req:http.IncomingMessage){
+  const h=req.headers.authorization||"";
+  return h.startsWith("Bearer ")&&secureEqual(h.slice(7),TOKEN);
+}
+
+let eufy:EufyClient|null=null;
+let eufyReady=false;
+let eufyStatus="Not connected";
+let readyNames:string[]=[];
+let preparing:Promise<EufyClient>|null=null;
+let commandQueue:Promise<void>=Promise.resolve();
+
+async function serialized<T>(fn:()=>Promise<T>):Promise<T>{
+  const prior=commandQueue;
+  let release!:()=>void;
+  commandQueue=new Promise<void>(resolve=>{release=resolve;});
+  await prior.catch(()=>{});
+  try{return await fn();}finally{release();}
+}
+
+async function ensureEufy(force=false){
+  if(force){eufy=null;eufyReady=false;readyNames=[];preparing=null;}
+  if(eufy&&eufyReady&&readyNames.length===4)return eufy;
+  if(preparing)return preparing;
+  preparing=(async()=>{
+    const install=meta("install_id")||DEFAULT_INSTALL;
+    let session:EufySession|undefined;
+    const raw=meta("eufy_session");
+    if(raw){try{session=JSON.parse(raw);}catch{}}
+    let client=new EufyClient(install,session);
+    try{
+      if(!client.authed)await client.login(EMAIL,PASSWORD);
+      await client.prepare();
+    }catch(first){
+      if(session){
+        delMeta("eufy_session");
+        client=new EufyClient(install);
+        await client.login(EMAIL,PASSWORD);
+        await client.prepare();
+      }else throw first;
+    }
+    const names=client.readyNames();
+    for(const n of DEVICE_NAMES)if(!names.includes(n))throw new Error("Missing expected Eufy light: "+n);
+    eufy=client;eufyReady=true;readyNames=names;eufyStatus=`Ready ${names.length}/4`;
+    setMeta("eufy_session",JSON.stringify(client.exportSession()));
+    return client;
+  })().catch((e:any)=>{
+    eufyReady=false;readyNames=[];eufyStatus=e?.message||String(e);throw e;
+  }).finally(()=>{preparing=null;});
+  return preparing;
+}
+
+async function sendScene(name:string,scene:Scene){
+  return serialized(async()=>{
+    const c=await ensureEufy(false);
+    return scene.power
+      ? c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
+      : c.power(name,false);
+  });
+}
+
+async function statusPayload(refresh=false){
+  if(refresh){
+    try{await ensureEufy(false);}catch{}
+  }
+  const astro=astronomy(new Date(),LAT,LON,TZ);
+  const next=nextScheduleEvent(scheduleRows(),new Date(),LAT,LON,TZ);
+  let override:any=null;const raw=meta("override");
+  try{override=raw?JSON.parse(raw):null;}catch{}
+  const devices=(db.prepare("SELECT name,model,enabled,last_ok,last_error FROM devices ORDER BY CASE name WHEN 'Pool' THEN 1 WHEN 'House' THEN 2 WHEN 'Garage' THEN 3 ELSE 4 END").all() as any[])
+    .map(d=>({...d,ready:eufyReady&&readyNames.includes(d.name)}));
+  return {
+    ok:true,
+    controller:"Online",
+    architecture:"Oracle Linux + Node.js + SQLite",
+    eufy:{ready:eufyReady,status:eufyStatus,readyNames:[...readyNames],transport:"linux-mqtt"},
+    devices,
+    override,
+    astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:TZ},
+    nextEvent:next?{at:new Date(next.at).toISOString(),name:next.row.name,phase:next.phase,target:next.row.target}:null,
+    lastCommand:meta("last_command"),
+    desired:db.prepare("SELECT * FROM desired_state ORDER BY name").all()
+  };
+}
+
+async function manualControl(input:any){
+  const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
+  const detail:any[]=[];let ok=0;
+  for(const name of names){
+    try{
+      const r=await sendScene(name,scene);
+      ok++;detail.push({name,ok:true,report:r.report||null,instance:(r as any).instance||null});
+      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+      db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
+    }catch(e:any){
+      const msg=e?.message||String(e);detail.push({name,ok:false,error:msg});
+      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+    }
+  }
+  const next=nextScheduleEvent(scheduleRows(),new Date(),LAT,LON,TZ);
+  const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
+  setMeta("override",JSON.stringify(override));
+  const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail,transport:"linux-mqtt"};
+  setMeta("last_command",JSON.stringify(summary));
+  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(Date.now(),target,"manual",ok===names.length?1:0,JSON.stringify(detail));
+  if(ok===0)throw new Error(detail.map(x=>x.error).filter(Boolean).join("; ")||"No light command completed");
+  return {ok:true,updated:ok,total:names.length,detail,override};
+}
+
+async function applyScheduled(name:string,scene:Scene,reason:string){
+  const r=await sendScene(name,scene);
+  const now=Date.now();
+  db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(now,name);
+  db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),now);
+  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(now,name,"schedule",1,JSON.stringify({reason,report:r.report||null}));
+}
+
+let reconciling=false;
+async function reconcile(ignoreOverride=false,forceSend=false){
+  if(reconciling)return {ok:true,busy:true};
+  reconciling=true;
+  try{
+    const now=Date.now(),rows=scheduleRows();
+    let override:any=null;const raw=meta("override");
+    if(raw){try{override=JSON.parse(raw);}catch{delMeta("override");}}
+    if(override?.active&&override.expiresAt&&Number(override.expiresAt)<=now){delMeta("override");override=null;}
+    const skipped=new Set<string>();
+    if(!ignoreOverride&&override?.active){
+      for(const name of targetNames(String(override.target||"All")))skipped.add(name);
+    }
+    const changes:{name:string;scene:Scene;reason:string}[]=[];
+    if(rows.length){
+      const resolved=resolveScheduleState(rows,new Date(now),LAT,LON,TZ,[...DEVICE_NAMES]);
+      for(const name of DEVICE_NAMES){
+        if(skipped.has(name))continue;
+        const active=resolved[name],scene=active?active.scene:offScene(),stored=storedScene(name);
+        if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene)){
+          changes.push({name,scene,reason:active?`${active.row.name} • active ${new Date(active.start).toISOString()}–${new Date(active.end).toISOString()}`:"No active schedule"});
+        }
+      }
+    }
+    const errors:string[]=[];
+    for(const c of changes){
+      try{await applyScheduled(c.name,c.scene,c.reason);}
+      catch(e:any){
+        const msg=e?.message||String(e);errors.push(`${c.name}: ${msg}`);
+        db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,c.name);
+      }
+    }
+    setMeta("last_reconcile",new Date().toISOString());
+    setMeta("last_command",JSON.stringify({at:new Date().toISOString(),action:"reconcile",sent:changes.length,errors,transport:"linux-mqtt"}));
+    if(changes.length&&errors.length===changes.length)throw new Error(errors.join("; "));
+    return {ok:true,sent:changes.length,errors};
+  }finally{reconciling=false;}
+}
+
+function saveSchedule(input:any){
+  const id=String(input?.id||crypto.randomUUID());
+  const name=String(input?.name||"Schedule").slice(0,80);
+  const enabled=input?.enabled===false?0:1;
+  const days=String(input?.days||"*").slice(0,64);
+  const startKind=["clock","dawn","dusk"].includes(input?.startKind)?input.startKind:"clock";
+  const endKind=["clock","dawn","dusk"].includes(input?.endKind)?input.endKind:"clock";
+  const startValue=String(input?.startValue||"18:00");
+  const endValue=String(input?.endValue||"23:00");
+  const target=String(input?.target||"All");targetNames(target);
+  const scene=safeScene(input);
+  const priority=clamp(Number(input?.priority||0),-100,100);
+  db.prepare(`INSERT INTO schedules(id,name,enabled,days,start_kind,start_value,end_kind,end_value,target,effect,colors,brightness,speed,priority)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,days=excluded.days,start_kind=excluded.start_kind,start_value=excluded.start_value,end_kind=excluded.end_kind,end_value=excluded.end_value,target=excluded.target,effect=excluded.effect,colors=excluded.colors,brightness=excluded.brightness,speed=excluded.speed,priority=excluded.priority`)
+    .run(id,name,enabled,days,startKind,startValue,endKind,endValue,target,scene.effect,JSON.stringify(scene.colors),scene.brightness,scene.speed,priority);
+  void reconcile(false,true).catch(e=>console.error("[schedule reconcile]",e?.message||e));
+  return {ok:true,id};
+}
+
+const server=http.createServer(async(req,res)=>{
+  try{
+    const url=new URL(req.url||"/","http://localhost"),method=(req.method||"GET").toUpperCase(),path=url.pathname;
+    if(method==="GET"&&path==="/api/health"){
+      return json(res,200,{ok:true,service:"jason-home",runtime:"oracle-linux",architecture:"Node.js + SQLite + Eufy MQTT",time:new Date().toISOString()});
+    }
+    if(!authorized(req))return json(res,401,{ok:false,error:"Unauthorized"});
+
+    if(method==="GET"&&path==="/api/status")return json(res,200,await statusPayload(url.searchParams.get("refresh")==="1"));
+    if(method==="GET"&&path==="/api/devices")return json(res,200,{ok:true,devices:(await statusPayload(false)).devices});
+    if(method==="GET"&&path==="/api/schedules")return json(res,200,{ok:true,schedules:allSchedules()});
+    if(method==="POST"&&path==="/api/schedules")return json(res,200,saveSchedule(await readJson(req)));
+    if(method==="DELETE"&&path==="/api/schedules"){
+      const id=url.searchParams.get("id")||"";
+      if(!id)throw new Error("Schedule id required");
+      db.prepare("DELETE FROM schedules WHERE id=?").run(id);
+      void reconcile(false,true).catch(e=>console.error("[schedule delete reconcile]",e?.message||e));
+      return json(res,200,{ok:true});
+    }
+    if(method==="GET"&&path==="/api/events")return json(res,200,{ok:true,events:allSchedules().filter((x:any)=>x.enabled)});
+    if(method==="POST"&&path==="/api/control")return json(res,200,await manualControl(await readJson(req)));
+    if(method==="POST"&&(path==="/api/resume"||path==="/api/resume-schedule")){
+      delMeta("override");return json(res,200,{ok:true,resumed:true,reconcile:await reconcile(true,true)});
+    }
+    if(method==="POST"&&path==="/api/reconcile")return json(res,200,await reconcile(false,true));
+    if(method==="POST"&&path==="/api/reconnect"){
+      const c=await ensureEufy(true);return json(res,200,{ok:true,eufy:eufyStatus,readyNames:c.readyNames()});
+    }
+    if(method==="POST"&&path==="/api/provision-device"){
+      const input:any=await readJson(req),installId=String(input?.installId||"").trim().toLowerCase();
+      if(!/^[0-9a-f]{32}$/.test(installId))throw new Error("Android install identity must be 32 hexadecimal characters");
+      const changed=meta("install_id")!==installId;
+      if(changed){setMeta("install_id",installId);delMeta("eufy_session");eufy=null;eufyReady=false;readyNames=[];}
+      const c=await ensureEufy(changed);
+      return json(res,200,{ok:true,changed,eufy:eufyStatus,readyNames:c.readyNames(),transport:"linux-mqtt"});
+    }
+    if(method==="POST"&&path==="/api/mqtt-probe"){
+      const input:any=await readJson(req),target=String(input?.target||"Pool");
+      if(!DEVICE_NAMES.includes(target as any))throw new Error("Probe target must be Pool, House, Garage, or Shed");
+      const result=await serialized(async()=>{const c=await ensureEufy(false);return c.status(target);});
+      return json(res,200,{ok:true,target,published:result.published,report:result.report||null,instance:(result as any).instance||null});
+    }
+    return json(res,404,{ok:false,error:"Not found",path});
+  }catch(e:any){
+    const msg=e?.message||String(e);
+    console.error("[api]",req.method,req.url,msg);
+    if(/session|auth|login|certificate/i.test(msg)){eufy=null;eufyReady=false;readyNames=[];}
+    return json(res,500,{ok:false,error:msg});
+  }
+});
+
+server.keepAliveTimeout=65000;
+server.listen(PORT,"127.0.0.1",()=>{
+  console.log(`Jason Home Oracle server listening on 127.0.0.1:${PORT}`);
+  console.log(`Scheduler timezone: ${TZ}; coordinates: ${LAT}, ${LON}`);
+  setTimeout(()=>void reconcile(false,false).catch(e=>console.error("[startup reconcile]",e?.message||e)),5000);
+  setInterval(()=>void reconcile(false,false).catch(e=>console.error("[scheduler]",e?.message||e)),30000);
+});
