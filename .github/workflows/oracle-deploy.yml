@@ -1,0 +1,78 @@
+name: Deploy Jason Home Oracle
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeServer/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jason-home-oracle-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 20
+    steps:
+      - name: Preflight persistent runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d /home/ubuntu/repo/.git
+          test -f /home/ubuntu/repo/JasonHomeServer/.env
+          test -d /home/ubuntu/repo/JasonHomeServer/data
+          sudo docker --version
+          sudo docker compose version
+
+      - name: Update Oracle runtime checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo
+          git fetch origin jason-home-cloudflare-rebuild
+          git checkout jason-home-cloudflare-rebuild
+          git reset --hard origin/jason-home-cloudflare-rebuild
+
+      - name: Build and deploy server
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose up -d --build --remove-orphans
+          sudo docker compose ps
+
+      - name: Verify local health and Eufy readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/jh-health.json; then break; fi
+            sleep 2
+          done
+          python3 -m json.tool </tmp/jh-health.json
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          test -n "$TOKEN"
+          curl -fsS -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8080/api/status?refresh=1" >/tmp/jh-status.json
+          python3 - <<'PY'
+import json
+d=json.load(open("/tmp/jh-status.json"))
+e=d.get("eufy",{})
+assert e.get("ready") is True, d
+assert set(e.get("readyNames",[])) == {"Pool","House","Garage","Shed"}, d
+print("Oracle deploy verification: PASS — Eufy Ready 4/4")
+PY
+
+      - name: Diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          cd /home/ubuntu/repo/JasonHomeServer || exit 0
+          sudo docker compose ps || true
+          sudo docker compose logs --tail=150 || true
