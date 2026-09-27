@@ -21,47 +21,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate 5.0.22 production E120 engine
+      - name: Validate 5.0.23 unified effect catalog
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          commands = Path('JasonHome/app/src/main/java/com/jasonhome/app/EufyLightCommands.java').read_text()
-          controller = Path('JasonHome/app/src/main/java/com/jasonhome/app/BleLightController.java').read_text()
-          bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
-
-          expected = {
-              'Jump': 30009,
-              'Breath': 30011,
-              'Strobe': 30006,
-              'Chase': 30010,
-              'Gradient': 30007,
-              'Twinkle': 30006,
-              'Wipe': 30007,
-              'Meteor': 30012,
-              'Rainbow': 30013,
-              'Pulse': 30013,
-              'Solid / Static': 30014,
-          }
-          for name, mode in expected.items():
-              if str(mode) not in commands:
-                  raise SystemExit(f'Missing E120 mode {mode} for {name}')
-          if 'return reverse ? 30008 : 30010' not in commands:
-              raise SystemExit('Missing reverse-chase E120 mode')
-          if 'groupedCatalogPresetE120(modeId,10034,speed,palette,lampCount,2)' not in commands:
-              raise SystemExit('Production E120 grouped two-color path missing')
-          if 'catalogPresetE120(modeId,10034,speed,palette,lampCount,false)' not in commands:
-              raise SystemExit('Production E120 single-color path missing')
-          if 'sendE120Static(job,g,c,p)' not in controller:
-              raise SystemExit('Static color+hold sequence missing')
-          if 'EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse' not in controller:
-              raise SystemExit('Normal EFFECT path is not using native E120 engine')
-          if 'sendE120SceneEffect(job,g,c,p)' not in controller:
-              raise SystemExit('Scene path is not using native E120 engine')
-          if 'Craumer Home • Jason Home 5.0.22' not in bridge:
-              raise SystemExit('Bridge version is not 5.0.22')
-          print('5.0.22 production E120 source validation: PASS')
+          catalog=Path('JasonHome/app/src/main/java/com/jasonhome/app/LightPresetCatalog.java').read_text()
+          js=Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text()
+          html=Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
+          bridge=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
+          names=[
+              'Solid / Static','Jump','Breath','Strobe','Chase','Gradient Sweep',
+              'Candy Cane','Twinkle / Sparkle','Wipe / Fill','Meteor / Comet',
+              'Rainbow Flow','Pulse Wave'
+          ]
+          for name in names:
+              if name not in catalog or name not in js:
+                  raise SystemExit('Missing unified effect '+name)
+          if 'window.craumerPreviewColors' not in html:
+              raise SystemExit('Selected colors are not exposed to previews')
+          if 'grid-template-columns:repeat(7,1fr)' not in js:
+              raise SystemExit('Seven-light effect preview strip missing')
+          if 'Craumer Home • Jason Home 5.0.23' not in bridge:
+              raise SystemExit('Bridge version is not 5.0.23')
+          print('5.0.23 unified effect catalog source validation: PASS')
           PY
+          node --check JasonHome/app/src/main/assets/v3_mockup.js
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -129,14 +114,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.22-UNSIGNED.apk
-          sha256sum Jason-Home-5.0.22-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.23-UNSIGNED.apk
+          sha256sum Jason-Home-5.0.23-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.0.22-UNSIGNED-do-not-install
-          path: Jason-Home-5.0.22-UNSIGNED.apk
+          name: Jason-Home-5.0.23-UNSIGNED-do-not-install
+          path: Jason-Home-5.0.23-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
