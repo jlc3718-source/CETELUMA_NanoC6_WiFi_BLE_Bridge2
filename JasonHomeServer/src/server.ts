@@ -578,9 +578,10 @@ const server=http.createServer(async(req,res)=>{
       return json(res,202,{ok:true,queued:true,refresh:queueFactoryRefresh()});
     }
     if(method==="POST"&&path==="/api/eufy/factory-test"){
-      const input:any=await readJson(req),lightId=Number(input?.lightId);
+      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All");
       if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
-      return json(res,202,queueFactoryTest(lightId));
+      targetNames(target);
+      return json(res,202,queueFactoryTest(lightId,target));
     }
     if(method==="GET"&&path==="/api/eufy/factory-test"){
       const jobId=url.searchParams.get("job")||"";
