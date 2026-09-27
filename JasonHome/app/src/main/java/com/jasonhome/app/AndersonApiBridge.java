@@ -48,16 +48,18 @@ final class AndersonApiBridge {
     private final Host host;
     private final DeviceStore deviceStore;
     private final EufyCloudController cloud;
+    private final CloudflareApiClient cloudApi;
     private final AndersonSchedule schedule;
     private final SharedPreferences prefs;
     private volatile String cloudStatus = "Wi-Fi cloud starting";
 
     AndersonApiBridge(Context context, Host host, DeviceStore deviceStore,
-                      EufyCloudController cloud, AndersonSchedule schedule) {
+                      EufyCloudController cloud, CloudflareApiClient cloudApi, AndersonSchedule schedule) {
         this.context = context.getApplicationContext();
         this.host = host;
         this.deviceStore = deviceStore;
         this.cloud = cloud;
+        this.cloudApi = cloudApi;
         this.schedule = schedule;
         this.prefs = this.context.getSharedPreferences("anderson_android", Context.MODE_PRIVATE);
         ensureDefaults();
@@ -65,6 +67,57 @@ final class AndersonApiBridge {
 
     void updateCloudStatus(String message) {
         cloudStatus = message == null ? "" : message;
+    }
+
+    boolean usesDirectMode() {
+        return !cloudApi.isCloudMode();
+    }
+
+    private String forwardCloud(String method, String path, String body) throws Exception {
+        CloudflareApiClient.Result r=cloudApi.request(method,path,body==null?"":body);
+        return response(r.status,r.body);
+    }
+
+    private String cloudConfig(JSONObject in, boolean write) throws Exception {
+        CloudflareConfigStore store=cloudApi.store();
+        if(write){
+            if(in.has("token")){
+                String token=in.optString("token","").trim();
+                if(token.isEmpty())store.clearToken(); else store.saveToken(token);
+            }
+            if(in.has("mode")){
+                boolean cloudMode="cloud".equalsIgnoreCase(in.optString("mode","direct"));
+                if(cloudMode&&!store.hasToken())return error(400,"Enter the Jason Home Cloud API token before enabling Cloudflare mode");
+                store.setCloudMode(cloudMode);
+                AndersonScheduleService.update(context);
+                if(!cloudMode)cloud.start();
+            }
+        }
+        JSONObject out=cloudApi.configJson();
+        out.put("directReady",cloud.isReady()).put("directStatus",cloud.status());
+        return ok(out);
+    }
+
+    private JSONObject directStatusJson() throws Exception {
+        JSONObject o=new JSONObject();
+        o.put("ok",true).put("controller","Direct Android").put("architecture","Android → Eufy direct fallback");
+        o.put("eufy",new JSONObject().put("ready",cloud.isReady()).put("status",cloud.status()).put("readyNames",directReadyNames()));
+        o.put("devices",directDevices());
+        LocalDate today=LocalDate.now();
+        o.put("astronomy",new JSONObject().put("dawn",displayMinutes(schedule.civilDawnMinutes(today))).put("dusk",displayMinutes(schedule.civilDuskMinutes(today))).put("timeZone","America/New_York"));
+        o.put("nextEvent",new JSONObject().put("label",schedule.nextEventLabel()));
+        o.put("override",new JSONObject().put("active",prefs.getBoolean("manual_override",false)));
+        return o;
+    }
+
+    private JSONArray directReadyNames() {
+        JSONArray a=new JSONArray();for(String name:NAMES)if(cloud.isDeviceReady(name))a.put(name);return a;
+    }
+
+    private JSONArray directDevices() throws Exception {
+        JSONArray a=new JSONArray();
+        for(int i=0;i<NAMES.length;i++)a.put(new JSONObject().put("name",NAMES[i]).put("model",MODELS[i]).put("enabled",true).put("ready",cloud.isDeviceReady(NAMES[i])));
+        return a;
     }
 
     @JavascriptInterface
@@ -75,6 +128,30 @@ final class AndersonApiBridge {
             Uri uri = Uri.parse(raw.startsWith("http") ? raw : "http://local" + raw);
             String path = uri.getPath() == null ? "/" : uri.getPath();
             JSONObject input = parseBody(body);
+            String cloudPath=path+(uri.getEncodedQuery()==null?"":"?"+uri.getEncodedQuery());
+
+            if ("/api/cloud/config".equals(path) && "GET".equals(m)) return cloudConfig(input,false);
+            if ("/api/cloud/config".equals(path) && "POST".equals(m)) return cloudConfig(input,true);
+            if ("/api/cloud/health".equals(path) && "GET".equals(m)) {
+                CloudflareApiClient.Result r=cloudApi.health(); return response(r.status,r.body);
+            }
+            if ("/api/cloud/test".equals(path) && "GET".equals(m)) {
+                if(!cloudApi.configured())return error(400,"Cloud API token is not configured");
+                return forwardCloud("GET","/api/status?refresh=1","");
+            }
+
+            if (cloudApi.isCloudMode()) {
+                if ("/api/status".equals(path) || "/api/devices".equals(path) || "/api/schedules".equals(path) || "/api/events".equals(path)
+                    || "/api/reconcile".equals(path) || "/api/reconnect".equals(path)) {
+                    return forwardCloud(m,cloudPath,body);
+                }
+                if ("/api/control".equals(path) && "POST".equals(m)) return forwardCloud(m,"/api/control",body);
+                if ("/api/resume".equals(path) && "POST".equals(m)) return forwardCloud("POST","/api/resume-schedule",body);
+            } else {
+                if ("/api/status".equals(path) && "GET".equals(m)) return ok(directStatusJson());
+                if ("/api/devices".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("ok",true).put("devices",directDevices()));
+                if ("/api/schedules".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("ok",true).put("schedules",new JSONArray()));
+            }
 
             if ("/api/auth/status".equals(path)) return ok(authStatus());
             if ("/api/auth/unlock".equals(path) && "POST".equals(m)) return authUnlock(input);
