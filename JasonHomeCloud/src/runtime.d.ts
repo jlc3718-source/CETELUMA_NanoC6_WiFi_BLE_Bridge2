@@ -12,5 +12,8 @@ declare module "node:tls" {
 declare module "node:dns" {
   export const promises:any;
 }
+declare module "node:net" {
+  export function connect(options:any, callback?:()=>void): any;
+}
 declare const Buffer: any;
 type Buffer = any;
