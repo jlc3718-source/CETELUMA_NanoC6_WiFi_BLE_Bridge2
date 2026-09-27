@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeCalendarConfig, resolveCalendar, nextCalendarEvent } from "../dist/calendar.js";
+import { normalizeCalendarConfig, resolveCalendar, nextCalendarEvent, nextCalendarBoundary, nextCalendarTransition } from "../dist/calendar.js";
 import { astronomy, localParts } from "../dist/scheduler.js";
 
 const base={
@@ -40,6 +40,24 @@ assert.equal(r?.scene.brightness,88);
 
 const next=nextCalendarEvent(normalizeCalendarConfig(base),new Date("2026-12-01T15:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(next?.name,"Christmas Day");
+
+const christmasMorning=new Date("2026-12-25T15:00:00Z");
+const christmasTransition=nextCalendarTransition(normalizeCalendarConfig(base),christmasMorning,42.1507,-78.9452,"America/New_York");
+assert.equal(christmasTransition?.name,"Christmas Day","Christmas morning transition should be tonight, not next year");
+assert.equal(new Date(christmasTransition.at).toISOString(),"2026-12-25T22:00:00.000Z");
+const christmasBoundary=nextCalendarBoundary(normalizeCalendarConfig(base),christmasMorning,42.1507,-78.9452,"America/New_York");
+assert.equal(new Date(christmasBoundary.at).toISOString(),"2026-12-25T22:00:00.000Z");
+
+const monthlyOnly=normalizeCalendarConfig({...base,events:[base.events[1]]});
+const monthlyTransition=nextCalendarTransition(monthlyOnly,new Date("2026-09-27T15:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(monthlyTransition?.name,"Hispanic Heritage Month");
+
+const customOnly=normalizeCalendarConfig({...base,events:[],customSchedules:[{
+  id:"today-custom",name:"Today Custom",enabled:true,annual:true,year:2026,month:9,day:27,
+  effect:"Breath",speed:3,brightness:80,colors:[0x123456]
+}]});
+const customTransition=nextCalendarTransition(customOnly,new Date("2026-09-27T15:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(customTransition?.name,"Today Custom");
 
 const zeros=normalizeCalendarConfig({settings:{
   enabled:true,mode:2,lead:0,trail:0,on:0,off:0,startAtDusk:false,
