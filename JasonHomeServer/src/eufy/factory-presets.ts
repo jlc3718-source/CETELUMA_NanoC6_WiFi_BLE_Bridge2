@@ -69,7 +69,7 @@ export function normalizeFactoryEntry(entry:Record<string,unknown>):EufyFactoryP
 }
 
 export function dedupeFactoryPresetsByName(presets:EufyFactoryPreset[]):EufyFactoryPreset[]{
-  const norm=(s:string)=>s.trim().toLowerCase().replace(/\\s+/g," ");
+  const norm=(s:string)=>s.trim().toLowerCase().replace(/\s+/g," ");
   const score=(p:EufyFactoryPreset)=>(p.buildableE22?8:0)+(p.buildableE120Experimental?8:0)+(p.layers.length?4:0)+(p.colors?2:0)+(typeof p.brightness==="number"?1:0);
   const chosen=new Map<string,EufyFactoryPreset>();
   for(const p of presets){
