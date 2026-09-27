@@ -81,6 +81,18 @@ final class AndersonApiBridge {
         return response(r.status,r.body);
     }
 
+    private void provisionCloudIdentity() throws Exception {
+        if(!cloudApi.configured())throw new IOException("Cloud API token is not configured");
+        JSONObject payload=new JSONObject().put("installId",cloud.installId());
+        CloudflareApiClient.Result r=cloudApi.request("POST","/api/provision-device",payload.toString());
+        if(r.status<200||r.status>=300){
+            String msg="Cloudflare identity provisioning HTTP "+r.status;
+            try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
+            throw new IOException(msg);
+        }
+        invalidateCloudSnapshot();
+    }
+
     private String cloudConfig(JSONObject in, boolean write) throws Exception {
         CloudflareConfigStore store=cloudApi.store();
         if(write){
@@ -96,6 +108,7 @@ final class AndersonApiBridge {
                 if(!cloudMode)cloud.start();
             }
         }
+        if(write&&store.hasToken())provisionCloudIdentity();
         JSONObject out=cloudApi.configJson();
         out.put("directReady",cloud.isReady()).put("directStatus",cloud.status());
         return ok(out);
@@ -140,6 +153,7 @@ final class AndersonApiBridge {
             }
             if ("/api/cloud/test".equals(path) && "GET".equals(m)) {
                 if(!cloudApi.configured())return error(400,"Cloud API token is not configured");
+                provisionCloudIdentity();
                 return forwardCloud("GET","/api/status?refresh=1","");
             }
 
@@ -234,6 +248,7 @@ final class AndersonApiBridge {
     }
 
     private String cloudControlCompat(JSONObject in) throws Exception {
+        provisionCloudIdentity();
         SharedPreferences.Editor e=prefs.edit().putBoolean("manual_override",true);
         boolean hadPower=in.has("power"),hadBrightness=in.has("brightness"),hadEffect=in.has("effect"),hadColors=in.has("colors"),hadSpeed=in.has("speed");
         if(hadPower)e.putBoolean("power",in.optBoolean("power",true));
@@ -273,6 +288,7 @@ final class AndersonApiBridge {
     }
 
     private String cloudResumeCompat() throws Exception {
+        provisionCloudIdentity();
         prefs.edit().putBoolean("manual_override",false).apply();
         CloudflareApiClient.Result r=cloudApi.request("POST","/api/resume-schedule","{}");
         if(r.status<200||r.status>=300){
