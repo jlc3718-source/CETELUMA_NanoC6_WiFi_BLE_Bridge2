@@ -5,7 +5,7 @@ on:
     branches:
       - jason-home-3.1-build
       - jason-home-anderson-eufy
-      - jason-home-wifi-5.2.1-build
+      - jason-home-wifi-5.2.0-build
     paths:
       - 'JasonHome/**'
       - '.github/workflows/build-jason-home.yml'
@@ -77,11 +77,15 @@ jobs:
               raise SystemExit('Android WebView API bridge entry point missing')
           if 'Craumer Home • 5.2.1 Wi-Fi' not in bridge:
               raise SystemExit('Bridge version is not 5.2.1 Wi-Fi')
+          if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
+              raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
+          if 'cloud.setScene(0, scene.effect' not in schedule_service:
+              raise SystemExit('Schedule service is not sending full Wi-Fi scenes')
           if 'new BleLightController' in main or 'BleLightController' in schedule_service:
               raise SystemExit('Bluetooth transport is still active in app startup or scheduler')
           if 'android.permission.BLUETOOTH' in manifest or 'android.hardware.bluetooth_le' in manifest:
               raise SystemExit('Bluetooth manifest permissions/features still enabled')
-          for marker in ['class EufyCloudController','CloudSessionStore','setPower(int target,boolean on)']:
+          for marker in ['class EufyCloudController','CloudSessionStore','setPower(int target,boolean on)','setBrightness(int target,int percent)','setEffect(int target,String effect','setScene(int target,String effect']:
               if marker not in cloud + secure_store:
                   raise SystemExit('Cloud controller/persistence missing '+marker)
           for marker in ['T8L006102353014B','T8L00610243503A2','T8L028102427474A','T8L0291024470193','get_user_mqtt_info']:
