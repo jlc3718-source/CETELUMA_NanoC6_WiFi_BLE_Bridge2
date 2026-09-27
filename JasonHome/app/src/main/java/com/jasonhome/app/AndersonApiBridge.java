@@ -264,10 +264,21 @@ final class AndersonApiBridge {
         if(hadColors)e.putString("colors",normalizeColors(in.optJSONArray("colors")).toString());
         e.apply();
 
-        if(hadPower){
-            cloud.setPower(prefs.getInt("ble_target",0),prefs.getBoolean("power",false));
-        } else if(hadBrightness||hadEffect||hadColors||hadSpeed){
-            host.onBridgeStatus("Wi-Fi power control is active. Cloud color/effect/brightness commands are temporarily held until those DPs are verified.");
+        boolean power=prefs.getBoolean("power",false);
+        int brightness=prefs.getInt("brightness",75);
+        int speed=prefs.getInt("speed",3);
+        String effect=prefs.getString("effect","Jump");
+        int[] colors=rgbArray(new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
+        int target=prefs.getInt("ble_target",0);
+
+        if(hadPower && !power){
+            cloud.setPower(target,false);
+        }else if(hadColors || hadEffect || (hadPower && power)){
+            cloud.setScene(target,effect,colors,speed,false,brightness);
+        }else if(hadBrightness){
+            cloud.setBrightness(target,brightness);
+        }else if(hadSpeed){
+            cloud.setEffect(target,effect,colors,speed,false);
         }
         return ok(stateJson());
     }
@@ -276,7 +287,8 @@ final class AndersonApiBridge {
         prefs.edit().putBoolean("manual_override",false).apply();
         AndersonScheduleService.update(context);
         AndersonSchedule.Scene scene=schedule.resolveNow();
-        cloud.setPower(0,scene!=null);
+        if(scene==null) cloud.setPower(0,false);
+        else cloud.setScene(0,scene.effect,scene.colors,scene.speed,false,scene.brightness);
         return ok(stateJson());
     }
 
