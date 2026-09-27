@@ -26,6 +26,7 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
     private EufyCloudController cloud;
     private android.content.SharedPreferences appPrefs;
     private String lastSceneKey = "";
+    private String pendingSceneKey = "";
     private String lastStatus = "Schedule ready";
 
     private final Runnable tick = new Runnable() {
@@ -99,6 +100,7 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
         }
         if (!cloud.isReady()) {
             lastSceneKey = "";
+            pendingSceneKey = "";
             lastStatus = cloud.status();
             cloud.start();
             updateNotification();
@@ -110,9 +112,9 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
         String key;
         if (scene == null) key = "OFF";
         else key = scene.eventIndex + "|" + scene.effect + "|" + Arrays.toString(scene.colors) + "|" + scene.speed + "|" + scene.brightness + "|" + scene.schedule2;
-        if (key.equals(lastSceneKey)) return;
+        if (key.equals(lastSceneKey) || key.equals(pendingSceneKey)) return;
 
-        lastSceneKey = key;
+        pendingSceneKey = key;
         if (scene == null) {
             lastStatus = "Scheduled OFF • Wi-Fi";
             cloud.setPower(0, false);
@@ -130,8 +132,18 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
     }
 
     @Override
+    public void onCloudCommandResult(boolean complete,String message) {
+        if(complete&&!pendingSceneKey.isEmpty())lastSceneKey=pendingSceneKey;
+        if(!complete)lastSceneKey="";
+        pendingSceneKey="";
+        if(message!=null&&!message.isEmpty())lastStatus=message;
+        updateNotification();
+    }
+
+    @Override
     public void onCloudLoginRequired(String reason) {
         lastSceneKey = "";
+        pendingSceneKey = "";
         lastStatus = reason == null ? "Open Jason Home once to sign in to Eufy" : reason;
         updateNotification();
     }
