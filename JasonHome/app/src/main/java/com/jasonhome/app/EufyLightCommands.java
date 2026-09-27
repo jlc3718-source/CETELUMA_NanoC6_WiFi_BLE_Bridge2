@@ -212,6 +212,42 @@ final class EufyLightCommands {
         return out.toByteArray();
     }
 
+    static byte[] groupedCatalogPresetE120Multi(int localId, int catalogId, int rawA5, int[] colors, int lampCount) {
+        int lamps=clamp(lampCount,2,120);
+        int[] source=colors==null||colors.length==0?new int[]{0xFFFFFF}:colors;
+        int count=Math.max(1,Math.min(8,source.length));
+
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        write(out,tlv(0xA3,le16(localId)));
+        write(out,tlv(0xA4,le16(0)));
+        write(out,tlv(0xA5,new byte[]{(byte)clamp(rawA5,1,5)}));
+
+        ByteArrayOutputStream palette=new ByteArrayOutputStream();
+        palette.write(count);
+        for(int i=0;i<count;i++)write(palette,nativeColor("E120",source[i]));
+        write(out,tlv(0xA6,palette.toByteArray()));
+
+        ByteArrayOutputStream groups=new ByteArrayOutputStream();
+        for(int g=0;g<count;g++){
+            int n=0;
+            for(int i=g;i<lamps;i+=count)n++;
+            groups.write(n);
+            for(int i=g;i<lamps;i+=count)groups.write(i);
+        }
+        write(out,tlv(0xA7,groups.toByteArray()));
+
+        write(out,tlv(0xA8,new byte[]{100}));
+        write(out,tlv(0xA9,new byte[]{0,0,0,0,0}));
+        write(out,tlv(0xAA,new byte[]{0}));
+        write(out,tlv(0xAB,new byte[]{0,0}));
+        write(out,tlv(0xAC,le32(catalogId)));
+        write(out,tlv(0xAD,new byte[]{0}));
+        write(out,tlv(0xAE,new byte[]{0}));
+        write(out,tlv(0xAF,new byte[]{0}));
+        write(out,tlv(0xB0,new byte[]{0}));
+        return out.toByteArray();
+    }
+
     static byte[] localEffectE120(int localId, int[] colors, int speed1to5, int lampCount) {
         int lamps = clamp(lampCount, 1, 120);
         int[] paletteColors = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors;
@@ -321,15 +357,12 @@ final class EufyLightCommands {
 
     static byte[] effectE120(String effectName, int[] colors, int speed1to5, boolean reverse, int lampCount) {
         int[] source = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
-        // Two-color grouped behavior is physically verified on T8L00. Until a
-        // three-plus group layout is captured, keep production E120 effects on
-        // the proven one/two-color path instead of sending an unverified group map.
-        int[] palette = source.length > 2 ? new int[]{source[0],source[1]} : source;
+        int[] palette = source.length > 8 ? java.util.Arrays.copyOf(source,8) : source;
         int modeId = e120ModeId(effectName, reverse);
         int speed = clamp(speed1to5,1,5);
 
         if (palette.length > 1) {
-            return groupedCatalogPresetE120(modeId,10034,speed,palette,lampCount,2);
+            return groupedCatalogPresetE120Multi(modeId,10034,speed,palette,lampCount);
         }
         return catalogPresetE120(modeId,10034,speed,palette,lampCount,false);
     }
