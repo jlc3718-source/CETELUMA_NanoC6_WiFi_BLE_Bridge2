@@ -145,8 +145,8 @@ final class AndersonApiBridge {
                     || "/api/reconcile".equals(path) || "/api/reconnect".equals(path)) {
                     return forwardCloud(m,cloudPath,body);
                 }
-                if ("/api/control".equals(path) && "POST".equals(m)) return forwardCloud(m,"/api/control",body);
-                if ("/api/resume".equals(path) && "POST".equals(m)) return forwardCloud("POST","/api/resume-schedule",body);
+                if ("/api/control".equals(path) && "POST".equals(m)) return cloudControlCompat(input);
+                if ("/api/resume".equals(path) && "POST".equals(m)) return cloudResumeCompat();
             } else {
                 if ("/api/status".equals(path) && "GET".equals(m)) return ok(directStatusJson());
                 if ("/api/devices".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("ok",true).put("devices",directDevices()));
@@ -211,6 +211,74 @@ final class AndersonApiBridge {
         } catch (Throwable t) {
             return error(500, t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage());
         }
+    }
+
+    private synchronized JSONObject cloudStatusSnapshot(boolean refresh) throws Exception {
+        long now=System.currentTimeMillis();
+        if(!refresh&&cloudSnapshotCache!=null&&now-cloudSnapshotAt<4000L)return new JSONObject(cloudSnapshotCache.toString());
+        CloudflareApiClient.Result r=cloudApi.request("GET",refresh?"/api/status?refresh=1":"/api/status","");
+        if(r.status<200||r.status>=300)throw new IOException("Cloudflare status HTTP "+r.status);
+        JSONObject o=new JSONObject(r.body);
+        if(!o.optBoolean("ok",false))throw new IOException(o.optString("error","Cloudflare status failed"));
+        cloudSnapshotCache=o;cloudSnapshotAt=now;
+        return new JSONObject(o.toString());
+    }
+
+    private void invalidateCloudSnapshot(){synchronized(this){cloudSnapshotCache=null;cloudSnapshotAt=0L;}}
+
+    private String targetName(int target){
+        return target<=0?"All":NAMES[Math.max(0,Math.min(NAMES.length-1,target-1))];
+    }
+
+    private String cloudControlCompat(JSONObject in) throws Exception {
+        SharedPreferences.Editor e=prefs.edit().putBoolean("manual_override",true);
+        boolean hadPower=in.has("power"),hadBrightness=in.has("brightness"),hadEffect=in.has("effect"),hadColors=in.has("colors"),hadSpeed=in.has("speed");
+        if(hadPower)e.putBoolean("power",in.optBoolean("power",true));
+        if(hadBrightness)e.putInt("brightness",clamp(in.optInt("brightness",75),1,100));
+        if(hadSpeed)e.putInt("speed",clamp(in.optInt("speed",3),1,5));
+        if(in.has("name"))e.putString("running_name",in.optString("name","Manual"));
+        if(hadEffect)e.putString("effect",normalizeEffect(in.optString("effect","Jump")));
+        if(hadColors)e.putString("colors",normalizeColors(in.optJSONArray("colors")).toString());
+        e.apply();
+
+        JSONObject payload=new JSONObject();
+        payload.put("target",targetName(prefs.getInt("ble_target",0)));
+        if(hadPower)payload.put("power",in.optBoolean("power",true));
+        if(hadBrightness)payload.put("brightness",clamp(in.optInt("brightness",75),1,100));
+        if(hadSpeed)payload.put("speed",clamp(in.optInt("speed",3),1,5));
+        if(hadEffect)payload.put("effect",normalizeEffect(in.optString("effect","Jump")));
+        if(hadColors)payload.put("colors",normalizeColors(in.optJSONArray("colors")));
+        if(in.has("name"))payload.put("name",in.optString("name","Manual"));
+
+        // Old UI often sends one changed field at a time. Supply the current full scene
+        // when Cloudflare needs to turn on/apply a visual change.
+        if(!payload.has("power")||payload.optBoolean("power",true)){
+            if(!payload.has("brightness"))payload.put("brightness",prefs.getInt("brightness",75));
+            if(!payload.has("speed"))payload.put("speed",prefs.getInt("speed",3));
+            if(!payload.has("effect"))payload.put("effect",prefs.getString("effect","Jump"));
+            if(!payload.has("colors"))payload.put("colors",new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
+        }
+
+        CloudflareApiClient.Result r=cloudApi.request("POST","/api/control",payload.toString());
+        if(r.status<200||r.status>=300){
+            String msg="Cloudflare control HTTP "+r.status;
+            try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
+            throw new IOException(msg);
+        }
+        invalidateCloudSnapshot();
+        return ok(stateJson());
+    }
+
+    private String cloudResumeCompat() throws Exception {
+        prefs.edit().putBoolean("manual_override",false).apply();
+        CloudflareApiClient.Result r=cloudApi.request("POST","/api/resume-schedule","{}");
+        if(r.status<200||r.status>=300){
+            String msg="Cloudflare resume HTTP "+r.status;
+            try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
+            throw new IOException(msg);
+        }
+        invalidateCloudSnapshot();
+        return ok(stateJson());
     }
 
     private void ensureDefaults() {
@@ -297,32 +365,65 @@ final class AndersonApiBridge {
         d.put("wifi",wifi);
 
         JSONObject b=new JSONObject();
-        boolean cloudReady=cloud.isReady();
-        int cloudCount=cloud.readyCount();
+        boolean useServer=cloudApi.isCloudMode();
+        JSONObject server=null;
+        boolean cloudReady=false;
+        int cloudCount=0;
+        java.util.HashSet<String> readyNames=new java.util.HashSet<>();
+        String statusText;
+        String transportText;
+        if(useServer){
+            try{
+                server=cloudStatusSnapshot(false);
+                JSONObject eu=server.optJSONObject("eufy");
+                cloudReady=eu!=null&&eu.optBoolean("ready",false);
+                JSONArray rn=eu==null?null:eu.optJSONArray("readyNames");
+                if(rn!=null)for(int i=0;i<rn.length();i++)readyNames.add(rn.optString(i));
+                cloudCount=readyNames.size();
+                statusText=eu==null?"Cloudflare online":eu.optString("status","Cloudflare online");
+                transportText="Cloudflare Worker → Eufy MQTT";
+                JSONObject next=server.optJSONObject("nextEvent");
+                if(next!=null&&next.optString("name","").length()>0){
+                    String n=next.optString("name");
+                    String at=next.optString("at","");
+                    d.put("nextEvent",at.isEmpty()?n:n+" • "+at);
+                }
+                JSONObject ov=server.optJSONObject("override");
+                if(ov!=null)d.put("manualOverride",ov.optBoolean("active",prefs.getBoolean("manual_override",false)));
+            }catch(Throwable t){
+                statusText="Cloudflare unavailable";
+                transportText=t.getMessage()==null?t.getClass().getSimpleName():t.getMessage();
+            }
+        }else{
+            cloudReady=cloud.isReady();cloudCount=cloud.readyCount();
+            for(String name:NAMES)if(cloud.isDeviceReady(name))readyNames.add(name);
+            statusText=cloud.status();transportText=cloudStatus;
+        }
         b.put("ready",cloudReady);
-        b.put("busy",cloud.isBusy());
+        b.put("busy",useServer?false:cloud.isBusy());
         b.put("connected",cloudReady);
         b.put("connectedCount",cloudCount);
         b.put("knownCount",NAMES.length);
         b.put("seenCount",cloudCount);
         b.put("name","Saved Eufy lights");
         b.put("address","");
-        b.put("protocol","Eufy Cloud MQTT");
-        b.put("connectionMode","Wi-Fi / Internet");
+        b.put("protocol",useServer?"Cloudflare + Eufy MQTT":"Eufy Cloud MQTT");
+        b.put("connectionMode",useServer?"Cloudflare / Internet":"Wi-Fi / Internet");
         b.put("target",prefs.getInt("ble_target",0));
         JSONArray controllers=new JSONArray();
         for(int i=0;i<NAMES.length;i++){
+            boolean seen=readyNames.contains(NAMES[i]);
             JSONObject x=new JSONObject();
             x.put("slot",i).put("name",NAMES[i]).put("address",ADDRESSES[i])
-             .put("model",MODELS[i]).put("protocol",MODELS[i]+" / Cloud MQTT")
-             .put("seen",cloud.isDeviceReady(NAMES[i])).put("connected",cloud.isDeviceReady(NAMES[i])).put("saved",true);
+             .put("model",MODELS[i]).put("protocol",MODELS[i]+(useServer?" / Cloudflare":" / Cloud MQTT"))
+             .put("seen",seen).put("connected",seen).put("saved",true);
             controllers.put(x);
         }
         b.put("controllers",controllers);
-        b.put("status",cloud.status());
-        b.put("transportStatus",cloudStatus);
+        b.put("status",statusText);
+        b.put("transportStatus",transportText);
         d.put("ble",b);
-        d.put("manualOverride",prefs.getBoolean("manual_override",false));
+        if(!d.has("manualOverride"))d.put("manualOverride",prefs.getBoolean("manual_override",false));
         return d;
     }
 
@@ -594,8 +695,16 @@ final class AndersonApiBridge {
     }
 
     private JSONObject bleScan() throws Exception {
-        cloud.refresh();
         JSONArray devices=new JSONArray();
+        if(cloudApi.isCloudMode()){
+            JSONObject st=cloudStatusSnapshot(true);
+            java.util.HashSet<String> ready=new java.util.HashSet<>();
+            JSONObject eu=st.optJSONObject("eufy");JSONArray rn=eu==null?null:eu.optJSONArray("readyNames");
+            if(rn!=null)for(int i=0;i<rn.length();i++)ready.add(rn.optString(i));
+            for(int i=0;i<NAMES.length;i++)devices.put(new JSONObject().put("name",NAMES[i]).put("address",ADDRESSES[i]).put("rssi",0).put("model",MODELS[i]).put("serial",deviceStore.serialFor(ADDRESSES[i],"")).put("connected",ready.contains(NAMES[i])));
+            return new JSONObject().put("scanning",false).put("transport","cloudflare").put("devices",devices);
+        }
+        cloud.refresh();
         for(int i=0;i<NAMES.length;i++){
             devices.put(new JSONObject()
                 .put("name",NAMES[i])
