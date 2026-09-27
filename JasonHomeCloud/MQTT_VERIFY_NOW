@@ -1,1 +1,1 @@
-Deploy and verify the corrected MQTT handshake with a status-only Pool probe.
+Deploy and verify corrected MQTT handshake with authenticated Eufy user ID fallback.
