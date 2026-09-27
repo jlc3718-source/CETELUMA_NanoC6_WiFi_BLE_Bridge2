@@ -125,7 +125,7 @@ export class EufyClient {
     const s=this.spec(name);
     const fields=buildFactoryFields(s.model,preset);
     const brightness=typeof preset.brightness==="number"?Math.max(1,Math.min(100,Math.round(preset.brightness))):75;
-    const strategy=s.model==="T8L02"?"verified-t8l02-020d":"experimental-t8l00-020d";
+    const strategy=s.model==="T8L02"?"native-t8l02-020d-experimental":"native-t8l00-020d-experimental";
     const r=await this.command(name,[
       {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
       {opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},
