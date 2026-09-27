@@ -265,6 +265,8 @@ jobs:
           for marker in ['1 · Lighting','2 · Schedules','3 · Eufy Devices','4 · Backup & Restore']:
               if marker not in Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text():
                   raise SystemExit('Settings tab renumbering missing '+marker)
+          schedule_service = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonScheduleService.java').read_text()
+          manifest = Path('JasonHome/app/src/main/AndroidManifest.xml').read_text()
           audit_files = {
               'bridge': bridge,
               'main': main,
