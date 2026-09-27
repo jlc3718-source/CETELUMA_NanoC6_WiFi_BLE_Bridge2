@@ -1,0 +1,41 @@
+name: Build Jason Home Linux Relay
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeRelay/**'
+      - '.github/workflows/build-jason-home-relay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: JasonHomeRelay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install
+      - name: Type check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Build Linux container
+        run: docker build -t jason-home-eufy-relay:test .
+      - name: Verify relay surface
+        run: |
+          grep -q '"/health"' src/server.ts
+          grep -q '"/ready"' src/server.ts
+          grep -q '"/probe"' src/server.ts
+          grep -q '"/command"' src/server.ts
+          grep -q 'JASON_HOME_RELAY_TOKEN' src/server.ts
