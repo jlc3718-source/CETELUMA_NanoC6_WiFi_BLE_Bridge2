@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { EufyClient, type EufySession } from "./eufy/client.js";
-import { dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
+import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
 import { currentCalendarInfo, nextCalendarEvent, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
@@ -256,9 +256,65 @@ async function factoryCatalog(refresh=false){
   console.log(`Eufy factory catalog: scanned ${fetched.scanned} ids; ${fetched.presets.length} valid records returned`);
   return value;
 }
+function factoryEdits():Record<string,any>{
+  const raw=meta("factory_edits");
+  if(!raw)return {};
+  try{
+    const parsed=JSON.parse(raw);
+    return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed:{};
+  }catch{return {};}
+}
+function applyFactoryEdit(base:any){
+  const edit=factoryEdits()[String(base?.lightId)];
+  if(!edit)return base;
+  return {...base,...edit,lightId:base.lightId,raw:base.raw,customized:true};
+}
+function sanitizeFactoryEdit(base:any,input:any){
+  if(!base)throw new Error("Factory preset was not found");
+  const out:any={};
+  if(input?.name!=null)out.name=String(input.name).trim().slice(0,100)||base.name;
+  if(input?.brightness!=null){
+    const n=Math.round(Number(input.brightness));
+    if(!Number.isFinite(n)||n<1||n>100)throw new Error("Brightness must be 1–100");
+    out.brightness=n;
+  }
+  for(const key of ["speed","layerExecutionMode"]){
+    if(input?.[key]!=null){
+      const n=Math.round(Number(input[key]));
+      if(!Number.isFinite(n)||n<0||n>255)throw new Error(key+" must be 0–255");
+      out[key]=n;
+    }
+  }
+  if(input?.layers!=null){
+    if(!Array.isArray(input.layers)||input.layers.length<1||input.layers.length>32)throw new Error("Factory preset must contain 1–32 layers");
+    out.layers=input.layers.map((layer:any,index:number)=>{
+      if(!layer||typeof layer!=="object"||Array.isArray(layer))throw new Error("Layer "+(index+1)+" is invalid");
+      return JSON.parse(JSON.stringify(layer));
+    });
+  }
+  const merged={...base,...out,lightId:base.lightId,raw:base.raw};
+  const e22=canBuildFactoryFields("T8L02",merged);
+  const e120=canBuildFactoryFields("T8L00",merged);
+  if(!e22&&!e120)throw new Error("Edited factory recipe cannot be serialized for E22 or E120");
+  return {edit:out,merged:{...merged,customized:true,buildableE22:e22,buildableE120Experimental:e120}};
+}
+function saveFactoryEdit(catalog:any,input:any){
+  const lightId=Number(input?.lightId);
+  if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
+  const base=(Array.isArray(catalog?.presets)?catalog.presets:[]).find((p:any)=>Number(p?.lightId)===lightId);
+  const {edit,merged}=sanitizeFactoryEdit(base,input?.preset||input);
+  const edits=factoryEdits();edits[String(lightId)]=edit;setMeta("factory_edits",JSON.stringify(edits));
+  return merged;
+}
+function resetFactoryEdit(lightId:number){
+  const edits=factoryEdits(),key=String(lightId),had=Object.prototype.hasOwnProperty.call(edits,key);
+  delete edits[key];setMeta("factory_edits",JSON.stringify(edits));
+  return had;
+}
+
 function factorySummary(catalog:any,includeRaw=false,id?:number){
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
-  const canonical=id==null?dedupeFactoryPresetsByName(src):src.filter((p:any)=>Number(p?.lightId)===id);
+  const edited=src.map(applyFactoryEdit);\n  const canonical=id==null?dedupeFactoryPresetsByName(edited):edited.filter((p:any)=>Number(p?.lightId)===id);
   const list=canonical.map((p:any)=>{
     if(includeRaw)return p;
     const {raw,...summary}=p||{};
@@ -271,7 +327,7 @@ function pruneFactoryJobs(){
   const cutoff=Date.now()-60*60*1000;
   for(const [id,j] of factoryJobs)if(Number(j?.createdAt||0)<cutoff)factoryJobs.delete(id);
 }
-function queueFactoryTest(lightId:number){
+function queueFactoryTest(lightId:number,target="All"){
   pruneFactoryJobs();
   const jobId=crypto.randomUUID();
   factoryJobs.set(jobId,{jobId,state:"running",lightId,createdAt:Date.now()});
@@ -279,7 +335,7 @@ function queueFactoryTest(lightId:number){
     .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,createdAt:Date.now(),error:e?.message||String(e)}));
   return {ok:true,queued:true,jobId,lightId};
 }
-async function factoryTestAll(lightId:number){
+async function factoryTestAll(lightId:number,target="All"){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
   const c=await ensureEufy(false);
   let preset:any=null;
@@ -300,7 +356,7 @@ async function factoryTestAll(lightId:number){
     }
   }
   const next=nextAutomationEvent(new Date());
-  setMeta("override",JSON.stringify({active:true,target:"All",factory:true,lightId,createdAt:Date.now(),expiresAt:next?.at||null}));
+  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,createdAt:Date.now(),expiresAt:next?.at||null}));
   setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,sent,total:DEVICE_NAMES.length,results}));
   return {ok:sent===DEVICE_NAMES.length,lightId,name:preset?.name||null,attempted:DEVICE_NAMES.length,sent,results,note:"Factory command sent to all four strings. T8L02/E22 uses the verified 0x020D layout; T8L00/E120 uses the isolated experimental family adaptation and must be verified visually."};
 }
@@ -502,6 +558,18 @@ const server=http.createServer(async(req,res)=>{
       let catalog:any;
       try{catalog=JSON.parse(raw);}catch{delMeta("factory_catalog");return json(res,202,{ok:true,loading:true,refresh:queueFactoryRefresh()});}
       return json(res,200,{...factorySummary(catalog,includeRaw,id),refresh:factoryRefreshState});
+    }
+    if(method==="POST"&&path==="/api/eufy/factory-presets/save"){
+      const raw=meta("factory_catalog");
+      if(!raw)throw new Error("Factory catalog is not loaded yet");
+      const catalog=JSON.parse(raw),input:any=await readJson(req);
+      const preset=saveFactoryEdit(catalog,input);
+      return json(res,200,{ok:true,preset});
+    }
+    if(method==="POST"&&path==="/api/eufy/factory-presets/reset"){
+      const input:any=await readJson(req),lightId=Number(input?.lightId);
+      if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
+      return json(res,200,{ok:true,lightId,reset:resetFactoryEdit(lightId)});
     }
     if(method==="POST"&&path==="/api/eufy/factory-presets/refresh"){
       return json(res,202,{ok:true,queued:true,refresh:queueFactoryRefresh()});
