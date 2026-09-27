@@ -215,6 +215,7 @@ final class AndersonApiBridge {
             if ("/api/preset".equals(path) && "POST".equals(m)) return updatePreset(input);
             if ("/api/custom-schedules".equals(path) && "GET".equals(m)) return ok(customSchedules(uri));
             if ("/api/custom-schedules".equals(path) && "POST".equals(m)) return updateCustomSchedule(input);
+            if ("/api/custom-schedules/group".equals(path) && "POST".equals(m)) return updateCustomScheduleGroup(input);
             if ("/api/colors".equals(path) && "GET".equals(m)) return ok(colorsJson());
             if ("/api/colors".equals(path) && "POST".equals(m)) return updateColor(input);
 
@@ -531,7 +532,7 @@ final class AndersonApiBridge {
         String q=search==null?"":search.trim().toLowerCase(Locale.ROOT);
         long mask=prefs.getLong("category_mask",(1L<<15)-1L);
         for(int i=0;i<AndersonEventData.EVENTS.length;i++){
-            if(!schedule.includedByMode(i))continue;
+            if(!schedule.visibleByMode(i))continue;
             int cat=(i<AndersonEventData.CATEGORY_INDEX.length)?AndersonEventData.CATEGORY_INDEX[i]:9;
             if((mask&(1L<<cat))==0)continue;
             if(month>0&&!schedule.eventOccursInMonth(i,year,month))continue;
@@ -655,7 +656,20 @@ final class AndersonApiBridge {
             JSONObject x=findById(a,id);
             if(x==null)return error(404,"Unknown custom light");
             if(in.has("favorite"))x.put("favorite",in.optBoolean("favorite"));
-            if(in.has("enabled"))x.put("enabled",in.optBoolean("enabled"));
+            if(in.has("enabled")){
+                boolean wanted=in.optBoolean("enabled");
+                x.put("enabled",wanted);
+                JSONArray schedules=readArray("custom_schedules");
+                boolean changed=false;
+                for(int i=0;i<schedules.length();i++){
+                    JSONObject s=schedules.optJSONObject(i);
+                    if(s!=null&&id.equals(s.optString("presetId",""))){
+                        s.put("enabled",wanted);changed=true;
+                    }
+                }
+                if(changed)writeArray("custom_schedules",schedules);
+                syncCalendarToOracleAsync();
+            }
             writeArray("presets",a);
             return ok(new JSONObject().put("ok",true).put("id",id));
         }
@@ -713,6 +727,21 @@ final class AndersonApiBridge {
         a.put(x); writeArray("custom_schedules",a);
         syncCalendarToOracleAsync();
         return ok(new JSONObject().put("ok",true).put("id",x.getString("id")));
+    }
+
+    private String updateCustomScheduleGroup(JSONObject in) throws Exception {
+        boolean wanted=in.optBoolean("enabled",true);
+        JSONArray a=readArray("custom_schedules");
+        int changed=0;
+        for(int i=0;i<a.length();i++){
+            JSONObject x=a.optJSONObject(i);
+            if(x==null)continue;
+            if(x.optBoolean("enabled",true)!=wanted){x.put("enabled",wanted);changed++;}
+        }
+        writeArray("custom_schedules",a);
+        prefs.edit().putBoolean("custom_events_enabled",wanted).apply();
+        syncCalendarToOracleAsync();
+        return ok(new JSONObject().put("ok",true).put("enabled",wanted).put("changed",changed).put("total",a.length()));
     }
 
     private JSONObject colorsJson() throws Exception {
