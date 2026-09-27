@@ -5,6 +5,7 @@ on:
     branches:
       - jason-home-3.1-build
       - jason-home-anderson-eufy
+      - jason-home-wifi-5.2.0-build
     paths:
       - 'JasonHome/**'
       - '.github/workflows/build-jason-home.yml'
