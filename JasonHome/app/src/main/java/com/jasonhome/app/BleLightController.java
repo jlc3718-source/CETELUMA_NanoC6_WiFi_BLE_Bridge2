@@ -368,7 +368,16 @@ final class BleLightController {
                 launch.add(worker);
             }
         }
-        for (ParallelWorker worker : launch) worker.start();
+        // Android's BLE stack is much more reliable when several GATT links are
+        // not opened on the exact same scheduler tick. Keep the broadcast tight,
+        // but stagger connection starts by only 125 ms per installed string.
+        for (int i=0;i<launch.size();i++) {
+            ParallelWorker worker=launch.get(i);
+            long delay=i*125L;
+            handler.postDelayed(() -> {
+                if (token==parallelToken) worker.start();
+            },delay);
+        }
     }
 
     private void cancelAllWork() {
