@@ -1,5 +1,6 @@
 import { connect as tlsConnect } from "node:tls";
 import { promises as dns } from "node:dns";
+import { connect as netConnect } from "node:net";
 import { sha256 } from "./crypto";
 import { dpCommand } from "./wire";
 
@@ -73,10 +74,15 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
   const appName=(creds.app_name&&String(creds.app_name).trim())||"eufy_life";
   const mqttUuid=sha256(installId).slice(0,16);
   const clientId=`android-${appName}-${brokerUser}-${mqttUuid}-${Math.floor(Date.now()/1000)}`;
-  const socket:any=tlsConnect({
-    host:connectHost,port,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,
-    rejectUnauthorized:true
-  });
+  const isIp=/^\d{1,3}(?:\.\d{1,3}){3}$/.test(connectHost);
+  let socket:any;
+  if(isIp){
+    const raw:any=netConnect({host:connectHost,port});
+    await new Promise<void>((resolve,reject)=>{raw.once("connect",()=>resolve());raw.once("error",reject);});
+    socket=tlsConnect({socket:raw,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
+  }else{
+    socket=tlsConnect({host:connectHost,port,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
+  }
   const reader=new Reader();
   try{socket.setNoDelay?.(true);}catch{}
   socket.on("data",(d:any)=>reader.push(Buffer.from(d)));
@@ -127,7 +133,8 @@ export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:Co
   if(!host||!creds.certificate_pem||!creds.private_key||!creds.aws_root_ca1_pem)throw new Error("Incomplete Eufy MQTT credentials");
   let ips:string[]=[];
   try{ips=await dns.resolve4(host);}catch{}
-  const candidates=[...new Set([...ips,host])];
+  const directIps=ips.map((x:any)=>String(x).replace(/\.$/,"")).filter((x:string)=>/^\d{1,3}(?:\.\d{1,3}){3}$/.test(x));
+  const candidates=[...new Set([...directIps,host])];
   const failures:string[]=[];
   for(const candidate of candidates){
     try{return await sendMqttOnInstance(creds,target,frames,installId,waitMs,candidate);}
