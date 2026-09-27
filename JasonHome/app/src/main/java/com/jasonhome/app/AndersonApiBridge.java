@@ -235,20 +235,30 @@ final class AndersonApiBridge {
 
         JSONObject b=new JSONObject();
         List<BleLightController.FoundLight> snap=snapshotDiscovered();
-        b.put("connected",!snap.isEmpty());
-        b.put("connectedCount",snap.size());
-        b.put("name",snap.isEmpty()?"Eufy E10 BLE":"Installed Eufy lights");
+        boolean bleBusy=ble.isBusy();
+        boolean ready=deviceStore.accountId().length()==40;
+        b.put("ready",ready);
+        b.put("busy",bleBusy);
+        b.put("connected",bleBusy);
+        b.put("connectedCount",0);
+        b.put("knownCount",ADDRESSES.length);
+        b.put("seenCount",snap.size());
+        b.put("name","Saved Eufy lights");
         b.put("address","");
         b.put("protocol","Eufy E10");
+        b.put("connectionMode","On-demand BLE");
         b.put("target",prefs.getInt("ble_target",0));
         JSONArray controllers=new JSONArray();
         for(int i=0;i<ADDRESSES.length;i++){
             JSONObject x=new JSONObject();
-            x.put("slot",i).put("name",NAMES[i]).put("address",ADDRESSES[i]).put("protocol",MODELS[i]+" / E10").put("connected",isDiscovered(ADDRESSES[i]));
+            x.put("slot",i).put("name",NAMES[i]).put("address",ADDRESSES[i])
+             .put("model",MODELS[i]).put("protocol",MODELS[i]+" / E10")
+             .put("seen",isDiscovered(ADDRESSES[i])).put("saved",true);
             controllers.put(x);
         }
         b.put("controllers",controllers);
-        b.put("status",bleStatus);
+        b.put("status",bleBusy?"BLE command in progress":"Ready — connects to saved lights on demand");
+        b.put("transportStatus",bleStatus);
         d.put("ble",b);
         d.put("manualOverride",prefs.getBoolean("manual_override",false));
         return d;
@@ -694,8 +704,9 @@ final class AndersonApiBridge {
             .put("cpuLoad",0).put("cpuMhz",0).put("wifiConnected",true).put("rssi",0)
             .put("heapFree",free).put("heapMin",free).put("heapLargest",free)
             .put("slotBytes",0).put("appBytes",0).put("appFreeBytes",0)
-            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.0.0")
-            .put("bleCount",snapshotDiscovered().size()).put("ssid","Android").put("ip","Local")
+            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.1.0")
+            .put("bleCount",0).put("bleSeen",snapshotDiscovered().size()).put("bleKnown",ADDRESSES.length).put("bleBusy",ble.isBusy())
+            .put("ssid","Android").put("ip","Local")
             .put("resetReason","Android app launch").put("loopWatchdog",true).put("networkRestarts",0)
             .put("nextReboot","—").put("nextRebootSeconds",-1)
             .put("rebootSchedule","Android managed");
