@@ -225,18 +225,6 @@ window.addEventListener("pageshow",e=>{if(e.persisted)showProfileGate()});
   </section>
 
   <section class="page" data-page="settings">
-    <div id="systemMonitorPanel" class="panel">
-      <div class="row between"><div><strong>System Monitor</strong><div class="sub">Live Craumer Home app status • refreshes automatically</div></div><span id="sysLive" class="badge">LIVE</span></div>
-      <div class="sysToolbar">
-        <div class="sysMetric"><span class="sysLabel">CPU</span><strong id="sysCpu">—</strong><span id="sysCpuSub" class="sysSub">application load</span></div>
-        <div class="sysMetric"><span class="sysLabel">Wi-Fi</span><strong id="sysWifi">—</strong><span id="sysWifiSub" class="sysSub">signal</span></div>
-        <div class="sysMetric"><span class="sysLabel">RAM</span><strong id="sysRam">—</strong><span id="sysRamSub" class="sysSub">free heap</span></div>
-        <div class="sysMetric"><span class="sysLabel">Storage</span><strong id="sysStorage">—</strong><span id="sysStorageSub" class="sysSub">APP slot free</span></div>
-        <div class="sysMetric"><span class="sysLabel">Auto Update</span><strong id="sysUpdate">—</strong><span id="sysUpdateSub" class="sysSub">next check</span></div>
-        <div class="sysMetric"><span class="sysLabel">Next Reboot</span><strong id="sysReboot">—</strong><span id="sysRebootSub" class="sysSub">time remaining</span></div>
-      </div>
-      <div id="sysDetails" class="card sysDetails">Waiting for live telemetry…</div>
-    </div>
     <div id="liveColorTunerPanel" class="panel">
       <strong>Live Color Tuning</strong><div class="sub">Fine-tune an exact RGB output while watching the selected light controller respond. Use the wheel, HEX, or RGB fields for exact tuning. You can overwrite an existing named preset, but you cannot add preset slots here.</div>
       <div id="liveColorWheel" class="rgbWheel liveColorTuneWheel"><div id="liveColorMarker" class="rgbWheelMarker"></div></div>
