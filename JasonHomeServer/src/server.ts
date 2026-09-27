@@ -622,7 +622,7 @@ async function statusPayload(refresh=false){
     astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:TZ},
     nextEvent:next?{at:new Date(next.at).toISOString(),id:(next as any).id||null,name:next.name,phase:next.phase,target:next.target,source:next.source}:null,
     location:{zip:"14772",lat:LAT,lon:LON,timeZone:TZ},
-    calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,eventCount:calendar?.events?.length||0,promotedFactoryCount:factoryPromotionRows(calendar).length,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
+    calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,revision:calendar?.revision||Number(meta("calendar_revision")||0)||0,eventCount:calendar?.events?.length||0,promotedFactoryCount:factoryPromotionRows(calendar).length,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
     lastCommand:meta("last_command"),
     desired:db.prepare("SELECT * FROM desired_state ORDER BY name").all()
   };
@@ -773,12 +773,28 @@ const server=http.createServer(async(req,res)=>{
       return json(res,200,{ok:true,synced:!!cfg,calendar:cfg});
     }
     if(method==="POST"&&path==="/api/calendar/sync"){
-      const cfg=normalizeCalendarConfig(await readJson(req));
-      if(cfg.events.length<1)throw new Error("Holiday calendar is empty");
+      const input:any=await readJson(req);
+      const incomingExplicit=Number.isFinite(Number(input?.revision))&&Number(input?.revision)>0;
+      const currentRevision=Math.max(0,Number(meta("calendar_revision")||0)||0);
+      let incomingRevision=incomingExplicit?Math.floor(Number(input.revision)):currentRevision+1;
+      if(incomingExplicit&&incomingRevision<currentRevision){
+        return json(res,409,{ok:false,error:"Stale calendar revision",incomingRevision,currentRevision});
+      }
+      if(incomingExplicit&&incomingRevision===currentRevision){
+        const current=calendarConfig();
+        const cfg=normalizeCalendarConfig(input);
+        cfg.revision=incomingRevision;
+        if(current&&JSON.stringify({...current,syncedAt:0})===JSON.stringify({...cfg,syncedAt:0}))
+          return json(res,200,{ok:true,unchanged:true,revision:currentRevision,eventCount:cfg.events.length,customCount:cfg.customSchedules.length,enabled:cfg.settings.enabled,syncedAt:current.syncedAt});
+        return json(res,409,{ok:false,error:"Calendar revision conflict",incomingRevision,currentRevision});
+      }
+      const cfg=normalizeCalendarConfig(input);
+      cfg.revision=incomingRevision;
       setMeta("calendar_config",JSON.stringify(cfg));
+      setMeta("calendar_revision",String(incomingRevision));
       setMeta("calendar_sync",new Date().toISOString());
       void reconcile(false,true).catch(e=>console.error("[calendar reconcile]",e?.message||e));
-      return json(res,200,{ok:true,eventCount:cfg.events.length,customCount:cfg.customSchedules.length,enabled:cfg.settings.enabled,syncedAt:cfg.syncedAt});
+      return json(res,200,{ok:true,revision:incomingRevision,eventCount:cfg.events.length,customCount:cfg.customSchedules.length,enabled:cfg.settings.enabled,syncedAt:cfg.syncedAt});
     }
     if(method==="GET"&&path==="/api/events"){
       const cfg=calendarConfig();
