@@ -216,6 +216,21 @@ async function sendScene(name:string,scene:Scene){
   });
 }
 
+let manualSequence=0;
+const latestManualSequence=new Map<string,number>();
+
+async function sendSceneLatest(name:string,scene:Scene,sequence:number){
+  return serializedForDevice(name,async()=>{
+    if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
+    const c=await ensureEufy(false);
+    if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
+    const result=scene.power
+      ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
+      : await c.power(name,false);
+    return {...result,skipped:false};
+  });
+}
+
 let factoryRefreshState:any={state:"idle",startedAt:null,finishedAt:null,error:null};
 function queueFactoryRefresh(){
   if(factoryRefreshState?.state==="running")return factoryRefreshState;
@@ -316,33 +331,52 @@ async function statusPayload(refresh=false){
   };
 }
 
-async function manualControl(input:any){
+async function manualControl(input:any,sequence?:number){
   const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
 
-  // Set the override before I/O so the 30-second scheduler cannot race a manual
-  // button press while the four parallel device commands are in flight.
   const next=nextAutomationEvent(new Date());
   const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
   setMeta("override",JSON.stringify(override));
 
   const detail=await Promise.all(names.map(async name=>{
     try{
-      const r=await sendScene(name,scene);
+      const r:any=sequence==null?await sendScene(name,scene):await sendSceneLatest(name,scene,sequence);
+      if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-      return {name,ok:true,report:r.report||null,instance:(r as any).instance||null};
+      return {name,ok:true,report:r?.report||null,instance:r?.instance||null};
     }catch(e:any){
       const msg=e?.message||String(e);
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
       return {name,ok:false,error:msg};
     }
   }));
-  const ok=detail.filter(x=>x.ok).length;
-  const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail,transport:"linux-mqtt"};
+  const completed=detail.filter((x:any)=>x.ok&&!x.skipped).length;
+  const skipped=detail.filter((x:any)=>x.skipped).length;
+  const failed=detail.filter((x:any)=>!x.ok).length;
+  const summary={at:new Date().toISOString(),target,ok:completed,skipped,failed,total:names.length,scene,detail,transport:"linux-mqtt"};
   setMeta("last_command",JSON.stringify(summary));
-  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(Date.now(),target,"manual",ok===names.length?1:0,JSON.stringify(detail));
-  if(ok===0)throw new Error(detail.map((x:any)=>x.error).filter(Boolean).join("; ")||"No light command completed");
-  return {ok:true,updated:ok,total:names.length,detail,override};
+  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(Date.now(),target,"manual",failed===0?1:0,JSON.stringify(detail));
+  if(failed===names.length)throw new Error(detail.map((x:any)=>x.error).filter(Boolean).join("; ")||"No light command completed");
+  return {ok:true,updated:completed,skipped,total:names.length,detail,override};
+}
+
+function queueManualControl(input:any){
+  const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
+  const sequence=++manualSequence;
+  for(const name of names)latestManualSequence.set(name,sequence);
+
+  const next=nextAutomationEvent(new Date());
+  const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
+  setMeta("override",JSON.stringify(override));
+  setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:true,sequence,scene,transport:"linux-mqtt"}));
+
+  void manualControl(input,sequence).catch((e:any)=>{
+    const msg=e?.message||String(e);
+    console.error("[manual queued]",target,msg);
+    setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:false,sequence,error:msg,scene,transport:"linux-mqtt"}));
+  });
+  return {ok:true,queued:true,sequence,target,total:names.length,override};
 }
 
 async function applyScheduled(name:string,scene:Scene,reason:string){
@@ -479,7 +513,11 @@ const server=http.createServer(async(req,res)=>{
       const job=factoryJobs.get(jobId);
       return job?json(res,200,{ok:true,...job}):json(res,404,{ok:false,error:"Factory test job not found"});
     }
-    if(method==="POST"&&path==="/api/control")return json(res,200,await manualControl(await readJson(req)));
+    if(method==="POST"&&path==="/api/control"){
+      const input=await readJson(req);
+      if(url.searchParams.get("wait")==="1")return json(res,200,await manualControl(input));
+      return json(res,202,queueManualControl(input));
+    }
     if(method==="POST"&&(path==="/api/resume"||path==="/api/resume-schedule")){
       delMeta("override");return json(res,200,{ok:true,resumed:true,reconcile:await reconcile(true,true)});
     }
