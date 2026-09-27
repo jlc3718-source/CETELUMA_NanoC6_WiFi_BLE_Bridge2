@@ -1,8 +1,8 @@
 import { connect as tlsConnect } from "node:tls";
 import { promises as dns } from "node:dns";
 import { connect as netConnect } from "node:net";
-import { sha256 } from "./crypto";
-import { dpCommand } from "./wire";
+import { sha256 } from "./crypto.js";
+import { dpCommand } from "./wire.js";
 
 export interface MqttCredentials {
   endpoint_addr:string;
@@ -20,7 +20,7 @@ export interface CommandFrame { opcode:number; fields:Uint8Array; label:string; 
 function utf(value:string):Buffer{const b=Buffer.from(value,"utf8");const h=Buffer.alloc(2);h.writeUInt16BE(b.length,0);return Buffer.concat([h,b]);}
 function packet(header:number,body:Uint8Array):Buffer{const bytes:number[]=[];let n=body.length;do{let x=n%128;n=Math.floor(n/128);if(n>0)x|=128;bytes.push(x);}while(n>0);return Buffer.concat([Buffer.from([header,...bytes]),Buffer.from(body)]);}
 function connectPacket(clientId:string):Buffer{return packet(0x10,Buffer.concat([utf("MQTT"),Buffer.from([4,2,0,60]),utf(clientId)]));}
-function subscribePacket(topics:string[]):Buffer{const parts=[Buffer.from([0,1])];for(const t of topics)parts.push(utf(t),Buffer.from([1]));return packet(0x82,Buffer.concat(parts));}
+function subscribePacket(topics:string[]):Buffer{const parts:any[]=[Buffer.from([0,1])];for(const t of topics)parts.push(utf(t),Buffer.from([1]));return packet(0x82,Buffer.concat(parts));}
 function publishPacket(topic:string,packetId:number,payload:Uint8Array):Buffer{const id=Buffer.alloc(2);id.writeUInt16BE(packetId,0);return packet(0x32,Buffer.concat([utf(topic),id,Buffer.from(payload)]));}
 function pubAck(packetId:number):Buffer{return Buffer.from([0x40,0x02,(packetId>>>8)&255,packetId&255]);}
 
