@@ -1,4 +1,4 @@
-name: Build Jason Home Android
+name: Build Craumer Home Android
 
 on:
   push:
@@ -21,32 +21,82 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate 5.0.23 unified effect catalog
+      - name: Validate Craumer Home 5.1 overhaul
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           catalog=Path('JasonHome/app/src/main/java/com/jasonhome/app/LightPresetCatalog.java').read_text()
-          js=Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text()
-          html=Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
+          commands=Path('JasonHome/app/src/main/java/com/jasonhome/app/EufyLightCommands.java').read_text()
+          controller=Path('JasonHome/app/src/main/java/com/jasonhome/app/BleLightController.java').read_text()
           bridge=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
-          names=[
-              'Solid / Static','Jump','Breath','Strobe','Chase','Gradient Sweep',
-              'Candy Cane','Twinkle / Sparkle','Wipe / Fill','Meteor / Comet',
-              'Rainbow Flow','Pulse Wave'
-          ]
-          for name in names:
-              if name not in catalog or name not in js:
-                  raise SystemExit('Missing unified effect '+name)
-          if 'window.craumerPreviewColors' not in html:
-              raise SystemExit('Selected colors are not exposed to previews')
-          if 'grid-template-columns:repeat(7,1fr)' not in js:
-              raise SystemExit('Seven-light effect preview strip missing')
-          if 'Craumer Home • Jason Home 5.0.23' not in bridge:
-              raise SystemExit('Bridge version is not 5.0.23')
-          print('5.0.23 unified effect catalog source validation: PASS')
+          html=Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
+          js=Path('JasonHome/app/src/main/assets/v3_mockup.js').read_text()
+          generator=Path('JasonHome/tools/generate_anderson_events.py').read_text()
+
+          effects=['Solid / Static','Jump','Breath','Strobe','Chase','Gradient Sweep',
+                   'Candy Cane','Twinkle / Sparkle','Wipe / Fill','Meteor / Comet',
+                   'Rainbow Flow','Pulse Wave']
+          for effect in effects:
+              if effect not in catalog or effect not in js:
+                  raise SystemExit('Missing effect '+effect)
+
+          palette=catalog.split('static final NamedColor[] ANDERSON = {',1)[1].split('};',1)[0]
+          if palette.count('new NamedColor(') != 36:
+              raise SystemExit('Master color library is not 36 colors')
+
+          required_colors=['Crimson','Coral','Bronze','Brown','Forest Green','Turquoise','Deep Purple','Black / Off']
+          for color in required_colors:
+              if color not in catalog or color not in html:
+                  raise SystemExit('Missing expanded color '+color)
+
+          if 'speedValueE22' not in commands or 'case 1: return 8;' not in commands or 'default: return 100;' not in commands:
+              raise SystemExit('E22 five-speed calibration missing')
+          if 'groupedCatalogPresetE120Multi' not in commands:
+              raise SystemExit('E120 multi-color grouped serializer missing')
+          if controller.count('startParallel(targets') < 6:
+              raise SystemExit('Normal multi-light commands are not using parallel workers')
+
+          if 'connectionMode","On-demand BLE"' not in bridge or '.put("seenCount",snap.size())' not in bridge:
+              raise SystemExit('On-demand BLE status model missing')
+          if 'Craumer Home • 5.1.0' not in bridge:
+              raise SystemExit('Bridge version is not 5.1.0')
+
+          if 'data-tab="favorites"' in html:
+              raise SystemExit('Favorites navigation still visible')
+          if 'E120 command tests — Pool or House only' in html:
+              raise SystemExit('Legacy E120 diagnostic panel still visible')
+          if '<strong>Profile PINs</strong>' in html:
+              raise SystemExit('Users & Security panel still visible')
+          if 'Scan Known Eufy Lights' not in html or 'only authorized lights' not in html:
+              raise SystemExit('Fixed Eufy device UI missing')
+          if 'max="2"' in html and 'eventsSpeed' in html:
+              raise SystemExit('Legacy event speed restriction remains')
+          if 'Complete Craumer Home Backup' not in js or 'Back Up Everything Now' not in js:
+              raise SystemExit('Complete backup UI missing')
+          if 'Users & Security' in js:
+              raise SystemExit('Users & Security settings tab still present')
+
+          holiday_checks={
+              '"Pride Month": ("Rainbow Flow",3':'Pride',
+              '"Halloween": ("Strobe",3':'Halloween',
+              '"Christmas Day": ("Candy Cane",2':'Christmas',
+              '"National Human Trafficking Awareness Day": ("Breath",1,[0x245BFF])':'Human trafficking',
+              '"988 Day": ("Breath",1,[0x00B4B4,0x5B00E6])':'988 Day',
+              '"Kwanzaa": ("Wipe / Fill",2,[0xFF0000,0x000000,0x28FF00])':'Kwanzaa'
+          }
+          for needle,label in holiday_checks.items():
+              if needle not in generator:
+                  raise SystemExit('Holiday curation missing '+label)
+
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',html,re.S)
+          for i,script in enumerate(scripts):
+              Path(f'/tmp/craumer-inline-{i}.js').write_text(script)
+          print(f'Craumer Home 5.1 source validation: PASS ({len(scripts)} inline scripts)')
           PY
           node --check JasonHome/app/src/main/assets/v3_mockup.js
+          for f in /tmp/craumer-inline-*.js; do node --check "$f"; done
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -67,11 +117,28 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Generate Anderson event calendar
+      - name: Generate Craumer event calendar
         shell: bash
         run: |
           python3 JasonHome/tools/generate_anderson_events.py
           test -s JasonHome/app/src/main/java/com/jasonhome/app/AndersonEventData.java
+          python3 - <<'PY'
+          from pathlib import Path
+          generated=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonEventData.java').read_text()
+          effects=['Solid / Static','Jump','Breath','Strobe','Chase','Gradient Sweep',
+                   'Candy Cane','Twinkle / Sparkle','Wipe / Fill','Meteor / Comet',
+                   'Rainbow Flow','Pulse Wave']
+          if generated.count('new Event(') < 200:
+              raise SystemExit('Generated event calendar is unexpectedly short')
+          for marker in ['Pride Month','Halloween','Christmas Day','988 Day','Kwanzaa']:
+              if marker not in generated:
+                  raise SystemExit('Generated calendar missing '+marker)
+          for effect in effects:
+              # At least the curated catalog must contain multiple supported effect families.
+              if effect in ('Jump','Candy Cane','Rainbow Flow','Twinkle / Sparkle','Breath','Wipe / Fill') and effect not in generated:
+                  raise SystemExit('Generated calendar missing effect '+effect)
+          print('Craumer event calendar generation: PASS')
+          PY
 
       - name: Check E10 framing and session parser
         shell: bash
@@ -114,14 +181,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.23-UNSIGNED.apk
-          sha256sum Jason-Home-5.0.23-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Craumer-Home-5.1.0-UNSIGNED.apk
+          sha256sum Craumer-Home-5.1.0-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.0.23-UNSIGNED-do-not-install
-          path: Jason-Home-5.0.23-UNSIGNED.apk
+          name: Craumer-Home-5.1.0-UNSIGNED-do-not-install
+          path: Craumer-Home-5.1.0-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
