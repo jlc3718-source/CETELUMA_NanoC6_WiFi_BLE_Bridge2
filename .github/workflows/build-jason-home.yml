@@ -21,31 +21,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate 5.0.21 W-series master matrix
+      - name: Validate 5.0.22 production E120 engine
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          commands = Path('JasonHome/app/src/main/java/com/jasonhome/app/EufyLightCommands.java').read_text()
+          controller = Path('JasonHome/app/src/main/java/com/jasonhome/app/BleLightController.java').read_text()
           bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
-          html = Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
-          for idx,a3 in enumerate(range(30006,30015),1):
-              a=f'case "master-{idx}-a"'
-              b=f'case "master-{idx}-b"'
-              c=f'case "master-{idx}-c"'
-              for token in (a,b,c):
-                  if token not in bridge:
-                      raise SystemExit(f'Missing {token}')
-              if f'W{idx}A · Red control' not in html or f'W{idx}B · R/G alt · S2' not in html or f'W{idx}C · R/G alt · S4' not in html:
-                  raise SystemExit(f'Missing W{idx} UI labels')
-              if f'testE120PresetPair(one,{a3},10034,new int[]{{0xFF0000}},2,false)' not in bridge:
-                  raise SystemExit(f'Missing W{idx}A control')
-              if f'testE120Group(one,{a3},10034,new int[]{{0xFF0000,0x00FF00}},2,2)' not in bridge:
-                  raise SystemExit(f'Missing W{idx}B grouped S2')
-              if f'testE120Group(one,{a3},10034,new int[]{{0xFF0000,0x00FF00}},4,2)' not in bridge:
-                  raise SystemExit(f'Missing W{idx}C grouped S4')
-          if 'Craumer Home • Jason Home 5.0.21' not in bridge:
-              raise SystemExit('Bridge version is not 5.0.21')
-          print('5.0.21 W-series source validation: PASS')
+
+          expected = {
+              'Jump': 30009,
+              'Breath': 30011,
+              'Strobe': 30006,
+              'Chase': 30010,
+              'Gradient': 30007,
+              'Twinkle': 30006,
+              'Wipe': 30007,
+              'Meteor': 30012,
+              'Rainbow': 30013,
+              'Pulse': 30013,
+              'Solid / Static': 30014,
+          }
+          for name, mode in expected.items():
+              if str(mode) not in commands:
+                  raise SystemExit(f'Missing E120 mode {mode} for {name}')
+          if 'return reverse ? 30008 : 30010' not in commands:
+              raise SystemExit('Missing reverse-chase E120 mode')
+          if 'groupedCatalogPresetE120(modeId,10034,speed,palette,lampCount,2)' not in commands:
+              raise SystemExit('Production E120 grouped two-color path missing')
+          if 'catalogPresetE120(modeId,10034,speed,palette,lampCount,false)' not in commands:
+              raise SystemExit('Production E120 single-color path missing')
+          if 'sendE120Static(job,g,c,p)' not in controller:
+              raise SystemExit('Static color+hold sequence missing')
+          if 'EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse' not in controller:
+              raise SystemExit('Normal EFFECT path is not using native E120 engine')
+          if 'sendE120SceneEffect(job,g,c,p)' not in controller:
+              raise SystemExit('Scene path is not using native E120 engine')
+          if 'Craumer Home • Jason Home 5.0.22' not in bridge:
+              raise SystemExit('Bridge version is not 5.0.22')
+          print('5.0.22 production E120 source validation: PASS')
           PY
 
       - name: Set up Java 17
@@ -114,14 +129,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.21-UNSIGNED.apk
-          sha256sum Jason-Home-5.0.21-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.0.22-UNSIGNED.apk
+          sha256sum Jason-Home-5.0.22-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.0.21-UNSIGNED-do-not-install
-          path: Jason-Home-5.0.21-UNSIGNED.apk
+          name: Jason-Home-5.0.22-UNSIGNED-do-not-install
+          path: Jason-Home-5.0.22-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
