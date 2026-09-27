@@ -113,8 +113,14 @@ function nextAutomationEvent(now=new Date()){
 }
 function nextOverrideExpiry(now=new Date()){
   const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
-  const calendar=nextCalendarBoundary(effectiveCalendarConfig(),now,LAT,LON,TZ);
-  const at=Math.min(generic?.at??Number.POSITIVE_INFINITY,calendar?.at??Number.POSITIVE_INFINITY);
+  const cfg=effectiveCalendarConfig();
+  // Prefer the next transition that actually changes the scheduled scene.
+  // A nominal dusk/end/dawn boundary can be a no-op, and expiring a manual
+  // preview there would resume the schedule earlier than the user expects.
+  const transition=nextCalendarTransition(cfg,now,LAT,LON,TZ);
+  const boundary=transition?null:nextCalendarBoundary(cfg,now,LAT,LON,TZ);
+  const calendarAt=transition?.at??boundary?.at??Number.POSITIVE_INFINITY;
+  const at=Math.min(generic?.at??Number.POSITIVE_INFINITY,calendarAt);
   return Number.isFinite(at)?at:null;
 }
 if(!meta("install_id"))setMeta("install_id",DEFAULT_INSTALL);
