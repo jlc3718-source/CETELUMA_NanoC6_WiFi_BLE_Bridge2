@@ -1,0 +1,11 @@
+services:
+  jason-home:
+    build: .
+    container_name: jason-home
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
