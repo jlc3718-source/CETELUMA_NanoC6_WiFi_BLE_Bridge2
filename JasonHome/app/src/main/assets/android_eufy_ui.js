@@ -38,8 +38,8 @@ function installAndroidEufyUi(){
         eufy.id="eufyAndroidStatusPanel";
         eufy.className="panel";
         eufy.innerHTML=
-          '<div class="row between"><div><strong>Eufy Bluetooth Status</strong>'+
-          '<div class="sub">Direct Bluetooth control from this phone • no NanoC6 or device Wi-Fi required</div></div>'+
+          '<div class="row between"><div><strong>Eufy Wi-Fi / Cloud Status</strong>'+
+          '<div class="sub">Authenticated Eufy cloud MQTT control over this phone's active Internet connection</div></div>'+
           '<span class="badge" id="eufyBleBadge">READY</span></div>'+
           '<div class="eufyStatusGrid">'+
           '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
@@ -48,7 +48,7 @@ function installAndroidEufyUi(){
           '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
           '</div>'+
           '<div class="card small eufyStatusNote"><strong>Control path</strong><br>'+
-          '<span class="sub">Anderson schedules, scenes, brightness, effects and manual controls are translated directly into the proven Jason Home Eufy E10 Bluetooth commands.</span></div>';
+          '<span class="sub">Bluetooth is temporarily disabled. Power ON/OFF uses the proven Eufy cloud MQTT path; cloud color/effect/brightness DPs remain disabled until verified.</span></div>';
         generalPane.insertBefore(eufy,monitor);
       }
     }
@@ -104,16 +104,16 @@ function installAndroidEufyUi(){
 
   const scan=$("scanBle");
   if(scan){
-    scan.textContent="Scan Installed Eufy Lights";
+    scan.textContent="Refresh Eufy Cloud Lights";
     scan.addEventListener("click",()=>setTimeout(refreshEufyStatus,13000));
   }
 
   const meta=$("bleMeta");
-  if(meta&&!meta.textContent.includes("Eufy"))meta.textContent="Eufy E10 • Manual target: All";
+  if(meta&&!meta.textContent.includes("Eufy"))meta.textContent="Eufy Cloud MQTT • Manual target: All";
 
   // Android edition wording.
   const conn=$("connectionBadge");
-  if(conn)conn.title="Jason Home Android • Eufy Bluetooth";
+  if(conn)conn.title="Jason Home Android • Eufy Wi-Fi / Cloud";
   refreshEufyStatus();
   setInterval(refreshEufyStatus,5000);
 }
