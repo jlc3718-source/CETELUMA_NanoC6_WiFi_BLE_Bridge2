@@ -19,11 +19,11 @@ final class CloudflareApiClient {
     boolean configured(){return store.hasToken();}
     Result health()throws Exception{return requestRaw("GET","/api/health","",false);}
     Result request(String method,String path,String body)throws Exception{
-        if(!configured())throw new IOException("Cloudflare API token is not configured");
+        if(!configured())throw new IOException("Oracle API token is not configured");
         return requestRaw(method,path,body,true);
     }
     private Result requestRaw(String method,String path,String body,boolean auth)throws Exception{
-        if(path==null||!path.startsWith("/api/"))throw new IOException("Invalid cloud API path");
+        if(path==null||!path.startsWith("/api/"))throw new IOException("Invalid Oracle API path");
         URL url=new URL(CloudflareConfigStore.ENDPOINT+path);
         HttpsURLConnection c=(HttpsURLConnection)url.openConnection();
         try{
@@ -37,7 +37,7 @@ final class CloudflareApiClient {
             }
             int status=c.getResponseCode();InputStream in=status>=400?c.getErrorStream():c.getInputStream();
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-            if(in!=null)try(InputStream s=in){byte[] buf=new byte[4096];int n;while((n=s.read(buf))!=-1){bytes.write(buf,0,n);if(bytes.size()>2*1024*1024)throw new IOException("Cloud response too large");}}
+            if(in!=null)try(InputStream s=in){byte[] buf=new byte[4096];int n;while((n=s.read(buf))!=-1){bytes.write(buf,0,n);if(bytes.size()>2*1024*1024)throw new IOException("Oracle response too large");}}
             return new Result(status,bytes.toString("UTF-8"));
         }finally{c.disconnect();}
     }
