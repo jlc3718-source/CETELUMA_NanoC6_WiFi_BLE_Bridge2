@@ -6,6 +6,8 @@ public final class EufyLightCommandsRegression {
         assertShow("T8L00", "Strobe", 10474, 4);
         assertShow("E22", "Breath", 21002, 5);
         assertShow("T8L02", "Strobe", 21003, 5);
+        assertLocalE120(20001);
+        assertLocalE120(20005);
         System.out.println("EufyLightCommands regression: PASS");
     }
 
@@ -29,6 +31,19 @@ public final class EufyLightCommandsRegression {
         for (int i = 1; i < expectedColorWidth; i++) {
             if ((payload[layer + 11 + i] & 0xFF) != 0) fail(model + " native color width/content mismatch");
         }
+    }
+
+    private static void assertLocalE120(int localId) {
+        byte[] payload = EufyLightCommands.localEffectE120(localId, new int[]{0xFF0000,0x0000FF}, 3, 60);
+        int a3 = find(payload, 0xA3);
+        if (a3 < 0 || (payload[a3 + 1] & 0xFF) != 2) fail("E120 local missing A3/u16 id");
+        int id = (payload[a3 + 2] & 0xFF) | ((payload[a3 + 3] & 0xFF) << 8);
+        if (id != localId) fail("E120 local id=" + id + " expected=" + localId);
+        int a5 = find(payload, 0xA5);
+        if (a5 < 0 || (payload[a5 + 2] & 0xFF) != 50) fail("E120 local speed mismatch");
+        int a6 = find(payload, 0xA6);
+        if (a6 < 0 || (payload[a6 + 2] & 0xFF) != 2) fail("E120 local palette count mismatch");
+        if ((payload[a6 + 1] & 0xFF) != 9) fail("E120 local expected 2 RGBW colors");
     }
 
     private static int find(byte[] payload, int tag) {
