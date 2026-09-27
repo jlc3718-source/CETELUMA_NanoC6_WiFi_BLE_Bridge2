@@ -155,6 +155,50 @@ final class E10Probe {
         });
     }
 
+    String stateDetails(byte[] input) {
+        if (sessionKey == null || input == null || input.length < 10) return null;
+        if ((input[0] & 0xff) != 0xff || input[1] != 9) return null;
+        if (u16le(input,2) != input.length || xor(input) != 0) return null;
+        int command = u16be(input,7);
+        if (command != 0x4A00 && command != 0x4204 && command != 0x4A04 &&
+            command != 0x0A00 && command != 0x0204) return null;
+        try {
+            byte[] body = Arrays.copyOfRange(input,9,input.length-1);
+            byte[] plain = body;
+            if ((command & 0x4000) != 0) {
+                if (body.length == 0 || body.length % 16 != 0) return null;
+                plain = decrypt(body,sessionKey);
+                int pad = plain[plain.length-1] & 0xff;
+                if (pad >= 1 && pad <= 16 && pad <= plain.length) {
+                    boolean ok=true;
+                    for(int i=plain.length-pad;i<plain.length;i++) if((plain[i]&0xff)!=pad){ok=false;break;}
+                    if(ok) plain=Arrays.copyOfRange(plain,0,plain.length-pad);
+                }
+            }
+            StringBuilder out=new StringBuilder();
+            out.append(String.format(java.util.Locale.ROOT,"reply=%04X",command));
+            int i=0, shown=0;
+            while(i+1<plain.length){
+                int tag=plain[i]&0xff, len=plain[i+1]&0xff;
+                if(i+2+len>plain.length){ i++; continue; }
+                if(tag>=0xA3 && tag<=0xB0){
+                    if(shown++>0) out.append("\n");
+                    out.append(String.format(java.util.Locale.ROOT,"%02X[%d]=",tag,len));
+                    int cap=Math.min(len,96);
+                    for(int n=0;n<cap;n++){
+                        if(n>0)out.append(' ');
+                        out.append(String.format(java.util.Locale.ROOT,"%02X",plain[i+2+n]&0xff));
+                    }
+                    if(len>cap)out.append(" …");
+                }
+                i+=2+len;
+            }
+            return out.toString();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     String stateSummary(byte[] input) {
         if (sessionKey == null || input == null || input.length < 10) return null;
         if ((input[0] & 0xff) != 0xff || input[1] != 9) return null;
