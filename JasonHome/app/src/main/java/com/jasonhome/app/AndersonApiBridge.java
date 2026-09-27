@@ -25,6 +25,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -102,6 +104,10 @@ final class AndersonApiBridge {
             if ("/api/control".equals(path) && "POST".equals(m)) return control(input);
             if ("/api/resume".equals(path) && "POST".equals(m)) return resume();
             if ("/api/settings".equals(path) && "POST".equals(m)) return saveSettings(input);
+            if ("/api/backup/status".equals(path) && "GET".equals(m)) return ok(backupStatus());
+            if ("/api/backup/manual".equals(path) && "POST".equals(m)) return backupAll();
+            if ("/api/backup/restore".equals(path) && "POST".equals(m)) return restoreBackup();
+            if ("/api/backup/settings".equals(path) && "POST".equals(m)) return ok(new JSONObject().put("ok",true).put("mode","all"));
 
             if ("/api/events".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), intQuery(uri,"month",LocalDate.now().getMonthValue()), null));
             if ("/api/events/search".equals(path)) return ok(eventsJson(intQuery(uri,"year",LocalDate.now().getYear()), 0, uri.getQueryParameter("q")));
@@ -596,6 +602,89 @@ final class AndersonApiBridge {
             .put("configured",hasPin("shirley")&&hasPin("kelly")&&hasPin("jason")).put("kellyConfigured",hasPin("kelly"));
         if("jason".equals(profile))o.put("token",UUID.randomUUID().toString());
         return ok(o);
+    }
+
+    private JSONObject backupStatus() throws Exception {
+        SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
+        String snapshot=bp.getString("snapshot","");
+        long when=bp.getLong("last_backup",0L);
+        return new JSONObject()
+            .put("hasBackup",!snapshot.isEmpty())
+            .put("lastBackup",when)
+            .put("lastOk",!snapshot.isEmpty())
+            .put("mode","complete");
+    }
+
+    private String backupAll() throws Exception {
+        JSONObject root=new JSONObject();
+        root.put("schema",1);
+        root.put("createdAt",System.currentTimeMillis()/1000L);
+        root.put("app",preferencesToJson(context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE),true));
+        root.put("schedule",preferencesToJson(context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE),false));
+        // Device authentication/serial identity is intentionally not copied into a settings backup.
+        SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
+        long now=System.currentTimeMillis()/1000L;
+        bp.edit().putString("snapshot",root.toString()).putLong("last_backup",now).apply();
+        return ok(new JSONObject().put("ok",true).put("lastBackup",now).put("mode","complete"));
+    }
+
+    private String restoreBackup() throws Exception {
+        SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
+        String raw=bp.getString("snapshot","");
+        if(raw.isEmpty())return error(404,"No Craumer Home backup is available");
+        JSONObject root=new JSONObject(raw);
+        restorePreferences(context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE),root.optJSONObject("app"),true);
+        restorePreferences(context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE),root.optJSONObject("schedule"),false);
+        AndersonScheduleService.update(context);
+        return ok(new JSONObject().put("ok",true).put("restoredAt",System.currentTimeMillis()/1000L));
+    }
+
+    private JSONObject preferencesToJson(SharedPreferences source,boolean appPrefs) throws Exception {
+        JSONObject out=new JSONObject();
+        for(Map.Entry<String,?> entry:source.getAll().entrySet()){
+            String key=entry.getKey();
+            if(appPrefs&&(key.startsWith("pin_")||"pin_enabled".equals(key)))continue;
+            Object value=entry.getValue();
+            JSONObject v=new JSONObject();
+            if(value instanceof String){v.put("t","s").put("v",value);}
+            else if(value instanceof Boolean){v.put("t","b").put("v",value);}
+            else if(value instanceof Integer){v.put("t","i").put("v",value);}
+            else if(value instanceof Long){v.put("t","l").put("v",value);}
+            else if(value instanceof Float){v.put("t","f").put("v",((Float)value).doubleValue());}
+            else if(value instanceof Set){
+                JSONArray a=new JSONArray();
+                for(Object x:(Set<?>)value)a.put(String.valueOf(x));
+                v.put("t","ss").put("v",a);
+            }else continue;
+            out.put(key,v);
+        }
+        return out;
+    }
+
+    private void restorePreferences(SharedPreferences target,JSONObject data,boolean appPrefs) throws Exception {
+        if(data==null)return;
+        SharedPreferences.Editor ed=target.edit().clear();
+        for(java.util.Iterator<String> it=data.keys();it.hasNext();){
+            String key=it.next();
+            if(appPrefs&&(key.startsWith("pin_")||"pin_enabled".equals(key)))continue;
+            JSONObject v=data.optJSONObject(key);
+            if(v==null)continue;
+            String type=v.optString("t","");
+            switch(type){
+                case "s": ed.putString(key,v.optString("v","")); break;
+                case "b": ed.putBoolean(key,v.optBoolean("v",false)); break;
+                case "i": ed.putInt(key,v.optInt("v",0)); break;
+                case "l": ed.putLong(key,v.optLong("v",0L)); break;
+                case "f": ed.putFloat(key,(float)v.optDouble("v",0.0)); break;
+                case "ss":
+                    java.util.HashSet<String> set=new java.util.HashSet<>();
+                    JSONArray a=v.optJSONArray("v");
+                    if(a!=null)for(int i=0;i<a.length();i++)set.add(a.optString(i,""));
+                    ed.putStringSet(key,set);
+                    break;
+            }
+        }
+        ed.apply();
     }
 
     private JSONObject systemJson() throws Exception {
