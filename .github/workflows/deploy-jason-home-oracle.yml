@@ -1,15 +1,10 @@
 name: Deploy Jason Home to Oracle
 
 on:
-  workflow_run:
-    workflows:
-      - Build Jason Home Oracle Server
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       sha:
-        description: Exact tested commit SHA to deploy
+        description: Exact tested commit SHA to deploy manually
         required: true
         type: string
 
@@ -22,20 +17,11 @@ concurrency:
 
 jobs:
   deploy:
-    if: >-
-      github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2' &&
-      (
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_branch == 'jason-home-cloudflare-rebuild'
-        ) ||
-        github.event_name == 'workflow_dispatch'
-      )
+    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2'
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 20
     env:
-      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
+      DEPLOY_SHA: ${{ inputs.sha }}
     steps:
       - name: Validate immutable deploy revision
         shell: bash
