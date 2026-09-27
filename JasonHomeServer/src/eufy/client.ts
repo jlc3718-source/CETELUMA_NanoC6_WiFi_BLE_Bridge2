@@ -27,8 +27,15 @@ export class EufyClient {
   private authHeaders(h:Record<string,string>){if(this.token){h["x-auth-token"]=this.token;h.authorization=this.token;h.gtoken=md5(this.accountUid);}}
   private async raw(host:string,path:string,body:string,headers:Record<string,string>):Promise<any>{
     if(!allowedApi(host))throw new Error(`Unexpected Eufy API hostname: ${host}`);
-    const response=await fetch(`https://${host}${path}`,{method:"POST",headers,body,redirect:"manual"}),text=await response.text();
-    let obj:any;try{obj=JSON.parse(text);}catch{throw new Error(`Eufy ${path} HTTP ${response.status} returned non-JSON`);}obj._http=response.status;return obj;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    try{
+      const response=await fetch(`https://${host}${path}`,{method:"POST",headers,body,redirect:"manual",signal:controller.signal});
+      const text=await response.text();
+      let obj:any;try{obj=JSON.parse(text);}catch{throw new Error(`Eufy ${path} HTTP ${response.status} returned non-JSON`);}obj._http=response.status;return obj;
+    }catch(e:any){
+      if(e?.name==="AbortError")throw new Error(`Eufy ${path} request timeout`);
+      throw e;
+    }finally{clearTimeout(timer);}
   }
   private signedHeaders(h:Record<string,string>,key:string,keyId:string,cipher:string){const ts=String(nowSec()),nonce=randomId();h["x-encryption-info"]="algo_ecdh";h["x-replay-info"]="replay";h["x-key-ident"]=keyId;h["x-request-ts"]=ts;h["x-request-once"]=nonce;h["x-signature"]=sign(key,ts,nonce,cipher);}
   private async exchange(){
