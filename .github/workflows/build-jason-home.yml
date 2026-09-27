@@ -21,51 +21,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare 5.0.18 T-series RGB characterization
+      - name: Validate 5.0.18 T-series RGB characterization
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          bridge_path = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java')
-          bridge = bridge_path.read_text()
-          bridge = bridge.replace('Craumer Home • Jason Home 5.0.17', 'Craumer Home • Jason Home 5.0.18')
-          old_palette = 'new int[]{0xFF0000,0x00FF00},2,false'
-          new_palette = 'new int[]{0xFF0000,0x00FF00,0x0000FF},2,false'
-          count = bridge.count(old_palette)
-          if count != 9:
-              raise SystemExit(f'Expected 9 S-series preset calls, found {count}')
-          bridge = bridge.replace(old_palette, new_palette)
-          bridge_path.write_text(bridge)
-
-          html_path = Path('JasonHome/app/src/main/assets/anderson_home.html')
-          html = html_path.read_text()
-          html = html.replace(
-              '<div class="sub" style="margin:10px 0 6px"><strong>E120 local-ID scan</strong> — AC=10034, A5=2, red+green and standard A7 stay fixed. Only A3 changes around the known 30010 Chase value.</div>',
-              '<div class="sub" style="margin:10px 0 6px"><strong>E120 RGB mode characterization</strong> — T1–T9 keep AC=10034, A5=2, red+green+blue and standard A7 fixed. Only A3 changes from 30006 through 30014.</div>'
-          )
-          labels = {
-              'S1 · A3=30006':'T1 · A3=30006',
-              'S2 · A3=30007':'T2 · A3=30007',
-              'S3 · A3=30008':'T3 · A3=30008',
-              'S4 · A3=30009':'T4 · A3=30009',
-              'S5 · A3=30010 baseline':'T5 · A3=30010',
-              'S6 · A3=30011':'T6 · A3=30011',
-              'S7 · A3=30012':'T7 · A3=30012',
-              'S8 · A3=30013':'T8 · A3=30013',
-              'S9 · A3=30014':'T9 · A3=30014',
-          }
-          for old, new in labels.items():
-              if old not in html:
-                  raise SystemExit(f'Missing expected label: {old}')
-              html = html.replace(old, new)
-          html_path.write_text(html)
-
-          if bridge.count(new_palette) != 9:
-              raise SystemExit('RGB palette replacement count is not 9')
-          if html.count('T1 · A3=30006') != 1 or html.count('T9 · A3=30014') != 1:
-              raise SystemExit('T-series labels were not applied exactly once')
-          print('5.0.18 T-series RGB preparation: PASS')
+          bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
+          html = Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
+          palette = 'new int[]{0xFF0000,0x00FF00,0x0000FF},2,false'
+          if bridge.count(palette) != 9:
+              raise SystemExit(f'Expected 9 RGB preset calls, found {bridge.count(palette)}')
+          for n, a3 in enumerate(range(30006, 30015), 1):
+              if f'case "rgb-{a3}"' not in bridge:
+                  raise SystemExit(f'Missing rgb-{a3} bridge action')
+              if f'T{n} · A3={a3}' not in html:
+                  raise SystemExit(f'Missing T{n} label')
+          if 'Craumer Home • Jason Home 5.0.18' not in bridge:
+              raise SystemExit('Bridge version is not 5.0.18')
+          print('5.0.18 T-series RGB source validation: PASS')
           PY
 
       - name: Set up Java 17
