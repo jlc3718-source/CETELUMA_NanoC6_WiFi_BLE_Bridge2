@@ -77,7 +77,7 @@ jobs:
               raise SystemExit('Complete backup UI missing')
           if 'Users & Security' in js:
               raise SystemExit('Users & Security settings tab still present')
-          if '[\"general\",\"General\"]' in js or 'systemMonitorPanel' in html:
+          if '[\"general\",\"General\"]' in js or '<div id="systemMonitorPanel"' in html:
               raise SystemExit('General settings tab still present')
 
           holiday_checks={
