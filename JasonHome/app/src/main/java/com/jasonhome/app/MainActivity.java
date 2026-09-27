@@ -22,6 +22,7 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
     private DeviceStore deviceStore;
     private AndersonSchedule schedule;
     private EufyCloudController cloud;
+    private CloudflareApiClient cloudflare;
     private AndersonApiBridge bridge;
     private volatile boolean cloudLoginShowing=false;
 
@@ -35,7 +36,8 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         deviceStore = new DeviceStore(this);
         schedule = new AndersonSchedule(this);
         cloud = new EufyCloudController(this, this);
-        bridge = new AndersonApiBridge(this, this, deviceStore, cloud, schedule);
+        cloudflare = new CloudflareApiClient(this);
+        bridge = new AndersonApiBridge(this, this, deviceStore, cloud, cloudflare, schedule);
 
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.rgb(4,13,29));
@@ -77,10 +79,12 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
 
         setContentView(frame);
         frame.requestApplyInsets();
-        webView.loadUrl("file:///android_asset/anderson_home.html");
+        webView.loadUrl("file:///android_asset/jason_cloud_home.html");
 
-        // Wi-Fi/cloud is the only active Eufy transport in this build.
-        cloud.start();
+        // Cloudflare mode leaves Eufy transport and schedules to the server.
+        // Direct mode preserves the known-good 5.2.2 Android -> Eufy fallback.
+        if (!cloudflare.isCloudMode()) cloud.start();
+        AndersonScheduleService.update(this);
     }
 
     @Override
@@ -96,7 +100,7 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
 
     @Override
     public void onCloudLoginRequired(String reason) {
-        runOnUiThread(() -> showCloudLogin(reason));
+        if (bridge != null && bridge.usesDirectMode()) runOnUiThread(() -> showCloudLogin(reason));
     }
 
     private void showCloudLogin(String reason) {
