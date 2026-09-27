@@ -85,6 +85,10 @@ jobs:
           print('CALENDAR enabled', bool((c.get('settings') or {}).get('enabled')))
           print('CALENDAR custom schedules', len(c.get('customSchedules') or []))
           PY
+          echo "LEGACY REFERENCE AUDIT"
+          cd /home/ubuntu/repo
+          grep -RInE 'JasonHomeCloud|JasonHomeRelay|jason-home-cloud\.jlc3718\.workers\.dev'             --exclude-dir=.git --exclude-dir=JasonHomeCloud --exclude-dir=JasonHomeRelay             --exclude='audit-jason-home-runtime.yml' . || true
+          cd /home/ubuntu/repo/JasonHomeServer
           sudo docker compose exec -T jason-home node --input-type=module - <<'NODE'
           import { resolveCalendar } from '/app/dist/calendar.js';
           const res=await fetch('http://127.0.0.1:8080/api/calendar',{headers:{Authorization:'Bearer '+process.env.JASON_HOME_API_TOKEN}});
