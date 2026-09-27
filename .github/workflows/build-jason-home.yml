@@ -80,8 +80,8 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Craumer Home • 5.3.4 Cloud' not in bridge:
-              raise SystemExit('Bridge version is not 5.3.4 Cloud')
+          if 'Craumer Home • 5.3.5 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not 5.3.5 Cloud')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
           if 'cloud.setScene(0, scene.effect' not in schedule_service:
@@ -251,13 +251,13 @@ jobs:
           for marker in ['data-page="home"','data-page="lights"','data-page="events"','data-page="settings"','housePreview','Shirley','Kelly','Jason','Live Color Tuning','Scheduling Rules','Eufy Devices']:
               if marker not in classic:
                   raise SystemExit('Classic Jason Home layout missing '+marker)
-          for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test']:
+          for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller']:
               if marker not in classic_js:
                   raise SystemExit('Classic Cloudflare integration missing '+marker)
-          print("Classic Jason Home layout regression: PASS")
+          print("Classic Jason Home Oracle layout regression: PASS")
           if 'controllerPane.prepend(eufy)' not in classic_js or 'data-settings-pane="controllers"' not in classic_js:
               raise SystemExit('Cloudflare controller must live under Eufy Devices')
-          print("Cloudflare Eufy Devices placement regression: PASS")
+          print("Oracle Eufy Devices placement regression: PASS")
           bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
           if 'provisionCloudIdentity' not in bridge or '/api/provision-device' not in bridge:
               raise SystemExit('Android Cloudflare identity provisioning missing')
@@ -269,14 +269,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.3.4-Cloud-UNSIGNED.apk
-          sha256sum Jason-Home-5.3.4-Cloud-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.3.5-Oracle-UNSIGNED.apk
+          sha256sum Jason-Home-5.3.5-Oracle-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.3.4-Cloud-UNSIGNED-do-not-install
-          path: Jason-Home-5.3.4-Cloud-UNSIGNED.apk
+          name: Jason-Home-5.3.5-Oracle-UNSIGNED-do-not-install
+          path: Jason-Home-5.3.5-Oracle-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
