@@ -20,6 +20,7 @@ final class EufyCloudController {
     interface Listener {
         void onCloudStatus(String message);
         void onCloudLoginRequired(String reason);
+        default void onCloudCommandResult(boolean complete,String message){}
     }
 
     private static final String[] NAMES={"Pool","House","Garage","Shed"};
@@ -108,9 +109,12 @@ final class EufyCloudController {
             }
             if(ok==0){
                 ready=false;
-                throw new IOException("No Wi-Fi light command completed"+(failures.length()>0?": "+failures:""));
+                String fail="No Wi-Fi light command completed"+(failures.length()>0?": "+failures:"");
+                if(listener!=null)listener.onCloudCommandResult(false,fail);
+                throw new IOException(fail);
             }
-            setStatus((on?"ON":"OFF")+" sent over Wi-Fi to "+ok+"/"+names.length+" string"+(names.length==1?"":"s")+(failures.length()>0?" • "+failures:""));
+            String result=(on?"ON":"OFF")+" sent over Wi-Fi to "+ok+"/"+names.length+" string"+(names.length==1?"":"s")+(failures.length()>0?" • "+failures:"");
+            setStatus(result);if(listener!=null)listener.onCloudCommandResult(ok==names.length,result);
         },false);
     }
 
@@ -165,8 +169,9 @@ final class EufyCloudController {
                     failures.append(cause.getMessage()==null?cause.getClass().getSimpleName():cause.getMessage());
                 }
             }
-            if(ok==0){ready=false;throw new IOException("No Wi-Fi light command completed"+(failures.length()>0?": "+failures:""));}
-            setStatus(action+" sent over Wi-Fi to "+ok+"/"+names.length+" string"+(names.length==1?"":"s")+(failures.length()>0?" • "+failures:""));
+            if(ok==0){ready=false;String fail="No Wi-Fi light command completed"+(failures.length()>0?": "+failures:"");if(listener!=null)listener.onCloudCommandResult(false,fail);throw new IOException(fail);}
+            String result=action+" sent over Wi-Fi to "+ok+"/"+names.length+" string"+(names.length==1?"":"s")+(failures.length()>0?" • "+failures:"");
+            setStatus(result);if(listener!=null)listener.onCloudCommandResult(ok==names.length,result);
         },false);
     }
 
