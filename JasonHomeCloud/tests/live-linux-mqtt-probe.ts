@@ -9,7 +9,8 @@ const installId="7f2e4a0b1c3d5e6f8091a2b3c4d5e6f7";
 const client=new EufyClient(env,installId);
 
 console.log("LINUX PROBE: authenticating and discovering Eufy devices");
-await client.prepare(true);
+await client.login();
+await client.prepare();
 const names=client.readyNames();
 console.log("LINUX PROBE READY:",names.join(", "));
 for(const expected of ["Pool","House","Garage","Shed"]){
