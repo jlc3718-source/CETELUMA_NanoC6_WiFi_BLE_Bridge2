@@ -17,6 +17,8 @@ const DB_PATH=process.env.JASON_HOME_DB||"/data/jason-home.sqlite";
 const LAT=Number(process.env.HOME_LAT||"42.1507");
 const LON=Number(process.env.HOME_LON||"-78.9452");
 const TZ=process.env.HOME_TZ||"America/New_York";
+const BUILD_SHA=process.env.JASON_HOME_BUILD_SHA||"unknown";
+const STARTED_AT=new Date().toISOString();
 const DEFAULT_INSTALL=(process.env.EUFY_INSTALL_ID||createHash("sha256").update("jason-home-server:"+EMAIL).digest("hex").slice(0,32)).toLowerCase();
 
 if(!EMAIL||!PASSWORD)throw new Error("EUFY_EMAIL and EUFY_PASSWORD are required");
@@ -108,6 +110,7 @@ function nextOverrideExpiry(now=new Date()){
   return Number.isFinite(at)?at:null;
 }
 if(!meta("install_id"))setMeta("install_id",DEFAULT_INSTALL);
+if(!meta("automation_owner"))setMeta("automation_owner","oracle");
 
 function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
 function parseColor(v:any):number|null{
@@ -136,6 +139,12 @@ function targetNames(target:string):string[]{
   if(!(target in DEVICE_MODELS))throw new Error("Unknown target "+target);
   return [target];
 }
+function logCommand(at:number,target:string,action:string,ok:boolean,detail:any){
+  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(at,target,action,ok?1:0,typeof detail==="string"?detail:JSON.stringify(detail));
+  db.prepare("DELETE FROM command_log WHERE id NOT IN (SELECT id FROM command_log ORDER BY id DESC LIMIT 1000)").run();
+}
+db.prepare("DELETE FROM command_log WHERE id NOT IN (SELECT id FROM command_log ORDER BY id DESC LIMIT 1000)").run();
+
 function storedScene(name:string):Scene|null{
   const row=db.prepare("SELECT scene FROM desired_state WHERE name=?").get(name) as any;
   try{return row?.scene?JSON.parse(row.scene):null;}catch{return null;}
@@ -153,7 +162,8 @@ async function readJson(req:http.IncomingMessage){
     chunks.push(b);
   }
   if(!chunks.length)return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try{return JSON.parse(Buffer.concat(chunks).toString("utf8"));}
+  catch{const e:any=new Error("Malformed JSON request body");e.statusCode=400;throw e;}
 }
 function secureEqual(a:string,b:string){
   const aa=Buffer.from(a),bb=Buffer.from(b);
@@ -616,6 +626,8 @@ async function statusPayload(refresh=false){
     ok:true,
     controller:"Online",
     architecture:"Oracle Linux + Node.js + SQLite",
+    build:{sha:BUILD_SHA,startedAt:STARTED_AT},
+    automationOwner:meta("automation_owner")||"oracle",
     eufy:{ready:eufyReady,status:eufyStatus,readyNames:[...readyNames],transport:"linux-mqtt"},
     devices,
     override,
@@ -624,6 +636,9 @@ async function statusPayload(refresh=false){
     location:{zip:"14772",lat:LAT,lon:LON,timeZone:TZ},
     calendar:{synced:!!calendar,enabled:!!calendar?.settings?.enabled,revision:calendar?.revision||Number(meta("calendar_revision")||0)||0,eventCount:calendar?.events?.length||0,promotedFactoryCount:factoryPromotionRows(calendar).length,customCount:calendar?.customSchedules?.length||0,current:currentCalendar,syncedAt:calendar?.syncedAt||null},
     lastCommand:meta("last_command"),
+    lastReconcile:meta("last_reconcile"),
+    lastSchedulerEvaluation:meta("last_scheduler_eval"),
+    commandLogCount:Number((db.prepare("SELECT COUNT(*) AS n FROM command_log").get() as any)?.n||0),
     desired:db.prepare("SELECT * FROM desired_state ORDER BY name").all()
   };
 }
@@ -653,7 +668,7 @@ async function manualControl(input:any,sequence?:number){
   const failed=detail.filter((x:any)=>!x.ok).length;
   const summary={at:new Date().toISOString(),target,ok:completed,skipped,failed,total:names.length,scene,detail,transport:"linux-mqtt"};
   setMeta("last_command",JSON.stringify(summary));
-  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(Date.now(),target,"manual",failed===0?1:0,JSON.stringify(detail));
+  logCommand(Date.now(),target,"manual",failed===0,detail);
   if(failed===names.length)throw new Error(detail.map((x:any)=>x.error).filter(Boolean).join("; ")||"No light command completed");
   return {ok:true,updated:completed,skipped,total:names.length,detail,override};
 }
@@ -681,7 +696,7 @@ async function applyScheduled(name:string,scene:Scene,reason:string){
   const now=Date.now();
   db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(now,name);
   db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),now);
-  db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(now,name,"schedule",1,JSON.stringify({reason,report:r.report||null}));
+  logCommand(now,name,"schedule",true,{reason,brokerAccepted:r.brokerAccepted===true,deviceReported:r.deviceReported===true,report:r.report||null});
 }
 
 let reconciling=false;
@@ -689,7 +704,14 @@ async function reconcile(ignoreOverride=false,forceSend=false){
   if(reconciling)return {ok:true,busy:true};
   reconciling=true;
   try{
-    const now=Date.now(),rows=scheduleRows(),calendar=effectiveCalendarConfig();
+    const now=Date.now(),owner=meta("automation_owner")||"oracle";
+    if(owner!=="oracle"&&!ignoreOverride){
+      const evalState={at:new Date(now).toISOString(),owner,paused:true,sent:0,errors:[]};
+      setMeta("last_reconcile",new Date(now).toISOString());
+      setMeta("last_scheduler_eval",JSON.stringify(evalState));
+      return {ok:true,paused:true,owner,sent:0,errors:[]};
+    }
+    const rows=scheduleRows(),calendar=effectiveCalendarConfig();
     let override:any=null;const raw=meta("override");
     if(raw){try{override=JSON.parse(raw);}catch{delMeta("override");}}
     if(override?.active&&override.expiresAt&&Number(override.expiresAt)<=now){delMeta("override");override=null;}
@@ -723,7 +745,7 @@ async function reconcile(ignoreOverride=false,forceSend=false){
     }));
     const errors=results.filter((x):x is string=>!!x);
     setMeta("last_reconcile",new Date().toISOString());
-    setMeta("last_command",JSON.stringify({at:new Date().toISOString(),action:"reconcile",sent:changes.length,errors,transport:"linux-mqtt"}));
+    setMeta("last_scheduler_eval",JSON.stringify({at:new Date().toISOString(),owner:meta("automation_owner")||"oracle",action:"reconcile",sent:changes.length,errors,transport:"linux-mqtt"}));
     if(changes.length&&errors.length===changes.length)throw new Error(errors.join("; "));
     return {ok:true,sent:changes.length,errors};
   }finally{reconciling=false;}
@@ -844,12 +866,22 @@ const server=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url||"/","http://localhost"),method=(req.method||"GET").toUpperCase(),path=url.pathname;
     if(method==="GET"&&path==="/api/health"){
-      return json(res,200,{ok:true,service:"jason-home",runtime:"oracle-linux",architecture:"Node.js + SQLite + Eufy MQTT",time:new Date().toISOString()});
+      return json(res,200,{ok:true,service:"jason-home",runtime:"oracle-linux",architecture:"Node.js + SQLite + Eufy MQTT",build:{sha:BUILD_SHA,startedAt:STARTED_AT},automationOwner:meta("automation_owner")||"oracle",time:new Date().toISOString()});
     }
     if(!authorized(req))return json(res,401,{ok:false,error:"Unauthorized"});
 
     if(method==="GET"&&path==="/api/status")return json(res,200,await statusPayload(url.searchParams.get("refresh")==="1"));
     if(method==="GET"&&path==="/api/devices")return json(res,200,{ok:true,devices:(await statusPayload(false)).devices});
+    if(method==="POST"&&path==="/api/automation/ownership"){
+      const input:any=await readJson(req),owner=String(input?.owner||"").toLowerCase();
+      if(owner!=="oracle"&&owner!=="direct")return json(res,400,{ok:false,error:"Automation owner must be oracle or direct"});
+      setMeta("automation_owner",owner);
+      if(owner==="oracle"){
+        delMeta("override");
+        return json(res,200,{ok:true,owner,reconcile:await reconcile(true,true)});
+      }
+      return json(res,200,{ok:true,owner,paused:true});
+    }
     if(method==="GET"&&path==="/api/backup/export")return json(res,200,{ok:true,backup:settingsBackupExport()});
     if(method==="POST"&&path==="/api/backup/restore"){
       const input:any=await readJson(req);
@@ -992,7 +1024,8 @@ const server=http.createServer(async(req,res)=>{
     const msg=e?.message||String(e);
     console.error("[api]",req.method,req.url,msg);
     if(/session|auth|login|certificate/i.test(msg)){eufy=null;eufyReady=false;readyNames=[];}
-    return json(res,500,{ok:false,error:msg});
+    const status=Number(e?.statusCode)||(/^(Invalid|Unknown|Malformed|Schedule id required|Factory apply mode|Probe target|Android install identity|Automation owner|Backup )/i.test(msg)?400:500);
+    return json(res,status,{ok:false,error:msg});
   }
 });
 
