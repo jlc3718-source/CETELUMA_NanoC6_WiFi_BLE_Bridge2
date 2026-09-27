@@ -189,6 +189,8 @@ final class CloudClient {
     String sn=selected.optString("device_sn");String snTail=sn.length()>4?sn.substring(sn.length()-4):sn;String clientId="android-eufy_life-"+creds.optString("user_id",uid)+"-"+md5(installId).substring(0,16)+"-"+snTail+"-"+(System.currentTimeMillis()%100000);ByteArrayOutputStream b=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(b);utf(d,"MQTT");d.writeByte(4);d.writeByte(2);d.writeShort(45);utf(d,clientId);packet(out,0x10,b.toByteArray());Packet response=read(in);if(response.type()!=2||response.data.length!=2)throw new IOException("Invalid MQTT CONNACK");int rc=response.data[1]&255;if(rc!=0)throw new IOException("MQTT CONNACK refused with code "+rc+(rc==2?" (client identifier rejected)":""));
     b.reset();d=new DataOutputStream(b);d.writeShort(1);String[] requested=topics();for(String topic:requested){utf(d,topic);d.writeByte(1);}packet(out,0x82,b.toByteArray());long deadline=System.currentTimeMillis()+15000;boolean subscribed=false;while(System.currentTimeMillis()<deadline){h.check();response=read(in);if(response.type()==9){if(response.data.length!=6||response.data[0]!=0||response.data[1]!=1)throw new IOException("Malformed subscription acknowledgment");int granted=0;for(int i=0;i<4;i++){int q=response.data[i+2]&255;if(q!=128&&q<=2)granted++;}if(granted==0)throw new IOException("All subscriptions denied");if(opcodes!=null&&(response.data[2]&255)==128)throw new IOException(selectedSpec.name+" state topic denied; writes blocked.");subscribed=true;break;}handle(response,out);}
     if(!subscribed)throw new IOException("No MQTT SUBACK received");
+    java.util.HashSet<Integer> expectedAcks=new java.util.HashSet<>(),acked=new java.util.HashSet<>();
+    boolean requireReport=false,deviceReported=false;
     if(opcodes!=null){
      for(int i=0;i<opcodes.length;i++){
       long ts=System.currentTimeMillis()/1000;
@@ -196,20 +198,33 @@ final class CloudClient {
       JSONObject inner=new JSONObject().put("account_id",account()).put("device_sn",selected.optString("device_sn")).put("data",Base64.getEncoder().encodeToString(frame)).put("trans","");
       JSONObject head=new JSONObject().put("version","1.0.0.1").put("client_id",clientId).put("sess_id","0000").put("msg_seq",i+1).put("seed","").put("timestamp",ts).put("cmd_status",1).put("cmd",17).put("sign_code",0);
       byte[] payload=bytes(new JSONObject().put("head",head).put("payload",inner.toString()).toString());
-      h.check();b.reset();d=new DataOutputStream(b);utf(d,"cmd/eufy_life/"+selectedSpec.model+"/"+selected.optString("device_sn")+"/req");d.writeShort(2+i);d.write(payload);packet(out,0x32,b.toByteArray());
+      int publishId=2+i;expectedAcks.add(publishId);if(opcodes[i]==0x0200)requireReport=true;
+      h.check();b.reset();d=new DataOutputStream(b);utf(d,"cmd/eufy_life/"+selectedSpec.model+"/"+selected.optString("device_sn")+"/req");d.writeShort(publishId);d.write(payload);packet(out,0x32,b.toByteArray());
       if(i+1<opcodes.length)Thread.sleep(180);
      }
-     h.log(selectedSpec.name+" "+label+" published over Wi-Fi.");
+     h.log(selectedSpec.name+" "+label+" queued over Wi-Fi; waiting for broker acknowledgment.");
     }
-    long until=System.currentTimeMillis()+responseWait;while(System.currentTimeMillis()<until){h.check();ssl.setSoTimeout(800);int first;try{first=in.read();}catch(SocketTimeoutException e){continue;}ssl.setSoTimeout(12000);response=readAfterHeader(first,in);handle(response,out);}
+    long until=System.currentTimeMillis()+responseWait;
+    while(System.currentTimeMillis()<until){
+     h.check();ssl.setSoTimeout(800);int first;try{first=in.read();}catch(SocketTimeoutException e){continue;}ssl.setSoTimeout(12000);response=readAfterHeader(first,in);
+     if(response.type()==4&&response.data.length>=2){acked.add(((response.data[0]&255)<<8)|(response.data[1]&255));}
+     else if(handle(response,out))deviceReported=true;
+     if(opcodes!=null&&acked.containsAll(expectedAcks)&&(!requireReport||deviceReported))break;
+    }
+    if(opcodes!=null&&!acked.containsAll(expectedAcks)){
+     java.util.HashSet<Integer> missing=new java.util.HashSet<>(expectedAcks);missing.removeAll(acked);
+     throw new IOException("MQTT PUBACK timeout; missing packet ids "+missing);
+    }
+    if(requireReport&&!deviceReported)throw new IOException("MQTT device report timeout");
+    if(opcodes!=null)h.log(selectedSpec.name+" "+label+" accepted by broker"+(deviceReported?" • device report received":"")+".");
     packet(out,0xe0,new byte[0]);
    }finally{h.untrack(ssl);ssl.close();}
   }finally{h.untrack(raw);raw.close();}
  }
- void handle(Packet p,OutputStream out)throws Exception{
-  if(p.type()==4)return;
-  if(p.type()!=3)return;DataInputStream d=new DataInputStream(new ByteArrayInputStream(p.data));int n=d.readUnsignedShort();if(n>d.available())throw new IOException("Bad MQTT topic length");byte[] t=new byte[n];d.readFully(t);String topic=new String(t,StandardCharsets.UTF_8);String[] parts=topic.split("/");boolean ours=parts.length>=5&&parts[1].equals("eufy_life")&&parts[2].equals(selectedSpec.model)&&parts[3].equals(selected.optString("device_sn"));int qos=(p.header>>1)&3;if(qos==1){int packetId=d.readUnsignedShort();packet(out,0x40,new byte[]{(byte)(packetId>>8),(byte)packetId});}else if(qos!=0)throw new IOException("Unexpected MQTT QoS");byte[] body=new byte[d.available()];d.readFully(body);if(!ours)return;
-  try{JSONObject envelope=new JSONObject(new String(body,StandardCharsets.UTF_8));Object payload=envelope.opt("payload");JSONObject outer=payload instanceof String?new JSONObject((String)payload):(JSONObject)payload;if(outer==null)return;String sn=outer.optString("sn",outer.optString("device_sn",selected.optString("device_sn")));if(!selected.optString("device_sn").equals(sn))return;String nested=new String(Base64.getDecoder().decode(outer.getString("data")),StandardCharsets.UTF_8);String frameHex=new JSONObject(nested).getString("data");byte[] frame=unhex(frameHex);if(frame.length<10||frame[0]!=(byte)0xff||frame[1]!=9||((frame[2]&255)|((frame[3]&255)<<8))!=frame.length)return;int x=0;for(byte v:frame)x^=v&255;if(x!=0)return;int cmd=((frame[7]&255)<<8)|(frame[8]&255);int start=(cmd>>8)==10?10:9;if(cmd!=0x0a00&&cmd!=0x0204)return;for(int i=start;i+1<frame.length-1;){int tag=frame[i]&255,len=frame[i+1]&255;i+=2;if(i+len>frame.length-1)return;if((tag==0xa1||tag==0xa2)&&len>0&&len<=4){long value=0;for(int k=0;k<len;k++)value|=(long)(frame[i+k]&255)<<(8*k);h.log(tag==0xa1?selectedSpec.name+" reported power: "+(value==0?"OFF":"ON"):selectedSpec.name+" reported brightness: "+value);}i+=len;}
-  }catch(JSONException|IllegalArgumentException ignored){}
+ boolean handle(Packet p,OutputStream out)throws Exception{
+  if(p.type()==4)return false;
+  if(p.type()!=3)return false;DataInputStream d=new DataInputStream(new ByteArrayInputStream(p.data));int n=d.readUnsignedShort();if(n>d.available())throw new IOException("Bad MQTT topic length");byte[] t=new byte[n];d.readFully(t);String topic=new String(t,StandardCharsets.UTF_8);String[] parts=topic.split("/");boolean ours=parts.length>=5&&parts[1].equals("eufy_life")&&parts[2].equals(selectedSpec.model)&&parts[3].equals(selected.optString("device_sn"));int qos=(p.header>>1)&3;if(qos==1){int packetId=d.readUnsignedShort();packet(out,0x40,new byte[]{(byte)(packetId>>8),(byte)packetId});}else if(qos!=0)throw new IOException("Unexpected MQTT QoS");byte[] body=new byte[d.available()];d.readFully(body);if(!ours)return false;
+  try{JSONObject envelope=new JSONObject(new String(body,StandardCharsets.UTF_8));Object payload=envelope.opt("payload");JSONObject outer=payload instanceof String?new JSONObject((String)payload):(JSONObject)payload;if(outer==null)return false;String sn=outer.optString("sn",outer.optString("device_sn",selected.optString("device_sn")));if(!selected.optString("device_sn").equals(sn))return false;String nested=new String(Base64.getDecoder().decode(outer.getString("data")),StandardCharsets.UTF_8);String frameHex=new JSONObject(nested).getString("data");byte[] frame=unhex(frameHex);if(frame.length<10||frame[0]!=(byte)0xff||frame[1]!=9||((frame[2]&255)|((frame[3]&255)<<8))!=frame.length)return false;int x=0;for(byte v:frame)x^=v&255;if(x!=0)return false;int cmd=((frame[7]&255)<<8)|(frame[8]&255);int start=(cmd>>8)==10?10:9;if(cmd!=0x0a00&&cmd!=0x0204)return false;for(int i=start;i+1<frame.length-1;){int tag=frame[i]&255,len=frame[i+1]&255;i+=2;if(i+len>frame.length-1)return false;if((tag==0xa1||tag==0xa2)&&len>0&&len<=4){long value=0;for(int k=0;k<len;k++)value|=(long)(frame[i+k]&255)<<(8*k);h.log(tag==0xa1?selectedSpec.name+" reported power: "+(value==0?"OFF":"ON"):selectedSpec.name+" reported brightness: "+value);}i+=len;}return true;
+  }catch(JSONException|IllegalArgumentException ignored){return false;}
  }
 }
