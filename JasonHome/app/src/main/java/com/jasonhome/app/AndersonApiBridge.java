@@ -163,12 +163,15 @@ final class AndersonApiBridge {
 
             if (cloudApi.isCloudMode()) {
                 if ("/api/status".equals(path) || "/api/devices".equals(path) || "/api/schedules".equals(path)
-                    || "/api/reconcile".equals(path) || "/api/reconnect".equals(path)) {
+                    || "/api/reconcile".equals(path) || "/api/reconnect".equals(path)
+                    || "/api/eufy/factory-presets".equals(path) || "/api/eufy/factory-test".equals(path)) {
                     return forwardCloud(m,cloudPath,body);
                 }
                 if ("/api/control".equals(path) && "POST".equals(m)) return cloudControlCompat(input);
                 if ("/api/resume".equals(path) && "POST".equals(m)) return cloudResumeCompat();
             } else {
+                if ("/api/eufy/factory-presets".equals(path) || "/api/eufy/factory-test".equals(path))
+                    return error(409,"Factory Lab requires Oracle Internet Controller mode.");
                 if ("/api/status".equals(path) && "GET".equals(m)) return ok(directStatusJson());
                 if ("/api/devices".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("ok",true).put("devices",directDevices()));
                 if ("/api/schedules".equals(path) && "GET".equals(m)) return ok(new JSONObject().put("ok",true).put("schedules",new JSONArray()));
@@ -336,7 +339,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.3.6 Oracle");
+        d.put("firmwareVersion","Craumer Home • 5.3.7 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
