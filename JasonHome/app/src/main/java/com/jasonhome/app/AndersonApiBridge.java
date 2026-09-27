@@ -176,7 +176,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.18");
+        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.19");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -614,7 +614,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Jason Home 5.0.18").put("buildCommit","Craumer Home UI")
+            .put("version","Jason Home 5.0.19").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -648,15 +648,15 @@ final class AndersonApiBridge {
             case "blue": host.runOnUi(()->ble.setColor(one,0x0000FF)); break;
             case "breath": host.runOnUi(()->ble.setEffect(one,"Breath",new int[]{0xFF0000},3,false)); break;
             case "status": host.runOnUi(()->ble.readE120State(one)); break;
-            case "rgb-30006": host.runOnUi(()->ble.testE120PresetPair(one,30006,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30007": host.runOnUi(()->ble.testE120PresetPair(one,30007,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30008": host.runOnUi(()->ble.testE120PresetPair(one,30008,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30009": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30010": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30011": host.runOnUi(()->ble.testE120PresetPair(one,30011,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30012": host.runOnUi(()->ble.testE120PresetPair(one,30012,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30013": host.runOnUi(()->ble.testE120PresetPair(one,30013,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
-            case "rgb-30014": host.runOnUi(()->ble.testE120PresetPair(one,30014,10034,new int[]{0xFF0000,0x00FF00,0x0000FF},2,false)); break;
+            case "slot-r": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0xFF0000},2,false)); break;
+            case "slot-g": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0x00FF00},2,false)); break;
+            case "slot-b": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0x0000FF},2,false)); break;
+            case "slot-rg": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0xFF0000,0x00FF00},2,false)); break;
+            case "slot-gr": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0x00FF00,0xFF0000},2,false)); break;
+            case "slot-rb": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0xFF0000,0x0000FF},2,false)); break;
+            case "slot-br": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0x0000FF,0xFF0000},2,false)); break;
+            case "slot-gb": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0x00FF00,0x0000FF},2,false)); break;
+            case "slot-bg": host.runOnUi(()->ble.testE120PresetPair(one,30009,10034,new int[]{0x0000FF,0x00FF00},2,false)); break;
             case "show-10034-id": host.runOnUi(()->ble.testE120ShowIdOnly(one,10034)); break;
             case "show-10034-full": host.runOnUi(()->ble.testE120ShowIdFull(one,10034,new int[]{0xFF0000,0x0000FF},3)); break;
             case "captured-30010-10034": host.runOnUi(()->ble.testE120CapturedPair(one,30010,10034,new int[]{0xFF0000,0x0000FF},3)); break;
