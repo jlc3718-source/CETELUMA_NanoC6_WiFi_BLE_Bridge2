@@ -111,12 +111,18 @@ jobs:
               raise SystemExit('Fixed Eufy cloud device UI missing')
           if 'max="2"' in html and 'eventsSpeed' in html:
               raise SystemExit('Legacy event speed restriction remains')
-          if 'Complete Craumer Home Backup' not in js or 'Back Up Everything Now' not in js:
-              raise SystemExit('Complete backup UI missing')
-          if 'Users & Security' in js:
-              raise SystemExit('Users & Security settings tab still present')
-          if '[\"general\",\"General\"]' in js or '<div id="systemMonitorPanel"' in html:
-              raise SystemExit('General settings tab still present')
+          if not cloud_ui.exists():
+              if 'Complete Craumer Home Backup' not in js or 'Back Up Everything Now' not in js:
+                  raise SystemExit('Complete backup UI missing')
+              if 'Users & Security' in js:
+                  raise SystemExit('Users & Security settings tab still present')
+              if '[\"general\",\"General\"]' in js or '<div id="systemMonitorPanel"' in html:
+                  raise SystemExit('General settings tab still present')
+          else:
+              native = bridge + main + Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudflareApiClient.java').read_text() + Path('JasonHome/app/src/main/java/com/jasonhome/app/CloudflareConfigStore.java').read_text()
+              for marker in ['CloudflareApiClient','CloudflareConfigStore','usesDirectMode','forwardCloud']:
+                  if marker not in native:
+                      raise SystemExit('Cloud rebuild native routing missing '+marker)
 
           holiday_checks={
               '"Pride Month": ("Rainbow Flow",3':'Pride',
