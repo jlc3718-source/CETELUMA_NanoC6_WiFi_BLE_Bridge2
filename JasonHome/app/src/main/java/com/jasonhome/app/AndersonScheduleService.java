@@ -37,9 +37,13 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
         }
     };
 
+    private static boolean ownsDirectSchedule(Context context){
+        return context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE).getBoolean("direct_scheduler_owned",true);
+    }
+
     static void update(Context context) {
         Intent intent = new Intent(context, AndersonScheduleService.class);
-        if (new CloudflareConfigStore(context).isCloudMode()) {
+        if (new CloudflareConfigStore(context).isCloudMode() || !ownsDirectSchedule(context)) {
             try { context.stopService(intent); } catch (Throwable ignored) {}
             return;
         }
@@ -60,7 +64,7 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
     @Override
     public void onCreate() {
         super.onCreate();
-        if (new CloudflareConfigStore(this).isCloudMode()) {
+        if (new CloudflareConfigStore(this).isCloudMode() || !ownsDirectSchedule(this)) {
             stopSelf();
             return;
         }
@@ -75,7 +79,7 @@ public final class AndersonScheduleService extends Service implements EufyCloudC
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (new CloudflareConfigStore(this).isCloudMode() || schedule == null) {
+        if (new CloudflareConfigStore(this).isCloudMode() || !ownsDirectSchedule(this) || schedule == null) {
             stopSelf();
             return START_NOT_STICKY;
         }
