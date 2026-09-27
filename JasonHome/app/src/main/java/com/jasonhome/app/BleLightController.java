@@ -1244,46 +1244,48 @@ final class BleLightController {
                 sendLocalE120Static();
                 return;
             }
+            sendLocalCommandPass(false);
+        }
 
-            byte[] frame;
-            boolean withResponse=false;
+        private boolean localCommandNeedsResponse() {
+            return job.kind==Kind.POWER && isE22(job.light);
+        }
+
+        private byte[] buildLocalCommandFrame() {
+            switch(job.kind) {
+                case POWER:
+                    return localProbe.powerCommand(job.on);
+                case BRIGHTNESS:
+                    return localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
+                case COLOR:
+                    return localProbe.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.color(job.light.model,job.rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+                case WHITE:
+                    return localProbe.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.white(job.light.model,job.value,EufyLightCommands.defaultLampCount(job.light.model)));
+                case EFFECT:
+                    if (isE22(job.light)) {
+                        return localProbe.command(EufyLightCommands.OP_SHOW,
+                            EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
+                    }
+                    return localProbe.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse,
+                            EufyLightCommands.defaultLampCount(job.light.model)));
+                case E120_LOCAL_EFFECT:
+                    return localProbe.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
+                default:
+                    throw new IllegalStateException("Unknown command");
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        private void sendLocalCommandPass(boolean secondPass) {
+            if (finished||token!=parallelToken||localGatt==null||localWrite==null||localProbe==null||!localProbe.sessionEstablished()) return;
+            final boolean withResponse=localCommandNeedsResponse();
+            final byte[] frame;
             try {
-                switch(job.kind) {
-                    case POWER:
-                        frame=localProbe.powerCommand(job.on);
-                        withResponse=isE22(job.light);
-                        break;
-                    case BRIGHTNESS:
-                        frame=localProbe.command(EufyLightCommands.OP_SETUP,EufyLightCommands.brightness(job.value));
-                        break;
-                    case COLOR:
-                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
-                            EufyLightCommands.color(job.light.model,job.rgb,EufyLightCommands.defaultLampCount(job.light.model)));
-                        break;
-                    case WHITE:
-                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
-                            EufyLightCommands.white(job.light.model,job.value,EufyLightCommands.defaultLampCount(job.light.model)));
-                        break;
-                    case EFFECT:
-                        if (isE22(job.light)) {
-                            frame=localProbe.command(EufyLightCommands.OP_SHOW,
-                                EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
-                        } else {
-                            frame=localProbe.command(EufyLightCommands.OP_COLOR,
-                                EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse,
-                                    EufyLightCommands.defaultLampCount(job.light.model)));
-                        }
-                        break;
-                    case E120_LOCAL_EFFECT:
-                        frame=localProbe.command(EufyLightCommands.OP_COLOR,
-                            EufyLightCommands.localEffectE120(job.value,job.colors,job.speed,EufyLightCommands.defaultLampCount(job.light.model)));
-                        break;
-                    case DIAGNOSTIC:
-                        finish(true,null);
-                        return;
-                    default:
-                        throw new IllegalStateException("Unknown command");
-                }
+                frame=buildLocalCommandFrame(); // fresh E10 sequence on every pass
             } catch(Throwable t) {
                 finish(false,displayName(job.light)+": "+commandName(job)+" could not be built");
                 return;
@@ -1293,7 +1295,11 @@ final class BleLightController {
                 finish(false,displayName(job.light)+": "+commandName(job)+" write failed ("+result+")");
                 return;
             }
-            handler.postDelayed(() -> finish(true,null),withResponse?700L:550L);
+            if (!secondPass) {
+                handler.postDelayed(() -> sendLocalCommandPass(true),withResponse?450L:280L);
+            } else {
+                handler.postDelayed(() -> finish(true,null),withResponse?500L:350L);
+            }
         }
 
         @SuppressLint("MissingPermission")
