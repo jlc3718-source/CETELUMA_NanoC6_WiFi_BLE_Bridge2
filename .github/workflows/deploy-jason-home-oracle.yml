@@ -36,6 +36,9 @@ jobs:
           set -euo pipefail
           cd /home/ubuntu/repo/JasonHomeServer
           test -s .env
+          # One-time scheduler migration from the former ZIP 14738 defaults to ZIP 14772.
+          sed -i 's/^HOME_LAT=42\.0529$/HOME_LAT=42.1507/' .env
+          sed -i 's/^HOME_LON=-79\.0576$/HOME_LON=-78.9452/' .env
           chmod 600 .env
 
       - name: Build and restart Jason Home
@@ -78,7 +81,13 @@ jobs:
           if not e.get("ready") or names != expected:
               raise SystemExit("Eufy validation failed: "+json.dumps(e))
           print("Oracle deploy validation: PASS — Eufy Ready 4/4")
+          loc=d.get("location",{})
+          if loc.get("zip")!="14772" or abs(float(loc.get("lat",0))-42.1507)>0.001 or abs(float(loc.get("lon",0))+78.9452)>0.001:
+              raise SystemExit("Scheduler location validation failed: "+json.dumps(loc))
+          print("Scheduler location: PASS — ZIP 14772", json.dumps(loc))
           cal=d.get("calendar",{})
+          if not cal.get("synced") or not cal.get("enabled") or int(cal.get("eventCount") or 0)<1:
+              raise SystemExit("Holiday calendar validation failed: "+json.dumps(cal))
           print("Holiday calendar:", json.dumps({
               "synced": cal.get("synced"),
               "enabled": cal.get("enabled"),
