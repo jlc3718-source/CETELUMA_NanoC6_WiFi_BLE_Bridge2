@@ -855,6 +855,11 @@ const server=http.createServer(async(req,res)=>{
       const input:any=await readJson(req);
       return json(res,200,restoreSettingsBackup(input?.backup||input));
     }
+    if(method==="POST"&&path==="/api/backup/rollback"){
+      const raw=meta("settings_backup_previous");
+      if(!raw)throw new Error("No Oracle rollback snapshot is available");
+      return json(res,200,restoreSettingsBackup(JSON.parse(raw)));
+    }
     if(method==="GET"&&path==="/api/schedules")return json(res,200,{ok:true,schedules:allSchedules()});
     if(method==="POST"&&path==="/api/schedules")return json(res,200,saveSchedule(await readJson(req)));
     if(method==="DELETE"&&path==="/api/schedules"){
