@@ -78,18 +78,26 @@ for(const [name,model] of Object.entries(DEVICE_MODELS)){
   db.prepare("INSERT OR IGNORE INTO devices(name,model,enabled) VALUES(?,?,1)").run(name,model);
 }
 
+const parsedMetaCache=new Map<string,{raw:string,value:any}>();
 function meta(key:string):string|null{
   const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key) as any;
   return row?.value??null;
 }
 function setMeta(key:string,value:string){
   db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,value);
+  parsedMetaCache.delete(key);
 }
-function delMeta(key:string){db.prepare("DELETE FROM meta WHERE key=?").run(key);}
+function delMeta(key:string){db.prepare("DELETE FROM meta WHERE key=?").run(key);parsedMetaCache.delete(key);}
+function parsedMeta<T>(key:string,fallback:T):T{
+  const raw=meta(key);
+  if(raw==null)return fallback;
+  const cached=parsedMetaCache.get(key);
+  if(cached&&cached.raw===raw)return cached.value as T;
+  try{const value=JSON.parse(raw) as T;parsedMetaCache.set(key,{raw,value});return value;}
+  catch{return fallback;}
+}
 function calendarConfig():CalendarConfig|null{
-  const raw=meta("calendar_config");
-  if(!raw)return null;
-  try{return JSON.parse(raw) as CalendarConfig;}catch{return null;}
+  return parsedMeta<CalendarConfig|null>("calendar_config",null);
 }
 function nextAutomationEvent(now=new Date()){
   const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
@@ -286,12 +294,8 @@ async function factoryCatalog(refresh=false){
   return value;
 }
 function factoryEdits():Record<string,any>{
-  const raw=meta("factory_edits");
-  if(!raw)return {};
-  try{
-    const parsed=JSON.parse(raw);
-    return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed:{};
-  }catch{return {};}
+  const parsed=parsedMeta<any>("factory_edits",{});
+  return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed:{};
 }
 function applyFactoryEdit(base:any){
   const edit=factoryEdits()[String(base?.lightId)];
@@ -428,30 +432,20 @@ function promotionNameKey(v:any){
   return String(v??"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
 }
 function factoryPromotionState():Record<string,{enabled?:boolean}>{
-  const raw=meta("factory_promotions");
-  if(!raw)return {};
-  try{
-    const x=JSON.parse(raw);
-    return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
-  }catch{return {};}
+  const x=parsedMeta<any>("factory_promotions",{});
+  return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
 }
 function factoryPromotionMap():Record<string,{eventId:string;sourceNameKey:string}>{
-  const raw=meta("factory_promotion_map");
-  if(!raw)return {};
-  try{
-    const x=JSON.parse(raw);
-    return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
-  }catch{return {};}
+  const x=parsedMeta<any>("factory_promotion_map",{});
+  return x&&typeof x==="object"&&!Array.isArray(x)?x:{};
 }
 function persistFactoryPromotionMap(value:Record<string,{eventId:string;sourceNameKey:string}>){
   setMeta("factory_promotion_map",JSON.stringify(value));
 }
 function factoryPromotionRows(base:CalendarConfig|null=calendarConfig()){
   if(!base)return [] as any[];
-  const raw=meta("factory_catalog");
-  if(!raw)return [] as any[];
-  let catalog:any=null;
-  try{catalog=JSON.parse(raw);}catch{return [] as any[];}
+  const catalog=parsedMeta<any>("factory_catalog",null);
+  if(!catalog)return [] as any[];
   const src=Array.isArray(catalog?.presets)?catalog.presets:[];
   const bases=dedupeFactoryPresetsByName(src);
   const state=factoryPromotionState();
@@ -756,19 +750,17 @@ function plainObject(value:any){
 }
 function settingsBackupExport(){
   const calendar=calendarConfig();
-  const edits=plainObject((()=>{try{return JSON.parse(meta("factory_edits")||"{}");}catch{return {};}})());
-  const promotions=plainObject((()=>{try{return JSON.parse(meta("factory_promotions")||"{}");}catch{return {};}})());
-  const promotionMap=plainObject((()=>{try{return JSON.parse(meta("factory_promotion_map")||"{}");}catch{return {};}})());
+  const edits=plainObject(parsedMeta<any>("factory_edits",{}));
+  const promotions=plainObject(parsedMeta<any>("factory_promotions",{}));
+  const promotionMap=plainObject(parsedMeta<any>("factory_promotion_map",{}));
   const ids=new Set<number>([
     ...Object.keys(edits).map(Number),
     ...Object.keys(promotions).map(Number),
     ...Object.keys(promotionMap).map(Number)
   ].filter(Number.isFinite));
   let referencedFactoryPresets:any[]=[];
-  try{
-    const catalog=JSON.parse(meta("factory_catalog")||"{}");
-    referencedFactoryPresets=(Array.isArray(catalog?.presets)?catalog.presets:[]).filter((p:any)=>ids.has(Number(p?.lightId)));
-  }catch{}
+  const catalog=parsedMeta<any>("factory_catalog",{});
+  referencedFactoryPresets=(Array.isArray(catalog?.presets)?catalog.presets:[]).filter((p:any)=>ids.has(Number(p?.lightId)));
   return {
     schema:1,
     createdAt:new Date().toISOString(),
