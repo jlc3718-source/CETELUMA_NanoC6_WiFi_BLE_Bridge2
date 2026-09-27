@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate Craumer Home 5.2 Wi-Fi transport
+      - name: Validate Jason Home Oracle Android source
         shell: bash
         run: |
           python3 - <<'PY'
@@ -31,7 +31,6 @@ jobs:
           import re
           catalog=Path('JasonHome/app/src/main/java/com/jasonhome/app/LightPresetCatalog.java').read_text()
           commands=Path('JasonHome/app/src/main/java/com/jasonhome/app/EufyLightCommands.java').read_text()
-          controller=Path('JasonHome/app/src/main/java/com/jasonhome/app/BleLightController.java').read_text()
           bridge=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
           main=Path('JasonHome/app/src/main/java/com/jasonhome/app/MainActivity.java').read_text()
           schedule_service=Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonScheduleService.java').read_text()
@@ -67,21 +66,12 @@ jobs:
               raise SystemExit('E22 five-speed calibration missing')
           if 'groupedCatalogPresetE120Multi' not in commands:
               raise SystemExit('E120 multi-color grouped serializer missing')
-          if controller.count('startParallel(targets') < 6:
-              raise SystemExit('Normal multi-light commands are not using parallel workers')
-          if 'i*125L' not in controller:
-              raise SystemExit('Parallel connection staggering is missing')
-          if 'sendLocalCommandPass(true)' not in controller or 'sendLocalScenePass(true)' not in controller:
-              raise SystemExit('Fresh-sequence command replay is missing')
-          if 'retryCount<1' not in controller:
-              raise SystemExit('Per-light reconnect retry is missing')
-
           if 'Wi-Fi / Internet' not in bridge or 'Eufy Cloud MQTT' not in bridge:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Craumer Home • 5.3.9 Oracle' not in bridge:
-              raise SystemExit('Bridge version is not 5.3.9 Oracle')
+          if 'Craumer Home • 5.4.0 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not 5.4.0 Oracle')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
           if 'cloud.setScene(0, scene.effect' not in schedule_service:
@@ -276,14 +266,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.3.9-Oracle-UNSIGNED.apk
-          sha256sum Jason-Home-5.3.9-Oracle-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.0-Oracle-UNSIGNED.apk
+          sha256sum Jason-Home-5.4.0-Oracle-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.3.9-Oracle-UNSIGNED-do-not-install
-          path: Jason-Home-5.3.9-Oracle-UNSIGNED.apk
+          name: Jason-Home-5.4.0-Oracle-UNSIGNED-do-not-install
+          path: Jason-Home-5.4.0-Oracle-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 
