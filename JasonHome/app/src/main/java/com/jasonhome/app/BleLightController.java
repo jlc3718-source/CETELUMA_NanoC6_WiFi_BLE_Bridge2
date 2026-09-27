@@ -57,7 +57,7 @@ final class BleLightController {
         }
     }
 
-    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, E120_PRESET_PAIR, E120_SHOW_ID_ONLY, E120_SHOW_ID_FULL, E120_CAPTURED_PAIR, STATUS, SCENE, DIAGNOSTIC }
+    private enum Kind { POWER, BRIGHTNESS, COLOR, WHITE, EFFECT, E120_LOCAL_EFFECT, E120_PRESET_PAIR, E120_GROUP_TEST, E120_SHOW_ID_ONLY, E120_SHOW_ID_FULL, E120_CAPTURED_PAIR, STATUS, SCENE, DIAGNOSTIC }
 
     private static final class Job {
         final FoundLight light;
@@ -87,6 +87,9 @@ final class BleLightController {
         }
         static Job e120PresetPair(FoundLight l,int localId,int catalogId,int[] colors,int rawA5,boolean minimal){
             return new Job(l,Kind.E120_PRESET_PAIR,minimal,localId,catalogId,"E120 preset pair",colors,rawA5,false);
+        }
+        static Job e120GroupTest(FoundLight l,int localId,int catalogId,int[] colors,int rawA5,int mode){
+            return new Job(l,Kind.E120_GROUP_TEST,false,localId,catalogId,"E120 group "+mode,colors,rawA5,mode>0);
         }
         static Job e120ShowIdOnly(FoundLight l,int showId){
             return new Job(l,Kind.E120_SHOW_ID_ONLY,false,showId,0,"E120 show id only",null,0,false);
@@ -216,6 +219,11 @@ final class BleLightController {
     void testE120PresetPair(List<FoundLight> targets, int localId, int catalogId, int[] colors, int rawA5, boolean minimal) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x00FF00} : colors.clone();
         enqueue(targets, item -> Job.e120PresetPair(item,localId,catalogId,safe,rawA5,minimal));
+    }
+
+    void testE120Group(List<FoundLight> targets, int localId, int catalogId, int[] colors, int rawA5, int mode) {
+        int[] safe = colors == null || colors.length < 2 ? new int[]{0xFF0000,0x00FF00} : colors.clone();
+        enqueue(targets, item -> Job.e120GroupTest(item,localId,catalogId,safe,rawA5,mode));
     }
 
     void testE120ShowIdOnly(List<FoundLight> targets, int showId) {
@@ -737,6 +745,11 @@ final class BleLightController {
                 case E120_PRESET_PAIR:
                     frame=p.command(EufyLightCommands.OP_COLOR,
                         EufyLightCommands.catalogPresetE120(job.value,job.rgb,job.speed,job.colors,EufyLightCommands.defaultLampCount(job.light.model),job.on));
+                    break;
+                case E120_GROUP_TEST:
+                    int groupMode = job.effect!=null && job.effect.startsWith("E120 group ") ? Integer.parseInt(job.effect.substring(11)) : 1;
+                    frame=p.command(EufyLightCommands.OP_COLOR,
+                        EufyLightCommands.groupedCatalogPresetE120(job.value,job.rgb,job.speed,job.colors,EufyLightCommands.defaultLampCount(job.light.model),groupMode));
                     break;
                 case E120_SHOW_ID_ONLY:
                     frame=p.command(EufyLightCommands.OP_SHOW,EufyLightCommands.showIdOnly(job.value));
@@ -1348,6 +1361,7 @@ final class BleLightController {
             case EFFECT:return "Starting "+job.effect;
             case E120_LOCAL_EFFECT:return "Testing E120 local effect "+job.value;
             case E120_PRESET_PAIR:return "Testing E120 preset "+job.value+"/"+job.rgb+(job.on?" minimal":" A5="+job.speed);
+            case E120_GROUP_TEST:return "Testing E120 grouped palette";
             case E120_SHOW_ID_ONLY:return "Testing E120 show "+job.value+" (ID only)";
             case E120_SHOW_ID_FULL:return "Testing E120 show "+job.value+" (full)";
             case E120_CAPTURED_PAIR:return "Testing E120 captured "+job.value+" → "+job.rgb;
@@ -1367,6 +1381,7 @@ final class BleLightController {
             case EFFECT:return job.effect;
             case E120_LOCAL_EFFECT:return "E120 0206 local "+job.value;
             case E120_PRESET_PAIR:return "E120 0206 pair "+job.value+"/"+job.rgb;
+            case E120_GROUP_TEST:return "E120 0206 grouped palette";
             case E120_SHOW_ID_ONLY:return "E120 020D id "+job.value;
             case E120_SHOW_ID_FULL:return "E120 020D full "+job.value;
             case E120_CAPTURED_PAIR:return "E120 captured "+job.value+" -> "+job.rgb;
