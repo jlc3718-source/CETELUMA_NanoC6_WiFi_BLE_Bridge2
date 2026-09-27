@@ -34,8 +34,16 @@ export interface Astro {dawnLabel:string;duskLabel:string;dawnMs:number|null;dus
 export function astronomy(now:Date,lat:number,lon:number,tz:string):Astro{
   const lp=localParts(now,tz),noonUtc=localToUtcMs(lp.year,lp.month,lp.day,12,0,tz),basis=new Date(noonUtc);
   const d1=civilTwilightUtc(basis,lat,lon,true),d2=civilTwilightUtc(basis,lat,lon,false);
-  function toMs(min:number|null){if(min==null)return null;return Date.UTC(basis.getUTCFullYear(),basis.getUTCMonth(),basis.getUTCDate())+min*60000;}
-  return {dawnLabel:d1==null?"—":utcMinutesToLocalLabel(basis,d1,tz),duskLabel:d2==null?"—":utcMinutesToLocalLabel(basis,d2,tz),dawnMs:toMs(d1),duskMs:toMs(d2)};
+  function toMs(min:number|null){
+    if(min==null)return null;
+    const base=Date.UTC(basis.getUTCFullYear(),basis.getUTCMonth(),basis.getUTCDate())+min*60000;
+    const candidates=[base-86400000,base,base+86400000];
+    const exact=candidates.find(ms=>{const p=localParts(new Date(ms),tz);return p.year===lp.year&&p.month===lp.month&&p.day===lp.day;});
+    return exact??base;
+  }
+  const dawnMs=toMs(d1),duskMs=toMs(d2);
+  const label=(ms:number|null)=>ms==null?"—":new Intl.DateTimeFormat("en-US",{timeZone:tz,hour:"numeric",minute:"2-digit"}).format(new Date(ms));
+  return {dawnLabel:label(dawnMs),duskLabel:label(duskMs),dawnMs,duskMs};
 }
 function eventTime(row:ScheduleRow,day:Date,kind:string,value:string,lat:number,lon:number,tz:string):number|null{
   const lp=localParts(day,tz);
