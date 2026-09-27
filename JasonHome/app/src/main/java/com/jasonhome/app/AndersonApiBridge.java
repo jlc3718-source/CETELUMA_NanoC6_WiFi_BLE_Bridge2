@@ -176,7 +176,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.11");
+        d.put("firmwareVersion","Craumer Home • Jason Home 5.0.12");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -614,7 +614,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Jason Home 5.0.11").put("buildCommit","Craumer Home UI")
+            .put("version","Jason Home 5.0.12").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
@@ -648,6 +648,14 @@ final class AndersonApiBridge {
             case "blue": host.runOnUi(()->ble.setColor(one,0x0000FF)); break;
             case "breath": host.runOnUi(()->ble.setEffect(one,"Breath",new int[]{0xFF0000},3,false)); break;
             case "status": host.runOnUi(()->ble.readE120State(one)); break;
+            case "cand-1": host.runOnUi(()->ble.testE120PresetPair(one,20005,418507,new int[]{0xFF0000,0x00FF00},0,true)); break;
+            case "cand-2": host.runOnUi(()->ble.testE120PresetPair(one,20005,418507,new int[]{0xFF0000,0x00FF00},0,false)); break;
+            case "cand-3": host.runOnUi(()->ble.testE120PresetPair(one,20005,418507,new int[]{0xFF0000,0x00FF00},5,false)); break;
+            case "cand-4": host.runOnUi(()->ble.testE120PresetPair(one,20005,418507,new int[]{0xFF0000,0x00FF00},50,false)); break;
+            case "cand-5": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x00FF00},0,true)); break;
+            case "cand-6": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x00FF00},0,false)); break;
+            case "cand-7": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x00FF00},5,false)); break;
+            case "cand-8": host.runOnUi(()->ble.testE120PresetPair(one,30010,10034,new int[]{0xFF0000,0x00FF00},50,false)); break;
             case "show-10034-id": host.runOnUi(()->ble.testE120ShowIdOnly(one,10034)); break;
             case "show-10034-full": host.runOnUi(()->ble.testE120ShowIdFull(one,10034,new int[]{0xFF0000,0x0000FF},3)); break;
             case "captured-30010-10034": host.runOnUi(()->ble.testE120CapturedPair(one,30010,10034,new int[]{0xFF0000,0x0000FF},3)); break;
