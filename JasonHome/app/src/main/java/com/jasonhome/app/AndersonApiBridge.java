@@ -872,15 +872,25 @@ final class AndersonApiBridge {
 
     private String backupAll() throws Exception {
         JSONObject root=new JSONObject();
-        root.put("schema",1);
+        root.put("schema",2);
         root.put("createdAt",System.currentTimeMillis()/1000L);
         root.put("app",preferencesToJson(context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE),true));
         root.put("schedule",preferencesToJson(context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE),false));
-        // Device authentication/serial identity is intentionally not copied into a settings backup.
+        // Device authentication, Oracle bearer tokens, Eufy sessions and install identity
+        // are intentionally excluded from this settings backup.
+        if(cloudApi.isCloudMode()&&cloudApi.configured()){
+            provisionCloudIdentity();
+            CloudflareApiClient.Result r=cloudApi.request("GET","/api/backup/export","");
+            if(r.status<200||r.status>=300)throw new IOException("Oracle backup export HTTP "+r.status);
+            JSONObject wrapped=new JSONObject(r.body);
+            JSONObject oracle=wrapped.optJSONObject("backup");
+            if(oracle==null)throw new IOException("Oracle backup export did not contain a settings snapshot");
+            root.put("oracle",oracle);
+        }
         SharedPreferences bp=context.getSharedPreferences("craumer_backup",Context.MODE_PRIVATE);
         long now=System.currentTimeMillis()/1000L;
         bp.edit().putString("snapshot",root.toString()).putLong("last_backup",now).apply();
-        return ok(new JSONObject().put("ok",true).put("lastBackup",now).put("mode","complete"));
+        return ok(new JSONObject().put("ok",true).put("lastBackup",now).put("mode","complete-v2").put("oracleIncluded",root.has("oracle")));
     }
 
     private String restoreBackup() throws Exception {
@@ -888,10 +898,61 @@ final class AndersonApiBridge {
         String raw=bp.getString("snapshot","");
         if(raw.isEmpty())return error(404,"No Craumer Home backup is available");
         JSONObject root=new JSONObject(raw);
-        restorePreferences(context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE),root.optJSONObject("app"),true);
-        restorePreferences(context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE),root.optJSONObject("schedule"),false);
-        AndersonScheduleService.update(context);
-        return ok(new JSONObject().put("ok",true).put("restoredAt",System.currentTimeMillis()/1000L));
+        int schema=root.optInt("schema",0);
+        if(schema<1||schema>2)return error(400,"Unsupported Craumer Home backup schema");
+        JSONObject app=root.optJSONObject("app"),scheduleData=root.optJSONObject("schedule");
+        validatePreferenceSnapshot(app);
+        validatePreferenceSnapshot(scheduleData);
+
+        JSONObject previousLocal=new JSONObject()
+            .put("schema",2)
+            .put("createdAt",System.currentTimeMillis()/1000L)
+            .put("app",preferencesToJson(context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE),true))
+            .put("schedule",preferencesToJson(context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE),false));
+        bp.edit().putString("previous_snapshot",previousLocal.toString()).apply();
+
+        JSONObject oracle=root.optJSONObject("oracle");
+        boolean oracleRestored=false;
+        long oracleRevision=0L;
+        if(oracle!=null&&cloudApi.isCloudMode()&&cloudApi.configured()){
+            provisionCloudIdentity();
+            CloudflareApiClient.Result rr=cloudApi.request("POST","/api/backup/restore",new JSONObject().put("backup",oracle).toString());
+            if(rr.status<200||rr.status>=300){
+                String msg="Oracle backup restore HTTP "+rr.status;
+                try{msg=new JSONObject(rr.body).optString("error",msg);}catch(Throwable ignored){}
+                throw new IOException(msg);
+            }
+            oracleRestored=true;
+            try{oracleRevision=new JSONObject(rr.body).optLong("revision",0L);}catch(Throwable ignored){}
+        }
+
+        try{
+            restorePreferences(context.getSharedPreferences("anderson_android",Context.MODE_PRIVATE),app,true);
+            restorePreferences(context.getSharedPreferences("jason_schedule",Context.MODE_PRIVATE),scheduleData,false);
+            if(oracleRevision>0L)prefs.edit().putLong("calendar_revision",oracleRevision).apply();
+            AndersonScheduleService.update(context);
+            if(cloudApi.isCloudMode()&&cloudApi.configured())syncCalendarToOracleAsync();
+            invalidateCloudSnapshot();
+            return ok(new JSONObject().put("ok",true).put("restoredAt",System.currentTimeMillis()/1000L).put("oracleRestored",oracleRestored));
+        }catch(Throwable localFailure){
+            if(oracleRestored){
+                try{cloudApi.request("POST","/api/backup/rollback","{}");}catch(Throwable ignored){}
+            }
+            throw localFailure;
+        }
+    }
+
+    private void validatePreferenceSnapshot(JSONObject data) throws Exception {
+        if(data==null)throw new IOException("Backup is missing required local settings");
+        for(java.util.Iterator<String> it=data.keys();it.hasNext();){
+            String key=it.next();
+            JSONObject v=data.optJSONObject(key);
+            if(v==null)throw new IOException("Invalid backup preference: "+key);
+            String type=v.optString("t","");
+            if(!("s".equals(type)||"b".equals(type)||"i".equals(type)||"l".equals(type)||"f".equals(type)||"ss".equals(type)))
+                throw new IOException("Unsupported backup preference type for "+key);
+            if(!v.has("v"))throw new IOException("Backup preference has no value: "+key);
+        }
     }
 
     private JSONObject preferencesToJson(SharedPreferences source,boolean appPrefs) throws Exception {
