@@ -114,6 +114,7 @@ function installAndroidEufyUi(){
     document.head.appendChild(style);
 
     let presets=[],catalogLoading=false;
+    function dedupeFactoryByName(items){const best=new Map();for(const p of items||[]){const k=String(p?.name||("id:"+p?.lightId)).trim().toLowerCase().replace(/\s+/g," ");const old=best.get(k);if(!old||Number(p?.lightId||0)<Number(old?.lightId||0))best.set(k,p)}return [...best.values()].sort((a,b)=>Number(a.lightId)-Number(b.lightId))}
     const escapeColor=x=>/^#?[0-9a-fA-F]{6}$/.test(x||"")?"#"+String(x).replace("#",""):"#444";
 
     function syncFactoryAccess(profile=window.andersonProfile){
@@ -167,11 +168,11 @@ function installAndroidEufyUi(){
         for(let i=0;i<90;i++){
           const r=await api("/api/eufy/factory-presets?ts="+Date.now(),{},12000);
           if(Array.isArray(r.presets)){
-            presets=r.presets;
+            presets=dedupeFactoryByName(r.presets);
             if(badge)badge.textContent=presets.length+" presets";
             if(statusEl){
               const found=presets.find(x=>Number(x.lightId)===10474);
-              statusEl.textContent="Loaded "+presets.length+" factory presets"+(found?" • 10474 Presidents Day found":"")+(r.refresh?.state==="running"?" • refresh still running":"")+".";
+              statusEl.textContent="Loaded "+presets.length+" unique factory presets"+(Number(r.duplicatesCollapsed||0)?" • "+r.duplicatesCollapsed+" duplicates collapsed":"")+(r.refresh?.state==="running"?" • refresh still running":"")+".";
             }
             renderFactory();
             if(r.refresh?.state!=="running")break;
