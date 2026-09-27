@@ -305,6 +305,75 @@ export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:
   return null;
 }
 
+function calendarResolutionKey(r:CalendarResolution|null){
+  return r?JSON.stringify({id:r.id,schedule2:r.schedule2,scene:r.scene}):"off";
+}
+function calendarDayBounds(cfg:CalendarConfig,day:Ymd,lat:number,lon:number,tz:string){
+  const noon=(d:Ymd)=>new Date(localToUtcMs(d.year,d.month,d.day,12,0,tz));
+  const startMinute=cfg.settings.startAtDusk?astroMinute(noon(day),lat,lon,tz,false):cfg.settings.on;
+  let start=localToUtcMs(day.year,day.month,day.day,Math.floor(startMinute/60),startMinute%60,tz);
+  let end=localToUtcMs(day.year,day.month,day.day,Math.floor(cfg.settings.off/60),cfg.settings.off%60,tz);
+  if(end<=start){
+    const d=addDays(day,1);end=localToUtcMs(d.year,d.month,d.day,Math.floor(cfg.settings.off/60),cfg.settings.off%60,tz);
+  }
+  let schedule2End:number|null=null;
+  if(cfg.settings.schedule2Enabled){
+    if(cfg.settings.schedule2EndAtDawn){
+      for(let shift=0;shift<=2;shift++){
+        const d=addDays(day,shift),a=astronomy(noon(d),lat,lon,tz).dawnMs;
+        if(a!=null&&a>end){schedule2End=a;break;}
+      }
+    }else{
+      let d=day;
+      schedule2End=localToUtcMs(d.year,d.month,d.day,Math.floor(cfg.settings.schedule2End/60),cfg.settings.schedule2End%60,tz);
+      while(schedule2End<=end){
+        d=addDays(d,1);
+        schedule2End=localToUtcMs(d.year,d.month,d.day,Math.floor(cfg.settings.schedule2End/60),cfg.settings.schedule2End%60,tz);
+      }
+    }
+  }
+  return {start,end,schedule2End};
+}
+export function nextCalendarBoundary(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
+  if(!cfg?.settings?.enabled)return null;
+  const today=localYmd(now,tz),nowMs=now.getTime(),items:Array<{at:number;phase:string}>=[];
+  for(let shift=-1;shift<=3;shift++){
+    const b=calendarDayBounds(cfg,addDays(today,shift),lat,lon,tz);
+    items.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
+    if(b.schedule2End!=null)items.push({at:b.schedule2End,phase:"schedule2-end"});
+  }
+  return items.filter(x=>x.at>nowMs+500).sort((a,b)=>a.at-b.at)[0]||null;
+}
+export function nextCalendarTransition(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
+  if(!cfg?.settings?.enabled)return null;
+  const nowMs=now.getTime(),today=localYmd(now,tz);
+  const boundaries:Array<{at:number;phase:string}>=[];
+  for(let shift=-1;shift<=14;shift++){
+    const b=calendarDayBounds(cfg,addDays(today,shift),lat,lon,tz);
+    boundaries.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
+    if(b.schedule2End!=null)boundaries.push({at:b.schedule2End,phase:"schedule2-end"});
+  }
+  boundaries.sort((a,b)=>a.at-b.at);
+  const first=boundaries.find(x=>x.at>nowMs+500);
+  if(first){
+    let prior=resolveCalendar(cfg,now,lat,lon,tz),priorKey=calendarResolutionKey(prior);
+    for(let t=Math.ceil((nowMs+1)/60000)*60000;t<first.at;t+=60000){
+      const r=resolveCalendar(cfg,new Date(t),lat,lon,tz),key=calendarResolutionKey(r);
+      if(key!==priorKey)return {at:t,id:r?.id||null,name:r?.name||(r?"Scheduled scene":"Lights off"),target:"All",phase:"scene"};
+      prior=r;priorKey=key;
+    }
+  }
+  for(const b of boundaries){
+    if(b.at<=nowMs+500)continue;
+    const before=resolveCalendar(cfg,new Date(b.at-1000),lat,lon,tz);
+    const after=resolveCalendar(cfg,new Date(b.at+1000),lat,lon,tz);
+    if(calendarResolutionKey(before)!==calendarResolutionKey(after)){
+      return {at:b.at,id:after?.id||null,name:after?.name||(after?"Scheduled scene":"Lights off"),target:"All",phase:b.phase};
+    }
+  }
+  return null;
+}
+
 export function nextCalendarEvent(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
   if(!cfg?.settings?.enabled)return null;
   const today=localYmd(now,tz);
