@@ -155,6 +155,61 @@ final class E10Probe {
         });
     }
 
+    String stateSummary(byte[] input) {
+        if (sessionKey == null || input == null || input.length < 10) return null;
+        if ((input[0] & 0xff) != 0xff || input[1] != 9) return null;
+        if (u16le(input,2) != input.length || xor(input) != 0) return null;
+        int command = u16be(input,7);
+        if (command != 0x4A00 && command != 0x4204 && command != 0x4A04 &&
+            command != 0x0A00 && command != 0x0204) return null;
+        try {
+            byte[] body = Arrays.copyOfRange(input,9,input.length-1);
+            byte[] plain = body;
+            if ((command & 0x4000) != 0) {
+                if (body.length == 0 || body.length % 16 != 0) return null;
+                plain = decrypt(body,sessionKey);
+                int pad = plain[plain.length-1] & 0xff;
+                if (pad >= 1 && pad <= 16 && pad <= plain.length) {
+                    boolean ok=true;
+                    for(int i=plain.length-pad;i<plain.length;i++) if((plain[i]&0xff)!=pad){ok=false;break;}
+                    if(ok) plain=Arrays.copyOfRange(plain,0,plain.length-pad);
+                }
+            }
+
+            Integer power=null, brightness=null, length=null, selected=null, gradient=null, running=null, mode=null;
+            int i=0;
+            // Some replies prefix a one-byte status before the TLVs.
+            while(i+1<plain.length && ((plain[i]&0xff)<0xA1 || (plain[i]&0xff)>0xB0)) i++;
+            while(i+1<plain.length) {
+                int tag=plain[i]&0xff, len=plain[i+1]&0xff;
+                if(tag<0xA1 || tag>0xB0 || i+2+len>plain.length) break;
+                int v=0;
+                if(len>0 && len<=4) for(int n=0;n<len;n++) v|=(plain[i+2+n]&0xff)<<(8*n);
+                if(tag==0xA1 && len==1) power=v;
+                else if(tag==0xA2 && len<=2) brightness=v; // never expose A2/40 account metadata
+                else if(tag==0xA3 && len<=4) length=v;
+                else if(tag==0xA4 && len<=4) selected=v;
+                else if(tag==0xA5 && len<=4) gradient=v;
+                else if(tag==0xA6 && len<=4) running=v;
+                else if(tag==0xA8 && len<=4) mode=v;
+                else if((command==0x4204 || command==0x0204 || command==0x4A04) && tag==0xA7 && len<=4) mode=v;
+                i+=2+len;
+            }
+            StringBuilder out=new StringBuilder("E120 state");
+            out.append(String.format(java.util.Locale.ROOT," • reply %04X",command));
+            if(power!=null)out.append(" • power=").append(power);
+            if(brightness!=null)out.append(" • brightness=").append(brightness).append("%");
+            if(length!=null)out.append(" • length=").append(length);
+            if(selected!=null)out.append(" • selectedEffect=").append(selected);
+            if(running!=null)out.append(" • runningEffect=").append(running);
+            if(gradient!=null)out.append(" • gradient=").append(gradient);
+            if(mode!=null)out.append(" • mode=").append(mode);
+            return out.toString();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     byte[] command(int opcode, byte[] params) {
         if (sessionKey == null) throw new IllegalStateException("Complete handshake first");
         if (params == null) params = new byte[0];
