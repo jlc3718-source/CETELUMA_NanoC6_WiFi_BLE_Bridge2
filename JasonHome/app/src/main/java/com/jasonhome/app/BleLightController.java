@@ -188,27 +188,32 @@ final class BleLightController {
     }
 
     void setPower(List<FoundLight> targets, boolean on) {
-        enqueue(targets, item -> Job.power(item,on));
+        if (targets != null && targets.size() > 1) startParallel(targets, item -> Job.power(item,on));
+        else enqueue(targets, item -> Job.power(item,on));
     }
 
     void setBrightness(List<FoundLight> targets, int percent) {
         int v=Math.max(0,Math.min(100,percent));
-        enqueue(targets, item -> Job.brightness(item,v));
+        if (targets != null && targets.size() > 1) startParallel(targets, item -> Job.brightness(item,v));
+        else enqueue(targets, item -> Job.brightness(item,v));
     }
 
     void setColor(List<FoundLight> targets, int rgb) {
         int v=rgb & 0xFFFFFF;
-        enqueue(targets, item -> Job.color(item,v));
+        if (targets != null && targets.size() > 1) startParallel(targets, item -> Job.color(item,v));
+        else enqueue(targets, item -> Job.color(item,v));
     }
 
     void setWhite(List<FoundLight> targets, int kelvin) {
         int v=Math.max(1500,Math.min(9000,kelvin));
-        enqueue(targets, item -> Job.white(item,v));
+        if (targets != null && targets.size() > 1) startParallel(targets, item -> Job.white(item,v));
+        else enqueue(targets, item -> Job.white(item,v));
     }
 
     void setEffect(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
-        enqueue(targets, item -> Job.effect(item,effect,safe,speed,reverse));
+        if (targets != null && targets.size() > 1) startParallel(targets, item -> Job.effect(item,effect,safe,speed,reverse));
+        else enqueue(targets, item -> Job.effect(item,effect,safe,speed,reverse));
     }
 
     void setE120LocalEffect(List<FoundLight> targets, int localId, int[] colors, int speed) {
@@ -257,7 +262,8 @@ final class BleLightController {
     void setScene(List<FoundLight> targets, String effect, int[] colors, int speed, boolean reverse, int brightness) {
         int[] safe = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors.clone();
         int bright = Math.max(1, Math.min(100, brightness));
-        enqueue(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
+        if (targets != null && targets.size() > 1) startParallel(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
+        else enqueue(targets, item -> Job.scene(item,effect,safe,speed,reverse,bright));
     }
 
     void diagnoseSingle(FoundLight target) {
