@@ -1,0 +1,70 @@
+name: Test Jason Home Relay Live
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeRelay/LIVE_RELAY_VERIFY_NOW'
+
+permissions:
+  contents: read
+
+jobs:
+  live-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: JasonHomeRelay
+    env:
+      EUFY_EMAIL: ${{ secrets.EUFY_EMAIL }}
+      EUFY_PASSWORD: ${{ secrets.EUFY_PASSWORD }}
+      JASON_HOME_RELAY_TOKEN: live-test-relay-token-6ff639c76b8f4b44
+      PORT: 8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require Eufy secrets
+        run: |
+          test -n "$EUFY_EMAIL"
+          test -n "$EUFY_PASSWORD"
+      - name: Install and build
+        run: |
+          npm install
+          npm run build
+      - name: Start relay
+        run: |
+          node dist/server.js > /tmp/relay.log 2>&1 &
+          echo $! > /tmp/relay.pid
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8080/health >/tmp/health.json; then break; fi
+            sleep 1
+          done
+          cat /tmp/health.json
+      - name: Verify authenticated 4/4 readiness
+        run: |
+          curl -fsS -H "Authorization: Bearer $JASON_HOME_RELAY_TOKEN" http://127.0.0.1:8080/ready -o /tmp/ready.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/ready.json'))
+          print('RELAY READY',d)
+          assert d.get('ok') is True
+          assert set(d.get('readyNames',[]))=={'Pool','House','Garage','Shed'}
+          PY
+      - name: Verify Pool status-only MQTT probe
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $JASON_HOME_RELAY_TOKEN" -H "Content-Type: application/json" --data '{"target":"Pool"}' http://127.0.0.1:8080/probe -o /tmp/probe.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/probe.json'))
+          print('RELAY POOL PROBE',d)
+          assert d.get('ok') is True
+          assert d.get('target')=='Pool'
+          assert d.get('published')==1
+          PY
+      - name: Show relay log on failure
+        if: failure()
+        run: cat /tmp/relay.log || true
