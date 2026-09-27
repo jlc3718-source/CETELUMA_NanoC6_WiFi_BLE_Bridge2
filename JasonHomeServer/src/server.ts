@@ -158,14 +158,21 @@ let eufyReady=false;
 let eufyStatus="Not connected";
 let readyNames:string[]=[];
 let preparing:Promise<EufyClient>|null=null;
-let commandQueue:Promise<void>=Promise.resolve();
 
-async function serialized<T>(fn:()=>Promise<T>):Promise<T>{
-  const prior=commandQueue;
+// Serialize commands per physical string, not globally. This preserves command
+// order for each device while allowing Pool/House/Garage/Shed to run in parallel.
+const deviceQueues=new Map<string,Promise<void>>();
+async function serializedForDevice<T>(name:string,fn:()=>Promise<T>):Promise<T>{
+  const prior=deviceQueues.get(name)||Promise.resolve();
   let release!:()=>void;
-  commandQueue=new Promise<void>(resolve=>{release=resolve;});
+  const current=new Promise<void>(resolve=>{release=resolve;});
+  deviceQueues.set(name,current);
   await prior.catch(()=>{});
-  try{return await fn();}finally{release();}
+  try{return await fn();}
+  finally{
+    release();
+    if(deviceQueues.get(name)===current)deviceQueues.delete(name);
+  }
 }
 
 async function ensureEufy(force=false){
@@ -201,7 +208,7 @@ async function ensureEufy(force=false){
 }
 
 async function sendScene(name:string,scene:Scene){
-  return serialized(async()=>{
+  return serializedForDevice(name,async()=>{
     const c=await ensureEufy(false);
     return scene.power
       ? c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
@@ -265,7 +272,7 @@ async function factoryTestAll(lightId:number){
   const results:any[]=[];let sent=0;
   for(const name of DEVICE_NAMES){
     try{
-      const r=await serialized(()=>c.factoryScene(name,preset));
+      const r=await serializedForDevice(name,()=>c.factoryScene(name,preset));
       sent++;
       results.push({name,ok:true,model:DEVICE_MODELS[name],strategy:(r as any).strategy,published:(r as any).published,instance:(r as any).instance||null,report:(r as any).report||null});
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
@@ -311,25 +318,30 @@ async function statusPayload(refresh=false){
 
 async function manualControl(input:any){
   const target=String(input?.target||"All"),names=targetNames(target),scene=safeScene(input);
-  const detail:any[]=[];let ok=0;
-  for(const name of names){
-    try{
-      const r=await sendScene(name,scene);
-      ok++;detail.push({name,ok:true,report:r.report||null,instance:(r as any).instance||null});
-      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
-      db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-    }catch(e:any){
-      const msg=e?.message||String(e);detail.push({name,ok:false,error:msg});
-      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
-    }
-  }
+
+  // Set the override before I/O so the 30-second scheduler cannot race a manual
+  // button press while the four parallel device commands are in flight.
   const next=nextAutomationEvent(new Date());
   const override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};
   setMeta("override",JSON.stringify(override));
+
+  const detail=await Promise.all(names.map(async name=>{
+    try{
+      const r=await sendScene(name,scene);
+      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+      db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
+      return {name,ok:true,report:r.report||null,instance:(r as any).instance||null};
+    }catch(e:any){
+      const msg=e?.message||String(e);
+      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+      return {name,ok:false,error:msg};
+    }
+  }));
+  const ok=detail.filter(x=>x.ok).length;
   const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail,transport:"linux-mqtt"};
   setMeta("last_command",JSON.stringify(summary));
   db.prepare("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)").run(Date.now(),target,"manual",ok===names.length?1:0,JSON.stringify(detail));
-  if(ok===0)throw new Error(detail.map(x=>x.error).filter(Boolean).join("; ")||"No light command completed");
+  if(ok===0)throw new Error(detail.map((x:any)=>x.error).filter(Boolean).join("; ")||"No light command completed");
   return {ok:true,updated:ok,total:names.length,detail,override};
 }
 
@@ -370,14 +382,15 @@ async function reconcile(ignoreOverride=false,forceSend=false){
         if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene))changes.push({name,scene,reason});
       }
     }
-    const errors:string[]=[];
-    for(const c of changes){
-      try{await applyScheduled(c.name,c.scene,c.reason);}
+    const results=await Promise.all(changes.map(async c=>{
+      try{await applyScheduled(c.name,c.scene,c.reason);return null;}
       catch(e:any){
-        const msg=e?.message||String(e);errors.push(`${c.name}: ${msg}`);
+        const msg=e?.message||String(e);
         db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,c.name);
+        return `${c.name}: ${msg}`;
       }
-    }
+    }));
+    const errors=results.filter((x):x is string=>!!x);
     setMeta("last_reconcile",new Date().toISOString());
     setMeta("last_command",JSON.stringify({at:new Date().toISOString(),action:"reconcile",sent:changes.length,errors,transport:"linux-mqtt"}));
     if(changes.length&&errors.length===changes.length)throw new Error(errors.join("; "));
@@ -485,7 +498,7 @@ const server=http.createServer(async(req,res)=>{
     if(method==="POST"&&path==="/api/mqtt-probe"){
       const input:any=await readJson(req),target=String(input?.target||"Pool");
       if(!DEVICE_NAMES.includes(target as any))throw new Error("Probe target must be Pool, House, Garage, or Shed");
-      const result=await serialized(async()=>{const c=await ensureEufy(false);return c.status(target);});
+      const result=await serializedForDevice(target,async()=>{const c=await ensureEufy(false);return c.status(target);});
       return json(res,200,{ok:true,target,published:result.published,report:result.report||null,instance:(result as any).instance||null});
     }
     return json(res,404,{ok:false,error:"Not found",path});
