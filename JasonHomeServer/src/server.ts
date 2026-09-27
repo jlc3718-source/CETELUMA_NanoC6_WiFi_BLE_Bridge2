@@ -231,6 +231,19 @@ function factorySummary(catalog:any,includeRaw=false,id?:number){
   });
   return {ok:true,fetchedAt:catalog?.fetchedAt||null,count:list.length,totalCount:src.length,scanned:Number(catalog?.scanned)||0,presets:list};
 }
+const factoryJobs=new Map<string,any>();
+function pruneFactoryJobs(){
+  const cutoff=Date.now()-60*60*1000;
+  for(const [id,j] of factoryJobs)if(Number(j?.createdAt||0)<cutoff)factoryJobs.delete(id);
+}
+function queueFactoryTest(lightId:number){
+  pruneFactoryJobs();
+  const jobId=crypto.randomUUID();
+  factoryJobs.set(jobId,{jobId,state:"running",lightId,createdAt:Date.now()});
+  void factoryTestAll(lightId).then(result=>factoryJobs.set(jobId,{jobId,state:"complete",lightId,createdAt:Date.now(),result}))
+    .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,createdAt:Date.now(),error:e?.message||String(e)}));
+  return {ok:true,queued:true,jobId,lightId};
+}
 async function factoryTestAll(lightId:number){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
   const c=await ensureEufy(false);
@@ -423,8 +436,14 @@ const server=http.createServer(async(req,res)=>{
       return json(res,200,factorySummary(catalog,includeRaw,id));
     }
     if(method==="POST"&&path==="/api/eufy/factory-test"){
-      const input:any=await readJson(req);
-      return json(res,200,await factoryTestAll(Number(input?.lightId)));
+      const input:any=await readJson(req),lightId=Number(input?.lightId);
+      if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
+      return json(res,202,queueFactoryTest(lightId));
+    }
+    if(method==="GET"&&path==="/api/eufy/factory-test"){
+      const jobId=url.searchParams.get("job")||"";
+      const job=factoryJobs.get(jobId);
+      return job?json(res,200,{ok:true,...job}):json(res,404,{ok:false,error:"Factory test job not found"});
     }
     if(method==="POST"&&path==="/api/control")return json(res,200,await manualControl(await readJson(req)));
     if(method==="POST"&&(path==="/api/resume"||path==="/api/resume-schedule")){
