@@ -8,6 +8,9 @@ public final class EufyLightCommandsRegression {
         assertShow("T8L02", "Strobe", 21003, 5);
         assertLocalE120(20001);
         assertLocalE120(20005);
+        assertLocalE120(30010);
+        assertShowIdOnly(10034);
+        assertShowWithId(10034);
         System.out.println("EufyLightCommands regression: PASS");
     }
 
@@ -31,6 +34,23 @@ public final class EufyLightCommandsRegression {
         for (int i = 1; i < expectedColorWidth; i++) {
             if ((payload[layer + 11 + i] & 0xFF) != 0) fail(model + " native color width/content mismatch");
         }
+    }
+
+    private static void assertShowIdOnly(int showId) {
+        byte[] payload = EufyLightCommands.showIdOnly(showId);
+        if (payload.length != 6 || (payload[0] & 0xFF) != 0xA3 || (payload[1] & 0xFF) != 4)
+            fail("captured E120 ID-only payload shape mismatch");
+        int id=(payload[2]&255)|((payload[3]&255)<<8)|((payload[4]&255)<<16)|((payload[5]&255)<<24);
+        if(id!=showId) fail("captured E120 ID-only id mismatch");
+    }
+
+    private static void assertShowWithId(int showId) {
+        byte[] payload = EufyLightCommands.showWithId("E120",showId,"Breath",new int[]{0xFF0000,0x0000FF},3,false);
+        int a3=find(payload,0xA3);
+        if(a3<0 || (payload[a3+1]&255)!=4) fail("captured E120 full show missing A3");
+        int id=(payload[a3+2]&255)|((payload[a3+3]&255)<<8)|((payload[a3+4]&255)<<16)|((payload[a3+5]&255)<<24);
+        if(id!=showId) fail("captured E120 full show id mismatch");
+        if(find(payload,0xA9)<0) fail("captured E120 full show missing layer");
     }
 
     private static void assertLocalE120(int localId) {
