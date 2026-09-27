@@ -81,7 +81,7 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         frame.requestApplyInsets();
         webView.loadUrl("file:///android_asset/anderson_home.html");
 
-        // Cloudflare mode leaves Eufy transport and schedules to the server.
+        // Oracle mode leaves Eufy transport and schedules to the server.
         // Direct mode preserves the known-good 5.2.2 Android -> Eufy fallback.
         if (!cloudflare.isCloudMode()) cloud.start();
         AndersonScheduleService.update(this);
