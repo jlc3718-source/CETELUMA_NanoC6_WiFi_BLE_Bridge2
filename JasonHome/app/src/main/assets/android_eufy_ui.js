@@ -341,7 +341,7 @@ function installAndroidEufyUi(){
   const conn=$("connectionBadge");
   if(conn)conn.title="Jason Home Android • Eufy Wi-Fi / Cloud";
   refreshEufyStatus();
-  setInterval(refreshEufyStatus,5000);
+  setInterval(()=>{if(!document.hidden)refreshEufyStatus();},20000);
 }
 
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>setTimeout(installAndroidEufyUi,0),{once:true});
