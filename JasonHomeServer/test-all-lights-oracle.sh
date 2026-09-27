@@ -31,10 +31,10 @@ echo "  Shed   = ORANGE"
 echo
 printf "Type YES to run all four physical tests: "
 read -r answer
-if [ "$answer" != "YES" ]; then
-  echo "Test skipped."
-  exit 0
-fi
+case "${answer,,}" in
+  y|yes) ;;
+  *) echo "Test skipped."; exit 0 ;;
+esac
 
 call_control "Pool"   16711680 "RED"
 sleep 1
