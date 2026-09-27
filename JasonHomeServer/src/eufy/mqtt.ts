@@ -16,6 +16,26 @@ export interface MqttCredentials {
 }
 export interface MqttTarget { name:string; model:string; serial:string; account:string; }
 export interface CommandFrame { opcode:number; fields:Uint8Array; label:string; }
+export interface MqttSendResult {
+  published:number;
+  report?:Record<string,unknown>;
+  instance?:string;
+  brokerAccepted:boolean;
+  deviceReported:boolean;
+}
+export function mqttCompletionStatus(expectedIds:number[],ackedIds:number[],requireReport:boolean,report?:Record<string,unknown>){
+  const acked=new Set(ackedIds),missing=expectedIds.filter(id=>!acked.has(id));
+  return {brokerAccepted:missing.length===0,deviceReported:!!report,missing,complete:missing.length===0&&(!requireReport||!!report)};
+}
+async function withTimeout<T>(promise:Promise<T>,timeoutMs:number,label:string,onTimeout?:()=>void):Promise<T>{
+  let timer:any;
+  try{
+    return await Promise.race([
+      promise,
+      new Promise<T>((_,reject)=>{timer=setTimeout(()=>{try{onTimeout?.();}catch{}reject(new Error(label+" timeout"));},timeoutMs);})
+    ]);
+  }finally{if(timer)clearTimeout(timer);}
+}
 
 function utf(value:string):Buffer{const b=Buffer.from(value,"utf8");const h=Buffer.alloc(2);h.writeUInt16BE(b.length,0);return Buffer.concat([h,b]);}
 function packet(header:number,body:Uint8Array):Buffer{const bytes:number[]=[];let n=body.length;do{let x=n%128;n=Math.floor(n/128);if(n>0)x|=128;bytes.push(x);}while(n>0);return Buffer.concat([Buffer.from([header,...bytes]),Buffer.from(body)]);}
@@ -68,33 +88,37 @@ function handlePublish(socket:any,p:ParsedPacket,target:MqttTarget):Record<strin
   return decodeDeviceFrame(p.data.subarray(off),target);
 }
 
-async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs:number,connectHost:string):Promise<{published:number;report?:Record<string,unknown>;instance:string}>{
+async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs:number,connectHost:string):Promise<MqttSendResult&{instance:string}>{
   const brokerHost=creds.endpoint_addr,port=creds.endpoint_port||8883;
   const brokerUser=creds.user_id===undefined||creds.user_id===null?"u":String(creds.user_id);
   const appName=(creds.app_name&&String(creds.app_name).trim())||"eufy_life";
   const mqttUuid=sha256(installId).slice(0,16);
   const clientId=`android-${appName}-${brokerUser}-${mqttUuid}-${target.serial.slice(-6)}-${Date.now()%1000000}-${Math.floor(Math.random()*65536).toString(16)}`;
   const isIp=/^\d{1,3}(?:\.\d{1,3}){3}$/.test(connectHost);
-  let socket:any;
-  if(isIp){
-    const raw:any=netConnect({host:connectHost,port});
-    await new Promise<void>((resolve,reject)=>{raw.once("connect",()=>resolve());raw.once("error",reject);});
-    socket=tlsConnect({socket:raw,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
-  }else{
-    socket=tlsConnect({host:connectHost,port,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
-  }
-  const reader=new Reader();
-  try{socket.setNoDelay?.(true);}catch{}
-  socket.on("data",(d:any)=>reader.push(Buffer.from(d)));
-  socket.on("error",(e:any)=>reader.fail(new Error("MQTT socket error: "+(e?.message||String(e)))));
-  socket.on("end",()=>reader.fail(new Error("MQTT broker ended connection")));
-  socket.on("close",()=>reader.fail(new Error("MQTT broker closed connection")));
-  await new Promise<void>((resolve,reject)=>{socket.once("secureConnect",()=>resolve());socket.once("error",reject);});
+  let raw:any=null,socket:any=null;
   try{
-    await new Promise<void>((resolve,reject)=>{
+    if(isIp){
+      raw=netConnect({host:connectHost,port});
+      await withTimeout(new Promise<void>((resolve,reject)=>{raw.once("connect",resolve);raw.once("error",reject);}),5000,"MQTT TCP connect",()=>raw?.destroy());
+      socket=tlsConnect({socket:raw,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
+    }else{
+      socket=tlsConnect({host:connectHost,port,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
+    }
+    const reader=new Reader();
+    try{socket.setNoDelay?.(true);}catch{}
+    try{socket.setTimeout?.(10000,()=>{reader.fail(new Error("MQTT socket idle timeout"));try{socket.destroy();}catch{}});}catch{}
+    socket.on("data",(d:any)=>reader.push(Buffer.from(d)));
+    socket.on("error",(e:any)=>reader.fail(new Error("MQTT socket error: "+(e?.message||String(e)))));
+    socket.on("end",()=>reader.fail(new Error("MQTT broker ended connection")));
+    socket.on("close",()=>reader.fail(new Error("MQTT broker closed connection")));
+    await withTimeout(new Promise<void>((resolve,reject)=>{socket.once("secureConnect",resolve);socket.once("error",reject);}),6000,"MQTT TLS handshake",()=>socket?.destroy());
+
+    await withTimeout(new Promise<void>((resolve,reject)=>{
       socket.write(connectPacket(clientId),(err:any)=>err?reject(err):resolve());
-    });
-    let p=await reader.next(8000,"MQTT CONNACK");if(p.type!==2||p.data.length!==2)throw new Error("Invalid MQTT CONNACK");
+    }),3000,"MQTT CONNECT write",()=>socket?.destroy());
+
+    let p=await reader.next(8000,"MQTT CONNACK");
+    if(p.type!==2||p.data.length!==2)throw new Error("Invalid MQTT CONNACK");
     const rc=p.data[1];if(rc!==0)throw new Error(`MQTT CONNACK refused with code ${rc}${rc===2?" (client identifier rejected)":""}`);
     socket.write(subscribePacket(topics(target)));let sub=false;const subDeadline=Date.now()+8000;
     while(Date.now()<subDeadline&&!sub){
@@ -109,6 +133,7 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
       if(p.type===3)handlePublish(socket,p,target);
     }
     if(!sub)throw new Error("No MQTT SUBACK received");
+
     let packetId=2;
     const publishedIds:number[]=[];
     for(let i=0;i<frames.length;i++){
@@ -121,10 +146,6 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
       if(i+1<frames.length)await new Promise(r=>setTimeout(r,120));
     }
 
-    // Status requests need a real device report. Normal control requests only need
-    // the broker to acknowledge all QoS1 publishes; waiting the old fixed 2.5-3.6s
-    // after that made every button press feel frozen even though the command had
-    // already been accepted.
     const requireReport=frames.some(f=>f.opcode===0x0200);
     const expected=new Set(publishedIds),acked=new Set<number>();
     const deadline=Date.now()+waitMs;let report:Record<string,unknown>|undefined;
@@ -133,21 +154,29 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
       catch(e:any){if(String(e?.message||e).includes("timeout"))continue;throw e;}
       if(p.type===4&&p.data.length>=2){
         acked.add(p.data.readUInt16BE(0));
-        if(!requireReport&&[...expected].every(id=>acked.has(id)))break;
       }else if(p.type===3){
         const r=handlePublish(socket,p,target);
-        if(r){report=r;if(requireReport)break;}
+        if(r)report=r;
       }
+      const state=mqttCompletionStatus([...expected],[...acked],requireReport,report);
+      if(state.complete)break;
     }
-    return {published:frames.length,report,instance:connectHost};
-  }finally{try{socket.end();}catch{}try{socket.destroy();}catch{}}
+    const state=mqttCompletionStatus([...expected],[...acked],requireReport,report);
+    if(!state.brokerAccepted)throw new Error("MQTT PUBACK timeout; missing packet ids "+state.missing.join(","));
+    if(requireReport&&!state.deviceReported)throw new Error("MQTT device report timeout");
+    return {published:frames.length,report,instance:connectHost,brokerAccepted:true,deviceReported:!!report};
+  }finally{
+    try{socket?.end();}catch{}
+    try{socket?.destroy();}catch{}
+    try{raw?.destroy();}catch{}
+  }
 }
 
-export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs=2500):Promise<{published:number;report?:Record<string,unknown>;instance?:string}>{
+export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,waitMs=2500):Promise<MqttSendResult>{
   const host=creds.endpoint_addr;
   if(!host||!creds.certificate_pem||!creds.private_key||!creds.aws_root_ca1_pem)throw new Error("Incomplete Eufy MQTT credentials");
   let ips:string[]=[];
-  try{ips=await dns.resolve4(host);}catch{}
+  try{ips=await withTimeout(dns.resolve4(host),4000,"MQTT DNS lookup");}catch{}
   const directIps=ips.map((x:any)=>String(x).replace(/\.$/,"")).filter((x:string)=>/^\d{1,3}(?:\.\d{1,3}){3}$/.test(x));
   const candidates=[...new Set([...directIps,host])];
   const failures:string[]=[];
