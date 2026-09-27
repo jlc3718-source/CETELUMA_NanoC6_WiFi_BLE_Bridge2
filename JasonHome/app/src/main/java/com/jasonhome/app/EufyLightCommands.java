@@ -288,7 +288,7 @@ final class EufyLightCommands {
 
     static byte[] showWithId(String model, int showId, String effectName, int[] colors, int speed1to5, boolean reverse) {
         int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
-        int speed = speedValue(speed1to5);
+        int speed = isE22(model) ? speedValueE22(speed1to5) : speedValue(speed1to5);
         int layerType = layerType(effectName);
         byte[] layer = encodeLayer(model, layerType, effectName, palette, speed, reverse);
 
@@ -468,6 +468,18 @@ final class EufyLightCommands {
             case 3: return 50;
             case 4: return 70;
             default: return 90;
+        }
+    }
+
+    // T8L02/E22 carries speed on a 0-100 show/layer field. Use a wider
+    // five-point calibration so every UI step is distinct on the E22s.
+    static int speedValueE22(int speed1to5) {
+        switch (clamp(speed1to5,1,5)) {
+            case 1: return 8;
+            case 2: return 25;
+            case 3: return 50;
+            case 4: return 78;
+            default: return 100;
         }
     }
 
