@@ -54,6 +54,7 @@ function installAndroidEufyUi(){
         '<input id="cloudControllerToken" type="password" class="field" autocomplete="off" placeholder="Enter only to set or replace the saved token">'+
         '<div id="cloudControllerTokenMeta" class="sub" style="margin-top:6px">Token status loading…</div>'+
         '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Cloud</button></div>'+
+        '<div class="grid2" style="margin-top:8px"><button id="reconnectCloudController" class="btn" type="button">Reconnect Eufy</button><button id="reconcileCloudController" class="btn" type="button">Reconcile Schedule</button></div>'+
         '<div id="cloudControllerResult" class="sub" style="margin-top:7px"></div>';
       controllerPane.prepend(eufy);
     }
@@ -125,6 +126,26 @@ function installAndroidEufyUi(){
     }catch(e){if(result)result.textContent="Cloud test failed: "+e.message;}
   }
 
+  async function reconnectCloudController(){
+    const result=$("cloudControllerResult");
+    if(result)result.textContent="Reconnecting Cloudflare to Eufy…";
+    try{
+      const r=await post("/api/reconnect",{});
+      if(result)result.textContent="Eufy reconnect complete"+(r.eufy?.status?" • "+r.eufy.status:".");
+      await refreshEufyStatus();
+    }catch(e){if(result)result.textContent="Reconnect failed: "+e.message;}
+  }
+
+  async function reconcileCloudController(){
+    const result=$("cloudControllerResult");
+    if(result)result.textContent="Reconciling the cloud schedule…";
+    try{
+      await post("/api/reconcile",{});
+      if(result)result.textContent="Cloud schedule reconciled.";
+      await refreshEufyStatus();
+    }catch(e){if(result)result.textContent="Reconcile failed: "+e.message;}
+  }
+
   async function refreshEufyStatus(){
     try{
       const data=typeof api==="function"?await api("/api/state?eufy="+Date.now()):null;
@@ -158,6 +179,10 @@ function installAndroidEufyUi(){
   if(saveCloud)saveCloud.addEventListener("click",saveCloudControllerConfig);
   const testCloud=$("testCloudController");
   if(testCloud)testCloud.addEventListener("click",testCloudController);
+  const reconnectCloud=$("reconnectCloudController");
+  if(reconnectCloud)reconnectCloud.addEventListener("click",reconnectCloudController);
+  const reconcileCloud=$("reconcileCloudController");
+  if(reconcileCloud)reconcileCloud.addEventListener("click",reconcileCloudController);
   loadCloudControllerConfig();
 
   const meta=$("bleMeta");
