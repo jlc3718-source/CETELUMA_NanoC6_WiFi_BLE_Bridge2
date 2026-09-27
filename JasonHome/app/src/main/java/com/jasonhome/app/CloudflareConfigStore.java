@@ -13,9 +13,9 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 final class CloudflareConfigStore {
-    static final String ENDPOINT="https://jason-home-cloud.jlc3718.workers.dev";
-    private static final String PREF="jason_home_cloudflare";
-    private static final String ALIAS="jason_home_cloudflare_key_v1";
+    static final String ENDPOINT="https://150.136.245.51";
+    private static final String PREF="jason_home_oracle";
+    private static final String ALIAS="jason_home_oracle_key_v1";
     private final SharedPreferences prefs;
 
     CloudflareConfigStore(Context context){prefs=context.getApplicationContext().getSharedPreferences(PREF,Context.MODE_PRIVATE);}
