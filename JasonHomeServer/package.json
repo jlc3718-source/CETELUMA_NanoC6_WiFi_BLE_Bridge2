@@ -7,7 +7,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "npm run build && node tests/calendar.mjs && node tests/factory-presets.mjs"
+    "test": "npm run build && node tests/calendar.mjs && node tests/factory-presets.mjs && node tests/mqtt-completion.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
