@@ -10,13 +10,14 @@ export interface MqttCredentials {
   aws_root_ca1_pem:string;
   user_id?:string;
   app_name?:string;
+  thing_name?:string;
 }
 export interface MqttTarget { name:string; model:string; serial:string; account:string; }
 export interface CommandFrame { opcode:number; fields:Uint8Array; label:string; }
 
 function utf(value:string):Buffer{const b=Buffer.from(value,"utf8");const h=Buffer.alloc(2);h.writeUInt16BE(b.length,0);return Buffer.concat([h,b]);}
 function packet(header:number,body:Uint8Array):Buffer{const bytes:number[]=[];let n=body.length;do{let x=n%128;n=Math.floor(n/128);if(n>0)x|=128;bytes.push(x);}while(n>0);return Buffer.concat([Buffer.from([header,...bytes]),Buffer.from(body)]);}
-function connectPacket(clientId:string):Buffer{return packet(0x10,Buffer.concat([utf("MQTT"),Buffer.from([4,2,0,45]),utf(clientId)]));}
+function connectPacket(clientId:string):Buffer{return packet(0x10,Buffer.concat([utf("MQTT"),Buffer.from([4,2,0,60]),utf(clientId)]));}
 function subscribePacket(topics:string[]):Buffer{const parts=[Buffer.from([0,1])];for(const t of topics)parts.push(utf(t),Buffer.from([1]));return packet(0x82,Buffer.concat(parts));}
 function publishPacket(topic:string,packetId:number,payload:Uint8Array):Buffer{const id=Buffer.alloc(2);id.writeUInt16BE(packetId,0);return packet(0x32,Buffer.concat([utf(topic),id,Buffer.from(payload)]));}
 function pubAck(packetId:number):Buffer{return Buffer.from([0x40,0x02,(packetId>>>8)&255,packetId&255]);}
@@ -69,7 +70,8 @@ export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:Co
   const host=creds.endpoint_addr,port=creds.endpoint_port||8883;
   if(!host||!creds.certificate_pem||!creds.private_key||!creds.aws_root_ca1_pem)throw new Error("Incomplete Eufy MQTT credentials");
   const brokerUser=creds.user_id===undefined||creds.user_id===null?"u":creds.user_id;
-  const clientId=`android-eufy_life-${brokerUser}-${md5(installId).slice(0,16)}-${target.serial.slice(-4)}-${Date.now()%100000}`;
+  const appClientId=`android-eufy_life-${brokerUser}-${md5(installId).slice(0,16)}-${target.serial.slice(-4)}-${Date.now()%100000}`;
+  const clientId=(creds.thing_name&&String(creds.thing_name).trim())||appClientId;
   const socket:any=tlsConnect({host,port,servername:host,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
   const reader=new Reader();
   try{socket.setNoDelay?.(true);}catch{}
