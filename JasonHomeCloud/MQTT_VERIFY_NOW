@@ -1,1 +1,1 @@
-Deploy and verify exact Android MQTT client-ID semantics.
+Deploy Android identity provisioning endpoint and corrected MQTT handshake.
