@@ -261,7 +261,13 @@ jobs:
           bridge = Path('JasonHome/app/src/main/java/com/jasonhome/app/AndersonApiBridge.java').read_text()
           if 'provisionCloudIdentity' not in bridge or '/api/provision-device' not in bridge or 'syncCalendarToOracleAsync' not in bridge or '/api/calendar/sync' not in bridge or '/api/eufy/factory-' not in bridge:
               raise SystemExit('Android Cloudflare identity provisioning missing')
-          print("Oracle identity + Factory Lab routing regression: PASS")
+          if 'requestAsync' not in bridge or 'onBridgeResponse' not in main:
+              raise SystemExit('Non-blocking Android bridge missing')
+          if '__andersonBridgeResolve' not in classic or 'Sending to Oracle' not in classic:
+              raise SystemExit('Asynchronous/optimistic Oracle UI missing')
+          if 'cloudIdentityProvisioned' not in bridge or 'touchCloudSnapshot' not in bridge:
+              raise SystemExit('Oracle round-trip suppression missing')
+          print("Oracle identity + Factory Lab + low-latency routing regression: PASS")
 
           PY
 
