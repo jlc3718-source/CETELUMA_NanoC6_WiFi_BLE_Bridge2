@@ -58,7 +58,10 @@ final class AndersonApiBridge {
     private volatile String cloudStatus = "Wi-Fi cloud starting";
     private JSONObject cloudSnapshotCache;
     private long cloudSnapshotAt=0L;
+    private final Object cloudSnapshotLock=new Object();
+    private final Object cloudIdentityLock=new Object();
     private volatile boolean cloudIdentityProvisioned=false;
+    private boolean cloudIdentityProvisioning=false;
     private final ExecutorService apiExecutor=Executors.newFixedThreadPool(4);
     private final ExecutorService calendarSyncExecutor=Executors.newSingleThreadExecutor();
     private final AtomicBoolean calendarSyncQueued=new AtomicBoolean(false);
@@ -90,22 +93,38 @@ final class AndersonApiBridge {
         return response(r.status,r.body);
     }
 
-    private synchronized void provisionCloudIdentity() throws Exception {
+    private void provisionCloudIdentity() throws Exception {
         if(cloudIdentityProvisioned)return;
         if(!cloudApi.configured())throw new IOException("Oracle API token is not configured");
-        JSONObject payload=new JSONObject().put("installId",cloud.installId());
-        CloudflareApiClient.Result r=cloudApi.request("POST","/api/provision-device",payload.toString());
-        if(r.status<200||r.status>=300){
-            String msg="Oracle identity provisioning HTTP "+r.status;
-            try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
-            throw new IOException(msg);
+        synchronized(cloudIdentityLock){
+            if(cloudIdentityProvisioned)return;
+            if(cloudIdentityProvisioning){
+                long until=System.currentTimeMillis()+12000L;
+                while(cloudIdentityProvisioning&&System.currentTimeMillis()<until)cloudIdentityLock.wait(Math.max(1L,until-System.currentTimeMillis()));
+                if(cloudIdentityProvisioned)return;
+                if(cloudIdentityProvisioning)throw new IOException("Oracle identity provisioning timeout");
+            }
+            cloudIdentityProvisioning=true;
         }
-        cloudIdentityProvisioned=true;
-        invalidateCloudSnapshot();
+        boolean success=false;
+        try{
+            JSONObject payload=new JSONObject().put("installId",cloud.installId());
+            CloudflareApiClient.Result r=cloudApi.request("POST","/api/provision-device",payload.toString());
+            if(r.status<200||r.status>=300){
+                String msg="Oracle identity provisioning HTTP "+r.status;
+                try{msg=new JSONObject(r.body).optString("error",msg);}catch(Throwable ignored){}
+                throw new IOException(msg);
+            }
+            cloudIdentityProvisioned=true;success=true;invalidateCloudSnapshot();
+        }finally{
+            synchronized(cloudIdentityLock){cloudIdentityProvisioning=false;cloudIdentityLock.notifyAll();}
+            if(!success)cloudIdentityProvisioned=false;
+        }
     }
 
     private String cloudConfig(JSONObject in, boolean write) throws Exception {
         CloudflareConfigStore store=cloudApi.store();
+        String ownershipNote="";
         if(write){
             if(in.has("token")){
                 String token=in.optString("token","").trim();
@@ -114,24 +133,59 @@ final class AndersonApiBridge {
             }
             if(in.has("mode")){
                 boolean cloudMode="cloud".equalsIgnoreCase(in.optString("mode","direct"));
+                boolean wasCloud=store.isCloudMode();
                 if(cloudMode&&!store.hasToken())return error(400,"Enter the Jason Home Oracle API token before enabling Oracle mode");
-                store.setCloudMode(cloudMode);
-                AndersonScheduleService.update(context);
-                if(!cloudMode)cloud.start();
+                if(cloudMode!=wasCloud){
+                    if(cloudMode){
+                        boolean priorDirectOwner=prefs.getBoolean("direct_scheduler_owned",true);
+                        prefs.edit().putBoolean("direct_scheduler_owned",false).apply();
+                        AndersonScheduleService.update(context);
+                        try{
+                            provisionCloudIdentity();
+                            CloudflareApiClient.Result own=cloudApi.request("POST","/api/automation/ownership",new JSONObject().put("owner","oracle").toString());
+                            if(own.status<200||own.status>=300)throw new IOException("Oracle ownership transfer HTTP "+own.status);
+                            store.setCloudMode(true);
+                            ownershipNote="Oracle scheduler owns automation";
+                        }catch(Throwable t){
+                            prefs.edit().putBoolean("direct_scheduler_owned",priorDirectOwner).apply();
+                            AndersonScheduleService.update(context);
+                            return error(502,"Could not transfer automation to Oracle: "+(t.getMessage()==null?t.getClass().getSimpleName():t.getMessage()));
+                        }
+                    }else{
+                        boolean transferred=false;
+                        if(store.hasToken()){
+                            try{
+                                provisionCloudIdentity();
+                                CloudflareApiClient.Result own=cloudApi.request("POST","/api/automation/ownership",new JSONObject().put("owner","direct").toString());
+                                transferred=own.status>=200&&own.status<300;
+                            }catch(Throwable ignored){}
+                        }
+                        store.setCloudMode(false);
+                        prefs.edit().putBoolean("direct_scheduler_owned",transferred).apply();
+                        AndersonScheduleService.update(context);
+                        cloud.start();
+                        ownershipNote=transferred?"Phone scheduler owns automation":"Direct manual fallback only • Oracle ownership could not be transferred";
+                    }
+                }
             }
         }
-        if(write&&store.hasToken()){
+        if(write&&store.hasToken()&&store.isCloudMode()){
             provisionCloudIdentity();
             syncCalendarToOracleAsync();
         }
         JSONObject out=cloudApi.configJson();
-        out.put("directReady",cloud.isReady()).put("directStatus",cloud.status());
+        boolean directOwned=prefs.getBoolean("direct_scheduler_owned",true);
+        out.put("directReady",cloud.isReady()).put("directStatus",cloud.status())
+           .put("automationOwner",store.isCloudMode()?"oracle":(directOwned?"direct":"manual-only"))
+           .put("ownershipStatus",ownershipNote);
         return ok(out);
     }
 
     private JSONObject directStatusJson() throws Exception {
         JSONObject o=new JSONObject();
-        o.put("ok",true).put("controller","Direct Android").put("architecture","Android → Eufy direct fallback");
+        boolean directOwned=prefs.getBoolean("direct_scheduler_owned",true);
+        o.put("ok",true).put("controller","Direct Android").put("architecture","Android → Eufy direct fallback")
+         .put("automationOwner",directOwned?"direct":"manual-only");
         o.put("eufy",new JSONObject().put("ready",cloud.isReady()).put("status",cloud.status()).put("readyNames",directReadyNames()));
         o.put("devices",directDevices());
         LocalDate today=LocalDate.now();
@@ -188,6 +242,7 @@ final class AndersonApiBridge {
             if (cloudApi.isCloudMode()) {
                 if ("/api/status".equals(path) || "/api/devices".equals(path) || "/api/schedules".equals(path)
                     || "/api/reconcile".equals(path) || "/api/reconnect".equals(path)
+                    || "/api/automation/ownership".equals(path)
                     || path.startsWith("/api/eufy/factory-")) {
                     return forwardCloud(m,cloudPath,body);
                 }
@@ -239,19 +294,21 @@ final class AndersonApiBridge {
         }
     }
 
-    private synchronized JSONObject cloudStatusSnapshot(boolean refresh) throws Exception {
+    private JSONObject cloudStatusSnapshot(boolean refresh) throws Exception {
         long now=System.currentTimeMillis();
-        if(!refresh&&cloudSnapshotCache!=null&&now-cloudSnapshotAt<4000L)return new JSONObject(cloudSnapshotCache.toString());
+        synchronized(cloudSnapshotLock){
+            if(!refresh&&cloudSnapshotCache!=null&&now-cloudSnapshotAt<4000L)return new JSONObject(cloudSnapshotCache.toString());
+        }
         CloudflareApiClient.Result r=cloudApi.request("GET",refresh?"/api/status?refresh=1":"/api/status","");
         if(r.status<200||r.status>=300)throw new IOException("Oracle status HTTP "+r.status);
         JSONObject o=new JSONObject(r.body);
         if(!o.optBoolean("ok",false))throw new IOException(o.optString("error","Oracle status failed"));
-        cloudSnapshotCache=o;cloudSnapshotAt=now;
+        synchronized(cloudSnapshotLock){cloudSnapshotCache=new JSONObject(o.toString());cloudSnapshotAt=System.currentTimeMillis();}
         return new JSONObject(o.toString());
     }
 
-    private void invalidateCloudSnapshot(){synchronized(this){cloudSnapshotCache=null;cloudSnapshotAt=0L;}}
-    private void touchCloudSnapshot(){synchronized(this){if(cloudSnapshotCache!=null)cloudSnapshotAt=System.currentTimeMillis();}}
+    private void invalidateCloudSnapshot(){synchronized(cloudSnapshotLock){cloudSnapshotCache=null;cloudSnapshotAt=0L;}}
+    private void touchCloudSnapshot(){synchronized(cloudSnapshotLock){if(cloudSnapshotCache!=null)cloudSnapshotAt=System.currentTimeMillis();}}
     private void refreshCloudSnapshotAsync(){
         if(!cloudApi.isCloudMode()||!cloudApi.configured()||!statusRefreshInFlight.compareAndSet(false,true))return;
         apiExecutor.execute(() -> {
