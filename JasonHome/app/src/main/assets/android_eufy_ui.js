@@ -91,10 +91,10 @@ function installAndroidEufyUi(){
 
     const style=document.createElement("style");
     style.textContent=
-      '#factoryPresetList{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;align-items:stretch}#eventList{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px!important;align-items:stretch}#eventList>.card.event{display:flex!important;flex-direction:column!important;gap:6px!important;min-width:0!important;padding:9px!important;border-radius:11px!important;margin:0!important}#eventList>.card.event>.eventchecks{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;gap:6px!important;min-width:0!important;order:1}#eventList>.card.event>.eventchecks label{font-size:9px!important;gap:4px!important}#eventList>.card.event>.eventchecks input{transform:scale(.9)}#eventList>.card.event>div:nth-child(2){order:2;min-width:0}#eventList>.card.event>div:nth-child(2) .small{font-size:12px!important;line-height:1.15}#eventList>.card.event>div:nth-child(2) .sub{font-size:9px!important;line-height:1.25;margin-top:2px}#eventList>.card.event>div:nth-child(2) .tags{margin-top:3px}#eventList>.card.event>div:nth-child(2) .tag{font-size:8px!important;padding:1px 4px!important}#eventList>.card.event>div:nth-child(2) .chips{display:flex!important;gap:3px!important;flex-wrap:wrap!important;margin-top:4px}#eventList>.card.event>div:nth-child(2) .colorNamePill{font-size:8px!important;min-height:18px!important;padding:2px 5px!important}#eventList>.card.event>.row.wraprow{order:3;display:grid!important;grid-template-columns:1fr 1fr!important;gap:5px!important;margin-top:auto}#eventList>.card.event>.row.wraprow .btn{font-size:10px!important;padding:7px 5px!important;min-width:0!important}#eventList>.factoryScheduleResult{order:4;font-size:9px!important;line-height:1.25}#eventList .factoryScheduleMatch{font-size:9px!important;line-height:1.25}.factoryPresetCard{display:flex;flex-direction:column;gap:6px;min-width:0;padding:9px;border:1px solid rgba(120,160,220,.22);border-radius:11px;background:#091327;margin:0}.factoryPresetName{font-size:13px;line-height:1.15;min-height:30px}.factoryPresetMeta{font-size:9px;color:#91a7ca;margin-top:1px}.factoryPattern{font-size:10px;line-height:1.25;color:#d4e5ff;margin-top:2px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.factorySwatches{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px}.factorySwatch{width:13px;height:13px;border-radius:50%;border:1px solid rgba(255,255,255,.35)}.factoryFlags{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px}.factoryFlag{font-size:8px;border:1px solid rgba(130,175,235,.35);border-radius:999px;padding:1px 4px;color:#aec5e8}.factoryFlag.edited{border-color:#31d89b;color:#7ef2c4}.factoryButtons{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:auto}.factoryButtons .btn{font-size:10px;padding:7px 5px;min-width:0}.factoryTestResult{font-size:9px;line-height:1.25;color:#a9bad5;min-height:0;grid-column:auto}.factoryScheduledEvent{border-color:rgba(49,216,155,.42)!important;box-shadow:inset 3px 0 0 rgba(49,216,155,.65)}.factoryPromotionMaster{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border:1px solid rgba(49,216,155,.42);border-radius:12px;background:linear-gradient(135deg,rgba(8,42,35,.82),rgba(6,24,38,.88));cursor:pointer}.factoryPromotionMaster strong{font-size:12px}.factoryPromotionMaster .sub{font-size:9px;margin-top:2px}.factoryPromotionMaster input{width:24px;height:24px;flex:0 0 auto;accent-color:#31d89b}.factoryPromotionMaster.busy{opacity:.7;pointer-events:none}.factoryPromotionMasterStatus{font-size:9px;color:#7ef2c4;margin-top:4px}.factoryScheduledEvent .factoryScheduleTag{border-color:#31d89b;color:#7ef2c4}.factoryScheduleResult{font-size:10px;color:#a9bad5;margin-top:4px}.factoryScheduleMatch{font-size:10px;color:#7ef2c4;margin-top:3px}.factoryEditorOverlay{position:fixed;inset:0;z-index:22000;background:rgba(0,0,0,.78);display:none;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));overflow:auto}.factoryEditorOverlay.open{display:flex}.factoryEditorCard{width:min(760px,100%);background:#081526;border:1px solid rgba(92,177,235,.42);border-radius:18px;padding:16px;box-shadow:0 24px 80px rgba(0,0,0,.55)}.factoryEditorGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.factoryLayer{border:1px solid rgba(102,155,214,.25);border-radius:14px;padding:12px;margin-top:12px;background:#091327}.factoryLayerHead{display:flex;justify-content:space-between;gap:8px;align-items:center}.factoryLayerGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.factoryLayer textarea{width:100%;min-height:180px;box-sizing:border-box;background:#050c17;color:#d7e7ff;border:1px solid #304765;border-radius:10px;padding:9px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.factoryEditorActions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px}.factoryLayerActions{display:flex;gap:6px;flex-wrap:wrap}@media(max-width:560px){#factoryPresetList,#eventList{grid-template-columns:repeat(2,minmax(0,1fr))}.factoryEditorGrid,.factoryLayerGrid{grid-template-columns:1fr}.factoryEditorActions .btn{flex:1 1 100%}}@media(max-width:285px){#factoryPresetList,#eventList{grid-template-columns:1fr}}@media(min-width:760px){#factoryPresetList,#eventList{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}';
+      '#factoryPresetList{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;align-items:stretch}#eventList{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px!important;align-items:stretch}#eventList>.card.event{display:flex!important;flex-direction:column!important;gap:6px!important;min-width:0!important;padding:9px!important;border-radius:11px!important;margin:0!important}#eventList>.card.event>.eventchecks{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;gap:6px!important;min-width:0!important;order:1}#eventList>.card.event>.eventchecks label{font-size:9px!important;gap:4px!important}#eventList>.card.event>.eventchecks input{transform:scale(.9)}#eventList>.card.event>div:nth-child(2){order:2;min-width:0}#eventList>.card.event>div:nth-child(2) .small{font-size:12px!important;line-height:1.15}#eventList>.card.event>div:nth-child(2) .sub{font-size:9px!important;line-height:1.25;margin-top:2px}#eventList>.card.event>div:nth-child(2) .tags{margin-top:3px}#eventList>.card.event>div:nth-child(2) .tag{font-size:8px!important;padding:1px 4px!important}#eventList>.card.event>div:nth-child(2) .chips{display:flex!important;gap:3px!important;flex-wrap:wrap!important;margin-top:4px}#eventList>.card.event>div:nth-child(2) .colorNamePill{font-size:8px!important;min-height:18px!important;padding:2px 5px!important}#eventList>.card.event>.row.wraprow{order:3;display:grid!important;grid-template-columns:1fr 1fr!important;gap:5px!important;margin-top:auto}#eventList>.card.event>.row.wraprow .btn{font-size:10px!important;padding:7px 5px!important;min-width:0!important}#eventList>.factoryScheduleResult{order:4;font-size:9px!important;line-height:1.25}#eventList .factoryScheduleMatch{font-size:9px!important;line-height:1.25}.factoryPresetCard{display:flex;flex-direction:column;gap:6px;min-width:0;padding:9px;border:1px solid rgba(120,160,220,.22);border-radius:11px;background:#091327;margin:0}.factoryPresetName{font-size:13px;line-height:1.15;min-height:30px}.factoryPresetMeta{font-size:9px;color:#91a7ca;margin-top:1px}.factoryPattern{font-size:10px;line-height:1.25;color:#d4e5ff;margin-top:2px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.factorySwatches{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px}.factorySwatch{width:13px;height:13px;border-radius:50%;border:1px solid rgba(255,255,255,.35)}.factoryFlags{display:flex;gap:3px;flex-wrap:wrap;margin-top:3px}.factoryFlag{font-size:8px;border:1px solid rgba(130,175,235,.35);border-radius:999px;padding:1px 4px;color:#aec5e8}.factoryFlag.edited{border-color:#31d89b;color:#7ef2c4}.factoryButtons{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:auto}.factoryButtons .btn{font-size:10px;padding:7px 5px;min-width:0}.factoryTestResult{font-size:9px;line-height:1.25;color:#a9bad5;min-height:0;grid-column:auto}.factoryScheduledEvent{border-color:rgba(49,216,155,.42)!important;box-shadow:inset 3px 0 0 rgba(49,216,155,.65)}.factoryScheduledEvent .factoryScheduleTag{border-color:#31d89b;color:#7ef2c4}.factoryScheduleResult{font-size:10px;color:#a9bad5;margin-top:4px}.factoryScheduleMatch{font-size:10px;color:#7ef2c4;margin-top:3px}.factoryEditorOverlay{position:fixed;inset:0;z-index:22000;background:rgba(0,0,0,.78);display:none;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));overflow:auto}.factoryEditorOverlay.open{display:flex}.factoryEditorCard{width:min(760px,100%);background:#081526;border:1px solid rgba(92,177,235,.42);border-radius:18px;padding:16px;box-shadow:0 24px 80px rgba(0,0,0,.55)}.factoryEditorGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.factoryLayer{border:1px solid rgba(102,155,214,.25);border-radius:14px;padding:12px;margin-top:12px;background:#091327}.factoryLayerHead{display:flex;justify-content:space-between;gap:8px;align-items:center}.factoryLayerGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.factoryLayer textarea{width:100%;min-height:180px;box-sizing:border-box;background:#050c17;color:#d7e7ff;border:1px solid #304765;border-radius:10px;padding:9px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.factoryEditorActions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px}.factoryLayerActions{display:flex;gap:6px;flex-wrap:wrap}@media(max-width:560px){#factoryPresetList,#eventList{grid-template-columns:repeat(2,minmax(0,1fr))}.factoryEditorGrid,.factoryLayerGrid{grid-template-columns:1fr}.factoryEditorActions .btn{flex:1 1 100%}}@media(max-width:285px){#factoryPresetList,#eventList{grid-template-columns:1fr}}@media(min-width:760px){#factoryPresetList,#eventList{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}';
     document.head.appendChild(style);
 
-    let presets=[],promotions=[],promotionGroup={total:0,enabledCount:0,disabledCount:0,allEnabled:false,allDisabled:false,mixed:false},catalogLoading=false,promotionsLoading=false,editorPreset=null,lastScheduleEvents=[];
+    let presets=[],promotions=[],catalogLoading=false,promotionsLoading=false,editorPreset=null,lastScheduleEvents=[];
     const deep=x=>JSON.parse(JSON.stringify(x));
     function dedupeFactoryByName(items){const best=new Map();for(const p of items||[]){const k=String(p?.name||("id:"+p?.lightId)).trim().toLowerCase().replace(/\s+/g," ");const old=best.get(k);if(!old||Number(p?.lightId||0)<Number(old?.lightId||0))best.set(k,p)}return [...best.values()].sort((a,b)=>String(a?.name||"").localeCompare(String(b?.name||""),undefined,{sensitivity:"base",numeric:true})||Number(a.lightId)-Number(b.lightId))}
     const escapeColor=x=>/^#?[0-9a-fA-F]{6}$/.test(x||"")?"#"+String(x).replace("#",""):"#444";
@@ -249,55 +249,6 @@ function installAndroidEufyUi(){
       });
       return host;
     }
-    function computedPromotionGroup(){
-      const total=promotions.length,enabledCount=promotions.filter(x=>x.enabled!==false).length;
-      return {total,enabledCount,disabledCount:Math.max(0,total-enabledCount),allEnabled:total>0&&enabledCount===total,allDisabled:total>0&&enabledCount===0,mixed:enabledCount>0&&enabledCount<total};
-    }
-    function ensureFactoryPromotionMaster(){
-      const eventList=$("eventList");if(!eventList)return null;
-      let bar=$("factoryPromotionMaster");
-      if(!bar){
-        const label=document.createElement("label");label.id="factoryPromotionMaster";label.className="factoryPromotionMaster";
-        const text=document.createElement("div");
-        const title=document.createElement("strong");title.textContent="Eufy Factory";
-        const sub=document.createElement("div");sub.id="factoryPromotionMasterSub";sub.className="sub";sub.textContent="Enable or disable all promoted Eufy Factory holiday looks.";
-        const statusLine=document.createElement("div");statusLine.id="factoryPromotionMasterStatus";statusLine.className="factoryPromotionMasterStatus";
-        text.append(title,sub,statusLine);
-        const box=document.createElement("input");box.id="factoryPromotionMasterCheck";box.type="checkbox";box.setAttribute("aria-label","Enable all Eufy Factory scheduled presets");
-        label.append(text,box);
-        eventList.parentElement.insertBefore(label,eventList);
-        box.addEventListener("change",async()=>{
-          const wanted=box.checked;label.classList.add("busy");box.disabled=true;statusLine.textContent=(wanted?"Enabling":"Disabling")+" all Eufy Factory scheduled presets…";
-          try{
-            const r=await post("/api/eufy/factory-promotions/group",{enabled:wanted},12000);
-            promotions.forEach(p=>p.enabled=wanted);
-            promotionGroup=r.group||computedPromotionGroup();
-            renderFactorySchedulePromotions(lastScheduleEvents);
-            statusLine.textContent=wanted?"All Eufy Factory scheduled presets enabled.":"All Eufy Factory scheduled presets disabled.";
-            if(typeof loadState==="function")loadState();
-          }catch(e){
-            statusLine.textContent="Eufy Factory group change failed: "+e.message;
-            updateFactoryPromotionMaster();
-          }finally{
-            label.classList.remove("busy");box.disabled=false;
-          }
-        });
-      }
-      return bar;
-    }
-    function updateFactoryPromotionMaster(){
-      const bar=ensureFactoryPromotionMaster();if(!bar)return;
-      const box=$("factoryPromotionMasterCheck"),sub=$("factoryPromotionMasterSub");
-      const g=promotionGroup?.total===promotions.length?promotionGroup:computedPromotionGroup();
-      bar.hidden=!g.total;
-      if(box){
-        box.indeterminate=!!g.mixed;
-        box.checked=!!g.allEnabled;
-        box.title=g.mixed?"Some Eufy Factory scheduled presets are enabled":"";
-      }
-      if(sub)sub.textContent=g.total?g.enabledCount+" of "+g.total+" Eufy Factory holiday presets enabled • uncheck/check to toggle the whole group":"No promoted Eufy Factory presets.";
-    }
-
     function promotionCard(p,baseEvent){
       const card=document.createElement("div");card.className="card event factoryScheduledEvent";card.dataset.factoryLightId=String(p.lightId);
       const checks=document.createElement("div");checks.className="eventchecks";checks.style.display="flex";checks.style.flexDirection="column";checks.style.gap="7px";checks.style.minWidth="92px";
@@ -328,7 +279,7 @@ function installAndroidEufyUi(){
         const wanted=enabled.checked;enabled.disabled=true;result.textContent=(wanted?"Enabling ":"Disabling ")+(p.name||"Factory preset")+"…";
         try{
           const r=await post("/api/eufy/factory-promotions",{lightId:Number(p.lightId),enabled:wanted},12000);
-          p.enabled=r.promotion?.enabled!==false;enabled.checked=p.enabled;promotionGroup=computedPromotionGroup();updateFactoryPromotionMaster();result.textContent=(p.name||"Factory preset")+" "+(p.enabled?"enabled":"disabled")+" in the schedule.";
+          p.enabled=r.promotion?.enabled!==false;enabled.checked=p.enabled;window.dispatchEvent(new CustomEvent("factory-promotions-changed",{detail:{lightId:Number(p.lightId),enabled:p.enabled}}));result.textContent=(p.name||"Factory preset")+" "+(p.enabled?"enabled":"disabled")+" in the schedule.";
           if(typeof loadState==="function")loadState();
         }catch(e){enabled.checked=!wanted;result.textContent="Schedule change failed: "+e.message;}
         finally{enabled.disabled=false;}
@@ -340,7 +291,6 @@ function installAndroidEufyUi(){
       lastScheduleEvents=Array.isArray(events)?events:[];
       const root=$("eventList");if(!root)return;
       root.querySelectorAll(":scope > .factoryScheduledEvent").forEach(x=>x.remove());
-      updateFactoryPromotionMaster();
       if(!promotions.length)return;
       const baseCards=[...root.querySelectorAll(":scope > .event:not(.factoryScheduledEvent)")];
       const byId=new Map(lastScheduleEvents.map((e,i)=>[String(e.id),{event:e,card:baseCards[i]}]));
@@ -369,8 +319,6 @@ function installAndroidEufyUi(){
       try{
         const r=await api("/api/eufy/factory-promotions?ts="+Date.now(),{},12000);
         promotions=Array.isArray(r.promotions)?r.promotions:[];
-        promotionGroup=r.group||computedPromotionGroup();
-        updateFactoryPromotionMaster();
         if(redraw)renderFactorySchedulePromotions(lastScheduleEvents);
       }catch(e){console.warn("Factory schedule promotions unavailable",e);}
       finally{promotionsLoading=false;}
@@ -404,6 +352,7 @@ function installAndroidEufyUi(){
     }
 
     installFactorySchedulePromotions();
+    window.addEventListener("factory-promotions-changed",()=>setTimeout(()=>loadFactoryPromotions(true),80));
 
     tab.addEventListener("click",()=>{
       if(tab.hidden)return;
