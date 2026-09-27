@@ -48,7 +48,7 @@ function installAndroidEufyUi(){
           '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
           '</div>'+
           '<div class="card small eufyStatusNote"><strong>Control path</strong><br>'+
-          '<span class="sub">Bluetooth is temporarily disabled. Power ON/OFF uses the proven Eufy cloud MQTT path; cloud color/effect/brightness DPs remain disabled until verified.</span></div>';
+          '<span class="sub">Bluetooth is temporarily disabled. Power, brightness, colors, speed and effects are routed through the Eufy cloud MQTT path.</span></div>';
         generalPane.insertBefore(eufy,monitor);
       }
     }
