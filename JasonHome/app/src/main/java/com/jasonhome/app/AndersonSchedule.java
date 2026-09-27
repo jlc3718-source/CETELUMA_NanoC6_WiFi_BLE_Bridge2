@@ -39,8 +39,8 @@ final class AndersonSchedule {
         }
     }
 
-    private static final double LAT=42.0529;
-    private static final double LON=-79.0576;
+    private static final double LAT=42.1507; // ZIP 14772 (Randolph, NY) centroid
+    private static final double LON=-78.9452;
     private static final double ZENITH=96.0;
     private static final SharedPreferences.OnSharedPreferenceChangeListener NOOP=(p,k)->{};
 
