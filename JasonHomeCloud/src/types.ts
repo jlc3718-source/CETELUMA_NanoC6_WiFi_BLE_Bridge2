@@ -3,6 +3,8 @@ export interface Env {
   JASON_HOME_API_TOKEN:string;
   EUFY_EMAIL:string;
   EUFY_PASSWORD:string;
+  JASON_HOME_RELAY_URL?:string;
+  JASON_HOME_RELAY_TOKEN?:string;
   HOME_LAT?:string;
   HOME_LON?:string;
   HOME_TZ?:string;
