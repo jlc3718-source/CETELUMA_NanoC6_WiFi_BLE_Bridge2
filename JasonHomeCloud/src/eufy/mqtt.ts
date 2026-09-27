@@ -1,4 +1,4 @@
-import { connect as tlsConnect, checkServerIdentity } from "node:tls";
+import { connect as tlsConnect } from "node:tls";
 import { promises as dns } from "node:dns";
 import { sha256 } from "./crypto";
 import { dpCommand } from "./wire";
@@ -75,7 +75,7 @@ async function sendMqttOnInstance(creds:MqttCredentials,target:MqttTarget,frames
   const clientId=`android-${appName}-${brokerUser}-${mqttUuid}-${Math.floor(Date.now()/1000)}`;
   const socket:any=tlsConnect({
     host:connectHost,port,servername:brokerHost,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,
-    rejectUnauthorized:true,checkServerIdentity:(_hostname:string,cert:any)=>checkServerIdentity(brokerHost,cert)
+    rejectUnauthorized:true
   });
   const reader=new Reader();
   try{socket.setNoDelay?.(true);}catch{}
