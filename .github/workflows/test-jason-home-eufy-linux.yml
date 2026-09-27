@@ -1,0 +1,36 @@
+name: Test Jason Home Eufy Linux MQTT
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeCloud/LINUX_MQTT_VERIFY_NOW'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: JasonHomeCloud
+    env:
+      EUFY_EMAIL: ${{ secrets.EUFY_EMAIL }}
+      EUFY_PASSWORD: ${{ secrets.EUFY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require Eufy secrets
+        shell: bash
+        run: |
+          test -n "$EUFY_EMAIL"
+          test -n "$EUFY_PASSWORD"
+      - name: Install
+        run: npm install
+      - name: Safe Pool status-only MQTT probe
+        run: npx tsx tests/live-linux-mqtt-probe.ts
