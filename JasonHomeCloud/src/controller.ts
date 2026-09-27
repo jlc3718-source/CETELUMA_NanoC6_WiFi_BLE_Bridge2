@@ -94,13 +94,17 @@ export class JasonHomeController {
   private targetNames(target:string){if(!target||target.toLowerCase()==="all")return ["Pool","House","Garage","Shed"];if(!(target in DEVICE_MODELS))throw new Error(`Unknown target ${target}`);return [target];}
   private async control(input:any){
     const target=String(input?.target||"All"),names=this.targetNames(target),scene=safeScene(input),eufy=await this.ensureEufy(false);
-    const results=await Promise.allSettled(names.map(async name=>{
-      const r=input?.power===false?await eufy.power(name,false):await eufy.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
-      this.sql.exec("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?",Date.now(),name);
-      this.sql.exec("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at",name,JSON.stringify(scene),Date.now());
-      return {name,...r};
-    }));
-    let ok=0;const detail:any[]=[];results.forEach((r,i)=>{if(r.status==="fulfilled"){ok++;detail.push({name:names[i],ok:true,report:r.value.report||null});}else{const msg=(r.reason as any)?.message||String(r.reason);detail.push({name:names[i],ok:false,error:msg});this.sql.exec("UPDATE devices SET last_error=? WHERE name=?",msg,names[i]);}});
+    let ok=0;const detail:any[]=[];
+    for(const name of names){
+      try{
+        const r=input?.power===false?await eufy.power(name,false):await eufy.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
+        ok++;detail.push({name,ok:true,report:r.report||null,instance:(r as any).instance||null});
+        this.sql.exec("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?",Date.now(),name);
+        this.sql.exec("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at",name,JSON.stringify(scene),Date.now());
+      }catch(reason:any){
+        const msg=reason?.message||String(reason);detail.push({name,ok:false,error:msg});this.sql.exec("UPDATE devices SET last_error=? WHERE name=?",msg,name);
+      }
+    }
     const next=nextScheduleEvent(this.scheduleRows(),new Date(),this.geo().lat,this.geo().lon,this.geo().tz),override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};this.setMeta("override",JSON.stringify(override));
     const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail};this.setMeta("last_command",JSON.stringify(summary));this.sql.exec("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)",Date.now(),target,"manual",ok===names.length?1:0,JSON.stringify(detail));await this.scheduleNextAlarm();
     if(ok===0)throw new Error(detail.map(x=>x.error).filter(Boolean).join("; ")||"No light command completed");return {ok:true,updated:ok,total:names.length,detail,override};
