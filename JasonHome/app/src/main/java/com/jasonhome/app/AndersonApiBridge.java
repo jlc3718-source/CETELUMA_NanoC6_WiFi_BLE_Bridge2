@@ -182,7 +182,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.1.0");
+        d.put("firmwareVersion","Craumer Home • 5.1.1");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
@@ -704,7 +704,7 @@ final class AndersonApiBridge {
             .put("cpuLoad",0).put("cpuMhz",0).put("wifiConnected",true).put("rssi",0)
             .put("heapFree",free).put("heapMin",free).put("heapLargest",free)
             .put("slotBytes",0).put("appBytes",0).put("appFreeBytes",0)
-            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.1.0")
+            .put("uptimeMs",android.os.SystemClock.elapsedRealtime()).put("version","5.1.1")
             .put("bleCount",0).put("bleSeen",snapshotDiscovered().size()).put("bleKnown",ADDRESSES.length).put("bleBusy",ble.isBusy())
             .put("ssid","Android").put("ip","Local")
             .put("resetReason","Android app launch").put("loopWatchdog",true).put("networkRestarts",0)
@@ -714,7 +714,7 @@ final class AndersonApiBridge {
 
     private JSONObject firmwareJson() throws Exception {
         return new JSONObject().put("runningPartition","Android").put("nextPartition","Android")
-            .put("version","Craumer Home 5.1.0").put("buildCommit","Craumer Home UI")
+            .put("version","Craumer Home 5.1.1").put("buildCommit","Craumer Home UI")
             .put("slotSize",0).put("previousAvailable",false);
     }
 
