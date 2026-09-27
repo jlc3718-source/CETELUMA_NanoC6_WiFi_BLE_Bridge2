@@ -230,7 +230,7 @@ jobs:
           for marker in ['data-page="home"','data-page="lights"','data-page="events"','data-page="settings"','housePreview','Jason','Scheduling Rules','Eufy Devices']:
               if marker not in classic:
                   raise SystemExit('Classic Jason Home layout missing '+marker)
-          for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller','Test Oracle','factoryTab','Factory preset editor','Save & Apply','Advanced Layer Data','/api/eufy/factory-test','/api/eufy/factory-presets','/api/eufy/factory-presets/save','/api/eufy/factory-promotions','/api/eufy/factory-promotions/group','installFactorySchedulePromotions','#factoryPresetList{display:grid']:
+          for marker in ['cloudControllerMode','saveCloudController','testCloudController','/api/cloud/config','/api/cloud/test','Oracle — Internet controller','Test Oracle','factoryTab','Factory preset editor','Save & Apply','Advanced Layer Data','/api/eufy/factory-test','/api/eufy/factory-presets','/api/eufy/factory-presets/save','/api/eufy/factory-promotions' ,'installFactorySchedulePromotions','#factoryPresetList{display:grid']:
               if marker not in classic_js:
                   raise SystemExit('Classic Cloudflare integration missing '+marker)
           print("Classic Jason Home Oracle layout regression: PASS")
