@@ -320,7 +320,11 @@ final class EufyLightCommands {
     }
 
     static byte[] effectE120(String effectName, int[] colors, int speed1to5, boolean reverse, int lampCount) {
-        int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        int[] source = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        // Two-color grouped behavior is physically verified on T8L00. Until a
+        // three-plus group layout is captured, keep production E120 effects on
+        // the proven one/two-color path instead of sending an unverified group map.
+        int[] palette = source.length > 2 ? new int[]{source[0],source[1]} : source;
         int modeId = e120ModeId(effectName, reverse);
         int speed = clamp(speed1to5,1,5);
 
