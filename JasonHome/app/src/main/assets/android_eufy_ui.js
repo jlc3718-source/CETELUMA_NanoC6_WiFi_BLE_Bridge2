@@ -28,36 +28,34 @@ function installAndroidEufyUi(){
       ctlTab.setAttribute("aria-label","Eufy Devices");
     }
 
-    const generalPane=q('.v3SettingsPane[data-settings-pane="general"]');
     const monitor=$("systemMonitorPanel");
-    if(generalPane&&monitor){
-      monitor.hidden=true;
-      monitor.style.display="none";
-      if(!$("eufyAndroidStatusPanel")){
-        const eufy=document.createElement("div");
-        eufy.id="eufyAndroidStatusPanel";
-        eufy.className="panel";
-        eufy.innerHTML=
-          '<div class="row between"><div><strong>Eufy / Cloud Controller</strong>'+
-          '<div class="sub">Same Jason Home controls with either direct Eufy access or the Cloudflare controller behind them.</div></div>'+
-          '<span class="badge" id="eufyBleBadge">READY</span></div>'+
-          '<div class="eufyStatusGrid">'+
-          '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
-          '<div class="eufyStatusCard"><span>House</span><strong id="eufyHouseState">Saved</strong><small>E120</small></div>'+
-          '<div class="eufyStatusCard"><span>Garage</span><strong id="eufyGarageState">Saved</strong><small>E22</small></div>'+
-          '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
-          '</div>'+
-          '<div class="card small eufyStatusNote"><strong>Controller path</strong><br>'+
-          '<span id="cloudControllerSummary" class="sub">Loading controller mode…</span></div>'+
-          '<div class="label">Controller mode</div>'+
-          '<select id="cloudControllerMode" class="field"><option value="direct">Direct Eufy — phone fallback</option><option value="cloud">Cloudflare — Internet controller</option></select>'+
-          '<div class="label">Jason Home Cloud API token</div>'+
-          '<input id="cloudControllerToken" type="password" class="field" autocomplete="off" placeholder="Only needed when enabling Cloudflare">'+
-          '<div id="cloudControllerTokenMeta" class="sub" style="margin-top:6px">Token status loading…</div>'+
-          '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Cloud</button></div>'+
-          '<div id="cloudControllerResult" class="sub" style="margin-top:7px"></div>';
-        generalPane.insertBefore(eufy,monitor);
-      }
+    if(monitor){monitor.hidden=true;monitor.style.display="none";}
+
+    const controllerPane=q('.v3SettingsPane[data-settings-pane="controllers"]');
+    if(controllerPane&&!$("eufyAndroidStatusPanel")){
+      const eufy=document.createElement("div");
+      eufy.id="eufyAndroidStatusPanel";
+      eufy.className="panel";
+      eufy.innerHTML=
+        '<div class="row between"><div><strong>Eufy / Cloud Controller</strong>'+
+        '<div class="sub">Choose whether Jason Home controls the lights through Cloudflare or directly from this phone.</div></div>'+
+        '<span class="badge" id="eufyBleBadge">READY</span></div>'+
+        '<div class="eufyStatusGrid">'+
+        '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
+        '<div class="eufyStatusCard"><span>House</span><strong id="eufyHouseState">Saved</strong><small>E120</small></div>'+
+        '<div class="eufyStatusCard"><span>Garage</span><strong id="eufyGarageState">Saved</strong><small>E22</small></div>'+
+        '<div class="eufyStatusCard"><span>Shed</span><strong id="eufyShedState">Saved</strong><small>E22</small></div>'+
+        '</div>'+
+        '<div class="card small eufyStatusNote"><strong>Controller path</strong><br>'+
+        '<span id="cloudControllerSummary" class="sub">Loading controller mode…</span></div>'+
+        '<div class="label">Controller mode</div>'+
+        '<select id="cloudControllerMode" class="field"><option value="cloud">Cloudflare — Internet controller</option><option value="direct">Direct Eufy — phone fallback</option></select>'+
+        '<div class="label">Jason Home Cloud API token</div>'+
+        '<input id="cloudControllerToken" type="password" class="field" autocomplete="off" placeholder="Enter only to set or replace the saved token">'+
+        '<div id="cloudControllerTokenMeta" class="sub" style="margin-top:6px">Token status loading…</div>'+
+        '<div class="grid2" style="margin-top:10px"><button id="saveCloudController" class="btn primary" type="button">Save Controller</button><button id="testCloudController" class="btn" type="button">Test Cloud</button></div>'+
+        '<div id="cloudControllerResult" class="sub" style="margin-top:7px"></div>';
+      controllerPane.prepend(eufy);
     }
 
     const pane=q('.v3SettingsPane[data-settings-pane="controllers"]');
