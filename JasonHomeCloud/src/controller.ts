@@ -1,6 +1,7 @@
 import type { Env, ScheduleRow, Scene } from "./types";
 import { EufyClient, type EufySession } from "./eufy/client";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler";
+import { relayCommand, relayConfigured, relayProbe, relayReady, relayReconnect } from "./relay";
 
 const DEFAULT_SCENE:Scene={power:true,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
 const DEVICE_MODELS:Record<string,string>={Pool:"E120",House:"E120",Garage:"E22",Shed:"E22"};
@@ -16,7 +17,7 @@ function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,bright
 function offScene():Scene{return {power:false,brightness:DEFAULT_SCENE.brightness,effect:DEFAULT_SCENE.effect,colors:[...DEFAULT_SCENE.colors],speed:DEFAULT_SCENE.speed};}
 
 export class JasonHomeController {
-  private sql:any;private eufy:EufyClient|null=null;private eufyReady=false;private eufyStatus="Not connected";
+  private sql:any;private eufy:EufyClient|null=null;private eufyReady=false;private eufyStatus="Not connected";private relayReadyNames:string[]=[];
   constructor(private state:any,private env:Env){this.sql=state.storage.sql;state.blockConcurrencyWhile(async()=>this.init());}
   private async init(){
     this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -50,7 +51,13 @@ export class JasonHomeController {
       if(method==="POST"&&path==="/api/control")return json(await this.control(await request.json()));
       if(method==="POST"&&(path==="/api/resume-schedule"||path==="/api/resume")){this.delMeta("override");await this.reconcile(true,true);return json({ok:true,resumed:true});}
       if(method==="POST"&&path==="/api/reconcile"){await this.reconcile(false,true);return json({ok:true});}
-      if(method==="POST"&&path==="/api/reconnect"){this.eufy=null;this.eufyReady=false;await this.ensureEufy(true);return json({ok:true,eufy:this.eufyStatus});}
+      if(method==="POST"&&path==="/api/reconnect"){
+        if(relayConfigured(this.env)){
+          const r=await relayReconnect(this.env);this.relayReadyNames=Array.isArray(r.readyNames)?r.readyNames:[];this.eufyReady=this.relayReadyNames.length===4;this.eufyStatus=r.status||`Ready ${this.relayReadyNames.length}/4`;
+          return json({ok:true,eufy:this.eufyStatus,readyNames:this.relayReadyNames,transport:"linux-relay"});
+        }
+        this.eufy=null;this.eufyReady=false;await this.ensureEufy(true);return json({ok:true,eufy:this.eufyStatus});
+      }
       if(method==="POST"&&path==="/api/provision-device"){
         const input:any=await request.json().catch(()=>({})),installId=String(input?.installId||"").trim().toLowerCase();
         if(!/^[0-9a-f]{32}$/.test(installId))throw new Error("Android install identity must be 32 hexadecimal characters");
@@ -59,12 +66,17 @@ export class JasonHomeController {
           this.setMeta("install_id",installId);this.delMeta("eufy_session");
           this.eufy=null;this.eufyReady=false;this.eufyStatus="Android identity synchronized";
         }
+        if(relayConfigured(this.env)){
+          const r=await relayReady(this.env);this.relayReadyNames=Array.isArray(r.readyNames)?r.readyNames:[];this.eufyReady=this.relayReadyNames.length===4;this.eufyStatus=r.status||`Ready ${this.relayReadyNames.length}/4`;
+          return json({ok:true,changed,eufy:this.eufyStatus,readyNames:this.relayReadyNames,transport:"linux-relay"});
+        }
         await this.ensureEufy(changed);
         return json({ok:true,changed,eufy:this.eufyStatus,readyNames:this.eufy?.readyNames()||[]});
       }
       if(method==="POST"&&path==="/api/mqtt-probe"){
         const input:any=await request.json().catch(()=>({})),target=String(input?.target||"Pool");
         if(!DEVICE_NAMES.includes(target))throw new Error("Probe target must be Pool, House, Garage, or Shed");
+        if(relayConfigured(this.env))return json(await relayProbe(this.env,target));
         const eufy=await this.ensureEufy(false),result=await eufy.status(target);
         return json({ok:true,target,published:result.published,report:result.report||null});
       }
@@ -73,12 +85,21 @@ export class JasonHomeController {
   }
   async alarm(){await this.reconcile(false,false);}
   private async status(refresh:boolean){
-    if(refresh){try{await this.ensureEufy(false);}catch(e:any){this.eufyStatus=e?.message||String(e);}}
+    if(relayConfigured(this.env)){
+      if(refresh||this.relayReadyNames.length!==4){
+        try{const r=await relayReady(this.env);this.relayReadyNames=Array.isArray(r.readyNames)?r.readyNames:[];this.eufyReady=this.relayReadyNames.length===4;this.eufyStatus=r.status||`Ready ${this.relayReadyNames.length}/4`;}
+        catch(e:any){this.eufyReady=false;this.eufyStatus=e?.message||String(e);}
+      }
+    }else if(refresh){try{await this.ensureEufy(false);}catch(e:any){this.eufyStatus=e?.message||String(e);}}
     const {lat,lon,tz}=this.geo(),astro=astronomy(new Date(),lat,lon,tz),next=nextScheduleEvent(this.scheduleRows(),new Date(),lat,lon,tz);
     const overrideRaw=this.meta("override");let override:any=null;try{override=overrideRaw?JSON.parse(overrideRaw):null;}catch{}
-    return {ok:true,controller:"Online",architecture:"Cloudflare Worker + Durable Object",eufy:{ready:this.eufyReady,status:this.eufyStatus,readyNames:this.eufy?.readyNames()||[]},devices:this.deviceStatus(),override,astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:tz},nextEvent:next?{at:new Date(next.at).toISOString(),name:next.row.name,phase:next.phase,target:next.row.target}:null,lastCommand:this.meta("last_command"),desired:Array.from(this.sql.exec("SELECT * FROM desired_state ORDER BY name"))};
+    const names=relayConfigured(this.env)?this.relayReadyNames:(this.eufy?.readyNames()||[]);
+    return {ok:true,controller:"Online",architecture:relayConfigured(this.env)?"Cloudflare Worker + Durable Object + Linux MQTT relay":"Cloudflare Worker + Durable Object",eufy:{ready:this.eufyReady,status:this.eufyStatus,readyNames:names,transport:relayConfigured(this.env)?"linux-relay":"worker-mqtt"},devices:this.deviceStatus(),override,astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:tz},nextEvent:next?{at:new Date(next.at).toISOString(),name:next.row.name,phase:next.phase,target:next.row.target}:null,lastCommand:this.meta("last_command"),desired:Array.from(this.sql.exec("SELECT * FROM desired_state ORDER BY name"))};
   }
-  private deviceStatus(){return (Array.from(this.sql.exec("SELECT name,model,enabled,last_ok,last_error FROM devices ORDER BY CASE name WHEN 'Pool' THEN 1 WHEN 'House' THEN 2 WHEN 'Garage' THEN 3 ELSE 4 END")) as any[]).map(d=>({...d,ready:this.eufyReady&&!!this.eufy?.readyNames().includes(d.name)}));}
+  private deviceStatus(){
+    const names=relayConfigured(this.env)?this.relayReadyNames:(this.eufy?.readyNames()||[]);
+    return (Array.from(this.sql.exec("SELECT name,model,enabled,last_ok,last_error FROM devices ORDER BY CASE name WHEN 'Pool' THEN 1 WHEN 'House' THEN 2 WHEN 'Garage' THEN 3 ELSE 4 END")) as any[]).map(d=>({...d,ready:this.eufyReady&&names.includes(d.name)}));
+  }
   private async ensureEufy(force:boolean){
     if(this.eufyReady&&!force&&this.eufy)return this.eufy;
     const install=this.meta("install_id")!;let session:EufySession|undefined;const raw=this.meta("eufy_session");if(raw){try{session=JSON.parse(raw);}catch{}}
@@ -93,21 +114,30 @@ export class JasonHomeController {
   }
   private targetNames(target:string){if(!target||target.toLowerCase()==="all")return ["Pool","House","Garage","Shed"];if(!(target in DEVICE_MODELS))throw new Error(`Unknown target ${target}`);return [target];}
   private async control(input:any){
-    const target=String(input?.target||"All"),names=this.targetNames(target),scene=safeScene(input),eufy=await this.ensureEufy(false);
+    const target=String(input?.target||"All"),names=this.targetNames(target),scene=safeScene(input);
     let ok=0;const detail:any[]=[];
-    for(const name of names){
-      try{
-        const r=input?.power===false?await eufy.power(name,false):await eufy.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
-        ok++;detail.push({name,ok:true,report:r.report||null,instance:(r as any).instance||null});
-        this.sql.exec("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?",Date.now(),name);
-        this.sql.exec("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at",name,JSON.stringify(scene),Date.now());
-      }catch(reason:any){
-        const msg=reason?.message||String(reason);detail.push({name,ok:false,error:msg});this.sql.exec("UPDATE devices SET last_error=? WHERE name=?",msg,name);
+    if(relayConfigured(this.env)){
+      const r=await relayCommand(this.env,target,scene);detail.push(...(Array.isArray(r.detail)?r.detail:[]));ok=Number(r.updated||detail.filter((x:any)=>x.ok).length||0);
+    }else{
+      const eufy=await this.ensureEufy(false);
+      for(const name of names){
+        try{
+          const r=input?.power===false?await eufy.power(name,false):await eufy.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
+          ok++;detail.push({name,ok:true,report:r.report||null,instance:(r as any).instance||null});
+        }catch(reason:any){
+          detail.push({name,ok:false,error:reason?.message||String(reason)});
+        }
       }
     }
+    for(const item of detail){
+      if(item.ok){
+        this.sql.exec("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?",Date.now(),item.name);
+        this.sql.exec("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at",item.name,JSON.stringify(scene),Date.now());
+      }else if(item.name)this.sql.exec("UPDATE devices SET last_error=? WHERE name=?",item.error||"Command failed",item.name);
+    }
     const next=nextScheduleEvent(this.scheduleRows(),new Date(),this.geo().lat,this.geo().lon,this.geo().tz),override={active:true,target,scene,createdAt:Date.now(),expiresAt:next?.at||null};this.setMeta("override",JSON.stringify(override));
-    const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail};this.setMeta("last_command",JSON.stringify(summary));this.sql.exec("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)",Date.now(),target,"manual",ok===names.length?1:0,JSON.stringify(detail));await this.scheduleNextAlarm();
-    if(ok===0)throw new Error(detail.map(x=>x.error).filter(Boolean).join("; ")||"No light command completed");return {ok:true,updated:ok,total:names.length,detail,override};
+    const summary={at:new Date().toISOString(),target,ok,total:names.length,scene,detail,transport:relayConfigured(this.env)?"linux-relay":"worker-mqtt"};this.setMeta("last_command",JSON.stringify(summary));this.sql.exec("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)",Date.now(),target,"manual",ok===names.length?1:0,JSON.stringify(detail));await this.scheduleNextAlarm();
+    if(ok===0)throw new Error(detail.map((x:any)=>x.error).filter(Boolean).join("; ")||"No light command completed");return {ok:true,updated:ok,total:names.length,detail,override};
   }
   private async saveSchedule(input:any){
     const id=String(input?.id||crypto.randomUUID()),name=String(input?.name||"Schedule").slice(0,80),enabled=input?.enabled===false?0:1,days=String(input?.days||"*").slice(0,64),startKind=["clock","dawn","dusk"].includes(input?.startKind)?input.startKind:"clock",endKind=["clock","dawn","dusk"].includes(input?.endKind)?input.endKind:"clock",startValue=String(input?.startValue||"18:00"),endValue=String(input?.endValue||"23:00"),target=String(input?.target||"All"),scene=safeScene(input),priority=clamp(Number(input?.priority||0),-100,100);
@@ -133,8 +163,13 @@ export class JasonHomeController {
     const rows=Array.from(this.sql.exec("SELECT scene FROM desired_state WHERE name=?",name)) as any[];
     try{return rows[0]?.scene?JSON.parse(rows[0].scene):null;}catch{return null;}
   }
-  private async applyScheduled(name:string,scene:Scene,eufy:EufyClient,reason:string){
-    if(scene.power)await eufy.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);else await eufy.power(name,false);
+  private async applyScheduled(name:string,scene:Scene,reason:string){
+    if(relayConfigured(this.env)){
+      const r=await relayCommand(this.env,name,scene);if(Number(r.updated||0)<1)throw new Error("Relay did not update "+name);
+    }else{
+      const eufy=await this.ensureEufy(false);
+      if(scene.power)await eufy.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);else await eufy.power(name,false);
+    }
     const now=Date.now();this.sql.exec("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?",now,name);
     this.sql.exec("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at",name,sceneKey(scene),now);
     this.sql.exec("INSERT INTO command_log(at,target,action,ok,detail) VALUES(?,?,?,?,?)",now,name,"schedule",1,reason);
@@ -158,10 +193,12 @@ export class JasonHomeController {
         }
       }
       if(changes.length){
-        const eufy=await this.ensureEufy(false);
-        const results=await Promise.allSettled(changes.map(c=>this.applyScheduled(c.name,c.scene,eufy,c.reason)));
-        const errors:string[]=[];results.forEach((r,i)=>{if(r.status==="rejected"){const msg=(r.reason as any)?.message||String(r.reason);errors.push(`${changes[i].name}: ${msg}`);this.sql.exec("UPDATE devices SET last_error=? WHERE name=?",msg,changes[i].name);}});
-        this.setMeta("last_command",JSON.stringify({at:new Date().toISOString(),action:"reconcile",sent:changes.length,errors}));
+        const errors:string[]=[];
+        for(const c of changes){
+          try{await this.applyScheduled(c.name,c.scene,c.reason);}
+          catch(reason:any){const msg=reason?.message||String(reason);errors.push(`${c.name}: ${msg}`);this.sql.exec("UPDATE devices SET last_error=? WHERE name=?",msg,c.name);}
+        }
+        this.setMeta("last_command",JSON.stringify({at:new Date().toISOString(),action:"reconcile",sent:changes.length,errors,transport:relayConfigured(this.env)?"linux-relay":"worker-mqtt"}));
         if(errors.length===changes.length)throw new Error(errors.join("; "));
       }
     }
