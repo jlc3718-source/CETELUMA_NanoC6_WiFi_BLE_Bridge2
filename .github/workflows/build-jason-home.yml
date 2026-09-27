@@ -133,10 +133,11 @@ jobs:
           for marker in ['Pride Month','Halloween','Christmas Day','988 Day','Kwanzaa']:
               if marker not in generated:
                   raise SystemExit('Generated calendar missing '+marker)
-          for effect in effects:
-              # At least the curated catalog must contain multiple supported effect families.
-              if effect in ('Jump','Candy Cane','Rainbow Flow','Twinkle / Sparkle','Breath','Wipe / Fill') and effect not in generated:
-                  raise SystemExit('Generated calendar missing effect '+effect)
+          # The curated expanded calendar intentionally no longer requires the
+          # legacy Jump default. Verify the diverse families we deliberately use.
+          for effect in ('Candy Cane','Rainbow Flow','Twinkle / Sparkle','Breath','Wipe / Fill','Strobe','Gradient Sweep'):
+              if effect not in generated:
+                  raise SystemExit('Generated calendar missing curated effect '+effect)
           print('Craumer event calendar generation: PASS')
           PY
 
