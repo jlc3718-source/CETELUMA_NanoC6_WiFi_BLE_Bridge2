@@ -990,6 +990,53 @@ final class BleLightController {
     }
 
     @SuppressLint("MissingPermission")
+    private void sendE120SceneEffect(Job job,BluetoothGatt g,BluetoothGattCharacteristic c,E10Probe p){
+        try{
+            if(EufyLightCommands.isSolidEffect(job.effect)){
+                int rgb=(job.colors==null||job.colors.length==0)?0xFFFFFF:job.colors[0];
+                byte[] colorFrame=p.command(EufyLightCommands.OP_COLOR,
+                    EufyLightCommands.color(job.light.model,rgb,EufyLightCommands.defaultLampCount(job.light.model)));
+                int r3=write(g,c,colorFrame);
+                if(Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS){
+                    finishActive(false,"Scene static color write failed ("+r3+")");
+                    return;
+                }
+                handler.postDelayed(()->{
+                    if(active!=job||gatt!=g||probe!=p)return;
+                    try{
+                        byte[] hold=p.command(EufyLightCommands.OP_COLOR,
+                            EufyLightCommands.effectE120("Solid / Static",new int[]{rgb},job.speed,false,
+                                EufyLightCommands.defaultLampCount(job.light.model)));
+                        int r4=write(g,c,hold);
+                        if(Build.VERSION.SDK_INT>=33&&r4!=BluetoothStatusCodes.SUCCESS){
+                            finishActive(false,"Scene static hold write failed ("+r4+")");
+                            return;
+                        }
+                        listener.onStatus(displayName(job.light)+": static scene written");
+                        handler.postDelayed(()->{if(active==job)finishActive(true,null);},550L);
+                    }catch(Throwable t){
+                        finishActive(false,"Scene static hold command could not be built");
+                    }
+                },220L);
+                return;
+            }
+
+            byte[] effect=p.command(EufyLightCommands.OP_COLOR,
+                EufyLightCommands.effectE120(job.effect,job.colors,job.speed,job.reverse,
+                    EufyLightCommands.defaultLampCount(job.light.model)));
+            int r3=write(g,c,effect);
+            if(Build.VERSION.SDK_INT>=33&&r3!=BluetoothStatusCodes.SUCCESS){
+                finishActive(false,"Scene E120 effect write failed ("+r3+")");
+                return;
+            }
+            listener.onStatus(displayName(job.light)+": E120 native scene written");
+            handler.postDelayed(()->{if(active==job)finishActive(true,null);},550L);
+        }catch(Throwable t){
+            finishActive(false,"Scene E120 effect command could not be built");
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private void sendSceneSequence(Job job, BluetoothGatt g, BluetoothGattCharacteristic c, E10Probe p) {
         try {
             byte[] on = p.powerCommand(true);
@@ -1009,27 +1056,7 @@ final class BleLightController {
                     }
                     handler.postDelayed(() -> {
                         if (active != job || gatt != g || probe != p) return;
-                        try {
-                            byte[] finalFrame;
-                            if (("Solid".equals(job.effect) || "Solid / Static".equals(job.effect)) && job.colors.length == 1) {
-                                finalFrame = p.command(EufyLightCommands.OP_COLOR,
-                                    EufyLightCommands.color(job.light.model,job.colors[0],EufyLightCommands.defaultLampCount(job.light.model)));
-                            } else {
-                                finalFrame = p.command(EufyLightCommands.OP_SHOW,
-                                    EufyLightCommands.show(job.light.model,job.effect,job.colors,job.speed,job.reverse));
-                            }
-                            int r3 = write(g,c,finalFrame);
-                            if (Build.VERSION.SDK_INT >= 33 && r3 != BluetoothStatusCodes.SUCCESS) {
-                                finishActive(false,"Scene effect write failed ("+r3+")");
-                                return;
-                            }
-                            listener.onStatus(displayName(job.light)+": scene written");
-                            handler.postDelayed(() -> {
-                                if (active == job) finishActive(true,null);
-                            },550L);
-                        } catch (Throwable t) {
-                            finishActive(false,"Scene effect command could not be built");
-                        }
+                        sendE120SceneEffect(job,g,c,p);
                     },220L);
                 } catch (Throwable t) {
                     finishActive(false,"Scene brightness command could not be built");
