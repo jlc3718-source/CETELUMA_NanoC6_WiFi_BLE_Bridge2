@@ -55,7 +55,20 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
 
         webView.setWebChromeClient(new WebChromeClient());
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                view.evaluateJavascript(
+                    "(function(){if(document.getElementById('scheduledFactoryPromotionsScript'))return;" +
+                    "var s=document.createElement('script');" +
+                    "s.id='scheduledFactoryPromotionsScript';" +
+                    "s.src='file:///android_asset/scheduled_factory_promotions.js';" +
+                    "document.head.appendChild(s);})();",
+                    null
+                );
+            }
+        });
         webView.addJavascriptInterface(bridge, "AndroidAnderson");
 
         frame.addView(webView, new FrameLayout.LayoutParams(
