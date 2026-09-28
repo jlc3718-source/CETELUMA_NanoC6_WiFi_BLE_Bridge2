@@ -611,8 +611,7 @@ async function factoryTestAll(lightId:number,target="All",mode="native"){
   const names=targetNames(target),sequence=++manualSequence;
   for(const name of names)latestManualSequence.set(name,sequence);
   const compatible=factoryCompatibleScene(preset),native=mode==="native";
-  const expiresAt=nextOverrideExpiry(new Date());
-  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode,sequence,scene:native?undefined:compatible,createdAt:Date.now(),expiresAt}));
+  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode,sequence,scene:native?undefined:compatible,createdAt:Date.now(),expiresAt:null}));
   const results=await Promise.all(names.map(async name=>{
     try{
       const r:any=await serializedForDevice(name,async()=>{
@@ -637,6 +636,12 @@ async function factoryTestAll(lightId:number,target="All",mode="native"){
     }
   }));
   const sent=results.filter((x:any)=>x.ok&&!x.skipped).length,skipped=results.filter((x:any)=>x.skipped).length;
+  const expiresAt=nextOverrideExpiry(new Date());
+  const currentFactoryOverride=parsedMeta<any>("override",null);
+  if(currentFactoryOverride?.active&&Number(currentFactoryOverride?.sequence)===sequence){
+    currentFactoryOverride.expiresAt=expiresAt;
+    setMeta("override",JSON.stringify(currentFactoryOverride));
+  }
   if(sent===0&&skipped===0){
     const current=meta("override");
     try{if(current&&JSON.parse(current)?.sequence===sequence)delMeta("override");}catch{}
@@ -683,8 +688,11 @@ async function statusPayload(refresh=false){
 async function manualControl(input:any,sequence?:number){
   const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
   const firstScene=scenes[names[0]]||DEFAULT_SCENE;
-  const expiresAt=nextOverrideExpiry(new Date());
-  const override={active:true,target,scene:firstScene,scenes,createdAt:Date.now(),expiresAt};
+  const overrideSequence=sequence??++manualSequence;
+  // Do not let calendar bookkeeping delay the physical command. The scheduler
+  // treats an active override with no expiry as active while we send, then the
+  // exact next transition is attached after MQTT completion.
+  const override:any={active:true,target,scene:firstScene,scenes,sequence:overrideSequence,createdAt:Date.now(),expiresAt:null};
   setMeta("override",JSON.stringify(override));
 
   const detail=await Promise.all(names.map(async name=>{
@@ -704,6 +712,13 @@ async function manualControl(input:any,sequence?:number){
   const completed=detail.filter((x:any)=>x.ok&&!x.skipped).length;
   const skipped=detail.filter((x:any)=>x.skipped).length;
   const failed=detail.filter((x:any)=>!x.ok).length;
+  const expiresAt=nextOverrideExpiry(new Date());
+  override.expiresAt=expiresAt;
+  const currentOverride=parsedMeta<any>("override",null);
+  if(currentOverride?.active&&Number(currentOverride?.sequence)===overrideSequence){
+    currentOverride.expiresAt=expiresAt;
+    setMeta("override",JSON.stringify(currentOverride));
+  }
   const summary={at:new Date().toISOString(),target,ok:completed,skipped,failed,total:names.length,scenes,detail,transport:"linux-mqtt"};
   setMeta("last_command",JSON.stringify(summary));
   logCommand(Date.now(),target,"manual",failed===0,detail);
@@ -716,8 +731,7 @@ function queueManualControl(input:any){
   const sequence=++manualSequence;
   for(const name of names)latestManualSequence.set(name,sequence);
 
-  const expiresAt=nextOverrideExpiry(new Date());
-  const override={active:true,target,scene:scenes[names[0]]||DEFAULT_SCENE,scenes,createdAt:Date.now(),expiresAt};
+  const override={active:true,target,scene:scenes[names[0]]||DEFAULT_SCENE,scenes,sequence,createdAt:Date.now(),expiresAt:null};
   setMeta("override",JSON.stringify(override));
   setMeta("last_command",JSON.stringify({at:new Date().toISOString(),target,queued:true,sequence,scenes,transport:"linux-mqtt"}));
 
