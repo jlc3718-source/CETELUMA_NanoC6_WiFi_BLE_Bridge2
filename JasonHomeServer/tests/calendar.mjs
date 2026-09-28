@@ -104,7 +104,7 @@ r=resolveCalendar(overnightSchedule1,new Date("2026-12-26T06:30:00Z"),42.1507,-7
 assert.equal(r,null,"Cross-midnight Schedule 1 must end at its configured end time");
 
 const splitNight=normalizeCalendarConfig({
-  settings:{...base.settings,on:17*60,off:23*60,startAtDusk:false,schedule2Enabled:false},
+  settings:{...base.settings,on:17*60,off:23*60,startAtDusk:false,schedule2Enabled:false,overlap:1},
   special:[],
   customSchedules:[],
   events:[
