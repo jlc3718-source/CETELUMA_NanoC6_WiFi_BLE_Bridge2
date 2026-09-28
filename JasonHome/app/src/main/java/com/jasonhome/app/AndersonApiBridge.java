@@ -358,7 +358,7 @@ final class AndersonApiBridge {
         d.put("brightness",clamp(scene.optInt("brightness",d.optInt("brightness",75)),1,100));
         d.put("speed",clamp(scene.optInt("speed",d.optInt("speed",3)),1,5));
         running.put("name",name==null||name.isEmpty()?"Oracle scene":name);
-        running.put("effect",scene.optString("effect",running.optString("effect","Jump")));
+        running.put("effect",scene.optString("effect",running.optString("effect","Candy Cane")));
         JSONArray colors=scene.optJSONArray("colors");
         if(colors!=null){
             JSONArray hex=new JSONArray();
@@ -396,7 +396,7 @@ final class AndersonApiBridge {
         if(hadBrightness)e.putInt("brightness",clamp(in.optInt("brightness",75),1,100));
         if(hadSpeed)e.putInt("speed",clamp(in.optInt("speed",3),1,5));
         if(in.has("name"))e.putString("running_name",in.optString("name","Manual"));
-        if(hadEffect)e.putString("effect",normalizeEffect(in.optString("effect","Jump")));
+        if(hadEffect)e.putString("effect",normalizeEffect(in.optString("effect","Candy Cane")));
         if(hadColors)e.putString("colors",normalizeColors(in.optJSONArray("colors")).toString());
         e.apply();
 
@@ -405,7 +405,7 @@ final class AndersonApiBridge {
         if(hadPower)payload.put("power",in.optBoolean("power",true));
         if(hadBrightness)payload.put("brightness",clamp(in.optInt("brightness",75),1,100));
         if(hadSpeed)payload.put("speed",clamp(in.optInt("speed",3),1,5));
-        if(hadEffect)payload.put("effect",normalizeEffect(in.optString("effect","Jump")));
+        if(hadEffect)payload.put("effect",normalizeEffect(in.optString("effect","Candy Cane")));
         if(hadColors)payload.put("colors",normalizeColors(in.optJSONArray("colors")));
         if(in.has("name"))payload.put("name",in.optString("name","Manual"));
 
@@ -445,7 +445,7 @@ final class AndersonApiBridge {
             .putInt("brightness",75)
             .putInt("speed",3)
             .putString("running_name","Craumer Home")
-            .putString("effect","Jump")
+            .putString("effect","Candy Cane")
             .putString("colors","[\"#FF0D00\",\"#FFFFFA\"]")
             .putBoolean("manual_override",false)
             .putInt("ble_target",0)
@@ -463,7 +463,7 @@ final class AndersonApiBridge {
 
         JSONObject running=new JSONObject();
         running.put("name",prefs.getString("running_name","Craumer Home"));
-        running.put("effect",prefs.getString("effect","Jump"));
+        running.put("effect",prefs.getString("effect","Candy Cane"));
         running.put("colors",new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
         d.put("running",running);
 
@@ -609,14 +609,14 @@ final class AndersonApiBridge {
         if(hadBrightness)e.putInt("brightness",clamp(in.optInt("brightness",75),1,100));
         if(hadSpeed)e.putInt("speed",clamp(in.optInt("speed",3),1,5));
         if(in.has("name"))e.putString("running_name",in.optString("name","Manual"));
-        if(hadEffect)e.putString("effect",normalizeEffect(in.optString("effect","Jump")));
+        if(hadEffect)e.putString("effect",normalizeEffect(in.optString("effect","Candy Cane")));
         if(hadColors)e.putString("colors",normalizeColors(in.optJSONArray("colors")).toString());
         e.apply();
 
         boolean power=prefs.getBoolean("power",false);
         int brightness=prefs.getInt("brightness",75);
         int speed=prefs.getInt("speed",3);
-        String effect=prefs.getString("effect","Jump");
+        String effect=prefs.getString("effect","Candy Cane");
         int[] colors=rgbArray(new JSONArray(prefs.getString("colors","[\"#FF0D00\"]")));
         int target=prefs.getInt("ble_target",0);
 
@@ -811,7 +811,7 @@ final class AndersonApiBridge {
         if(id.isEmpty())id="custom-"+UUID.randomUUID().toString().substring(0,8);
         JSONObject x=findById(a,id);
         if(x==null){x=new JSONObject();a.put(x);}
-        x.put("id",id).put("name",name).put("effect",normalizeEffect(in.optString("effect","Jump")))
+        x.put("id",id).put("name",name).put("effect",normalizeEffect(in.optString("effect","Candy Cane")))
          .put("brightness",clamp(in.optInt("brightness",100),1,100)).put("speed",clamp(in.optInt("speed",3),1,5))
          .put("enabled",in.has("enabled")?in.optBoolean("enabled"):true)
          .put("favorite",in.has("favorite")?in.optBoolean("favorite"):false)
@@ -1174,7 +1174,7 @@ final class AndersonApiBridge {
     }
 
     private static String normalizeEffect(String e) {
-        if(e==null)return "Jump";
+        if(e==null)return "Candy Cane";
         if(e.startsWith("Solid"))return "Solid";
         if(e.startsWith("Breath"))return "Breath";
         if(e.startsWith("Strobe"))return "Strobe";
