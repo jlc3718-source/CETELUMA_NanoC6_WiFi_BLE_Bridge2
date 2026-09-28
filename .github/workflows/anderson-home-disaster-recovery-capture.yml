@@ -1,0 +1,190 @@
+name: Capture Anderson Home Disaster Recovery
+
+on:
+  push:
+    branches:
+      - anderson-home-disaster-recovery-3.1.58-2026-09-27
+    paths:
+      - '.github/workflows/anderson-home-disaster-recovery-capture.yml'
+      - 'anderson-disaster-recovery/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anderson-home-disaster-recovery-3.1.58
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PRODUCTION_SHA: 5e08048f80b51ad6fdc0a3fd6c23134eb773671f
+      VERSION: 3.1.58
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout frozen recovery branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Capture source and exact published production assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/anderson-dr"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/production-release" "$OUT/live-ota" "$OUT/recovery-tools"
+
+          git fetch origin main ota --tags --force
+          git bundle create "$OUT/anderson-source.bundle" --all
+          git bundle verify "$OUT/anderson-source.bundle"
+
+          gh release view "anderson-v$VERSION" --json targetCommitish,isDraft,isPrerelease > "$OUT/production-release/release-metadata.json"
+          python3 - "$OUT/production-release/release-metadata.json" "$PRODUCTION_SHA" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          if d.get("targetCommitish")!=sys.argv[2] or d.get("isDraft") or d.get("isPrerelease"):
+              raise SystemExit("Stable release does not point at the expected production commit")
+          print("Stable release target verified:",sys.argv[2])
+          PY
+
+          gh release download "anderson-v$VERSION" \
+            --pattern "and_$VERSION.bin" \
+            --pattern "release.json" \
+            --pattern "ota-manifest.json" \
+            --dir "$OUT/production-release"
+
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "/repos/$GITHUB_REPOSITORY/contents/latest.json?ref=ota" > "$OUT/live-ota/latest.json"
+
+          python3 - "$OUT/production-release" "$OUT/live-ota/latest.json" "$PRODUCTION_SHA" "$VERSION" <<'PY'
+          import base64,hashlib,json,os,sys
+          root,live_path,sha,version=sys.argv[1:5]
+          app_name=f"and_{version}.bin"
+          app=open(os.path.join(root,app_name),"rb").read()
+          digest=hashlib.sha256(app).hexdigest()
+          rel=json.load(open(os.path.join(root,"release.json")))
+          if rel.get("version")!=version or rel.get("commit")!=sha:
+              raise SystemExit("release.json provenance mismatch")
+          meta=(rel.get("files") or {}).get(app_name) or {}
+          if meta.get("sha256")!=digest or int(meta.get("bytes",0))!=len(app):
+              raise SystemExit("Production BIN does not match release.json")
+          ota=json.load(open(os.path.join(root,"ota-manifest.json")))
+          live=json.load(open(live_path))
+          if ota!=live:
+              raise SystemExit("Live OTA channel differs from stable release manifest")
+          payload={}
+          for line in str(ota.get("payload","")).splitlines():
+              if "=" in line:
+                  k,v=line.split("=",1);payload[k]=v
+          if payload.get("version")!=version or payload.get("commit")!=sha:
+              raise SystemExit("Signed OTA payload provenance mismatch")
+          if payload.get("sha256")!=digest or int(payload.get("bytes","0"))!=len(app):
+              raise SystemExit("Signed OTA payload binary identity mismatch")
+          print("Production BIN and signed live OTA manifest verified:",len(app),digest)
+          PY
+
+      - name: Build exact-source full serial recovery image
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROD="$RUNNER_TEMP/anderson-production-source"
+          OUT="$RUNNER_TEMP/anderson-dr"
+          rm -rf "$PROD"
+          git worktree add --detach "$PROD" "$PRODUCTION_SHA"
+
+          python3 -m pip install -q -r "$PROD/tools/requirements-build.txt"
+          npm ci --prefix "$PROD/tools" --no-audit --no-fund
+
+          cd "$PROD"
+          test "$(tr -d '\r\n' < FIRMWARE_VERSION.txt)" = "$VERSION"
+          python tools/release.py prepare
+          python tools/test_maintenance.py
+          python tools/test_regressions.py
+          python tools/test_audit_fixes.py
+          python tools/test_connection_recovery.py
+          python tools/test_runtime_fixes.py
+          python tools/audit_event_coverage.py --start-year 2026 --end-year 2037 --require-full
+          pio run -d firmware -e m5stack-nanoc6 -j 4
+          python tools/release.py package --full
+
+          test -s "release/and_$VERSION.bin"
+          test -s "release/and_${VERSION}_full.bin"
+          test -s "release/release.json"
+          cp "release/and_${VERSION}_full.bin" "$OUT/"
+          cp "release/release.json" "$OUT/full-recovery-release.json"
+          cp firmware/.pio/build/m5stack-nanoc6/bootloader.bin "$OUT/" 2>/dev/null || true
+          cp firmware/.pio/build/m5stack-nanoc6/partitions.bin "$OUT/" 2>/dev/null || true
+
+          python3 - "$OUT/and_${VERSION}_full.bin" "$OUT/full-recovery-release.json" "$PRODUCTION_SHA" "$VERSION" <<'PY'
+          import hashlib,json,os,sys
+          full,manifest_path,sha,version=sys.argv[1:5]
+          data=open(full,"rb").read()
+          m=json.load(open(manifest_path))
+          name=f"and_{version}_full.bin"
+          meta=(m.get("files") or {}).get(name) or {}
+          digest=hashlib.sha256(data).hexdigest()
+          if m.get("version")!=version or m.get("commit")!=sha:
+              raise SystemExit("Full recovery image provenance mismatch")
+          if meta.get("sha256")!=digest or int(meta.get("bytes",0))!=len(data):
+              raise SystemExit("Full recovery image hash mismatch")
+          if not data or data[0]!=0xE9:
+              raise SystemExit("Full recovery image does not look like an ESP image")
+          print("Full serial-recovery image verified:",len(data),digest)
+          PY
+
+      - name: Package recovery documentation and manifest
+        shell: bash
+        env:
+          SNAPSHOT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/anderson-dr"
+          cp anderson-disaster-recovery/README.md "$OUT/recovery-tools/README.md"
+
+          python3 - "$OUT" "$SNAPSHOT_SHA" "$PRODUCTION_SHA" "$VERSION" <<'PY'
+          import datetime,hashlib,json,os,sys
+          out,snapshot,production,version=sys.argv[1:5]
+          files={}
+          for base,dirs,names in os.walk(out):
+              for name in names:
+                  if name=="manifest.json":
+                      continue
+                  p=os.path.join(base,name)
+                  rel=os.path.relpath(p,out)
+                  h=hashlib.sha256()
+                  with open(p,"rb") as f:
+                      for chunk in iter(lambda:f.read(1024*1024),b""):
+                          h.update(chunk)
+                  files[rel]={"bytes":os.path.getsize(p),"sha256":h.hexdigest()}
+          manifest={
+              "schema":1,
+              "createdAt":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "project":"Anderson Home NanoC6",
+              "version":version,
+              "productionCommit":production,
+              "recoveryBranchCommit":snapshot,
+              "stableTag":f"anderson-v{version}",
+              "sourceBackup":"anderson-source.bundle",
+              "exactProductionApp":f"production-release/and_{version}.bin",
+              "fullSerialRecoveryImage":f"and_{version}_full.bin",
+              "liveOtaManifest":"live-ota/latest.json",
+              "privateOtaSigningKeyIncluded":False,
+              "privateOtaSigningKeyLocation":"ChatGPT Library / Anderson Home signing-key backup; intentionally excluded from public GitHub/Actions artifacts",
+              "files":files
+          }
+          with open(os.path.join(out,"manifest.json"),"w",encoding="utf-8") as f:
+              json.dump(manifest,f,indent=2,sort_keys=True);f.write("\n")
+          print(json.dumps(manifest,indent=2))
+          PY
+
+      - name: Upload Anderson disaster-recovery bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-3.1.58-FULL-Disaster-Recovery
+          path: ${{ runner.temp }}/anderson-dr/
+          retention-days: 90
+          if-no-files-found: error
