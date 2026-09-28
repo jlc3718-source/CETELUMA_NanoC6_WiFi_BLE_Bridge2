@@ -69,7 +69,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.58";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.59";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -201,7 +201,7 @@ static bool storageHealthCheck(){
 
 static bool loadPresetThemeFromArray(JsonArray presets,const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){for(JsonObject o:presets){if(o["id"].as<String>()!=id)continue;if(activeOnly&&!(o["enabled"]|true))return false;t.name=o["name"].as<String>();if(outName)*outName=t.name;t.effect=effectFromString(o["effect"].as<String>());t.colorCount=0;for(JsonVariant v:o["colors"].as<JsonArray>()){if(t.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())t.colors[t.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!t.colorCount){t.colors[0]=0xE08700;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;}return false;}
 static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){JsonDocument list;if(deserializeJson(list,presetStoreRaw())||!list.is<JsonArray>())return false;return loadPresetThemeFromArray(list.as<JsonArray>(),id,t,br,sp,outName,activeOnly);}
-static bool resolveCustomSchedule(const tm& l,Theme& t,uint8_t& br,uint8_t& sp){JsonDocument schedules,presets;if(deserializeJson(schedules,scheduleStoreRaw())||!schedules.is<JsonArray>()||deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;bool found=false;for(JsonObject o:schedules.as<JsonArray>()){if(!(o["enabled"]|true))continue;int m=o["month"]|0,d=o["day"]|0,y=o["year"]|0;bool annual=o["annual"]|true;if(m!=l.tm_mon+1||d!=l.tm_mday||(!annual&&y!=l.tm_year+1900))continue;Theme q;uint8_t qb=100,qs=1;if(loadPresetThemeFromArray(presets.as<JsonArray>(),o["presetId"].as<String>(),q,qb,qs,nullptr,true)){t=q;br=qb;sp=min((uint8_t)2,qs);found=true;}}return found;}
+static bool resolveCustomSchedule(const tm& l,Theme& t,uint8_t& br,uint8_t& sp,String* scheduleId=nullptr){JsonDocument schedules,presets;if(deserializeJson(schedules,scheduleStoreRaw())||!schedules.is<JsonArray>()||deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;bool found=false;for(JsonObject o:schedules.as<JsonArray>()){if(!(o["enabled"]|true))continue;int m=o["month"]|0,d=o["day"]|0,y=o["year"]|0;bool annual=o["annual"]|true;if(m!=l.tm_mon+1||d!=l.tm_mday||(!annual&&y!=l.tm_year+1900))continue;Theme q;uint8_t qb=100,qs=1;if(loadPresetThemeFromArray(presets.as<JsonArray>(),o["presetId"].as<String>(),q,qb,qs,nullptr,true)){t=q;br=qb;sp=min((uint8_t)2,qs);if(scheduleId)*scheduleId=o["id"].as<String>();found=true;}}return found;}
 
 static bool otaPartitionValid(const esp_partition_t* p){
   if(!p)return false;esp_app_desc_t desc{};return esp_ota_get_partition_description(p,&desc)==ESP_OK;
@@ -486,6 +486,51 @@ void setupRoutes(){
     for(size_t i=0;i<EVENT_COUNT;i++){if(!eventAllowedInActiveSchedule(i)||!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<MAX_BUILTIN_EVENTS?eventOverrides[i].valid:false;e["speed"]=(i<MAX_BUILTIN_EVENTS&&eventOverrides[i].valid)?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
     d["overlap"]=monthly>1?String(monthly)+" month-long events enabled — overlap rule applies.":(monthly==1?"1 month-long event enabled.":"No month-long awareness themes enabled.");
     String out;serializeJson(d,out);sendJson(out);
+  });
+  server.on("/api/night-calendar",HTTP_GET,[]{
+    if(!requireUser())return;
+    int year=server.arg("year").toInt(),month=server.arg("month").toInt();
+    if(year<2020||year>2037||month<1||month>12){server.send(400,"application/json","{\"error\":\"Choose a supported month\"}");return;}
+    tm first{};first.tm_year=year-1900;first.tm_mon=month-1;first.tm_mday=1;first.tm_hour=12;first.tm_isdst=-1;mktime(&first);
+    tm next=first;next.tm_mon++;mktime(&next);next.tm_mday=0;mktime(&next);
+    const int days=next.tm_mday;const auto& settings=store.get();
+    JsonDocument output;output["year"]=year;output["month"]=month;JsonArray dates=output["days"].to<JsonArray>();
+    for(int day=1;day<=days;day++){
+      tm night=first;night.tm_mday=day;night.tm_hour=12;night.tm_min=0;night.tm_sec=0;night.tm_isdst=-1;mktime(&night);
+      JsonObject entry=dates.add<JsonObject>();entry["day"]=day;JsonArray items=entry["events"].to<JsonArray>();
+      if(!settings.schedulerEnabled&&!settings.schedule2Enabled)continue;
+      Theme custom;uint8_t customBrightness=100,customSpeed=1;String customId;
+      if(resolveCustomSchedule(night,custom,customBrightness,customSpeed,&customId)){
+        JsonObject item=items.add<JsonObject>();item["id"]=customId;item["name"]=custom.name;item["effect"]=effectName(custom.effect);item["type"]="Custom event";
+        JsonArray colors=item["colors"].to<JsonArray>();for(uint8_t c=0;c<custom.colorCount;c++)colors.add(colorHex(custom.colors[c]));continue;
+      }
+      bool eligible[MAX_BUILTIN_EVENTS]={false},seen[MAX_BUILTIN_EVENTS]={false};size_t candidateCount=0;
+      for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
+        if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;
+        const bool exact=eventActiveOn(i,night);
+        const bool window=!exact&&EVENTS[i].kind==EventKind::Holiday&&(settings.leadDays||settings.trailDays)
+          &&eventWindowActiveOn(i,night,settings.leadDays,settings.trailDays);
+        if(exact||window){eligible[i]=true;candidateCount++;}
+      }
+      if(!candidateCount)continue;
+      const int start=settings.schedule1StartAtDusk?scheduler.civilDuskMinutes(night):settings.onMinutes;
+      int span=(int)settings.offMinutes-start;if(span<=0)span+=1440;
+      for(int pos=0;pos<span;pos++){
+        tm probe=night;int minute=(start+pos)%1440;probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;
+        Theme selected=scheduler.resolve(probe);
+        for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
+          if(!eligible[i]||seen[i])continue;
+          if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
+        }
+        if((pos&31)==0)yield();
+      }
+      for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i]){
+        Theme theme=effectiveEventTheme(i);JsonObject item=items.add<JsonObject>();item["id"]=EVENTS[i].id;item["name"]=EVENTS[i].name;
+        item["effect"]=effectName(theme.effect);item["type"]=kindName(EVENTS[i].kind);JsonArray colors=item["colors"].to<JsonArray>();
+        for(uint8_t c=0;c<theme.colorCount;c++)colors.add(colorHex(theme.colors[c]));
+      }
+    }
+    String json;serializeJson(output,json);sendJson(json);
   });
   server.on("/api/event-categories",HTTP_GET,[]{
     if(!requireUser())return;JsonDocument d;d["mask"]=eventCategoryMask();d["expanded"]=activeEventColorTheme!=EventColorTheme::MajorUS;JsonArray arr=d["categories"].to<JsonArray>();
