@@ -1,4 +1,5 @@
 name: Diagnose Jason Home 2 latency
+# Triggered from regular chat to capture Jason Home 2 latency before broker-path optimization.
 on:
   push:
     branches: [jason-home-2-web]
