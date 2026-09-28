@@ -1,0 +1,28 @@
+name: Diagnose Jason Home 2 latency
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths: ['.github/workflows/diagnose-jason-home-2.yml']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Measure existing and new services without changing lights
+        shell: bash
+        run: |
+          set +e
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          for path in /api/health /api/calendar /api/status; do
+            echo "Original ${path}"
+            curl --noproxy '*' -sS -m 20 -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\n' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8080${path}"
+          done
+          echo 'Jason Home 2 health'
+          curl --noproxy '*' -sS -m 10 -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\n' http://127.0.0.1:8081/api/health
+          echo 'HTTPS routes'
+          for path in /jason-home-2/api/health /api/health; do
+            curl --noproxy '*' -sS -m 20 --resolve 150.136.245.51:443:127.0.0.1 -o /dev/null -w "$path HTTP %{http_code} in %{time_total}s\n" "https://150.136.245.51${path}"
+          done
+          sudo docker ps --format '{{.Names}} {{.Status}}'
