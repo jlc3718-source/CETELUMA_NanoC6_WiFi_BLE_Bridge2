@@ -23,6 +23,9 @@ export interface MqttSendResult {
   brokerAccepted:boolean;
   deviceReported:boolean;
 }
+const preferredConnectHost=new Map<string,string>();
+const dnsCache=new Map<string,{until:number;ips:string[]}>();
+
 export function mqttCompletionStatus(expectedIds:number[],ackedIds:number[],requireReport:boolean,report?:Record<string,unknown>){
   const acked=new Set(ackedIds),missing=expectedIds.filter(id=>!acked.has(id));
   return {brokerAccepted:missing.length===0,deviceReported:!!report,missing,complete:missing.length===0&&(!requireReport||!!report)};
@@ -176,13 +179,26 @@ export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:Co
   const host=creds.endpoint_addr;
   if(!host||!creds.certificate_pem||!creds.private_key||!creds.aws_root_ca1_pem)throw new Error("Incomplete Eufy MQTT credentials");
   let ips:string[]=[];
-  try{ips=await withTimeout(dns.resolve4(host),4000,"MQTT DNS lookup");}catch{}
+  const cached=dnsCache.get(host);
+  if(cached&&Date.now()<cached.until)ips=cached.ips;
+  else{
+    try{ips=await withTimeout(dns.resolve4(host),4000,"MQTT DNS lookup");}catch{}
+    dnsCache.set(host,{until:Date.now()+10*60*1000,ips});
+  }
   const directIps=ips.map((x:any)=>String(x).replace(/\.$/,"")).filter((x:string)=>/^\d{1,3}(?:\.\d{1,3}){3}$/.test(x));
-  const candidates=[...new Set([...directIps,host])];
+  const preferred=preferredConnectHost.get(host);
+  const candidates=[...new Set([preferred,host,...directIps].filter(Boolean) as string[])];
   const failures:string[]=[];
   for(const candidate of candidates){
-    try{return await sendMqttOnInstance(creds,target,frames,installId,waitMs,candidate);}
-    catch(e:any){failures.push(`${candidate}: ${e?.message||String(e)}`);}
+    try{
+      const result=await sendMqttOnInstance(creds,target,frames,installId,waitMs,candidate);
+      preferredConnectHost.set(host,candidate);
+      return result;
+    }
+    catch(e:any){
+      if(preferredConnectHost.get(host)===candidate)preferredConnectHost.delete(host);
+      failures.push(`${candidate}: ${e?.message||String(e)}`);
+    }
   }
   throw new Error("MQTT broker discovery failed: "+failures.join(" | "));
 }
