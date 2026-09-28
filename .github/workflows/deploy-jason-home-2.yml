@@ -77,10 +77,29 @@ jobs:
           PY
           sudo nginx -t
           sudo systemctl reload nginx
-          sudo nginx -T 2>&1 | grep -A9 -B3 'location \^~ /jason-home-2/' || true
-          curl --noproxy '*' -sSi --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/jason-home-2/api/health | head -25
           curl --noproxy '*' -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/jason-home-2/api/health >/dev/null
           curl --noproxy '*' -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/api/health >/dev/null
+          python3 - <<'PY'
+          import json,urllib.request,ssl,socket
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          resolve=socket.getaddrinfo
+          socket.getaddrinfo=lambda host,port,*args,**kwargs: resolve('127.0.0.1' if host=='150.136.245.51' else host,port,*args,**kwargs)
+          base='https://150.136.245.51/jason-home-2'
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+          data=json.dumps({'token':token}).encode()
+          response=opener.open(urllib.request.Request(base+'/api/session',data,{'Content-Type':'application/json'}),timeout=10)
+          cookie=response.headers['Set-Cookie'].split(';',1)[0]
+          def read(path):
+              return json.load(opener.open(urllib.request.Request(base+path,headers={'Cookie':cookie}),timeout=15))
+          state=read('/api/state')
+          assert state['stateAuthority']=='oracle' and len(state['ble']['controllers'])==4
+          assert len(read('/api/events')['events'])>0
+          assert len(read('/api/colors')['presets'])==36
+          assert len(read('/api/event-categories')['categories'])==15
+          assert 'presets' in read('/api/presets')
+          print('Jason Home 2 live login, state, events, colors, categories, presets: PASS')
+          PY
           echo 'Jason Home 2 and original Oracle HTTPS health: PASS'
       - name: Restore previous web app on failure
         if: failure()
