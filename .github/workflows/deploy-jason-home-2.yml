@@ -77,6 +77,8 @@ jobs:
           PY
           sudo nginx -t
           sudo systemctl reload nginx
+          sudo nginx -T 2>&1 | grep -A9 -B3 'location \^~ /jason-home-2/' || true
+          curl --noproxy '*' -sSi --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/jason-home-2/api/health | head -25
           curl --noproxy '*' -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/jason-home-2/api/health >/dev/null
           curl --noproxy '*' -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/api/health >/dev/null
           echo 'Jason Home 2 and original Oracle HTTPS health: PASS'
