@@ -45,4 +45,17 @@ if text.count(old) != 1:
     raise SystemExit("Jason Home 2 backup import source changed")
 text = text.replace(old, 'const raw=prompt("Paste your Jason Home backup JSON here:")||"";')
 ui.write_text(text)
+
+eufy = target / "android_eufy_ui.js"
+text = eufy.read_text()
+old = """'<div class=\"sub\">Choose whether Jason Home controls the lights through Oracle or directly from this phone.</div></div>'+"""
+if text.count(old) != 1:
+    raise SystemExit("Jason Home 2 controller introduction source changed")
+text = text.replace(old, "'<div class=\"sub\">Oracle controls all four lights.</div></div>'+", 1)
+start = text.index("        '<div class=\"label\">Controller mode</div>'+", text.index("function installAndroidEufyUi"))
+end = text.index("        '<div class=\"grid2\" style=\"margin-top:8px\">", start)
+text = text[:start] + "        '<button id=\"testCloudController\" class=\"btn primary\" type=\"button\">Test Oracle</button>'+\n" + text[end:]
+text = text.replace('api("/api/cloud/test?ts="+Date.now(),{},30000)',
+                    'api("/api/cloud/test?ts="+Date.now(),{},45000)', 1)
+eufy.write_text(text)
 print("Jason Home 2 hosted UI ready")
