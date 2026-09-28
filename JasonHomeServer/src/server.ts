@@ -300,9 +300,19 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number){
     try{
       const c=await ensureEufy(false);
       if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
-      const result=scene.power
-        ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
-        : await c.power(name,false);
+      let result:any;
+      if(!scene.power){
+        result=await c.power(name,false);
+      }else{
+        const factoryLightId=nativeFactoryLightId(scene);
+        if(factoryLightId!=null){
+          const preset=cachedFactoryPreset(factoryLightId);
+          if(!preset)throw new Error("Exact Native Factory preset "+factoryLightId+" is not available in the cached Eufy catalog");
+          result=await c.factoryScene(name,preset,scene.brightness);
+        }else{
+          result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
+        }
+      }
       return {...result,skipped:false};
     }catch(e){markEufyDegraded(e);throw e;}
   });
