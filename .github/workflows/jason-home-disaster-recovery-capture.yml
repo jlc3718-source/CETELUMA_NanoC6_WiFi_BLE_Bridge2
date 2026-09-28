@@ -102,11 +102,16 @@ jobs:
           openssl cms -encrypt -binary -aes-256-cbc             -in "$OUT/jason-home.sqlite"             -out "$OUT/jason-home.sqlite.cms" -outform DER "$CERT"
           rm -f "$OUT/jason-home.sqlite"
 
+          mkdir -p "$OUT/recovery-tools"
+          cp "$GITHUB_WORKSPACE/JasonHomeServer/disaster-recovery/jason-home-backup-recipient.crt.pem" "$OUT/recovery-tools/"
+          cp "$GITHUB_WORKSPACE/JasonHomeServer/disaster-recovery/decrypt-runtime-backup.sh" "$OUT/recovery-tools/"
+          cp "$GITHUB_WORKSPACE/JasonHomeServer/disaster-recovery/README.md" "$OUT/recovery-tools/"
+
           python3 - "$OUT" "$SNAPSHOT_SHA" <<'PY'
           import datetime,hashlib,json,os,sys
           out,sha=sys.argv[1:3]
           files={}
-          for name in ["jason-home-source.bundle","oracle-settings-backup.json","oracle-health.json","oracle.env.cms","jason-home.sqlite.cms"]:
+          for name in ["jason-home-source.bundle","oracle-settings-backup.json","oracle-health.json","oracle.env.cms","jason-home.sqlite.cms","recovery-tools/jason-home-backup-recipient.crt.pem","recovery-tools/decrypt-runtime-backup.sh","recovery-tools/README.md"]:
               p=os.path.join(out,name)
               h=hashlib.sha256()
               with open(p,"rb") as f:
