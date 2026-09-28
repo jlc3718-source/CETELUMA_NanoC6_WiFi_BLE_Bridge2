@@ -1,0 +1,35 @@
+name: Verify Jason Home 2 schedule control
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths: ['.github/workflows/verify-jason-home-2-controls.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Resume the existing schedule through Jason Home 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request,ssl,socket,time
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          lookup=socket.getaddrinfo
+          socket.getaddrinfo=lambda host,port,*args,**kw: lookup('127.0.0.1' if host=='150.136.245.51' else host,port,*args,**kw)
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+          base='https://150.136.245.51/jason-home-2'
+          login=opener.open(urllib.request.Request(base+'/api/session',json.dumps({'token':token}).encode(),{'Content-Type':'application/json'}),timeout=20)
+          cookie=login.headers['Set-Cookie'].split(';',1)[0]
+          start=time.monotonic()
+          response=opener.open(urllib.request.Request(base+'/api/resume',b'{}',{'Content-Type':'application/json','Cookie':cookie}),timeout=75)
+          state=json.load(response)
+          print('Resume response seconds:',round(time.monotonic()-start,2))
+          print('Oracle authority:',state.get('stateAuthority'),'Eufy ready:',state.get('ble',{}).get('connectedCount'),'manual override:',state.get('manualOverride'))
+          assert state.get('stateAuthority')=='oracle'
+          assert state.get('ble',{}).get('connectedCount')==4
+          assert state.get('manualOverride') is False
+          PY
