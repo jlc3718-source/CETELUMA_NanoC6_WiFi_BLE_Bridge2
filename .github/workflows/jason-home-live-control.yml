@@ -11,21 +11,31 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: jason-home-live-control
+  cancel-in-progress: true
+
 jobs:
   send:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v4
       - name: Send live lighting command through local Oracle API
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           ENV_FILE=/home/ubuntu/repo/JasonHomeServer/.env
           test -s "$ENV_FILE"
           TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' "$ENV_FILE")"
           test -n "$TOKEN"
-          PAYLOAD="$(cat .github/jason-home-live-command.json)"
+          PAYLOAD="$(curl -fsS --max-time 10 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github.raw+json' \
+            "https://api.github.com/repos/$REPO/contents/.github/jason-home-live-command.json?ref=$SHA")"
           curl -fsS --max-time 45 \
             -X POST 'http://127.0.0.1:8080/api/control?wait=1' \
             -H "Authorization: Bearer $TOKEN" \
