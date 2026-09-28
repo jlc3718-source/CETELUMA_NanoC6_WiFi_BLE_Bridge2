@@ -33,6 +33,9 @@ jobs:
           import json
           d=json.load(open('/tmp/jh2-command-diagnostic.json'))
           c=d.get('lastCommand') or {}
+          if isinstance(c,str):
+              try: c=json.loads(c)
+              except Exception: c={'raw':c}
           print('Last command:',{k:c.get(k) for k in ('at','target','queued','sequence','ok','failed','total','error')})
           for item in c.get('detail') or []:
               print('Light:',{k:item.get(k) for k in ('name','ok','error','instance','brokerAccepted','deviceReported')})
