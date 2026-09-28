@@ -26,3 +26,18 @@ jobs:
             curl --noproxy '*' -sS -m 20 --resolve 150.136.245.51:443:127.0.0.1 -o /dev/null -w "$path HTTP %{http_code} in %{time_total}s\n" "https://150.136.245.51${path}"
           done
           sudo docker ps --format '{{.Names}} {{.Status}}'
+          echo 'Host DNS and TLS reachability'
+          python3 - <<'PY'
+          import socket,ssl,time
+          for host,port in [('mega-us-pr.eufy.com',443),('aiot-mqtt-us.anker.com',8883)]:
+              started=time.monotonic()
+              try:
+                  addresses=socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)
+                  print(host,'DNS',sorted({x[4][0] for x in addresses})[:4],flush=True)
+                  with socket.create_connection((host,port),timeout=8) as raw:
+                      with ssl.create_default_context().wrap_socket(raw,server_hostname=host) as tls:
+                          print(host,'TLS',tls.version(),'seconds',round(time.monotonic()-started,2),flush=True)
+              except Exception as e: print(host,type(e).__name__,str(e),'seconds',round(time.monotonic()-started,2),flush=True)
+          PY
+          echo 'Container DNS and TLS reachability'
+          sudo docker exec jason-home node -e 'const dns=require("node:dns").promises,tls=require("node:tls");(async()=>{for(const [host,port] of [["mega-us-pr.eufy.com",443],["aiot-mqtt-us.anker.com",8883]]){try{const a=await dns.lookup(host);console.log(host,"DNS",a.address);await new Promise((resolve,reject)=>{const s=tls.connect({host,port,servername:host,timeout:8000},()=>{console.log(host,"TLS",s.getProtocol());s.end();resolve()});s.on("error",reject);s.on("timeout",()=>{s.destroy();reject(Error("timeout"))})})}catch(e){console.log(host,e.message)}}})()'
