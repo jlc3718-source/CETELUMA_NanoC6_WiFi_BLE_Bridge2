@@ -1,0 +1,108 @@
+name: Repair Jason Home Oracle Calendar
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - '.github/workflows/repair-jason-home-calendar.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: Repair calendar and deploy current Jason Home 2
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    concurrency:
+      group: jason-home-oracle-production
+      cancel-in-progress: false
+    steps:
+      - name: Repair calendar state and deploy exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo
+          git fetch origin "$GITHUB_SHA"
+          git reset --hard "$GITHUB_SHA"
+          cd JasonHomeServer
+
+          sudo docker compose stop || true
+          if [ ! -f data/jason-home.sqlite ]; then
+            echo 'Oracle database is missing' >&2
+            exit 1
+          fi
+
+          sudo cp data/jason-home.sqlite /tmp/jason-home-before-calendar-repair.sqlite
+          sudo python3 - <<'PY'
+          import json, sqlite3, time
+          path='data/jason-home.sqlite'
+          db=sqlite3.connect(path)
+          row=db.execute("SELECT value FROM meta WHERE key='calendar_config'").fetchone()
+          if not row:
+              raise SystemExit('calendar_config is missing')
+          cfg=json.loads(row[0])
+          settings=cfg.setdefault('settings',{})
+          settings['enabled']=True
+          rev_row=db.execute("SELECT value FROM meta WHERE key='calendar_revision'").fetchone()
+          current=max(int(cfg.get('revision') or 0), int(rev_row[0]) if rev_row else 0)
+          revision=current+1
+          cfg['revision']=revision
+          cfg['syncedAt']=int(time.time()*1000)
+          with db:
+              db.execute("INSERT INTO meta(key,value) VALUES('calendar_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(cfg,separators=(',',':')),))
+              db.execute("INSERT INTO meta(key,value) VALUES('calendar_revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(revision),))
+              db.execute("INSERT INTO meta(key,value) VALUES('calendar_sync',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),))
+          print('calendar enabled; revision',revision,'events',len(cfg.get('events') or []))
+          db.close()
+          PY
+
+          export JASON_HOME_BUILD_SHA="$GITHUB_SHA"
+          sudo --preserve-env=JASON_HOME_BUILD_SHA docker compose build
+          sudo --preserve-env=JASON_HOME_BUILD_SHA docker compose up -d --remove-orphans
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/jason-home-repair-health.json; then
+              break
+            fi
+            sleep 2
+          done
+          cat /tmp/jason-home-repair-health.json
+          python3 - "$GITHUB_SHA" <<'PY'
+          import json,sys
+          d=json.load(open('/tmp/jason-home-repair-health.json'))
+          expected=sys.argv[1]
+          actual=(d.get('build') or {}).get('sha')
+          if actual!=expected:
+              raise SystemExit(f'build SHA mismatch: expected {expected}, got {actual}')
+          print('exact build verified',actual)
+          PY
+
+          sleep 8
+          sudo python3 - <<'PY'
+          import json, sqlite3
+          db=sqlite3.connect('data/jason-home.sqlite')
+          row=db.execute("SELECT value FROM meta WHERE key='calendar_config'").fetchone()
+          if not row:
+              raise SystemExit('calendar_config disappeared after restart')
+          cfg=json.loads(row[0])
+          if not (cfg.get('settings') or {}).get('enabled'):
+              raise SystemExit('calendar is still disabled')
+          events=len(cfg.get('events') or [])
+          if events<1:
+              raise SystemExit('calendar has no events')
+          eval_row=db.execute("SELECT value FROM meta WHERE key='last_scheduler_eval'").fetchone()
+          if eval_row:
+              ev=json.loads(eval_row[0])
+              errors=ev.get('errors') or []
+              if errors:
+                  raise SystemExit('scheduler reconcile errors: '+json.dumps(errors))
+              print('scheduler evaluation',json.dumps(ev,separators=(',',':')))
+          print('calendar verification PASS; enabled=true; events=',events)
+          db.close()
+          PY
+
+          sudo docker ps --filter name=jason-home --format 'container={{.Names}} status={{.Status}}'
+          sudo docker logs --tail 40 jason-home
