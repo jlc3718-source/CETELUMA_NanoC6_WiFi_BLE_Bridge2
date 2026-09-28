@@ -151,6 +151,16 @@ function layerBlob(model:string,l:Record<string,unknown>):Uint8Array{
   return concat(new Uint8Array(layerHeader(l)),new Uint8Array([0,b8(l.current_layer_type),colors.length&255]),...blocks,new Uint8Array(layerTrailer(l)));
 }
 
+export function reverseFactoryPresetDirection<T extends Pick<EufyFactoryPreset,"layers">>(preset:T):T{
+  const layers=preset.layers.map(layer=>{
+    if(b8(layer.current_layer_type)!==0)return {...layer};
+    const dir=b8(layer.flow_direction);
+    if(dir!==0&&dir!==1)return {...layer};
+    return {...layer,flow_direction:dir===0?1:0};
+  });
+  return {...preset,layers};
+}
+
 export function buildFactoryFields(model:string,preset:Pick<EufyFactoryPreset,"lightId"|"speed"|"layerExecutionMode"|"layers">):Uint8Array{
   if(!preset.layers.length)throw new Error("Factory preset has no serializable layers");
   const fields:Uint8Array[]=[

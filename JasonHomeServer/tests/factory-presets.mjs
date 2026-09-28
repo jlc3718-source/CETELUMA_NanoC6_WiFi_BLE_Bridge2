@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { allowedApi } from "../dist/eufy/client.js";
-import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName } from "../dist/eufy/factory-presets.js";
+import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName, reverseFactoryPresetDirection } from "../dist/eufy/factory-presets.js";
 
 assert.equal(allowedApi("app-light-us-pr.eufy.com"),true);
 assert.equal(allowedApi("app-light-eu-pr.eufy.com"),true);
@@ -66,6 +66,20 @@ const e22=buildFactoryFields("T8L02",p),e120=buildFactoryFields("T8L00",p);
 assert.ok(e22.length>0);
 assert.ok(e120.length>0);
 assert.notDeepEqual([...e22],[...e120]);
+
+const directional={
+  ...p,
+  layers:[
+    {...p.layers[0],current_layer_type:0,flow_direction:0,colors:"FF0000|00FF00"},
+    {...p.layers[0],current_layer_type:1,flow_direction:0}
+  ]
+};
+const reversed=reverseFactoryPresetDirection(directional);
+assert.equal(reversed.layers[0].flow_direction,1);
+assert.equal(reversed.layers[1].flow_direction,0);
+assert.equal(directional.layers[0].flow_direction,0);
+assert.ok(buildFactoryFields("T8L02",reversed).length>0);
+assert.ok(buildFactoryFields("T8L00",reversed).length>0);
 
 const malformed=normalizeFactoryEntry({light_id:10099,name:"Bad",params:"{not-json"});
 assert.equal(malformed.layers.length,0);
