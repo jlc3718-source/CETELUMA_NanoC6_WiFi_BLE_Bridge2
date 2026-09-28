@@ -44,7 +44,7 @@ async function upstream(path,method="GET",value){
   if(current&&Date.now()<current.until)return current.promise;
   const entry={until:Infinity,promise:fetchUpstream(path,method,value)};
   readCache.set(path,entry);
-  entry.promise.then(()=>{entry.until=Date.now()+3000;},()=>{if(readCache.get(path)===entry)readCache.delete(path);});
+  entry.promise.then(()=>{entry.until=Date.now()+(path==="/api/status"?60000:10000);},()=>{if(readCache.get(path)===entry)readCache.delete(path);});
   return entry.promise;
 }
 async function fetchUpstream(path,method,value){
