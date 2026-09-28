@@ -1,0 +1,139 @@
+name: Capture Jason Home Disaster Recovery
+
+on:
+  push:
+    branches:
+      - jason-home-disaster-recovery-5.4.11-2026-09-27
+    paths:
+      - '.github/workflows/jason-home-disaster-recovery-capture.yml'
+      - 'JasonHomeServer/disaster-recovery/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jason-home-disaster-recovery-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout frozen recovery source
+        uses: actions/checkout@v4
+
+      - name: Validate recovery encryption certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CERT="JasonHomeServer/disaster-recovery/jason-home-backup-recipient.crt.pem"
+          test -s "$CERT"
+          FP="$(openssl x509 -in "$CERT" -noout -fingerprint -sha256 | cut -d= -f2)"
+          test "$FP" = "76:B2:8E:FD:4F:5D:13:2A:D3:04:8F:19:BA:E6:C3:5A:A5:F8:4C:4A:39:0E:98:C8:0D:EE:EB:C0:C3:E7:3A:E1"
+          echo "Recovery recipient certificate verified."
+
+      - name: Capture live Oracle runtime
+        shell: bash
+        env:
+          SNAPSHOT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          PROD="/home/ubuntu/repo/JasonHomeServer"
+          OUT="$RUNNER_TEMP/jason-home-dr"
+          CERT="$GITHUB_WORKSPACE/JasonHomeServer/disaster-recovery/jason-home-backup-recipient.crt.pem"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+
+          test -s "$PROD/.env"
+          test -s "$PROD/data/jason-home.sqlite"
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' "$PROD/.env")"
+          test -n "$TOKEN"
+
+          curl -fsS -H "Authorization: Bearer $TOKEN"             "http://127.0.0.1:8080/api/backup/export" > "$OUT/backup-response.json"
+          curl -fsS "http://127.0.0.1:8080/api/health" > "$OUT/oracle-health.json"
+
+          python3 - "$OUT/backup-response.json" "$OUT/oracle-settings-backup.json" <<'PY'
+          import json,sys
+          src,dst=sys.argv[1:3]
+          with open(src,encoding="utf-8") as f:
+              payload=json.load(f)
+          if payload.get("ok") is not True or not isinstance(payload.get("backup"),dict):
+              raise SystemExit("Oracle backup export was not valid")
+          b=payload["backup"]
+          if int(b.get("schema",0)) != 1:
+              raise SystemExit("Unexpected Oracle backup schema")
+          if not isinstance(b.get("schedules"),list):
+              raise SystemExit("Oracle schedules missing from backup")
+          forbidden={"EUFY_PASSWORD","EUFY_EMAIL","JASON_HOME_API_TOKEN","password","token"}
+          text=json.dumps(b)
+          if any(x in text for x in forbidden):
+              raise SystemExit("Sanitized settings export unexpectedly contains secret material")
+          with open(dst,"w",encoding="utf-8") as f:
+              json.dump(b,f,indent=2,sort_keys=True)
+              f.write("\n")
+          print("Settings export validated:",len(b.get("schedules",[])),"schedules")
+          PY
+          rm -f "$OUT/backup-response.json"
+
+          python3 - "$PROD/data/jason-home.sqlite" "$OUT/jason-home.sqlite" <<'PY'
+          import sqlite3,sys
+          src=sqlite3.connect(sys.argv[1])
+          dst=sqlite3.connect(sys.argv[2])
+          with dst:
+              src.backup(dst)
+          dst.close()
+          src.close()
+          check=sqlite3.connect(sys.argv[2])
+          result=check.execute("PRAGMA integrity_check").fetchone()[0]
+          check.close()
+          if result!="ok":
+              raise SystemExit("SQLite snapshot integrity check failed: "+str(result))
+          print("SQLite snapshot integrity: ok")
+          PY
+
+          openssl cms -encrypt -binary -aes-256-cbc             -in "$PROD/.env"             -out "$OUT/oracle.env.cms" -outform DER "$CERT"
+          openssl cms -encrypt -binary -aes-256-cbc             -in "$OUT/jason-home.sqlite"             -out "$OUT/jason-home.sqlite.cms" -outform DER "$CERT"
+          rm -f "$OUT/jason-home.sqlite"
+
+          python3 - "$OUT" "$SNAPSHOT_SHA" <<'PY'
+          import datetime,hashlib,json,os,sys
+          out,sha=sys.argv[1:3]
+          files={}
+          for name in ["oracle-settings-backup.json","oracle-health.json","oracle.env.cms","jason-home.sqlite.cms"]:
+              p=os.path.join(out,name)
+              h=hashlib.sha256()
+              with open(p,"rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b""):
+                      h.update(chunk)
+              files[name]={"bytes":os.path.getsize(p),"sha256":h.hexdigest()}
+          with open(os.path.join(out,"oracle-settings-backup.json"),encoding="utf-8") as f:
+              b=json.load(f)
+          manifest={
+              "schema":1,
+              "createdAt":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "sourceCommit":sha,
+              "sourceBranch":"jason-home-disaster-recovery-5.4.11-2026-09-27",
+              "androidVersion":"5.4.11",
+              "encryption":"CMS AES-256-CBC; recipient is Jason Home permanent 4096-bit RSA signing certificate",
+              "recipientCertificateSha256":"76:B2:8E:FD:4F:5D:13:2A:D3:04:8F:19:BA:E6:C3:5A:A5:F8:4C:4A:39:0E:98:C8:0D:EE:EB:C0:C3:E7:3A:E1",
+              "calendarRevision":b.get("calendarRevision"),
+              "scheduleCount":len(b.get("schedules",[])),
+              "factoryEditCount":len(b.get("factoryEdits",{})),
+              "factoryPromotionCount":len(b.get("factoryPromotions",{})),
+              "files":files
+          }
+          with open(os.path.join(out,"manifest.json"),"w",encoding="utf-8") as f:
+              json.dump(manifest,f,indent=2,sort_keys=True)
+              f.write("\n")
+          print(json.dumps(manifest,indent=2))
+          PY
+
+      - name: Upload encrypted Oracle recovery bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-5.4.11-Oracle-Disaster-Recovery
+          path: ${{ runner.temp }}/jason-home-dr/
+          retention-days: 90
+          if-no-files-found: error
