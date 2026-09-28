@@ -70,7 +70,11 @@ const targetNames=["All","Pool","House","Garage","Shed"];
 const nightLocation={lat:42.1507,lon:-78.9452,tz:"America/New_York"};
 const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLocation.tz,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(now);
   const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
-const nightEvents=(cfg,day)=>resolveNightEvents(cfg,day,nightLocation.lat,nightLocation.lon,nightLocation.tz).map(e=>({...e,colors:rgb(e.colors)}));
+const nightEvents=(cfg,day)=>resolveNightEvents(cfg,day,nightLocation.lat,nightLocation.lon,nightLocation.tz).map(e=>{
+  const source=cfg.events.find(item=>item.id===e.id)||cfg.customSchedules.find(item=>item.id===e.id);
+  return {...e,colors:rgb(e.colors),effect:source?.effect||"Solid / Static",
+    type:e.id.includes("::factory:")?"Factory event":cfg.customSchedules.some(item=>item.id===e.id)?"Custom event":"Calendar event"};
+});
 const monthCache=new Map();
 function monthSummary(cfg,year,month){
   if(!Number.isInteger(year)||year<2020||year>2100||!Number.isInteger(month)||month<1||month>12)throw fail(400,"Invalid month");
