@@ -21,9 +21,16 @@
       const heading=document.createElement("div"),kicker=document.createElement("span"),title=document.createElement("h2");
       kicker.className="jh2NightKicker";kicker.textContent="SCHEDULED FOR THIS NIGHT";title.textContent=label;
       heading.append(kicker,title);
+      const back=document.createElement("button");back.type="button";back.className="btn jh2CalendarBack";back.textContent="‹ Back to calendar";
+      back.addEventListener("click",()=>{
+        document.body.classList.remove("jh2DateView");detail.hidden=true;
+        document.querySelector('.tab[data-tab="home"]')?.click();
+        requestAnimationFrame(()=>wrap.scrollIntoView({block:"center",behavior:"smooth"}));
+      });
       const all=document.createElement("button");all.type="button";all.className="btn";all.textContent="Show all schedules";
       all.addEventListener("click",()=>{document.body.classList.remove("jh2DateView");detail.hidden=true;document.querySelector(".page.active")?.scrollIntoView({block:"start"})});
-      head.append(heading,all);detail.append(head);
+      const actions=document.createElement("div");actions.className="jh2NightActions";actions.append(back,all);
+      head.append(heading,actions);detail.append(head);
       if(!entry.events.length){const empty=document.createElement("p");empty.className="sub";empty.textContent="No scheduled events for this night.";detail.append(empty)}
       else{
         const list=document.createElement("div");list.className="jh2NightList";
@@ -71,6 +78,7 @@
       body.jh2DateView .page[data-page="events"]>.panel:not(.jh2NightDetail){display:none!important}
       .jh2NightDetail{width:100%;box-sizing:border-box}
       .jh2NightHead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+      .jh2NightActions{display:flex;gap:8px;flex-wrap:wrap}
       .jh2NightHead h2{font-size:20px;line-height:1.2;margin:5px 0 12px}
       .jh2NightKicker{color:#9cb8e7;font-size:10px;font-weight:700;letter-spacing:.12em}
       .jh2NightHead .btn{min-height:42px}
