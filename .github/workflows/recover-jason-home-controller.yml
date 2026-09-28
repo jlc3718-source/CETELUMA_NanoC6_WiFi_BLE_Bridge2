@@ -1,0 +1,36 @@
+name: Recover unresponsive Oracle controller
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths: ['.github/workflows/recover-jason-home-controller.yml']
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Preserve runtime diagnostics and restart stalled controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Before restart:'
+          sudo docker stats --no-stream --format '{{.Name}} CPU={{.CPUPerc}} MEM={{.MemUsage}}' jason-home jason-home-2-web || true
+          sudo docker logs --tail=50 jason-home 2>&1 | tail -50 || true
+          sudo docker restart jason-home
+          for attempt in $(seq 1 40); do
+            if curl --noproxy '*' -fsS -m 3 http://127.0.0.1:8080/api/health >/tmp/jason-home-recovered-health.json; then break; fi
+            sleep 2
+          done
+          cat /tmp/jason-home-recovered-health.json
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          test -n "$TOKEN"
+          curl --noproxy '*' -fsS -m 45 -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/status >/tmp/jason-home-recovered-status.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/jason-home-recovered-status.json'))
+          print('Oracle status:',d.get('eufy',{}).get('status'),'ready names:',d.get('eufy',{}).get('readyNames'))
+          assert d.get('calendar',{}).get('synced'), 'Calendar not synced'
+          PY
+          curl --noproxy '*' -fsS -m 10 http://127.0.0.1:8081/api/health >/dev/null
+          echo 'Both original Oracle and Jason Home 2 gateways healthy.'
