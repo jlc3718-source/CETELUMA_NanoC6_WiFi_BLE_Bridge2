@@ -357,7 +357,7 @@ async function route(req,res){
     const value=Number((await input(req)).target);
     const selected=Number.isInteger(value)&&value>=0&&value<=4?value:0;
     put("target",selected);
-    return send(res,200,{ok:true,target:selected});
+    return send(res,200,{ok:true,target:selected,ble:{target:selected}});
   }
   if(method==="GET"&&path==="/api/backup/status")return send(res,200,{hasBackup:!!meta("backup"),lastBackup:meta("backup_time",0),lastOk:!!meta("backup"),mode:"complete"});
   if(method==="POST"&&path==="/api/backup/manual"){
