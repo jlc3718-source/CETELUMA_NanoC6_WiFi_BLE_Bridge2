@@ -19,8 +19,6 @@ final class LightPresetCatalog {
         }
     }
 
-    // Human-facing templates built from Eufy's native 0x020D layer engine.
-    // Names are Jason Home UI names; the device wire uses layer types/parameters, not these labels.
     static final EffectTemplate[] EFFECTS = {
         new EffectTemplate("Solid / Static", "Static", "Applies Color 1 and holds it with no motion."),
         new EffectTemplate("Jump", "Full-string color cycle", "The entire string changes from one selected color to the next with no fade."),
@@ -36,25 +34,24 @@ final class LightPresetCatalog {
         new EffectTemplate("Pulse Wave", "Brightness wave", "A moving color pattern rises and falls in brightness like a traveling pulse.")
     };
 
-    // Anderson Home approved named palette, preserved exactly as its calibrated RGB values.
+    // Approved Jason Home palette. Device-specific compensation is applied by the controller.
     static final NamedColor[] ANDERSON = {
         new NamedColor("Red",               0xFF0000, true),
         new NamedColor("Crimson",           0xDC143C, true),
-        new NamedColor("Burgundy",          0x87002D, true),
+        new NamedColor("Burgundy",          0x960000, true),
         new NamedColor("Orange",            0xFF0D00, true),
-        new NamedColor("True Orange",       0xFF7A00, true),
-        new NamedColor("Coral",             0xFF6F61, true),
+        new NamedColor("True Orange",       0xFF0A00, true),
+        new NamedColor("Coral",             0xFF1414, true),
         new NamedColor("Pink",              0xFF0024, true),
-        new NamedColor("Hot Pink",          0xFF4FA3, true),
-        new NamedColor("Rose",              0xFF507A, true),
+        new NamedColor("Hot Pink",          0xFF0014, true),
+        new NamedColor("Rose",              0xFF2032, true),
         new NamedColor("Magenta",           0xFF00FF, true),
         new NamedColor("Yellow",            0xE08700, true),
-        new NamedColor("Amber Gold",        0xFFA000, true),
-        new NamedColor("Gold",              0xFFD700, true),
-        new NamedColor("Bronze",            0xCD7F32, true),
-        new NamedColor("Brown",             0x8B4513, true),
+        new NamedColor("Amber Gold",        0xFF7A00, true),
+        new NamedColor("Gold",              0xF08000, true),
+        new NamedColor("Bronze",            0xA85000, true),
         new NamedColor("Green",             0x28FF00, true),
-        new NamedColor("Lime",              0x7CFF00, true),
+        new NamedColor("Lime",              0x80FF00, true),
         new NamedColor("Emerald",           0x00C875, true),
         new NamedColor("Forest Green",      0x0B6623, true),
         new NamedColor("Cyan",              0x00BD4C, true),
@@ -76,18 +73,17 @@ final class LightPresetCatalog {
         new NamedColor("Black / Off",       0x000000, true)
     };
 
-    // Additional normal RGB quick picks. The custom RGB controls cover the rest of the 24-bit space.
     static final NamedColor[] QUICK = {
-        new NamedColor("True Orange", 0xFF7A00, false),
-        new NamedColor("Gold",        0xFFD700, false),
-        new NamedColor("Lime",        0x7CFF00, false),
+        new NamedColor("True Orange", 0xFF0A00, false),
+        new NamedColor("Gold",        0xF08000, false),
+        new NamedColor("Lime",        0x80FF00, false),
         new NamedColor("Emerald",     0x00C875, false),
         new NamedColor("Aqua",        0x00FFB8, false),
         new NamedColor("Royal Blue",  0x245BFF, false),
         new NamedColor("Indigo",      0x5B00E6, false),
         new NamedColor("Magenta",     0xFF00FF, false),
-        new NamedColor("Hot Pink",    0xFF4FA3, false),
-        new NamedColor("Rose",        0xFF507A, false),
+        new NamedColor("Hot Pink",    0xFF0014, false),
+        new NamedColor("Rose",        0xFF2032, false),
         new NamedColor("Warm White RGB", 0xFFD6A1, false),
         new NamedColor("Neutral White RGB", 0xFFF4E5, false)
     };
