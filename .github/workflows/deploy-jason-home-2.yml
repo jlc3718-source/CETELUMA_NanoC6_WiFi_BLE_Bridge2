@@ -98,7 +98,9 @@ jobs:
           assert len(read('/api/colors')['presets'])==36
           assert len(read('/api/event-categories')['categories'])==15
           assert 'presets' in read('/api/presets')
-          print('Jason Home 2 live login, state, events, colors, categories, presets: PASS')
+          target=opener.open(urllib.request.Request(base+'/api/ble/target',json.dumps({'target':0}).encode(),{'Cookie':cookie,'Content-Type':'application/json'}),timeout=45)
+          assert json.load(target)['ble']['target']==0
+          print('Jason Home 2 live login, state, events, colors, categories, presets, authenticated POST: PASS')
           PY
           echo 'Jason Home 2 and original Oracle HTTPS health: PASS'
       - name: Restore previous web app on failure
