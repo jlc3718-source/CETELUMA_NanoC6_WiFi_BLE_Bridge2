@@ -16,6 +16,7 @@ export interface CalendarSettings {
   enabled:boolean; mode:number; lead:number; trail:number; on:number; off:number;
   startAtDusk:boolean; schedule2Enabled:boolean; schedule2EndAtDawn:boolean;
   schedule2End:number; schedule2Brightness:number; overlap:number; categoryMask:number;
+  whiteOverride1Enabled:boolean; whiteOverride2Enabled:boolean;
 }
 export interface CalendarConfig {
   version?:number;
@@ -135,15 +136,17 @@ function sceneFor(e:CalendarEvent,brightness:number):Scene{
     speed:clamp(Number(e.speed)||3,1,5)
   };
 }
-function customScene(cfg:CalendarConfig,day:Ymd,schedule2:boolean,schedule2Brightness:number):CalendarResolution|null{
+type CalendarCandidate={id:string;name:string;scene:Scene};
+
+function customCandidates(cfg:CalendarConfig,day:Ymd,schedule2:boolean,schedule2Brightness:number):CalendarCandidate[]{
+  const out:CalendarCandidate[]=[];
   for(const x of cfg.customSchedules||[]){
     if(x.enabled===false)continue;
     if(Number(x.month)!==day.month||Number(x.day)!==day.day)continue;
     if(!x.annual&&Number(x.year)!==day.year)continue;
-    return {
+    out.push({
       id:x.id||"",
       name:x.name||"Custom Light",
-      schedule2,
       scene:{
         power:true,
         brightness:schedule2?clamp(schedule2Brightness,1,100):clamp(Number(x.brightness)||100,1,100),
@@ -151,90 +154,47 @@ function customScene(cfg:CalendarConfig,day:Ymd,schedule2:boolean,schedule2Brigh
         colors:Array.isArray(x.colors)&&x.colors.length?x.colors.slice(0,8).map(v=>Number(v)&0xffffff):[0xffffff],
         speed:clamp(Number(x.speed)||3,1,5)
       }
-    };
+    });
   }
-  return null;
+  return out;
 }
-function higherPriorityCountOn(cfg:CalendarConfig,day:Ymd){
-  let count=0;
-  const lead=clamp(Number(cfg.settings.lead)||0,0,14),trail=clamp(Number(cfg.settings.trail)||0,0,14);
-  for(const e of cfg.events||[]){
-    if(!included(cfg,e)||e.rule==="Month")continue;
-    if(activeOn(cfg,e,day)){count++;continue;}
-    if(e.kind==="Holiday"&&(lead||trail)&&windowActive(cfg,e,day,lead,trail))count++;
-  }
-  return count;
-}
-const monthlyPositionCache=new WeakMap<CalendarConfig,Map<string,{eligibleDays:number[];forcedDay:number}>>();
-function monthlyPosition(cfg:CalendarConfig,day:Ymd){
-  let cache=monthlyPositionCache.get(cfg);
-  if(!cache){cache=new Map();monthlyPositionCache.set(cfg,cache);}
-  const key=day.year+"-"+day.month;
-  let month=cache.get(key);
-  if(!month){
-    const eligibleDays:number[]=[];
-    let forcedDay=0,lowest=Number.MAX_SAFE_INTEGER;
-    const days=monthDays(day.year,day.month);
-    for(let d=1;d<=days;d++){
-      const probe={year:day.year,month:day.month,day:d};
-      const high=higherPriorityCountOn(cfg,probe);
-      if(high===0)eligibleDays.push(d);
-      if(high<lowest){lowest=high;forcedDay=d;}
-    }
-    month={eligibleDays,forcedDay};
-    cache.set(key,month);
-  }
-  let ordinal=0;
-  while(ordinal<month.eligibleDays.length&&month.eligibleDays[ordinal]<day.day)ordinal++;
-  return {total:month.eligibleDays.length,ordinal,forcedDay:month.forcedDay};
-}
-function combineMonthly(items:CalendarEvent[],brightness:number,schedule2:boolean):CalendarResolution{
+function combineCandidates(items:CalendarCandidate[],brightness:number,schedule2:boolean):CalendarResolution{
   const colors:number[]=[];
-  for(const e of items){
-    for(const c of e.colors||[]){const v=Number(c)&0xffffff;if(colors.length<8&&!colors.includes(v))colors.push(v);}
+  for(const item of items){
+    for(const c of item.scene.colors||[]){
+      const v=Number(c)&0xffffff;
+      if(colors.length<8&&!colors.includes(v))colors.push(v);
+    }
     if(colors.length>=8)break;
   }
-  return {id:items[0]?.id||"",name:"Combined monthly events",schedule2,scene:{power:true,brightness:clamp(brightness,1,100),effect:"Jump",colors:colors.length?colors:[0xffffff],speed:1}};
+  const names=items.map(x=>x.name).filter(Boolean);
+  return {
+    id:"overlap:"+items.map(x=>x.id).join("+"),
+    name:names.length<=3?names.join(" + "):`${names.length} overlapping events`,
+    schedule2,
+    scene:{power:true,brightness:clamp(brightness,1,100),effect:"Jump",colors:colors.length?colors:[0xffffff],speed:1}
+  };
 }
 function resolveFor(cfg:CalendarConfig,day:Ymd,minute:number,start:number,end:number,schedule2:boolean,brightness:number):CalendarResolution|null{
-  const specific:CalendarEvent[]=[],windows:CalendarEvent[]=[],monthly:CalendarEvent[]=[];
+  const candidates:CalendarCandidate[]=customCandidates(cfg,day,schedule2,brightness);
   const lead=clamp(Number(cfg.settings.lead)||0,0,14),trail=clamp(Number(cfg.settings.trail)||0,0,14);
   for(const e of cfg.events||[]){
     if(!included(cfg,e))continue;
-    if(activeOn(cfg,e,day)){(e.rule==="Month"?monthly:specific).push(e);continue;}
-    if(e.kind==="Holiday"&&(lead||trail)&&windowActive(cfg,e,day,lead,trail))windows.push(e);
+    const active=activeOn(cfg,e,day)||(e.kind==="Holiday"&&(lead||trail)&&windowActive(cfg,e,day,lead,trail));
+    if(active)candidates.push({id:e.id,name:e.name,scene:sceneFor(e,brightness)});
   }
-  const total=span(start,end),pos=elapsed(minute,start,total),mp=monthlyPosition(cfg,day);
-  const forced=monthly.length>0&&mp.total===0&&mp.forcedDay===day.day&&(specific.length>0||windows.length>0);
+  if(!candidates.length)return null;
+  const wrap=(x:CalendarCandidate):CalendarResolution=>({id:x.id,name:x.name,schedule2,scene:x.scene});
+  if(candidates.length===1)return wrap(candidates[0]);
 
-  const wrap=(e:CalendarEvent):CalendarResolution=>({id:e.id,name:e.name,schedule2,scene:sceneFor(e,brightness)});
-  if(forced){
-    const monthlySpan=Math.max(1,Math.floor(total/3));
-    if(pos<monthlySpan){
-      if(Number(cfg.settings.overlap)===2)return combineMonthly(monthly,brightness,schedule2);
-      return wrap(pick(monthly,pos,monthlySpan));
-    }
-    const highPos=pos-monthlySpan,highSpan=Math.max(1,total-monthlySpan);
-    if(windows.length&&specific.length){
-      const ws=Math.max(1,Math.floor(highSpan/3));
-      return highPos<ws?wrap(pick(windows,highPos,ws)):wrap(pick(specific,highPos-ws,Math.max(1,highSpan-ws)));
-    }
-    if(specific.length)return wrap(pick(specific,highPos,highSpan));
-    if(windows.length)return wrap(pick(windows,highPos,highSpan));
-  }
+  const overlap=clamp(Number(cfg.settings.overlap)||0,0,2),total=span(start,end),pos=elapsed(minute,start,total);
+  if(overlap===2)return combineCandidates(candidates,brightness,schedule2);
+  if(overlap===1)return wrap(pick(candidates,pos,total));
 
-  if(specific.length)return wrap(pick(specific,pos,total));
-  if(windows.length)return wrap(pick(windows,pos,total));
-  if(monthly.length){
-    const overlap=Number(cfg.settings.overlap)||0;
-    if(overlap===2)return combineMonthly(monthly,brightness,schedule2);
-    if(overlap===1)return wrap(pick(monthly,pos,total));
-    if(mp.total===0)return wrap(monthly[0]);
-    if(mp.total>=monthly.length)return wrap(monthly[mp.ordinal%monthly.length]);
-    const a=Math.floor((mp.ordinal*monthly.length)/mp.total),b=Math.max(a+1,Math.floor(((mp.ordinal+1)*monthly.length)/mp.total));
-    return wrap(pick(monthly.slice(a,Math.min(monthly.length,b)),pos,total));
-  }
-  return null;
+  // Rotate nightly across every colliding item, regardless of event type.
+  const ordinal=Math.floor(ymdMs(day)/86400000);
+  const index=((ordinal%candidates.length)+candidates.length)%candidates.length;
+  return wrap(candidates[index]);
 }
 function astroMinute(now:Date,lat:number,lon:number,tz:string,dawn:boolean){
   const a=astronomy(now,lat,lon,tz),ms=dawn?a.dawnMs:a.duskMs;
@@ -261,7 +221,9 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       schedule2End:clamp(finiteOr(s.schedule2End,360),0,1439),
       schedule2Brightness:clamp(finiteOr(s.schedule2Brightness,10),1,100),
       overlap:clamp(finiteOr(s.overlap,0),0,2),
-      categoryMask:clamp(finiteOr(s.categoryMask,32767),0,32767)
+      categoryMask:clamp(finiteOr(s.categoryMask,32767),0,32767),
+      whiteOverride1Enabled:s.whiteOverride1Enabled!==false,
+      whiteOverride2Enabled:s.whiteOverride2Enabled!==false
     },
     events:[],
     special:[],
@@ -295,8 +257,22 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
 }
 
 export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string):CalendarResolution|null{
-  if(!cfg?.settings?.enabled||(!(cfg.events?.length)&&!(cfg.customSchedules?.length)))return null;
+  if(!cfg)return null;
   const lp=localParts(now,tz),day={year:lp.year,month:lp.month,day:lp.day},minute=lp.hour*60+lp.minute;
+  const whiteScene:Scene={power:true,brightness:100,effect:"Solid / Static",colors:[0xffffff],speed:3};
+
+  if(cfg.settings.whiteOverride1Enabled!==false&&minute>=21*60&&minute<22*60){
+    return {id:"white-override-1",name:"White Override 1",schedule2:false,scene:whiteScene};
+  }
+
+  if(cfg.settings.whiteOverride2Enabled!==false){
+    const dawn=astroMinute(now,lat,lon,tz,true),morningEnd=Math.min(dawn,7*60+30);
+    if(dawn>6*60&&minute>=6*60&&minute<morningEnd){
+      return {id:"white-override-2",name:"White Override 2",schedule2:false,scene:whiteScene};
+    }
+  }
+
+  if(!cfg.settings.enabled||(!(cfg.events?.length)&&!(cfg.customSchedules?.length)))return null;
   const start=cfg.settings.startAtDusk?astroMinute(now,lat,lon,tz,false):cfg.settings.on;
   const end=cfg.settings.off;
   if(inWindow(minute,start,end)){
@@ -311,7 +287,6 @@ export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:
         themeStart=astroMinute(themeNoon,lat,lon,tz,false);
       }
     }
-    const custom=customScene(cfg,themeDay,false,100);if(custom)return custom;
     return resolveFor(cfg,themeDay,minute,themeStart,end,false,100);
   }
   if(cfg.settings.schedule2Enabled){
@@ -323,7 +298,6 @@ export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:
         const themeNoon=new Date(localToUtcMs(themeDay.year,themeDay.month,themeDay.day,12,0,tz));
         themeStart=cfg.settings.startAtDusk?astroMinute(themeNoon,lat,lon,tz,false):cfg.settings.on;
       }
-      const custom=customScene(cfg,themeDay,true,cfg.settings.schedule2Brightness);if(custom)return custom;
       const last=(end+1439)%1440;
       return resolveFor(cfg,themeDay,last,themeStart,end,true,cfg.settings.schedule2Brightness);
     }
@@ -358,26 +332,45 @@ function calendarDayBounds(cfg:CalendarConfig,day:Ymd,lat:number,lon:number,tz:s
       }
     }
   }
-  return {start,end,schedule2End};
+  const white1Start=localToUtcMs(day.year,day.month,day.day,21,0,tz);
+  const white1End=localToUtcMs(day.year,day.month,day.day,22,0,tz);
+  const dawnMinute=astroMinute(noon(day),lat,lon,tz,true);
+  const white2Start=dawnMinute>360?localToUtcMs(day.year,day.month,day.day,6,0,tz):null;
+  const white2End=dawnMinute>360
+    ?localToUtcMs(day.year,day.month,day.day,Math.floor(Math.min(dawnMinute,450)/60),Math.min(dawnMinute,450)%60,tz)
+    :null;
+  return {start,end,schedule2End,white1Start,white1End,white2Start,white2End};
 }
 export function nextCalendarBoundary(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
-  if(!cfg?.settings?.enabled)return null;
+  if(!cfg||(!cfg.settings.enabled&&cfg.settings.whiteOverride1Enabled===false&&cfg.settings.whiteOverride2Enabled===false))return null;
   const today=localYmd(now,tz),nowMs=now.getTime(),items:Array<{at:number;phase:string}>=[];
   for(let shift=-1;shift<=3;shift++){
     const b=calendarDayBounds(cfg,addDays(today,shift),lat,lon,tz);
-    items.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
-    if(b.schedule2End!=null)items.push({at:b.schedule2End,phase:"schedule2-end"});
+    if(cfg.settings.enabled){
+      items.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
+      if(b.schedule2End!=null)items.push({at:b.schedule2End,phase:"schedule2-end"});
+    }
+    if(cfg.settings.whiteOverride1Enabled!==false)items.push({at:b.white1Start,phase:"white-override-1-start"},{at:b.white1End,phase:"white-override-1-end"});
+    if(cfg.settings.whiteOverride2Enabled!==false&&b.white2Start!=null&&b.white2End!=null){
+      items.push({at:b.white2Start,phase:"white-override-2-start"},{at:b.white2End,phase:"white-override-2-end"});
+    }
   }
   return items.filter(x=>x.at>nowMs+500).sort((a,b)=>a.at-b.at)[0]||null;
 }
 export function nextCalendarTransition(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
-  if(!cfg?.settings?.enabled)return null;
+  if(!cfg||(!cfg.settings.enabled&&cfg.settings.whiteOverride1Enabled===false&&cfg.settings.whiteOverride2Enabled===false))return null;
   const nowMs=now.getTime(),today=localYmd(now,tz);
   const boundaries:Array<{at:number;phase:string}>=[];
   for(let shift=-1;shift<=14;shift++){
     const b=calendarDayBounds(cfg,addDays(today,shift),lat,lon,tz);
-    boundaries.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
-    if(b.schedule2End!=null)boundaries.push({at:b.schedule2End,phase:"schedule2-end"});
+    if(cfg.settings.enabled){
+      boundaries.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
+      if(b.schedule2End!=null)boundaries.push({at:b.schedule2End,phase:"schedule2-end"});
+    }
+    if(cfg.settings.whiteOverride1Enabled!==false)boundaries.push({at:b.white1Start,phase:"white-override-1-start"},{at:b.white1End,phase:"white-override-1-end"});
+    if(cfg.settings.whiteOverride2Enabled!==false&&b.white2Start!=null&&b.white2End!=null){
+      boundaries.push({at:b.white2Start,phase:"white-override-2-start"},{at:b.white2End,phase:"white-override-2-end"});
+    }
   }
   boundaries.sort((a,b)=>a.at-b.at);
   const first=boundaries.find(x=>x.at>nowMs+500);

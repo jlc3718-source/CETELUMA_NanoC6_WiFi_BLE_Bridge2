@@ -6,7 +6,8 @@ const base={
   settings:{
     enabled:true,mode:2,lead:0,trail:0,on:17*60,off:23*60,startAtDusk:false,
     schedule2Enabled:true,schedule2EndAtDawn:false,schedule2End:6*60,
-    schedule2Brightness:10,overlap:0,categoryMask:32767
+    schedule2Brightness:10,overlap:0,categoryMask:32767,
+    whiteOverride1Enabled:false,whiteOverride2Enabled:false
   },
   special:[],
   customSchedules:[],
@@ -30,12 +31,12 @@ assert.equal(r?.scene.brightness,10);
 r=resolveCalendar(cfg,new Date("2026-09-27T22:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.name,"Hispanic Heritage Month");
 
-cfg=normalizeCalendarConfig({...base,customSchedules:[{
+cfg=normalizeCalendarConfig({...base,settings:{...base.settings,overlap:1},customSchedules:[{
   id:"custom1",name:"Birthday Test",enabled:true,annual:true,year:2026,month:12,day:25,
   effect:"Breath",speed:3,brightness:88,colors:[0x123456]
 }]});
 r=resolveCalendar(cfg,new Date("2026-12-25T23:00:00Z"),42.1507,-78.9452,"America/New_York");
-assert.equal(r?.name,"Birthday Test");
+assert.equal(r?.name,"Birthday Test","Custom schedules participate in universal split overlap");
 assert.equal(r?.scene.brightness,88);
 
 const next=nextCalendarEvent(normalizeCalendarConfig(base),new Date("2026-12-01T15:00:00Z"),42.1507,-78.9452,"America/New_York");
@@ -62,7 +63,8 @@ assert.equal(customTransition?.name,"Today Custom");
 const zeros=normalizeCalendarConfig({settings:{
   enabled:true,mode:2,lead:0,trail:0,on:0,off:0,startAtDusk:false,
   schedule2Enabled:true,schedule2EndAtDawn:false,schedule2End:0,
-  schedule2Brightness:10,overlap:0,categoryMask:0
+  schedule2Brightness:10,overlap:0,categoryMask:0,
+  whiteOverride1Enabled:false,whiteOverride2Enabled:false
 },events:[],special:[],customSchedules:[]});
 assert.equal(zeros.settings.on,0);
 assert.equal(zeros.settings.off,0);
@@ -118,5 +120,49 @@ const summer=astronomy(new Date("2026-06-21T16:00:00Z"),42.1507,-78.9452,"Americ
 assert.ok(summer.duskMs!=null);
 const duskLocal=localParts(new Date(summer.duskMs),"America/New_York");
 assert.deepEqual([duskLocal.year,duskLocal.month,duskLocal.day],[2026,6,21]);
+
+const universalSplit=normalizeCalendarConfig({
+  settings:{...base.settings,overlap:1},
+  special:[],customSchedules:[],
+  events:[
+    {...base.events[0],id:"same-a",name:"Same Night A"},
+    {...base.events[0],id:"same-b",name:"Same Night B",effect:"Breath",colors:[0x0000ff]}
+  ]
+});
+r=resolveCalendar(universalSplit,new Date("2026-12-25T23:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Same Night A");
+r=resolveCalendar(universalSplit,new Date("2026-12-26T01:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Same Night B");
+
+const universalCombine=normalizeCalendarConfig({
+  settings:{...base.settings,overlap:2},
+  special:[],customSchedules:[],
+  events:[
+    {...base.events[0],id:"combine-a",name:"Combine A",colors:[0xff0000]},
+    {...base.events[0],id:"combine-b",name:"Combine B",colors:[0x0000ff]}
+  ]
+});
+r=resolveCalendar(universalCombine,new Date("2026-12-25T23:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.scene.effect,"Jump");
+assert.deepEqual(r?.scene.colors,[0xff0000,0x0000ff]);
+
+const whiteOverrides=normalizeCalendarConfig({
+  settings:{...base.settings,enabled:false,whiteOverride1Enabled:true,whiteOverride2Enabled:true},
+  special:[],customSchedules:[],events:[]
+});
+r=resolveCalendar(whiteOverrides,new Date("2026-09-28T01:15:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"White Override 1");
+assert.equal(r?.scene.brightness,100);
+assert.deepEqual(r?.scene.colors,[0xffffff]);
+r=resolveCalendar(whiteOverrides,new Date("2026-09-28T10:05:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"White Override 2");
+assert.equal(r?.scene.brightness,100);
+r=resolveCalendar(whiteOverrides,new Date("2026-09-28T11:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"Morning white override must be off by 7:30 AM");
+r=resolveCalendar(whiteOverrides,new Date("2026-06-21T10:05:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"Morning white override must not start when civil dawn was before 6:00 AM");
+
+const whiteBoundary=nextCalendarBoundary(whiteOverrides,new Date("2026-09-28T00:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(new Date(whiteBoundary.at).toISOString(),"2026-09-28T01:00:00.000Z");
 
 console.log("Holiday calendar regression: PASS");
