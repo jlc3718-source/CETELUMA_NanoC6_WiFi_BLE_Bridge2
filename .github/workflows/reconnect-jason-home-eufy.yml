@@ -1,0 +1,33 @@
+name: Reconnect Jason Home Eufy transport
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths: ['.github/workflows/reconnect-jason-home-eufy.yml']
+permissions:
+  contents: read
+jobs:
+  reconnect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Reconnect original Oracle controller to Eufy
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          test -n "$TOKEN"
+          curl --noproxy '*' -sS -m 90 -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            -d '{}' http://127.0.0.1:8080/api/reconnect >/tmp/jh2-reconnect-result.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/jh2-reconnect-result.json'))
+          print('Reconnect:',d.get('ok'), 'ready:',d.get('readyNames'), 'status:',d.get('eufy',{}).get('status') if isinstance(d.get('eufy'),dict) else d.get('eufy'))
+          assert d.get('ok'), d.get('error','Reconnect failed')
+          PY
+          curl --noproxy '*' -fsS -m 30 -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/status >/tmp/jh2-status-after-reconnect.json
+          python3 - <<'PY'
+          import json
+          e=json.load(open('/tmp/jh2-status-after-reconnect.json')).get('eufy',{})
+          print('After reconnect:',e.get('status'),e.get('readyNames'))
+          assert set(e.get('readyNames',[]))=={'Pool','House','Garage','Shed'}
+          PY
