@@ -28,6 +28,8 @@ text = text.replace('async function api(e,t={},n=12e3)',
                     'async function api(e,t={},n=45e3)', 1)
 text = text.replace('async function post(e,t,n=12e3)',
                     'async function post(e,t,n=45e3)', 1)
+text = text.replace('setInterval(refreshVisibleState,30e3)',
+                    'setInterval(refreshVisibleState,120e3)', 1)
 old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
 if text.count(old_resume) != 1:
     raise SystemExit("Jason Home 2 resume error handler source changed")
@@ -57,5 +59,7 @@ end = text.index("        '<div class=\"grid2\" style=\"margin-top:8px\">", star
 text = text[:start] + "        '<button id=\"testCloudController\" class=\"btn primary\" type=\"button\">Test Oracle</button>'+\n" + text[end:]
 text = text.replace('api("/api/cloud/test?ts="+Date.now(),{},30000)',
                     'api("/api/cloud/test?ts="+Date.now(),{},45000)', 1)
+text = text.replace('setInterval(()=>{if(!document.hidden)refreshEufyStatus();},20000)',
+                    'setInterval(()=>{if(!document.hidden&&document.body.dataset.page==="settings")refreshEufyStatus();},120000)', 1)
 eufy.write_text(text)
 print("Jason Home 2 hosted UI ready")
