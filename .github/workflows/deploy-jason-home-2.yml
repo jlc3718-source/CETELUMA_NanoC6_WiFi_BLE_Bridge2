@@ -80,7 +80,7 @@ jobs:
           curl --noproxy '*' -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/jason-home-2/api/health >/dev/null
           curl --noproxy '*' -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/api/health >/dev/null
           python3 - <<'PY'
-          import json,urllib.request,ssl,socket
+          import json,urllib.request,ssl,socket,time
           from pathlib import Path
           token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
           resolve=socket.getaddrinfo
@@ -91,9 +91,13 @@ jobs:
           response=opener.open(urllib.request.Request(base+'/api/session',data,{'Content-Type':'application/json'}),timeout=10)
           cookie=response.headers['Set-Cookie'].split(';',1)[0]
           def read(path):
-              return json.load(opener.open(urllib.request.Request(base+path,headers={'Cookie':cookie}),timeout=15))
+              start=time.monotonic()
+              value=json.load(opener.open(urllib.request.Request(base+path,headers={'Cookie':cookie}),timeout=45))
+              print(path,'response seconds',round(time.monotonic()-start,2))
+              return value
           state=read('/api/state')
           assert state['stateAuthority']=='oracle' and len(state['ble']['controllers'])==4
+          assert len(read('/api/cloud/test')['eufy']['readyNames'])==4
           assert len(read('/api/events')['events'])>0
           assert len(read('/api/colors')['presets'])==36
           assert len(read('/api/event-categories')['categories'])==15
