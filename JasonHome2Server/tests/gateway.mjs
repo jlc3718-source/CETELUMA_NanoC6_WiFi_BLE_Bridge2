@@ -38,7 +38,11 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const cookie=valid.headers.get('set-cookie').split(';')[0];
     assert.match(valid.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Strict/);
     const ui=await fetch(base+'/',{headers:{cookie}});
-    assert.match(await ui.text(),/Jason Home 2/);
+    const html=await ui.text();assert.match(html,/Jason Home 2/);
+    assert.match(html,/night_calendar\.js/);
+    const calendarUi=await fetch(base+'/night_calendar.js',{headers:{cookie}});
+    const calendarJs=await calendarUi.text();
+    assert.match(calendarJs,/\.v3ScheduleCard\{grid-template-columns:minmax\(0,1fr\)!important/);
     const events=await fetch(base+'/api/events',{headers:{cookie}});
     assert.equal((await events.json()).events.length,0);
     const state=await fetch(base+'/api/state',{headers:{cookie}});
