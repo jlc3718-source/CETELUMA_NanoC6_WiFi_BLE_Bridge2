@@ -221,8 +221,10 @@ async function route(req,res){
     const body=await input(req),target=targetNames[meta("target",0)]||"All";
     if(body.colors)body.colors=colorInts(body.colors);
     if(body.name)put("running_name",String(body.name).slice(0,100));
-    await upstream("/api/control","POST",{...body,target});
-    return send(res,200,await state());
+    const accepted=await upstream("/api/control","POST",{...body,target});
+    // The browser already applies manual changes optimistically. Do not block
+    // the button press on a second full Oracle status/calendar calculation.
+    return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
   if(method==="POST"&&path==="/api/resume"){await upstream("/api/resume","POST",{});return send(res,200,await state());}
   if(method==="POST"&&path==="/api/settings"){
@@ -353,8 +355,9 @@ async function route(req,res){
   }
   if(method==="POST"&&path==="/api/ble/target"){
     const value=Number((await input(req)).target);
-    put("target",Number.isInteger(value)&&value>=0&&value<=4?value:0);
-    return send(res,200,await state());
+    const selected=Number.isInteger(value)&&value>=0&&value<=4?value:0;
+    put("target",selected);
+    return send(res,200,{ok:true,target:selected});
   }
   if(method==="GET"&&path==="/api/backup/status")return send(res,200,{hasBackup:!!meta("backup"),lastBackup:meta("backup_time",0),lastOk:!!meta("backup"),mode:"complete"});
   if(method==="POST"&&path==="/api/backup/manual"){
