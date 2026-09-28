@@ -26,6 +26,16 @@ jobs:
             curl --noproxy '*' -sS -m 20 --resolve 150.136.245.51:443:127.0.0.1 -o /dev/null -w "$path HTTP %{http_code} in %{time_total}s\n" "https://150.136.245.51${path}"
           done
           sudo docker ps --format '{{.Names}} {{.Status}}'
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          curl --noproxy '*' -fsS -m 30 -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/status >/tmp/jh2-command-diagnostic.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/jh2-command-diagnostic.json'))
+          c=d.get('lastCommand') or {}
+          print('Last command:',{k:c.get(k) for k in ('at','target','queued','sequence','ok','failed','total','error')})
+          for item in c.get('detail') or []:
+              print('Light:',{k:item.get(k) for k in ('name','ok','error','instance','brokerAccepted','deviceReported')})
+          PY
           echo 'Host DNS and TLS reachability'
           python3 - <<'PY'
           import socket,ssl,time
