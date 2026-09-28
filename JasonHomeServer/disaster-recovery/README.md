@@ -11,12 +11,13 @@ This branch is a frozen recovery checkpoint for **Jason Home 5.4.11 Oracle**.
 - Oracle server stack: Node.js + SQLite + Docker Compose + Eufy MQTT
 - Scheduler location: ZIP 14772 / America/New_York
 
-The branch itself preserves the complete project source needed to rebuild the Android application and Oracle service.
+The branch itself preserves the complete project source needed to rebuild the Android application and Oracle service. The captured recovery bundle also contains `jason-home-source.bundle`, a verified Git bundle of this frozen branch so recovery does not depend on GitHub remaining available.
 
 ## Live Oracle runtime backup
 
 The capture workflow creates a recovery bundle containing:
 
+- `jason-home-source.bundle` — portable Git repository/history backup of this frozen checkpoint.
 - `oracle-settings-backup.json` — sanitized, API-restorable calendar, schedules, Factory edits/promotions, and referenced Factory presets.
 - `oracle-health.json` — server health/build provenance at capture time.
 - `oracle.env.cms` — the production `.env` encrypted with the Jason Home permanent RSA certificate.
