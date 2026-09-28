@@ -154,7 +154,7 @@ function displayEvents(cfg,url){
        ||JSON.stringify(e.colors)!==JSON.stringify(mode===0?defaults.major:mode===1?defaults.basic:defaults.expanded))});
     if(!month&&rows.length>=96)break;
   }
-  return {events:rows,truncated:!month&&rows.length>=96,overlap:"Craumer priority and overlap rules are active."};
+  return {events:rows,truncated:!month&&rows.length>=96,overlap:"Universal overlap rules apply whenever two or more scheduled items share the same night."};
 }
 async function state(){
   const [s,cfg]=await Promise.all([upstream("/api/status"),config()]);
@@ -167,11 +167,12 @@ async function state(){
     custom:id.startsWith("schedule-"),factoryLightId:id.includes("::factory:")?Number(id.split("::factory:")[1]):undefined};
   return {firmwareVersion:"Jason Home 2 • Oracle Web",power:!!scene.power,brightness:scene.brightness,speed:scene.speed,
     running:{name:scheduled.name||meta("running_name","Jason Home 2"),effect:scene.effect,colors:rgb(scene.colors)},
-    settings:{on:clock(a.on),off:clock(a.off),lead:a.lead,trail:a.trail,overlap:["rotate","first","last"][a.overlap]||"rotate",
-      tz:"America/New_York",scheduler:a.enabled,scheduler2:a.schedule2Enabled,schedule1StartAtDusk:a.startAtDusk,
+    settings:{on:clock(a.on),off:clock(a.off),lead:a.lead,trail:a.trail,overlap:Number(a.overlap)||0,
+      tz:"America/New_York",scheduler:a.enabled,scheduler2:a.schedule2Enabled,
+      whiteOverride1:a.whiteOverride1Enabled!==false,whiteOverride2:a.whiteOverride2Enabled!==false,schedule1StartAtDusk:a.startAtDusk,
       schedule2End:clock(a.schedule2End),schedule2EndAtDawn:a.schedule2EndAtDawn,schedule2Brightness:a.schedule2Brightness,
       dawn:s.astronomy?.dawn||"",dusk:s.astronomy?.dusk||""},
-    scheduleWindow:`Schedule 1 ${a.startAtDusk?"dusk ("+(s.astronomy?.dusk||"")+")":clock(a.on)} - ${clock(a.off)} • Schedule 2 ${clock(a.off)} - ${a.schedule2EndAtDawn?"dawn ("+(s.astronomy?.dawn||"")+")":clock(a.schedule2End)} at ${a.schedule2Brightness}%`,
+    scheduleWindow:`Schedule 1 ${a.startAtDusk?"dusk ("+(s.astronomy?.dusk||"")+")":clock(a.on)} - ${clock(a.off)} • Schedule 2 ${clock(a.off)} - ${a.schedule2EndAtDawn?"dawn ("+(s.astronomy?.dawn||"")+")":clock(a.schedule2End)} at ${a.schedule2Brightness}% • White 1 ${a.whiteOverride1Enabled===false?"OFF":"9:00–10:00 PM"} • White 2 ${a.whiteOverride2Enabled===false?"OFF":"6:00 AM–dawn/7:30 AM"}`,
     nextEvent:s.nextEvent?.name||"No upcoming event",scheduledEvent,manualOverride:!!s.override?.active,stateAuthority:"oracle",
     ble:{ready:!!s.eufy?.ready,busy:false,connected:!!s.eufy?.ready,connectedCount:ready.size,knownCount:4,seenCount:ready.size,
       name:"Saved Eufy lights",address:"",protocol:"Oracle + Eufy MQTT",connectionMode:"Oracle / Internet",target:selected,
@@ -231,10 +232,10 @@ async function route(req,res){
     const body=await input(req);
     await mutateCalendar(cfg=>{
       const s=cfg.settings;
-      for(const [field,key] of [["scheduler","enabled"],["scheduler2","schedule2Enabled"],["schedule1Dusk","startAtDusk"],["schedule2Dawn","schedule2EndAtDawn"],["lead","lead"],["trail","trail"],["schedule2Brightness","schedule2Brightness"]])
+      for(const [field,key] of [["scheduler","enabled"],["scheduler2","schedule2Enabled"],["whiteOverride1","whiteOverride1Enabled"],["whiteOverride2","whiteOverride2Enabled"],["schedule1Dusk","startAtDusk"],["schedule2Dawn","schedule2EndAtDawn"],["lead","lead"],["trail","trail"],["schedule2Brightness","schedule2Brightness"]])
         if(Object.hasOwn(body,field))s[key]=body[field];
       for(const [field,key] of [["on","on"],["off","off"],["schedule2End","schedule2End"]])if(Object.hasOwn(body,field)){const n=minutes(body[field]);if(n===null)throw fail(400,"Invalid schedule time");s[key]=n;}
-      if(Object.hasOwn(body,"overlap"))s.overlap={rotate:0,first:1,last:2}[body.overlap]??0;
+      if(Object.hasOwn(body,"overlap"))s.overlap={rotate:0,split:1,combine:2}[body.overlap]??0;
     });
     return send(res,200,await state());
   }
