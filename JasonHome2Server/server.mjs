@@ -36,7 +36,7 @@ async function input(req){
   try{return JSON.parse(text);}catch{throw fail(400,"Invalid JSON");}
 }
 async function upstream(path,method="GET",value){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),60000);
   try{
     const response=await fetch(new URL(path,upstreamUrl),{
       method,headers:{"authorization":"Bearer "+upstreamToken,"accept":"application/json",...(value===undefined?{}:{"content-type":"application/json"})},
