@@ -7,7 +7,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 test('separate web gateway authenticates, serves the UI, and reads the shared calendar',async()=>{
-  const calendar={revision:1,settings:{mode:2,enabled:true,categoryMask:32767},events:[],customSchedules:[],special:[]};
+  const calendar={revision:1,settings:{mode:2,enabled:true,categoryMask:32767,on:1020,off:1380,startAtDusk:false,
+    schedule2Enabled:true,schedule2EndAtDawn:false,schedule2End:360,overlap:0},events:[],customSchedules:[],special:[]};
   const reads={status:0,calendar:0};
   const backend=http.createServer((req,res)=>{
     assert.equal(req.headers.authorization,'Bearer test-key');
@@ -41,7 +42,11 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const events=await fetch(base+'/api/events',{headers:{cookie}});
     assert.equal((await events.json()).events.length,0);
     const state=await fetch(base+'/api/state',{headers:{cookie}});
-    assert.equal((await state.json()).ble.connectedCount,4);
+    const stateValue=await state.json();assert.ok(stateValue.ble,JSON.stringify(stateValue));assert.equal(stateValue.ble.connectedCount,4);
+    assert.equal(stateValue.scheduledEvent.name,'Nothing scheduled for tonight');
+    const month=await fetch(base+'/api/night-calendar?year=2028&month=2',{headers:{cookie}});
+    const summary=await month.json();assert.equal(summary.days.length,29);
+    assert.equal(summary.days[0].events.length,0);
     await Promise.all(Array.from({length:6},()=>fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json())));
     assert.equal(reads.status,1,'concurrent screens share one status read');
     assert.equal(reads.calendar,1,'concurrent screens share one calendar read');

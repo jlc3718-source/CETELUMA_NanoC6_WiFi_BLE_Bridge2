@@ -3,6 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual, randomUUID } from "node:crypt
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { lightingNightDate, resolveNightEvents } from "./shared/calendar.js";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -66,6 +67,19 @@ const clamp=(v,low,high)=>Math.min(high,Math.max(low,Number(v)||low));
 const minutes=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(s||""));return m?Math.min(1439,Math.max(0,Number(m[1])*60+Number(m[2]))):null;};
 const clock=n=>`${String(Math.floor(Number(n||0)/60)).padStart(2,"0")}:${String(Number(n||0)%60).padStart(2,"0")}`;
 const targetNames=["All","Pool","House","Garage","Shed"];
+const nightLocation={lat:42.1507,lon:-78.9452,tz:"America/New_York"};
+const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLocation.tz,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(now);
+  const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
+const nightEvents=(cfg,day)=>resolveNightEvents(cfg,day,nightLocation.lat,nightLocation.lon,nightLocation.tz).map(e=>({...e,colors:rgb(e.colors)}));
+const monthCache=new Map();
+function monthSummary(cfg,year,month){
+  if(!Number.isInteger(year)||year<2020||year>2100||!Number.isInteger(month)||month<1||month>12)throw fail(400,"Invalid month");
+  const key=JSON.stringify([cfg.revision,year,month,cfg.settings,cfg.events,cfg.customSchedules]);
+  if(monthCache.has(key))return monthCache.get(key);
+  const days=new Date(Date.UTC(year,month,0)).getUTCDate(),entries=[];
+  for(let day=1;day<=days;day++)entries.push({day,events:nightEvents(cfg,{year,month,day})});
+  const result={year,month,days:entries};monthCache.clear();monthCache.set(key,result);return result;
+}
 const eventById=new Map(catalog.events.map(e=>[e.id,e]));
 const categoryByIndex=new Map(catalog.categories.map(c=>[c.index,c]));
 const theme=mode=>mode===0?"1":mode===1?"3.0.28":"3.0.29";
@@ -161,9 +175,11 @@ async function state(){
   const a=cfg.settings,first=s.override?.scene||s.calendar?.current?.scene||(()=>{try{return JSON.parse(s.desired?.[0]?.scene||"null");}catch{return null;}})();
   const selected=meta("target",0),names=["Pool","House","Garage","Shed"],ready=new Set(s.eufy?.readyNames||[]);
   const scene=first||{power:false,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
-  const scheduled=s.calendar?.current||{},id=scheduled.id||"";
-  const scheduledEvent={name:scheduled.name||(a.enabled?"Schedule active • waiting for next event":"Schedule disabled"),id,
-    enabled:a.enabled!==false,toggleable:!!id,upcoming:false,type:id.includes("::factory:")?"factoryPromotion":id.startsWith("schedule-")?"customSchedule":id?"builtin":"none",
+  const scheduled=s.calendar?.current||{};
+  const today=localDay(new Date()),night=lightingNightDate(cfg,new Date(),nightLocation.lat,nightLocation.lon,nightLocation.tz);
+  const tonight=nightEvents(cfg,night),single=tonight.length===1?tonight[0]:null,id=single?.id||"";
+  const scheduledEvent={name:tonight.length?tonight.map(e=>e.name).join("\n"):"Nothing scheduled for tonight",id,
+    events:tonight,night,enabled:a.enabled!==false,toggleable:!!single,upcoming:false,type:id.includes("::factory:")?"factoryPromotion":id.startsWith("schedule-")?"customSchedule":id?"builtin":"none",
     custom:id.startsWith("schedule-"),factoryLightId:id.includes("::factory:")?Number(id.split("::factory:")[1]):undefined};
   return {firmwareVersion:"Jason Home 2 • Oracle Web",power:!!scene.power,brightness:scene.brightness,speed:scene.speed,
     running:{name:scheduled.name||meta("running_name","Jason Home 2"),effect:scene.effect,colors:rgb(scene.colors)},
@@ -173,7 +189,7 @@ async function state(){
       schedule2End:clock(a.schedule2End),schedule2EndAtDawn:a.schedule2EndAtDawn,schedule2Brightness:a.schedule2Brightness,
       dawn:s.astronomy?.dawn||"",dusk:s.astronomy?.dusk||""},
     scheduleWindow:`Schedule 1 ${a.startAtDusk?"dusk ("+(s.astronomy?.dusk||"")+")":clock(a.on)} - ${clock(a.off)} • Schedule 2 ${clock(a.off)} - ${a.schedule2EndAtDawn?"dawn ("+(s.astronomy?.dawn||"")+")":clock(a.schedule2End)} at ${a.schedule2Brightness}% • White 1 ${a.whiteOverride1Enabled===false?"OFF":"9:00–10:00 PM"} • White 2 ${a.whiteOverride2Enabled===false?"OFF":"6:00 AM–dawn/7:30 AM"}`,
-    nextEvent:s.nextEvent?.name||"No upcoming event",scheduledEvent,manualOverride:!!s.override?.active,stateAuthority:"oracle",
+    nextEvent:s.nextEvent?.name||"No upcoming event",scheduledEvent,localToday:today,manualOverride:!!s.override?.active,stateAuthority:"oracle",
     ble:{ready:!!s.eufy?.ready,busy:false,connected:!!s.eufy?.ready,connectedCount:ready.size,knownCount:4,seenCount:ready.size,
       name:"Saved Eufy lights",address:"",protocol:"Oracle + Eufy MQTT",connectionMode:"Oracle / Internet",target:selected,
       controllers:names.map((name,slot)=>({slot,name,model:slot<2?"E120":"E22",protocol:"Oracle",seen:ready.has(name),connected:ready.has(name),saved:true})),
@@ -181,7 +197,7 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js"]);
   if(!allowed.has(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
@@ -214,6 +230,10 @@ async function route(req,res){
   }
   if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);
   if(method==="GET"&&path==="/api/state")return send(res,200,await state());
+  if(method==="GET"&&path==="/api/night-calendar"){
+    const today=localDay(new Date()),year=Number(url.searchParams.get("year")||today.year),month=Number(url.searchParams.get("month")||today.month);
+    return send(res,200,monthSummary(await config(),year,month));
+  }
   if(method==="GET"&&path==="/api/cloud/config")return send(res,200,{ok:true,endpoint:"https://150.136.245.51",mode:"cloud",configured:true,automationOwner:"oracle",directReady:false,directStatus:"Jason Home 2 web controller"});
   if(method==="POST"&&path==="/api/cloud/config")return send(res,200,{ok:true,endpoint:"https://150.136.245.51",mode:"cloud",configured:true,automationOwner:"oracle"});
   if(method==="GET"&&path==="/api/cloud/test")return send(res,200,await upstream("/api/status"));

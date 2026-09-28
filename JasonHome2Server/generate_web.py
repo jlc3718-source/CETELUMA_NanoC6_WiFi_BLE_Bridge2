@@ -30,6 +30,8 @@ text = text.replace('async function post(e,t,n=12e3)',
                     'async function post(e,t,n=45e3)', 1)
 text = text.replace('setInterval(refreshVisibleState,30e3)',
                     'setInterval(refreshVisibleState,120e3)', 1)
+text = text.replace('<script src="v3_mockup.js"></script>',
+                    '<script src="v3_mockup.js"></script>\n<script src="night_calendar.js"></script>', 1)
 old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
 if text.count(old_resume) != 1:
     raise SystemExit("Jason Home 2 resume error handler source changed")
@@ -47,6 +49,7 @@ if text.count(old) != 1:
     raise SystemExit("Jason Home 2 backup import source changed")
 text = text.replace(old, 'const raw=prompt("Paste your Jason Home backup JSON here:")||"";')
 ui.write_text(text)
+shutil.copyfile(Path(__file__).resolve().parent / "night_calendar.js", target / "night_calendar.js")
 
 eufy = target / "android_eufy_ui.js"
 text = eufy.read_text()

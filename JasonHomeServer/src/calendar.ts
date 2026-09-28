@@ -424,3 +424,38 @@ export function currentCalendarInfo(cfg:CalendarConfig|null,now:Date,lat:number,
   const r=resolveCalendar(cfg,now,lat,lon,tz);
   return r?{id:r.id,name:r.name,schedule2:r.schedule2,scene:r.scene}:null;
 }
+
+// The Home display uses the same winning scene selection as Schedule 1. Schedule 2
+// carries the last Schedule 1 scene forward, so it cannot add a new named item.
+export function resolveNightEvents(cfg:CalendarConfig|null,day:Ymd,lat:number,lon:number,tz:string){
+  if(!cfg?.settings?.enabled)return [];
+  const noon=new Date(localToUtcMs(day.year,day.month,day.day,12,0,tz));
+  const start=cfg.settings.startAtDusk?astroMinute(noon,lat,lon,tz,false):cfg.settings.on;
+  const end=cfg.settings.off,total=span(start,end);
+  const custom=customScene(cfg,day,false,100);
+  if(custom)return [{id:custom.id,name:custom.name,colors:custom.scene.colors}];
+  const found=new Map<string,{id:string;name:string;colors:number[]}>();
+  for(let position=0;position<total;position++){
+    const result=resolveFor(cfg,day,(start+position)%1440,start,end,false,100);
+    if(!result)continue;
+    if(result.name==="Combined monthly events"){
+      for(const event of cfg.events||[]){
+        if(event.rule==="Month"&&included(cfg,event)&&activeOn(cfg,event,day))
+          found.set(event.id,{id:event.id,name:event.name,colors:sceneFor(event,100).colors});
+      }
+    }else found.set(result.id,{id:result.id,name:result.name,colors:result.scene.colors});
+    // Once all possible minute positions have been resolved, the set is exact,
+    // including split windows shorter than one hour and forced monthly slots.
+  }
+  return [...found.values()];
+}
+
+export function lightingNightDate(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string):Ymd{
+  const today=localYmd(now,tz),yesterday=addDays(today,-1);
+  if(cfg?.settings?.enabled){
+    const prior=calendarDayBounds(cfg,yesterday,lat,lon,tz);
+    const last=prior.schedule2End??prior.end;
+    if(now.getTime()>=prior.start&&now.getTime()<last)return yesterday;
+  }
+  return today;
+}

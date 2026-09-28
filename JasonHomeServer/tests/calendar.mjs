@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeCalendarConfig, resolveCalendar, nextCalendarEvent, nextCalendarBoundary, nextCalendarTransition } from "../dist/calendar.js";
+import { normalizeCalendarConfig, resolveCalendar, nextCalendarEvent, nextCalendarBoundary, nextCalendarTransition, resolveNightEvents, lightingNightDate } from "../dist/calendar.js";
 import { astronomy, localParts } from "../dist/scheduler.js";
 
 const base={
@@ -118,5 +118,22 @@ const summer=astronomy(new Date("2026-06-21T16:00:00Z"),42.1507,-78.9452,"Americ
 assert.ok(summer.duskMs!=null);
 const duskLocal=localParts(new Date(summer.duskMs),"America/New_York");
 assert.deepEqual([duskLocal.year,duskLocal.month,duskLocal.day],[2026,6,21]);
+
+const night=(config,year,month,day)=>resolveNightEvents(config,{year,month,day},42.1507,-78.9452,"America/New_York").map(x=>x.id);
+assert.deepEqual(night(normalizeCalendarConfig(base),2026,12,25),["xmas"],"before dusk resolves the upcoming night");
+assert.deepEqual(night(monthlyOnly,2026,9,27),["heritage"]);
+assert.deepEqual(night(customOnly,2026,9,27),["today-custom"]);
+assert.deepEqual(night(crossing,2027,1,2),["cross"]);
+assert.deepEqual(night(hanukkah,2026,12,4),["evt202::factory:100"]);
+assert.deepEqual(night(normalizeCalendarConfig(base),2026,12,24),[],"tomorrow's event is not tonight's");
+assert.deepEqual(night(splitNight,2026,12,25),["xmas","xmas-alt"]);
+assert.deepEqual(night(normalizeCalendarConfig({...base,events:[{...base.events[0],enabled:false}]}),2026,12,25),[]);
+assert.deepEqual(night(normalizeCalendarConfig({...base,settings:{...base.settings,categoryMask:0}}),2026,12,25),[]);
+assert.deepEqual(night(normalizeCalendarConfig({...base,settings:{...base.settings,enabled:false}}),2026,12,25),[]);
+assert.deepEqual(night(normalizeCalendarConfig({...base,settings:{...base.settings,overlap:2},events:[base.events[1],{...base.events[1],id:"monthly-2"}]}),2026,9,27),["heritage","monthly-2"]);
+assert.deepEqual(lightingNightDate(cfg,new Date("2026-12-26T04:30:00Z"),42.1507,-78.9452,"America/New_York"),{year:2026,month:12,day:25});
+assert.deepEqual(lightingNightDate(cfg,new Date("2026-12-25T20:00:00Z"),42.1507,-78.9452,"America/New_York"),{year:2026,month:12,day:25});
+assert.deepEqual(lightingNightDate(cfg,new Date("2026-11-01T06:30:00Z"),42.1507,-78.9452,"America/New_York"),{year:2026,month:10,day:31},"DST fallback still belongs to prior night");
+assert.deepEqual(night(normalizeCalendarConfig({...base,events:[{...base.events[0],month:2,day:29}]}),2028,2,29),["xmas"]);
 
 console.log("Holiday calendar regression: PASS");
