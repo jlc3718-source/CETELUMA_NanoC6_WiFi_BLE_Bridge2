@@ -28,8 +28,8 @@ jobs:
           set -euo pipefail
           python3 JasonHome2Server/generate_catalog.py
           python3 JasonHome2Server/generate_web.py
-          node --check JasonHome2Server/server.mjs
-          node --test JasonHome2Server/tests/*.mjs
+          sudo docker run --rm --network host -v "$PWD:/src" -w /src node:22-bookworm-slim \
+            sh -c 'node --check JasonHome2Server/server.mjs && node --test JasonHome2Server/tests/*.mjs'
       - name: Build Jason Home 2 only
         run: sudo docker build -f JasonHome2Server/Dockerfile -t jason-home-2-web:${{ github.sha }} .
       - name: Install alongside original Oracle service
@@ -49,6 +49,8 @@ jobs:
           target.write_text('JH2_UPSTREAM_TOKEN='+token+'\nJH2_UPSTREAM_URL=http://127.0.0.1:8080\nJH2_BUILD_SHA=${{ github.sha }}\n')
           target.chmod(0o600)
           PY
+          sudo cp /etc/nginx/sites-available/jason-home /opt/jason-home-2/nginx-before-jason-home-2.conf
+          touch "/tmp/jason-home-2-deploy-$GITHUB_RUN_ID"
           if sudo docker container inspect jason-home-2-web >/dev/null 2>&1; then
             sudo docker rm -f jason-home-2-web-previous >/dev/null 2>&1 || true
             sudo docker stop jason-home-2-web
@@ -62,7 +64,6 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:8081/api/health >/dev/null
-          sudo cp /etc/nginx/sites-available/jason-home /opt/jason-home-2/nginx-before-jason-home-2.conf
           sudo python3 - <<'PY'
           from pathlib import Path
           p=Path('/etc/nginx/sites-available/jason-home')
@@ -83,6 +84,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          if ! test -f "/tmp/jason-home-2-deploy-$GITHUB_RUN_ID"; then exit 0; fi
           sudo docker rm -f jason-home-2-web >/dev/null 2>&1 || true
           if sudo docker container inspect jason-home-2-web-previous >/dev/null 2>&1; then
             sudo docker rename jason-home-2-web-previous jason-home-2-web
