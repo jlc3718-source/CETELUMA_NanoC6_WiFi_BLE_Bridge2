@@ -1,0 +1,102 @@
+name: Build and deploy Jason Home 2 web
+
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths:
+      - 'JasonHome2Server/**'
+      - 'JasonHome2Android/**'
+      - '.github/workflows/deploy-jason-home-2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jason-home-2-web
+  cancel-in-progress: false
+
+jobs:
+  deploy-web:
+    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2'
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate and check independent web app
+        run: |
+          set -euo pipefail
+          python3 JasonHome2Server/generate_catalog.py
+          python3 JasonHome2Server/generate_web.py
+          node --check JasonHome2Server/server.mjs
+          node --test JasonHome2Server/tests/*.mjs
+      - name: Build Jason Home 2 only
+        run: sudo docker build -f JasonHome2Server/Dockerfile -t jason-home-2-web:${{ github.sha }} .
+      - name: Install alongside original Oracle service
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s /home/ubuntu/repo/JasonHomeServer/.env
+          curl -fsS http://127.0.0.1:8080/api/health >/dev/null
+          sudo mkdir -p /opt/jason-home-2/data
+          sudo chown 1000:1000 /opt/jason-home-2/data
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          source=Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text()
+          token=next((line.split('=',1)[1] for line in source.splitlines() if line.startswith('JASON_HOME_API_TOKEN=')), '')
+          if not token or '\n' in token or '\r' in token: raise SystemExit('Original Oracle API token missing')
+          target=Path('/opt/jason-home-2/private.env')
+          target.write_text('JH2_UPSTREAM_TOKEN='+token+'\nJH2_UPSTREAM_URL=http://127.0.0.1:8080\nJH2_BUILD_SHA=${{ github.sha }}\n')
+          target.chmod(0o600)
+          PY
+          if sudo docker container inspect jason-home-2-web >/dev/null 2>&1; then
+            sudo docker rm -f jason-home-2-web-previous >/dev/null 2>&1 || true
+            sudo docker stop jason-home-2-web
+            sudo docker rename jason-home-2-web jason-home-2-web-previous
+          fi
+          sudo docker run -d --name jason-home-2-web --restart unless-stopped \
+            --network host --env-file /opt/jason-home-2/private.env \
+            -v /opt/jason-home-2/data:/data jason-home-2-web:${{ github.sha }}
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8081/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/api/health >/dev/null
+          sudo cp /etc/nginx/sites-available/jason-home /opt/jason-home-2/nginx-before-jason-home-2.conf
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/etc/nginx/sites-available/jason-home')
+          config=p.read_text()
+          block='''    location ^~ /jason-home-2/ {
+        proxy_pass http://127.0.0.1:8081/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+'''
+          if 'location ^~ /jason-home-2/' not in config:
+              marker='    location / {\n        proxy_pass http://127.0.0.1:8080;'
+              if marker not in config: raise SystemExit('Existing HTTPS proxy layout changed; review nginx before deploying')
+              config=config.replace(marker,block+marker,1)
+              p.write_text(config)
+          PY
+          sudo nginx -t
+          sudo systemctl reload nginx
+          curl -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/jason-home-2/api/health >/dev/null
+          curl -fsS --resolve 150.136.245.51:443:127.0.0.1 https://150.136.245.51/api/health >/dev/null
+          echo 'Jason Home 2 and original Oracle HTTPS health: PASS'
+      - name: Restore previous web app on failure
+        if: failure()
+        shell: bash
+        run: |
+          sudo docker rm -f jason-home-2-web >/dev/null 2>&1 || true
+          if sudo docker container inspect jason-home-2-web-previous >/dev/null 2>&1; then
+            sudo docker rename jason-home-2-web-previous jason-home-2-web
+            sudo docker start jason-home-2-web
+          fi
+          if test -s /opt/jason-home-2/nginx-before-jason-home-2.conf; then
+            sudo cp /opt/jason-home-2/nginx-before-jason-home-2.conf /etc/nginx/sites-available/jason-home
+            sudo nginx -t && sudo systemctl reload nginx
+          fi
