@@ -1,1 +1,3 @@
-Build Anderson Home 3.1.58: keep Off house preview dark and retain 12-hour AM/PM display
+Jason Home Candy Cane Fast rebuild
+Source commit: 031da6d6486564224afd2a4ef713ab8591d45080
+Requested: 2026-09-27
