@@ -8,8 +8,11 @@ import {join} from 'node:path';
 
 test('separate web gateway authenticates, serves the UI, and reads the shared calendar',async()=>{
   const calendar={revision:1,settings:{mode:2,enabled:true,categoryMask:32767},events:[],customSchedules:[],special:[]};
+  const reads={status:0,calendar:0};
   const backend=http.createServer((req,res)=>{
     assert.equal(req.headers.authorization,'Bearer test-key');
+    if(req.url==='/api/status')reads.status++;
+    if(req.url==='/api/calendar')reads.calendar++;
     res.setHeader('content-type','application/json');
     res.end(JSON.stringify(req.url==='/api/calendar'?{ok:true,calendar}:req.url==='/api/status'?{
       eufy:{ready:true,readyNames:['Pool','House','Garage','Shed']},calendar:{current:null},desired:[]
@@ -39,6 +42,9 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.equal((await events.json()).events.length,0);
     const state=await fetch(base+'/api/state',{headers:{cookie}});
     assert.equal((await state.json()).ble.connectedCount,4);
+    await Promise.all(Array.from({length:6},()=>fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json())));
+    assert.equal(reads.status,1,'concurrent screens share one status read');
+    assert.equal(reads.calendar,1,'concurrent screens share one calendar read');
     assert.equal((await fetch(base+'/api/event',{method:'POST',headers:{cookie,origin:'https://evil.example','content-type':'application/json'},body:'{}'})).status,403);
   }finally{
     child.kill();backend.close();rmSync(dir,{recursive:true,force:true});
