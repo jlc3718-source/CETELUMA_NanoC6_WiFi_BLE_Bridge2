@@ -1,6 +1,6 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
-import { sendMqtt } from "./mqtt.js";
+import { mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
 import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
@@ -85,7 +85,14 @@ export class EufyClient {
     if(c.user_id===undefined||c.user_id===null)c.user_id=this.uid;
     if(!allowedBroker(c.endpoint_addr)||((c.app_name||"eufy_life")!=="eufy_life"))throw new Error("Unexpected Eufy broker/certificate scope");this.creds=c;
   }
-  async prepare(){if(!this.authed)throw new Error("Eufy authentication required");await this.findLights();await this.certificate();}
+  async prepare(){
+    if(!this.authed)throw new Error("Eufy authentication required");
+    await this.findLights();
+    await this.certificate();
+    if(mqttConnectionMode()==="persistent"){
+      await Promise.allSettled([...this.lights.keys()].map(name=>warmPersistentMqtt(this.creds!,this.target(name),this.installId)));
+    }
+  }
   private spec(name:string){const s=LIGHTS.find(x=>x.name===name);if(!s)throw new Error(`Unknown light ${name}`);return s;}
   private target(name:string):MqttTarget{
     const s=this.spec(name),d=this.lights.get(name);if(!d||!s.serials.includes(d.device_sn)||d.device_model!==s.model||d.category!=="eufy_life")throw new Error(`${name} has no validated Eufy record`);

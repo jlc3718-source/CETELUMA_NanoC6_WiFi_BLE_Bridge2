@@ -8,6 +8,7 @@ import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factor
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
 import { currentCalendarInfo, nextCalendarBoundary, nextCalendarEvent, nextCalendarTransition, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
+import { mqttConnectionStatus } from "./eufy/mqtt.js";
 
 const PORT=Math.max(1,Number(process.env.PORT||"8080"));
 const EMAIL=process.env.EUFY_EMAIL||"";
@@ -670,7 +671,7 @@ async function statusPayload(refresh=false){
     architecture:"Oracle Linux + Node.js + SQLite",
     build:{sha:BUILD_SHA,startedAt:STARTED_AT},
     automationOwner:meta("automation_owner")||"oracle",
-    eufy:{ready:eufyReady,status:eufyStatus,readyNames:[...readyNames],transport:"linux-mqtt"},
+    eufy:{ready:eufyReady,status:eufyStatus,readyNames:[...readyNames],transport:"linux-mqtt",connection:mqttConnectionStatus()},
     devices,
     override,
     astronomy:{dawn:astro.dawnLabel,dusk:astro.duskLabel,timeZone:TZ},
@@ -702,7 +703,7 @@ async function manualControl(input:any,sequence?:number){
       if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-      return {name,ok:true,scene,brokerAccepted:r?.brokerAccepted===true,deviceReported:r?.deviceReported===true,report:r?.report||null,instance:r?.instance||null};
+      return {name,ok:true,scene,brokerAccepted:r?.brokerAccepted===true,deviceReported:r?.deviceReported===true,report:r?.report||null,instance:r?.instance||null,connectionMode:r?.transport||null};
     }catch(e:any){
       const msg=e?.message||String(e);
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
@@ -748,7 +749,7 @@ async function applyScheduled(name:string,scene:Scene,reason:string){
   const now=Date.now();
   db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(now,name);
   db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),now);
-  logCommand(now,name,"schedule",true,{reason,brokerAccepted:r.brokerAccepted===true,deviceReported:r.deviceReported===true,report:r.report||null});
+  logCommand(now,name,"schedule",true,{reason,brokerAccepted:r.brokerAccepted===true,deviceReported:r.deviceReported===true,report:r.report||null,connectionMode:r.transport||null});
 }
 
 let reconciling=false;
