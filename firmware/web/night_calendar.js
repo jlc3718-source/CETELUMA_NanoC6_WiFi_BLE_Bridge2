@@ -21,9 +21,16 @@
       const heading=document.createElement("div"),kicker=document.createElement("span"),title=document.createElement("h2");
       kicker.className="andersonNightKicker";kicker.textContent="SCHEDULED FOR THIS NIGHT";title.textContent=label;
       heading.append(kicker,title);
+      const back=document.createElement("button");back.type="button";back.className="btn andersonCalendarBack";back.textContent="‹ Back to calendar";
+      back.addEventListener("click",()=>{
+        document.body.classList.remove("andersonDateView");detail.hidden=true;
+        document.querySelector('.tab[data-tab="home"]')?.click();
+        requestAnimationFrame(()=>wrap.scrollIntoView({block:"center",behavior:"smooth"}));
+      });
       const all=document.createElement("button");all.type="button";all.className="btn";all.textContent="Show all schedules";
       all.addEventListener("click",()=>{document.body.classList.remove("andersonDateView");detail.hidden=true;document.querySelector(".page.active")?.scrollIntoView({block:"start"})});
-      head.append(heading,all);detail.append(head);
+      const actions=document.createElement("div");actions.className="andersonNightActions";actions.append(back,all);
+      head.append(heading,actions);detail.append(head);
       if(!entry.events.length){const empty=document.createElement("p");empty.className="sub";empty.textContent="No scheduled events for this night.";detail.append(empty)}
       else{
         const list=document.createElement("div");list.className="andersonNightList";
@@ -73,6 +80,7 @@
       body.andersonDateView .page[data-page="events"]>.panel:not(.andersonNightDetail){display:none!important}
       .andersonNightDetail{width:100%;box-sizing:border-box}
       .andersonNightHead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+      .andersonNightActions{display:flex;gap:8px;flex-wrap:wrap}
       .andersonNightHead h2{font-size:20px;line-height:1.2;margin:5px 0 12px}
       .andersonNightKicker{color:#9cb8e7;font-size:10px;font-weight:700;letter-spacing:.12em}
       .andersonNightHead .btn{min-height:42px}

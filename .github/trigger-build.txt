@@ -1,1 +1,1 @@
-Build Anderson Home 3.1.60: speed up calendar night resolution and add retry
+Build Anderson Home 3.1.61: back to month calendar from selected night
