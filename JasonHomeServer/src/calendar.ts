@@ -165,16 +165,28 @@ function higherPriorityCountOn(cfg:CalendarConfig,day:Ymd){
   }
   return count;
 }
+const monthlyPositionCache=new WeakMap<CalendarConfig,Map<string,{eligibleDays:number[];forcedDay:number}>>();
 function monthlyPosition(cfg:CalendarConfig,day:Ymd){
-  let total=0,ordinal=0,forcedDay=0,lowest=Number.MAX_SAFE_INTEGER;
-  const days=monthDays(day.year,day.month);
-  for(let d=1;d<=days;d++){
-    const probe={year:day.year,month:day.month,day:d};
-    const high=higherPriorityCountOn(cfg,probe);
-    if(high===0){if(d<day.day)ordinal++;total++;}
-    if(high<lowest){lowest=high;forcedDay=d;}
+  let cache=monthlyPositionCache.get(cfg);
+  if(!cache){cache=new Map();monthlyPositionCache.set(cfg,cache);}
+  const key=day.year+"-"+day.month;
+  let month=cache.get(key);
+  if(!month){
+    const eligibleDays:number[]=[];
+    let forcedDay=0,lowest=Number.MAX_SAFE_INTEGER;
+    const days=monthDays(day.year,day.month);
+    for(let d=1;d<=days;d++){
+      const probe={year:day.year,month:day.month,day:d};
+      const high=higherPriorityCountOn(cfg,probe);
+      if(high===0)eligibleDays.push(d);
+      if(high<lowest){lowest=high;forcedDay=d;}
+    }
+    month={eligibleDays,forcedDay};
+    cache.set(key,month);
   }
-  return {total,ordinal,forcedDay};
+  let ordinal=0;
+  while(ordinal<month.eligibleDays.length&&month.eligibleDays[ordinal]<day.day)ordinal++;
+  return {total:month.eligibleDays.length,ordinal,forcedDay:month.forcedDay};
 }
 function combineMonthly(items:CalendarEvent[],brightness:number,schedule2:boolean):CalendarResolution{
   const colors:number[]=[];
