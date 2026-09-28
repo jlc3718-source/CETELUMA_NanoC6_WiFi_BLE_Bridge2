@@ -69,7 +69,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.59";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.60";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -515,7 +515,11 @@ void setupRoutes(){
       if(!candidateCount)continue;
       const int start=settings.schedule1StartAtDusk?scheduler.civilDuskMinutes(night):settings.onMinutes;
       int span=(int)settings.offMinutes-start;if(span<=0)span+=1440;
-      for(int pos=0;pos<span;pos++){
+      // The narrowest overlap slice is at least 2/9 of Schedule 1 divided
+      // among one tier. Eight probes per candidate cover every occupied
+      // minute slot without resolving all 31 nights minute by minute.
+      const int stride=max(1,span/(8*(int)candidateCount));
+      for(int pos=0;pos<span;pos+=stride){
         tm probe=night;int minute=(start+pos)%1440;probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;
         Theme selected=scheduler.resolve(probe);
         for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
@@ -523,6 +527,13 @@ void setupRoutes(){
           if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
         }
         if((pos&31)==0)yield();
+      }
+      // Schedule 2 continues the final Schedule 1 scene.
+      if((span-1)%stride){
+        tm probe=night;int minute=(start+span-1)%1440;probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;
+        Theme selected=scheduler.resolve(probe);
+        for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eligible[i]&&!seen[i])
+          if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
       }
       for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i]){
         Theme theme=effectiveEventTheme(i);JsonObject item=items.add<JsonObject>();item["id"]=EVENTS[i].id;item["name"]=EVENTS[i].name;

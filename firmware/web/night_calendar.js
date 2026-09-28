@@ -56,6 +56,8 @@
       .andersonCalendarHead strong{font-size:13px;font-weight:700}
       .andersonCalendarHead button{width:32px;height:32px;border:1px solid #7899d34d;border-radius:9px;background:#1a2e51;color:#dbe9ff;font-size:23px;line-height:1}
       .andersonCalendarGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center;width:100%}
+      .andersonCalendarError{grid-column:1/-1;text-align:center;padding:12px 8px;color:#cbdcf5;font-size:12px;line-height:1.4}
+      .andersonCalendarError button{display:block;margin:10px auto 0;min-height:38px;padding:7px 16px;border:1px solid #7899d34d;border-radius:9px;background:#1a2e51;color:#dbe9ff}
       .andersonWeekday{font-size:10px;color:#9ab2da;padding:3px 0}
       .andersonDate{min-height:37px;padding:3px 1px;border-radius:9px;font-size:11px;line-height:16px;min-width:0}
       button.andersonDate{border:0;background:transparent;color:#dce8ff;cursor:pointer;width:100%;font-size:11px;line-height:16px}
@@ -94,6 +96,7 @@
     if(!force&&Date.now()-lastRefresh<30000)return;
     lastRefresh=Date.now();const sequence=++request;
     const grid=document.querySelector(".andersonCalendarGrid");if(!grid)return;
+    document.querySelector(".andersonCalendarHead strong").textContent=new Intl.DateTimeFormat("en-US",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(shown.year,shown.month-1,1)));
     try{
       const data=await api(`/api/night-calendar?year=${shown.year}&month=${shown.month}`,{},45000);
       if(sequence!==request)return;
@@ -113,7 +116,12 @@
         entry.events.forEach(event=>{const dot=document.createElement("span");dot.className="andersonDot";dot.style.background=event.colors?.[0]||"#79a9ff";dots.append(dot)});
         cell.append(dots);grid.append(cell);
       });
-    }catch{if(sequence===request)grid.textContent="Calendar unavailable. Pull to refresh."}
+    }catch(error){if(sequence===request){
+      grid.replaceChildren();const message=document.createElement("div");message.className="andersonCalendarError";
+      const text=document.createElement("span");text.textContent="Calendar unavailable"+(error?.message?": "+error.message:".");
+      const retry=document.createElement("button");retry.type="button";retry.textContent="Try again";
+      retry.addEventListener("click",()=>refresh(true));message.append(text,retry);grid.append(message);
+    }}
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
 })();

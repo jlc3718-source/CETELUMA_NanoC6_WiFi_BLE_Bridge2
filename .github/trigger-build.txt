@@ -1,1 +1,1 @@
-Build Anderson Home 3.1.59: night calendar with date-specific schedules
+Build Anderson Home 3.1.60: speed up calendar night resolution and add retry

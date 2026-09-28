@@ -151,4 +151,16 @@ assert 'eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)' in main
 assert 'NIGHT_CALENDAR_JS.read_text()' in release
 assert 'cell.addEventListener("click",()=>showNight' in night and 'Show all schedules' in night
 assert 'grid-template-columns:repeat(7,minmax(0,1fr))' in night
+assert 'const int stride=max(1,span/(8*(int)candidateCount))' in main
+for span in [1,2,3,5,20,60,360,1440]:
+    for count in [1,2,3,7,16,64]:
+        stride=max(1,span//(8*count)); samples=set(range(0,span,stride))|{span-1}
+        monthly=max(1,span//3); high=max(1,span-monthly); window=max(1,high//3)
+        segments=[(0,span),(0,monthly),(monthly,min(window,span-monthly)),(monthly+window,max(0,span-monthly-window))]
+        for start,length in segments:
+            if not length: continue
+            for slots in [1,count]:
+                actual={(position-start)*slots//length for position in range(start,start+length)}
+                sampled={(position-start)*slots//length for position in samples if start<=position<start+length}
+                assert sampled==actual,(span,count,start,length,slots)
 print('Anderson regression source checks passed')
