@@ -1,0 +1,33 @@
+name: Jason Home Live Control
+
+on:
+  push:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - '.github/jason-home-live-command.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send live lighting command through local Oracle API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV_FILE=/home/ubuntu/repo/JasonHomeServer/.env
+          test -s "$ENV_FILE"
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' "$ENV_FILE")"
+          test -n "$TOKEN"
+          PAYLOAD="$(cat .github/jason-home-live-command.json)"
+          curl -fsS --max-time 45 \
+            -X POST 'http://127.0.0.1:8080/api/control?wait=1' \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "$PAYLOAD"
