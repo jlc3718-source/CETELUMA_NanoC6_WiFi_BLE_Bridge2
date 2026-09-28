@@ -21,6 +21,17 @@ if text.count(old) != 1:
 text = text.replace(old, new).replace("<title>Craumer Home Lights</title>",
                                      "<title>Jason Home 2</title>", 1)
 text = text.replace("Craumer <b>Home</b>", "Jason <b>Home 2</b>", 1)
+text = text.replace('>● Preview</div>', '>● Connecting</div>', 1)
+text = text.replace('function controllerRequest(e,t={},o=12e3)',
+                    'function controllerRequest(e,t={},o=45e3)', 1)
+text = text.replace('async function api(e,t={},n=12e3)',
+                    'async function api(e,t={},n=45e3)', 1)
+text = text.replace('async function post(e,t,n=12e3)',
+                    'async function post(e,t,n=45e3)', 1)
+old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
+if text.count(old_resume) != 1:
+    raise SystemExit("Jason Home 2 resume error handler source changed")
+text = text.replace(old_resume, '.catch(e=>status("Resume failed: "+e.message))')
 page.write_text(text)
 
 ui = target / "v3_mockup.js"
