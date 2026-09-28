@@ -67,15 +67,7 @@ jobs:
           from pathlib import Path
           p=Path('/etc/nginx/sites-available/jason-home')
           config=p.read_text()
-          block='''    location ^~ /jason-home-2/ {
-        proxy_pass http://127.0.0.1:8081/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-'''
+          block='    location ^~ /jason-home-2/ {\n        proxy_pass http://127.0.0.1:8081/;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-Proto https;\n        proxy_set_header X-Real-IP $remote_addr;\n    }\n\n'
           if 'location ^~ /jason-home-2/' not in config:
               marker='    location / {\n        proxy_pass http://127.0.0.1:8080;'
               if marker not in config: raise SystemExit('Existing HTTPS proxy layout changed; review nginx before deploying')
