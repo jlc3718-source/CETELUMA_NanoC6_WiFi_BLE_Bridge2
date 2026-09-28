@@ -307,7 +307,7 @@ final class AndersonSchedule {
         }
         int[] out=new int[Math.max(1,colors.size())];
         if(colors.isEmpty())out[0]=0xFFFFFA;else for(int i=0;i<colors.size();i++)out[i]=colors.get(i);
-        return new Scene(indices.get(0),"Combined monthly events","Jump",out,1,brightness,schedule2);
+        return new Scene(indices.get(0),"Combined monthly events","Candy Cane",out,4,brightness,schedule2);
     }
 
     private Scene sceneFor(int index,int brightness,boolean schedule2){
@@ -445,7 +445,7 @@ final class AndersonSchedule {
                     colors[j]=(int)Long.parseLong(h,16)&0xffffff;
                 }
                 int b=schedule2?scheduleBrightness:Math.max(1,Math.min(100,x.optInt("brightness",100)));
-                return new Scene(-1,x.optString("name","Custom Light"),x.optString("effect","Jump"),colors,
+                return new Scene(-1,x.optString("name","Custom Light"),x.optString("effect","Candy Cane"),colors,
                     Math.max(1,Math.min(5,x.optInt("speed",3))),b,schedule2);
             }
         }catch(Throwable ignored){}
