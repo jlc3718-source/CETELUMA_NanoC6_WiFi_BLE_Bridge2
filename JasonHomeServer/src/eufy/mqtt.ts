@@ -23,6 +23,7 @@ export interface MqttSendResult {
   brokerAccepted:boolean;
   deviceReported:boolean;
 }
+// Keep the last healthy broker route warm in memory so interactive commands avoid slow fallback addresses.
 const preferredConnectHost=new Map<string,string>();
 const dnsCache=new Map<string,{until:number;ips:string[]}>();
 
