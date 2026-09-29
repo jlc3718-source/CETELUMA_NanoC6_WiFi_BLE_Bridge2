@@ -60,7 +60,7 @@ jobs:
           source=Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text()
           token=next((line.split('=',1)[1] for line in source.splitlines() if line.startswith('JASON_HOME_API_TOKEN=')), '')
           if not token or '\n' in token or '\r' in token: raise SystemExit('Original Oracle API token missing')
-          resolver=Path(os.environ['GITHUB_WORKSPACE'],'JasonHome2Server','shared','oracle-resolver.sha').read_text().strip()
+          resolver=Path.cwd().joinpath('JasonHome2Server','shared','oracle-resolver.sha').read_text().strip()
           if not resolver: raise SystemExit('Oracle resolver SHA missing')
           target=Path('/opt/jason-home-2/private.env')
           target.write_text('JH2_UPSTREAM_TOKEN='+token+'\nJH2_UPSTREAM_URL=http://127.0.0.1:8080\nJH2_BUILD_SHA=${{ github.sha }}\nJH2_RESOLVER_SHA='+resolver+'\n')
