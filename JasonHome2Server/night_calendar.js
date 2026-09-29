@@ -4,12 +4,31 @@
   const today=()=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(new Date());
     const n=type=>Number(parts.find(p=>p.type===type).value);return {year:n("year"),month:n("month"),day:n("day")};};
   let shown=today(),lastRefresh=0,request=0,showNight=()=>{};
+  const formatTime=iso=>{if(!iso)return "";const d=new Date(iso);return Number.isNaN(d.getTime())?"":new Intl.DateTimeFormat("en-US",{timeZone:zone,hour:"numeric",minute:"2-digit"}).format(d);};
+  function renderLiveState(state){
+    if(!state)return;
+    const row=document.querySelector(".jh2RunningNow"),info=state.runningNow||{};
+    if(row){
+      const title=row.querySelector("strong"),meta=row.querySelector("small");
+      if(title)title.textContent=info.name||"No scheduled scene running";
+      const brightness=Number(info.brightness),parts=[info.effect,Number.isFinite(brightness)?brightness+"%":null,info.phase].filter(Boolean);
+      if(meta)meta.textContent=parts.join(" · ");
+    }
+    const nextLabel=document.querySelector(".v3NextUpcoming");if(nextLabel)nextLabel.textContent="Next change";
+    const nextValue=document.getElementById("nextEvent");
+    if(nextValue){
+      const change=state.nextChange,time=formatTime(change?.at);
+      nextValue.textContent=change?`${change.name||"Next change"}${time?" · "+time:""}`:"No upcoming change";
+    }
+  }
   function start(){
     const card=document.querySelector(".v3ScheduleCard"),next=document.querySelector(".v3Next");
     if(!card||!next)return;
     const wrap=document.createElement("section");wrap.className="jh2Calendar";wrap.setAttribute("aria-label","Scheduled lighting by night");
     wrap.innerHTML='<div class="jh2CalendarHead"><button type="button" aria-label="Previous month">‹</button><strong></strong><button type="button" aria-label="Next month">›</button></div><div class="jh2CalendarGrid"></div>';
-    card.append(wrap,next);
+    const running=document.createElement("div");running.className="jh2RunningNow";
+    running.innerHTML='<span>RUNNING NOW</span><strong>Loading…</strong><small></small>';
+    card.append(running,wrap,next);
     const schedules=document.querySelector('.page[data-page="events"]');
     const detail=document.createElement("section");detail.className="panel jh2NightDetail";detail.hidden=true;
     (schedules.querySelector(".v3PageTitle")||schedules.firstElementChild)?.after(detail);
@@ -54,10 +73,14 @@
     }));
     const style=document.createElement("style");style.textContent=`
       .v3ScheduleCard{grid-template-columns:minmax(0,1fr)!important;row-gap:10px!important;min-width:0}
-      .v3ScheduleCard>.v3CardKicker,.v3ScheduleCard>#scheduleWindow,.v3ScheduleCard>#resumeSchedule,.v3ScheduleCard>.jh2Calendar,.v3ScheduleCard>.v3Next{grid-column:1/-1!important;grid-row:auto!important;min-width:0;box-sizing:border-box}
+      .v3ScheduleCard>.v3CardKicker,.v3ScheduleCard>#scheduleWindow,.v3ScheduleCard>#resumeSchedule,.v3ScheduleCard>.jh2RunningNow,.v3ScheduleCard>.jh2Calendar,.v3ScheduleCard>.v3Next{grid-column:1/-1!important;grid-row:auto!important;min-width:0;box-sizing:border-box}
       #scheduledEventName{display:none!important}
       .v3ScheduleCard>#scheduleWindow{font-size:12px;line-height:1.55;overflow-wrap:normal}
       .v3ScheduleCard>#resumeSchedule{width:100%;max-width:none!important;min-height:44px;font-size:12px}
+      .jh2RunningNow{display:grid;gap:3px;margin-top:4px;padding:11px 12px;border:1px solid #8daaff28;border-radius:13px;background:#0c1a32}
+      .jh2RunningNow>span{font-size:9px;font-weight:750;letter-spacing:.14em;color:#9db9e7}
+      .jh2RunningNow>strong{font-size:13px;line-height:1.35;color:#f1f6ff;overflow-wrap:anywhere}
+      .jh2RunningNow>small{font-size:10px;line-height:1.4;color:#a8bddf}
       .jh2Calendar{width:100%;margin:8px 0 0;padding:12px;border:1px solid #8daaff32;border-radius:17px;background:#09162c;color:#dfebff}
       .jh2CalendarHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
       .jh2CalendarHead strong{font-size:13px;font-weight:700}
@@ -103,6 +126,10 @@
     lastRefresh=Date.now();const sequence=++request;
     const grid=document.querySelector(".jh2CalendarGrid");if(!grid)return;
     try{
+      fetch("/jason-home-2/api/state",{credentials:"same-origin",cache:"no-store"})
+        .then(response=>response.ok?response.json():null)
+        .then(state=>{if(sequence===request&&state)renderLiveState(state)})
+        .catch(()=>{});
       const response=await fetch(`/jason-home-2/api/night-calendar?year=${shown.year}&month=${shown.month}`,{credentials:"same-origin",cache:"no-store"});
       if(!response.ok)throw new Error("Calendar unavailable");
       const data=await response.json();if(sequence!==request)return;

@@ -28,10 +28,18 @@ jobs:
       - name: Generate and check independent web app
         run: |
           set -euo pipefail
-          sudo docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src/JasonHomeServer node:22-bookworm-slim \
+          LIVE_SHA="$(curl -fsS http://127.0.0.1:8080/api/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["build"]["sha"])')"
+          test -n "$LIVE_SHA"
+          echo "Building Jason Home 2 resolver from deployed Oracle commit: $LIVE_SHA"
+          git fetch --no-tags --depth=1 origin "$LIVE_SHA"
+          rm -rf /tmp/jh2-oracle-src
+          mkdir -p /tmp/jh2-oracle-src
+          git archive "$LIVE_SHA" JasonHomeServer | tar -x -C /tmp/jh2-oracle-src
+          sudo docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v /tmp/jh2-oracle-src:/src -w /src/JasonHomeServer node:22-bookworm-slim \
             sh -c 'npm ci && npm run build && npm test'
           mkdir -p JasonHome2Server/shared
-          cp JasonHomeServer/dist/calendar.js JasonHomeServer/dist/scheduler.js JasonHome2Server/shared/
+          cp /tmp/jh2-oracle-src/JasonHomeServer/dist/calendar.js /tmp/jh2-oracle-src/JasonHomeServer/dist/scheduler.js JasonHome2Server/shared/
+          printf '%s\n' "$LIVE_SHA" > JasonHome2Server/shared/oracle-resolver.sha
           python3 JasonHome2Server/generate_catalog.py
           python3 JasonHome2Server/generate_web.py
           sudo docker run --rm --network host -v "$PWD:/src" -w /src node:22-bookworm-slim \
@@ -48,11 +56,14 @@ jobs:
           sudo chown 1000:1000 /opt/jason-home-2/data
           sudo python3 - <<'PY'
           from pathlib import Path
+          import os
           source=Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text()
           token=next((line.split('=',1)[1] for line in source.splitlines() if line.startswith('JASON_HOME_API_TOKEN=')), '')
           if not token or '\n' in token or '\r' in token: raise SystemExit('Original Oracle API token missing')
+          resolver=Path(os.environ['GITHUB_WORKSPACE'],'JasonHome2Server','shared','oracle-resolver.sha').read_text().strip()
+          if not resolver: raise SystemExit('Oracle resolver SHA missing')
           target=Path('/opt/jason-home-2/private.env')
-          target.write_text('JH2_UPSTREAM_TOKEN='+token+'\nJH2_UPSTREAM_URL=http://127.0.0.1:8080\nJH2_BUILD_SHA=${{ github.sha }}\n')
+          target.write_text('JH2_UPSTREAM_TOKEN='+token+'\nJH2_UPSTREAM_URL=http://127.0.0.1:8080\nJH2_BUILD_SHA=${{ github.sha }}\nJH2_RESOLVER_SHA='+resolver+'\n')
           target.chmod(0o600)
           PY
           sudo cp /etc/nginx/sites-available/jason-home /opt/jason-home-2/nginx-before-jason-home-2.conf
@@ -103,14 +114,27 @@ jobs:
               return value
           state=read('/api/state')
           assert state['stateAuthority']=='oracle' and len(state['ble']['controllers'])==4
+          authority=state.get('resolverAuthority') or {}
+          assert authority.get('inSync') is True, authority
+          assert authority.get('oracleBuild') and authority.get('oracleBuild')==authority.get('resolverBuild'), authority
           night=state['scheduledEvent']['night']
           summary=read(f"/api/night-calendar?year={night['year']}&month={night['month']}")
           assert len(summary['days'])>=28
           expected=summary['days'][night['day']-1]['events']
           assert [e['id'] for e in expected]==[e['id'] for e in state['scheduledEvent']['events']]
           page=opener.open(urllib.request.Request(base+'/night_calendar.js',headers={'Cookie':cookie}),timeout=10).read()
-          assert b'jh2CalendarGrid' in page
-          assert len(read('/api/cloud/test')['eufy']['readyNames'])==4
+          assert b'jh2CalendarGrid' in page and b'RUNNING NOW' in page
+          cloud=read('/api/cloud/test')
+          assert len(cloud['eufy']['readyNames'])==4
+          current=(cloud.get('calendar') or {}).get('current')
+          if (cloud.get('override') or {}).get('active'):
+              assert state['runningNow']['phase']=='Manual override'
+          elif current:
+              assert state['runningNow']['name']==current.get('name'), (state['runningNow'],current)
+          else:
+              assert state['runningNow']['phase']=='Idle'
+          if cloud.get('nextEvent'):
+              assert state.get('nextChange') and state['nextChange']['name']==cloud['nextEvent']['name']
           assert len(read('/api/events')['events'])>0
           assert len(read('/api/colors')['presets'])==36
           assert len(read('/api/event-categories')['categories'])==15

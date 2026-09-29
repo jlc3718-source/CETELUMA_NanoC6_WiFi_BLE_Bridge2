@@ -3,7 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual, randomUUID } from "node:crypt
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { lightingNightDate, resolveNightEvents } from "./shared/calendar.js";
+import { lightingNightDate, resolveNightEvents } from "./night_resolver.mjs";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -11,6 +11,7 @@ const catalog=JSON.parse(readFileSync(new URL("./catalog.json",import.meta.url),
 const port=Number(process.env.JH2_PORT||8081);
 const upstreamUrl=process.env.JH2_UPSTREAM_URL||"http://127.0.0.1:8080";
 const upstreamToken=process.env.JH2_UPSTREAM_TOKEN||"";
+const resolverSha=process.env.JH2_RESOLVER_SHA||"";
 if(!upstreamToken)throw new Error("JH2_UPSTREAM_TOKEN must be configured");
 mkdirSync(dataDir,{recursive:true});
 const db=new DatabaseSync(join(dataDir,"jason-home-2.sqlite"));
@@ -179,14 +180,23 @@ async function state(){
   const a=cfg.settings,first=s.override?.scene||s.calendar?.current?.scene||(()=>{try{return JSON.parse(s.desired?.[0]?.scene||"null");}catch{return null;}})();
   const selected=meta("target",0),names=["Pool","House","Garage","Shed"],ready=new Set(s.eufy?.readyNames||[]);
   const scene=first||{power:false,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
-  const scheduled=s.calendar?.current||{};
+  const scheduled=s.calendar?.current||null;
+  const runningNow=s.override?.active
+    ? {id:"manual-override",name:"Manual override",effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Manual override",schedule2:false}
+    : scheduled
+      ? {id:scheduled.id||"",name:scheduled.name||"Scheduled scene",effect:scheduled.scene?.effect||scene.effect||"Solid / Static",
+          brightness:Number(scheduled.scene?.brightness??scene.brightness)||75,
+          phase:String(scheduled.id||"").startsWith("white-override")?"White override":scheduled.schedule2?"Schedule 2":"Schedule 1",schedule2:!!scheduled.schedule2}
+      : {id:"",name:"No scheduled scene running",effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Idle",schedule2:false};
+  const nextChange=s.nextEvent?{name:s.nextEvent.name||"Next change",at:s.nextEvent.at||null,phase:s.nextEvent.phase||"",source:s.nextEvent.source||""}:null;
   const today=localDay(new Date()),night=lightingNightDate(cfg,new Date(),nightLocation.lat,nightLocation.lon,nightLocation.tz);
   const tonight=nightEvents(cfg,night),single=tonight.length===1?tonight[0]:null,id=single?.id||"";
   const scheduledEvent={name:tonight.length?tonight.map(e=>e.name).join("\n"):"Nothing scheduled for tonight",id,
     events:tonight,night,enabled:a.enabled!==false,toggleable:!!single,upcoming:false,type:id.includes("::factory:")?"factoryPromotion":id.startsWith("schedule-")?"customSchedule":id?"builtin":"none",
     custom:id.startsWith("schedule-"),factoryLightId:id.includes("::factory:")?Number(id.split("::factory:")[1]):undefined};
   return {firmwareVersion:"Jason Home 2 • Oracle Web",power:!!scene.power,brightness:scene.brightness,speed:scene.speed,
-    running:{name:scheduled.name||meta("running_name","Jason Home 2"),effect:scene.effect,colors:rgb(scene.colors)},
+    running:{name:runningNow.name,effect:scene.effect,colors:rgb(scene.colors)},runningNow,nextChange,
+    resolverAuthority:{oracleBuild:s.build?.sha||"",resolverBuild:resolverSha,inSync:!!resolverSha&&resolverSha===s.build?.sha},
     settings:{on:clock(a.on),off:clock(a.off),lead:a.lead,trail:a.trail,overlap:Number(a.overlap)||0,
       tz:"America/New_York",scheduler:a.enabled,scheduler2:a.schedule2Enabled,
       whiteOverride1:a.whiteOverride1Enabled!==false,whiteOverride2:a.whiteOverride2Enabled!==false,schedule1StartAtDusk:a.startAtDusk,
