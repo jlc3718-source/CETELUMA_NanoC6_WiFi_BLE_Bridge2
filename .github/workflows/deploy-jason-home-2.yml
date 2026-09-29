@@ -131,10 +131,15 @@ jobs:
               assert state['runningNow']['phase']=='Manual override'
           elif current:
               assert state['runningNow']['name']==current.get('name'), (state['runningNow'],current)
+              if not str(current.get('id') or '').startswith('white-override'):
+                  assert current.get('id') in [e['id'] for e in expected], (current,expected)
           else:
               assert state['runningNow']['phase']=='Idle'
           if cloud.get('nextEvent'):
               assert state.get('nextChange') and state['nextChange']['name']==cloud['nextEvent']['name']
+          print('Running now:', json.dumps(state.get('runningNow')))
+          print('Tonight:', json.dumps([{'id':e.get('id'),'name':e.get('name')} for e in expected]))
+          print('Next change:', json.dumps(state.get('nextChange')))
           assert len(read('/api/events')['events'])>0
           assert len(read('/api/colors')['presets'])==36
           assert len(read('/api/event-categories')['categories'])==15
