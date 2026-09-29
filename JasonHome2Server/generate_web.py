@@ -30,6 +30,11 @@ text = text.replace('async function post(e,t,n=12e3)',
                     'async function post(e,t,n=45e3)', 1)
 text = text.replace('setInterval(refreshVisibleState,30e3)',
                     'setInterval(refreshVisibleState,120e3)', 1)
+old_overlap = '$("overlapMode").addEventListener("change",overlapHelp)'
+new_overlap = '$("overlapMode").addEventListener("change",async()=>{overlapHelp();const e=$("overlapMode").value;status("Saving overlap behavior…");try{const t=await post("/api/settings",{overlap:e});settingsDirty.delete("overlapMode"),applyState(t),status("Overlap behavior saved — schedule refreshed.")}catch(t){status("Overlap change failed: "+t.message),await loadState()}})'
+if text.count(old_overlap) != 1:
+    raise SystemExit("Jason Home 2 overlap handler source changed")
+text = text.replace(old_overlap, new_overlap, 1)
 text = text.replace('<script src="v3_mockup.js"></script>',
                     '<script src="v3_mockup.js"></script>\n<script src="night_calendar.js"></script>', 1)
 old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
