@@ -111,7 +111,7 @@
       .jh2NightColors{display:flex;gap:5px;flex-wrap:wrap}
       .jh2NightColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}
     `;document.head.append(style);
-    window.addEventListener("anderson-scheduled-event",()=>refresh(false));
+    window.addEventListener("anderson-scheduled-event",()=>refresh(true));
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(false)});
     setInterval(()=>refresh(false),60000);
     refresh(true);
