@@ -123,7 +123,7 @@
       let labelText=nextLabel.querySelector(".jh2NextLabelText"),choice=nextLabel.querySelector(".jh2TonightOptionsButton");
       if(!labelText||!choice){
         nextLabel.replaceChildren();labelText=document.createElement("span");labelText.className="jh2NextLabelText";
-        choice=document.createElement("button");choice.type="button";choice.className="btn jh2TonightOptionsButton";choice.textContent="Tonight options";
+        choice=document.createElement("button");choice.type="button";choice.className="btn jh2TonightOptionsButton";choice.textContent="Other Options for Tonight";
         choice.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();openTonightChooser()});
         nextLabel.append(labelText,choice);
       }
