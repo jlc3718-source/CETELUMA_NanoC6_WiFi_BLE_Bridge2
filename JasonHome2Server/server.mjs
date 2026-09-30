@@ -1,5 +1,5 @@
 import http from "node:http";
-import { createHmac, randomBytes, timingSafeEqual, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual, randomUUID, createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -20,33 +20,20 @@ function normalizeEffects(value){
   return value;
 }
 
-const MASTER_EVENT_ID="master";
-const MASTER_COLORS=[0xff0000,0xfffffa,0x0d00ff];
-const MASTER_PHASES=[
-  {effect:"Flow1",speed:2,minutes:8,shift:0},
-  {effect:"Breathe",speed:1,minutes:6,shift:1},
-  {effect:"Streamlight",speed:3,minutes:6,shift:2},
-  {effect:"Twinkle",speed:2,minutes:5,shift:0},
-  {effect:"Flow2",speed:2,minutes:8,shift:2},
-  {effect:"Cycle",speed:3,minutes:6,shift:1},
-  {effect:"Breathe",speed:2,minutes:5,shift:0},
-  {effect:"Streamlight",speed:4,minutes:5,shift:2}
-];
-function ensureMasterEvent(cfg){
-  if(!cfg||!Array.isArray(cfg.events))return null;
-  let master=cfg.events.find(e=>e.id===MASTER_EVENT_ID);
-  if(!master){
-    const labor=cfg.events.find(e=>e.id==="evt144")||{kind:"Holiday",rule:"NthWeekday",month:9,day:1,weekday:1,nth:1,offsetDays:0,durationDays:1,categoryIndex:0,major:true};
-    master={...JSON.parse(JSON.stringify(labor)),id:MASTER_EVENT_ID,name:"Master",effect:"Flow1",speed:2,colors:[...MASTER_COLORS],enabled:true,favorite:false,creativePhases:MASTER_PHASES.map(x=>({...x}))};
-    cfg.events.push(master);
-  }
-  master.name="Master";master.colors=[...MASTER_COLORS];
-  if(!Array.isArray(master.creativePhases)||master.creativePhases.length!==8)master.creativePhases=MASTER_PHASES.map(x=>({...x}));
-  return master;
-}
+const AI_MODEL="gpt-5.6-luna";
+const AI_EFFECTS=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"];
+const AI_SYSTEM=`You are the Jason Home lighting designer. Hold a natural back-and-forth conversation, offer concrete design ideas, and revise earlier ideas when asked.
+You can only design using these native effects: Static, Flow1, Flow2, Cycle, Streamlight, Twinkle, Breathe.
+Speeds are 1-10 in the UI, but prefer 1-5 for scheduled shows unless the user specifically asks for faster. Pool and Shed are physically reversed by the controller automatically; do not compensate in the recipe.
+A draft can have 1-8 layers. Each layer has effect, speed, minutes, and shift. shift rotates the palette order: 0 normal, 1 one step, 2 two steps, etc.
+If the user is brainstorming or asking for alternatives, reply conversationally and draft may be null. If they have described a concrete show, provide a draft.
+target_event should be the exact holiday/event name when possible (for example Christmas Day, Halloween, Independence Day), otherwise date may be YYYY-MM-DD.
+Return JSON only with this shape:
+{"reply":"natural conversational response","draft":null or {"name":"short show name","target_event":"event name or empty","date":"YYYY-MM-DD or empty","brightness":1-100,"colors":["#RRGGBB"],"layers":[{"effect":"native effect","speed":1-10,"minutes":2-30,"shift":0-7}]}}
+Never claim a draft has been applied or scheduled; the user must press a button.`;
 function creativeLayerCount(e){
+
   const name=String(e?.name||"").toLowerCase(),factory=String(e?.id||"").includes("::factory:");
-  if(e?.id===MASTER_EVENT_ID)return 8;
   const colors=Array.isArray(e?.colors)?e.colors:[];
   if(factory)return 3;
   if(/new year.?s eve|new year.?s day|halloween|christmas day|christmas eve|independence day|mardi gras|diwali|lunar new year|valentine/.test(name))return 4;
