@@ -138,10 +138,23 @@ function recordAiChatUsage(payload){
 function markAiUsageExhausted(){
   const usage=currentAiUsage();usage.neurons=Math.max(AI_DAILY_NEURON_LIMIT,Number(usage.neurons)||0);usage.updatedAt=new Date().toISOString();put("ai_usage",usage);
 }
+function aiUsageBaseline(usage){
+  const existing=meta("ai_usage_baseline",null);
+  if(existing?.day===usage.day)return existing;
+  if(usage.day==="2026-09-30"){
+    const baseline={day:usage.day,total:70.21,trackedAt:Number(usage.neurons)||0,capturedAt:"2026-09-30T14:13:00Z",source:"Cloudflare Workers AI usage screenshot"};
+    put("ai_usage_baseline",baseline);return baseline;
+  }
+  return null;
+}
 function aiUsageState(){
-  const usage=currentAiUsage(),used=Math.max(0,Number(usage.neurons)||0),remaining=Math.max(0,AI_DAILY_NEURON_LIMIT-used);
-  return {limit:AI_DAILY_NEURON_LIMIT,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,percent:Math.min(100,Math.round((used/AI_DAILY_NEURON_LIMIT)*1000)/10),
-    day:usage.day,resetAt:"00:00 UTC",source:"estimated",note:"Jason Home estimate from this app's Cloudflare AI calls; Cloudflare account usage is authoritative."};
+  const usage=currentAiUsage(),tracked=Math.max(0,Number(usage.neurons)||0),baseline=aiUsageBaseline(usage);
+  const combined=baseline?Math.max(0,Number(baseline.total)||0)+Math.max(0,tracked-Math.max(0,Number(baseline.trackedAt)||0)):tracked;
+  const used=Math.min(AI_DAILY_NEURON_LIMIT,combined),remaining=Math.max(0,AI_DAILY_NEURON_LIMIT-used);
+  return {limit:AI_DAILY_NEURON_LIMIT,used:Math.round(used*100)/100,remaining:Math.round(remaining*100)/100,percent:Math.min(100,Math.round((used/AI_DAILY_NEURON_LIMIT)*1000)/10),
+    day:usage.day,resetAt:"00:00 UTC",source:baseline?"cloudflare-baseline":"estimated",
+    baseline:baseline?{total:baseline.total,capturedAt:baseline.capturedAt}:null,
+    note:baseline?"Cloudflare actual baseline plus Jason Home usage after that reading.":"Jason Home estimate from this app's Cloudflare AI calls; Cloudflare account usage is authoritative."};
 }
 async function cloudflareAiRun(model,input,{timeout=45000}={}){
   const account=cloudflareAiAccount(),token=cloudflareAiToken();
