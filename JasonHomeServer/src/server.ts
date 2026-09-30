@@ -578,29 +578,10 @@ function saveFactoryPromotionGroup(input:any){
   const updated=factoryPromotionRows(calendarConfig());
   return {enabled,group:factoryPromotionGroupState(updated),promotions:updated};
 }
-const MASTER_PHASES=[
-  {effect:"Flow1",speed:2,minutes:8,shift:0},
-  {effect:"Breathe",speed:1,minutes:6,shift:1},
-  {effect:"Streamlight",speed:3,minutes:6,shift:2},
-  {effect:"Twinkle",speed:2,minutes:5,shift:0},
-  {effect:"Flow2",speed:2,minutes:8,shift:2},
-  {effect:"Cycle",speed:3,minutes:6,shift:1},
-  {effect:"Breathe",speed:2,minutes:5,shift:0},
-  {effect:"Streamlight",speed:4,minutes:5,shift:2}
-];
-function masterCalendarEvent(base:CalendarConfig){
-  const existing=(base.events||[]).find((e:any)=>e.id==="master");
-  if(existing)return JSON.parse(JSON.stringify(existing));
-  const labor=(base.events||[]).find((e:any)=>e.id==="evt144");
-  const seed:any=labor||{kind:"Holiday",rule:"NthWeekday",month:9,day:1,weekday:1,nth:1,offsetDays:0,durationDays:1,categoryIndex:0,major:true};
-  return {...JSON.parse(JSON.stringify(seed)),id:"master",name:"Master",effect:"Flow1",speed:2,
-    colors:[0xff0000,0xfffffa,0x0d00ff],enabled:true,favorite:false,creativePhases:MASTER_PHASES.map(x=>({...x}))};
-}
 function effectiveCalendarConfig(base:CalendarConfig|null=calendarConfig()):CalendarConfig|null{
   if(!base)return null;
   const cfg=JSON.parse(JSON.stringify(base)) as CalendarConfig;
-  cfg.events=(cfg.events||[]).filter((e:any)=>!String(e.id||"").includes("::factory:"));
-  if(!cfg.events.some((e:any)=>e.id==="master"))cfg.events.push(masterCalendarEvent(base));
+  cfg.events=(cfg.events||[]).filter((e:any)=>!String(e.id||"").includes("::factory:")&&String(e.id||"")!=="master");
   for(const row of factoryPromotionRows(base)){
     const e:any=row.event;
     const scene:Scene=row.scene;
