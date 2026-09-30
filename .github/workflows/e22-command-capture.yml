@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: jason-home-cloudflare-rebuild
-      - name: Start, read, or stop isolated Shed capture
+      - name: Start, read, stop, or inventory command capture
         shell: bash
         run: |
           set -euo pipefail
@@ -41,6 +41,19 @@ jobs:
               curl -fsS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
                 -d '{}' http://127.0.0.1:8080/api/mqtt-capture/stop >/tmp/e22-action.json
               ;;
+            counts)
+              python3 - "$TOKEN" <<'PY' >/tmp/e22-action.json
+          import json,sys,urllib.request
+          token=sys.argv[1]
+          results={}
+          for target in ['Pool','House','Garage','Shed']:
+              data=json.dumps({'target':target}).encode()
+              request=urllib.request.Request('http://127.0.0.1:8080/api/mqtt-probe',data,{
+                  'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              results[target]=json.load(urllib.request.urlopen(request,timeout=45))
+          print(json.dumps({'targets':results}))
+          PY
+              ;;
             *) echo "Unknown capture action: $ACTION" >&2; exit 2;;
           esac
           python3 - <<'PY'
@@ -52,7 +65,7 @@ jobs:
           with open('.capture/e22-latest.json','w') as f:
               json.dump(out,f,indent=2,sort_keys=True)
               f.write('\n')
-          if request['action']!='stop':
+          if request['action'] in ('start','status'):
               if capture.get('target')!='Shed': raise SystemExit('Capture is not isolated to Shed')
               if not capture.get('active'): raise SystemExit('Shed capture is not active')
           print(json.dumps(out,indent=2,sort_keys=True))
@@ -65,5 +78,5 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add .capture/e22-latest.json
           git diff --cached --quiet && exit 0
-          git commit -m "Capture Shed E22 command snapshot"
+          git commit -m "Save lighting command capture snapshot"
           git push origin HEAD:jason-home-cloudflare-rebuild
