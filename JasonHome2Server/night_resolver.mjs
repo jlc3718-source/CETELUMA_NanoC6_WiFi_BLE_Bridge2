@@ -78,6 +78,38 @@ export function resolveNightEvents(cfg,day,lat,lon,tz){
   return winner?[eventFromId(cfg,winner.id,winner)]:[];
 }
 
+// All events that legitimately qualify for a lighting night, independent of
+// whether Rotate Nightly happened to choose a different winner.
+export function resolveNightCandidates(cfg,day,lat,lon,tz){
+  if(!cfg?.settings?.enabled)return [];
+  const bounds=nightBounds(cfg,day,lat,lon,tz);
+  if(bounds.end<=bounds.start)return [];
+  const noWhite={...cfg,settings:{...cfg.settings,whiteOverride1Enabled:false,whiteOverride2Enabled:false,overlap:2}};
+  const instant=new Date(Math.min(bounds.end-1,bounds.start+1000));
+  const combined=resolveCalendar(noWhite,instant,lat,lon,tz);
+  const ids=combinedIds(combined);
+  if(ids.length)return ids.map(id=>eventFromId(cfg,id));
+  return combined?[eventFromId(cfg,combined.id,combined)]:[];
+}
+
+// Resolve the selected candidate through the same authoritative calendar
+// resolver so brightness, creative phase, speed and palette all match what
+// that event would be doing at this point in the night.
+export function resolveNightCandidateScene(cfg,day,id,now,lat,lon,tz){
+  const source=sourceFor(cfg,id);if(!source)return null;
+  const bounds=nightBounds(cfg,day,lat,lon,tz);
+  const stop=bounds.schedule2End??bounds.end;
+  if(stop<=bounds.start)return null;
+  const filtered={...cfg,
+    settings:{...cfg.settings,whiteOverride1Enabled:false,whiteOverride2Enabled:false,overlap:0},
+    events:(cfg.events||[]).filter(x=>x.id===id),
+    customSchedules:(cfg.customSchedules||[]).filter(x=>x.id===id)
+  };
+  const nowMs=now instanceof Date?now.getTime():Number(now);
+  const at=Number.isFinite(nowMs)&&nowMs>=bounds.start&&nowMs<stop?nowMs:Math.min(stop-1,bounds.start+1000);
+  return resolveCalendar(filtered,new Date(at),lat,lon,tz)?.scene||null;
+}
+
 export function lightingNightDate(cfg,now,lat,lon,tz){
   const today=localDay(now,tz),yesterday=addDays(today,-1);
   if(cfg?.settings?.enabled){
