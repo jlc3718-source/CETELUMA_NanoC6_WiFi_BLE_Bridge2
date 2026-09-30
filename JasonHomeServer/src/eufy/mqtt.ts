@@ -28,9 +28,14 @@ export interface MqttSendResult {
 const preferredConnectHost=new Map<string,string>();
 const dnsCache=new Map<string,{until:number;ips:string[]}>();
 
+export function effectReportMatches(report:Record<string,unknown>|undefined,effectId:number):boolean|null{
+  if(!report)return null;
+  const ids=[report.effectId,report.cloudEffectId].filter((v):v is number=>typeof v==="number"&&Number.isFinite(v));
+  return ids.length?ids.includes(effectId):null;
+}
 export function mqttCompletionStatus(expectedIds:number[],ackedIds:number[],requireReport:boolean,report?:Record<string,unknown>){
   const acked=new Set(ackedIds),missing=expectedIds.filter(id=>!acked.has(id));
-  return {brokerAccepted:missing.length===0,deviceReported:!!report,missing,complete:missing.length===0&&(!requireReport||!!report)};
+  return {brokerAccepted:missing.length===0,deviceReported:!!report,missing,complete:missing.length===0&&(!requireReport||report?.cmd===0x0a00)};
 }
 async function withTimeout<T>(promise:Promise<T>,timeoutMs:number,label:string,onTimeout?:()=>void):Promise<T>{
   let timer:any;
@@ -75,14 +80,27 @@ class Reader{
 }
 function topics(t:MqttTarget){const b=`eufy_life/${t.model}/${t.serial}`;return [`cmd/${b}/app/res`,`cmd/${b}/res`,`synq/${b}/state_info`,`cmd/${b}/app/ota/res`];}
 
-function decodeDeviceFrame(payload:Buffer,target:MqttTarget):Record<string,unknown>|null{
+export function decodeDeviceFrame(payload:Buffer,target:MqttTarget):Record<string,unknown>|null{
   try{
     const env=JSON.parse(payload.toString("utf8")),outer=typeof env.payload==="string"?JSON.parse(env.payload):env.payload;if(!outer)return null;
     const sn=outer.sn||outer.device_sn||target.serial;if(sn!==target.serial)return null;
     const nested=Buffer.from(outer.data,"base64").toString("utf8"),frame=Buffer.from(JSON.parse(nested).data,"hex");
     if(frame.length<10||frame[0]!==0xff||frame[1]!==9)return null;let x=0;for(const v of frame)x^=v;if(x!==0)return null;
     const cmd=(frame[7]<<8)|frame[8];if(cmd!==0x0a00&&cmd!==0x0204)return null;const result:any={cmd};const start=(cmd>>>8)===10?10:9;
-    for(let i=start;i+1<frame.length-1;){const tag=frame[i],len=frame[i+1];i+=2;if(i+len>frame.length-1)break;if((tag===0xa1||tag===0xa2)&&len>0&&len<=4){let v=0;for(let k=0;k<len;k++)v|=frame[i+k]<<(8*k);if(tag===0xa1)result.power=v!==0;else result.brightness=v;}i+=len;}
+    for(let i=start;i+1<frame.length-1;){
+      const tag=frame[i],len=frame[i+1];i+=2;if(i+len>frame.length-1)break;
+      if(len>0&&len<=4){
+        let v=0;for(let k=0;k<len;k++)v+=frame[i+k]*2**(8*k);
+        if(tag===0xa1)result.power=v===1;
+        else if(tag===0xa2)result.brightness=v;
+        else if(tag===0xa3)result.lampCount=v;
+        else if(tag===0xa4)result.effectId=v;
+        else if(tag===0xa5)result.colorGradient=v===1;
+        else if(tag===0xa6)result.cloudEffectId=v;
+        else if(tag===(cmd===0x0a00?0xa8:0xa7))result.effectMode=v;
+      }
+      i+=len;
+    }
     return result;
   }catch{return null;}
 }

@@ -18,8 +18,10 @@ assert.equal(s.brokerAccepted,true);
 assert.equal(s.deviceReported,false);
 
 s=mqttCompletionStatus([2],[2],true,{cmd:0x0204});
-assert.equal(s.complete,true);
+assert.equal(s.complete,false);
 assert.equal(s.brokerAccepted,true);
 assert.equal(s.deviceReported,true);
+s=mqttCompletionStatus([2],[2],true,{cmd:0x0a00});
+assert.equal(s.complete,true);
 
 console.log("MQTT completion regression: PASS");

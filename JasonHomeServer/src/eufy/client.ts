@@ -1,6 +1,6 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
-import { mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
+import { effectReportMatches, mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
 import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
@@ -105,7 +105,12 @@ export class EufyClient {
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
     const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse);
-    return this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}],3200);
+    const result=await this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"}],3200);
+    const state=await this.status(name);
+    const effectId=Buffer.from(fx.fields).readUIntLE(2,fx.fields[1]);
+    const verified=fx.opcode===0x020d?effectReportMatches(state.report,effectId):null;
+    if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
+    return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified};
   }
   async factoryPresets():Promise<{presets:EufyFactoryPreset[];rawDiscover:unknown;scanned:number}>{
     this.requireLogin();

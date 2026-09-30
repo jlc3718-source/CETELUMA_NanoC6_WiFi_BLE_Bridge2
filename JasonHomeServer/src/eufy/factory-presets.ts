@@ -113,7 +113,7 @@ function inv3(m:number[][]){
 }
 const MRGB=[[RGBCW_X.R[0],RGBCW_X.G[0],RGBCW_X.B[0]],[RGBCW_X.R[1],RGBCW_X.G[1],RGBCW_X.B[1]],[RGBCW_X.R[2],RGBCW_X.G[2],RGBCW_X.B[2]]];
 const MRGB_INV=inv3(MRGB);
-function rgbcw(hex:string):Uint8Array{
+export function rgbcw(hex:string):Uint8Array{
   if(!HEX.test(hex))throw new Error("Factory preset color is not six-digit RGB");
   const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);
   const target=mul3(MRGB,[dec(r),dec(g),dec(b)]);
