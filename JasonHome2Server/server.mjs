@@ -145,6 +145,31 @@ async function callLightingAi(message){
   put("ai_thread",next);if(draft)put("ai_draft",draft);
   return {reply,draft:draft||meta("ai_draft",null),thread:next};
 }
+async function transcribeAiVoice(audioBase64,mime){
+  const key=openAiKey();if(!key)throw fail(409,"AI is not connected yet.");
+  const raw=String(audioBase64||"");if(!raw)throw fail(400,"No voice audio was received");
+  let bytes;try{bytes=Buffer.from(raw,"base64");}catch{throw fail(400,"Voice audio could not be decoded");}
+  if(bytes.length<800)throw fail(400,"Voice recording was too short");
+  if(bytes.length>5_000_000)throw fail(413,"Voice recording is too large");
+  const type=/^(audio\/(webm|ogg|mp4|mpeg|wav|x-m4a))$/i.test(String(mime||""))?String(mime):"audio/webm";
+  const ext=type.includes("ogg")?"ogg":type.includes("mp4")||type.includes("m4a")?"m4a":type.includes("mpeg")?"mp3":type.includes("wav")?"wav":"webm";
+  const form=new FormData();form.append("file",new Blob([bytes],{type}),"voice-turn."+ext);form.append("model","gpt-4o-mini-transcribe");form.append("language","en");
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
+  try{
+    const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{authorization:"Bearer "+key},body:form,signal:controller.signal});
+    const payload=await response.json().catch(()=>({}));if(!response.ok)throw fail(502,payload?.error?.message||"Voice transcription failed");
+    const text=String(payload?.text||"").trim();if(!text)throw fail(400,"I did not hear any speech in that turn");return text;
+  }finally{clearTimeout(timer);}
+}
+async function synthesizeAiVoice(text){
+  const key=openAiKey();if(!key)throw fail(409,"AI is not connected yet.");
+  const response=await fetch("https://api.openai.com/v1/audio/speech",{method:"POST",headers:{authorization:"Bearer "+key,"content-type":"application/json"},
+    body:JSON.stringify({model:"gpt-4o-mini-tts",voice:"marin",input:String(text||"").slice(0,4096),response_format:"mp3",
+      instructions:"Speak naturally and warmly, like a helpful home-lighting designer in a casual spoken conversation. Be concise and conversational."})});
+  if(!response.ok){const payload=await response.json().catch(()=>({}));throw fail(502,payload?.error?.message||"Voice generation failed");}
+  return Buffer.from(await response.arrayBuffer()).toString("base64");
+}
+
 function normalizeEventName(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");}
 function dateKey(y,m,d){return y*10000+m*100+d;}
 function resolveAiTarget(draft,cfg){
@@ -188,7 +213,7 @@ const isSession=req=>{
 const cookie=()=>{const expires=String(Date.now()+90*86400000),sig=createHmac("sha256",secret).update(expires).digest("hex");return `jh2=${expires}.${sig}; Path=/jason-home-2; Max-Age=7776000; HttpOnly; Secure; SameSite=Strict`;};
 async function input(req){
   let text="";
-  for await(const chunk of req){text+=chunk;if(text.length>2_000_000)throw fail(413,"Request is too large");}
+  for await(const chunk of req){text+=chunk;if(text.length>8_000_000)throw fail(413,"Request is too large");}
   if(!text)return {};
   try{return JSON.parse(text);}catch{throw fail(400,"Invalid JSON");}
 }
@@ -487,6 +512,12 @@ async function route(req,res){
     const result=await callLightingAi(message);
     const cfg=await config();
     return send(res,200,{ok:true,reply:result.reply,thread:result.thread,draft:decorateAiDraft(result.draft,cfg),state:await aiState()});
+  }
+  if(method==="POST"&&path==="/api/ai/voice-turn"){
+    const body=await input(req),transcript=await transcribeAiVoice(body?.audio,body?.mime);
+    const result=await callLightingAi(transcript),cfg=await config(),draft=decorateAiDraft(result.draft,cfg);
+    let speech="";try{speech=await synthesizeAiVoice(result.reply);}catch(e){console.error("[AI voice speech]",e?.message||e);}
+    return send(res,200,{ok:true,transcript,reply:result.reply,draft,state:await aiState(),audioBase64:speech,audioMime:"audio/mpeg"});
   }
   if(method==="POST"&&path==="/api/ai/reset"){
     put("ai_thread",[]);put("ai_draft",null);return send(res,200,await aiState());
