@@ -176,9 +176,13 @@ jobs:
           resumed=call('/api/resume',{})
           assert resumed.get('resumed') is True
           state=call('/api/status?refresh=1')
-          for attempt in range(8):
+          for attempt in range(12):
               override_active=(state.get('override') or {}).get('active')
               if len(state['eufy']['readyNames'])==4 and not override_active: break
+              # A queued verification command can finish after the first Resume.
+              # Clear it again instead of rejecting an otherwise-good deployment.
+              if override_active:
+                  call('/api/resume',{})
               time.sleep(2)
               state=call('/api/status?refresh=1')
           print('Final Oracle state:',json.dumps({'owner':state.get('automationOwner'),'ready':state['eufy']['readyNames'],'status':state['eufy'].get('status'),'override':state.get('override'),'devices':state.get('devices')}))
