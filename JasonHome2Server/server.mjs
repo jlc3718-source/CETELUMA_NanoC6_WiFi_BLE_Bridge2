@@ -175,25 +175,6 @@ async function aiState(){
   return {ok:true,configured:!!openAiKey(),model:AI_MODEL,thread:meta("ai_thread",[]),draft,applied};
 }
 
-const aiSecretKey=createHash("sha256").update("jason-home-ai:"+String(secret)).digest();
-function encryptAiKey(value){
-  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",aiSecretKey,iv);
-  const data=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]),tag=cipher.getAuthTag();
-  return {v:1,iv:iv.toString("base64"),tag:tag.toString("base64"),data:data.toString("base64")};
-}
-function decryptAiKey(box){
-  if(!box||box.v!==1)return "";
-  try{
-    const decipher=createDecipheriv("aes-256-gcm",aiSecretKey,Buffer.from(box.iv,"base64"));
-    decipher.setAuthTag(Buffer.from(box.tag,"base64"));
-    return Buffer.concat([decipher.update(Buffer.from(box.data,"base64")),decipher.final()]).toString("utf8");
-  }catch{return "";}
-}
-function aiApiKey(){
-  const env=String(process.env.OPENAI_API_KEY||"").trim();
-  if(env)return env;
-  return decryptAiKey(meta("ai_openai_key",null)).trim();
-}
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const secureEqual=(a,b)=>{const x=Buffer.from(String(a)),y=Buffer.from(String(b));return x.length===y.length&&timingSafeEqual(x,y);};
@@ -529,7 +510,7 @@ async function route(req,res){
     if(!target.year)throw fail(409,"I need a specific future date or a recognizable scheduled event before I can apply this once");
     const id="ai-once-"+randomUUID().slice(0,12),first=draft.layers[0],expiresAt=new Date(Date.UTC(target.year,target.month-1,target.day+1,14,0,0)).toISOString();
     const item={id,name:String(draft.name||"AI Light Show"),kind:"AI One-Time",rule:"YearTable",month:target.month,day:target.day,weekday:0,nth:0,offsetDays:0,durationDays:1,
-      effect:first.effect,speed:first.speed,colors:colorInts(draft.colors),enabled:true,favorite:false,categoryIndex:Number(target.source?.categoryIndex||0),major:true,
+      effect:first.effect,speed:first.speed,brightness:Math.round(clamp(draft.brightness??100,1,100)),colors:colorInts(draft.colors),enabled:true,favorite:false,categoryIndex:Number(target.source?.categoryIndex||0),major:true,
       dateRuleSourceId:id,creativePhases:draft.layers.map(p=>({...p})),aiOneTime:true,expiresAt,aiReplaceEventId:target.source?.id||""};
     await mutateCalendar(cfg=>{cfg.events=(cfg.events||[]).filter(e=>e.id!=="master");cfg.special=(cfg.special||[]).filter(x=>x.id!=="master");cfg.events.push(item);cfg.special.push({id,year:target.year,month:target.month,day:target.day});});
     put("ai_thread",[...meta("ai_thread",[]),{role:"assistant",text:"Applied "+item.name+" one time for "+[target.year,String(target.month).padStart(2,"0"),String(target.day).padStart(2,"0")].join("-")+". It will remove itself after that lighting night."}].slice(-30));
