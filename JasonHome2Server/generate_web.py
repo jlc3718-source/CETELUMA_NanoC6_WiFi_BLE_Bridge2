@@ -14,7 +14,7 @@ def native_effect_choices(text):
     text = re.sub(r'const labels=[{].*?[}];', 'const labels='+json.dumps(dict(zip(names,names)))+';', text)
     descriptions={"Static":"Hold the selected color","Flow1":"Flow along the string","Flow2":"Flow in the opposite direction","Cycle":"Cycle through selected colors","Streamlight":"Moving stream of selected colors","Twinkle":"Twinkling selected colors","Breathe":"Smooth brightness rise and fall"}
     text = re.sub(r'const descriptions=[{].*?[}];', 'const descriptions='+json.dumps(descriptions)+';', text)
-    text = text.replace('const effect=node.dataset.effect,', 'const effect=({Static:"Solid",Flow1:"Chase",Flow2:"Chase",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"}[node.dataset.effect]||node.dataset.effect),')
+    text = text.replace('const effect=node.dataset.effect,', 'const effect=({Static:"Solid",Flow1:"Flow1",Flow2:"Flow2",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"}[node.dataset.effect]||node.dataset.effect),')
     return text
 
 def ten_speed_settings(text):
