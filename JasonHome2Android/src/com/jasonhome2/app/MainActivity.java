@@ -1,6 +1,8 @@
 package com.jasonhome2.app;
 
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -8,6 +10,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
@@ -21,9 +24,11 @@ import android.widget.TextView;
 public final class MainActivity extends Activity {
     private static final String URL = "https://150.136.245.51/jason-home-2/";
     private static final String HOST = "150.136.245.51";
+    private static final int REQUEST_RECORD_AUDIO = 41;
     private WebView web;
     private LinearLayout error;
     private boolean loadFailed=false;
+    private PermissionRequest pendingAudioRequest;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -41,9 +46,31 @@ public final class MainActivity extends Activity {
         web.getSettings().setAllowUniversalAccessFromFileURLs(false);
         web.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.getSettings().setSafeBrowsingEnabled(true);
+        web.getSettings().setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> {
+                    Uri origin=request.getOrigin();
+                    boolean trusted=origin!=null && "https".equals(origin.getScheme()) && HOST.equals(origin.getHost());
+                    boolean wantsAudio=false;
+                    for(String resource:request.getResources()){
+                        if(PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)){wantsAudio=true;break;}
+                    }
+                    if(!trusted || !wantsAudio){request.deny();return;}
+                    if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){
+                        request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                    }else{
+                        pendingAudioRequest=request;
+                        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQUEST_RECORD_AUDIO);
+                    }
+                });
+            }
+            @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+                if(pendingAudioRequest==request)pendingAudioRequest=null;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon){
                 loadFailed=false;
@@ -100,6 +127,16 @@ public final class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
         web.loadUrl(URL);
+    }
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode==REQUEST_RECORD_AUDIO && pendingAudioRequest!=null){
+            PermissionRequest request=pendingAudioRequest;
+            pendingAudioRequest=null;
+            if(grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED)
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            else request.deny();
+        }
     }
     @Override public void onBackPressed() {
         if(error!=null && error.getVisibility()==View.VISIBLE){error.setVisibility(View.GONE);web.loadUrl(URL);}
