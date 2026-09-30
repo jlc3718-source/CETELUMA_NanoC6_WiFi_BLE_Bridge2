@@ -5,7 +5,7 @@ import type { Scene } from "./types.js";
 export interface CalendarEvent {
   id:string; name:string; kind:string; rule:string;
   month:number; day:number; weekday:number; nth:number; offsetDays:number; durationDays:number;
-  effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean;
+  effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean; brightness?:number;
   categoryIndex:number; major:boolean; dateRuleSourceId?:string;
   creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number}>;
   aiOneTime?:boolean; expiresAt?:string; aiReplaceEventId?:string;
@@ -198,9 +198,11 @@ function sceneFor(e:CalendarEvent,brightness:number,showPosition=0):Scene{
   const program=creativeProgram(e),cycle=program.reduce((n,p)=>n+p.minutes,0),at=((Math.floor(showPosition)%cycle)+cycle)%cycle;
   let cursor=0,chosen=program[0];
   for(const p of program){cursor+=p.minutes;if(at<cursor){chosen=p;break;}}
+  const eventBrightness=Number(e.brightness);
+  const level=brightness<100?brightness:(Number.isFinite(eventBrightness)&&eventBrightness>0?eventBrightness:brightness);
   return {
     power:true,
-    brightness:clamp(brightness,1,100),
+    brightness:clamp(level,1,100),
     effect:chosen.effect,
     colors:rotatePalette(colors,chosen.shift||0),
     speed:chosen.speed
@@ -316,7 +318,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       offsetDays:Number(raw.offsetDays)||0,durationDays:Math.max(1,Number(raw.durationDays)||1),
       effect:canonicalEffect(raw.effect),speed:clamp(Number(raw.speed)||3,1,10),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
-      enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
+      enabled:raw.enabled!==false,favorite:!!raw.favorite,brightness:raw.brightness==null?undefined:clamp(Number(raw.brightness)||100,1,100),categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
       dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined,
       creativePhases:Array.isArray(raw.creativePhases)?raw.creativePhases.slice(0,8).map((p:any)=>({
         effect:canonicalEffect(p?.effect),speed:clamp(Number(p?.speed)||2,1,5),minutes:clamp(Number(p?.minutes)||6,2,30),shift:Math.trunc(Number(p?.shift)||0)
