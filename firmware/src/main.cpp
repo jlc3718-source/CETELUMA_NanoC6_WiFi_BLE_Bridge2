@@ -409,7 +409,7 @@ String stateJson(){
   }else{String s1Start=s.schedule1StartAtDusk?"dusk":fmtDisplayTime(s.onMinutes),s2End=s.schedule2EndAtDawn?"dawn":fmtDisplayTime(s.schedule2EndMinutes);d["scheduleWindow"]=String("Schedule 1 ")+s1Start+" - "+fmtDisplayTime(s.offMinutes)+" • Schedule 2 "+fmtDisplayTime(s.offMinutes)+" - "+s2End+" at "+String(s.schedule2Brightness)+"%";d["nextEvent"]="Waiting for time sync";JsonObject scheduled=d["scheduledEvent"].to<JsonObject>();scheduled["name"]="Waiting for time sync";scheduled["id"]="";scheduled["enabled"]=false;scheduled["toggleable"]=false;scheduled["custom"]=false;}
   JsonObject w=d["wifi"].to<JsonObject>();w["ssid"]=WiFi.status()==WL_CONNECTED?WiFi.SSID():"";w["rssi"]=WiFi.status()==WL_CONNECTED?WiFi.RSSI():0;w["ip"]=WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString();
   JsonObject b=d["ble"].to<JsonObject>();b["connected"]=ble.connected();b["connectedCount"]=ble.connectedCount();b["name"]=ble.name();b["address"]=ble.address();b["protocol"]=ble.protocolName();b["target"]=ble.getTarget();JsonArray ca=b["controllers"].to<JsonArray>();for(uint8_t i=0;i<2;i++){auto si=ble.slotInfo(i);if(!si.address.length())continue;JsonObject c=ca.add<JsonObject>();c["slot"]=i;c["name"]=si.name;c["address"]=si.address;c["protocol"]=si.protocol;c["connected"]=si.connected;}
-  d["manualOverride"]=manualOverride;String out;serializeJson(d,out);return out;
+  d["manualOverride"]=manualOverride;d["tonightOptionOverride"]=tonightOptionOverride;if(tonightOptionOverride){d["tonightOptionId"]=tonightOptionId;d["tonightOptionUntil"]=(int64_t)tonightOptionUntil;}String out;serializeJson(d,out);return out;
 }
 void sendJson(const String&s,int code=200){server.sendHeader("Cache-Control","no-store");server.send(code,"application/json",s);}
 bool body(JsonDocument&d){DeserializationError e=deserializeJson(d,server.arg("plain"));if(e){server.send(400,"text/plain","Invalid JSON");return false;}return true;}
@@ -469,7 +469,12 @@ void applyRunning(bool force=false){
   ble.applyTheme(runningTheme,brightness,speedLevel,millis(),force);
 }
 void evaluateSchedule(bool force=false){
-  if(manualOverride||!timeValid())return;tm l{};time_t n=time(nullptr);localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
+  if(!timeValid())return;time_t n=time(nullptr);
+  if(tonightOptionOverride){
+    if(n<tonightOptionUntil){if(force)applyRunning(true);return;}
+    tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";
+  }
+  if(manualOverride)return;tm l{};localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
   ble.setTarget(0);brightness=100;speedLevel=1;bool schedule1Active=s.schedulerEnabled&&scheduler.inRunWindow(l);bool schedule2Active=s.schedule2Enabled&&scheduler.inSchedule2Window(l);if(!schedule1Active&&!schedule2Active){if(power){power=false;ble.setPower(false);}return;}
   tm themeLocal=l;if(schedule2Active&&!schedule1Active){int mins=l.tm_hour*60+l.tm_min;uint16_t schedule1Start=s.schedule1StartAtDusk?scheduler.civilDuskMinutes(l):s.onMinutes;if(mins<schedule1Start){themeLocal.tm_mday-=1;themeLocal.tm_isdst=-1;mktime(&themeLocal);}}
   Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=s.schedule2Brightness;bool changed=!power||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;power=true;runningTheme=t;if(changed||force)applyRunning(true);
@@ -558,10 +563,10 @@ void setupRoutes(){
   });
   server.on("/api/login-preview",HTTP_GET,[]{sendJson(loginPreviewJson());});
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
-  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
+  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
 
   server.on("/api/control",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;manualOverride=true;
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";manualOverride=true;
     if(!d["power"].isNull())power=d["power"].as<bool>();
     if(!d["brightness"].isNull())brightness=constrain(d["brightness"].as<int>(),1,100);
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
