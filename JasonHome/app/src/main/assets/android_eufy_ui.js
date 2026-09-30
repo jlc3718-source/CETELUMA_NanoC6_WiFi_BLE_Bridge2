@@ -101,6 +101,17 @@ function installAndroidEufyUi(){
     const layerName=t=>Number(t)===0?"Flow / Movement":Number(t)===1?"Color Transition / Sequence":Number(t)===2?"Blink / Twinkle":"Unknown Pattern "+String(t??"?");
     const patternSummary=p=>Array.isArray(p?.layers)&&p.layers.length?p.layers.map((l,i)=>(i+1)+". "+layerName(l?.current_layer_type)).join(" + "):"No serializable pattern layers";
     const layerColors=l=>String(l?.colors||"").split("|").map(x=>x.trim()).filter(Boolean);
+    function factoryPreviewScene(p){
+      const layers=Array.isArray(p?.layers)?p.layers:[],dominant=layers.map((x,i)=>({x,i,p:Number(x?.layer_priority)||0})).sort((a,b)=>b.p-a.p||a.i-b.i)[0]?.x||layers[0]||{};
+      const type=Number(dominant?.current_layer_type),transition=Number(dominant?.transition_mode)||0,gradient=Number(dominant?.gradient_value)||0,meteor=Number(dominant?.length_range)||0;
+      let effect="Breathe";
+      if(type===0)effect=meteor>0?"Streamlight":gradient>0?"Flow1":"Flow1";
+      else if(type===2)effect="Twinkle";
+      else if(type===1)effect=transition===0?"Breathe":transition===2?"Flow1":"Cycle";
+      const colors=[...new Set(layers.flatMap(layerColors).map(escapeColor))].slice(0,8);
+      const raw=Number(p?.speed??dominant?.layer_speed??25),speed=!Number.isFinite(raw)?3:raw<=5?1:raw<=20?2:raw<=40?3:raw<=70?4:5;
+      return {name:p?.name||("Factory "+p?.lightId),colors:colors.length?colors:["#FFFFFF"],effect,speed};
+    }
 
     function renderFactory(){
       const root=$("factoryPresetList"),search=($("factorySearch")?.value||"").trim().toLowerCase();
@@ -119,9 +130,11 @@ function installAndroidEufyUi(){
         const flags=document.createElement("div");flags.className="factoryFlags";
         const f1=document.createElement("span");f1.className="factoryFlag";f1.textContent=p.buildableE22?"E22":"E22 !";
         const f2=document.createElement("span");f2.className="factoryFlag";f2.textContent=p.buildableE120Experimental?"E120":"E120 !";
-        flags.append(f1,f2);
+        const layerBadge=document.createElement("span");layerBadge.className="tag eventLayerCount";layerBadge.textContent=String(Math.max(1,p.layers?.length||1));layerBadge.title=layerBadge.textContent+" factory layer"+(layerBadge.textContent==="1"?"":"s");
+        flags.append(layerBadge,f1,f2);
         if(p.customized){const ed=document.createElement("span");ed.className="factoryFlag edited";ed.textContent="Edited";flags.appendChild(ed);}
         info.append(name,meta,pattern,swatches,flags);
+        const mini=window.createEventMiniPreview?.(factoryPreviewScene(p));if(mini)info.appendChild(mini);
         const buttons=document.createElement("div");buttons.className="factoryButtons";
         const edit=document.createElement("button");edit.className="btn";edit.type="button";edit.textContent="Edit";
         const test=document.createElement("button");test.className="btn primary";test.type="button";test.textContent="Apply All 4";
@@ -266,7 +279,8 @@ function installAndroidEufyUi(){
       sub.textContent=(baseEvent?.when||("Matches "+p.eventName))+" • "+(scene.effect||"Factory Pattern")+" • "+speedName;
       const match=document.createElement("div");match.className="factoryScheduleMatch";match.textContent="Scheduled with "+p.eventName+" • "+p.scheduling;
       const tags=document.createElement("div");tags.className="tags";
-      const kind=document.createElement("span");kind.className="tag "+String(baseEvent?.kind||p.event?.kind||"Holiday").toLowerCase();kind.textContent=baseEvent?.kind||p.event?.kind||"Holiday";tags.appendChild(kind);
+      const kind=document.createElement("span");kind.className="tag "+String(baseEvent?.kind||p.event?.kind||"Holiday").toLowerCase();kind.textContent=baseEvent?.kind||p.event?.kind||"Holiday";
+      const layerBadge=document.createElement("span");layerBadge.className="tag eventLayerCount";layerBadge.textContent="3";layerBadge.title="3 lighting layers";tags.append(kind,layerBadge);
       info.append(title,sub,match,tags,factorySceneColorPills(scene.colors));
       const mini=window.createEventMiniPreview?.({name:p.name||("Factory "+p.lightId),colors:scene.colors||[],effect:scene.effect||"Static",speed:scene.speed||1});
       if(mini)info.appendChild(mini);
