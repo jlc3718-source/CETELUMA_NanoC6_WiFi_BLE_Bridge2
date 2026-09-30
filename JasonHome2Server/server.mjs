@@ -23,6 +23,11 @@ function normalizeEffects(value){
 const AI_MODEL=process.env.JH2_AI_MODEL||"@cf/zai-org/glm-4.7-flash";
 const AI_ASR_MODEL=process.env.JH2_AI_ASR_MODEL||"@cf/openai/whisper-large-v3-turbo";
 const AI_TTS_MODEL=process.env.JH2_AI_TTS_MODEL||"@cf/myshell-ai/melotts";
+const AI_DAILY_NEURON_LIMIT=10000;
+const AI_TEXT_INPUT_NEURONS_PER_MILLION=5500;
+const AI_TEXT_OUTPUT_NEURONS_PER_MILLION=36400;
+const AI_ASR_NEURONS_PER_MINUTE=46.63;
+const AI_TTS_NEURONS_PER_MINUTE=18.63;
 const AI_EFFECTS=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"];
 const AI_SYSTEM=`You are the Jason Home lighting designer. Hold a natural back-and-forth conversation, offer concrete design ideas, and revise earlier ideas when asked.
 You can only design using these native effects: Static, Flow1, Flow2, Cycle, Streamlight, Twinkle, Breathe.
@@ -104,6 +109,40 @@ function cloudflareAiToken(){
   catch{return "";}
 }
 function cloudflareAiConfigured(){return !!(cloudflareAiAccount()&&cloudflareAiToken());}
+function aiUsageDay(){return new Date().toISOString().slice(0,10);}
+function currentAiUsage(){
+  const day=aiUsageDay(),prior=meta("ai_usage",null);
+  if(prior?.day===day)return prior;
+  const fresh={day,neurons:0,inputTokens:0,outputTokens:0,asrMinutes:0,ttsMinutes:0,startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  put("ai_usage",fresh);return fresh;
+}
+function addAiUsage({inputTokens=0,outputTokens=0,asrMinutes=0,ttsMinutes=0}={}){
+  const usage=currentAiUsage();
+  const neurons=(Math.max(0,Number(inputTokens)||0)*AI_TEXT_INPUT_NEURONS_PER_MILLION/1e6)
+    +(Math.max(0,Number(outputTokens)||0)*AI_TEXT_OUTPUT_NEURONS_PER_MILLION/1e6)
+    +(Math.max(0,Number(asrMinutes)||0)*AI_ASR_NEURONS_PER_MINUTE)
+    +(Math.max(0,Number(ttsMinutes)||0)*AI_TTS_NEURONS_PER_MINUTE);
+  usage.neurons=Math.max(0,Number(usage.neurons)||0)+neurons;
+  usage.inputTokens=Math.max(0,Number(usage.inputTokens)||0)+Math.max(0,Number(inputTokens)||0);
+  usage.outputTokens=Math.max(0,Number(usage.outputTokens)||0)+Math.max(0,Number(outputTokens)||0);
+  usage.asrMinutes=Math.max(0,Number(usage.asrMinutes)||0)+Math.max(0,Number(asrMinutes)||0);
+  usage.ttsMinutes=Math.max(0,Number(usage.ttsMinutes)||0)+Math.max(0,Number(ttsMinutes)||0);
+  usage.updatedAt=new Date().toISOString();put("ai_usage",usage);return usage;
+}
+function recordAiChatUsage(payload){
+  const usage=payload?.usage||payload?.result?.usage||{};
+  const inputTokens=Number(usage.prompt_tokens??usage.input_tokens??0)||0;
+  const outputTokens=Number(usage.completion_tokens??usage.output_tokens??0)||0;
+  if(inputTokens||outputTokens)addAiUsage({inputTokens,outputTokens});
+}
+function markAiUsageExhausted(){
+  const usage=currentAiUsage();usage.neurons=Math.max(AI_DAILY_NEURON_LIMIT,Number(usage.neurons)||0);usage.updatedAt=new Date().toISOString();put("ai_usage",usage);
+}
+function aiUsageState(){
+  const usage=currentAiUsage(),used=Math.max(0,Number(usage.neurons)||0),remaining=Math.max(0,AI_DAILY_NEURON_LIMIT-used);
+  return {limit:AI_DAILY_NEURON_LIMIT,used:Math.round(used*10)/10,remaining:Math.round(remaining*10)/10,percent:Math.min(100,Math.round((used/AI_DAILY_NEURON_LIMIT)*1000)/10),
+    day:usage.day,resetAt:"00:00 UTC",source:"estimated",note:"Jason Home estimate from this app's Cloudflare AI calls; Cloudflare account usage is authoritative."};
+}
 async function cloudflareAiRun(model,input,{timeout=45000}={}){
   const account=cloudflareAiAccount(),token=cloudflareAiToken();
   if(!account||!token)throw fail(409,"Free AI is not connected yet. Add your Cloudflare Account ID and Workers AI API token.");
@@ -117,6 +156,7 @@ async function cloudflareAiRun(model,input,{timeout=45000}={}){
     const payload=await response.json().catch(()=>({}));
     if(!response.ok||payload?.success===false){
       const msg=payload?.errors?.[0]?.message||payload?.error?.message||"Cloudflare Workers AI request failed";
+      if(response.status===429&&/10,?000|daily free allocation|neurons/i.test(msg))markAiUsageExhausted();
       throw fail(response.status||502,msg);
     }
     return payload;
@@ -138,8 +178,10 @@ async function cloudflareAiChat(body,{timeout=60000}={}){
     const payload=await response.json().catch(()=>({}));
     if(!response.ok){
       const msg=payload?.error?.message||payload?.errors?.[0]?.message||"Cloudflare Workers AI chat request failed";
+      if(response.status===429&&/10,?000|daily free allocation|neurons/i.test(msg))markAiUsageExhausted();
       throw fail(response.status||502,msg);
     }
+    recordAiChatUsage(payload);
     return payload;
   }catch(e){
     if(e?.name==="AbortError")throw fail(504,"Cloudflare Workers AI chat request timed out");
@@ -225,7 +267,7 @@ async function callLightingAi(message){
   put("ai_thread",updated);if(draft)put("ai_draft",draft);
   return {reply,draft:draft||meta("ai_draft",null),thread:updated};
 }
-async function transcribeAiVoice(audioBase64,mime){
+async function transcribeAiVoice(audioBase64,mime,durationSeconds=0){
   if(!cloudflareAiConfigured())throw fail(409,"Free AI is not connected yet.");
   const raw=String(audioBase64||"");if(!raw)throw fail(400,"No voice audio was received");
   let bytes;try{bytes=Buffer.from(raw,"base64");}catch{throw fail(400,"Voice audio could not be decoded");}
@@ -234,14 +276,17 @@ async function transcribeAiVoice(audioBase64,mime){
   const payload=await cloudflareAiRun(AI_ASR_MODEL,{audio:raw,task:"transcribe",language:"en",vad_filter:true},{timeout:60000});
   const text=String(payload?.result?.text??payload?.text??"").trim();
   if(!text)throw fail(400,"I did not hear any speech in that turn");
+  const measured=Math.max(0,Number(durationSeconds)||0)/60,words=text.split(/\s+/).filter(Boolean).length;
+  addAiUsage({asrMinutes:measured||Math.max(.02,words/130)});
   return text;
 }
 async function synthesizeAiVoice(text){
   if(!cloudflareAiConfigured())throw fail(409,"Free AI is not connected yet.");
-  const payload=await cloudflareAiRun(AI_TTS_MODEL,{prompt:String(text||"").slice(0,4096),lang:"en"},{timeout:60000});
-  if(payload?.audio&&Buffer.isBuffer(payload.audio))return payload.audio.toString("base64");
+  const spoken=String(text||"").slice(0,4096),payload=await cloudflareAiRun(AI_TTS_MODEL,{prompt:spoken,lang:"en"},{timeout:60000});
+  const words=spoken.trim()?spoken.trim().split(/\s+/).length:0,ttsMinutes=Math.max(.02,words/160);
+  if(payload?.audio&&Buffer.isBuffer(payload.audio)){addAiUsage({ttsMinutes});return payload.audio.toString("base64");}
   const audio=payload?.result?.audio??payload?.audio??"";
-  if(typeof audio==="string"&&audio)return audio;
+  if(typeof audio==="string"&&audio){addAiUsage({ttsMinutes});return audio;}
   throw fail(502,"Free AI voice generation did not return audio");
 }
 
@@ -272,7 +317,7 @@ async function aiState(){
   const applied=(cfg.events||[]).filter(e=>e.aiOneTime===true).map(e=>{
     const sp=(cfg.special||[]).find(x=>x.id===e.id);return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",brightness:Number(e.brightness)||100,colors:rgb(e.colors),layerCount:e.creativePhases?.length||1,expiresAt:e.expiresAt||""};
   });
-  return {ok:true,configured:cloudflareAiConfigured(),provider:"Cloudflare Workers AI",freeTier:true,model:AI_MODEL,accountId:cloudflareAiConfigured()?cloudflareAiAccount():"",thread:meta("ai_thread",[]),draft,applied};
+  return {ok:true,configured:cloudflareAiConfigured(),provider:"Cloudflare Workers AI",freeTier:true,model:AI_MODEL,accountId:cloudflareAiConfigured()?cloudflareAiAccount():"",usage:aiUsageState(),thread:meta("ai_thread",[]),draft,applied};
 }
 
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};
@@ -596,13 +641,15 @@ async function route(req,res){
     return send(res,200,{ok:true,reply:result.reply,thread:result.thread,draft:decorateAiDraft(result.draft,cfg),state:await aiState()});
   }
   if(method==="POST"&&path==="/api/ai/voice-turn"){
-    const body=await input(req),transcript=await transcribeAiVoice(body?.audio,body?.mime);
+    const body=await input(req),transcript=await transcribeAiVoice(body?.audio,body?.mime,body?.durationSeconds);
     const result=await callLightingAi(transcript),cfg=await config(),draft=decorateAiDraft(result.draft,cfg);
     let speech="";try{speech=await synthesizeAiVoice(result.reply);}catch(e){console.error("[AI voice speech]",e?.message||e);}
     return send(res,200,{ok:true,transcript,reply:result.reply,draft,state:await aiState(),audioBase64:speech,audioMime:"audio/mpeg"});
   }
   if(method==="POST"&&path==="/api/ai/reset"){
-    put("ai_thread",[]);put("ai_draft",null);return send(res,200,await aiState());
+    aiPreviewGeneration++;put("ai_thread",[]);put("ai_draft",null);
+    try{await upstream("/api/resume","POST",{});}catch(e){console.error("[AI reset resume]",e?.message||e);}
+    return send(res,200,await aiState());
   }
   if(method==="POST"&&path==="/api/ai/preview"){
     const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to preview");
