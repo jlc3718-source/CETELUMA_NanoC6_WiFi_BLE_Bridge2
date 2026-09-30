@@ -96,7 +96,7 @@ export class EufyClient {
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
-    const s=this.spec(name),fx=buildEffect(s.model,effect,colors,speed,false);
+    const s=this.spec(name),reverse=name==="Pool"||name==="Shed",fx=buildEffect(s.model,effect,colors,speed,reverse);
     return this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}],3200);
   }
   async factoryPresets():Promise<{presets:EufyFactoryPreset[];rawDiscover:unknown;scanned:number}>{
