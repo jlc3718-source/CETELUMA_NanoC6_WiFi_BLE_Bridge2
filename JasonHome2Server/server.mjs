@@ -8,6 +8,19 @@ import { lightingNightDate, resolveNightEvents } from "./night_resolver.mjs";
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
 const catalog=JSON.parse(readFileSync(new URL("./catalog.json",import.meta.url),"utf8"));
+
+const nativeEffects=new Set(["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"]);
+const oldEffects={Solid:"Static","Solid / Static":"Static",Jump:"Cycle",Breath:"Breathe",Strobe:"Twinkle",Chase:"Flow1","Gradient Sweep":"Flow1","Candy Cane":"Flow1","Twinkle / Sparkle":"Twinkle","Wipe / Fill":"Streamlight","Meteor / Comet":"Streamlight","Rainbow Flow":"Flow1","Pulse Wave":"Breathe"};
+function normalizeEffects(value){
+  if(Array.isArray(value)){value.forEach(normalizeEffects);return value;}
+  if(value&&typeof value==="object")for(const [key,item] of Object.entries(value)){
+    if(["effect","expandedEffect"].includes(key)&&typeof item==="string")value[key]=nativeEffects.has(item)?item:oldEffects[item]||"Flow1";
+    else normalizeEffects(item);
+  }
+  return value;
+}
+normalizeEffects(catalog);
+
 const port=Number(process.env.JH2_PORT||8081);
 const upstreamUrl=process.env.JH2_UPSTREAM_URL||"http://127.0.0.1:8080";
 const upstreamToken=process.env.JH2_UPSTREAM_TOKEN||"";
@@ -18,6 +31,7 @@ const db=new DatabaseSync(join(dataDir,"jason-home-2.sqlite"));
 db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
+for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 let secret=meta("session_secret");
 if(!secret){secret=randomBytes(32).toString("hex");put("session_secret",secret);}
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};

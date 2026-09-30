@@ -3,15 +3,19 @@
 from pathlib import Path
 import shutil
 
-def native_effect_choices(text):
-    names = ["Flow1", "Flow2", "Cycle", "Streamlight", "Twinkle", "Breathe"]
-    anchor = '<option value="Solid">Solid / Static</option>'
-    options = ''.join('<option value="'+name+'">'+name+'</option>' for name in names)
-    text = text.replace(anchor, anchor+options)
-    old = '["Jump","Breath","Strobe","Solid","Chase","Gradient Sweep","Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet","Rainbow Flow","Pulse Wave"]'
-    new = old[:-1] + ',"Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"]'
-    return text.replace(old, new)
 
+def native_effect_choices(text):
+    import re, json
+    names = ["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"]
+    options = ''.join('<option value="'+name+'">'+name+'</option>' for name in names)
+    text = re.sub(r'<option value="Jump">.*?<option value="Pulse Wave">Pulse Wave</option>', lambda _: options, text, flags=re.S)
+    old = '["Jump","Breath","Strobe","Solid","Chase","Gradient Sweep","Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet","Rainbow Flow","Pulse Wave"]'
+    text = text.replace(old, json.dumps(names,separators=(',',':')))
+    text = re.sub(r'const labels=[{].*?[}];', 'const labels='+json.dumps(dict(zip(names,names)))+';', text)
+    descriptions={"Static":"Hold the selected color","Flow1":"Flow along the string","Flow2":"Flow in the opposite direction","Cycle":"Cycle through selected colors","Streamlight":"Moving stream of selected colors","Twinkle":"Twinkling selected colors","Breathe":"Smooth brightness rise and fall"}
+    text = re.sub(r'const descriptions=[{].*?[}];', 'const descriptions='+json.dumps(descriptions)+';', text)
+    text = text.replace('const effect=node.dataset.effect,', 'const effect=({Static:"Solid",Flow1:"Chase",Flow2:"Chase",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"}[node.dataset.effect]||node.dataset.effect),')
+    return text
 
 root = Path(__file__).resolve().parents[1]
 source = root / "JasonHome/app/src/main/assets"

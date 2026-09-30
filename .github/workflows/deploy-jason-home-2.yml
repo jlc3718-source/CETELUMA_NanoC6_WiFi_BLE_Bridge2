@@ -38,7 +38,7 @@ jobs:
           sudo docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v /tmp/jh2-oracle-src:/src -w /src/JasonHomeServer node:22-bookworm-slim \
             sh -c 'npm ci && npm run build && npm test'
           mkdir -p JasonHome2Server/shared
-          cp /tmp/jh2-oracle-src/JasonHomeServer/dist/calendar.js /tmp/jh2-oracle-src/JasonHomeServer/dist/scheduler.js JasonHome2Server/shared/
+          cp /tmp/jh2-oracle-src/JasonHomeServer/dist/effects.js /tmp/jh2-oracle-src/JasonHomeServer/dist/calendar.js /tmp/jh2-oracle-src/JasonHomeServer/dist/scheduler.js JasonHome2Server/shared/
           printf '%s\n' "$LIVE_SHA" > JasonHome2Server/shared/oracle-resolver.sha
           python3 JasonHome2Server/generate_catalog.py
           python3 JasonHome2Server/generate_web.py
