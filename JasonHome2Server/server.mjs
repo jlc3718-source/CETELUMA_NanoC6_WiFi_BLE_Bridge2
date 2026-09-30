@@ -19,6 +19,24 @@ function normalizeEffects(value){
   }
   return value;
 }
+
+function creativeLayerCount(e){
+  const name=String(e?.name||"").toLowerCase(),factory=String(e?.id||"").includes("::factory:");
+  const colors=Array.isArray(e?.colors)?e.colors:[];
+  if(factory)return 3;
+  if(/new year.?s eve|new year.?s day|halloween|christmas day|christmas eve|independence day|mardi gras|diwali|lunar new year|valentine/.test(name))return 4;
+  if(/remembrance|memorial|holocaust|pow\/mia|yom kippur|good friday|ash wednesday|gold star|pearl harbor|transgender day of remembrance/.test(name))return 2;
+  if(/pride|lgbtq|coming out|homophobia|transphobia/.test(name))return 4;
+  if(/flag day|veterans|armed forces|patriot day|constitution|freedom day|presidents|d-day|korean war|purple heart/.test(name))return 3;
+  if(/christmas|hanukkah|kwanzaa|winter solstice/.test(name))return 3;
+  if(/cinco de mayo|st\. patrick|easter/.test(name))return 4;
+  if(/mother.?s day|father.?s day|parents.? day|grandparents/.test(name))return 3;
+  if(e?.rule==="Month")return colors.length>=3?3:2;
+  if(e?.kind==="Seasonal")return 3;
+  if(e?.kind==="Holiday"&&colors.length>=2)return 3;
+  if(colors.length>=2)return 2;
+  return 1;
+}
 normalizeEffects(catalog);
 const legacySpeed=v=>[1,3,5,8,10][Math.max(1,Math.min(5,Math.round(Number(v)||3)))-1];
 function migrateSpeeds(value){
@@ -222,7 +240,7 @@ function displayEvents(cfg,url){
     if(search&&!(e.name+" "+label+" "+e.kind+" "+category.name).toLowerCase().includes(search))continue;
     const original=eventById.get(e.id),defaults=original?.profiles;
     rows.push({id:e.id,name:e.name,kind:e.kind,categoryId:category.id,categoryName:category.name,categoryColor:category.color,
-      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),enabled:e.enabled!==false,favorite:!!e.favorite,
+      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:creativeLayerCount(e),enabled:e.enabled!==false,favorite:!!e.favorite,
       customized:!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
        ||JSON.stringify(e.colors)!==JSON.stringify(mode===0?defaults.major:mode===1?defaults.basic:defaults.expanded))});
     if(!month&&rows.length>=96)break;
