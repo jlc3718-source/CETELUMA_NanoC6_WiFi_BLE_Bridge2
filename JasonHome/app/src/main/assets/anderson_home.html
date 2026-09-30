@@ -457,7 +457,9 @@ function renderAi(data){
   const usage=data?.usage;if($("aiUsageText")&&usage){
     $("aiUsageText").textContent="AI today: "+Number(usage.used||0).toLocaleString()+" / "+Number(usage.limit||10000).toLocaleString()+" neurons • "+Number(usage.remaining||0).toLocaleString()+" left";
     $("aiUsageFill").style.width=Math.max(0,Math.min(100,Number(usage.percent)||0))+"%";
-    $("aiUsageNote").textContent=(usage.source==="estimated"?"Estimated in Jason Home • ":"")+"resets "+(usage.resetAt||"00:00 UTC");
+    $("aiUsageNote").textContent=usage.source==="cloudflare-baseline"
+      ?"Cloudflare actual baseline "+Number(usage.baseline?.total||0).toLocaleString()+" • live estimate after baseline • resets "+(usage.resetAt||"00:00 UTC")
+      :"Estimated in Jason Home • resets "+(usage.resetAt||"00:00 UTC");
   }
   if($("aiVoiceButton"))$("aiVoiceButton").disabled=!connected;
   if($("aiStartOver"))$("aiStartOver").disabled=!connected;
