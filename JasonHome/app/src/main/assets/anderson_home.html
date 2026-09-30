@@ -506,6 +506,11 @@ function blobToBase64(blob){
 async function beginAiVoiceListening(){
   if(!aiVoiceSessionActive||aiVoiceTurnBusy)return;
   try{
+    if(window.AndroidVoice&&typeof AndroidVoice.start==="function"){
+      setAiVoiceState("listening");
+      AndroidVoice.start();
+      return;
+    }
     const stream=await ensureAiVoiceStream();
     if(!aiVoiceContext)aiVoiceContext=new (window.AudioContext||window.webkitAudioContext)();
     if(aiVoiceContext.state==="suspended")await aiVoiceContext.resume();
@@ -525,11 +530,10 @@ async function beginAiVoiceListening(){
     $("aiStatus").textContent="Microphone failed: "+e.message;endAiVoiceSession(false);
   }
 }
-async function processAiVoiceTurn(blob){
+async function processAiVoicePayload(audio,mime){
   aiVoiceTurnBusy=true;setAiVoiceState("thinking");
   try{
-    const audio=await blobToBase64(blob);
-    const data=await api("/api/ai/voice-turn",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio,mime:blob.type||"audio/webm"})},120000);
+    const data=await api("/api/ai/voice-turn",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio,mime:mime||"audio/webm"})},120000);
     renderAi(data.state||data);
     $("aiVoiceTranscript").textContent="You: "+(data.transcript||"") +"\n\nAI: "+(data.reply||"");
     $("aiStatus").textContent=data.draft?"Draft updated from the conversation.":"Voice conversation active.";
@@ -544,6 +548,11 @@ async function processAiVoiceTurn(blob){
     if(aiVoiceSessionActive){setAiVoiceState("listening");setTimeout(beginAiVoiceListening,350)}
   }
 }
+async function processAiVoiceTurn(blob){return processAiVoicePayload(await blobToBase64(blob),blob.type||"audio/webm")}
+window.__androidVoiceListening=()=>{if(aiVoiceSessionActive)setAiVoiceState("listening")};
+window.__androidVoiceCaptured=(audio,mime)=>{if(aiVoiceSessionActive&&!aiVoiceTurnBusy)processAiVoicePayload(audio,mime||"audio/mp4")};
+window.__androidVoiceNoSpeech=()=>{if(!aiVoiceSessionActive)return;setAiVoiceState("listening","I’m listening…","I didn’t catch anything yet — go ahead when you’re ready.");setTimeout(beginAiVoiceListening,450)};
+window.__androidVoiceError=message=>{if(!aiVoiceSessionActive)return;$("aiStatus").textContent="Microphone failed: "+message;endAiVoiceSession(false)};
 function playAiVoiceReply(base64,mime){
   return new Promise(resolve=>{
     try{
@@ -559,7 +568,9 @@ async function startAiVoiceSession(){
   $("aiStatus").textContent="Voice conversation started.";await beginAiVoiceListening();
 }
 function endAiVoiceSession(showStatus=true){
-  aiVoiceSessionActive=false;aiVoiceTurnBusy=false;stopAiVoiceRecorder();
+  aiVoiceSessionActive=false;aiVoiceTurnBusy=false;
+  if(window.AndroidVoice&&typeof AndroidVoice.stop==="function"){try{AndroidVoice.stop()}catch{}}
+  stopAiVoiceRecorder();
   if(aiVoicePlayback){try{aiVoicePlayback.pause();aiVoicePlayback.currentTime=0}catch{}aiVoicePlayback=null}
   if(aiVoiceStream){aiVoiceStream.getTracks().forEach(t=>t.stop());aiVoiceStream=null}
   if(aiVoiceContext){try{aiVoiceContext.close()}catch{}aiVoiceContext=null}aiVoiceAnalyser=null;
@@ -569,6 +580,7 @@ function endAiVoiceSession(showStatus=true){
 async function aiVoiceButtonAction(){
   if(!aiVoiceSessionActive){await startAiVoiceSession();return}
   if(aiVoicePlayback){aiVoicePlayback.pause();aiVoicePlayback=null;aiVoiceTurnBusy=false;setAiVoiceState("listening","I’m listening…","Go ahead — I stopped speaking.");setTimeout(beginAiVoiceListening,120);return}
+  if(window.AndroidVoice&&typeof AndroidVoice.stop==="function"){try{AndroidVoice.stop()}catch{}setTimeout(beginAiVoiceListening,120);return}
   if(aiVoiceRecorder?.state==="recording"){stopAiVoiceRecorder();return}
   beginAiVoiceListening();
 }
