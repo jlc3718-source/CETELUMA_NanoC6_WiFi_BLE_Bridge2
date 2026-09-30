@@ -268,6 +268,8 @@ function installAndroidEufyUi(){
       const tags=document.createElement("div");tags.className="tags";
       const kind=document.createElement("span");kind.className="tag "+String(baseEvent?.kind||p.event?.kind||"Holiday").toLowerCase();kind.textContent=baseEvent?.kind||p.event?.kind||"Holiday";tags.appendChild(kind);
       info.append(title,sub,match,tags,factorySceneColorPills(scene.colors));
+      const mini=window.createEventMiniPreview?.({name:p.name||("Factory "+p.lightId),colors:scene.colors||[],effect:scene.effect||"Static",speed:scene.speed||1});
+      if(mini)info.appendChild(mini);
 
       const actions=document.createElement("div");actions.className="row wraprow";
       const preview=document.createElement("button");preview.className="btn previewEvent";preview.type="button";preview.textContent="Preview";
