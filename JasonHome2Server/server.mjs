@@ -20,7 +20,9 @@ function normalizeEffects(value){
   return value;
 }
 
-const AI_MODEL=process.env.JH2_AI_MODEL||"gpt-6-luna";
+const AI_MODEL=process.env.JH2_AI_MODEL||"@cf/zai-org/glm-4.7-flash";
+const AI_ASR_MODEL=process.env.JH2_AI_ASR_MODEL||"@cf/openai/whisper-large-v3-turbo";
+const AI_TTS_MODEL=process.env.JH2_AI_TTS_MODEL||"@cf/myshell-ai/melotts";
 const AI_EFFECTS=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"];
 const AI_SYSTEM=`You are the Jason Home lighting designer. Hold a natural back-and-forth conversation, offer concrete design ideas, and revise earlier ideas when asked.
 You can only design using these native effects: Static, Flow1, Flow2, Cycle, Streamlight, Twinkle, Breathe.
@@ -91,6 +93,51 @@ function openAiKey(){
   const box=meta("ai_api_key_cipher");if(!box?.iv||!box?.tag||!box?.data)return "";
   try{const d=createDecipheriv("aes-256-gcm",aiCipherKey,Buffer.from(box.iv,"base64"));d.setAuthTag(Buffer.from(box.tag,"base64"));return Buffer.concat([d.update(Buffer.from(box.data,"base64")),d.final()]).toString("utf8");}
   catch{return "";}
+}
+function cloudflareAiAccount(){
+  return String(process.env.JH2_CF_AI_ACCOUNT_ID||meta("cf_ai_account_id","")||"").trim();
+}
+function cloudflareAiToken(){
+  const env=String(process.env.JH2_CF_AI_TOKEN||"").trim();if(env)return env;
+  const box=meta("cf_ai_token_cipher");if(!box?.iv||!box?.tag||!box?.data)return "";
+  try{const d=createDecipheriv("aes-256-gcm",aiCipherKey,Buffer.from(box.iv,"base64"));d.setAuthTag(Buffer.from(box.tag,"base64"));return Buffer.concat([d.update(Buffer.from(box.data,"base64")),d.final()]).toString("utf8");}
+  catch{return "";}
+}
+function cloudflareAiConfigured(){return !!(cloudflareAiAccount()&&cloudflareAiToken());}
+async function cloudflareAiRun(model,input,{timeout=45000}={}){
+  const account=cloudflareAiAccount(),token=cloudflareAiToken();
+  if(!account||!token)throw fail(409,"Free AI is not connected yet. Add your Cloudflare Account ID and Workers AI API token.");
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
+  try{
+    const response=await fetch("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(account)+"/ai/run/"+model,{
+      method:"POST",signal:controller.signal,headers:{authorization:"Bearer "+token,"content-type":"application/json"},body:JSON.stringify(input)
+    });
+    const type=String(response.headers.get("content-type")||"");
+    if(type.includes("audio/"))return {ok:response.ok,status:response.status,audio:Buffer.from(await response.arrayBuffer()),type};
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok||payload?.success===false){
+      const msg=payload?.errors?.[0]?.message||payload?.error?.message||"Cloudflare Workers AI request failed";
+      throw fail(response.status||502,msg);
+    }
+    return payload;
+  }catch(e){
+    if(e?.name==="AbortError")throw fail(504,"Cloudflare Workers AI request timed out");
+    throw e;
+  }finally{clearTimeout(timer);}
+}
+async function verifyCloudflareAi(accountId,token){
+  const priorAccount=meta("cf_ai_account_id",""),priorToken=meta("cf_ai_token_cipher",null);
+  put("cf_ai_account_id",String(accountId).trim());put("cf_ai_token_cipher",sealAiKey(String(token).trim()));
+  try{
+    const r=await cloudflareAiRun(AI_MODEL,{messages:[{role:"user",content:"Reply with OK only."}],max_tokens:8,temperature:0});
+    const result=r?.result||r;
+    const text=String(result?.response??result?.choices?.[0]?.message?.content??"").trim();
+    if(!text)throw fail(400,"Cloudflare Workers AI connected but did not return a test response");
+    return true;
+  }catch(e){
+    put("cf_ai_account_id",priorAccount);put("cf_ai_token_cipher",priorToken);
+    throw e;
+  }
 }
 async function verifyAiKey(key){
   const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:"Bearer "+key,accept:"application/json"}});
