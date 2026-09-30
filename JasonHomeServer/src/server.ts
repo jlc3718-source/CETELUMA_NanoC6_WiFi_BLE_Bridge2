@@ -443,10 +443,15 @@ function factoryCompatibleScene(preset:any):Scene{
   };
 }
 function factoryScheduledNativeScene(preset:any):Scene{
-  const visual=factoryCompatibleScene(preset);
-  const lightId=Number(preset?.lightId);
-  if(!Number.isInteger(lightId)||lightId<1)throw new Error("Factory preset has an invalid native light id");
-  return {...visual,effect:"Exact Native Factory #"+lightId};
+  const visual=factoryCompatibleScene(preset),raw=String(visual.effect||"");
+  const effect=
+    /twinkle|strobe/i.test(raw)?"Twinkle":
+    /breath|pulse/i.test(raw)?"Breathe":
+    /jump/i.test(raw)?"Cycle":
+    /wipe|meteor/i.test(raw)?"Streamlight":
+    /solid|static/i.test(raw)?"Static":
+    "Flow1";
+  return {...visual,effect};
 }
 const FACTORY_EVENT_MATCHES:Record<string,string>={
   "mardi gras":"evt027",
