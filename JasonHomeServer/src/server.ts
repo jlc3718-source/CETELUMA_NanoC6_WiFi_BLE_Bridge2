@@ -99,8 +99,47 @@ function parsedMeta<T>(key:string,fallback:T):T{
   try{const value=JSON.parse(raw) as T;parsedMetaCache.set(key,{raw,value});return value;}
   catch{return fallback;}
 }
+function localCalendarParts(now=new Date()){
+  const parts=new Intl.DateTimeFormat("en-US",{timeZone:TZ,year:"numeric",month:"numeric",day:"numeric",hour:"numeric",hourCycle:"h23"}).formatToParts(now);
+  const get=(type:string)=>Number(parts.find(x=>x.type===type)?.value||0);
+  return {year:get("year"),month:get("month"),day:get("day"),hour:get("hour")};
+}
+function calendarOrdinal(v:{year:number;month:number;day:number}){return Math.floor(Date.UTC(v.year,v.month-1,v.day)/86400000);}
+function cleanedCalendarConfig(input:CalendarConfig){
+  const cfg=JSON.parse(JSON.stringify(input)) as CalendarConfig;
+  const beforeEvents=cfg.events.length,beforeSpecial=cfg.special.length;
+  const now=localCalendarParts(),today=calendarOrdinal(now);
+  const specials=new Map((cfg.special||[]).map((x:any)=>[String(x.id||""),x]));
+  const expired=new Set<string>();
+  for(const e of cfg.events||[]){
+    const id=String((e as any).id||"");
+    if(id==="master"){expired.add(id);continue;}
+    if(!id.startsWith("ai-one:"))continue;
+    const hit:any=specials.get(id);
+    if(!hit){expired.add(id);continue;}
+    const age=today-calendarOrdinal({year:Number(hit.year),month:Number(hit.month),day:Number(hit.day)});
+    // Keep the one-time show through the following morning so Schedule 2 can
+    // finish the prior lighting night; purge it by noon the next day.
+    if(age>1||(age===1&&now.hour>=12))expired.add(id);
+  }
+  if(expired.size){
+    cfg.events=(cfg.events||[]).filter((e:any)=>!expired.has(String(e.id||"")));
+    cfg.special=(cfg.special||[]).filter((x:any)=>!expired.has(String(x.id||"")));
+  }
+  return {cfg,changed:cfg.events.length!==beforeEvents||cfg.special.length!==beforeSpecial};
+}
 function calendarConfig():CalendarConfig|null{
-  return parsedMeta<CalendarConfig|null>("calendar_config",null);
+  const stored=parsedMeta<CalendarConfig|null>("calendar_config",null);
+  if(!stored)return null;
+  const {cfg,changed}=cleanedCalendarConfig(stored);
+  if(changed){
+    const revision=Math.max(Number(meta("calendar_revision")||0)||0,Number(cfg.revision)||0)+1;
+    cfg.revision=revision;cfg.syncedAt=Date.now();
+    setMeta("calendar_config",JSON.stringify(cfg));
+    setMeta("calendar_revision",String(revision));
+    setMeta("calendar_sync",new Date().toISOString());
+  }
+  return cfg;
 }
 function pruneExpiredAiEvents(now=Date.now()){
   const cfg=calendarConfig();if(!cfg)return false;
