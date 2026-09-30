@@ -1,0 +1,175 @@
+{
+  "capturedOn": "2026-09-29",
+  "controller": "Pool",
+  "model": "T8L00",
+  "states": [
+    {
+      "label": "Solid Red",
+      "sample": {
+        "at": "2026-09-30T01:01:23.503188+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "264e",
+            "a5": "00",
+            "a6": "356e0700",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20006,
+          "colorGradient": false,
+          "cloudEffectId": 486965
+        }
+      }
+    },
+    {
+      "label": "Flow1",
+      "sample": {
+        "at": "2026-09-30T01:06:03.464879+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "204e",
+            "a5": "00",
+            "a6": "ffffffff",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20000,
+          "colorGradient": false,
+          "cloudEffectId": 4294967295
+        }
+      }
+    },
+    {
+      "label": "Flow2",
+      "sample": {
+        "at": "2026-09-30T01:06:48.519466+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "214e",
+            "a5": "00",
+            "a6": "ffffffff",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20001,
+          "colorGradient": false,
+          "cloudEffectId": 4294967295
+        }
+      }
+    },
+    {
+      "label": "Cycle",
+      "sample": {
+        "at": "2026-09-30T01:07:36.358586+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "224e",
+            "a5": "00",
+            "a6": "ffffffff",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20002,
+          "colorGradient": false,
+          "cloudEffectId": 4294967295
+        }
+      }
+    },
+    {
+      "label": "Streamlight",
+      "sample": {
+        "at": "2026-09-30T01:08:23.984630+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "234e",
+            "a5": "00",
+            "a6": "ffffffff",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20003,
+          "colorGradient": false,
+          "cloudEffectId": 4294967295
+        }
+      }
+    },
+    {
+      "label": "Twinkle",
+      "sample": {
+        "at": "2026-09-30T01:09:08.394915+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "244e",
+            "a5": "00",
+            "a6": "ffffffff",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20004,
+          "colorGradient": false,
+          "cloudEffectId": 4294967295
+        }
+      }
+    },
+    {
+      "label": "Breath",
+      "sample": {
+        "at": "2026-09-30T01:02:27.481070+00:00",
+        "target": "Pool",
+        "deviceReported": true,
+        "report": {
+          "cmd": 2560,
+          "rawFields": {
+            "a3": "3c00",
+            "a4": "254e",
+            "a5": "00",
+            "a6": "ffffffff",
+            "a7": "00000000000000000000000000000000"
+          },
+          "power": true,
+          "brightness": 100,
+          "lampCount": 60,
+          "effectId": 20005,
+          "colorGradient": false,
+          "cloudEffectId": 4294967295
+        }
+      }
+    }
+  ]
+}

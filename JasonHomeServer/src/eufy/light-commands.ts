@@ -12,7 +12,7 @@ function le32(v:number){return new Uint8Array([v&255,(v>>>8)&255,(v>>>16)&255,(v
 function isE22(model:string){const m=(model||"").toUpperCase();return m==="E22"||m.startsWith("T8L02");}
 function contains(value:string,token:string){return (value||"").toLowerCase().includes(token.toLowerCase());}
 export function defaultLampCount(_model:string){return 60;}
-export function isSolidEffect(effect:string){return effect==="Solid"||effect==="Solid / Static";}
+export function isSolidEffect(effect:string){return effect==="Solid"||effect==="Solid / Static"||effect==="Static";}
 export function brightness(percent:number){return tlv(0xa4,new Uint8Array([clamp(percent,0,100)]));}
 function nativeColor(model:string,rgb:number){const r=(rgb>>>16)&255,g=(rgb>>>8)&255,b=rgb&255;return isE22(model)?new Uint8Array([r,g,b,0,0]):new Uint8Array([r,g,b,0]);}
 function positions(lamps:number){const out=new Uint8Array(lamps+1);out[0]=lamps;for(let i=0;i<lamps;i++)out[i+1]=i;return out;}
@@ -23,7 +23,9 @@ export function color(model:string,rgb:number,lampCount:number):Uint8Array{
 }
 function speedValueE22(speed:number){switch(clamp(speed,1,5)){case 1:return 2;case 2:return 4;case 3:return 8;case 4:return 25;default:return 50;}}
 export function styleDefinition(effect:string,colors:number[],speed:number,reverse:boolean){
-  const source=STYLE_TEMPLATES[effect];
+  const alias:Record<string,string>={Flow1:"Chase",Flow2:"Chase",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"};
+  const source=STYLE_TEMPLATES[alias[effect]||effect];
+  if(effect==="Flow2")reverse=!reverse;
   if(!source)throw new Error("Unsupported effect style: "+effect);
   const rawSpeed=speedValueE22(speed),palette=colors.slice(0,8).map(c=>(c&0xffffff).toString(16).padStart(6,"0")).join("|");
   let preset={...source,speed:rawSpeed,layers:source.layers.map(layer=>({
@@ -36,10 +38,25 @@ export function styleDefinition(effect:string,colors:number[],speed:number,rever
   return preset;
 }
 // E120 uses its native 0x0206 animation modes, not the E22 gallery protocol.
-function e120ModeId(effect:string,reverse:boolean){if(isSolidEffect(effect))return 30014;if(contains(effect,"Breath"))return 30011;if(contains(effect,"Twinkle")||contains(effect,"Strobe"))return 30006;if(contains(effect,"Meteor"))return 30012;if(contains(effect,"Rainbow")||contains(effect,"Pulse"))return 30013;if(contains(effect,"Gradient")||contains(effect,"Wipe"))return 30007;if(contains(effect,"Jump"))return 30009;if(contains(effect,"Candy")||contains(effect,"Chase"))return reverse?30008:30010;return 30010;}
+// Mode ids captured from Pool's Eufy app selections on 2026-09-29.
+export const E120_NATIVE_MODES:Record<string,number>={Flow1:20000,Flow2:20001,Cycle:20002,Streamlight:20003,Twinkle:20004,Breathe:20005,Static:20006};
+// Existing gallery labels use their closest available native E120 motion.
+export const E120_STYLE_ALIASES:Record<string,string>={
+  "Solid":"Static","Solid / Static":"Static",Jump:"Cycle",Breath:"Breathe",Strobe:"Twinkle",Chase:"Flow1",
+  "Gradient Sweep":"Flow1","Candy Cane":"Flow1","Twinkle / Sparkle":"Twinkle",
+  "Wipe / Fill":"Streamlight","Meteor / Comet":"Streamlight","Rainbow Flow":"Flow1","Pulse Wave":"Breathe"
+};
+export function e120ModeId(effect:string,reverse:boolean){
+  let native=E120_STYLE_ALIASES[effect]||effect;
+  if(reverse&&native==="Flow1")native="Flow2";
+  else if(reverse&&native==="Flow2")native="Flow1";
+  const id=E120_NATIVE_MODES[native];
+  if(id===undefined)throw new Error("Unsupported E120 effect style: "+effect);
+  return id;
+}
 function e120Catalog(localId:number,catalogId:number,rawA5:number,colors:number[],lampCount:number){const lamps=clamp(lampCount,1,120),palette=colors?.length?colors:[0xff0000,0x00ff00],pal:number[]=[Math.min(255,palette.length)];for(const c of palette)pal.push(...nativeColor("T8L00",c));return concat(tlv(0xa3,le16(localId)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawA5,0,255)])),tlv(0xa6,new Uint8Array(pal)),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,new Uint8Array([0,0])),tlv(0xac,le32(catalogId)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));}
 function e120Grouped(localId:number,catalogId:number,rawA5:number,colors:number[],lampCount:number){const lamps=clamp(lampCount,2,120),src=colors?.length?colors:[0xffffff],count=Math.max(1,Math.min(8,src.length)),pal:number[]=[count];for(let i=0;i<count;i++)pal.push(...nativeColor("T8L00",src[i]));const groups:number[]=[];for(let g=0;g<count;g++){const pos:number[]=[];for(let i=g;i<lamps;i+=count)pos.push(i);groups.push(pos.length,...pos);}return concat(tlv(0xa3,le16(localId)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawA5,1,5)])),tlv(0xa6,new Uint8Array(pal)),tlv(0xa7,new Uint8Array(groups)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,new Uint8Array([0,0])),tlv(0xac,le32(catalogId)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));}
-export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number){const src=colors?.length?colors:[0xffffff],palette=src.slice(0,8),mode=e120ModeId(effect,reverse),sp=clamp(speed,1,5);return palette.length>1?e120Grouped(mode,10034,sp,palette,lampCount):e120Catalog(mode,10034,sp,palette,lampCount);}
+export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number){const src=colors?.length?colors:[0xffffff],palette=src.slice(0,8),mode=e120ModeId(effect,reverse),sp=clamp(speed,1,5);return palette.length>1?e120Grouped(mode,0xffffffff,sp,palette,lampCount):e120Catalog(mode,0xffffffff,sp,palette,lampCount);}
 export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean):{opcode:number;fields:Uint8Array}{
   const raw=colors?.length?colors:[0xffffff];
   if(isSolidEffect(effect))return {opcode:OP_COLOR,fields:color(model,raw[0],defaultLampCount(model))};
