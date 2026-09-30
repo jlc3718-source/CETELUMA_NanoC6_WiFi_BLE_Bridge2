@@ -4,14 +4,18 @@ import android.app.Activity;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.content.Intent;
+import android.media.MediaRecorder;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -19,6 +23,9 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.util.Base64;
+import java.io.File;
+import java.io.FileInputStream;
 
 /** Jason Home 2 has a separate package and loads the Oracle-hosted interface. */
 public final class MainActivity extends Activity {
@@ -29,6 +36,14 @@ public final class MainActivity extends Activity {
     private LinearLayout error;
     private boolean loadFailed=false;
     private PermissionRequest pendingAudioRequest;
+    private MediaRecorder nativeRecorder;
+    private File nativeVoiceFile;
+    private final Handler voiceHandler=new Handler(Looper.getMainLooper());
+    private long nativeVoiceStartedAt=0L;
+    private long nativeVoiceLastSoundAt=0L;
+    private boolean nativeVoiceHeard=false;
+    private boolean pendingNativeStart=false;
+    private Runnable nativeVoiceMonitor;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -49,6 +64,7 @@ public final class MainActivity extends Activity {
         web.getSettings().setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
+        web.addJavascriptInterface(new VoiceBridge(), "AndroidVoice");
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> {
@@ -130,21 +146,141 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults);
-        if(requestCode==REQUEST_RECORD_AUDIO && pendingAudioRequest!=null){
+        if(requestCode!=REQUEST_RECORD_AUDIO)return;
+        boolean granted=grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED;
+        if(pendingAudioRequest!=null){
             PermissionRequest request=pendingAudioRequest;
             pendingAudioRequest=null;
-            if(grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED)
-                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            if(granted)request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
             else request.deny();
         }
+        if(pendingNativeStart){
+            pendingNativeStart=false;
+            if(granted)startNativeVoiceRecorder();
+            else notifyVoiceError("Microphone permission was denied. Allow Microphone for Jason Home 2 in Android settings.");
+        }
     }
+    private final class VoiceBridge {
+        @JavascriptInterface public boolean available(){return true;}
+        @JavascriptInterface public void start(){
+            runOnUiThread(() -> {
+                if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+                    pendingNativeStart=true;
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQUEST_RECORD_AUDIO);
+                    return;
+                }
+                startNativeVoiceRecorder();
+            });
+        }
+        @JavascriptInterface public void stop(){runOnUiThread(() -> stopNativeVoiceRecorder(false));}
+    }
+
+    private void startNativeVoiceRecorder(){
+        stopNativeVoiceRecorder(false);
+        try{
+            nativeVoiceFile=new File(getCacheDir(),"ai-voice-turn.m4a");
+            if(nativeVoiceFile.exists())nativeVoiceFile.delete();
+            nativeRecorder=new MediaRecorder();
+            nativeRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION);
+            nativeRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            nativeRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            nativeRecorder.setAudioSamplingRate(16000);
+            nativeRecorder.setAudioEncodingBitRate(64000);
+            nativeRecorder.setOutputFile(nativeVoiceFile.getAbsolutePath());
+            nativeRecorder.prepare();
+            nativeRecorder.start();
+            nativeVoiceStartedAt=System.currentTimeMillis();
+            nativeVoiceLastSoundAt=nativeVoiceStartedAt;
+            nativeVoiceHeard=false;
+            notifyVoiceListening();
+            nativeVoiceMonitor=new Runnable(){
+                @Override public void run(){
+                    if(nativeRecorder==null)return;
+                    long now=System.currentTimeMillis();
+                    int amp=0;
+                    try{amp=nativeRecorder.getMaxAmplitude();}catch(Throwable ignored){}
+                    if(amp>1200){nativeVoiceHeard=true;nativeVoiceLastSoundAt=now;}
+                    long elapsed=now-nativeVoiceStartedAt;
+                    if((nativeVoiceHeard && now-nativeVoiceLastSoundAt>1200 && elapsed>1300) || elapsed>30000){
+                        stopNativeVoiceRecorder(true);
+                        return;
+                    }
+                    if(!nativeVoiceHeard && elapsed>12000){
+                        stopNativeVoiceRecorder(true);
+                        return;
+                    }
+                    voiceHandler.postDelayed(this,140);
+                }
+            };
+            voiceHandler.postDelayed(nativeVoiceMonitor,140);
+        }catch(Throwable e){
+            stopNativeVoiceRecorder(false);
+            notifyVoiceError("Could not start microphone: "+e.getMessage());
+        }
+    }
+
+    private void stopNativeVoiceRecorder(boolean deliver){
+        if(nativeVoiceMonitor!=null)voiceHandler.removeCallbacks(nativeVoiceMonitor);
+        nativeVoiceMonitor=null;
+        MediaRecorder recorder=nativeRecorder;
+        nativeRecorder=null;
+        if(recorder!=null){
+            try{recorder.stop();}catch(Throwable ignored){}
+            try{recorder.release();}catch(Throwable ignored){}
+        }
+        if(!deliver)return;
+        if(!nativeVoiceHeard || nativeVoiceFile==null || !nativeVoiceFile.exists() || nativeVoiceFile.length()<800){
+            notifyVoiceNoSpeech();
+            return;
+        }
+        try(FileInputStream in=new FileInputStream(nativeVoiceFile)){
+            byte[] bytes=new byte[(int)Math.min(nativeVoiceFile.length(),5_000_000L)];
+            int off=0,n;
+            while(off<bytes.length && (n=in.read(bytes,off,bytes.length-off))>0)off+=n;
+            String audio=Base64.encodeToString(off==bytes.length?bytes:java.util.Arrays.copyOf(bytes,off),Base64.NO_WRAP);
+            String quoted=orgJsonQuote(audio);
+            web.evaluateJavascript("window.__androidVoiceCaptured&&window.__androidVoiceCaptured("+quoted+",\"audio/mp4\");",null);
+        }catch(Throwable e){
+            notifyVoiceError("Could not read microphone recording: "+e.getMessage());
+        }finally{
+            try{nativeVoiceFile.delete();}catch(Throwable ignored){}
+        }
+    }
+
+    private void notifyVoiceListening(){
+        if(web!=null)web.evaluateJavascript("window.__androidVoiceListening&&window.__androidVoiceListening();",null);
+    }
+    private void notifyVoiceNoSpeech(){
+        if(web!=null)web.evaluateJavascript("window.__androidVoiceNoSpeech&&window.__androidVoiceNoSpeech();",null);
+    }
+    private void notifyVoiceError(String message){
+        if(web!=null)web.evaluateJavascript("window.__androidVoiceError&&window.__androidVoiceError("+orgJsonQuote(message)+");",null);
+    }
+    private static String orgJsonQuote(String value){
+        if(value==null)return "\"\"";
+        StringBuilder b=new StringBuilder("\"");
+        for(int i=0;i<value.length();i++){
+            char c=value.charAt(i);
+            switch(c){
+                case '\\':b.append("\\\\");break;
+                case '\"':b.append("\\\"");break;
+                case '\n':b.append("\\n");break;
+                case '\r':b.append("\\r");break;
+                case '\t':b.append("\\t");break;
+                default:if(c<32)b.append(String.format(java.util.Locale.ROOT,"\\u%04x",(int)c));else b.append(c);
+            }
+        }
+        return b.append('\"').toString();
+    }
+
     @Override public void onBackPressed() {
         if(error!=null && error.getVisibility()==View.VISIBLE){error.setVisibility(View.GONE);web.loadUrl(URL);}
         else if(web!=null && web.canGoBack())web.goBack();
         else super.onBackPressed();
     }
     @Override protected void onDestroy(){
-        if(web!=null){web.destroy();web=null;}
+        stopNativeVoiceRecorder(false);
+        if(web!=null){web.removeJavascriptInterface("AndroidVoice");web.destroy();web=null;}
         super.onDestroy();
     }
 }
