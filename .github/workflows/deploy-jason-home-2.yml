@@ -173,8 +173,10 @@ jobs:
           call('/api/mqtt-capture/stop',{})
           resumed=call('/api/resume',{})
           assert resumed.get('resumed') is True
-          state=call('/api/state')
+          state=call('/api/status')
           assert not (state.get('override') or {}).get('active')
+          assert state.get('automationOwner')=='oracle'
+          assert len(state['eufy']['readyNames'])==4
           print('Ten-step home, effects, event-preview, event-editor controls and calendar bounds PASS')
           print('Pool capture stopped; manual test override cleared; normal scheduling resumed PASS')
           PY
