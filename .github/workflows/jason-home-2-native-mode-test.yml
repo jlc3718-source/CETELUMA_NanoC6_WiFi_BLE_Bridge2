@@ -1,0 +1,31 @@
+name: Verify Jason Home 2 captured E120 commands
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['.github/workflows/jason-home-2-native-mode-test.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Select Flow1 then leave Pool on red Breathe
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          def call(path,data=None):
+              req=urllib.request.Request('http://127.0.0.1:8080'+path,None if data is None else json.dumps(data).encode(),{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              return json.load(urllib.request.urlopen(req,timeout=45))
+          health=call('/api/health')
+          assert health['build']['sha']=='eb6bc6ef1a6fa2d1fe2b87b169ec9f43107e3198',health
+          for effect in ['Flow1','Breathe']:
+              result=call('/api/control?wait=1',{'target':'Pool','power':True,'effect':effect,'colors':[16711680],'brightness':100,'speed':3})
+              print(json.dumps(result))
+              report=call('/api/mqtt-probe',{'target':'Pool'})
+              print(json.dumps(report))
+              expected=20001 if effect=='Flow1' else 20005
+              assert report['report']['effectId']==expected,(effect,report)
+          PY
