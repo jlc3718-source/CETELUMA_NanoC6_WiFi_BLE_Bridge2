@@ -3,7 +3,7 @@
   const zone="America/New_York",weekdays=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today=()=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(new Date());
     const n=type=>Number(parts.find(p=>p.type===type).value);return {year:n("year"),month:n("month"),day:n("day")};};
-  let shown=today(),lastRefresh=0,request=0,showNight=()=>{};
+  let shown=today(),lastRefresh=0,request=0,showNight=()=>{},latestState=null;
   const formatTime=iso=>{if(!iso)return "";const d=new Date(iso);return Number.isNaN(d.getTime())?"":new Intl.DateTimeFormat("en-US",{timeZone:zone,hour:"numeric",minute:"2-digit"}).format(d);};
 
   function openSchedulerEvent(event,night){
@@ -54,8 +54,51 @@
     node.onkeydown=active?e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSchedulerEvent(event,night)}}:null;
   }
 
+  let chooser=null;
+  function closeChooser(){if(chooser){chooser.classList.remove("open");document.body.style.overflow="";}}
+  function ensureChooser(){
+    if(chooser)return chooser;
+    chooser=document.createElement("div");chooser.className="jh2TonightChooser";chooser.innerHTML='<div class="jh2TonightChooserCard"><div class="jh2TonightChooserHead"><div><span>TONIGHT OPTIONS</span><h2>Choose another eligible event</h2><p>Only events that legitimately qualified for this lighting night are shown.</p></div><button type="button" class="btn jh2TonightChooserClose">Close</button></div><div class="jh2TonightChooserBody"><div class="sub">Loading tonight’s choices…</div></div></div>';
+    chooser.querySelector(".jh2TonightChooserClose").addEventListener("click",closeChooser);
+    chooser.addEventListener("click",e=>{if(e.target===chooser)closeChooser()});
+    document.body.appendChild(chooser);return chooser;
+  }
+  async function chooseTonightEvent(id,name,button){
+    const old=button.textContent;button.disabled=true;button.textContent="Starting…";
+    try{
+      const response=await fetch("/jason-home-2/api/tonight-options",{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify({id})});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Could not select this event");
+      button.textContent="Running until next change";
+      setTimeout(()=>{closeChooser();refresh(true)},550);
+    }catch(error){button.disabled=false;button.textContent=old;const body=chooser?.querySelector(".jh2TonightChooserBody");if(body){const msg=document.createElement("div");msg.className="jh2ChoiceError";msg.textContent=error.message;body.prepend(msg)}}
+  }
+  async function openTonightChooser(){
+    const modal=ensureChooser(),body=modal.querySelector(".jh2TonightChooserBody");body.replaceChildren();
+    const loading=document.createElement("div");loading.className="sub";loading.textContent="Loading tonight’s eligible events…";body.appendChild(loading);
+    modal.classList.add("open");document.body.style.overflow="hidden";
+    try{
+      const response=await fetch("/jason-home-2/api/tonight-options",{credentials:"same-origin",cache:"no-store"});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Tonight options unavailable");
+      body.replaceChildren();const options=data.options||[];
+      if(!options.length){const empty=document.createElement("div");empty.className="sub";empty.textContent="No eligible scheduled events were found for this lighting night.";body.appendChild(empty);return}
+      if(options.length===1){const note=document.createElement("div");note.className="jh2ChoiceNote";note.textContent="Only one event qualified for tonight, so there is no alternate winner.";body.appendChild(note)}
+      for(const option of options){
+        const item=document.createElement("article");item.className="jh2TonightChoice";
+        const title=document.createElement("strong");title.textContent=option.name;
+        const meta=document.createElement("div");meta.className="sub";meta.textContent=`${option.type||"Scheduled event"} · ${option.effect||"Static"} · speed ${option.speed||1}`;
+        const mini=window.createEventMiniPreview?.({name:option.name,colors:option.colors||[],effect:option.effect||"Static",speed:option.speed||1});
+        const chips=document.createElement("div");chips.className="jh2ChoiceColors";(option.colors||[]).forEach(color=>{const x=document.createElement("span");x.style.background=color;chips.appendChild(x)});
+        const action=document.createElement("button");action.type="button";action.className="btn";action.textContent="Run until next change";
+        const current=latestState?.runningNow,already=current&&current.id!=="manual-override"&&(current.id===option.id||current.name===option.name);
+        if(already){action.textContent="Scheduled now";action.disabled=true}
+        else action.addEventListener("click",()=>chooseTonightEvent(option.id,option.name,action));
+        item.append(title,meta);if(mini)item.appendChild(mini);item.append(chips,action);body.appendChild(item);
+      }
+    }catch(error){body.replaceChildren();const msg=document.createElement("div");msg.className="jh2ChoiceError";msg.textContent=error.message;body.appendChild(msg)}
+  }
+
   function renderLiveState(state){
-    if(!state)return;
+    if(!state)return;latestState=state;
     const row=document.querySelector(".jh2RunningNow"),info=state.runningNow||{};
     if(row){
       const title=row.querySelector("strong"),meta=row.querySelector("small");
@@ -75,7 +118,17 @@
       });
       else tonight.textContent="Nothing scheduled for tonight";
     }
-    const nextLabel=document.querySelector(".v3NextUpcoming");if(nextLabel)nextLabel.textContent="Next change";
+    const nextLabel=document.querySelector(".v3NextUpcoming");
+    if(nextLabel){
+      let labelText=nextLabel.querySelector(".jh2NextLabelText"),choice=nextLabel.querySelector(".jh2TonightOptionsButton");
+      if(!labelText||!choice){
+        nextLabel.replaceChildren();labelText=document.createElement("span");labelText.className="jh2NextLabelText";
+        choice=document.createElement("button");choice.type="button";choice.className="btn jh2TonightOptionsButton";choice.textContent="Tonight options";
+        choice.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();openTonightChooser()});
+        nextLabel.append(labelText,choice);
+      }
+      labelText.textContent="Next change";
+    }
     const nextValue=document.getElementById("nextEvent");
     if(nextValue){
       const change=state.nextChange,time=formatTime(change?.at);
@@ -120,8 +173,9 @@
           const colors=document.createElement("div");colors.className="jh2NightColors";
           (event.colors||[]).forEach(color=>{const swatch=document.createElement("span");swatch.style.background=color;colors.append(swatch)});
           const name=document.createElement("strong"),meta=document.createElement("div");name.textContent=event.name;
-          meta.className="sub";meta.textContent=`${event.type||"Scheduled event"} · ${event.effect||"Solid / Static"}`;
-          item.append(colors,name,meta);list.append(item);
+          meta.className="sub";meta.textContent=`${event.type||"Scheduled event"} · ${event.effect||"Solid / Static"} · speed ${event.speed||1}`;
+          const mini=window.createEventMiniPreview?.({name:event.name,colors:event.colors||[],effect:event.effect||"Static",speed:event.speed||1});
+          item.append(colors,name,meta);if(mini)item.appendChild(mini);list.append(item);
         });detail.append(list);
       }
       detail.hidden=false;document.body.classList.add("jh2DateView");
@@ -172,6 +226,9 @@
       .jh2NightItem strong{display:block;overflow-wrap:anywhere;font-size:15px;margin:7px 0 3px}
       .jh2NightColors{display:flex;gap:5px;flex-wrap:wrap}
       .jh2NightColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}
+      .jh2NextLabelText{min-width:0}.v3NextUpcoming{display:flex!important;align-items:center;justify-content:space-between;gap:10px}.jh2TonightOptionsButton{font-size:10px!important;padding:6px 9px!important;min-height:0!important;width:auto!important;flex:0 0 auto}
+      .jh2TonightChooser{position:fixed;inset:0;z-index:26000;background:#000b;display:none;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));overflow:auto}.jh2TonightChooser.open{display:flex}.jh2TonightChooserCard{width:min(620px,100%);background:#081526;border:1px solid #7fa9ee5c;border-radius:18px;padding:16px;box-shadow:0 24px 80px #000a}.jh2TonightChooserHead{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.jh2TonightChooserHead span{font-size:9px;font-weight:750;letter-spacing:.14em;color:#9db9e7}.jh2TonightChooserHead h2{font-size:20px;margin:4px 0 5px}.jh2TonightChooserHead p{font-size:11px;line-height:1.45;color:#a8bddf;margin:0}.jh2TonightChooserClose{width:auto!important;flex:0 0 auto}.jh2TonightChooserBody{display:grid;gap:10px;margin-top:14px}.jh2TonightChoice{padding:12px;border:1px solid #91b5ee35;border-radius:13px;background:#0d1d36}.jh2TonightChoice>strong{display:block;font-size:14px;margin-bottom:3px}.jh2TonightChoice .btn{width:100%;margin-top:8px}.jh2ChoiceColors{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.jh2ChoiceColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}.jh2ChoiceNote{padding:10px 12px;border-radius:10px;background:#27456d55;color:#dceaff;font-size:11px}.jh2ChoiceError{padding:10px 12px;border-radius:10px;background:#7a263955;color:#ffd8df;font-size:11px}
+      @media(max-width:520px){.jh2TonightChooserHead{flex-direction:column}.jh2TonightChooserClose{width:100%!important}.v3NextUpcoming{align-items:flex-start}.jh2TonightOptionsButton{white-space:nowrap}}
     `;document.head.append(style);
     window.addEventListener("anderson-scheduled-event",()=>refresh(true));
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(false)});
