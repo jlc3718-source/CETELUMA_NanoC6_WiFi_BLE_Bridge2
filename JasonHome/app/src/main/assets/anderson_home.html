@@ -70,7 +70,7 @@ window.andersonAuthToken="";</script>
 
   <div class="nav" role="tablist">
     <button class="tab active" data-tab="home">Home</button>
-    <button class="tab" data-tab="lights">Lights</button>
+    <button class="tab" data-tab="master">Master</button>
     <button class="tab" data-tab="events">Schedules</button>
     <button class="tab" data-tab="settings">Settings</button>
   </div>
@@ -154,31 +154,27 @@ window.andersonAuthToken="";</script>
     <div class="panel"><strong>Custom Shows</strong><div class="sub">Saved custom lighting shows. Preview one immediately, mark it as a favorite, or enable/disable its automatic runs.</div><div id="homeCustomLightList" class="presetList"><div class="sub">Loading custom shows…</div></div></div>
   </section>
 
-  <section class="page" data-page="lights">
-    <div class="panel">
-      <div class="row between"><div><strong>Light Preview</strong><div id="previewName" class="sub">Current</div></div><div id="previewEffect" class="sub">Jump</div></div>
-      <div class="card" style="margin-top:10px"><div id="ledRows" class="ledrows"></div></div>
-    </div>
-    <div class="panel">
-      <strong>Build Your Lights</strong><div class="sub">Manual changes become the currently running light state.</div>
-      <div class="label">Colors</div>
-      <div class="sub">Build a one-color or multi-color RGBIC preset. Add up to 8 colors.</div>
-      <div id="colorBuilder" class="colorBuilder"></div>
-      <div class="colorActions">
-        <button id="addColor" class="btn" type="button">+ Add Color</button>
-        <button id="clearColors" class="btn" type="button">Reset to 1 Color</button>
+  <section class="page" data-page="master">
+    <div class="panel" id="masterPanel">
+      <div class="row between wraprow">
+        <div><strong>Master</strong><div class="sub">Labor Day timing • 8-layer red, white &amp; blue show</div></div>
+        <span class="tag eventLayerCount" title="8 lighting layers">8</span>
       </div>
-      <div class="label">Quick colors</div>
-      <div class="quick" id="quickColors" style="margin-top:8px"></div>
-      <div class="label">Favorite Colors</div><div id="lightSavedColorGrid" class="savedColorGrid"></div>
-      <div class="sub" style="margin-top:5px">Tap a saved color to add it to this custom light setup. Tap any color slot above to open the RGB wheel.</div>
-      <div class="label">Effect</div><select id="effectSelect" class="field"><option value="Jump">Jump</option><option value="Breath">Breath</option><option value="Strobe">Strobe</option><option value="Solid">Solid / Static</option><option value="Chase">Chase</option><option value="Gradient Sweep">Gradient Sweep</option><option value="Candy Cane">Candy Cane</option><option value="Twinkle / Sparkle">Twinkle / Sparkle</option><option value="Wipe / Fill">Wipe / Fill</option><option value="Meteor / Comet">Meteor / Comet</option><option value="Rainbow Flow">Rainbow Flow</option><option value="Pulse Wave">Pulse Wave</option></select>
-      <div class="sub" style="margin-top:5px">Unified E22/E120 effect catalog. RGB effect colors are shared across both models; Solid / Static applies Color 1 and holds it.</div>
-      <div class="label row between"><span>Brightness</span><span id="brightVal" class="muted">100%</span></div><input id="brightness" type="range" min="1" max="100" value="100">
-      <div class="label row between"><span>Speed</span><span id="speedVal" class="muted">Very Slow</span></div><input id="speed" type="range" min="1" max="5" value="1">
-      <div class="label">Custom light name</div><input id="customPresetName" class="field" maxlength="32" placeholder="e.g. Front Porch Purple"><button id="savePreset" class="btn primary" style="width:100%;margin-top:10px">Save Custom Light</button>
+      <div class="chips" style="margin-top:10px">
+        <span class="colorNamePill" style="background:#FF0000;color:#fff">Red</span>
+        <span class="colorNamePill" style="background:#FFFFFF;color:#111">White</span>
+        <span class="colorNamePill" style="background:#0A84FF;color:#fff">Blue</span>
+      </div>
+      <div id="masterAnimatedPreview" style="margin-top:8px"></div>
+      <div id="masterLayerList" class="presetList" style="margin-top:10px"><div class="sub">Loading Master…</div></div>
+      <div class="row wraprow" style="margin-top:10px">
+        <button id="masterPreviewButton" class="btn primary" type="button">Preview</button>
+        <button id="masterEditButton" class="btn" type="button">Edit</button>
+        <button id="masterResumeButton" class="btn" type="button">Resume Schedule</button>
+      </div>
+      <label class="row small" style="margin-top:10px"><input id="masterEnabled" type="checkbox" checked><span>Enabled on Labor Day</span></label>
+      <div id="masterStatus" class="status"></div>
     </div>
-    <div class="panel"><strong>Saved Custom Lights</strong><div class="sub">Your saved shows appear here immediately. Use Add to Schedule to assign one to a date.</div><div id="customPresetList" class="presetList"><div class="sub">Loading saved custom lights…</div></div></div>
   </section>
 
   <section class="page" data-page="events">
@@ -267,7 +263,17 @@ window.andersonAuthToken="";</script>
   </div>
 </div>
 
-<div id="scheduleOverlay" class="scheduleOverlay"><div class="scheduleCard"><strong>Add Custom Light to Schedule</strong><div id="schedulePresetName" class="sub" style="margin-top:4px"></div><div class="label">Date</div><input id="customScheduleDate" type="date" class="field"><label class="row" style="margin-top:12px"><input id="customScheduleAnnual" type="checkbox" checked><span class="small">Repeat every year</span></label><div class="grid2" style="margin-top:12px"><button id="cancelCustomSchedule" class="btn">Cancel</button><button id="saveCustomSchedule" class="btn primary">Add to Schedule</button></div></div></div>
+<div id="masterEditorOverlay" class="scheduleOverlay">
+  <div class="scheduleCard" style="max-width:720px">
+    <div class="row between"><div><strong>Edit Master</strong><div class="sub">Eight native layers • red, white and blue only</div></div><button id="masterEditorClose" class="btn" type="button">Done</button></div>
+    <div id="masterEditorBody" style="margin-top:12px"></div>
+    <div class="row wraprow" style="margin-top:12px">
+      <button id="masterEditorReset" class="btn" type="button">Restore Defaults</button>
+      <button id="masterEditorSave" class="btn primary" type="button">Save 8 Layers</button>
+    </div>
+    <div id="masterEditorStatus" class="status"></div>
+  </div>
+</div>
 <script>const API_MODE=!!window.AndroidAnderson||"http:"===location.protocol||"https:"===location.protocol,$=e=>document.getElementById(e),status=e=>$("statusMsg").textContent=e;async function api(e,t={},n=12e3){if(!API_MODE)throw new Error("preview");const o=new Headers(t.headers||{});const{response:a,text:s}=await controllerRequest(e,{...t,headers:o},n);let r={};try{r=s?JSON.parse(s):{}}catch(e){}if(!a.ok)throw new Error(r.error||s||a.statusText);return r}async function post(e,t,n=12e3){return api(e,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(t)},n)}document.querySelectorAll(".tab").forEach(e=>e.addEventListener("click",()=>{e.hidden||(document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t===e)),document.querySelectorAll(".page").forEach(t=>t.classList.toggle("active",t.dataset.page===e.dataset.tab)),"home"===e.dataset.tab&&loadHomeCustomLights(),"lights"===e.dataset.tab&&loadCustomPresets(),"events"===e.dataset.tab&&(loadEventColorTheme(),loadEvents(),loadCustomSchedules()),"settings"===e.dataset.tab&&loadState())}));const leds=[],rows=$("ledRows");{const e=document.createElement("div");e.className="ledgrid";for(let t=0;t<20;t++){const t=document.createElement("div");t.className="led",e.appendChild(t),leds.push(t)}rows.appendChild(e)}const houseLeds=[],houseGroup=$("houseLeds"),houseScene=houseGroup.closest(".housePreview"),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82]];pts.forEach(([e,t])=>{const n=document.createElementNS("http://www.w3.org/2000/svg","circle");n.setAttribute("cx",e),n.setAttribute("cy",t),n.setAttribute("r","5"),n.setAttribute("class","houseLed"),houseGroup.appendChild(n),houseLeds.push(n)});const NAMED_COLOR_PALETTE=[
 {name:"Red",reference:"#FF0000",output:"#FF0000"},{name:"Crimson",reference:"#DC143C",output:"#DC143C"},{name:"Burgundy",reference:"#87002D",output:"#87002D"},
 {name:"Orange",reference:"#FF0D00",output:"#FF0D00"},{name:"True Orange",reference:"#FF7A00",output:"#FF7A00"},{name:"Coral",reference:"#FF6F61",output:"#FF6F61"},
