@@ -7,6 +7,7 @@ export interface CalendarEvent {
   month:number; day:number; weekday:number; nth:number; offsetDays:number; durationDays:number;
   effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean;
   categoryIndex:number; major:boolean; dateRuleSourceId?:string;
+  creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number}>;
 }
 export interface SpecialDate { id:string; year:number; month:number; day:number; }
 export interface CustomCalendarItem {
@@ -140,6 +141,9 @@ function phase(effect:string,speed:number,minutes:number,shift=0):CreativePhase{
   return {effect:canonicalEffect(effect),speed:clamp(Math.round(speed)||1,1,5),minutes:Math.max(2,Math.round(minutes)||8),shift};
 }
 function creativeProgram(e:CalendarEvent):CreativePhase[]{
+  if(Array.isArray(e.creativePhases)&&e.creativePhases.length){
+    return e.creativePhases.slice(0,8).map(p=>phase(p.effect,p.speed,p.minutes,p.shift||0));
+  }
   const name=String(e.name||"").toLowerCase(),base=canonicalEffect(e.effect),baseSpeed=clamp(Number(e.speed)||2,1,5);
   const factory=String(e.id||"").includes("::factory:");
   const solemn=/(remembrance|memorial|holocaust|pow\/mia|yom kippur|good friday|ash wednesday|gold star|pearl harbor|transgender day of remembrance)/.test(name);
@@ -302,7 +306,10 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       effect:canonicalEffect(raw.effect),speed:clamp(Number(raw.speed)||3,1,10),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
       enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
-      dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined
+      dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined,
+      creativePhases:Array.isArray(raw.creativePhases)?raw.creativePhases.slice(0,8).map((p:any)=>({
+        effect:canonicalEffect(p?.effect),speed:clamp(Number(p?.speed)||2,1,5),minutes:clamp(Number(p?.minutes)||6,2,30),shift:Math.trunc(Number(p?.shift)||0)
+      })) : undefined
     });
   }
   for(const raw of Array.isArray(input?.special)?input.special:[]){
