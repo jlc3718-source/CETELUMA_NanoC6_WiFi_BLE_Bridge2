@@ -42,6 +42,9 @@ Scheduler scheduler(&store.get());
 bool manualOverride=false,power=true;
 uint8_t brightness=100,speedLevel=1;
 Theme runningTheme;
+static bool tonightOptionOverride=false;
+static time_t tonightOptionUntil=0;
+static String tonightOptionId;
 uint32_t buttonDown=0;
 static time_t lastScheduleMinute=-1;
 static uint32_t lastScheduleMinuteProbe=0;
@@ -69,7 +72,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.62";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.63";
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
