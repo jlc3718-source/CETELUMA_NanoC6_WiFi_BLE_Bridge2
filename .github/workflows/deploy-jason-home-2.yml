@@ -43,8 +43,17 @@ jobs:
           printf '%s\n' "$LIVE_SHA" > JasonHome2Server/shared/oracle-resolver.sha
           python3 JasonHome2Server/generate_catalog.py
           python3 JasonHome2Server/generate_web.py
-          sudo docker run --rm --network host -v "$PWD:/src" -w /src node:22-bookworm-slim \
-            sh -c 'node --check JasonHome2Server/server.mjs && node --test JasonHome2Server/tests/*.mjs'
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('JasonHome2Server/web/anderson_home.html').read_text()
+          scripts=[x for x in re.findall(r'<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>',html,re.I) if x.strip()]
+          for i,code in enumerate(scripts):
+              Path(f'/tmp/jh2-inline-{i}.js').write_text(code)
+          if not scripts: raise SystemExit('No inline Jason Home UI scripts found')
+          PY
+          sudo docker run --rm --network host -v "$PWD:/src" -v /tmp:/host-tmp -w /src node:22-bookworm-slim \
+            sh -c 'node --check JasonHome2Server/server.mjs && for f in /host-tmp/jh2-inline-*.js; do node --check "$f"; done && node --test JasonHome2Server/tests/*.mjs'
       - name: Build Jason Home 2 only
         run: sudo docker build -f JasonHome2Server/Dockerfile -t jason-home-2-web:${{ github.sha }} .
       - name: Install alongside original Oracle service
@@ -166,8 +175,9 @@ jobs:
           cfg=call('/api/calendar')['calendar']
           assert all(1<=e['speed']<=10 for e in cfg['events']+cfg['customSchedules'])
           text=Path('JasonHome2Server/web/anderson_home.html').read_text()
-          for id in ['speed','eventsSpeed']:
-              assert re.search(r'<input id="'+id+r'"[^>]*max="10"',text), id
+          assert re.search(r'<input id="eventsSpeed"[^>]*max="10"',text), 'eventsSpeed'
+          assert 'data-page="master"' in text and 'id="masterPreviewButton"' in text and 'id="masterEditButton"' in text
+          assert 'data-page="lights"' not in text
           assert 'c.max="10",c.value=e.speed' in text
           ui=Path('JasonHome2Server/web/v3_mockup.js').read_text()
           assert 'id="homeSpeed" type="range" min="1" max="10"' in ui
