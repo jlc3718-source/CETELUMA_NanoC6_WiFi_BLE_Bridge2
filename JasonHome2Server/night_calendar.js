@@ -5,6 +5,41 @@
     const n=type=>Number(parts.find(p=>p.type===type).value);return {year:n("year"),month:n("month"),day:n("day")};};
   let shown=today(),lastRefresh=0,request=0,showNight=()=>{};
   const formatTime=iso=>{if(!iso)return "";const d=new Date(iso);return Number.isNaN(d.getTime())?"":new Intl.DateTimeFormat("en-US",{timeZone:zone,hour:"numeric",minute:"2-digit"}).format(d);};
+
+  function openSchedulerEvent(event,night){
+    if(!event||(!event.id&&!event.name))return;
+    document.body.classList.remove("jh2DateView");
+    const detail=document.querySelector(".jh2NightDetail");if(detail)detail.hidden=true;
+    const year=document.getElementById("yearSelect"),search=document.getElementById("eventSearch");
+    const date=event.at?new Date(event.at):null;
+    const targetYear=night?.year||(date&&!Number.isNaN(date.getTime())?Number(new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric"}).format(date)):today().year);
+    if(year)year.value=String(targetYear);
+    if(search)search.value=event.name||"";
+    document.querySelector('.tab[data-tab="events"]')?.click();
+    year?.dispatchEvent(new Event("change",{bubbles:true}));
+    const id=String(event.id||""),factory=id.includes("::factory:")?id.split("::factory:")[1]:null;
+    let tries=0;
+    const seek=()=>{
+      const cards=[...document.querySelectorAll("#eventList [data-event-id],#eventList .factoryScheduledEvent,#customScheduleList [data-custom-schedule-id]")];
+      const card=cards.find(node=>(id&&(node.dataset.eventId===id||node.dataset.customScheduleId===id))||(factory&&node.dataset.factoryLightId===factory))
+        ||cards.find(node=>[...node.querySelectorAll("strong")].some(title=>title.textContent.trim()===event.name));
+      if(card){
+        document.querySelectorAll(".v3EventJumpTarget").forEach(node=>node.classList.remove("v3EventJumpTarget"));
+        card.classList.add("v3EventJumpTarget");card.tabIndex=-1;
+        card.scrollIntoView({block:"center",behavior:"smooth"});card.focus({preventScroll:true});
+      }else if(++tries<80)setTimeout(seek,100);
+    };setTimeout(seek,100);
+  }
+  function eventLink(node,event,night){
+    if(!node)return;
+    const active=!!event&&(!!event.id||!!event.name)&&event.id!=="manual-override"&&event.phase!=="Idle";
+    node.classList.toggle("v3CurrentEventLink",active);node.tabIndex=active?0:-1;
+    if(active){node.setAttribute("role","button");node.setAttribute("aria-label","Open "+event.name+" in Schedules")}
+    else{node.removeAttribute("role");node.removeAttribute("aria-label")}
+    node.onclick=active?()=>openSchedulerEvent(event,night):null;
+    node.onkeydown=active?e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSchedulerEvent(event,night)}}:null;
+  }
+
   function renderLiveState(state){
     if(!state)return;
     const row=document.querySelector(".jh2RunningNow"),info=state.runningNow||{};
@@ -14,10 +49,23 @@
       const brightness=Number(info.brightness),parts=[info.effect,Number.isFinite(brightness)?brightness+"%":null,info.phase].filter(Boolean);
       if(meta)meta.textContent=parts.join(" · ");
     }
+    eventLink(row,info,state.scheduledEvent?.night);
+    const tonight=document.getElementById("tonightEvent");
+    const events=state.scheduledEvent?.events||[];
+    if(tonight){
+      tonight.replaceChildren();
+      if(events.length)events.forEach((event,index)=>{
+        if(index)tonight.append(document.createElement("br"));
+        const link=document.createElement("span");link.textContent=event.name;
+        eventLink(link,event,state.scheduledEvent.night);tonight.append(link);
+      });
+      else tonight.textContent="Nothing scheduled for tonight";
+    }
     const nextLabel=document.querySelector(".v3NextUpcoming");if(nextLabel)nextLabel.textContent="Next change";
     const nextValue=document.getElementById("nextEvent");
     if(nextValue){
       const change=state.nextChange,time=formatTime(change?.at);
+      eventLink(nextValue,change,null);
       nextValue.textContent=change?`${change.name||"Next change"}${time?" · "+time:""}`:"No upcoming change";
     }
   }
