@@ -492,19 +492,56 @@ async function route(req,res){
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
-  if(method==="POST"&&path==="/api/resume"){masterPreviewGeneration++;await upstream("/api/resume","POST",{});return send(res,200,await state());}
-  if(method==="POST"&&path==="/api/master/preview"){
-    const cfg=await config(),event=ensureMasterEvent(cfg),token=++masterPreviewGeneration,phases=event.creativePhases||MASTER_PHASES;
+  if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
+  if(method==="POST"&&path==="/api/ai/key"){
+    const body=await input(req),key=String(body?.key||"").trim();
+    if(body?.remove){put("ai_api_key_cipher",null);return send(res,200,{ok:true,configured:false,model:AI_MODEL});}
+    if(!/^sk-[A-Za-z0-9_-]{20,}$/.test(key))throw fail(400,"That does not look like an OpenAI API key");
+    await verifyAiKey(key);put("ai_api_key_cipher",sealAiKey(key));
+    return send(res,200,{ok:true,configured:true,model:AI_MODEL});
+  }
+  if(method==="POST"&&path==="/api/ai/chat"){
+    const body=await input(req),message=String(body?.message||"").trim();
+    if(!message)throw fail(400,"Tell the AI what you want the lights to do");
+    const result=await callLightingAi(message);
+    const cfg=await config();
+    return send(res,200,{ok:true,reply:result.reply,thread:result.thread,draft:decorateAiDraft(result.draft,cfg),state:await aiState()});
+  }
+  if(method==="POST"&&path==="/api/ai/reset"){
+    put("ai_thread",[]);put("ai_draft",null);return send(res,200,await aiState());
+  }
+  if(method==="POST"&&path==="/api/ai/preview"){
+    const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to preview");
+    const token=++aiPreviewGeneration,colors=rgb(draft.colors),layers=draft.layers||[];
     void (async()=>{
-      for(let i=0;i<phases.length;i++){
-        if(token!==masterPreviewGeneration)return;
-        const p=phases[i],base=rgb(MASTER_COLORS),shift=Math.max(0,Math.min(2,Math.trunc(Number(p.shift)||0))),colors=[...base.slice(shift),...base.slice(0,shift)];
-        await upstream("/api/control","POST",{name:"Master • Layer "+(i+1),target:"All",power:true,brightness:100,effect:p.effect,colors,speed:p.speed});
+      for(let i=0;i<layers.length;i++){
+        if(token!==aiPreviewGeneration)return;
+        const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
+        await upstream("/api/control","POST",{name:"AI Preview • "+draft.name+" • Layer "+(i+1),target:"All",power:true,brightness:draft.brightness||100,effect:p.effect,colors:colorInts(palette),speed:p.speed});
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
     })().catch(()=>{});
-    return send(res,202,{ok:true,queued:true,layers:8});
+    return send(res,202,{ok:true,queued:true,layers:layers.length});
   }
+  if(method==="POST"&&path==="/api/ai/apply-once"){
+    const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to apply");
+    const cfgNow=await config(),target=resolveAiTarget(draft,cfgNow);
+    if(!target.year)throw fail(409,"I need a specific future date or a recognizable scheduled event before I can apply this once");
+    const id="ai-once-"+randomUUID().slice(0,12),first=draft.layers[0],expiresAt=new Date(Date.UTC(target.year,target.month-1,target.day+1,14,0,0)).toISOString();
+    const item={id,name:String(draft.name||"AI Light Show"),kind:"AI One-Time",rule:"YearTable",month:target.month,day:target.day,weekday:0,nth:0,offsetDays:0,durationDays:1,
+      effect:first.effect,speed:first.speed,colors:colorInts(draft.colors),enabled:true,favorite:false,categoryIndex:Number(target.source?.categoryIndex||0),major:true,
+      dateRuleSourceId:id,creativePhases:draft.layers.map(p=>({...p})),aiOneTime:true,expiresAt,aiReplaceEventId:target.source?.id||""};
+    await mutateCalendar(cfg=>{cfg.events=(cfg.events||[]).filter(e=>e.id!=="master");cfg.special=(cfg.special||[]).filter(x=>x.id!=="master");cfg.events.push(item);cfg.special.push({id,year:target.year,month:target.month,day:target.day});});
+    put("ai_thread",[...meta("ai_thread",[]),{role:"assistant",text:"Applied "+item.name+" one time for "+[target.year,String(target.month).padStart(2,"0"),String(target.day).padStart(2,"0")].join("-")+". It will remove itself after that lighting night."}].slice(-30));
+    return send(res,200,{ok:true,id,appliedDate:[target.year,String(target.month).padStart(2,"0"),String(target.day).padStart(2,"0")].join("-"),state:await aiState()});
+  }
+  if(method==="POST"&&path==="/api/ai/remove"){
+    const body=await input(req),id=String(body?.id||"");
+    if(!id.startsWith("ai-once-"))throw fail(400,"Unknown AI one-time event");
+    await mutateCalendar(cfg=>{cfg.events=(cfg.events||[]).filter(e=>e.id!==id);cfg.special=(cfg.special||[]).filter(x=>x.id!==id);});
+    return send(res,200,{ok:true,state:await aiState()});
+  }
+  if(method==="POST"&&path==="/api/resume"){aiPreviewGeneration++;await upstream("/api/resume","POST",{});return send(res,200,await state());}
   if(method==="POST"&&path==="/api/settings"){
     const body=await input(req);
     await mutateCalendar(cfg=>{
@@ -517,41 +554,14 @@ async function route(req,res){
     return send(res,200,await state());
   }
   if(method==="GET"&&(path==="/api/events"||path==="/api/events/search"))return send(res,200,displayEvents(await config(),url));
-  if(method==="GET"&&path==="/api/master"){
-    const cfg=await config(),event=ensureMasterEvent(cfg);
-    return send(res,200,{ok:true,event:{...event,colors:rgb(event.colors),layerCount:8,when:when(event,new Date().getFullYear(),cfg.special||[])},phases:event.creativePhases});
-  }
-  if(method==="POST"&&path==="/api/master"){
-    const body=await input(req);
-    let saved=null;
-    await mutateCalendar(cfg=>{
-      const event=ensureMasterEvent(cfg);
-      if(Object.hasOwn(body,"enabled"))event.enabled=!!body.enabled;
-      if(Array.isArray(body.phases)){
-        if(body.phases.length!==8)throw fail(400,"Master must contain exactly eight layers");
-        event.creativePhases=body.phases.map((p,i)=>({
-          effect:nativeEffects.has(String(p?.effect))?String(p.effect):MASTER_PHASES[i].effect,
-          speed:clamp(p?.speed??MASTER_PHASES[i].speed,1,5),
-          minutes:clamp(p?.minutes??MASTER_PHASES[i].minutes,2,30),
-          shift:Math.max(0,Math.min(2,Math.trunc(Number(p?.shift)||0)))
-        }));
-      }
-      event.colors=[...MASTER_COLORS];event.name="Master";event.effect=event.creativePhases?.[0]?.effect||"Flow1";event.speed=event.creativePhases?.[0]?.speed||2;
-      saved=JSON.parse(JSON.stringify(event));
-    });
-    return send(res,200,{ok:true,event:{...saved,colors:rgb(saved.colors),layerCount:8}});
-  }
   if(method==="POST"&&path==="/api/event"){
     const body=await input(req);
     await mutateCalendar(cfg=>{
       const e=cfg.events.find(x=>x.id===body.id),original=eventById.get(body.id);
       if(!e)throw fail(404,"Unknown event");
-      if(e.id===MASTER_EVENT_ID){
-        if(body.reset){Object.assign(e,{effect:"Flow1",speed:2,colors:[...MASTER_COLORS],enabled:true,favorite:false,creativePhases:MASTER_PHASES.map(x=>({...x}))});}
-        else{
-          for(const key of ["enabled","favorite","effect","speed"])if(Object.hasOwn(body,key))e[key]=key==="speed"?clamp(body[key],1,5):body[key];
-          e.colors=[...MASTER_COLORS];
-        }
+      if(e.aiOneTime===true){
+        if(Object.hasOwn(body,"enabled"))e.enabled=!!body.enabled;
+        if(Object.hasOwn(body,"favorite"))e.favorite=!!body.favorite;
         return;
       }
       if(!original)throw fail(404,"Unknown event");
