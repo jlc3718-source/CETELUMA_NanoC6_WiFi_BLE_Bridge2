@@ -48,7 +48,16 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.match(calendarJs,/cell\.addEventListener\("click",\(\)=>showNight/);
     assert.match(calendarJs,/Show all schedules/);
     const events=await fetch(base+'/api/events',{headers:{cookie}});
-    assert.equal((await events.json()).events.length,0);
+    const eventRows=(await events.json()).events;
+    assert.equal(eventRows.length,1);
+    assert.equal(eventRows[0].id,'master');
+    assert.equal(eventRows[0].layerCount,8);
+    const master=await fetch(base+'/api/master',{headers:{cookie}});
+    const masterValue=await master.json();
+    assert.equal(masterValue.event.name,'Master');
+    assert.equal(masterValue.event.layerCount,8);
+    assert.equal(masterValue.phases.length,8);
+    assert.deepEqual(masterValue.event.colors,['#FF0000','#FFFFFA','#0D00FF']);
     const state=await fetch(base+'/api/state',{headers:{cookie}});
     const stateValue=await state.json();assert.ok(stateValue.ble,JSON.stringify(stateValue));assert.equal(stateValue.ble.connectedCount,4);
     assert.equal(stateValue.scheduledEvent.name,'Nothing scheduled for tonight');
