@@ -286,7 +286,8 @@ async function sendScene(name:string,scene:Scene){
       if(factoryLightId!=null){
         const preset=cachedFactoryPreset(factoryLightId);
         if(!preset)throw new Error("Exact Native Factory preset "+factoryLightId+" is not available in the cached Eufy catalog");
-        return await c.factoryScene(name,preset,scene.brightness);
+        const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
+        return await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
       }
       return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
     }catch(e){markEufyDegraded(e);throw e;}
@@ -310,7 +311,8 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number){
         if(factoryLightId!=null){
           const preset=cachedFactoryPreset(factoryLightId);
           if(!preset)throw new Error("Exact Native Factory preset "+factoryLightId+" is not available in the cached Eufy catalog");
-          result=await c.factoryScene(name,preset,scene.brightness);
+          const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
+          result=await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
         }else{
           result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
         }
@@ -603,7 +605,7 @@ function pruneFactoryJobs(){
   const cutoff=Date.now()-60*60*1000;
   for(const [id,j] of factoryJobs)if(Number(j?.createdAt||0)<cutoff)factoryJobs.delete(id);
 }
-function queueFactoryTest(lightId:number,target="All",mode="native"){
+function queueFactoryTest(lightId:number,target="All",mode="compatible"){
   pruneFactoryJobs();
   const jobId=crypto.randomUUID();
   factoryJobs.set(jobId,{jobId,state:"running",lightId,target,mode,createdAt:Date.now()});
@@ -611,7 +613,7 @@ function queueFactoryTest(lightId:number,target="All",mode="native"){
     .catch((e:any)=>factoryJobs.set(jobId,{jobId,state:"failed",lightId,target,mode,createdAt:Date.now(),error:e?.message||String(e)}));
   return {ok:true,queued:true,jobId,lightId,target,mode};
 }
-async function factoryTestAll(lightId:number,target="All",mode="native"){
+async function factoryTestAll(lightId:number,target="All",mode="compatible"){
   if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
   let preset:any=null;
   const raw=meta("factory_catalog");
@@ -623,15 +625,15 @@ async function factoryTestAll(lightId:number,target="All",mode="native"){
   preset=applyFactoryEdit(preset);
   const names=targetNames(target),sequence=++manualSequence;
   for(const name of names)latestManualSequence.set(name,sequence);
-  const compatible=factoryCompatibleScene(preset),native=mode==="native";
-  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode,sequence,scene:native?undefined:compatible,createdAt:Date.now(),expiresAt:null}));
+  const compatible=factoryCompatibleScene(preset);
+  setMeta("override",JSON.stringify({active:true,target,factory:true,lightId,mode:"compatible",sequence,scene:compatible,createdAt:Date.now(),expiresAt:null}));
   const results=await Promise.all(names.map(async name=>{
     try{
       const r:any=await serializedForDevice(name,async()=>{
         if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
         const client=await ensureEufy(false);
         if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
-        const out=native?await client.factoryScene(name,preset):await client.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
+        const out=await client.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
         return {...out,skipped:false};
       });
       if(r?.skipped)return {name,ok:true,skipped:true,model:DEVICE_MODELS[name]};
@@ -640,12 +642,12 @@ async function factoryTestAll(lightId:number,target="All",mode="native"){
       // scheduled scene is still physically present. Invalidating this cache
       // forces the scheduler to reapply its scene after Resume/expiry.
       db.prepare("DELETE FROM desired_state WHERE name=?").run(name);
-      return {name,ok:true,model:DEVICE_MODELS[name],strategy:native?(r.strategy||"native-factory-020d"):"compatible-production-effect",compatible:native?null:compatible,published:r.published,brokerAccepted:r.brokerAccepted===true,deviceReported:r.deviceReported===true,instance:r.instance||null,report:r.report||null};
+      return {name,ok:true,model:DEVICE_MODELS[name],strategy:"native-personal-0206",compatible,published:r.published,brokerAccepted:r.brokerAccepted===true,deviceReported:r.deviceReported===true,instance:r.instance||null,report:r.report||null};
     }catch(e:any){
       markEufyDegraded(e);
       const msg=e?.message||String(e);
       db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
-      return {name,ok:false,model:DEVICE_MODELS[name],strategy:mode==="native"?(DEVICE_MODELS[name]==="E22"?"native-t8l02-020d":"experimental-t8l00-020d"):"compatible-production-effect",error:msg};
+      return {name,ok:false,model:DEVICE_MODELS[name],strategy:"native-personal-0206",error:msg};
     }
   }));
   const sent=results.filter((x:any)=>x.ok&&!x.skipped).length,skipped=results.filter((x:any)=>x.skipped).length;
@@ -660,7 +662,7 @@ async function factoryTestAll(lightId:number,target="All",mode="native"){
     try{if(current&&JSON.parse(current)?.sequence===sequence)delMeta("override");}catch{}
   }
   setMeta("factory_last_test",JSON.stringify({at:new Date().toISOString(),lightId,name:preset?.name||null,target,mode,sequence,sent,skipped,total:names.length,results}));
-  return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode,sequence,customized:!!preset?.customized,compatible,attempted:names.length,sent,skipped,results,note:mode==="native"?"Exact native 0x020D factory recipe sent; physical pattern verification is still required.":"Factory recipe translated to the production Jason Home effect engine for reliable visible output."};
+  return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode:"compatible",sequence,customized:!!preset?.customized,compatible,attempted:names.length,sent,skipped,results,note:"Factory recipe translated to the captured native 0x0206 command set for reliable visible output."};
 }
 
 async function statusPayload(refresh=false){
@@ -1045,10 +1047,10 @@ const server=http.createServer(async(req,res)=>{
       return json(res,202,{ok:true,queued:true,refresh:queueFactoryRefresh()});
     }
     if(method==="POST"&&path==="/api/eufy/factory-test"){
-      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All"),requestedMode=String(input?.mode||"native"),mode="native";
+      const input:any=await readJson(req),lightId=Number(input?.lightId),target=String(input?.target||"All"),requestedMode=String(input?.mode||"compatible"),mode="compatible";
       if(!Number.isInteger(lightId)||lightId<1||lightId>1000000)throw new Error("Invalid factory preset id");
       targetNames(target);
-      if(requestedMode!=="compatible"&&requestedMode!=="native")throw new Error("Factory apply mode must be native");
+      if(requestedMode!=="compatible"&&requestedMode!=="native")throw new Error("Factory apply mode must be compatible");
       return json(res,202,queueFactoryTest(lightId,target,mode));
     }
     if(method==="GET"&&path==="/api/eufy/factory-test"){
