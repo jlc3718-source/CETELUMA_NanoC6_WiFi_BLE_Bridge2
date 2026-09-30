@@ -372,6 +372,11 @@ export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:
 function calendarResolutionKey(r:CalendarResolution|null){
   return r?JSON.stringify({id:r.id,schedule2:r.schedule2,scene:r.scene}):"off";
 }
+function calendarTransitionKey(r:CalendarResolution|null){
+  // Internal creative-show phase changes are reconciled every 30 seconds, but
+  // they are not schedule/event boundaries and should not replace the next-event UI.
+  return r?JSON.stringify({id:r.id,schedule2:r.schedule2}):"off";
+}
 function calendarDayBounds(cfg:CalendarConfig,day:Ymd,lat:number,lon:number,tz:string){
   const noon=(d:Ymd)=>new Date(localToUtcMs(d.year,d.month,d.day,12,0,tz));
   const startMinute=cfg.settings.startAtDusk?astroMinute(noon(day),lat,lon,tz,false):cfg.settings.on;
@@ -439,9 +444,9 @@ export function nextCalendarTransition(cfg:CalendarConfig|null,now:Date,lat:numb
   boundaries.sort((a,b)=>a.at-b.at);
   const first=boundaries.find(x=>x.at>nowMs+500);
   if(first){
-    let prior=resolveCalendar(cfg,now,lat,lon,tz),priorKey=calendarResolutionKey(prior);
+    let prior=resolveCalendar(cfg,now,lat,lon,tz),priorKey=calendarTransitionKey(prior);
     for(let t=Math.ceil((nowMs+1)/60000)*60000;t<first.at;t+=60000){
-      const r=resolveCalendar(cfg,new Date(t),lat,lon,tz),key=calendarResolutionKey(r);
+      const r=resolveCalendar(cfg,new Date(t),lat,lon,tz),key=calendarTransitionKey(r);
       if(key!==priorKey)return {at:t,id:r?.id||null,name:r?.name||(r?"Scheduled scene":"Lights off"),target:"All",phase:"scene"};
       prior=r;priorKey=key;
     }
@@ -450,7 +455,7 @@ export function nextCalendarTransition(cfg:CalendarConfig|null,now:Date,lat:numb
     if(b.at<=nowMs+500)continue;
     const before=resolveCalendar(cfg,new Date(b.at-1000),lat,lon,tz);
     const after=resolveCalendar(cfg,new Date(b.at+1000),lat,lon,tz);
-    if(calendarResolutionKey(before)!==calendarResolutionKey(after)){
+    if(calendarTransitionKey(before)!==calendarTransitionKey(after)){
       return {at:b.at,id:after?.id||null,name:after?.name||(after?"Scheduled scene":"Lights off"),target:"All",phase:b.phase};
     }
   }
