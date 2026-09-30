@@ -2,8 +2,10 @@ package com.jasonhome.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
 import android.graphics.Color;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -11,6 +13,7 @@ import android.text.InputType;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -28,6 +31,8 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
     private CloudflareApiClient cloudflare;
     private AndersonApiBridge bridge;
     private volatile boolean cloudLoginShowing=false;
+    private static final int REQUEST_RECORD_AUDIO = 4107;
+    private PermissionRequest pendingAudioPermissionRequest;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -60,7 +65,37 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         settings.setMediaPlaybackRequiresUserGesture(false);
         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
 
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                if (request == null) return;
+                runOnUiThread(() -> {
+                    boolean wantsAudio=false;
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                            wantsAudio=true;
+                            break;
+                        }
+                    }
+                    if (!wantsAudio) {
+                        request.deny();
+                        return;
+                    }
+                    if (Build.VERSION.SDK_INT < 23 ||
+                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                        return;
+                    }
+                    pendingAudioPermissionRequest=request;
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
+                });
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (pendingAudioPermissionRequest == request) pendingAudioPermissionRequest=null;
+            }
+        });
         webView.setWebViewClient(new WebViewClient() {
             private boolean handle(String url) {
                 if (url != null && url.startsWith("file:///android_asset/")) return false;
@@ -196,6 +231,26 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
                 "(function(){var e=document.getElementById('statusMsg');if(e)e.textContent=" + safe + ";})();",
                 null
             );
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_RECORD_AUDIO) return;
+        final PermissionRequest request=pendingAudioPermissionRequest;
+        pendingAudioPermissionRequest=null;
+        if (request == null) return;
+        runOnUiThread(() -> {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                request.deny();
+                if (webView != null) webView.evaluateJavascript(
+                    "(function(){var e=document.getElementById('aiVoiceStatus');if(e)e.textContent='Microphone permission was denied. Allow Microphone for Jason Home in Android settings and tap again.';})();",
+                    null
+                );
+            }
         });
     }
 
