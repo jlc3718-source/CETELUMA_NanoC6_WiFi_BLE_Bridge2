@@ -76,3 +76,83 @@ jobs:
           path: android-build-tools-35.tar.gz
           if-no-files-found: error
           retention-days: 7
+
+
+  sign:
+    name: Sign Jason Home 2 Voice APK
+    needs: build
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Java 17 for apksigner
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download unsigned APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-2.0.2-VOICE-UNSIGNED
+          path: sign-work
+
+      - name: Download Android signing tools
+        uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-Android-Build-Tools-35
+          path: sign-tools
+
+      - name: Create or reuse persistent Oracle signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYDIR=/home/ubuntu/.jason-home-2-signing
+          KEYSTORE="$KEYDIR/jason-home-2-release.p12"
+          PASSFILE="$KEYDIR/password"
+          mkdir -p "$KEYDIR"
+          chmod 700 "$KEYDIR"
+
+          if [ ! -s "$PASSFILE" ]; then
+            umask 077
+            openssl rand -base64 36 | tr -d '\n' > "$PASSFILE"
+          fi
+          PASS="$(cat "$PASSFILE")"
+
+          if [ ! -s "$KEYSTORE" ]; then
+            keytool -genkeypair -v               -storetype PKCS12               -keystore "$KEYSTORE"               -storepass "$PASS"               -keypass "$PASS"               -alias jason-home-2               -keyalg RSA -keysize 4096 -validity 10000               -dname "CN=Jason Home 2, OU=Jason Home, O=Jason Craumer, L=Randolph, ST=New York, C=US"
+            chmod 600 "$KEYSTORE" "$PASSFILE"
+          fi
+
+          keytool -list -v -keystore "$KEYSTORE" -storepass "$PASS" -alias jason-home-2             | grep -E 'Alias name:|SHA256:' > /tmp/jh2-signing-cert.txt
+          cat /tmp/jh2-signing-cert.txt
+
+      - name: Sign and verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf sign-tools/android-build-tools-35.tar.gz -C sign-tools
+          APKSIGNER="$(find sign-tools -type f -name apksigner | head -1)"
+          test -n "$APKSIGNER"
+          chmod +x "$APKSIGNER"
+
+          KEYDIR=/home/ubuntu/.jason-home-2-signing
+          KEYSTORE="$KEYDIR/jason-home-2-release.p12"
+          PASS="$(cat "$KEYDIR/password")"
+          IN="sign-work/Jason-Home-2-2.0.2-VOICE-UNSIGNED.apk"
+          OUT="Jason-Home-2-2.0.2-VOICE-SIGNED.apk"
+
+          test -s "$IN"
+          "$APKSIGNER" sign             --ks "$KEYSTORE"             --ks-type PKCS12             --ks-key-alias jason-home-2             --ks-pass "pass:$PASS"             --key-pass "pass:$PASS"             --out "$OUT" "$IN"
+
+          "$APKSIGNER" verify --verbose --print-certs "$OUT"
+          sha256sum "$OUT"
+
+      - name: Upload signed installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-2.0.2-VOICE-SIGNED
+          path: Jason-Home-2-2.0.2-VOICE-SIGNED.apk
+          if-no-files-found: error
+          retention-days: 14
