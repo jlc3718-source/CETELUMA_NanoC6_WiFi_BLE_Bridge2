@@ -116,20 +116,6 @@ jobs:
           TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
           test -n "$TOKEN"
 
-          # One-time repair for the calendar flag that was accidentally left off.
-          # The marker is written only after the candidate passes production
-          # validation, so a failed deploy can still retry the repair safely.
-          SCHEDULER_FIX_MARKER=/home/ubuntu/.jason-home-schedule1-enabled-v1
-          SCHEDULER_FIX_APPLIED=0
-          if [ ! -f "$SCHEDULER_FIX_MARKER" ]; then
-            curl -fsS -X POST \
-              -H "Authorization: Bearer $TOKEN" \
-              -H 'Content-Type: application/json' \
-              --data '{"scheduler":true}' \
-              http://127.0.0.1:8080/api/settings >/tmp/jason-home-scheduler-repair.json
-            SCHEDULER_FIX_APPLIED=1
-          fi
-
           STATUS="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1')"
           python3 - "$STATUS" "$DEPLOY_SHA" <<'PY'
           import json,sys
@@ -148,10 +134,7 @@ jobs:
               raise SystemExit("Build provenance mismatch: "+json.dumps(build))
           print("Oracle exact-commit deploy PASS",sha)
           PY
-          if [ "$SCHEDULER_FIX_APPLIED" = 1 ]; then
-            touch "$SCHEDULER_FIX_MARKER"
-            cat /tmp/jason-home-scheduler-repair.json
-          fi
+
 
       - name: Roll back failed candidate
         if: failure()
