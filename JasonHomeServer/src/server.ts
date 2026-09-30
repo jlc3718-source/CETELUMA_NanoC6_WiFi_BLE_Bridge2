@@ -1,3 +1,4 @@
+import { canonicalEffect } from "./effects.js";
 import http from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -28,7 +29,7 @@ if(!/^[0-9a-f]{32}$/.test(DEFAULT_INSTALL))throw new Error("EUFY_INSTALL_ID must
 
 const DEVICE_NAMES=["Pool","House","Garage","Shed"] as const;
 const DEVICE_MODELS:Record<string,string>={Pool:"E120",House:"E120",Garage:"E22",Shed:"E22"};
-const DEFAULT_SCENE:Scene={power:true,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
+const DEFAULT_SCENE:Scene={power:true,brightness:75,effect:"Static",colors:[0xffffff],speed:3};
 
 mkdirSync(dirname(DB_PATH),{recursive:true});
 const db=new DatabaseSync(DB_PATH);
@@ -138,7 +139,7 @@ function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
   return {
     power:input?.power==null?base.power:!!input.power,
     brightness:clamp(Number(input?.brightness??base.brightness)||base.brightness,1,100),
-    effect:String(input?.effect||base.effect).slice(0,64),
+    effect:canonicalEffect(input?.effect||base.effect),
     colors:colors.length?colors:[...base.colors],
     speed:clamp(Number(input?.speed??base.speed)||base.speed,1,5)
   };
@@ -448,7 +449,7 @@ function factoryCompatibleScene(preset:any):Scene{
   return {
     power:true,
     brightness:clamp(Math.round(Number(preset?.brightness)||75),1,100),
-    effect,
+    effect:canonicalEffect(effect),
     colors:factoryHexColors(preset).length?factoryHexColors(preset):[0xffffff],
     speed:factorySpeed5(preset)
   };
@@ -457,7 +458,7 @@ function factoryScheduledNativeScene(preset:any):Scene{
   const visual=factoryCompatibleScene(preset);
   const lightId=Number(preset?.lightId);
   if(!Number.isInteger(lightId)||lightId<1)throw new Error("Factory preset has an invalid native light id");
-  return {...visual,effect:"Exact Native Factory #"+lightId};
+  return {...visual,effect:canonicalEffect(visual.effect)};
 }
 const FACTORY_EVENT_MATCHES:Record<string,string>={
   "mardi gras":"evt027",
@@ -1091,6 +1092,23 @@ const server=http.createServer(async(req,res)=>{
 });
 
 server.keepAliveTimeout=65000;
+// Migrate effects once, preserving dates, palettes, enablement and schedule settings.
+const previousCalendar=calendarConfig();
+if(previousCalendar){
+  const migrated=normalizeCalendarConfig(previousCalendar);
+  const changed=[...previousCalendar.events,...previousCalendar.customSchedules].some(e=>e.effect!==canonicalEffect(e.effect));
+  if(changed){
+    if(!meta("native_effects_migration_backup"))setMeta("native_effects_migration_backup",JSON.stringify(previousCalendar));
+    migrated.revision=Math.max(Number(meta("calendar_revision")||0),Number(previousCalendar.revision)||0)+1;
+    migrated.syncedAt=previousCalendar.syncedAt;
+    setMeta("calendar_config",JSON.stringify(migrated));
+    setMeta("calendar_revision",String(migrated.revision));
+  }
+}
+for(const row of allSchedules()){
+  const effect=canonicalEffect(row.effect);
+  if(effect!==row.effect)db.prepare("UPDATE schedules SET effect=? WHERE id=?").run(effect,row.id);
+}
 server.listen(PORT,"0.0.0.0",()=>{
   console.log(`Jason Home Oracle server listening on 0.0.0.0:${PORT}`);
   console.log(`Scheduler timezone: ${TZ}; coordinates: ${LAT}, ${LON}`);

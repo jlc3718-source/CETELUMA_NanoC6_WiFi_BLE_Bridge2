@@ -1,3 +1,4 @@
+import { canonicalEffect } from "./effects.js";
 import { astronomy, localParts, localToUtcMs } from "./scheduler.js";
 import type { Scene } from "./types.js";
 
@@ -172,7 +173,7 @@ function combineCandidates(items:CalendarCandidate[],brightness:number,schedule2
     id:"overlap:"+items.map(x=>x.id).join("+"),
     name:names.length<=3?names.join(" + "):`${names.length} overlapping events`,
     schedule2,
-    scene:{power:true,brightness:clamp(brightness,1,100),effect:"Jump",colors:colors.length?colors:[0xffffff],speed:1}
+    scene:{power:true,brightness:clamp(brightness,1,100),effect:"Cycle",colors:colors.length?colors:[0xffffff],speed:1}
   };
 }
 function resolveFor(cfg:CalendarConfig,day:Ymd,minute:number,start:number,end:number,schedule2:boolean,brightness:number):CalendarResolution|null{
@@ -235,7 +236,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       id:String(raw.id),name:String(raw.name||raw.id),kind:String(raw.kind||"Observance"),rule:String(raw.rule||"Fixed"),
       month:Number(raw.month)||0,day:Number(raw.day)||0,weekday:Number(raw.weekday)||0,nth:Number(raw.nth)||0,
       offsetDays:Number(raw.offsetDays)||0,durationDays:Math.max(1,Number(raw.durationDays)||1),
-      effect:String(raw.effect||"Solid / Static"),speed:clamp(Number(raw.speed)||3,1,5),
+      effect:canonicalEffect(raw.effect),speed:clamp(Number(raw.speed)||3,1,5),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
       enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
       dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined
@@ -248,7 +249,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
     if(!raw||typeof raw.id!=="string")continue;
     cfg.customSchedules.push({
       id:String(raw.id),name:String(raw.name||"Custom Light"),enabled:raw.enabled!==false,annual:raw.annual!==false,
-      year:Number(raw.year)||0,month:Number(raw.month)||0,day:Number(raw.day)||0,effect:String(raw.effect||"Solid / Static"),
+      year:Number(raw.year)||0,month:Number(raw.month)||0,day:Number(raw.day)||0,effect:canonicalEffect(raw.effect),
       speed:clamp(Number(raw.speed)||3,1,5),brightness:clamp(Number(raw.brightness)||100,1,100),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff]
     });
@@ -259,7 +260,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
 export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string):CalendarResolution|null{
   if(!cfg)return null;
   const lp=localParts(now,tz),day={year:lp.year,month:lp.month,day:lp.day},minute=lp.hour*60+lp.minute;
-  const whiteScene:Scene={power:true,brightness:100,effect:"Solid / Static",colors:[0xffffff],speed:3};
+  const whiteScene:Scene={power:true,brightness:100,effect:"Static",colors:[0xffffff],speed:3};
 
   if(cfg.settings.whiteOverride1Enabled!==false&&minute>=21*60&&minute<22*60){
     return {id:"white-override-1",name:"White Override 1",schedule2:false,scene:whiteScene};

@@ -20,7 +20,7 @@ const base={
 let cfg=normalizeCalendarConfig(base);
 let r=resolveCalendar(cfg,new Date("2026-12-25T23:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.name,"Christmas Day");
-assert.equal(r?.scene.effect,"Candy Cane");
+assert.equal(r?.scene.effect,"Flow1");
 assert.equal(r?.schedule2,false);
 
 r=resolveCalendar(cfg,new Date("2026-12-26T04:30:00Z"),42.1507,-78.9452,"America/New_York");
@@ -143,7 +143,7 @@ const universalCombine=normalizeCalendarConfig({
   ]
 });
 r=resolveCalendar(universalCombine,new Date("2026-12-25T23:30:00Z"),42.1507,-78.9452,"America/New_York");
-assert.equal(r?.scene.effect,"Jump");
+assert.equal(r?.scene.effect,"Cycle");
 assert.deepEqual(r?.scene.colors,[0xff0000,0x0000ff]);
 
 const whiteOverrides=normalizeCalendarConfig({
