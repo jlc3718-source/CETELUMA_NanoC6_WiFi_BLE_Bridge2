@@ -114,7 +114,7 @@ function cleanedCalendarConfig(input:CalendarConfig){
   for(const e of cfg.events||[]){
     const id=String((e as any).id||"");
     if(id==="master"){expired.add(id);continue;}
-    if(!id.startsWith("ai-one:"))continue;
+    if(!id.startsWith("ai-once-"))continue;
     const hit:any=specials.get(id);
     if(!hit){expired.add(id);continue;}
     const age=today-calendarOrdinal({year:Number(hit.year),month:Number(hit.month),day:Number(hit.day)});
