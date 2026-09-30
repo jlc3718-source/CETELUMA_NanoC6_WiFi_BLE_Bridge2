@@ -47,7 +47,7 @@ jobs:
           from pathlib import Path
           import re
           html=Path('JasonHome2Server/web/anderson_home.html').read_text()
-          scripts=[x for x in re.findall(r'<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>',html,re.I) if x.strip()]
+          scripts=[x for x in re.findall(r'<script[^>]*>(.*?)</script>',html,re.I|re.S) if x.strip()]
           for i,code in enumerate(scripts):
               Path(f'/tmp/jh2-inline-{i}.js').write_text(code)
           if not scripts: raise SystemExit('No inline Jason Home UI scripts found')
