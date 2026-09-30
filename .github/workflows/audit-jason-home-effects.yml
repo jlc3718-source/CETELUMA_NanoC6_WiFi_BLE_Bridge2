@@ -1,4 +1,4 @@
-name: Audit Jason Home effect catalog
+name: Audit Jason Home 2 device reports
 on:
   push:
     branches: [jason-home-cloudflare-rebuild]
@@ -11,22 +11,18 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 5
     steps:
-      - name: Read cached Eufy effect definitions
+      - name: Read fresh reports from all four controllers
         run: |
           python3 - <<'PY'
           import json,urllib.request
           from pathlib import Path
           token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
-          def read(path):
-              return json.load(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080'+path,headers={'Authorization':'Bearer '+token}),timeout=45))
-          data=read('/api/eufy/factory-presets?raw=1')
-          rows=[]
-          for p in data.get('presets',[]):
-              rows.append({k:p.get(k) for k in ['lightId','name','colors','brightness','speed','layerExecutionMode','layers','buildableE22','buildableE120Experimental']})
-          Path('/tmp/jason-effect-catalog.json').write_text(json.dumps({'presets':rows},indent=2))
-          print('Cached catalog entries:',len(rows))
+          health=json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health'))
+          assert health['build']['sha']=='1ca33c61c1b6cdea5c5e1be022fb8d6097a39f4a',health
+          for target in ['Pool','House','Garage','Shed']:
+              request=urllib.request.Request('http://127.0.0.1:8080/api/mqtt-probe',json.dumps({'target':target}).encode(),{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              data=json.load(urllib.request.urlopen(request,timeout=45))
+              print(json.dumps({k:data.get(k) for k in ['target','brokerAccepted','deviceReported','report']}))
+              assert data.get('brokerAccepted') and data.get('deviceReported'),target
+              assert data['report']['cmd']==2560,data['report']
           PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: jason-effect-catalog
-          path: /tmp/jason-effect-catalog.json
