@@ -3,7 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual, randomUUID } from "node:crypt
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { lightingNightDate, resolveNightEvents } from "./night_resolver.mjs";
+import { lightingNightDate, resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene } from "./night_resolver.mjs";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -149,6 +149,30 @@ async function mutateCalendar(change){
   if(!result.ok)throw fail(409,"Calendar update was rejected");
   return cfg;
 }
+
+async function effectiveNightConfig(){
+  const cfg=await config(),out=JSON.parse(JSON.stringify(cfg));
+  let promotions=[];
+  try{promotions=(await upstream("/api/eufy/factory-promotions")).promotions||[];}catch{}
+  out.events=(out.events||[]).filter(e=>!String(e.id||"").includes("::factory:"));
+  for(const p of promotions){
+    const event=p?.event||{},scene=p?.scene||{},lightId=Number(p?.lightId);
+    if(!event.id||!Number.isInteger(lightId)||p.enabled===false)continue;
+    out.events.push({...event,id:String(event.id)+"::factory:"+lightId,dateRuleSourceId:String(event.id),
+      name:String(p.name||event.name||("Factory "+lightId)),effect:String(scene.effect||event.effect||"Static"),
+      speed:Number(scene.speed||event.speed||1),colors:Array.isArray(scene.colors)?scene.colors:[...(event.colors||[])],
+      enabled:true,favorite:false});
+  }
+  return out;
+}
+async function tonightCandidateBundle(){
+  const cfg=await effectiveNightConfig(),now=new Date(),night=lightingNightDate(cfg,now,nightLocation.lat,nightLocation.lon,nightLocation.tz);
+  const candidates=resolveNightCandidates(cfg,night,nightLocation.lat,nightLocation.lon,nightLocation.tz).map(item=>{
+    const source=(cfg.events||[]).find(x=>x.id===item.id)||(cfg.customSchedules||[]).find(x=>x.id===item.id)||{};
+    return {id:String(item.id||source.id||""),name:String(item.name||source.name||"Scheduled event"),source};
+  });
+  return {cfg,now,night,candidates};
+}
 function eventDate(e,year,special){
   const utc=(y,m,d)=>new Date(Date.UTC(y,m-1,d));
   let d=null;
@@ -212,7 +236,7 @@ async function state(){
   const scene=first||{power:false,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
   const scheduled=s.calendar?.current||null;
   const runningNow=s.override?.active
-    ? {id:"manual-override",name:"Manual override",effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Manual override",schedule2:false}
+    ? {id:"manual-override",name:String(meta("running_name","Manual override")||"Manual override"),effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Manual override",schedule2:false}
     : scheduled
       ? {id:scheduled.id||"",name:scheduled.name||"Scheduled scene",effect:scheduled.scene?.effect||scene.effect||"Solid / Static",
           brightness:Number(scheduled.scene?.brightness??scene.brightness)||75,
@@ -277,6 +301,26 @@ async function route(req,res){
   if(method==="GET"&&path==="/api/night-calendar"){
     const today=localDay(new Date()),year=Number(url.searchParams.get("year")||today.year),month=Number(url.searchParams.get("month")||today.month);
     return send(res,200,monthSummary(await config(),year,month));
+  }
+  if(method==="GET"&&path==="/api/tonight-options"){
+    const {cfg,now,night,candidates}=await tonightCandidateBundle();
+    const options=candidates.map(({id,name,source})=>{
+      const scene=resolveNightCandidateScene(cfg,night,id,now,nightLocation.lat,nightLocation.lon,nightLocation.tz);
+      return {id,name,type:id.includes("::factory:")?"Factory event":(cfg.customSchedules||[]).some(x=>x.id===id)?"Custom event":"Calendar event",
+        effect:String(scene?.effect||source.effect||"Static"),speed:Number(scene?.speed||source.speed||1),
+        colors:rgb(source.colors||scene?.colors||[]),scene:scene?{...scene,colors:rgb(scene.colors)}:null};
+    }).filter(x=>x.scene);
+    return send(res,200,{ok:true,night,options});
+  }
+  if(method==="POST"&&path==="/api/tonight-options"){
+    const body=await input(req),wanted=String(body?.id||""),bundle=await tonightCandidateBundle();
+    const chosen=bundle.candidates.find(x=>x.id===wanted);
+    if(!chosen)throw fail(409,"That event is not an eligible option for this lighting night");
+    const scene=resolveNightCandidateScene(bundle.cfg,bundle.night,wanted,bundle.now,nightLocation.lat,nightLocation.lon,nightLocation.tz);
+    if(!scene)throw fail(409,"The selected event cannot run in the current lighting window");
+    put("running_name",chosen.name);
+    const accepted=await upstream("/api/control","POST",{...scene,name:chosen.name,target:"All"});
+    return send(res,accepted?.queued?202:200,{ok:true,selected:{id:wanted,name:chosen.name,scene:{...scene,colors:rgb(scene.colors)}},temporary:true,...accepted});
   }
   if(method==="GET"&&path==="/api/cloud/config")return send(res,200,{ok:true,endpoint:"https://150.136.245.51",mode:"cloud",configured:true,automationOwner:"oracle",directReady:false,directStatus:"Jason Home 2 web controller"});
   if(method==="POST"&&path==="/api/cloud/config")return send(res,200,{ok:true,endpoint:"https://150.136.245.51",mode:"cloud",configured:true,automationOwner:"oracle"});
