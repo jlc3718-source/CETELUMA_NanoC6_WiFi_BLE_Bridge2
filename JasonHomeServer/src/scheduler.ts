@@ -90,7 +90,7 @@ export function nextScheduleEvent(rows:ScheduleRow[],now:Date,lat:number,lon:num
 function rowScene(row:ScheduleRow):Scene{
   let colors:number[]=[0xffffff];
   try{const parsed=JSON.parse(row.colors||"[]");if(Array.isArray(parsed)){const safe=parsed.map((x:any)=>Number(x)&0xffffff).filter((x:any)=>Number.isFinite(x)).slice(0,8);if(safe.length)colors=safe;}}catch{}
-  return {power:true,brightness:Math.max(1,Math.min(100,Number(row.brightness)||75)),effect:row.effect||"Solid / Static",colors,speed:Math.max(1,Math.min(5,Number(row.speed)||3))};
+  return {power:true,brightness:Math.max(1,Math.min(100,Number(row.brightness)||75)),effect:row.effect||"Solid / Static",colors,speed:Math.max(1,Math.min(10,Math.round(Number(row.speed)||5)))};
 }
 export function resolveScheduleState(rows:ScheduleRow[],now:Date,lat:number,lon:number,tz:string,devices:string[]):Record<string,ResolvedScheduleState|null>{
   const result:Record<string,ResolvedScheduleState|null>={};for(const d of devices)result[d]=null;
