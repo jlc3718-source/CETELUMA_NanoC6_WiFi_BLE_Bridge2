@@ -1,3 +1,4 @@
+import { buildFactoryFields } from "./factory-presets.js";
 export const OP_SETUP=0x0201;
 export const OP_COLOR=0x0206;
 export const OP_SHOW=0x020d;
@@ -48,4 +49,22 @@ function calibratedColor(model:string,rgb:number){
   return c;
 }
 function calibratedColors(model:string,colors:number[]){return colors.map(c=>calibratedColor(model,c));}
-export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean):{opcode:number;fields:Uint8Array}{const raw=colors?.length?colors:[0xffffff],safe=calibratedColors(model,raw);if(isSolidEffect(effect))return {opcode:OP_COLOR,fields:color(model,safe[0],defaultLampCount(model))};if(isE22(model))return {opcode:OP_SHOW,fields:show(model,effect,safe,speed,reverse)};return {opcode:OP_COLOR,fields:effectE120(effect,safe,speed,reverse,defaultLampCount(model))};}
+// Breath needs brightness modulation, including for a one-color palette.
+// The old type-1 color transition had no brightness range and completed once.
+export function breath(model:string,colors:number[],speed:number):Uint8Array{
+  const rawSpeed=isE22(model)?speedValueE22(speed):speedValue(speed);
+  return buildFactoryFields(model,{
+    lightId:isE22(model)?21002:E120_EFFECT_CARRIER_ID,speed:rawSpeed,layerExecutionMode:0,
+    layers:[{
+      current_layer_type:0,layer_priority:0,layer_speed:rawSpeed,layer_range:[0,100],
+      interval_type:0,interval_value:0,light_effect_post_cycle_status:0,layer_execution_parameter:0,
+      colors:colors.map(c=>(c&0xffffff).toString(16).padStart(6,"0")).join("|"),
+      color_pick_mode:0,gradient_value:0,flow_direction:0,direction_change_mode:0,length_range:0,
+      color_fill_mode:0,insert_block_mode:0,insert_block_range:[0,0],
+      insert_black_block_mode:0,insert_black_block_range:[0,0],
+      brightness_variation_type:1,brightness_range:[10,100],
+      light_effect_cycle_method:0,execution_parameter:0
+    }]
+  });
+}
+export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean):{opcode:number;fields:Uint8Array}{const raw=colors?.length?colors:[0xffffff],safe=calibratedColors(model,raw);if(contains(effect,"Breath"))return {opcode:OP_SHOW,fields:breath(model,safe,speed)};if(isSolidEffect(effect))return {opcode:OP_COLOR,fields:color(model,safe[0],defaultLampCount(model))};if(isE22(model))return {opcode:OP_SHOW,fields:show(model,effect,safe,speed,reverse)};return {opcode:OP_COLOR,fields:effectE120(effect,safe,speed,reverse,defaultLampCount(model))};}
