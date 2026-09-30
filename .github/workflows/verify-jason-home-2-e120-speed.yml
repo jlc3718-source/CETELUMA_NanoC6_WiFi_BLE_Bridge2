@@ -1,0 +1,46 @@
+name: Verify Jason Home 2 E120 captured speed layout
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['.github/workflows/verify-jason-home-2-e120-speed.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Test Pool red and blue Breathe at fastest speed and inspect actual wire commands
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          def call(path,data=None):
+              req=urllib.request.Request('http://127.0.0.1:8080'+path,None if data is None else json.dumps(data).encode(),{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              return json.load(urllib.request.urlopen(req,timeout=45))
+          assert call('/api/health')['build']['sha']=='9b36a0b197c73b347377064bd2d9e583a421e2f3'
+          call('/api/mqtt-capture/start',{})
+          result=call('/api/control?wait=1',{'target':'Pool','power':True,'effect':'Breathe','colors':[16711680,255],'brightness':100,'speed':5})
+          assert result.get('ok'),result
+          time.sleep(5)
+          report=call('/api/mqtt-probe',{'target':'Pool'})
+          assert report['report']['effectId']==20005,report
+          capture=call('/api/mqtt-capture')
+          commands=[s for s in capture['samples'] if s['direction']=='command']
+          effect=next(s for s in commands if s['opcode']==518)
+          f=effect['fields']
+          assert f['a3']=='254e' and f['a5']=='0a' and f['a6']=='02ff0000000000ff00' and f['a8']=='64',effect
+          assert f['a9']=='00000000' and f['ac']=='ffffffff',effect
+          assert not any(k in f for k in ['ab','ad','af']),effect
+          assert not any(s['opcode']==513 and 'a4' in s['fields'] and s['at']>effect['at'] for s in commands),commands
+          print('Live E120 speed/color layout and absence of trailing brightness setup PASS')
+          print(json.dumps(report))
+          print(json.dumps({k:v for k,v in capture.items() if k!='samples'}))
+          for sample in capture['samples']:print(json.dumps(sample))
+          Path('/tmp/jh2-e120-speed-proof.json').write_text(json.dumps(capture,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e120-speed-proof
+          path: /tmp/jh2-e120-speed-proof.json
