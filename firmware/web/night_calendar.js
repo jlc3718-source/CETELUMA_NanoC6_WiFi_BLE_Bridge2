@@ -4,7 +4,44 @@
   const today=()=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(new Date());
     const n=type=>Number(parts.find(p=>p.type===type).value);return {year:n("year"),month:n("month"),day:n("day")};};
   let shown=today(),lastRefresh=0,request=0,showNight=()=>{};
+
+  function openEvent(event){
+    if(!event?.name)return;
+    document.body.classList.remove("andersonDateView");
+    const detail=document.querySelector(".andersonNightDetail");if(detail)detail.hidden=true;
+    const search=document.getElementById("eventSearch"),year=document.getElementById("yearSelect");
+    if(year)year.value=String(event.year||today().year);
+    const month=document.getElementById("monthSelect");if(month)month.value=String(event.month||today().month);
+    if(search)search.value=event.name;
+    document.querySelector('.tab[data-tab="events"]')?.click();
+    year?.dispatchEvent(new Event("change",{bubbles:true}));
+    let tries=0;
+    const seek=()=>{
+      const cards=[...document.querySelectorAll('#eventList [data-event-id],#customScheduleList [data-custom-schedule-id]')];
+      const card=cards.find(node=>event.id&&(node.dataset.eventId===String(event.id)||node.dataset.customScheduleId===String(event.id)))
+        ||cards.find(node=>[...node.querySelectorAll('strong')].some(title=>title.textContent.trim()===event.name));
+      if(card){document.querySelectorAll('.andersonEventTarget').forEach(node=>node.classList.remove('andersonEventTarget'));card.classList.add('andersonEventTarget');card.tabIndex=-1;card.scrollIntoView({block:'center',behavior:'smooth'});card.focus({preventScroll:true});}
+      else if(++tries<80)setTimeout(seek,100);
+    };setTimeout(seek,100);
+  }
+  function linkEvent(node,event){
+    if(!node)return;
+    const active=!!event?.name;
+    node.classList.toggle('andersonEventLink',active);node.tabIndex=active?0:-1;
+    if(active){node.setAttribute('role','button');node.setAttribute('aria-label','Open '+event.name+' in Schedules');}
+    else{node.removeAttribute('role');node.removeAttribute('aria-label');}
+    node.onclick=active?()=>openEvent(event):null;
+    node.onkeydown=active?e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openEvent(event);}}:null;
+  }
+  function navigation(state){
+    linkEvent(document.getElementById('nowTheme'),state.runningEvent);
+    linkEvent(document.getElementById('scheduledEventName'),state.scheduledEvent?.name&&state.scheduledEvent?.enabled?state.scheduledEvent:null);
+    linkEvent(document.getElementById('tonightEvent'),state.scheduledEvent?.name&&state.scheduledEvent?.enabled?state.scheduledEvent:null);
+    linkEvent(document.getElementById('nextEvent'),state.nextScheduledEvent);
+  }
+
   function start(){
+    window.addEventListener("anderson-event-navigation",event=>navigation(event.detail));
     const card=document.querySelector(".v3ScheduleCard"),next=document.querySelector(".v3Next");
     if(!card||!next)return;
     const wrap=document.createElement("section");wrap.className="andersonCalendar";wrap.setAttribute("aria-label","Scheduled lighting by night");
@@ -53,6 +90,9 @@
       shown={year:date.getUTCFullYear(),month:date.getUTCMonth()+1,day:1};refresh(true);
     }));
     const style=document.createElement("style");style.textContent=`
+      .andersonEventLink{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+      .andersonEventLink:focus-visible{outline:2px solid #9fc7ff;outline-offset:4px}
+      .andersonEventTarget{outline:2px solid #9fc7ff;outline-offset:4px}
       .v3ScheduleCard{grid-template-columns:minmax(0,1fr)!important;row-gap:10px!important;min-width:0}
       .v3ScheduleCard>.v3CardKicker,.v3ScheduleCard>#scheduleWindow,.v3ScheduleCard>#resumeSchedule,.v3ScheduleCard>.andersonCalendar,.v3ScheduleCard>.v3Next{grid-column:1/-1!important;grid-row:auto!important;min-width:0;box-sizing:border-box}
       #scheduledEventName{display:none!important}
