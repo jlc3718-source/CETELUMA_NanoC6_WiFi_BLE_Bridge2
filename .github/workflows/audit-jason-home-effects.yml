@@ -1,0 +1,32 @@
+name: Audit Jason Home effect catalog
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['.github/workflows/audit-jason-home-effects.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read cached Eufy effect definitions
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          def read(path):
+              return json.load(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080'+path,headers={'Authorization':'Bearer '+token}),timeout=45))
+          data=read('/api/eufy/factory-presets?raw=1')
+          rows=[]
+          for p in data.get('presets',[]):
+              rows.append({k:p.get(k) for k in ['lightId','name','colors','brightness','speed','layerExecutionMode','layers','buildableE22','buildableE120Experimental']})
+          Path('/tmp/jason-effect-catalog.json').write_text(json.dumps({'presets':rows},indent=2))
+          print('Cached catalog entries:',len(rows))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jason-effect-catalog
+          path: /tmp/jason-effect-catalog.json
