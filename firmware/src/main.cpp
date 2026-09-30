@@ -639,6 +639,31 @@ void setupRoutes(){
     }
     String json;serializeJson(output,json);sendJson(json);
   });
+  server.on("/api/tonight-options",HTTP_GET,[]{
+    if(!requireUser())return;if(!timeValid()){server.send(503,"application/json","{\"ok\":false,\"error\":\"Waiting for time sync\"}");return;}
+    tm night{};if(!currentLightingNight(night)){server.send(503,"application/json","{\"ok\":false,\"error\":\"Tonight is unavailable\"}");return;}
+    bool seen[MAX_BUILTIN_EVENTS];Theme custom;uint8_t cb=100,cs=1;String cid;size_t count=collectTonightOptions(night,seen,&custom,&cb,&cs,&cid);
+    JsonDocument d;d["ok"]=true;char date[11];snprintf(date,sizeof(date),"%04d-%02d-%02d",night.tm_year+1900,night.tm_mon+1,night.tm_mday);d["night"]=date;d["selectedId"]=tonightOptionOverride?tonightOptionId:String("");
+    JsonArray out=d["options"].to<JsonArray>();
+    if(cid.length()){
+      JsonObject o=out.add<JsonObject>();o["id"]=cid;o["name"]=custom.name;o["type"]="Custom event";o["effect"]=effectName(custom.effect);o["speed"]=cs;o["brightness"]=cb;
+      JsonArray colors=o["colors"].to<JsonArray>();for(uint8_t c=0;c<custom.colorCount;c++)colors.add(colorHex(custom.colors[c]));
+    }else for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i]){
+      Theme t=effectiveEventTheme(i);JsonObject o=out.add<JsonObject>();o["id"]=EVENTS[i].id;o["name"]=EVENTS[i].name;o["type"]=kindName(EVENTS[i].kind);o["effect"]=effectName(t.effect);
+      o["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);o["brightness"]=100;JsonArray colors=o["colors"].to<JsonArray>();for(uint8_t c=0;c<t.colorCount;c++)colors.add(colorHex(t.colors[c]));
+    }
+    d["count"]=(uint32_t)count;String json;serializeJson(d,json);sendJson(json);
+  });
+  server.on("/api/tonight-options",HTTP_POST,[]{
+    if(!requireUser())return;if(!timeValid()){server.send(503,"application/json","{\"ok\":false,\"error\":\"Waiting for time sync\"}");return;}
+    JsonDocument request;if(!body(request))return;String id=request["id"]|String("");if(!id.length()){server.send(400,"application/json","{\"ok\":false,\"error\":\"Choose an event\"}");return;}
+    tm night{};if(!currentLightingNight(night)){server.send(503,"application/json","{\"ok\":false,\"error\":\"Tonight is unavailable\"}");return;}
+    Theme chosen;uint8_t br=100,sp=1;if(!tonightOptionById(night,id,chosen,br,sp)){server.send(409,"application/json","{\"ok\":false,\"error\":\"That event is not an eligible option for this lighting night\"}");return;}
+    time_t now=time(nullptr);tm local{};localtime_r(&now,&local);auto& cfg=store.get();const bool s1=cfg.schedulerEnabled&&scheduler.inRunWindow(local),s2=cfg.schedule2Enabled&&scheduler.inSchedule2Window(local);if(s2&&!s1)br=cfg.schedule2Brightness;
+    tonightOptionUntil=nextPlannedScheduleChange(now);tonightOptionId=id;tonightOptionOverride=true;manualOverride=false;ble.setTarget(0);power=true;brightness=br;speedLevel=sp;runningTheme=chosen;applyRunning(true);
+    JsonDocument out;out["ok"]=true;out["id"]=id;out["name"]=chosen.name;out["effect"]=effectName(chosen.effect);out["speed"]=sp;out["brightness"]=br;out["until"]=(int64_t)tonightOptionUntil;JsonArray colors=out["colors"].to<JsonArray>();for(uint8_t c=0;c<chosen.colorCount;c++)colors.add(colorHex(chosen.colors[c]));String json;serializeJson(out,json);sendJson(json);
+  });
+
   server.on("/api/event-categories",HTTP_GET,[]{
     if(!requireUser())return;JsonDocument d;d["mask"]=eventCategoryMask();d["expanded"]=activeEventColorTheme!=EventColorTheme::MajorUS;JsonArray arr=d["categories"].to<JsonArray>();
     for(uint8_t c=0;c<EVENT_CATEGORY_COUNT;c++){const auto& def=eventCategoryDef(c);JsonObject o=arr.add<JsonObject>();o["index"]=c;o["id"]=def.id;o["name"]=def.name;o["color"]=def.color;o["enabled"]=eventCategoryEnabled(c);uint16_t count=0;for(size_t i=0;i<EVENT_COUNT;i++)if(eventCategoryIndex(i)==c)count++;o["count"]=count;}
