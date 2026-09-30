@@ -307,7 +307,7 @@ function eventMiniPaint(scene,index,count,now){
   if(effect==="Cycle")c=colors[Math.floor(localTick)%r];
   else if(effect==="Flow1"||effect==="Flow2"){const dir=effect==="Flow1"?-1:1,q=x*Math.max(2,r)+dir*localTick*.72,k=((q%r)+r)%r,i=Math.floor(k)%r;c=blendHex(colors[i],colors[(i+1)%r],k-Math.floor(k))}
   else if(effect==="Streamlight"){const head=((localTick*.16)%1+1)%1,dist=Math.min(Math.abs(x-head),1-Math.abs(x-head)),trail=Math.max(0,1-dist/.28),q=Math.floor(head*r+index)%r;c=colors[(q+r)%r];a=.08+.92*trail*trail;scale=.92+.14*trail}
-  else if(effect==="Twinkle"){const step=Math.floor(localTick/2.8),h=previewHash(index*37+step*101),spark=h>.76,idx=Math.floor(previewHash(index*19+step*13)*r)%r;c=colors[idx];a=spark?.72+.28*previewHash(index+step*7):.16;scale=spark?1.08:.96}
+  else if(effect==="Twinkle"){const step=Math.floor(localTick/2.8),h=previewHash(index*37+step*101),spark=h>.76,idx=Math.floor(previewHash(index*19+step*13)*r)%r;c=colors[idx];a=spark ? .72+.28*previewHash(index+step*7) : .16;scale=spark?1.08:.96}
   else if(effect==="Breathe"){const q=.12+.88*(.5-.5*Math.cos((localTick%4)/4*2*Math.PI));c=colors[index%r];a=q}
   return{c,a,scale};
 }
