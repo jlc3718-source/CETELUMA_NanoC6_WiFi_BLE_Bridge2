@@ -19,6 +19,7 @@ jobs:
           folder=Path('/tmp/jh2-e120-monitor')
           folder.mkdir(exist_ok=True)
           script=folder/'monitor.py'
+          previousScript=script.read_text() if script.exists() else ''
           script.write_text("""import json,time,urllib.request,datetime
           from pathlib import Path
           folder=Path('/tmp/jh2-e120-monitor')
@@ -29,7 +30,7 @@ jobs:
               return json.load(urllib.request.urlopen(request,timeout=15))
           def record(value):
               with (folder/'samples.jsonl').open('a') as output: output.write(json.dumps(value)+'\\n')
-          original=call('/api/health').get('automationOwner','oracle')
+          original=json.loads((folder/'session.json').read_text()).get('originalOwner','oracle') if (folder/'session.json').exists() else call('/api/health').get('automationOwner','oracle')
           deadline=time.time()+1800
           (folder/'session.json').write_text(json.dumps({'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'endsAt':datetime.datetime.fromtimestamp(deadline,datetime.timezone.utc).isoformat(),'originalOwner':original}))
           try:
@@ -53,8 +54,11 @@ jobs:
           if pidfile.exists():
               try: os.kill(int(pidfile.read_text()),0);running=True
               except (ProcessLookupError,ValueError): pass
+          if running and "['Pool','House']" in previousScript:
+              os.kill(int(pidfile.read_text()),15)
+              running=False
           if not running:
-              (folder/'samples.jsonl').write_text('')
+              if not (folder/'samples.jsonl').exists(): (folder/'samples.jsonl').write_text('')
               env=dict(os.environ);env['RUNNER_TRACKING_ID']=''
               with (folder/'process.log').open('a') as log:
                   process=subprocess.Popen(['python3',str(script)],env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
