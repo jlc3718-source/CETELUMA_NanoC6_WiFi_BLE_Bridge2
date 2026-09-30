@@ -281,6 +281,87 @@ static String eventOverrideKey(size_t i){return String("e")+String((unsigned)i);
 static uint8_t scheduledEventSpeedHint=1;
 Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;if(i<EVENT_COUNT){if(activeEventColorTheme==EventColorTheme::MajorUS)applyMajorUsEventColors(i,t);else if(activeEventColorTheme==EventColorTheme::V3028)applyOriginalEventColors(i,t);else applyModernEventColors(t);}scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,2);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
 static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
+
+static bool currentLightingNight(tm& night){
+  if(!timeValid())return false;
+  time_t now=time(nullptr);tm local{};localtime_r(&now,&local);auto& cfg=store.get();
+  const bool s1=cfg.schedulerEnabled&&scheduler.inRunWindow(local);
+  const bool s2=cfg.schedule2Enabled&&scheduler.inSchedule2Window(local);
+  night=local;
+  if(s2&&!s1){
+    const int mins=local.tm_hour*60+local.tm_min;
+    const uint16_t start=cfg.schedule1StartAtDusk?scheduler.civilDuskMinutes(local):cfg.onMinutes;
+    if(mins<start)night.tm_mday-=1;
+  }
+  night.tm_hour=12;night.tm_min=0;night.tm_sec=0;night.tm_isdst=-1;mktime(&night);return true;
+}
+static bool samePlannedScene(bool aa,const Theme& a,uint8_t abr,uint8_t asp,bool ba,const Theme& b,uint8_t bbr,uint8_t bsp){
+  if(aa!=ba)return false;if(!aa)return true;
+  if(abr!=bbr||asp!=bsp||a.name!=b.name||a.effect!=b.effect||a.colorCount!=b.colorCount)return false;
+  for(uint8_t i=0;i<a.colorCount;i++)if(a.colors[i]!=b.colors[i])return false;return true;
+}
+static bool plannedScheduleAt(time_t epoch,Theme& theme,uint8_t& br,uint8_t& sp){
+  tm local{};localtime_r(&epoch,&local);auto& cfg=store.get();
+  const bool s1=cfg.schedulerEnabled&&scheduler.inRunWindow(local);
+  const bool s2=cfg.schedule2Enabled&&scheduler.inSchedule2Window(local);
+  if(!s1&&!s2)return false;
+  tm themeLocal=local;
+  if(s2&&!s1){
+    const int mins=local.tm_hour*60+local.tm_min;
+    const uint16_t start=cfg.schedule1StartAtDusk?scheduler.civilDuskMinutes(local):cfg.onMinutes;
+    if(mins<start){themeLocal.tm_mday-=1;themeLocal.tm_isdst=-1;mktime(&themeLocal);}
+  }
+  br=100;sp=1;
+  if(!resolveCustomSchedule(themeLocal,theme,br,sp)){scheduledEventSpeedHint=1;theme=scheduler.resolve(themeLocal);sp=scheduledEventSpeedHint;}
+  if(s2&&!s1)br=cfg.schedule2Brightness;
+  return true;
+}
+static time_t nextPlannedScheduleChange(time_t now){
+  Theme base;uint8_t baseBr=100,baseSp=1;const bool baseActive=plannedScheduleAt(now,base,baseBr,baseSp);
+  time_t probe=((now/60)+1)*60;
+  for(uint16_t i=0;i<24U*60U;i++,probe+=60){
+    Theme next;uint8_t br=100,sp=1;const bool active=plannedScheduleAt(probe,next,br,sp);
+    if(!samePlannedScene(baseActive,base,baseBr,baseSp,active,next,br,sp))return probe;
+    if((i&31U)==0U)yield();
+  }
+  return now+24*60*60;
+}
+static size_t collectTonightOptions(const tm& night,bool seen[MAX_BUILTIN_EVENTS],Theme* customTheme=nullptr,uint8_t* customBr=nullptr,uint8_t* customSp=nullptr,String* customId=nullptr){
+  memset(seen,0,sizeof(bool)*MAX_BUILTIN_EVENTS);
+  Theme ct;uint8_t cb=100,cs=1;String cid;
+  if(resolveCustomSchedule(night,ct,cb,cs,&cid)){
+    if(customTheme)*customTheme=ct;if(customBr)*customBr=cb;if(customSp)*customSp=cs;if(customId)*customId=cid;return 1;
+  }
+  auto& cfg=store.get();bool eligible[MAX_BUILTIN_EVENTS]={false};size_t candidateCount=0;
+  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
+    if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;
+    const bool exact=eventActiveOn(i,night);
+    const bool window=!exact&&EVENTS[i].kind==EventKind::Holiday&&(cfg.leadDays||cfg.trailDays)&&eventWindowActiveOn(i,night,cfg.leadDays,cfg.trailDays);
+    if(exact||window){eligible[i]=true;candidateCount++;}
+  }
+  if(!candidateCount)return 0;
+  const int start=cfg.schedule1StartAtDusk?scheduler.civilDuskMinutes(night):cfg.onMinutes;
+  int span=(int)cfg.offMinutes-start;if(span<=0)span+=1440;
+  const int stride=max(1,span/(8*(int)candidateCount));
+  auto mark=[&](int pos){
+    tm probe=night;const int absolute=start+pos;probe.tm_mday+=absolute/1440;const int minute=absolute%1440;
+    probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;probe.tm_isdst=-1;mktime(&probe);
+    Theme selected=scheduler.resolve(probe);
+    for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eligible[i]&&!seen[i]){
+      if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
+    }
+  };
+  for(int pos=0;pos<span;pos+=stride){mark(pos);if((pos&31)==0)yield();}
+  mark(span-1);
+  size_t count=0;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i])count++;return count;
+}
+static bool tonightOptionById(const tm& night,const String& id,Theme& theme,uint8_t& br,uint8_t& sp){
+  bool seen[MAX_BUILTIN_EVENTS];Theme custom;uint8_t cb=100,cs=1;String cid;
+  const size_t count=collectTonightOptions(night,seen,&custom,&cb,&cs,&cid);if(!count)return false;
+  if(cid.length()){if(id!=cid)return false;theme=custom;br=cb;sp=cs;return true;}
+  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i]&&id==EVENTS[i].id){theme=effectiveEventTheme(i);br=100;sp=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);return true;}
+  return false;
+}
 static void loadEventOverrides(){
   for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++)eventOverrides[i]=EventOverrideCfg();
   Preferences p;if(!p.begin("anderson-event",true))return;
