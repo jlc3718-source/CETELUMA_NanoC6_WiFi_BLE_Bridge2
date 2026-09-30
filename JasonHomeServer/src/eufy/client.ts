@@ -151,10 +151,13 @@ export class EufyClient {
     const strategy=s.model==="T8L02"?"native-t8l02-020d-experimental":"native-t8l00-020d-experimental";
     const r=await this.command(name,[
       {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
-      {opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},
-      {opcode:OP_SHOW,fields,label:`FACTORY ${preset.lightId}`}
+      {opcode:OP_SHOW,fields,label:`FACTORY ${preset.lightId}`},
+      {opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"}
     ],3600);
-    return {...r,strategy,model:s.model};
+    const state=await this.status(name);
+    const verified=effectReportMatches(state.report,preset.lightId);
+    if(verified===false)throw new Error(`${name} did not select factory effect ${preset.lightId}: device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
+    return {...r,report:state.report,deviceReported:state.deviceReported,effectVerified:verified,strategy,model:s.model};
   }
   readyNames(){return [...this.lights.keys()];}
 }
