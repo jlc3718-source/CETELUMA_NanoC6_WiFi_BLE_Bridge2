@@ -86,9 +86,10 @@ export function decodeDeviceFrame(payload:Buffer,target:MqttTarget):Record<strin
     const sn=outer.sn||outer.device_sn||target.serial;if(sn!==target.serial)return null;
     const nested=Buffer.from(outer.data,"base64").toString("utf8"),frame=Buffer.from(JSON.parse(nested).data,"hex");
     if(frame.length<10||frame[0]!==0xff||frame[1]!==9)return null;let x=0;for(const v of frame)x^=v;if(x!==0)return null;
-    const cmd=(frame[7]<<8)|frame[8];if(cmd!==0x0a00&&cmd!==0x0204)return null;const result:any={cmd};const start=(cmd>>>8)===10?10:9;
+    const cmd=(frame[7]<<8)|frame[8];if(cmd!==0x0a00&&cmd!==0x0204)return null;const result:any={cmd,rawFields:{}};const start=(cmd>>>8)===10?10:9;
     for(let i=start;i+1<frame.length-1;){
       const tag=frame[i],len=frame[i+1];i+=2;if(i+len>frame.length-1)break;
+      if(tag>=0xa3)result.rawFields[tag.toString(16)]=frame.subarray(i,i+len).toString("hex");
       if(len>0&&len<=4){
         let v=0;for(let k=0;k<len;k++)v+=frame[i+k]*2**(8*k);
         if(tag===0xa1)result.power=v===1;
