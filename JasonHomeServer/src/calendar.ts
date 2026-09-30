@@ -101,7 +101,7 @@ function included(cfg:CalendarConfig,e:CalendarEvent){
   if(!e.enabled)return false;
   // Explicit one-night AI designs are user-approved overrides for that date,
   // so category/theme filters must not suppress them.
-  if(String(e.id||"").startsWith("ai-one:"))return true;
+  if(String(e.id||"").startsWith("ai-once-"))return true;
   const mask=Number(cfg.settings.categoryMask??32767);
   if(e.categoryIndex>=0&&e.categoryIndex<31&&((mask&(1<<e.categoryIndex))===0))return false;
   return Number(cfg.settings.mode||0)!==0||!!e.major;
@@ -264,7 +264,7 @@ function resolveFor(cfg:CalendarConfig,day:Ymd,minute:number,start:number,end:nu
   const wrap=(x:CalendarCandidate):CalendarResolution=>({id:x.id,name:x.name,schedule2,scene:x.scene});
   // "Apply one time" means replace the normal holiday result for this one
   // lighting night, not participate in rotate/split/combine overlap behavior.
-  const aiOneTime=candidates.filter(x=>String(x.id||"").startsWith("ai-one:"));
+  const aiOneTime=candidates.filter(x=>String(x.id||"").startsWith("ai-once-"));
   if(aiOneTime.length)return wrap(aiOneTime[aiOneTime.length-1]);
   if(candidates.length===1)return wrap(candidates[0]);
 
