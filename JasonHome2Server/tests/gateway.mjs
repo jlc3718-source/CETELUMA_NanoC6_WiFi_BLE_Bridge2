@@ -55,7 +55,7 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const month=await fetch(base+'/api/night-calendar?year=2028&month=2',{headers:{cookie}});
     const summary=await month.json();assert.equal(summary.days.length,29);
     assert.equal(summary.days[0].events.length,0);
-    assert.deepEqual(summary.days[28].events[0],{id:'schedule-leap',name:'Leap Night',colors:['#123456'],effect:'Breath',speed:1,type:'Custom event'});
+    assert.deepEqual(summary.days[28].events[0],{id:'schedule-leap',name:'Leap Night',colors:['#123456'],effect:'Breath',speed:1,layerCount:1,type:'Custom event'});
     await Promise.all(Array.from({length:6},()=>fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json())));
     assert.equal(reads.status,1,'concurrent screens share one status read');
     assert.equal(reads.calendar,1,'concurrent screens share one calendar read');
