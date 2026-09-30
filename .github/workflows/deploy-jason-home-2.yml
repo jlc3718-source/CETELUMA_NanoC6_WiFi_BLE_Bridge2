@@ -6,6 +6,7 @@ on:
     paths:
       - 'JasonHome2Server/**'
       - 'JasonHome2Android/**'
+      - 'JasonHome/app/src/main/assets/**'
       - '.github/workflows/deploy-jason-home-2.yml'
   workflow_dispatch:
 
