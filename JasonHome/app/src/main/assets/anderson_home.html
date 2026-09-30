@@ -173,6 +173,11 @@ window.andersonAuthToken="";</script>
       @keyframes aiWave{from{height:5px;opacity:.4}to{height:24px;opacity:1}}
       .aiVoiceTranscript{white-space:pre-wrap;line-height:1.45;margin-top:12px;min-height:48px}
       .aiTextFallback summary{cursor:pointer;color:#a9c8ff;font-weight:600}
+      .aiUsageBox{min-width:220px;margin-top:5px}
+      .aiUsageLine{font-size:12px;color:#b9c7d8}
+      .aiUsageTrack{height:7px;margin-top:5px;border-radius:999px;background:#07111d;border:1px solid #26384d;overflow:hidden}
+      .aiUsageFill{height:100%;width:0;background:linear-gradient(90deg,#39d98a,#64a9ff);transition:width .25s ease}
+      .aiUsageNote{font-size:10px;color:#8191a5;margin-top:4px}
     </style>
     <div class="panel">
       <div class="row between wraprow">
@@ -187,7 +192,12 @@ window.andersonAuthToken="";</script>
         </div>
         <div class="sub" style="margin-top:5px">Uses Cloudflare Workers AI's free daily allocation. The token is stored encrypted on Oracle and is never returned to the browser.</div>
       </div>
-      <div id="aiConnectedActions" class="row between" style="margin-top:9px;display:none"><span id="aiProviderText" class="sub">Free Workers AI is connected to Jason Home.</span><button id="aiDisconnectButton" class="btn" type="button">Disconnect</button></div>
+      <div id="aiConnectedActions" class="row between wraprow" style="margin-top:9px;display:none">
+        <div><span id="aiProviderText" class="sub">Free Workers AI is connected to Jason Home.</span>
+          <div id="aiUsageBox" class="aiUsageBox"><div id="aiUsageText" class="aiUsageLine">AI today: calculating usage…</div><div class="aiUsageTrack"><div id="aiUsageFill" class="aiUsageFill"></div></div><div id="aiUsageNote" class="aiUsageNote"></div></div>
+        </div>
+        <button id="aiDisconnectButton" class="btn" type="button">Disconnect</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -201,6 +211,7 @@ window.andersonAuthToken="";</script>
         <div class="row wraprow" style="justify-content:center;margin-top:7px">
           <button id="aiVoiceEnd" class="btn" type="button" hidden>End voice conversation</button>
           <button id="aiVoiceReplay" class="btn" type="button" disabled>Replay reply</button>
+          <button id="aiStartOver" class="btn danger" type="button">Start Over</button>
         </div>
       </div>
       <div id="aiVoiceTranscript" class="note aiVoiceTranscript">Your last spoken turn and the AI’s reply will appear here.</div>
@@ -443,7 +454,13 @@ function renderAi(data){
   $("aiConnectionBadge").textContent=connected?"Free AI connected":"Not connected";$("aiConnectionBadge").style.color=connected?"#66e39a":"";
   $("aiKeySetup").style.display=connected?"none":"block";$("aiConnectedActions").style.display=connected?"flex":"none";$("aiSendButton").disabled=!connected;
   if($("aiProviderText"))$("aiProviderText").textContent=connected?"Cloudflare Workers AI free tier is connected • "+(data.model||""):"";
+  const usage=data?.usage;if($("aiUsageText")&&usage){
+    $("aiUsageText").textContent="AI today: "+Number(usage.used||0).toLocaleString()+" / "+Number(usage.limit||10000).toLocaleString()+" neurons • "+Number(usage.remaining||0).toLocaleString()+" left";
+    $("aiUsageFill").style.width=Math.max(0,Math.min(100,Number(usage.percent)||0))+"%";
+    $("aiUsageNote").textContent=(usage.source==="estimated"?"Estimated in Jason Home • ":"")+"resets "+(usage.resetAt||"00:00 UTC");
+  }
   if($("aiVoiceButton"))$("aiVoiceButton").disabled=!connected;
+  if($("aiStartOver"))$("aiStartOver").disabled=!connected;
   if(!connected&&aiVoiceSessionActive)endAiVoiceSession(false);
   renderAiChat(data?.thread||[]);renderAiDraft(data?.draft||null);renderAiApplied(data?.applied||[]);
 }
@@ -513,7 +530,7 @@ async function beginAiVoiceListening(){
   if(!aiVoiceSessionActive||aiVoiceTurnBusy)return;
   try{
     if(window.AndroidVoice&&typeof AndroidVoice.start==="function"){
-      setAiVoiceState("listening");
+      aiVoiceStartedAt=performance.now();setAiVoiceState("listening");
       AndroidVoice.start();
       return;
     }
@@ -536,10 +553,11 @@ async function beginAiVoiceListening(){
     $("aiStatus").textContent="Microphone failed: "+e.message;endAiVoiceSession(false);
   }
 }
-async function processAiVoicePayload(audio,mime){
+async function processAiVoicePayload(audio,mime,durationSeconds){
   aiVoiceTurnBusy=true;setAiVoiceState("thinking");
   try{
-    const data=await api("/api/ai/voice-turn",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio,mime:mime||"audio/webm"})},120000);
+    const measured=Number(durationSeconds)>0?Number(durationSeconds):Math.max(0,(performance.now()-aiVoiceStartedAt)/1000);
+    const data=await api("/api/ai/voice-turn",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio,mime:mime||"audio/webm",durationSeconds:measured})},120000);
     renderAi(data.state||data);
     $("aiVoiceTranscript").textContent="You: "+(data.transcript||"") +"\n\nAI: "+(data.reply||"");
     $("aiStatus").textContent=data.draft?"Draft updated from the conversation.":"Voice conversation active.";
@@ -554,8 +572,8 @@ async function processAiVoicePayload(audio,mime){
     if(aiVoiceSessionActive){setAiVoiceState("listening");setTimeout(beginAiVoiceListening,350)}
   }
 }
-async function processAiVoiceTurn(blob){return processAiVoicePayload(await blobToBase64(blob),blob.type||"audio/webm")}
-window.__androidVoiceListening=()=>{if(aiVoiceSessionActive)setAiVoiceState("listening")};
+async function processAiVoiceTurn(blob){return processAiVoicePayload(await blobToBase64(blob),blob.type||"audio/webm",Math.max(0,(performance.now()-aiVoiceStartedAt)/1000))}
+window.__androidVoiceListening=()=>{if(aiVoiceSessionActive){aiVoiceStartedAt=performance.now();setAiVoiceState("listening")}};
 window.__androidVoiceCaptured=(audio,mime)=>{if(aiVoiceSessionActive&&!aiVoiceTurnBusy)processAiVoicePayload(audio,mime||"audio/mp4")};
 window.__androidVoiceNoSpeech=()=>{if(!aiVoiceSessionActive)return;setAiVoiceState("listening","I’m listening…","I didn’t catch anything yet — go ahead when you’re ready.");setTimeout(beginAiVoiceListening,450)};
 window.__androidVoiceError=message=>{if(!aiVoiceSessionActive)return;$("aiStatus").textContent="Microphone failed: "+message;endAiVoiceSession(false)};
@@ -582,6 +600,13 @@ function endAiVoiceSession(showStatus=true){
   if(aiVoiceContext){try{aiVoiceContext.close()}catch{}aiVoiceContext=null}aiVoiceAnalyser=null;
   $("aiVoiceEnd").hidden=true;$("aiVoiceButton")?.setAttribute("aria-label","Start voice conversation");setAiVoiceState("idle");
   if(showStatus)$("aiStatus").textContent="Voice conversation ended.";
+}
+async function resetAiConversation(){
+  endAiVoiceSession(false);aiVoiceLastAudio="";$("aiVoiceReplay").disabled=true;
+  $("aiVoiceTranscript").textContent="Your last spoken turn and the AI’s reply will appear here.";
+  try{
+    const r=await post("/api/ai/reset",{});renderAi(r);$("aiStatus").textContent="Started over. Draft and conversation cleared; normal schedule resumed. Applied one-time events were not changed.";
+  }catch(e){$("aiStatus").textContent="Start over failed: "+e.message}
 }
 async function aiVoiceButtonAction(){
   if(!aiVoiceSessionActive){await startAiVoiceSession();return}
@@ -612,10 +637,11 @@ $("aiDisconnectButton")?.addEventListener("click",async()=>{try{await post("/api
 $("aiVoiceButton")?.addEventListener("click",aiVoiceButtonAction);
 $("aiVoiceEnd")?.addEventListener("click",()=>endAiVoiceSession(true));
 $("aiVoiceReplay")?.addEventListener("click",()=>{if(aiVoiceLastAudio){setAiVoiceState("speaking");playAiVoiceReply(aiVoiceLastAudio,"audio/mpeg").then(()=>{if(aiVoiceSessionActive){setAiVoiceState("listening");setTimeout(beginAiVoiceListening,300)}else setAiVoiceState("idle")})}});
+$("aiStartOver")?.addEventListener("click",resetAiConversation);
 $("aiSendButton")?.addEventListener("click",()=>sendAiMessage());
 $("aiMessage")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendAiMessage()}});
 document.querySelectorAll(".aiIdea").forEach(b=>b.addEventListener("click",()=>sendAiMessage(b.dataset.prompt)));
-$("aiNewConversation")?.addEventListener("click",async()=>{try{const r=await post("/api/ai/reset",{});renderAi(r);$("aiStatus").textContent="New conversation started."}catch(e){$("aiStatus").textContent=e.message}});
+$("aiNewConversation")?.addEventListener("click",resetAiConversation);
 $("aiPreviewButton")?.addEventListener("click",previewAiDraft);
 $("aiApplyOnceButton")?.addEventListener("click",applyAiOnce);
 $("aiResumeButton")?.addEventListener("click",async()=>{try{await post("/api/resume",{});$("aiStatus").textContent="AI preview stopped. Normal schedule resumed."}catch(e){$("aiStatus").textContent="Resume failed: "+e.message}});
