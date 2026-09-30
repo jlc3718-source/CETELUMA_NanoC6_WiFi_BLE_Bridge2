@@ -12,7 +12,7 @@ const LIGHTS:LightSpec[]=[
   {name:"Pool",model:"T8L00",serials:["T8L006102353014B"],lampCount:60},
   {name:"House",model:"T8L00",serials:["T8L00610243503A2"],lampCount:60},
   {name:"Garage",model:"T8L02",serials:["T8L028102427474A"],lampCount:60},
-  {name:"Shed",model:"T8L02",serials:["T8L0281024470193","T8L0291024470193"],lampCount:28}
+  {name:"Shed",model:"T8L02",serials:["T8L0281024470193","T8L0291024470193"],lampCount:30}
 ];
 export function allowedApi(host:string){return /^(?:mega|app-(?:openapi|passport|push|house|devicemanage|light))-(?:us|eu)-pr\.eufy\.com$/.test(host);}
 function allowedBroker(host:string){return /^[a-zA-Z0-9.-]+$/.test(host)&&(host.endsWith(".anker.com")||host.endsWith(".eufy.com")||host.endsWith(".amazonaws.com"));}
