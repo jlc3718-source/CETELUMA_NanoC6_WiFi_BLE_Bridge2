@@ -180,11 +180,14 @@ window.andersonAuthToken="";</script>
         <span id="aiConnectionBadge" class="tag">Not connected</span>
       </div>
       <div id="aiKeySetup" style="margin-top:10px">
-        <div class="label">OpenAI API key</div>
-        <div class="row"><input id="aiApiKey" class="field" type="password" autocomplete="off" placeholder="sk-…"><button id="aiConnectButton" class="btn primary" type="button">Connect AI</button></div>
-        <div class="sub" style="margin-top:5px">Stored encrypted on the Oracle server. The key is never returned to the browser after saving.</div>
+        <div class="label">Cloudflare Workers AI — free tier</div>
+        <div style="display:grid;gap:8px">
+          <input id="aiCfAccountId" class="field" type="text" autocomplete="off" placeholder="Cloudflare Account ID">
+          <div class="row"><input id="aiApiKey" class="field" type="password" autocomplete="off" placeholder="Workers AI API token"><button id="aiConnectButton" class="btn primary" type="button">Connect Free AI</button></div>
+        </div>
+        <div class="sub" style="margin-top:5px">Uses Cloudflare Workers AI's free daily allocation. The token is stored encrypted on Oracle and is never returned to the browser.</div>
       </div>
-      <div id="aiConnectedActions" class="row between" style="margin-top:9px;display:none"><span class="sub">AI is connected to Jason Home.</span><button id="aiDisconnectButton" class="btn" type="button">Disconnect</button></div>
+      <div id="aiConnectedActions" class="row between" style="margin-top:9px;display:none"><span id="aiProviderText" class="sub">Free Workers AI is connected to Jason Home.</span><button id="aiDisconnectButton" class="btn" type="button">Disconnect</button></div>
     </div>
 
     <div class="panel">
@@ -437,8 +440,9 @@ function renderAiApplied(items){
 }
 function renderAi(data){
   aiStateCache=data;const connected=!!data?.configured;
-  $("aiConnectionBadge").textContent=connected?"Connected":"Not connected";$("aiConnectionBadge").style.color=connected?"#66e39a":"";
+  $("aiConnectionBadge").textContent=connected?"Free AI connected":"Not connected";$("aiConnectionBadge").style.color=connected?"#66e39a":"";
   $("aiKeySetup").style.display=connected?"none":"block";$("aiConnectedActions").style.display=connected?"flex":"none";$("aiSendButton").disabled=!connected;
+  if($("aiProviderText"))$("aiProviderText").textContent=connected?"Cloudflare Workers AI free tier is connected • "+(data.model||""):"";
   if($("aiVoiceButton"))$("aiVoiceButton").disabled=!connected;
   if(!connected&&aiVoiceSessionActive)endAiVoiceSession(false);
   renderAiChat(data?.thread||[]);renderAiDraft(data?.draft||null);renderAiApplied(data?.applied||[]);
@@ -448,11 +452,13 @@ async function loadAi(){
   catch(e){$("aiStatus").textContent="AI unavailable: "+e.message;return null}
 }
 async function connectAi(){
-  const key=$("aiApiKey").value.trim(),b=$("aiConnectButton"),old=b.textContent;
-  if(!key){$("aiStatus").textContent="Paste the OpenAI API key first.";return}
-  b.disabled=true;b.textContent="Connecting…";
-  try{await api("/api/ai/key",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key})},30000);$("aiApiKey").value="";$("aiStatus").textContent="AI connected.";await loadAi()}
-  catch(e){$("aiStatus").textContent="Connection failed: "+e.message}
+  const accountId=$("aiCfAccountId").value.trim(),token=$("aiApiKey").value.trim(),b=$("aiConnectButton"),old=b.textContent;
+  if(!accountId||!token){$("aiStatus").textContent="Enter the Cloudflare Account ID and Workers AI API token.";return}
+  b.disabled=true;b.textContent="Connecting free AI…";
+  try{
+    await api("/api/ai/key",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accountId,token})},60000);
+    $("aiApiKey").value="";$("aiStatus").textContent="Free Cloudflare Workers AI connected.";await loadAi()
+  }catch(e){$("aiStatus").textContent="Connection failed: "+e.message}
   finally{b.disabled=false;b.textContent=old}
 }
 async function sendAiMessage(text){
@@ -602,7 +608,7 @@ async function removeAiEvent(id){
   catch(e){$("aiStatus").textContent="Remove failed: "+e.message}
 }
 $("aiConnectButton")?.addEventListener("click",connectAi);
-$("aiDisconnectButton")?.addEventListener("click",async()=>{try{await post("/api/ai/key",{remove:true});await loadAi();$("aiStatus").textContent="AI disconnected."}catch(e){$("aiStatus").textContent=e.message}});
+$("aiDisconnectButton")?.addEventListener("click",async()=>{try{await post("/api/ai/key",{remove:true});await loadAi();$("aiStatus").textContent="Free AI disconnected."}catch(e){$("aiStatus").textContent=e.message}});
 $("aiVoiceButton")?.addEventListener("click",aiVoiceButtonAction);
 $("aiVoiceEnd")?.addEventListener("click",()=>endAiVoiceSession(true));
 $("aiVoiceReplay")?.addEventListener("click",()=>{if(aiVoiceLastAudio){setAiVoiceState("speaking");playAiVoiceReply(aiVoiceLastAudio,"audio/mpeg").then(()=>{if(aiVoiceSessionActive){setAiVoiceState("listening");setTimeout(beginAiVoiceListening,300)}else setAiVoiceState("idle")})}});
