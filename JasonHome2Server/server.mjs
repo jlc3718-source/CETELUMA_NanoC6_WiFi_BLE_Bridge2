@@ -80,6 +80,25 @@ if(!meta("speed_scale_10")){
 }
 let secret=meta("session_secret");
 if(!secret){secret=randomBytes(32).toString("hex");put("session_secret",secret);}
+const aiSecretKey=createHash("sha256").update("jason-home-ai:"+String(secret)).digest();
+function encryptAiKey(value){
+  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",aiSecretKey,iv);
+  const data=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]),tag=cipher.getAuthTag();
+  return {v:1,iv:iv.toString("base64"),tag:tag.toString("base64"),data:data.toString("base64")};
+}
+function decryptAiKey(box){
+  if(!box||box.v!==1)return "";
+  try{
+    const decipher=createDecipheriv("aes-256-gcm",aiSecretKey,Buffer.from(box.iv,"base64"));
+    decipher.setAuthTag(Buffer.from(box.tag,"base64"));
+    return Buffer.concat([decipher.update(Buffer.from(box.data,"base64")),decipher.final()]).toString("utf8");
+  }catch{return "";}
+}
+function aiApiKey(){
+  const env=String(process.env.OPENAI_API_KEY||"").trim();
+  if(env)return env;
+  return decryptAiKey(meta("ai_openai_key",null)).trim();
+}
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const secureEqual=(a,b)=>{const x=Buffer.from(String(a)),y=Buffer.from(String(b));return x.length===y.length&&timingSafeEqual(x,y);};
