@@ -152,7 +152,7 @@ jobs:
       - name: Verify ten speed controls and resume normal scheduling
         run: |
           python3 - <<'PY'
-          import json,urllib.request,re
+          import json,urllib.request,re,time
           from pathlib import Path
           token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
           opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -173,7 +173,12 @@ jobs:
           call('/api/mqtt-capture/stop',{})
           resumed=call('/api/resume',{})
           assert resumed.get('resumed') is True
-          state=call('/api/status')
+          state=call('/api/status?refresh=1')
+          for attempt in range(4):
+              if len(state['eufy']['readyNames'])==4: break
+              time.sleep(3)
+              state=call('/api/status?refresh=1')
+          print('Final Oracle state:',json.dumps({'owner':state.get('automationOwner'),'ready':state['eufy']['readyNames'],'status':state['eufy'].get('status'),'devices':state.get('devices')}))
           assert not (state.get('override') or {}).get('active')
           assert state.get('automationOwner')=='oracle'
           assert len(state['eufy']['readyNames'])==4
