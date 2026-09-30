@@ -16,3 +16,18 @@ assert.equal(effectReportMatches({effectId:10775},10996),false);
 assert.equal(effectReportMatches({brightness:50},10996),null);
 assert.throws(()=>buildEffect("T8L02","unknown",[0xff0000],3,false),/Unsupported/);
 console.log(`Effects: ${fixtures.length} independent SDK snapshots and report matching PASS`);
+
+// E120 native mode regression: model-specific opcode, mode, speed and direction.
+const modes={Jump:30009,Breath:30011,Strobe:30006,Chase:30010,"Gradient Sweep":30007,"Candy Cane":30010,"Twinkle / Sparkle":30006,"Wipe / Fill":30007,"Meteor / Comet":30012,"Rainbow Flow":30013,"Pulse Wave":30013};
+for(const [effect,mode] of Object.entries(modes))for(const speed of [1,2,3,4,5])for(const colors of [[0xff0000],[0xff0000,0x00ff00]]){
+ const command=buildEffect("T8L00",effect,colors,speed,false);
+ assert.equal(command.opcode,OP_COLOR,"E120 must use its native animation opcode");
+ const bytes=Buffer.from(command.fields);
+ assert.equal(bytes.readUInt16LE(2),mode,effect);
+ assert.deepEqual([...bytes.subarray(8,11)],[0xa5,1,speed]);
+}
+for(const effect of ["Chase","Candy Cane"]){
+ const reversed=buildEffect("T8L00",effect,[0xff0000],3,true);
+ assert.equal(Buffer.from(reversed.fields).readUInt16LE(2),30008);
+}
+console.log("E120 native modes, all speeds, palette grouping and reversed chase PASS");
