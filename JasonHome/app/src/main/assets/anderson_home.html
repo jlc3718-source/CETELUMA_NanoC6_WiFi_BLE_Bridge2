@@ -155,9 +155,28 @@ window.andersonAuthToken="";</script>
   </section>
 
   <section class="page" data-page="ai">
+    <style>
+      .aiVoiceStage{display:grid;justify-items:center;text-align:center;padding:18px 8px 8px}
+      .aiVoiceOrb{width:138px;height:138px;border-radius:50%;border:1px solid #79a8ff55;background:radial-gradient(circle at 35% 30%,#285895,#102c55 52%,#071526);box-shadow:0 0 0 8px #4b8cff10,0 18px 45px #0008;display:grid;place-items:center;color:#fff;cursor:pointer;transition:transform .18s ease,box-shadow .2s ease,background .2s ease}
+      .aiVoiceOrb svg{width:58px;height:58px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+      .aiVoiceOrb:not(:disabled):active{transform:scale(.96)}
+      .aiVoiceOrb.listening{background:radial-gradient(circle at 35% 30%,#2f8a62,#0e513b 55%,#071f18);box-shadow:0 0 0 11px #3be18b18,0 0 38px #42e39455}
+      .aiVoiceOrb.thinking{background:radial-gradient(circle at 35% 30%,#77613d,#4a3516 55%,#1e1407);box-shadow:0 0 0 11px #ffc45a16,0 0 38px #ffc45a42}
+      .aiVoiceOrb.speaking{background:radial-gradient(circle at 35% 30%,#6540a5,#31205b 55%,#130a29);box-shadow:0 0 0 11px #a675ff18,0 0 38px #a675ff50}
+      .aiVoiceOrb:disabled{opacity:.38;cursor:not-allowed}
+      .aiVoiceState{font-size:1.12rem;margin-top:13px}
+      .aiVoiceHint{max-width:430px;margin-top:5px}
+      .aiVoiceWave{display:flex;align-items:center;justify-content:center;gap:4px;height:28px;margin-top:7px}
+      .aiVoiceWave i{display:block;width:4px;height:7px;border-radius:5px;background:#8db6ff;opacity:.45}
+      .aiVoiceStage[data-state="listening"] .aiVoiceWave i,.aiVoiceStage[data-state="speaking"] .aiVoiceWave i{animation:aiWave .7s ease-in-out infinite alternate}
+      .aiVoiceWave i:nth-child(2){animation-delay:.1s}.aiVoiceWave i:nth-child(3){animation-delay:.2s}.aiVoiceWave i:nth-child(4){animation-delay:.3s}.aiVoiceWave i:nth-child(5){animation-delay:.4s}
+      @keyframes aiWave{from{height:5px;opacity:.4}to{height:24px;opacity:1}}
+      .aiVoiceTranscript{white-space:pre-wrap;line-height:1.45;margin-top:12px;min-height:48px}
+      .aiTextFallback summary{cursor:pointer;color:#a9c8ff;font-weight:600}
+    </style>
     <div class="panel">
       <div class="row between wraprow">
-        <div><strong>AI Lighting Designer</strong><div class="sub">Talk through an idea, refine it together, preview it, then apply it for one night.</div></div>
+        <div><strong>AI Lighting Designer</strong><div class="sub">Have a spoken conversation about the lights. The draft updates underneath while you talk.</div></div>
         <span id="aiConnectionBadge" class="tag">Not connected</span>
       </div>
       <div id="aiKeySetup" style="margin-top:10px">
@@ -167,19 +186,33 @@ window.andersonAuthToken="";</script>
       </div>
       <div id="aiConnectedActions" class="row between" style="margin-top:9px;display:none"><span class="sub">AI is connected to Jason Home.</span><button id="aiDisconnectButton" class="btn" type="button">Disconnect</button></div>
     </div>
+
     <div class="panel">
-      <div id="aiChatLog" style="display:grid;gap:9px;max-height:430px;overflow:auto;padding:2px"></div>
-      <div class="row wraprow" style="margin-top:10px">
-        <button class="btn aiIdea" type="button" data-prompt="Give me three lighting ideas that would look good for the next major holiday.">Give me ideas</button>
-        <button class="btn aiIdea" type="button" data-prompt="Make the current idea slower and more elegant, keeping the same colors.">Slower</button>
-        <button class="btn aiIdea" type="button" data-prompt="Give the current design more back-and-forth direction changes without making it too fast.">More direction</button>
+      <div id="aiVoiceStage" class="aiVoiceStage" data-state="idle">
+        <button id="aiVoiceButton" class="aiVoiceOrb" type="button" aria-label="Start voice conversation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7"/></svg>
+        </button>
+        <strong id="aiVoiceState" class="aiVoiceState">Tap the microphone to start talking</strong>
+        <div id="aiVoiceHint" class="sub aiVoiceHint">Speak naturally. When you stop talking, I’ll answer out loud and then listen again automatically.</div>
+        <div class="aiVoiceWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="row wraprow" style="justify-content:center;margin-top:7px">
+          <button id="aiVoiceEnd" class="btn" type="button" hidden>End voice conversation</button>
+          <button id="aiVoiceReplay" class="btn" type="button" disabled>Replay reply</button>
+        </div>
       </div>
-      <div style="margin-top:10px">
-        <textarea id="aiMessage" class="field" rows="3" placeholder="Example: I want a red and green Christmas show that chases back and forth and reverses direction…"></textarea>
-        <div class="row between wraprow" style="margin-top:8px"><button id="aiNewConversation" class="btn" type="button">New conversation</button><button id="aiSendButton" class="btn primary" type="button">Send</button></div>
-      </div>
+      <div id="aiVoiceTranscript" class="note aiVoiceTranscript">Your last spoken turn and the AI’s reply will appear here.</div>
       <div id="aiStatus" class="status"></div>
+
+      <details class="aiTextFallback" style="margin-top:12px">
+        <summary>Transcript &amp; typing fallback</summary>
+        <div id="aiChatLog" style="display:grid;gap:9px;max-height:300px;overflow:auto;padding:8px 2px"></div>
+        <div style="margin-top:8px">
+          <textarea id="aiMessage" class="field" rows="2" placeholder="Type here if you would rather not speak…"></textarea>
+          <div class="row between wraprow" style="margin-top:8px"><button id="aiNewConversation" class="btn" type="button">New conversation</button><button id="aiSendButton" class="btn primary" type="button">Send text</button></div>
+        </div>
+      </details>
     </div>
+
     <div class="panel" id="aiDraftPanel" hidden>
       <div class="row between wraprow"><div><strong id="aiDraftName">AI Draft</strong><div id="aiDraftTarget" class="sub"></div></div><span id="aiDraftLayers" class="tag eventLayerCount"></span></div>
       <div id="aiDraftColors" class="chips" style="margin-top:8px"></div>
