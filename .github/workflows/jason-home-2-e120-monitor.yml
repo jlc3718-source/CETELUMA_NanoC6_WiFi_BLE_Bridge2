@@ -54,7 +54,7 @@ jobs:
           if pidfile.exists():
               try: os.kill(int(pidfile.read_text()),0);running=True
               except (ProcessLookupError,ValueError): pass
-          if running and "['Pool','House']" in previousScript:
+          if running and not (folder/'pool-only-active').exists():
               os.kill(int(pidfile.read_text()),15)
               running=False
           if not running:
@@ -63,6 +63,7 @@ jobs:
               with (folder/'process.log').open('a') as log:
                   process=subprocess.Popen(['python3',str(script)],env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
               pidfile.write_text(str(process.pid))
+              (folder/'pool-only-active').write_text('1')
           time.sleep(10)
           if (folder/'session.json').exists(): print((folder/'session.json').read_text())
           lines=(folder/'samples.jsonl').read_text().splitlines()
