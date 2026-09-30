@@ -20,7 +20,7 @@ function normalizeEffects(value){
   return value;
 }
 
-const AI_MODEL=process.env.JH2_AI_MODEL||"gpt-6-astra";
+const AI_MODEL=process.env.JH2_AI_MODEL||"gpt-6-luna";
 const AI_EFFECTS=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"];
 const AI_SYSTEM=`You are the Jason Home lighting designer. Hold a natural back-and-forth conversation, offer concrete design ideas, and revise earlier ideas when asked.
 You can only design using these native effects: Static, Flow1, Flow2, Cycle, Streamlight, Twinkle, Breathe.
@@ -170,7 +170,7 @@ function decorateAiDraft(draft,cfg){
 async function aiState(){
   const cfg=await config(),draft=decorateAiDraft(meta("ai_draft",null),cfg);
   const applied=(cfg.events||[]).filter(e=>e.aiOneTime===true).map(e=>{
-    const sp=(cfg.special||[]).find(x=>x.id===e.id);return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",colors:rgb(e.colors),layerCount:e.creativePhases?.length||1,expiresAt:e.expiresAt||""};
+    const sp=(cfg.special||[]).find(x=>x.id===e.id);return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",brightness:Number(e.brightness)||100,colors:rgb(e.colors),layerCount:e.creativePhases?.length||1,expiresAt:e.expiresAt||""};
   });
   return {ok:true,configured:!!openAiKey(),model:AI_MODEL,thread:meta("ai_thread",[]),draft,applied};
 }
