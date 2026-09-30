@@ -546,11 +546,18 @@ async function route(req,res){
   }
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
   if(method==="POST"&&path==="/api/ai/key"){
-    const body=await input(req),key=String(body?.key||"").trim();
-    if(body?.remove){put("ai_api_key_cipher",null);return send(res,200,{ok:true,configured:false,model:AI_MODEL});}
-    if(!/^sk-[A-Za-z0-9_-]{20,}$/.test(key))throw fail(400,"That does not look like an OpenAI API key");
-    await verifyAiKey(key);put("ai_api_key_cipher",sealAiKey(key));
-    return send(res,200,{ok:true,configured:true,model:AI_MODEL});
+    const body=await input(req);
+    if(body?.remove){
+      put("cf_ai_account_id","");put("cf_ai_token_cipher",null);put("ai_api_key_cipher",null);
+      return send(res,200,{ok:true,configured:false,provider:"Cloudflare Workers AI",model:AI_MODEL});
+    }
+    const accountId=String(body?.accountId||"").trim(),token=String(body?.token||body?.key||"").trim();
+    if(!/^[A-Za-z0-9_-]{8,64}$/.test(accountId))throw fail(400,"Enter the Cloudflare Account ID from Workers AI");
+    if(token.length<20)throw fail(400,"Enter a Cloudflare Workers AI API token");
+    await verifyCloudflareAi(accountId,token);
+    // Do not retain the old paid OpenAI credential once the free provider is active.
+    put("ai_api_key_cipher",null);
+    return send(res,200,{ok:true,configured:true,provider:"Cloudflare Workers AI",freeTier:true,model:AI_MODEL});
   }
   if(method==="POST"&&path==="/api/ai/chat"){
     const body=await input(req),message=String(body?.message||"").trim();
