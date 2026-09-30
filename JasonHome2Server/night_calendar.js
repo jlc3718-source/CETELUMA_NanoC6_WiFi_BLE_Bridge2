@@ -86,14 +86,13 @@
         const item=document.createElement("article");item.className="jh2TonightChoice";
         const title=document.createElement("strong");title.textContent=option.name;
         const meta=document.createElement("div");meta.className="sub";meta.textContent=`${option.type||"Scheduled event"} · ${option.effect||"Static"} · speed ${option.speed||1}`;
-        const layer=document.createElement("span");layer.className="tag eventLayerCount";layer.textContent=String(option.layerCount||1);layer.title=`${option.layerCount||1} lighting layer${(option.layerCount||1)===1?"":"s"}`;
         const mini=window.createEventMiniPreview?.({name:option.name,colors:option.colors||[],effect:option.effect||"Static",speed:option.speed||1});
         const chips=document.createElement("div");chips.className="jh2ChoiceColors";(option.colors||[]).forEach(color=>{const x=document.createElement("span");x.style.background=color;chips.appendChild(x)});
         const action=document.createElement("button");action.type="button";action.className="btn";action.textContent="Run until next change";
         const current=latestState?.runningNow,already=current&&current.id!=="manual-override"&&(current.id===option.id||current.name===option.name);
         if(already){action.textContent="Scheduled now";action.disabled=true}
         else action.addEventListener("click",()=>chooseTonightEvent(option.id,option.name,action));
-        item.append(title,meta,layer);if(mini)item.appendChild(mini);item.append(chips,action);body.appendChild(item);
+        item.append(title,meta);if(mini)item.appendChild(mini);item.append(chips,action);body.appendChild(item);
       }
     }catch(error){body.replaceChildren();const msg=document.createElement("div");msg.className="jh2ChoiceError";msg.textContent=error.message;body.appendChild(msg)}
   }
@@ -175,9 +174,8 @@
           (event.colors||[]).forEach(color=>{const swatch=document.createElement("span");swatch.style.background=color;colors.append(swatch)});
           const name=document.createElement("strong"),meta=document.createElement("div");name.textContent=event.name;
           meta.className="sub";meta.textContent=`${event.type||"Scheduled event"} · ${event.effect||"Solid / Static"} · speed ${event.speed||1}`;
-          const layer=document.createElement("span");layer.className="tag eventLayerCount";layer.textContent=String(event.layerCount||1);layer.title=`${event.layerCount||1} lighting layer${(event.layerCount||1)===1?"":"s"}`;
           const mini=window.createEventMiniPreview?.({name:event.name,colors:event.colors||[],effect:event.effect||"Static",speed:event.speed||1});
-          item.append(colors,name,meta,layer);if(mini)item.appendChild(mini);list.append(item);
+          item.append(colors,name,meta);if(mini)item.appendChild(mini);list.append(item);
         });detail.append(list);
       }
       detail.hidden=false;document.body.classList.add("jh2DateView");
