@@ -266,8 +266,7 @@ function installAndroidEufyUi(){
       sub.textContent=(baseEvent?.when||("Matches "+p.eventName))+" • "+(scene.effect||"Factory Pattern")+" • "+speedName;
       const match=document.createElement("div");match.className="factoryScheduleMatch";match.textContent="Scheduled with "+p.eventName+" • "+p.scheduling;
       const tags=document.createElement("div");tags.className="tags";
-      const kind=document.createElement("span");kind.className="tag "+String(baseEvent?.kind||p.event?.kind||"Holiday").toLowerCase();kind.textContent=baseEvent?.kind||p.event?.kind||"Holiday";
-      const layers=document.createElement("span");layers.className="tag eventLayerCount";layers.textContent="3";layers.title="3 lighting layers";tags.append(kind,layers);
+      const kind=document.createElement("span");kind.className="tag "+String(baseEvent?.kind||p.event?.kind||"Holiday").toLowerCase();kind.textContent=baseEvent?.kind||p.event?.kind||"Holiday";tags.appendChild(kind);
       info.append(title,sub,match,tags,factorySceneColorPills(scene.colors));
       const mini=window.createEventMiniPreview?.({name:p.name||("Factory "+p.lightId),colors:scene.colors||[],effect:scene.effect||"Static",speed:scene.speed||1});
       if(mini)info.appendChild(mini);
