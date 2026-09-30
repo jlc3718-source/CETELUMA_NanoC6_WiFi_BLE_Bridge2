@@ -125,14 +125,41 @@ async function cloudflareAiRun(model,input,{timeout=45000}={}){
     throw e;
   }finally{clearTimeout(timer);}
 }
+async function cloudflareAiChat(body,{timeout=60000}={}){
+  const account=cloudflareAiAccount(),token=cloudflareAiToken();
+  if(!account||!token)throw fail(409,"Free AI is not connected yet. Add your Cloudflare Account ID and Workers AI API token.");
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
+  try{
+    const response=await fetch("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(account)+"/ai/v1/chat/completions",{
+      method:"POST",signal:controller.signal,
+      headers:{authorization:"Bearer "+token,"content-type":"application/json"},
+      body:JSON.stringify(body)
+    });
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok){
+      const msg=payload?.error?.message||payload?.errors?.[0]?.message||"Cloudflare Workers AI chat request failed";
+      throw fail(response.status||502,msg);
+    }
+    return payload;
+  }catch(e){
+    if(e?.name==="AbortError")throw fail(504,"Cloudflare Workers AI chat request timed out");
+    throw e;
+  }finally{clearTimeout(timer);}
+}
 async function verifyCloudflareAi(accountId,token){
   const priorAccount=meta("cf_ai_account_id",""),priorToken=meta("cf_ai_token_cipher",null);
   put("cf_ai_account_id",String(accountId).trim());put("cf_ai_token_cipher",sealAiKey(String(token).trim()));
   try{
-    const r=await cloudflareAiRun(AI_MODEL,{messages:[{role:"user",content:"Reply with OK only."}],max_tokens:8,temperature:0});
-    const result=r?.result||r;
-    const text=String(result?.response??result?.choices?.[0]?.message?.content??"").trim();
-    if(!text)throw fail(400,"Cloudflare Workers AI connected but did not return a test response");
+    const r=await cloudflareAiChat({
+      model:AI_MODEL,
+      messages:[{role:"user",content:"Reply with OK only."}],
+      max_completion_tokens:64,
+      temperature:0
+    },{timeout:30000});
+    // A successful 2xx response proves the Account ID/token can execute
+    // Workers AI. Some reasoning models can legally consume a tiny probe's
+    // output budget without placing text in message.content.
+    if(!Array.isArray(r?.choices))throw fail(400,"Cloudflare Workers AI connected but returned an unexpected response");
     return true;
   }catch(e){
     put("cf_ai_account_id",priorAccount);put("cf_ai_token_cipher",priorToken);
@@ -186,11 +213,13 @@ async function callLightingAi(message){
   const today=localDay(new Date()),instructions=AI_SYSTEM+"\nToday is "+[today.year,String(today.month).padStart(2,"0"),String(today.day).padStart(2,"0")].join("-")+
     ". Scheduled AI layers must use speeds 1-5. If the user refers to the current draft, revise it rather than starting over."+(prior?"\nExisting draft: "+JSON.stringify(prior):"");
   const messages=[{role:"system",content:instructions},...thread.map(m=>({role:m.role,content:m.text+(m.role==="assistant"&&m.draft?"\nCurrent draft: "+JSON.stringify(m.draft):"")})),{role:"user",content:String(message)}];
-  const payload=await cloudflareAiRun(AI_MODEL,{
-    messages,max_tokens:1800,temperature:.55,
+  const payload=await cloudflareAiChat({
+    model:AI_MODEL,messages,max_completion_tokens:1800,temperature:.55,
     response_format:{type:"json_schema",json_schema:AI_SCHEMA}
   },{timeout:60000});
-  let parsed;try{parsed=JSON.parse(cloudflareAiText(payload));}catch{throw fail(502,"Free AI returned an unreadable lighting design");}
+  const content=payload?.choices?.[0]?.message?.content;
+  let parsed;try{parsed=typeof content==="string"?JSON.parse(content):content;}catch{throw fail(502,"Free AI returned an unreadable lighting design");}
+  if(!parsed||typeof parsed!=="object")throw fail(502,"Free AI returned an empty lighting design");
   const draft=sanitizeAiDraft(parsed.draft),reply=String(parsed.reply||"").trim()||"I have a lighting idea ready.";
   const updated=[...thread,{role:"user",text:String(message).slice(0,2000)},{role:"assistant",text:reply,draft}].slice(-30);
   put("ai_thread",updated);if(draft)put("ai_draft",draft);
