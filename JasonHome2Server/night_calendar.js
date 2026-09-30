@@ -10,6 +10,20 @@
     if(!event||(!event.id&&!event.name))return;
     document.body.classList.remove("jh2DateView");
     const detail=document.querySelector(".jh2NightDetail");if(detail)detail.hidden=true;
+    const scheduleControl=/white override\s*1/i.test(event.name)||String(event.id||"").startsWith("white-override-1")?"whiteOverride1Master"
+      :/white override\s*2/i.test(event.name)||String(event.id||"").startsWith("white-override-2")?"whiteOverride2Master"
+      :/schedule 2/i.test(event.name)?"schedule2Master":/schedule 1/i.test(event.name)?"eventsMaster":null;
+    if(scheduleControl){
+      document.querySelector('.tab[data-tab="events"]')?.click();
+      const control=document.getElementById(scheduleControl);
+      control?.closest(".card")?.scrollIntoView({block:"center",behavior:"smooth"});control?.focus({preventScroll:true});return;
+    }
+    if(String(event.id||"").startsWith("overlap:")&&night){
+      fetch(`/jason-home-2/api/night-calendar?year=${night.year}&month=${night.month}`,{credentials:"same-origin",cache:"no-store"})
+        .then(response=>{if(!response.ok)throw new Error("Calendar unavailable");return response.json()})
+        .then(data=>{const entry=data.days.find(day=>day.day===night.day);if(entry)showNight(night.year,night.month,entry)})
+        .catch(()=>{});return;
+    }
     const year=document.getElementById("yearSelect"),search=document.getElementById("eventSearch");
     const date=event.at?new Date(event.at):null;
     const targetYear=night?.year||(date&&!Number.isNaN(date.getTime())?Number(new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric"}).format(date)):today().year);
