@@ -1,18 +1,18 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
 import { effectReportMatches, startCommandCapture, mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
-import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields, isSolidEffect } from "./light-commands.js";
+import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
 
 export interface EufySession { region:string; bootstrap:string; token:string; uid:string; accountUid:string; }
-interface LightSpec { name:string; model:string; serials:string[]; }
+interface LightSpec { name:string; model:string; serials:string[]; lampCount:number; }
 const REVERSED_INSTALLATIONS=new Set(["Pool","Shed"]);
 const LIGHTS:LightSpec[]=[
-  {name:"Pool",model:"T8L00",serials:["T8L006102353014B"]},
-  {name:"House",model:"T8L00",serials:["T8L00610243503A2"]},
-  {name:"Garage",model:"T8L02",serials:["T8L028102427474A"]},
-  {name:"Shed",model:"T8L02",serials:["T8L0281024470193","T8L0291024470193"]}
+  {name:"Pool",model:"T8L00",serials:["T8L006102353014B"],lampCount:60},
+  {name:"House",model:"T8L00",serials:["T8L00610243503A2"],lampCount:60},
+  {name:"Garage",model:"T8L02",serials:["T8L028102427474A"],lampCount:60},
+  {name:"Shed",model:"T8L02",serials:["T8L0281024470193","T8L0291024470193"],lampCount:28}
 ];
 export function allowedApi(host:string){return /^(?:mega|app-(?:openapi|passport|push|house|devicemanage|light))-(?:us|eu)-pr\.eufy\.com$/.test(host);}
 function allowedBroker(host:string){return /^[a-zA-Z0-9.-]+$/.test(host)&&(host.endsWith(".anker.com")||host.endsWith(".eufy.com")||host.endsWith(".amazonaws.com"));}
@@ -105,14 +105,13 @@ export class EufyClient {
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
-    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse,brightness);
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse,brightness,s.lampCount);
     const frames:CommandFrame[]=[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}];
-    // E120 native commands already carry brightness in A8. Send no extra setup write after the effect.
-    if(s.model!=="T8L00")frames.push({opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"});
+    // Native personal-mode commands carry brightness in A8 on both T8L00 and T8L02.
     const result=await this.command(name,frames,3200);
     const state=await this.status(name);
     const effectId=Buffer.from(fx.fields).readUIntLE(2,fx.fields[1]);
-    const verified=(!isSolidEffect(effect)||s.model==="T8L00")?effectReportMatches(state.report,effectId):null;
+    const verified=effectReportMatches(state.report,effectId);
     if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
     return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified};
   }
