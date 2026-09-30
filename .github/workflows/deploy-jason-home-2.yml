@@ -160,7 +160,8 @@ jobs:
               data=None if body is None else json.dumps(body).encode()
               return json.load(opener.open(urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'}),timeout=90))
           health=call('/api/health')
-          assert health['build']['sha']=='26b90b45e2bfb031599a39e1b178286685b73f18'
+          resolver=Path('JasonHome2Server/shared/oracle-resolver.sha').read_text().strip()
+          assert resolver and health['build']['sha']==resolver, (health.get('build'),resolver)
           cfg=call('/api/calendar')['calendar']
           assert all(1<=e['speed']<=10 for e in cfg['events']+cfg['customSchedules'])
           text=Path('JasonHome2Server/web/anderson_home.html').read_text()
