@@ -134,7 +134,7 @@ function sceneFor(e:CalendarEvent,brightness:number):Scene{
     brightness:clamp(brightness,1,100),
     effect:e.effect||"Solid / Static",
     colors:Array.isArray(e.colors)&&e.colors.length?e.colors.slice(0,8).map(x=>Number(x)&0xffffff):[0xffffff],
-    speed:clamp(Number(e.speed)||3,1,5)
+    speed:clamp(Number(e.speed)||3,1,10)
   };
 }
 type CalendarCandidate={id:string;name:string;scene:Scene};
@@ -153,7 +153,7 @@ function customCandidates(cfg:CalendarConfig,day:Ymd,schedule2:boolean,schedule2
         brightness:schedule2?clamp(schedule2Brightness,1,100):clamp(Number(x.brightness)||100,1,100),
         effect:x.effect||"Solid / Static",
         colors:Array.isArray(x.colors)&&x.colors.length?x.colors.slice(0,8).map(v=>Number(v)&0xffffff):[0xffffff],
-        speed:clamp(Number(x.speed)||3,1,5)
+        speed:clamp(Number(x.speed)||3,1,10)
       }
     });
   }
@@ -236,7 +236,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       id:String(raw.id),name:String(raw.name||raw.id),kind:String(raw.kind||"Observance"),rule:String(raw.rule||"Fixed"),
       month:Number(raw.month)||0,day:Number(raw.day)||0,weekday:Number(raw.weekday)||0,nth:Number(raw.nth)||0,
       offsetDays:Number(raw.offsetDays)||0,durationDays:Math.max(1,Number(raw.durationDays)||1),
-      effect:canonicalEffect(raw.effect),speed:clamp(Number(raw.speed)||3,1,5),
+      effect:canonicalEffect(raw.effect),speed:clamp(Number(raw.speed)||3,1,10),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
       enabled:raw.enabled!==false,favorite:!!raw.favorite,categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
       dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined
@@ -250,7 +250,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
     cfg.customSchedules.push({
       id:String(raw.id),name:String(raw.name||"Custom Light"),enabled:raw.enabled!==false,annual:raw.annual!==false,
       year:Number(raw.year)||0,month:Number(raw.month)||0,day:Number(raw.day)||0,effect:canonicalEffect(raw.effect),
-      speed:clamp(Number(raw.speed)||3,1,5),brightness:clamp(Number(raw.brightness)||100,1,100),
+      speed:clamp(Number(raw.speed)||3,1,10),brightness:clamp(Number(raw.brightness)||100,1,100),
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff]
     });
   }

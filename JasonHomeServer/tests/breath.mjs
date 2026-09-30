@@ -7,7 +7,7 @@ import {effectReportMatches} from "../dist/eufy/mqtt.js";
 const fixtures=JSON.parse(fs.readFileSync(new URL("sdk-effects.json",import.meta.url)));
 for(const f of fixtures){
  const solid=f.solid!==undefined;
- const result=buildEffect("T8L02",solid?"Solid / Static":f.effect,solid?[f.solid]:f.colors,f.speed??3,f.reverse??false);
+ const result=buildEffect("T8L02",solid?"Solid / Static":f.effect,solid?[f.solid]:f.colors,[1,3,5,8,10][(f.speed??3)-1],f.reverse??false);
  assert.equal(result.opcode,solid?OP_COLOR:OP_SHOW);
  assert.equal(Buffer.from(result.fields).toString("hex"),f.hex,f.effect??"Solid");
 }
@@ -19,7 +19,7 @@ console.log(`Effects: ${fixtures.length} independent SDK snapshots and report ma
 
 // E120 native mode regression: model-specific opcode, mode, speed and direction.
 const modes={Static:20006,Flow1:20000,Flow2:20001,Cycle:20002,Streamlight:20003,Twinkle:20004,Breathe:20005,Jump:20002,Breath:20005,Strobe:20004,Chase:20000,"Gradient Sweep":20000,"Candy Cane":20000,"Twinkle / Sparkle":20004,"Wipe / Fill":20003,"Meteor / Comet":20003,"Rainbow Flow":20000,"Pulse Wave":20005};
-for(const [effect,mode] of Object.entries(modes))for(const speed of [1,2,3,4,5])for(const colors of [[0xff0000],[0xff0000,0x00ff00]]){
+for(const [effect,mode] of Object.entries(modes))for(const speed of [1,2,3,4,5,6,7,8,9,10])for(const colors of [[0xff0000],[0xff0000,0x00ff00]]){
  const command=buildEffect("T8L00",effect,colors,speed,false);
  assert.equal(command.opcode,OP_COLOR,"E120 must use its native animation opcode");
  const bytes=Buffer.from(command.fields);
@@ -39,7 +39,7 @@ function tags(bytes){const out={};for(let i=0;i<bytes.length;){const tag=bytes[i
 for(const rawSpeed of [1,10])assert.deepEqual(tags(nativeE120Fields(20005,rawSpeed,[],60)),{
  a3:"254e",a4:"0000",a5:rawSpeed===1?"01":"0a",a6:"00",a8:"64",a9:"00000000",aa:"00",ac:"ffffffff",ae:"00",b0:"00"
 });
-const blue=tags(buildEffect("T8L00","Breathe",[0x0000ff],5,false).fields);
+const blue=tags(buildEffect("T8L00","Breathe",[0x0000ff],10,false).fields);
 assert.equal(blue.a6,"010000ff00");assert.equal(blue.a7,"3c"+Array.from({length:60},(_,i)=>i.toString(16).padStart(2,"0")).join(""));
 assert.equal(blue.a5,"0a");assert.equal(blue.a9,"00000000");
 assert.equal(tags(buildEffect("T8L00","Breathe",[0xff0000,0x0000ff],5,false,42).fields).a8,"2a");

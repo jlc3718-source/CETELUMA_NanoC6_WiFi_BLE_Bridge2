@@ -21,7 +21,7 @@ export function color(model:string,rgb:number,lampCount:number):Uint8Array{
   if(isE22(model))return concat(tlv(0xa3,le16(LOCAL_COLOR_ID)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([5])),tlv(0xa6,concat(new Uint8Array([1]),rgbcw((rgb&0xffffff).toString(16).padStart(6,"0")))),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,le16(0)),tlv(0xac,le32(0xffffffff)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
   return nativeE120Fields(LOCAL_COLOR_ID,5,[rgb],lamps);
 }
-function speedValueE22(speed:number){switch(clamp(speed,1,5)){case 1:return 2;case 2:return 4;case 3:return 8;case 4:return 25;default:return 50;}}
+function speedValueE22(speed:number){return [2,3,4,6,8,14,19,25,38,50][Math.round(clamp(speed,1,10))-1];}
 export function styleDefinition(effect:string,colors:number[],speed:number,reverse:boolean){
   const alias:Record<string,string>={Flow1:"Chase",Flow2:"Chase",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"};
   const source=STYLE_TEMPLATES[alias[effect]||effect];
@@ -55,7 +55,7 @@ export function e120ModeId(effect:string,reverse:boolean){
   return id;
 }
 // Eufy app captures: A5 is 1..10; A9 is four bytes; no AB/AD/AF fields.
-export function e120SpeedValue(speed:number){return [1,3,5,8,10][Math.round(clamp(speed,1,5))-1];}
+export function e120SpeedValue(speed:number){return Math.round(clamp(speed,1,10));}
 export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100){
   const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...nativeColor("T8L00",c));

@@ -30,7 +30,7 @@ if(!/^[0-9a-f]{32}$/.test(DEFAULT_INSTALL))throw new Error("EUFY_INSTALL_ID must
 
 const DEVICE_NAMES=["Pool","House","Garage","Shed"] as const;
 const DEVICE_MODELS:Record<string,string>={Pool:"E120",House:"E120",Garage:"E22",Shed:"E22"};
-const DEFAULT_SCENE:Scene={power:true,brightness:75,effect:"Static",colors:[0xffffff],speed:3};
+const DEFAULT_SCENE:Scene={power:true,brightness:75,effect:"Static",colors:[0xffffff],speed:5};
 
 mkdirSync(dirname(DB_PATH),{recursive:true});
 const db=new DatabaseSync(DB_PATH);
@@ -142,7 +142,7 @@ function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
     brightness:clamp(Number(input?.brightness??base.brightness)||base.brightness,1,100),
     effect:canonicalEffect(input?.effect||base.effect),
     colors:colors.length?colors:[...base.colors],
-    speed:clamp(Number(input?.speed??base.speed)||base.speed,1,5)
+    speed:clamp(Number(input?.speed??base.speed)||base.speed,1,10)
   };
 }
 function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,brightness:scene.brightness,effect:scene.effect,colors:scene.colors,speed:scene.speed});}
@@ -425,11 +425,11 @@ function factoryHexColors(preset:any):number[]{
   for(const x of String(preset?.colors||"").split("|"))add(x);
   return out.slice(0,8);
 }
-function factorySpeed5(preset:any):number{
+function factorySpeed10(preset:any):number{
   const layers=Array.isArray(preset?.layers)?preset.layers:[];
   const raw=Number(preset?.speed??layers[0]?.layer_speed??25);
-  if(!Number.isFinite(raw))return 3;
-  if(raw<=5)return 1;if(raw<=20)return 2;if(raw<=40)return 3;if(raw<=70)return 4;return 5;
+  if(!Number.isFinite(raw))return 5;
+  if(raw<=5)return 1;if(raw<=20)return 3;if(raw<=40)return 5;if(raw<=70)return 8;return 10;
 }
 function factoryDominantLayer(preset:any){
   const layers=Array.isArray(preset?.layers)?preset.layers:[];
@@ -452,7 +452,7 @@ function factoryCompatibleScene(preset:any):Scene{
     brightness:clamp(Math.round(Number(preset?.brightness)||75),1,100),
     effect:canonicalEffect(effect),
     colors:factoryHexColors(preset).length?factoryHexColors(preset):[0xffffff],
-    speed:factorySpeed5(preset)
+    speed:factorySpeed10(preset)
   };
 }
 function factoryScheduledNativeScene(preset:any):Scene{
@@ -892,7 +892,7 @@ function restoreSettingsBackup(input:any){
           ["clock","dawn","dusk"].includes(row.start_kind)?row.start_kind:"clock",String(row.start_value||"18:00"),
           ["clock","dawn","dusk"].includes(row.end_kind)?row.end_kind:"clock",String(row.end_value||"23:00"),
           String(row.target||"All"),String(row.effect||"Solid / Static"),typeof row.colors==="string"?row.colors:JSON.stringify(row.colors||[16777215]),
-          clamp(Number(row.brightness)||75,1,100),clamp(Number(row.speed)||3,1,5),clamp(Number(row.priority)||0,-100,100)
+          clamp(Number(row.brightness)||75,1,100),clamp(Number(row.speed)||3,1,10),clamp(Number(row.priority)||0,-100,100)
         );
     }
     setMeta("factory_edits",JSON.stringify(value.factoryEdits));
@@ -1106,6 +1106,28 @@ const server=http.createServer(async(req,res)=>{
 });
 
 server.keepAliveTimeout=65000;
+// Preserve each old speed at the corresponding point of the new ten-step scale.
+if(!meta("speed_scale_10")){
+  const legacySpeed=(v:any)=>[1,3,5,8,10][Math.round(clamp(Number(v)||3,1,5))-1];
+  const migrateScenes=(value:any):any=>{
+    if(Array.isArray(value)){value.forEach(migrateScenes);return value;}
+    if(value&&typeof value==="object")for(const [key,item] of Object.entries(value)){
+      if(key==="speed")value[key]=legacySpeed(item);else migrateScenes(item);
+    }
+    return value;
+  };
+  db.exec("BEGIN");
+  try{
+    for(const key of ["calendar_config","override"]){
+      const raw=meta(key);if(raw){setMeta("speed_scale_10_backup_"+key,raw);const value=migrateScenes(JSON.parse(raw));
+        if(key==="calendar_config"){value.revision=Math.max(Number(value.revision)||0,Number(meta("calendar_revision"))||0)+1;setMeta("calendar_revision",String(value.revision));}
+        setMeta(key,JSON.stringify(value));}
+    }
+    for(const row of allSchedules())db.prepare("UPDATE schedules SET speed=? WHERE id=?").run(legacySpeed(row.speed),row.id);
+    for(const row of db.prepare("SELECT name,scene FROM desired_state").all() as any[])db.prepare("UPDATE desired_state SET scene=? WHERE name=?").run(JSON.stringify(migrateScenes(JSON.parse(row.scene))),row.name);
+    setMeta("speed_scale_10","true");db.exec("COMMIT");
+  }catch(error){db.exec("ROLLBACK");throw error;}
+}
 // Migrate effects once, preserving dates, palettes, enablement and schedule settings.
 const previousCalendar=calendarConfig();
 if(previousCalendar){
