@@ -1,6 +1,6 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
-import { effectReportMatches, mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
+import { effectReportMatches, startPoolCapture, mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
 import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields, isSolidEffect } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
@@ -100,6 +100,7 @@ export class EufyClient {
     return {name,model:s.model,serial:d.device_sn,account:d.member?.admin_user_id||this.uid};
   }
   async command(name:string,frames:CommandFrame[],waitMs=2500){if(!this.creds)await this.certificate();return sendMqtt(this.creds!,this.target(name),frames,this.installId,waitMs);}
+  async startPoolCapture(){if(!this.creds)await this.certificate();return startPoolCapture(this.creds!,this.target("Pool"));}
   async status(name:string){return this.command(name,[{opcode:0x0200,fields:statusFields(),label:"STATUS"}],3000);}
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}

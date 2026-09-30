@@ -28,6 +28,67 @@ export interface MqttSendResult {
 const preferredConnectHost=new Map<string,string>();
 const dnsCache=new Map<string,{until:number;ips:string[]}>();
 
+let poolCapture:any={active:false,samples:[]};
+let stopCaptureSocket:(()=>void)|null=null;
+export function poolCaptureStatus(){return {...poolCapture,samples:[...poolCapture.samples]};}
+export function stopPoolCapture(){stopCaptureSocket?.();stopCaptureSocket=null;poolCapture.active=false;return poolCaptureStatus();}
+export async function startPoolCapture(creds:MqttCredentials,target:MqttTarget,durationMs=1800000){
+  if(target.name!=="Pool")throw new Error("Live command capture is limited to Pool");
+  stopPoolCapture();
+  const started=Date.now(),ends=started+durationMs;
+  poolCapture={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:"Pool",samples:[],requestTopicsGranted:false};
+  const state=poolCapture,reader=new Reader();
+  const socket=tlsConnect({host:creds.endpoint_addr,port:creds.endpoint_port||8883,servername:creds.endpoint_addr,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
+  socket.on("data",(data:any)=>reader.push(Buffer.from(data)));
+  socket.on("error",()=>reader.fail(new Error("Capture socket error")));
+  socket.on("close",()=>reader.fail(new Error("Capture socket closed")));
+  stopCaptureSocket=()=>{state.active=false;socket.destroy();};
+  try{
+    await withTimeout(new Promise<void>((resolve,reject)=>{socket.once("secureConnect",resolve);socket.once("error",reject);}),8000,"Capture TLS",()=>socket.destroy());
+    socket.write(connectPacket(`android-eufy_life-${creds.user_id||"u"}-pool-capture-${Math.random().toString(16).slice(2)}`));
+    const ack=await reader.next(8000,"Capture CONNACK");
+    if(ack.type!==2||ack.data[1]!==0)throw new Error("Capture broker refused connection");
+    const base=`cmd/eufy_life/${target.model}/${target.serial}`;
+    const requested=[base+"/req",base+"/app/req",...topics(target)];
+    socket.write(subscribePacket(requested));
+    let sub=await reader.next(8000,"Capture SUBACK");
+    while(sub.type===3){
+      if(sub.qos===1){const size=sub.data.readUInt16BE(0);socket.write(pubAck(sub.data.readUInt16BE(2+size)));}
+      sub=await reader.next(8000,"Capture SUBACK");
+    }
+    if(sub.type!==9||sub.data.length!==requested.length+2)throw new Error("Capture subscription reply invalid");
+    state.subscriptions=requested.map((topic,i)=>({topic:topic.replace(target.serial,"Pool"),granted:sub.data[i+2]!==128}));
+    state.requestTopicsGranted=sub.data[2]!==128||sub.data[3]!==128;
+    if(!state.subscriptions.some((s:any)=>s.granted))throw new Error("Capture topics denied by broker");
+    state.active=true;
+    void (async()=>{
+      let pingAt=Date.now();
+      try{
+        while(state.active&&Date.now()<ends){
+          if(Date.now()-pingAt>15000){socket.write(packet(0xc0,Buffer.alloc(0)));pingAt=Date.now();}
+          let p:ParsedPacket;try{p=await reader.next(1000,"Capture poll");}catch(e:any){if(e.message==="Capture poll timeout")continue;throw e;}
+          if(p.type!==3)continue;
+          let off=2;const length=p.data.readUInt16BE(0),topic=p.data.subarray(off,off+length).toString();off+=length;
+          if(p.qos===1){socket.write(pubAck(p.data.readUInt16BE(off)));off+=2;}
+          try{
+            const envelope=JSON.parse(p.data.subarray(off).toString()),outer=typeof envelope.payload==="string"?JSON.parse(envelope.payload):envelope.payload;
+            if(!outer||((outer.sn||outer.device_sn||target.serial)!==target.serial))continue;
+            const nested=JSON.parse(Buffer.from(outer.data,"base64").toString()),frame=Buffer.from(nested.data,"hex");
+            if(frame.length<10||frame[0]!==255||frame[1]!==9)continue;
+            let checksum=0;for(const byte of frame)checksum^=byte;if(checksum!==0)continue;
+            const opcode=frame.readUInt16BE(7),fields:Record<string,string>={};
+            for(let i=opcode===0x0a00?10:9;i+1<frame.length-1;){const tag=frame[i++],size=frame[i++];if(i+size>frame.length-1)break;if(tag>=0xa3)fields[tag.toString(16)]=frame.subarray(i,i+size).toString("hex");i+=size;}
+            state.samples.push({at:new Date().toISOString(),direction:topic.endsWith("/req")?"command":"report",opcode,fields});
+            if(state.samples.length>600)state.samples.shift();
+          }catch{}
+        }
+      }catch(e:any){state.error=e.message;}
+      finally{state.active=false;socket.destroy();}
+    })();
+    return poolCaptureStatus();
+  }catch(e){socket.destroy();state.active=false;throw e;}
+}
+
 export function effectReportMatches(report:Record<string,unknown>|undefined,effectId:number):boolean|null{
   if(!report)return null;
   const ids=[report.effectId,report.cloudEffectId].filter((v):v is number=>typeof v==="number"&&Number.isFinite(v));
