@@ -104,29 +104,18 @@ jobs:
           name: Jason-Home-2-Android-Build-Tools-35
           path: sign-tools
 
-      - name: Create or reuse persistent Oracle signing identity
+      - name: Verify permanent Jason Home signing identity is present
         shell: bash
         run: |
           set -euo pipefail
-          KEYDIR=/home/ubuntu/.jason-home-2-signing
-          KEYSTORE="$KEYDIR/jason-home-2-release.p12"
-          PASSFILE="$KEYDIR/password"
-          mkdir -p "$KEYDIR"
-          chmod 700 "$KEYDIR"
-
-          if [ ! -s "$PASSFILE" ]; then
-            umask 077
-            openssl rand -base64 36 | tr -d '\n' > "$PASSFILE"
-          fi
+          KEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks
+          PASSFILE=/home/ubuntu/.jason-home-signing/password
+          test -s "$KEYSTORE"
+          test -s "$PASSFILE"
           PASS="$(cat "$PASSFILE")"
-
-          if [ ! -s "$KEYSTORE" ]; then
-            keytool -genkeypair -v               -storetype PKCS12               -keystore "$KEYSTORE"               -storepass "$PASS"               -keypass "$PASS"               -alias jason-home-2               -keyalg RSA -keysize 4096 -validity 10000               -dname "CN=Jason Home 2, OU=Jason Home, O=Jason Craumer, L=Randolph, ST=New York, C=US"
-            chmod 600 "$KEYSTORE" "$PASSFILE"
-          fi
-
-          keytool -list -v -keystore "$KEYSTORE" -storepass "$PASS" -alias jason-home-2             | grep -E 'Alias name:|SHA256:' > /tmp/jh2-signing-cert.txt
-          cat /tmp/jh2-signing-cert.txt
+          FINGERPRINT="$(keytool -list -v -keystore "$KEYSTORE" -storepass "$PASS" -alias jason-home | sed -n 's/.*SHA256: //p' | head -1 | tr '[:lower:]' '[:upper:]')"
+          test "$FINGERPRINT" = "76:B2:8E:FD:4F:5D:13:2A:D3:04:8F:19:BA:E6:C3:5A:A5:F8:4C:4A:39:0E:98:C8:0D:EE:EB:C0:C3:E7:3A:E1"
+          echo "Permanent Jason Home signer verified: $FINGERPRINT"
 
       - name: Sign and verify APK
         shell: bash
@@ -137,16 +126,17 @@ jobs:
           test -n "$APKSIGNER"
           chmod +x "$APKSIGNER"
 
-          KEYDIR=/home/ubuntu/.jason-home-2-signing
-          KEYSTORE="$KEYDIR/jason-home-2-release.p12"
-          PASS="$(cat "$KEYDIR/password")"
+          KEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks
+          PASS="$(cat /home/ubuntu/.jason-home-signing/password)"
           IN="sign-work/Jason-Home-2-2.0.2-VOICE-UNSIGNED.apk"
           OUT="Jason-Home-2-2.0.2-VOICE-SIGNED.apk"
 
           test -s "$IN"
-          "$APKSIGNER" sign             --ks "$KEYSTORE"             --ks-type PKCS12             --ks-key-alias jason-home-2             --ks-pass "pass:$PASS"             --key-pass "pass:$PASS"             --out "$OUT" "$IN"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias jason-home --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out "$OUT" "$IN"
 
-          "$APKSIGNER" verify --verbose --print-certs "$OUT"
+          VERIFY="$("$APKSIGNER" verify --verbose --print-certs "$OUT")"
+          printf '%s\n' "$VERIFY"
+          printf '%s\n' "$VERIFY" | grep -qi 'Signer #1 certificate SHA-256 digest: 76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1'
           sha256sum "$OUT"
 
       - name: Upload signed installable APK
