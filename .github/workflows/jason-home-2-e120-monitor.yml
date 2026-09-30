@@ -36,7 +36,7 @@ jobs:
               call('/api/automation/ownership',{'owner':'direct'})
               record({'monitor':'started','scheduler':'paused'})
               while time.time()<deadline:
-                  for target in ['Pool','House']:
+                  for target in ['Pool']:
                       now=datetime.datetime.now(datetime.timezone.utc).isoformat()
                       try:
                           data=call('/api/mqtt-probe',{'target':target})
