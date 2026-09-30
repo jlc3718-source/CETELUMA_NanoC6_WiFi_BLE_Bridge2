@@ -1,0 +1,43 @@
+name: Jason Home 2 live Pool speed capture
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['.github/workflows/jason-home-2-speed-capture.yml']
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Verify seven effects and start or read Pool command capture
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          def call(path,data=None):
+              req=urllib.request.Request('http://127.0.0.1:8080'+path,None if data is None else json.dumps(data).encode(),{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              return json.load(urllib.request.urlopen(req,timeout=45))
+          valid={'Static','Flow1','Flow2','Cycle','Streamlight','Twinkle','Breathe'}
+          calendar=call('/api/calendar')['calendar']
+          events=calendar['events']+calendar.get('customSchedules',[])
+          assert all(e['effect'] in valid for e in events),[(e.get('name'),e.get('effect')) for e in events if e.get('effect') not in valid]
+          schedules=call('/api/schedules')['schedules']
+          assert all(e['effect'] in valid for e in schedules),schedules
+          print('Seven-effect event migration PASS:',len(events),'calendar/custom events;',len(schedules),'schedule rows')
+          capture=call('/api/mqtt-capture')
+          if not capture.get('active'):
+              capture=call('/api/mqtt-capture/start',{})
+          call('/api/mqtt-probe',{'target':'Pool'})
+          time.sleep(3)
+          capture=call('/api/mqtt-capture')
+          Path('/tmp/jh2-pool-speed-capture.json').write_text(json.dumps(capture,indent=2))
+          print(json.dumps({k:v for k,v in capture.items() if k!='samples'}))
+          for sample in capture.get('samples',[])[-30:]:print(json.dumps(sample))
+          assert capture.get('active'),capture
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pool-speed-capture
+          path: /tmp/jh2-pool-speed-capture.json
