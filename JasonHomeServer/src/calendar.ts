@@ -8,6 +8,7 @@ export interface CalendarEvent {
   effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean;
   categoryIndex:number; major:boolean; dateRuleSourceId?:string;
   creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number}>;
+  aiOneTime?:boolean; expiresAt?:string; aiReplaceEventId?:string;
 }
 export interface SpecialDate { id:string; year:number; month:number; day:number; }
 export interface CustomCalendarItem {
@@ -246,8 +247,11 @@ function resolveFor(cfg:CalendarConfig,day:Ymd,minute:number,start:number,end:nu
   let showPosition=programMinute-start;if(showPosition<0)showPosition+=1440;
   const candidates:CalendarCandidate[]=customCandidates(cfg,day,schedule2,brightness);
   const lead=clamp(Number(cfg.settings.lead)||0,0,14),trail=clamp(Number(cfg.settings.trail)||0,0,14);
+  const activeAi=(cfg.events||[]).filter(e=>e.aiOneTime&&included(cfg,e)&&activeOn(cfg,e,day));
+  const replaced=new Set(activeAi.map(e=>String(e.aiReplaceEventId||"")).filter(Boolean));
   for(const e of cfg.events||[]){
     if(!included(cfg,e))continue;
+    if(!e.aiOneTime&&(replaced.has(e.id)||replaced.has(String(e.dateRuleSourceId||""))))continue;
     const active=activeOn(cfg,e,day)||(e.kind==="Holiday"&&(lead||trail)&&windowActive(cfg,e,day,lead,trail));
     if(active)candidates.push({id:e.id,name:e.name,scene:sceneFor(e,brightness,showPosition)});
   }
@@ -309,7 +313,10 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined,
       creativePhases:Array.isArray(raw.creativePhases)?raw.creativePhases.slice(0,8).map((p:any)=>({
         effect:canonicalEffect(p?.effect),speed:clamp(Number(p?.speed)||2,1,5),minutes:clamp(Number(p?.minutes)||6,2,30),shift:Math.trunc(Number(p?.shift)||0)
-      })) : undefined
+      })) : undefined,
+      aiOneTime:raw.aiOneTime===true,
+      expiresAt:typeof raw.expiresAt==="string"&&raw.expiresAt?raw.expiresAt:undefined,
+      aiReplaceEventId:typeof raw.aiReplaceEventId==="string"&&raw.aiReplaceEventId?raw.aiReplaceEventId:undefined
     });
   }
   for(const raw of Array.isArray(input?.special)?input.special:[]){
