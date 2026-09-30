@@ -20,8 +20,33 @@ function normalizeEffects(value){
   return value;
 }
 
+const MASTER_EVENT_ID="master";
+const MASTER_COLORS=[0xff0000,0xfffffa,0x0d00ff];
+const MASTER_PHASES=[
+  {effect:"Flow1",speed:2,minutes:8,shift:0},
+  {effect:"Breathe",speed:1,minutes:6,shift:1},
+  {effect:"Streamlight",speed:3,minutes:6,shift:2},
+  {effect:"Twinkle",speed:2,minutes:5,shift:0},
+  {effect:"Flow2",speed:2,minutes:8,shift:2},
+  {effect:"Cycle",speed:3,minutes:6,shift:1},
+  {effect:"Breathe",speed:2,minutes:5,shift:0},
+  {effect:"Streamlight",speed:4,minutes:5,shift:2}
+];
+function ensureMasterEvent(cfg){
+  if(!cfg||!Array.isArray(cfg.events))return null;
+  let master=cfg.events.find(e=>e.id===MASTER_EVENT_ID);
+  if(!master){
+    const labor=cfg.events.find(e=>e.id==="evt144")||{kind:"Holiday",rule:"NthWeekday",month:9,day:1,weekday:1,nth:1,offsetDays:0,durationDays:1,categoryIndex:0,major:true};
+    master={...JSON.parse(JSON.stringify(labor)),id:MASTER_EVENT_ID,name:"Master",effect:"Flow1",speed:2,colors:[...MASTER_COLORS],enabled:true,favorite:false,creativePhases:MASTER_PHASES.map(x=>({...x}))};
+    cfg.events.push(master);
+  }
+  master.name="Master";master.colors=[...MASTER_COLORS];
+  if(!Array.isArray(master.creativePhases)||master.creativePhases.length!==8)master.creativePhases=MASTER_PHASES.map(x=>({...x}));
+  return master;
+}
 function creativeLayerCount(e){
   const name=String(e?.name||"").toLowerCase(),factory=String(e?.id||"").includes("::factory:");
+  if(e?.id===MASTER_EVENT_ID)return 8;
   const colors=Array.isArray(e?.colors)?e.colors:[];
   if(factory)return 3;
   if(/new year.?s eve|new year.?s day|halloween|christmas day|christmas eve|independence day|mardi gras|diwali|lunar new year|valentine/.test(name))return 4;
@@ -116,6 +141,7 @@ const clamp=(v,low,high)=>Math.min(high,Math.max(low,Number(v)||low));
 const minutes=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(s||""));return m?Math.min(1439,Math.max(0,Number(m[1])*60+Number(m[2]))):null;};
 const clock=n=>`${String(Math.floor(Number(n||0)/60)).padStart(2,"0")}:${String(Number(n||0)%60).padStart(2,"0")}`;
 const targetNames=["All","Pool","House","Garage","Shed"];
+let masterPreviewGeneration=0;
 const nightLocation={lat:42.1507,lon:-78.9452,tz:"America/New_York"};
 const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLocation.tz,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(now);
   const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
@@ -139,6 +165,7 @@ const theme=mode=>mode===0?"1":mode===1?"3.0.28":"3.0.29";
 const themeName=t=>t==="1"?"Major U.S. Holidays — Basic Colors":t==="3.0.28"?"Expanded Holidays — Basic Colors":"Expanded Holidays — Expanded Colors";
 async function config(){
   const r=await upstream("/api/calendar");if(!r.calendar)throw fail(503,"Oracle calendar is not initialized");
+  ensureMasterEvent(r.calendar);
   if(meta("initialized")!==true){
     const schedules=(r.calendar.customSchedules||[]).map(x=>({...x,colors:rgb(x.colors)}));
     const presets=[...new Map(schedules.filter(x=>x.presetId).map(x=>[x.presetId,
@@ -353,7 +380,19 @@ async function route(req,res){
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
-  if(method==="POST"&&path==="/api/resume"){await upstream("/api/resume","POST",{});return send(res,200,await state());}
+  if(method==="POST"&&path==="/api/resume"){masterPreviewGeneration++;await upstream("/api/resume","POST",{});return send(res,200,await state());}
+  if(method==="POST"&&path==="/api/master/preview"){
+    const cfg=await config(),event=ensureMasterEvent(cfg),token=++masterPreviewGeneration,phases=event.creativePhases||MASTER_PHASES;
+    void (async()=>{
+      for(let i=0;i<phases.length;i++){
+        if(token!==masterPreviewGeneration)return;
+        const p=phases[i],base=rgb(MASTER_COLORS),shift=Math.max(0,Math.min(2,Math.trunc(Number(p.shift)||0))),colors=[...base.slice(shift),...base.slice(0,shift)];
+        await upstream("/api/control","POST",{name:"Master • Layer "+(i+1),target:"All",power:true,brightness:100,effect:p.effect,colors,speed:p.speed});
+        await new Promise(resolve=>setTimeout(resolve,4000));
+      }
+    })().catch(()=>{});
+    return send(res,202,{ok:true,queued:true,layers:8});
+  }
   if(method==="POST"&&path==="/api/settings"){
     const body=await input(req);
     await mutateCalendar(cfg=>{
@@ -366,11 +405,44 @@ async function route(req,res){
     return send(res,200,await state());
   }
   if(method==="GET"&&(path==="/api/events"||path==="/api/events/search"))return send(res,200,displayEvents(await config(),url));
+  if(method==="GET"&&path==="/api/master"){
+    const cfg=await config(),event=ensureMasterEvent(cfg);
+    return send(res,200,{ok:true,event:{...event,colors:rgb(event.colors),layerCount:8,when:when(event,new Date().getFullYear(),cfg.special||[])},phases:event.creativePhases});
+  }
+  if(method==="POST"&&path==="/api/master"){
+    const body=await input(req);
+    let saved=null;
+    await mutateCalendar(cfg=>{
+      const event=ensureMasterEvent(cfg);
+      if(Object.hasOwn(body,"enabled"))event.enabled=!!body.enabled;
+      if(Array.isArray(body.phases)){
+        if(body.phases.length!==8)throw fail(400,"Master must contain exactly eight layers");
+        event.creativePhases=body.phases.map((p,i)=>({
+          effect:nativeEffects.has(String(p?.effect))?String(p.effect):MASTER_PHASES[i].effect,
+          speed:clamp(p?.speed??MASTER_PHASES[i].speed,1,5),
+          minutes:clamp(p?.minutes??MASTER_PHASES[i].minutes,2,30),
+          shift:Math.max(0,Math.min(2,Math.trunc(Number(p?.shift)||0)))
+        }));
+      }
+      event.colors=[...MASTER_COLORS];event.name="Master";event.effect=event.creativePhases?.[0]?.effect||"Flow1";event.speed=event.creativePhases?.[0]?.speed||2;
+      saved=JSON.parse(JSON.stringify(event));
+    });
+    return send(res,200,{ok:true,event:{...saved,colors:rgb(saved.colors),layerCount:8}});
+  }
   if(method==="POST"&&path==="/api/event"){
     const body=await input(req);
     await mutateCalendar(cfg=>{
       const e=cfg.events.find(x=>x.id===body.id),original=eventById.get(body.id);
-      if(!e||!original)throw fail(404,"Unknown event");
+      if(!e)throw fail(404,"Unknown event");
+      if(e.id===MASTER_EVENT_ID){
+        if(body.reset){Object.assign(e,{effect:"Flow1",speed:2,colors:[...MASTER_COLORS],enabled:true,favorite:false,creativePhases:MASTER_PHASES.map(x=>({...x}))});}
+        else{
+          for(const key of ["enabled","favorite","effect","speed"])if(Object.hasOwn(body,key))e[key]=key==="speed"?clamp(body[key],1,5):body[key];
+          e.colors=[...MASTER_COLORS];
+        }
+        return;
+      }
+      if(!original)throw fail(404,"Unknown event");
       if(body.reset){const mode=Number(cfg.settings.mode||0),p=original.profiles;
         e.effect=mode===2?p.expandedEffect:original.effect;e.speed=mode===2?p.expandedSpeed:original.speed;
         e.colors=mode===0?p.major:mode===1?p.basic:p.expanded;
