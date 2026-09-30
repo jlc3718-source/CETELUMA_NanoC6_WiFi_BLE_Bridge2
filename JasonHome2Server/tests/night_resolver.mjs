@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { normalizeCalendarConfig } from "../shared/calendar.js";
-import { resolveNightEvents, lightingNightDate } from "../night_resolver.mjs";
+import { resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene, lightingNightDate } from "../night_resolver.mjs";
 
 const lat=42.1507,lon=-78.9452,tz="America/New_York";
 const settings={
@@ -18,6 +18,12 @@ const ids=cfg=>resolveNightEvents(cfg,{year:2026,month:9,day:28},lat,lon,tz).map
 const rotate=ids(make(0));
 assert.equal(rotate.length,1,"rotate-nightly overlap must expose only the actual winner");
 assert.ok(["monthly","event::factory:77","schedule-test"].includes(rotate[0]));
+assert.deepEqual(new Set(resolveNightCandidates(make(0),{year:2026,month:9,day:28},lat,lon,tz).map(x=>x.id)),
+  new Set(["monthly","event::factory:77","schedule-test"]),"tonight chooser must expose every legitimate candidate even in rotate-nightly mode");
+const chosenScene=resolveNightCandidateScene(make(0),{year:2026,month:9,day:28},"schedule-test",new Date("2026-09-28T22:00:00Z"),lat,lon,tz);
+assert.equal(chosenScene?.effect,"Breathe");
+assert.equal(chosenScene?.brightness,75);
+assert.deepEqual(chosenScene?.colors,[0x0000ff]);
 
 assert.deepEqual(new Set(ids(make(1))),new Set(["monthly","event::factory:77","schedule-test"]),"split-night overlap must expose every participating item");
 assert.deepEqual(new Set(ids(make(2))),new Set(["monthly","event::factory:77","schedule-test"]),"combined overlap must expose every participating item");
