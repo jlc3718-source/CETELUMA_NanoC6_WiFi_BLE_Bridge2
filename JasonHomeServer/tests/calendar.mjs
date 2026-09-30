@@ -146,6 +146,25 @@ r=resolveCalendar(universalCombine,new Date("2026-12-25T23:30:00Z"),42.1507,-78.
 assert.equal(r?.scene.effect,"Cycle");
 assert.deepEqual(r?.scene.colors,[0xff0000,0x0000ff]);
 
+const aiOneTime=normalizeCalendarConfig({
+  settings:{...base.settings,overlap:2},
+  special:[{id:"ai-once-test",year:2026,month:12,day:25}],
+  customSchedules:[],
+  events:[
+    base.events[0],
+    {id:"ai-once-test",name:"AI Christmas Reverse",kind:"AI One-Time",rule:"YearTable",month:12,day:25,weekday:0,nth:0,offsetDays:0,durationDays:1,
+      effect:"Flow1",speed:2,brightness:62,colors:[0xff0000,0x00ff00],enabled:true,categoryIndex:0,major:true,dateRuleSourceId:"ai-once-test",
+      creativePhases:[{effect:"Flow1",speed:2,minutes:5,shift:0},{effect:"Flow2",speed:3,minutes:5,shift:1}],
+      aiOneTime:true,aiReplaceEventId:"xmas",expiresAt:"2026-12-26T14:00:00.000Z"}
+  ]
+});
+r=resolveCalendar(aiOneTime,new Date("2026-12-25T22:02:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"AI Christmas Reverse","Approved AI one-time event must replace the normal holiday for that night");
+assert.equal(r?.scene.brightness,62,"AI one-time event brightness must be honored during Schedule 1");
+assert.equal(r?.scene.effect,"Flow1");
+r=resolveCalendar(aiOneTime,new Date("2026-12-25T22:06:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.scene.effect,"Flow2","AI multi-layer recipe must advance through its saved phases");
+
 const whiteOverrides=normalizeCalendarConfig({
   settings:{...base.settings,enabled:false,whiteOverride1Enabled:true,whiteOverride2Enabled:true},
   special:[],customSchedules:[],events:[]
