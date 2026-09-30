@@ -28,6 +28,10 @@ export interface MqttSendResult {
 const preferredConnectHost=new Map<string,string>();
 const dnsCache=new Map<string,{until:number;ips:string[]}>();
 
+export function captureFrame(data:string):Buffer{
+  const bytes=Buffer.from(data,"base64");
+  return bytes[0]===255&&bytes[1]===9?bytes:Buffer.from(JSON.parse(bytes.toString()).data,"hex");
+}
 let poolCapture:any={active:false,samples:[]};
 let stopCaptureSocket:(()=>void)|null=null;
 export function poolCaptureStatus(){return {...poolCapture,samples:[...poolCapture.samples]};}
@@ -73,7 +77,7 @@ export async function startPoolCapture(creds:MqttCredentials,target:MqttTarget,d
           try{
             const envelope=JSON.parse(p.data.subarray(off).toString()),outer=typeof envelope.payload==="string"?JSON.parse(envelope.payload):envelope.payload;
             if(!outer||((outer.sn||outer.device_sn||target.serial)!==target.serial))continue;
-            const nested=JSON.parse(Buffer.from(outer.data,"base64").toString()),frame=Buffer.from(nested.data,"hex");
+            const frame=captureFrame(outer.data);
             if(frame.length<10||frame[0]!==255||frame[1]!==9)continue;
             let checksum=0;for(const byte of frame)checksum^=byte;if(checksum!==0)continue;
             const opcode=frame.readUInt16BE(7),fields:Record<string,string>={};
