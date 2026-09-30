@@ -185,6 +185,7 @@ function creativeProgram(e:CalendarEvent):CreativePhase[]{
   if((e.colors||[]).length>=2)return [phase(base,Math.min(baseSpeed,2),18),phase("Breathe",1,12,1)];
   return [phase(base,Math.min(baseSpeed,2),30)];
 }
+export function creativeProgramLayerCount(e:CalendarEvent):number{return creativeProgram(e).length;}
 function sceneFor(e:CalendarEvent,brightness:number,showPosition=0):Scene{
   const colors=Array.isArray(e.colors)&&e.colors.length?e.colors.slice(0,8).map(x=>Number(x)&0xffffff):[0xffffff];
   const program=creativeProgram(e),cycle=program.reduce((n,p)=>n+p.minutes,0),at=((Math.floor(showPosition)%cycle)+cycle)%cycle;
