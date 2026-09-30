@@ -3,6 +3,16 @@
 from pathlib import Path
 import shutil
 
+def native_effect_choices(text):
+    names = ["Flow1", "Flow2", "Cycle", "Streamlight", "Twinkle", "Breathe"]
+    anchor = '<option value="Solid">Solid / Static</option>'
+    options = ''.join('<option value="'+name+'">'+name+'</option>' for name in names)
+    text = text.replace(anchor, anchor+options)
+    old = '["Jump","Breath","Strobe","Solid","Chase","Gradient Sweep","Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet","Rainbow Flow","Pulse Wave"]'
+    new = old[:-1] + ',"Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"]'
+    return text.replace(old, new)
+
+
 root = Path(__file__).resolve().parents[1]
 source = root / "JasonHome/app/src/main/assets"
 target = Path(__file__).resolve().parent / "web"
@@ -36,7 +46,7 @@ old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
 if text.count(old_resume) != 1:
     raise SystemExit("Jason Home 2 resume error handler source changed")
 text = text.replace(old_resume, '.catch(e=>status("Resume failed: "+e.message))')
-page.write_text(text)
+page.write_text(native_effect_choices(text))
 
 ui = target / "v3_mockup.js"
 text = ui.read_text()
@@ -48,7 +58,7 @@ old = 'const raw=window.AndroidAnderson?.readBackupText?.()||"";'
 if text.count(old) != 1:
     raise SystemExit("Jason Home 2 backup import source changed")
 text = text.replace(old, 'const raw=prompt("Paste your Jason Home backup JSON here:")||"";')
-ui.write_text(text)
+ui.write_text(native_effect_choices(text))
 shutil.copyfile(Path(__file__).resolve().parent / "night_calendar.js", target / "night_calendar.js")
 
 eufy = target / "android_eufy_ui.js"
