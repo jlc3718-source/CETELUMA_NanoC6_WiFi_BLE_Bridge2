@@ -176,11 +176,12 @@ jobs:
           resumed=call('/api/resume',{})
           assert resumed.get('resumed') is True
           state=call('/api/status?refresh=1')
-          for attempt in range(4):
-              if len(state['eufy']['readyNames'])==4: break
-              time.sleep(3)
+          for attempt in range(8):
+              override_active=(state.get('override') or {}).get('active')
+              if len(state['eufy']['readyNames'])==4 and not override_active: break
+              time.sleep(2)
               state=call('/api/status?refresh=1')
-          print('Final Oracle state:',json.dumps({'owner':state.get('automationOwner'),'ready':state['eufy']['readyNames'],'status':state['eufy'].get('status'),'devices':state.get('devices')}))
+          print('Final Oracle state:',json.dumps({'owner':state.get('automationOwner'),'ready':state['eufy']['readyNames'],'status':state['eufy'].get('status'),'override':state.get('override'),'devices':state.get('devices')}))
           assert not (state.get('override') or {}).get('active')
           assert state.get('automationOwner')=='oracle'
           assert len(state['eufy']['readyNames'])==4
