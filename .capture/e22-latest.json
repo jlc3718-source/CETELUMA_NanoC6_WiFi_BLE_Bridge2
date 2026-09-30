@@ -149,6 +149,54 @@
           "a7": "02"
         },
         "opcode": 516
+      },
+      {
+        "at": "2026-09-30T02:31:26.237Z",
+        "direction": "command",
+        "fields": {
+          "a3": "ff1f0000"
+        },
+        "opcode": 512
+      },
+      {
+        "at": "2026-09-30T02:31:26.393Z",
+        "direction": "report",
+        "fields": {
+          "a3": "1e00",
+          "a4": "264e",
+          "a5": "00",
+          "a6": "ffffffff",
+          "a7": "00000030000000000000000000000000",
+          "a8": "02",
+          "a9": "00"
+        },
+        "opcode": 2560
+      },
+      {
+        "at": "2026-09-30T02:31:27.109Z",
+        "direction": "command",
+        "fields": {
+          "a4": "64"
+        },
+        "opcode": 513
+      },
+      {
+        "at": "2026-09-30T02:31:27.249Z",
+        "direction": "report",
+        "fields": {},
+        "opcode": 2561
+      },
+      {
+        "at": "2026-09-30T02:31:27.367Z",
+        "direction": "report",
+        "fields": {
+          "a3": "1e",
+          "a4": "264e0000",
+          "a5": "00",
+          "a6": "ffffffff",
+          "a7": "02"
+        },
+        "opcode": 516
       }
     ],
     "startedAt": "2026-09-30T02:27:42.119Z",
@@ -180,9 +228,9 @@
     ],
     "target": "Shed"
   },
-  "readAt": "2026-09-30T02:31:02.663245+00:00",
+  "readAt": "2026-09-30T02:31:49.283973+00:00",
   "request": {
     "action": "status",
-    "requestId": "brightness25-20260929-2230"
+    "requestId": "brightness100-20260929-2231"
   }
 }
