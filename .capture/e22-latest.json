@@ -1,16 +1,42 @@
 {
   "capture": {
-    "active": false,
-    "reconcile": {
-      "errors": [],
-      "ok": true,
-      "sent": 0
-    },
-    "samples": []
+    "active": true,
+    "endsAt": "2026-09-30T02:57:42.119Z",
+    "model": "T8L02",
+    "requestTopicsGranted": true,
+    "samples": [],
+    "startedAt": "2026-09-30T02:27:42.119Z",
+    "subscriptions": [
+      {
+        "granted": true,
+        "topic": "cmd/eufy_life/T8L02/Shed/req"
+      },
+      {
+        "granted": true,
+        "topic": "cmd/eufy_life/T8L02/Shed/app/req"
+      },
+      {
+        "granted": true,
+        "topic": "cmd/eufy_life/T8L02/Shed/app/res"
+      },
+      {
+        "granted": true,
+        "topic": "cmd/eufy_life/T8L02/Shed/res"
+      },
+      {
+        "granted": true,
+        "topic": "synq/eufy_life/T8L02/Shed/state_info"
+      },
+      {
+        "granted": true,
+        "topic": "cmd/eufy_life/T8L02/Shed/app/ota/res"
+      }
+    ],
+    "target": "Shed"
   },
-  "readAt": "2026-09-30T02:25:25.923321+00:00",
+  "readAt": "2026-09-30T02:27:42.338778+00:00",
   "request": {
-    "action": "stop",
-    "requestId": "setup"
+    "action": "start",
+    "requestId": "start-20260929-2228"
   }
 }
