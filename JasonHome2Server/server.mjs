@@ -4,7 +4,6 @@ import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { lightingNightDate, resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene } from "./night_resolver.mjs";
-import { creativeProgramLayerCount } from "./shared/calendar.js";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -104,10 +103,8 @@ const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLoca
   const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
 const nightEvents=(cfg,day)=>resolveNightEvents(cfg,day,nightLocation.lat,nightLocation.lon,nightLocation.tz).map(e=>{
   const source=cfg.events.find(item=>item.id===e.id)||cfg.customSchedules.find(item=>item.id===e.id);
-  const custom=cfg.customSchedules.some(item=>item.id===e.id);
   return {...e,colors:rgb(e.colors),effect:source?.effect||"Solid / Static",speed:Number(source?.speed||1),
-    layerCount:custom?1:source?creativeProgramLayerCount(source):1,
-    type:e.id.includes("::factory:")?"Factory event":custom?"Custom event":"Calendar event"};
+    type:e.id.includes("::factory:")?"Factory event":cfg.customSchedules.some(item=>item.id===e.id)?"Custom event":"Calendar event"};
 });
 const monthCache=new Map();
 function monthSummary(cfg,year,month){
@@ -225,7 +222,7 @@ function displayEvents(cfg,url){
     if(search&&!(e.name+" "+label+" "+e.kind+" "+category.name).toLowerCase().includes(search))continue;
     const original=eventById.get(e.id),defaults=original?.profiles;
     rows.push({id:e.id,name:e.name,kind:e.kind,categoryId:category.id,categoryName:category.name,categoryColor:category.color,
-      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:creativeProgramLayerCount(e),enabled:e.enabled!==false,favorite:!!e.favorite,
+      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),enabled:e.enabled!==false,favorite:!!e.favorite,
       customized:!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
        ||JSON.stringify(e.colors)!==JSON.stringify(mode===0?defaults.major:mode===1?defaults.basic:defaults.expanded))});
     if(!month&&rows.length>=96)break;
@@ -309,10 +306,9 @@ async function route(req,res){
     const {cfg,now,night,candidates}=await tonightCandidateBundle();
     const options=candidates.map(({id,name,source})=>{
       const scene=resolveNightCandidateScene(cfg,night,id,now,nightLocation.lat,nightLocation.lon,nightLocation.tz);
-      const custom=(cfg.customSchedules||[]).some(x=>x.id===id);
-      return {id,name,type:id.includes("::factory:")?"Factory event":custom?"Custom event":"Calendar event",
+      return {id,name,type:id.includes("::factory:")?"Factory event":(cfg.customSchedules||[]).some(x=>x.id===id)?"Custom event":"Calendar event",
         effect:String(scene?.effect||source.effect||"Static"),speed:Number(scene?.speed||source.speed||1),
-        layerCount:custom?1:creativeProgramLayerCount(source),colors:rgb(source.colors||scene?.colors||[]),scene:scene?{...scene,colors:rgb(scene.colors)}:null};
+        colors:rgb(source.colors||scene?.colors||[]),scene:scene?{...scene,colors:rgb(scene.colors)}:null};
     }).filter(x=>x.scene);
     return send(res,200,{ok:true,night,options});
   }
