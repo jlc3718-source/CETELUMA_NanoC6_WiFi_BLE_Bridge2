@@ -32,16 +32,15 @@ export function captureFrame(data:string):Buffer{
   const bytes=Buffer.from(data,"base64");
   return bytes[0]===255&&bytes[1]===9?bytes:Buffer.from(JSON.parse(bytes.toString()).data,"hex");
 }
-let poolCapture:any={active:false,samples:[]};
+let commandCapture:any={active:false,samples:[]};
 let stopCaptureSocket:(()=>void)|null=null;
-export function poolCaptureStatus(){return {...poolCapture,samples:[...poolCapture.samples]};}
-export function stopPoolCapture(){stopCaptureSocket?.();stopCaptureSocket=null;poolCapture.active=false;return poolCaptureStatus();}
-export async function startPoolCapture(creds:MqttCredentials,target:MqttTarget,durationMs=1800000){
-  if(target.name!=="Pool")throw new Error("Live command capture is limited to Pool");
-  stopPoolCapture();
+export function commandCaptureStatus(){return {...commandCapture,samples:[...commandCapture.samples]};}
+export function stopCommandCapture(){stopCaptureSocket?.();stopCaptureSocket=null;commandCapture.active=false;return commandCaptureStatus();}
+export async function startCommandCapture(creds:MqttCredentials,target:MqttTarget,durationMs=1800000){
+  stopCommandCapture();
   const started=Date.now(),ends=started+durationMs;
-  poolCapture={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:"Pool",samples:[],requestTopicsGranted:false};
-  const state=poolCapture,reader=new Reader();
+  commandCapture={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:target.name,model:target.model,samples:[],requestTopicsGranted:false};
+  const state=commandCapture,reader=new Reader();
   const socket=tlsConnect({host:creds.endpoint_addr,port:creds.endpoint_port||8883,servername:creds.endpoint_addr,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
   socket.on("data",(data:any)=>reader.push(Buffer.from(data)));
   socket.on("error",()=>reader.fail(new Error("Capture socket error")));
@@ -49,7 +48,8 @@ export async function startPoolCapture(creds:MqttCredentials,target:MqttTarget,d
   stopCaptureSocket=()=>{state.active=false;socket.destroy();};
   try{
     await withTimeout(new Promise<void>((resolve,reject)=>{socket.once("secureConnect",resolve);socket.once("error",reject);}),8000,"Capture TLS",()=>socket.destroy());
-    socket.write(connectPacket(`android-eufy_life-${creds.user_id||"u"}-pool-capture-${Math.random().toString(16).slice(2)}`));
+    const captureName=target.name.toLowerCase().replace(/[^a-z0-9]+/g,"-");
+    socket.write(connectPacket(`android-eufy_life-${creds.user_id||"u"}-${captureName}-capture-${Math.random().toString(16).slice(2)}`));
     const ack=await reader.next(8000,"Capture CONNACK");
     if(ack.type!==2||ack.data[1]!==0)throw new Error("Capture broker refused connection");
     const base=`cmd/eufy_life/${target.model}/${target.serial}`;
@@ -61,7 +61,7 @@ export async function startPoolCapture(creds:MqttCredentials,target:MqttTarget,d
       sub=await reader.next(8000,"Capture SUBACK");
     }
     if(sub.type!==9||sub.data.length!==requested.length+2)throw new Error("Capture subscription reply invalid");
-    state.subscriptions=requested.map((topic,i)=>({topic:topic.replace(target.serial,"Pool"),granted:sub.data[i+2]!==128}));
+    state.subscriptions=requested.map((topic,i)=>({topic:topic.replace(target.serial,target.name),granted:sub.data[i+2]!==128}));
     state.requestTopicsGranted=sub.data[2]!==128||sub.data[3]!==128;
     if(!state.subscriptions.some((s:any)=>s.granted))throw new Error("Capture topics denied by broker");
     state.active=true;
@@ -89,7 +89,7 @@ export async function startPoolCapture(creds:MqttCredentials,target:MqttTarget,d
       }catch(e:any){state.error=e.message;}
       finally{state.active=false;socket.destroy();}
     })();
-    return poolCaptureStatus();
+    return commandCaptureStatus();
   }catch(e){socket.destroy();state.active=false;throw e;}
 }
 

@@ -1,0 +1,69 @@
+name: Read E22 command capture
+
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths:
+      - '.capture/e22-request.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jason-home-e22-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2'
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: jason-home-cloudflare-rebuild
+      - name: Start, read, or stop isolated Shed capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          test -n "$TOKEN"
+          ACTION="$(python3 -c 'import json; print(json.load(open(".capture/e22-request.json"))["action"])')"
+          case "$ACTION" in
+            start)
+              curl -fsS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+                -d '{"target":"Shed"}' http://127.0.0.1:8080/api/mqtt-capture/start >/tmp/e22-action.json
+              ;;
+            status)
+              curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/mqtt-capture >/tmp/e22-action.json
+              ;;
+            stop)
+              curl -fsS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+                -d '{}' http://127.0.0.1:8080/api/mqtt-capture/stop >/tmp/e22-action.json
+              ;;
+            *) echo "Unknown capture action: $ACTION" >&2; exit 2;;
+          esac
+          python3 - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          request=json.load(open('.capture/e22-request.json'))
+          capture=json.load(open('/tmp/e22-action.json'))
+          out={'request':request,'readAt':datetime.now(timezone.utc).isoformat(),'capture':capture}
+          with open('.capture/e22-latest.json','w') as f:
+              json.dump(out,f,indent=2,sort_keys=True)
+              f.write('\n')
+          if request['action']!='stop':
+              if capture.get('target')!='Shed': raise SystemExit('Capture is not isolated to Shed')
+              if not capture.get('active'): raise SystemExit('Shed capture is not active')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - name: Save bounded capture snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .capture/e22-latest.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Capture Shed E22 command snapshot"
+          git push origin HEAD:jason-home-cloudflare-rebuild

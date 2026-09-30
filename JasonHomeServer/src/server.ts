@@ -9,7 +9,7 @@ import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factor
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
 import { currentCalendarInfo, nextCalendarBoundary, nextCalendarEvent, nextCalendarTransition, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
-import { mqttConnectionStatus, poolCaptureStatus, stopPoolCapture } from "./eufy/mqtt.js";
+import { mqttConnectionStatus, commandCaptureStatus, stopCommandCapture } from "./eufy/mqtt.js";
 
 let captureRestoreTimer:ReturnType<typeof setTimeout>|null=null;
 const PORT=Math.max(1,Number(process.env.PORT||"8080"));
@@ -1076,17 +1076,19 @@ const server=http.createServer(async(req,res)=>{
       const c=await ensureEufy(changed);
       return json(res,200,{ok:true,changed,eufy:eufyStatus,readyNames:c.readyNames(),transport:"linux-mqtt"});
     }
-    if(method==="GET"&&path==="/api/mqtt-capture")return json(res,200,poolCaptureStatus());
+    if(method==="GET"&&path==="/api/mqtt-capture")return json(res,200,commandCaptureStatus());
     if(method==="POST"&&path==="/api/mqtt-capture/start"){
-      const c=await ensureEufy(false),capture=await c.startPoolCapture();
+      const input:any=await readJson(req),target=String(input?.target||"Pool");
+      if(!DEVICE_NAMES.includes(target as any))throw new Error("Capture target must be Pool, House, Garage, or Shed");
+      const c=await ensureEufy(false),capture=await c.startCommandCapture(target);
       setMeta("automation_owner","direct");
       if(captureRestoreTimer)clearTimeout(captureRestoreTimer);
-      captureRestoreTimer=setTimeout(()=>{stopPoolCapture();setMeta("automation_owner","oracle");void reconcile(false,true).catch(e=>console.error("[capture resume]",e.message));},1800000);
+      captureRestoreTimer=setTimeout(()=>{stopCommandCapture();setMeta("automation_owner","oracle");void reconcile(false,true).catch(e=>console.error("[capture resume]",e.message));},1800000);
       return json(res,200,capture);
     }
     if(method==="POST"&&path==="/api/mqtt-capture/stop"){
       if(captureRestoreTimer)clearTimeout(captureRestoreTimer);
-      const capture=stopPoolCapture();setMeta("automation_owner","oracle");
+      const capture=stopCommandCapture();setMeta("automation_owner","oracle");
       return json(res,200,{...capture,reconcile:await reconcile(false,true)});
     }
     if(method==="POST"&&path==="/api/mqtt-probe"){
