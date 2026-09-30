@@ -20,7 +20,7 @@ function normalizeEffects(value){
   return value;
 }
 
-const AI_MODEL="gpt-5.6-luna";
+const AI_MODEL=process.env.JH2_AI_MODEL||"gpt-6-astra";
 const AI_EFFECTS=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"];
 const AI_SYSTEM=`You are the Jason Home lighting designer. Hold a natural back-and-forth conversation, offer concrete design ideas, and revise earlier ideas when asked.
 You can only design using these native effects: Static, Flow1, Flow2, Cycle, Streamlight, Twinkle, Breathe.
@@ -32,7 +32,7 @@ Return JSON only with this shape:
 {"reply":"natural conversational response","draft":null or {"name":"short show name","target_event":"event name or empty","date":"YYYY-MM-DD or empty","brightness":1-100,"colors":["#RRGGBB"],"layers":[{"effect":"native effect","speed":1-10,"minutes":2-30,"shift":0-7}]}}
 Never claim a draft has been applied or scheduled; the user must press a button.`;
 function creativeLayerCount(e){
-
+  if(Array.isArray(e?.creativePhases)&&e.creativePhases.length)return Math.min(8,e.creativePhases.length);
   const name=String(e?.name||"").toLowerCase(),factory=String(e?.id||"").includes("::factory:");
   const colors=Array.isArray(e?.colors)?e.colors:[];
   if(factory)return 3;
@@ -80,6 +80,101 @@ if(!meta("speed_scale_10")){
 }
 let secret=meta("session_secret");
 if(!secret){secret=randomBytes(32).toString("hex");put("session_secret",secret);}
+const aiCipherKey=createHash("sha256").update("jason-home-ai:"+secret).digest();
+function sealAiKey(value){
+  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",aiCipherKey,iv);
+  const encrypted=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]),tag=cipher.getAuthTag();
+  return {iv:iv.toString("base64"),tag:tag.toString("base64"),data:encrypted.toString("base64")};
+}
+function openAiKey(){
+  const env=String(process.env.OPENAI_API_KEY||"").trim();if(env)return env;
+  const box=meta("ai_api_key_cipher");if(!box?.iv||!box?.tag||!box?.data)return "";
+  try{const d=createDecipheriv("aes-256-gcm",aiCipherKey,Buffer.from(box.iv,"base64"));d.setAuthTag(Buffer.from(box.tag,"base64"));return Buffer.concat([d.update(Buffer.from(box.data,"base64")),d.final()]).toString("utf8");}
+  catch{return "";}
+}
+async function verifyAiKey(key){
+  const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:"Bearer "+key,accept:"application/json"}});
+  if(!r.ok){const p=await r.json().catch(()=>({}));throw fail(400,p?.error?.message||"OpenAI API key could not be verified");}
+  return true;
+}
+const AI_SCHEMA={
+  type:"object",additionalProperties:false,required:["reply","draft"],properties:{
+    reply:{type:"string"},
+    draft:{anyOf:[
+      {type:"null"},
+      {type:"object",additionalProperties:false,required:["name","target_event","date","brightness","colors","layers"],properties:{
+        name:{type:"string"},target_event:{type:"string"},date:{type:"string"},brightness:{type:"integer"},
+        colors:{type:"array",items:{type:"string"}},
+        layers:{type:"array",items:{type:"object",additionalProperties:false,required:["effect","speed","minutes","shift"],properties:{
+          effect:{type:"string",enum:AI_EFFECTS},speed:{type:"integer"},minutes:{type:"integer"},shift:{type:"integer"}
+        }}}
+      }}
+    ]}
+  }
+};
+function sanitizeAiDraft(raw){
+  if(!raw||typeof raw!=="object")return null;
+  const colors=(Array.isArray(raw.colors)?raw.colors:[]).map(hex).filter(x=>/^#[0-9A-F]{6}$/.test(x)).slice(0,8);
+  const layers=(Array.isArray(raw.layers)?raw.layers:[]).slice(0,8).map(p=>({
+    effect:AI_EFFECTS.includes(String(p?.effect))?String(p.effect):"Flow1",
+    speed:clamp(p?.speed??2,1,5),minutes:clamp(p?.minutes??6,2,30),shift:Math.max(0,Math.min(7,Math.trunc(Number(p?.shift)||0)))
+  }));
+  if(!colors.length||!layers.length)return null;
+  return {name:String(raw.name||"AI Light Show").trim().slice(0,80)||"AI Light Show",target_event:String(raw.target_event||"").trim().slice(0,100),
+    date:String(raw.date||"").trim().slice(0,10),brightness:clamp(raw.brightness??100,1,100),colors,layers};
+}
+function aiOutputText(payload){
+  if(typeof payload?.output_text==="string")return payload.output_text;
+  for(const item of payload?.output||[])for(const part of item?.content||[])if(part?.type==="output_text"&&typeof part.text==="string")return part.text;
+  return "";
+}
+async function callLightingAi(message){
+  const key=openAiKey();if(!key)throw fail(409,"AI is not connected yet. Add the OpenAI API key in the AI tab.");
+  const thread=meta("ai_thread",[]).slice(-24),prior=meta("ai_draft",null);
+  const inputs=thread.map(m=>({role:m.role,content:m.text+(m.role==="assistant"&&m.draft?"\nCurrent draft: "+JSON.stringify(m.draft):"")}));
+  inputs.push({role:"user",content:String(message)});
+  const today=localDay(new Date()),instructions=AI_SYSTEM+"\nToday is "+[today.year,String(today.month).padStart(2,"0"),String(today.day).padStart(2,"0")].join("-")+
+    ". Scheduled AI layers must use speeds 1-5. If the user refers to the current draft, revise it rather than starting over."+(prior?"\nExisting draft: "+JSON.stringify(prior):"");
+  const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{authorization:"Bearer "+key,"content-type":"application/json"},
+    body:JSON.stringify({model:AI_MODEL,instructions,input:inputs,max_output_tokens:1800,text:{format:{type:"json_schema",name:"jason_home_lighting_design",strict:true,schema:AI_SCHEMA}}})});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok)throw fail(response.status,payload?.error?.message||"OpenAI request failed");
+  let parsed;try{parsed=JSON.parse(aiOutputText(payload));}catch{throw fail(502,"AI returned an unreadable lighting design");}
+  const draft=sanitizeAiDraft(parsed.draft),reply=String(parsed.reply||"").trim()||"I have a lighting idea ready.";
+  const next=[...thread,{role:"user",text:String(message).slice(0,2000)},{role:"assistant",text:reply,draft}].slice(-30);
+  put("ai_thread",next);if(draft)put("ai_draft",draft);
+  return {reply,draft:draft||meta("ai_draft",null),thread:next};
+}
+function normalizeEventName(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");}
+function dateKey(y,m,d){return y*10000+m*100+d;}
+function resolveAiTarget(draft,cfg){
+  const today=localDay(new Date()),wanted=normalizeEventName(draft?.target_event),builtins=(cfg.events||[]).filter(e=>!e.aiOneTime&&e.id!=="master");
+  let source=wanted?builtins.find(e=>normalizeEventName(e.name)===wanted):null;
+  if(!source&&wanted)source=builtins.find(e=>normalizeEventName(e.name).includes(wanted)||wanted.includes(normalizeEventName(e.name)));
+  if(/^\d{4}-\d{2}-\d{2}$/.test(String(draft?.date||""))){
+    const [year,month,day]=draft.date.split("-").map(Number);if(dateKey(year,month,day)>=dateKey(today.year,today.month,today.day))return {year,month,day,source};
+  }
+  if(source){
+    for(let year=today.year;year<=today.year+3;year++){
+      const d=eventDate(source,year,cfg.special||[]);if(!d)continue;
+      const y=d.getUTCFullYear(),m=d.getUTCMonth()+1,day=d.getUTCDate();
+      if(dateKey(y,m,day)>=dateKey(today.year,today.month,today.day))return {year:y,month:m,day,source};
+    }
+  }
+  return {year:0,month:0,day:0,source};
+}
+function decorateAiDraft(draft,cfg){
+  if(!draft)return null;const target=resolveAiTarget(draft,cfg);
+  return {...draft,resolvedDate:target.year?[target.year,String(target.month).padStart(2,"0"),String(target.day).padStart(2,"0")].join("-"):"",replaceEventId:target.source?.id||"",replaceEventName:target.source?.name||""};
+}
+async function aiState(){
+  const cfg=await config(),draft=decorateAiDraft(meta("ai_draft",null),cfg);
+  const applied=(cfg.events||[]).filter(e=>e.aiOneTime===true).map(e=>{
+    const sp=(cfg.special||[]).find(x=>x.id===e.id);return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",colors:rgb(e.colors),layerCount:e.creativePhases?.length||1,expiresAt:e.expiresAt||""};
+  });
+  return {ok:true,configured:!!openAiKey(),model:AI_MODEL,thread:meta("ai_thread",[]),draft,applied};
+}
+
 const aiSecretKey=createHash("sha256").update("jason-home-ai:"+String(secret)).digest();
 function encryptAiKey(value){
   const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",aiSecretKey,iv);
@@ -147,7 +242,7 @@ const clamp=(v,low,high)=>Math.min(high,Math.max(low,Number(v)||low));
 const minutes=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(s||""));return m?Math.min(1439,Math.max(0,Number(m[1])*60+Number(m[2]))):null;};
 const clock=n=>`${String(Math.floor(Number(n||0)/60)).padStart(2,"0")}:${String(Number(n||0)%60).padStart(2,"0")}`;
 const targetNames=["All","Pool","House","Garage","Shed"];
-let masterPreviewGeneration=0;
+let aiPreviewGeneration=0;
 const nightLocation={lat:42.1507,lon:-78.9452,tz:"America/New_York"};
 const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLocation.tz,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(now);
   const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
@@ -171,7 +266,18 @@ const theme=mode=>mode===0?"1":mode===1?"3.0.28":"3.0.29";
 const themeName=t=>t==="1"?"Major U.S. Holidays — Basic Colors":t==="3.0.28"?"Expanded Holidays — Basic Colors":"Expanded Holidays — Expanded Colors";
 async function config(){
   const r=await upstream("/api/calendar");if(!r.calendar)throw fail(503,"Oracle calendar is not initialized");
-  ensureMasterEvent(r.calendar);
+  if(meta("master_removed_v1")!==true){
+    if((r.calendar.events||[]).some(e=>e.id==="master")){
+      const cleaned=JSON.parse(JSON.stringify(r.calendar));
+      cleaned.events=(cleaned.events||[]).filter(e=>e.id!=="master");
+      cleaned.special=(cleaned.special||[]).filter(x=>x.id!=="master");
+      cleaned.revision=Number(cleaned.revision||0)+1;
+      const saved=await upstream("/api/calendar/sync","POST",cleaned);
+      if(!saved.ok)throw fail(409,"Master cleanup was rejected");
+      r.calendar=cleaned;
+    }
+    put("master_removed_v1",true);
+  }
   if(meta("initialized")!==true){
     const schedules=(r.calendar.customSchedules||[]).map(x=>({...x,colors:rgb(x.colors)}));
     const presets=[...new Map(schedules.filter(x=>x.presetId).map(x=>[x.presetId,
