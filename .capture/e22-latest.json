@@ -228,9 +228,9 @@
     ],
     "target": "Shed"
   },
-  "readAt": "2026-09-30T02:31:49.283973+00:00",
+  "readAt": "2026-09-30T02:32:28.746075+00:00",
   "request": {
     "action": "status",
-    "requestId": "brightness100-20260929-2231"
+    "requestId": "static-red-20260929-2232"
   }
 }
