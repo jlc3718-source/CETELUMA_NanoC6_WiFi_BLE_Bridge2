@@ -103,7 +103,7 @@ const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLoca
   const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
 const nightEvents=(cfg,day)=>resolveNightEvents(cfg,day,nightLocation.lat,nightLocation.lon,nightLocation.tz).map(e=>{
   const source=cfg.events.find(item=>item.id===e.id)||cfg.customSchedules.find(item=>item.id===e.id);
-  return {...e,colors:rgb(e.colors),effect:source?.effect||"Solid / Static",
+  return {...e,colors:rgb(e.colors),effect:source?.effect||"Solid / Static",speed:Number(source?.speed||1),
     type:e.id.includes("::factory:")?"Factory event":cfg.customSchedules.some(item=>item.id===e.id)?"Custom event":"Calendar event"};
 });
 const monthCache=new Map();
