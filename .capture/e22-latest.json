@@ -1,0 +1,16 @@
+{
+  "capture": {
+    "active": false,
+    "reconcile": {
+      "errors": [],
+      "ok": true,
+      "sent": 0
+    },
+    "samples": []
+  },
+  "readAt": "2026-09-30T02:25:25.923321+00:00",
+  "request": {
+    "action": "stop",
+    "requestId": "setup"
+  }
+}
