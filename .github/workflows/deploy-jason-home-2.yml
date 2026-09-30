@@ -149,6 +149,35 @@ jobs:
           print('Jason Home 2 live login, tonight/month agreement, calendar UI, state, events, colors, categories, presets, authenticated POST: PASS')
           PY
           echo 'Jason Home 2 and original Oracle HTTPS health: PASS'
+      - name: Verify ten speed controls and resume normal scheduling
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,re
+          from pathlib import Path
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          def call(path,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              return json.load(opener.open(urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'}),timeout=90))
+          health=call('/api/health')
+          assert health['build']['sha']=='26b90b45e2bfb031599a39e1b178286685b73f18'
+          cfg=call('/api/calendar')['calendar']
+          assert all(1<=e['speed']<=10 for e in cfg['events']+cfg['customSchedules'])
+          text=Path('JasonHome2Server/web/anderson_home.html').read_text()
+          for id in ['speed','eventsSpeed']:
+              assert re.search(r'<input id="'+id+r'"[^>]*max="10"',text), id
+          assert 'c.max="10",c.value=e.speed' in text
+          ui=Path('JasonHome2Server/web/v3_mockup.js').read_text()
+          assert 'id="homeSpeed" type="range" min="1" max="10"' in ui
+          assert '["1","2","3","4","5","6","7","8","9","10"]' in text
+          call('/api/mqtt-capture/stop',{})
+          resumed=call('/api/resume',{})
+          assert resumed.get('resumed') is True
+          state=call('/api/state')
+          assert not (state.get('override') or {}).get('active')
+          print('Ten-step home, effects, event-preview, event-editor controls and calendar bounds PASS')
+          print('Pool capture stopped; manual test override cleared; normal scheduling resumed PASS')
+          PY
       - name: Restore previous web app on failure
         if: failure()
         shell: bash

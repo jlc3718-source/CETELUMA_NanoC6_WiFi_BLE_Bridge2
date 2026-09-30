@@ -20,6 +20,16 @@ function normalizeEffects(value){
   return value;
 }
 normalizeEffects(catalog);
+const legacySpeed=v=>[1,3,5,8,10][Math.max(1,Math.min(5,Math.round(Number(v)||3)))-1];
+function migrateSpeeds(value){
+  if(Array.isArray(value)){value.forEach(migrateSpeeds);return value;}
+  if(value&&typeof value==="object")for(const [key,item] of Object.entries(value)){
+    if(["speed","expandedSpeed"].includes(key))value[key]=legacySpeed(item);else migrateSpeeds(item);
+  }
+  return value;
+}
+migrateSpeeds(catalog);
+
 
 const port=Number(process.env.JH2_PORT||8081);
 const upstreamUrl=process.env.JH2_UPSTREAM_URL||"http://127.0.0.1:8080";
@@ -32,6 +42,12 @@ db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NUL
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
+if(!meta("speed_scale_10")){
+  db.exec("BEGIN");
+  try{for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value){put("speed_scale_10_backup_"+key,value);put(key,migrateSpeeds(value));}}
+    put("speed_scale_10",true);db.exec("COMMIT");
+  }catch(error){db.exec("ROLLBACK");throw error;}
+}
 let secret=meta("session_secret");
 if(!secret){secret=randomBytes(32).toString("hex");put("session_secret",secret);}
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};
@@ -360,7 +376,7 @@ async function route(req,res){
       if(!String(body.name||"").trim())throw fail(400,"Give this custom light a name");
       if(!item){item={id};all.push(item);}
       Object.assign(item,{name:String(body.name).trim(),effect:String(body.effect||"Jump"),brightness:clamp(body.brightness??100,1,100),
-        speed:clamp(body.speed??3,1,5),enabled:body.enabled!==false,favorite:!!body.favorite,colors:rgb(body.colors||["#E08700"])});
+        speed:clamp(body.speed??5,1,10),enabled:body.enabled!==false,favorite:!!body.favorite,colors:rgb(body.colors||["#E08700"])});
     }
     put("presets",all);return send(res,200,{ok:true,id,fileBytes:JSON.stringify(all).length});
   }
@@ -457,3 +473,4 @@ http.createServer((req,res)=>route(req,res).catch(e=>{
   if(status>=500)console.error("[Jason Home 2]",req.method,req.url,e.message);
   send(res,status,{ok:false,error:e.message||"Request failed"});
 })).listen(port,"0.0.0.0",()=>console.log("Jason Home 2 web on port "+port));
+

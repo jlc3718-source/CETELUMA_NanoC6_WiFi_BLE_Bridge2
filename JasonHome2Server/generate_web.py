@@ -17,6 +17,18 @@ def native_effect_choices(text):
     text = text.replace('const effect=node.dataset.effect,', 'const effect=({Static:"Solid",Flow1:"Chase",Flow2:"Chase",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"}[node.dataset.effect]||node.dataset.effect),')
     return text
 
+def ten_speed_settings(text):
+    import json
+    labels = json.dumps([str(i) for i in range(1,11)], separators=(',',':'))
+    text = text.replace('["Very Slow","Slow","Normal","Fast","Very Fast"]', labels)
+    text = text.replace('["","Very Slow","Slow","Normal","Fast","Very Fast"]', '["",'+labels[1:])
+    text = text.replace('max="5"', 'max="10"').replace('c.max="5",c.value=e.speed', 'c.max="10",c.value=e.speed')
+    text = text.replace('Math.min(5,parseInt(byId("homeSpeed")', 'Math.min(10,parseInt(byId("homeSpeed")')
+    text = text.replace('[.4,.65,1,1.65,2.5][v-1]', '[.4,.525,.65,.825,1,1.2167,1.4333,1.65,2.075,2.5][v-1]')
+    text = text.replace('["🐌","🐢","🚲","🐇","🚀"]', '["🐌","🐌","🐢","🐢","🚲","🚲","🐇","🐇","🚀","🚀"]')
+    text = text.replace('[0,2e3,1e3,500,250,100][+e]', '[0,2000,1500,1000,750,500,417,333,250,175,100][+e]')
+    return text
+
 root = Path(__file__).resolve().parents[1]
 source = root / "JasonHome/app/src/main/assets"
 target = Path(__file__).resolve().parent / "web"
@@ -50,7 +62,7 @@ old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
 if text.count(old_resume) != 1:
     raise SystemExit("Jason Home 2 resume error handler source changed")
 text = text.replace(old_resume, '.catch(e=>status("Resume failed: "+e.message))')
-page.write_text(native_effect_choices(text))
+page.write_text(ten_speed_settings(native_effect_choices(text)))
 
 ui = target / "v3_mockup.js"
 text = ui.read_text()
@@ -62,7 +74,7 @@ old = 'const raw=window.AndroidAnderson?.readBackupText?.()||"";'
 if text.count(old) != 1:
     raise SystemExit("Jason Home 2 backup import source changed")
 text = text.replace(old, 'const raw=prompt("Paste your Jason Home backup JSON here:")||"";')
-ui.write_text(native_effect_choices(text))
+ui.write_text(ten_speed_settings(native_effect_choices(text)))
 shutil.copyfile(Path(__file__).resolve().parent / "night_calendar.js", target / "night_calendar.js")
 
 eufy = target / "android_eufy_ui.js"
@@ -80,3 +92,4 @@ text = text.replace('setInterval(()=>{if(!document.hidden)refreshEufyStatus();},
                     'setInterval(()=>{if(!document.hidden&&document.body.dataset.page==="settings")refreshEufyStatus();},120000)', 1)
 eufy.write_text(text)
 print("Jason Home 2 hosted UI ready")
+
