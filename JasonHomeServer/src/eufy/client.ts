@@ -105,11 +105,14 @@ export class EufyClient {
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
-    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse);
-    const result=await this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"}],3200);
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse,brightness);
+    const frames:CommandFrame[]=[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}];
+    // E120 native commands already carry brightness in A8. Send no extra setup write after the effect.
+    if(s.model!=="T8L00")frames.push({opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"});
+    const result=await this.command(name,frames,3200);
     const state=await this.status(name);
     const effectId=Buffer.from(fx.fields).readUIntLE(2,fx.fields[1]);
-    const verified=!isSolidEffect(effect)?effectReportMatches(state.report,effectId):null;
+    const verified=(!isSolidEffect(effect)||s.model==="T8L00")?effectReportMatches(state.report,effectId):null;
     if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
     return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified};
   }

@@ -19,7 +19,7 @@ function positions(lamps:number){const out=new Uint8Array(lamps+1);out[0]=lamps;
 export function color(model:string,rgb:number,lampCount:number):Uint8Array{
   const lamps=clamp(lampCount,1,120),pal=concat(new Uint8Array([1]),nativeColor(model,rgb));
   if(isE22(model))return concat(tlv(0xa3,le16(LOCAL_COLOR_ID)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([5])),tlv(0xa6,concat(new Uint8Array([1]),rgbcw((rgb&0xffffff).toString(16).padStart(6,"0")))),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,le16(0)),tlv(0xac,le32(0xffffffff)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
-  return concat(tlv(0xa3,le16(LOCAL_COLOR_ID)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([5])),tlv(0xa6,pal),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,new Uint8Array([0,0])),tlv(0xac,new Uint8Array([255,255,255,255])),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
+  return nativeE120Fields(LOCAL_COLOR_ID,5,[rgb],lamps);
 }
 function speedValueE22(speed:number){switch(clamp(speed,1,5)){case 1:return 2;case 2:return 4;case 3:return 8;case 4:return 25;default:return 50;}}
 export function styleDefinition(effect:string,colors:number[],speed:number,reverse:boolean){
@@ -54,13 +54,32 @@ export function e120ModeId(effect:string,reverse:boolean){
   if(id===undefined)throw new Error("Unsupported E120 effect style: "+effect);
   return id;
 }
-function e120Catalog(localId:number,catalogId:number,rawA5:number,colors:number[],lampCount:number){const lamps=clamp(lampCount,1,120),palette=colors?.length?colors:[0xff0000,0x00ff00],pal:number[]=[Math.min(255,palette.length)];for(const c of palette)pal.push(...nativeColor("T8L00",c));return concat(tlv(0xa3,le16(localId)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawA5,0,255)])),tlv(0xa6,new Uint8Array(pal)),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,new Uint8Array([0,0])),tlv(0xac,le32(catalogId)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));}
-function e120Grouped(localId:number,catalogId:number,rawA5:number,colors:number[],lampCount:number){const lamps=clamp(lampCount,2,120),src=colors?.length?colors:[0xffffff],count=Math.max(1,Math.min(8,src.length)),pal:number[]=[count];for(let i=0;i<count;i++)pal.push(...nativeColor("T8L00",src[i]));const groups:number[]=[];for(let g=0;g<count;g++){const pos:number[]=[];for(let i=g;i<lamps;i+=count)pos.push(i);groups.push(pos.length,...pos);}return concat(tlv(0xa3,le16(localId)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawA5,1,5)])),tlv(0xa6,new Uint8Array(pal)),tlv(0xa7,new Uint8Array(groups)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,new Uint8Array([0,0])),tlv(0xac,le32(catalogId)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));}
-export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number){const src=colors?.length?colors:[0xffffff],palette=src.slice(0,8),mode=e120ModeId(effect,reverse),sp=clamp(speed,1,5);return palette.length>1?e120Grouped(mode,0xffffffff,sp,palette,lampCount):e120Catalog(mode,0xffffffff,sp,palette,lampCount);}
-export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean):{opcode:number;fields:Uint8Array}{
+// Eufy app captures: A5 is 1..10; A9 is four bytes; no AB/AD/AF fields.
+export function e120SpeedValue(speed:number){return [1,3,5,8,10][Math.round(clamp(speed,1,5))-1];}
+export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100){
+  const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
+  for(const c of palette)pal.push(...nativeColor("T8L00",c));
+  let assignment=positions(lamps);
+  if(palette.length>1){
+    const groups:number[]=[];
+    for(let group=0;group<palette.length;group++){
+      const members:number[]=[];for(let i=group;i<lamps;i+=palette.length)members.push(i);
+      groups.push(members.length,...members);
+    }
+    assignment=new Uint8Array(groups);
+  }
+  return concat(tlv(0xa3,le16(mode)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawSpeed,1,10)])),
+    tlv(0xa6,new Uint8Array(pal)),...(palette.length?[tlv(0xa7,assignment)]:[]),
+    tlv(0xa8,new Uint8Array([clamp(level,1,100)])),tlv(0xa9,new Uint8Array(4)),tlv(0xaa,new Uint8Array([0])),
+    tlv(0xac,le32(0xffffffff)),tlv(0xae,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
+}
+export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number,level=100){
+  return nativeE120Fields(e120ModeId(effect,reverse),e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level);
+}
+export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean,level=100):{opcode:number;fields:Uint8Array}{
   const raw=colors?.length?colors:[0xffffff];
+  if(!isE22(model))return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,defaultLampCount(model),level)};
   if(isSolidEffect(effect))return {opcode:OP_COLOR,fields:color(model,raw[0],defaultLampCount(model))};
-  if(!isE22(model))return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,defaultLampCount(model))};
   // Use actual catalog ids/parameters, not invented 21000-series gallery ids or 300xx colour aliases.
   return {opcode:OP_SHOW,fields:buildFactoryFields(model,styleDefinition(effect,raw,speed,reverse))};
 }
