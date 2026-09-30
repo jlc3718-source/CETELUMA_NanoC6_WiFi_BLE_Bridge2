@@ -1,6 +1,10 @@
 name: Deploy Jason Home to Oracle
 
 on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths:
+      - '.capture/e22-deploy.json'
   workflow_dispatch:
     inputs:
       sha:
@@ -21,7 +25,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 20
     env:
-      DEPLOY_SHA: ${{ inputs.sha }}
+      DEPLOY_SHA: ${{ inputs.sha || github.sha }}
     steps:
       - name: Validate immutable deploy revision
         shell: bash
