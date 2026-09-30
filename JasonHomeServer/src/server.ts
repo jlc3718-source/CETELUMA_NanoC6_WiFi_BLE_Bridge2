@@ -102,6 +102,17 @@ function parsedMeta<T>(key:string,fallback:T):T{
 function calendarConfig():CalendarConfig|null{
   return parsedMeta<CalendarConfig|null>("calendar_config",null);
 }
+function pruneExpiredAiEvents(now=Date.now()){
+  const cfg=calendarConfig();if(!cfg)return false;
+  const expired=new Set((cfg.events||[]).filter((e:any)=>e?.aiOneTime===true&&e?.expiresAt&&Date.parse(String(e.expiresAt))<=now).map((e:any)=>String(e.id)));
+  if(!expired.size)return false;
+  cfg.events=(cfg.events||[]).filter((e:any)=>!expired.has(String(e.id)));
+  cfg.special=(cfg.special||[]).filter((x:any)=>!expired.has(String(x.id)));
+  const revision=Math.max(Number(meta("calendar_revision")||0)||0,Number(cfg.revision||0)||0)+1;
+  cfg.revision=revision;cfg.syncedAt=Date.now();
+  setMeta("calendar_config",JSON.stringify(cfg));setMeta("calendar_revision",String(revision));setMeta("calendar_sync",new Date().toISOString());
+  return true;
+}
 function nextAutomationEvent(now=new Date()){
   const generic=nextScheduleEvent(scheduleRows(),now,LAT,LON,TZ);
   const cfg=effectiveCalendarConfig();
@@ -771,7 +782,8 @@ async function reconcile(ignoreOverride=false,forceSend=false){
   if(reconciling)return {ok:true,busy:true};
   reconciling=true;
   try{
-    const now=Date.now(),owner=meta("automation_owner")||"oracle";
+    const now=Date.now();pruneExpiredAiEvents(now);
+    const owner=meta("automation_owner")||"oracle";
     if(owner!=="oracle"&&!ignoreOverride){
       const evalState={at:new Date(now).toISOString(),owner,paused:true,sent:0,errors:[]};
       setMeta("last_reconcile",new Date(now).toISOString());
@@ -967,6 +979,7 @@ const server=http.createServer(async(req,res)=>{
       return json(res,200,{ok:true});
     }
     if(method==="GET"&&path==="/api/calendar"){
+      pruneExpiredAiEvents();
       const cfg=calendarConfig();
       return json(res,200,{ok:true,synced:!!cfg,calendar:cfg});
     }
