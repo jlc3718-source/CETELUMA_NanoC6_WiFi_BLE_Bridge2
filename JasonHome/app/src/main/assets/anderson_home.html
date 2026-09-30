@@ -394,7 +394,9 @@ function renderAiApplied(items){
   if(!items?.length){host.innerHTML='<div class="sub">No one-time AI events applied.</div>';return}
   items.forEach(x=>{
     const card=document.createElement("div");card.className="card";
-    const info=document.createElement("div");info.innerHTML='<strong>'+x.name+'</strong><div class="sub">'+(x.date||"Date unavailable")+' • '+(x.layerCount||1)+' layer'+((x.layerCount||1)===1?"":"s")+'</div>';
+    const info=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+    title.textContent=x.name||"AI One-Time";meta.className="sub";meta.textContent=(x.date||"Date unavailable")+" • "+(x.layerCount||1)+" layer"+((x.layerCount||1)===1?"":"s")+" • "+(x.brightness||100)+"%";
+    info.append(title,meta);
     const colors=document.createElement("div");colors.className="chips";
     (x.colors||[]).forEach(c=>{const p=document.createElement("span");p.className="colorNamePill";p.style.background=semanticColorVisual(c);p.style.color=semanticColorInk(c);p.textContent=semanticColorName(c);colors.appendChild(p)});
     const remove=document.createElement("button");remove.className="btn";remove.textContent="Remove";remove.onclick=()=>removeAiEvent(x.id);card.append(info,colors,remove);host.appendChild(card);
