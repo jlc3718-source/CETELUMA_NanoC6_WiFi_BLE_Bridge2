@@ -175,46 +175,45 @@ function aiOutputText(payload){
   for(const item of payload?.output||[])for(const part of item?.content||[])if(part?.type==="output_text"&&typeof part.text==="string")return part.text;
   return "";
 }
+function cloudflareAiText(payload){
+  const result=payload?.result??payload;
+  const value=result?.response??result?.choices?.[0]?.message?.content??payload?.choices?.[0]?.message?.content??"";
+  return typeof value==="string"?value:JSON.stringify(value||{});
+}
 async function callLightingAi(message){
-  const key=openAiKey();if(!key)throw fail(409,"AI is not connected yet. Add the OpenAI API key in the AI tab.");
+  if(!cloudflareAiConfigured())throw fail(409,"Free AI is not connected yet. Add your Cloudflare Account ID and Workers AI API token in the AI tab.");
   const thread=meta("ai_thread",[]).slice(-24),prior=meta("ai_draft",null);
-  const inputs=thread.map(m=>({role:m.role,content:m.text+(m.role==="assistant"&&m.draft?"\nCurrent draft: "+JSON.stringify(m.draft):"")}));
-  inputs.push({role:"user",content:String(message)});
   const today=localDay(new Date()),instructions=AI_SYSTEM+"\nToday is "+[today.year,String(today.month).padStart(2,"0"),String(today.day).padStart(2,"0")].join("-")+
     ". Scheduled AI layers must use speeds 1-5. If the user refers to the current draft, revise it rather than starting over."+(prior?"\nExisting draft: "+JSON.stringify(prior):"");
-  const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{authorization:"Bearer "+key,"content-type":"application/json"},
-    body:JSON.stringify({model:AI_MODEL,instructions,input:inputs,max_output_tokens:1800,text:{format:{type:"json_schema",name:"jason_home_lighting_design",strict:true,schema:AI_SCHEMA}}})});
-  const payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw fail(response.status,payload?.error?.message||"OpenAI request failed");
-  let parsed;try{parsed=JSON.parse(aiOutputText(payload));}catch{throw fail(502,"AI returned an unreadable lighting design");}
+  const messages=[{role:"system",content:instructions},...thread.map(m=>({role:m.role,content:m.text+(m.role==="assistant"&&m.draft?"\nCurrent draft: "+JSON.stringify(m.draft):"")})),{role:"user",content:String(message)}];
+  const payload=await cloudflareAiRun(AI_MODEL,{
+    messages,max_tokens:1800,temperature:.55,
+    response_format:{type:"json_schema",json_schema:AI_SCHEMA}
+  },{timeout:60000});
+  let parsed;try{parsed=JSON.parse(cloudflareAiText(payload));}catch{throw fail(502,"Free AI returned an unreadable lighting design");}
   const draft=sanitizeAiDraft(parsed.draft),reply=String(parsed.reply||"").trim()||"I have a lighting idea ready.";
-  const next=[...thread,{role:"user",text:String(message).slice(0,2000)},{role:"assistant",text:reply,draft}].slice(-30);
-  put("ai_thread",next);if(draft)put("ai_draft",draft);
-  return {reply,draft:draft||meta("ai_draft",null),thread:next};
+  const updated=[...thread,{role:"user",text:String(message).slice(0,2000)},{role:"assistant",text:reply,draft}].slice(-30);
+  put("ai_thread",updated);if(draft)put("ai_draft",draft);
+  return {reply,draft:draft||meta("ai_draft",null),thread:updated};
 }
 async function transcribeAiVoice(audioBase64,mime){
-  const key=openAiKey();if(!key)throw fail(409,"AI is not connected yet.");
+  if(!cloudflareAiConfigured())throw fail(409,"Free AI is not connected yet.");
   const raw=String(audioBase64||"");if(!raw)throw fail(400,"No voice audio was received");
   let bytes;try{bytes=Buffer.from(raw,"base64");}catch{throw fail(400,"Voice audio could not be decoded");}
   if(bytes.length<800)throw fail(400,"Voice recording was too short");
   if(bytes.length>5_000_000)throw fail(413,"Voice recording is too large");
-  const type=/^(audio\/(webm|ogg|mp4|mpeg|wav|x-m4a))$/i.test(String(mime||""))?String(mime):"audio/webm";
-  const ext=type.includes("ogg")?"ogg":type.includes("mp4")||type.includes("m4a")?"m4a":type.includes("mpeg")?"mp3":type.includes("wav")?"wav":"webm";
-  const form=new FormData();form.append("file",new Blob([bytes],{type}),"voice-turn."+ext);form.append("model","gpt-4o-mini-transcribe");form.append("language","en");
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
-  try{
-    const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{authorization:"Bearer "+key},body:form,signal:controller.signal});
-    const payload=await response.json().catch(()=>({}));if(!response.ok)throw fail(502,payload?.error?.message||"Voice transcription failed");
-    const text=String(payload?.text||"").trim();if(!text)throw fail(400,"I did not hear any speech in that turn");return text;
-  }finally{clearTimeout(timer);}
+  const payload=await cloudflareAiRun(AI_ASR_MODEL,{audio:raw,task:"transcribe",language:"en",vad_filter:true},{timeout:60000});
+  const text=String(payload?.result?.text??payload?.text??"").trim();
+  if(!text)throw fail(400,"I did not hear any speech in that turn");
+  return text;
 }
 async function synthesizeAiVoice(text){
-  const key=openAiKey();if(!key)throw fail(409,"AI is not connected yet.");
-  const response=await fetch("https://api.openai.com/v1/audio/speech",{method:"POST",headers:{authorization:"Bearer "+key,"content-type":"application/json"},
-    body:JSON.stringify({model:"gpt-4o-mini-tts",voice:"marin",input:String(text||"").slice(0,4096),response_format:"mp3",
-      instructions:"Speak naturally and warmly, like a helpful home-lighting designer in a casual spoken conversation. Be concise and conversational."})});
-  if(!response.ok){const payload=await response.json().catch(()=>({}));throw fail(502,payload?.error?.message||"Voice generation failed");}
-  return Buffer.from(await response.arrayBuffer()).toString("base64");
+  if(!cloudflareAiConfigured())throw fail(409,"Free AI is not connected yet.");
+  const payload=await cloudflareAiRun(AI_TTS_MODEL,{prompt:String(text||"").slice(0,4096),lang:"en"},{timeout:60000});
+  if(payload?.audio&&Buffer.isBuffer(payload.audio))return payload.audio.toString("base64");
+  const audio=payload?.result?.audio??payload?.audio??"";
+  if(typeof audio==="string"&&audio)return audio;
+  throw fail(502,"Free AI voice generation did not return audio");
 }
 
 function normalizeEventName(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");}
@@ -244,7 +243,7 @@ async function aiState(){
   const applied=(cfg.events||[]).filter(e=>e.aiOneTime===true).map(e=>{
     const sp=(cfg.special||[]).find(x=>x.id===e.id);return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",brightness:Number(e.brightness)||100,colors:rgb(e.colors),layerCount:e.creativePhases?.length||1,expiresAt:e.expiresAt||""};
   });
-  return {ok:true,configured:!!openAiKey(),model:AI_MODEL,thread:meta("ai_thread",[]),draft,applied};
+  return {ok:true,configured:cloudflareAiConfigured(),provider:"Cloudflare Workers AI",freeTier:true,model:AI_MODEL,accountId:cloudflareAiConfigured()?cloudflareAiAccount():"",thread:meta("ai_thread",[]),draft,applied};
 }
 
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};
