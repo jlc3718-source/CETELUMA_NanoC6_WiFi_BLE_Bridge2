@@ -185,14 +185,22 @@ function parseColor(v:any):number|null{
   if(typeof v==="string"&&/^#?[0-9a-fA-F]{6}$/.test(v))return parseInt(v.replace("#",""),16);
   return null;
 }
+function safePattern(value:any,colorCount:number){
+  if(colorCount<2||!value||typeof value!=="object"||!Array.isArray(value.blocks)||!value.blocks.length)return undefined;
+  const blocks=value.blocks.slice(0,colorCount).map((x:any)=>clamp(Math.round(Number(x)||1),1,12));
+  while(blocks.length<colorCount)blocks.push(blocks[blocks.length%Math.max(1,blocks.length)]||1);
+  return {blocks,offset:Math.trunc(Number(value.offset)||0),mirror:!!value.mirror};
+}
 function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
   const colors=Array.isArray(input?.colors)?input.colors.map(parseColor).filter((x:any)=>x!=null).slice(0,8) as number[]:base.colors;
   const source=input&&typeof input==="object"?input:{};
   const hasFactory=Object.prototype.hasOwnProperty.call(source,"factoryEffectName");
   const requestedFactory=hasFactory?String(source.factoryEffectName||"").trim().slice(0,100):"";
-  const recipeChanged=["effect","colors","speed"].some(key=>Object.prototype.hasOwnProperty.call(source,key));
+  const recipeChanged=["effect","colors","speed","pattern"].some(key=>Object.prototype.hasOwnProperty.call(source,key));
   const inheritedFactory=!hasFactory&&!recipeChanged?String(base.factoryEffectName||"").trim().slice(0,100):"";
   const factoryEffectName=requestedFactory||inheritedFactory||undefined;
+  const hasPattern=Object.prototype.hasOwnProperty.call(source,"pattern");
+  const pattern=hasPattern?safePattern(source.pattern,colors.length):(!recipeChanged?safePattern(base.pattern,colors.length):undefined);
   const scene:Scene={
     power:input?.power==null?base.power:!!input.power,
     brightness:clamp(Number(input?.brightness??base.brightness)||base.brightness,1,100),
@@ -201,9 +209,10 @@ function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
     speed:clamp(Number(input?.speed??base.speed)||base.speed,1,10)
   };
   if(factoryEffectName)scene.factoryEffectName=factoryEffectName;
+  if(pattern)scene.pattern=pattern;
   return scene;
 }
-function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,brightness:scene.brightness,effect:scene.effect,colors:scene.colors,speed:scene.speed,factoryEffectName:scene.factoryEffectName||null});}
+function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,brightness:scene.brightness,effect:scene.effect,colors:scene.colors,speed:scene.speed,factoryEffectName:scene.factoryEffectName||null,pattern:scene.pattern||null});}
 function offScene():Scene{return {power:false,brightness:DEFAULT_SCENE.brightness,effect:DEFAULT_SCENE.effect,colors:[...DEFAULT_SCENE.colors],speed:DEFAULT_SCENE.speed};}
 function scheduleRows():ScheduleRow[]{
   return db.prepare("SELECT * FROM schedules WHERE enabled=1 ORDER BY priority DESC,name ASC").all() as unknown as ScheduleRow[];
@@ -356,9 +365,9 @@ async function sendScene(name:string,scene:Scene){
         const preset=cachedFactoryPreset(factoryLightId);
         if(!preset)throw new Error("Exact Native Factory preset "+factoryLightId+" is not available in the cached Eufy catalog");
         const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
-        return await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
+        return await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
       }
-      return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
+      return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
     }catch(e){markEufyDegraded(e);throw e;}
   });
 }
@@ -385,9 +394,9 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number){
           const preset=cachedFactoryPreset(factoryLightId);
           if(!preset)throw new Error("Exact Native Factory preset "+factoryLightId+" is not available in the cached Eufy catalog");
           const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
-          result=await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness);
+          result=await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
         }else{
-          result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness);
+          result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
         }
       }
       return {...result,skipped:false};

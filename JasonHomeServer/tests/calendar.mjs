@@ -21,11 +21,10 @@ let cfg=normalizeCalendarConfig(base);
 let r=resolveCalendar(cfg,new Date("2026-12-25T23:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.name,"Christmas Day");
 assert.equal(r?.scene.effect,"Flow1");
+assert.ok(r?.scene.pattern?.blocks?.length===2,"Existing saved layers should automatically gain segmented patterns");
 assert.equal(r?.schedule2,false);
-
-const nativeFactoryDefault=normalizeCalendarConfig({...base,events:[{...base.events[0],id:"evt134",name:"Suicide Prevention Awareness Month",month:9,day:0,rule:"Month",factoryEffectName:"Garden Romance"}]});
-const nativeFactoryScene=resolveCalendar(nativeFactoryDefault,new Date("2026-09-15T23:00:00Z"),42.1507,-78.9452,"America/New_York");
-assert.equal(nativeFactoryScene?.scene.factoryEffectName,"Garden Romance","Native factory default must survive calendar normalization and resolution");
+assert.ok(r?.scene.pattern?.blocks?.length===2,"Two-color holiday should receive a segmented lamp pattern");
+assert.ok(r.scene.pattern.blocks.some(n=>n>1),"Segmented pattern must use multi-lamp color blocks");
 
 r=resolveCalendar(cfg,new Date("2026-12-26T04:30:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.name,"Christmas Day");

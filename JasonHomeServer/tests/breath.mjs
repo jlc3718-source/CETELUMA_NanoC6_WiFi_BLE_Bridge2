@@ -69,7 +69,14 @@ assert.equal(Buffer.from(tags(buildEffect("T8L02","Flow1",[0x0000ff],5,true,100,
 const e22Grouped=Buffer.from(tags(buildEffect("T8L02","Breathe",[0xff0000,0x00ff00],10,false,100,28).fields).a7,"hex");
 const e22Members=[];for(let i=0;i<e22Grouped.length;){const n=e22Grouped[i++];e22Members.push(...e22Grouped.subarray(i,i+n));i+=n;}
 assert.deepEqual(e22Members.sort((a,b)=>a-b),Array.from({length:28},(_,i)=>i));
-console.log("E22 seven native modes, direct speeds, RGBCW palette, direction field and bounded positions PASS");
+const segmented=Buffer.from(tags(buildEffect("T8L00","Flow1",[0x00b4b4,0x5b00e6],3,false,100,16,{blocks:[5,3],offset:0,mirror:false}).fields).a7,"hex");
+const segGroups=[];for(let i=0;i<segmented.length;){const n=segmented[i++];segGroups.push([...segmented.subarray(i,i+n)]);i+=n;}
+assert.deepEqual(segGroups[0],[0,1,2,3,4,8,9,10,11,12]);
+assert.deepEqual(segGroups[1],[5,6,7,13,14,15]);
+const segmentedReverse=Buffer.from(tags(buildEffect("T8L02","Flow1",[0x00b4b4,0x5b00e6],3,true,100,8,{blocks:[5,3],offset:0,mirror:false}).fields).a7,"hex");
+const revGroups=[];for(let i=0;i<segmentedReverse.length;){const n=segmentedReverse[i++];revGroups.push([...segmentedReverse.subarray(i,i+n)]);i+=n;}
+assert.deepEqual(revGroups[0],[7,6,5,4,3]);assert.deepEqual(revGroups[1],[2,1,0]);
+console.log("E22 seven native modes, direct speeds, RGBCW palette, direction field, segmented addressing and bounded positions PASS");
 
 const {EufyClient}=await import("../dist/eufy/client.js");
 for(const name of ["Pool","Garage"]){

@@ -1,13 +1,13 @@
 import { canonicalEffect } from "./effects.js";
 import { astronomy, localParts, localToUtcMs } from "./scheduler.js";
-import type { Scene } from "./types.js";
+import type { Scene, SegmentPattern } from "./types.js";
 
 export interface CalendarEvent {
   id:string; name:string; kind:string; rule:string;
   month:number; day:number; weekday:number; nth:number; offsetDays:number; durationDays:number;
   effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean; brightness?:number;
   categoryIndex:number; major:boolean; dateRuleSourceId?:string; factoryEffectName?:string;
-  creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number}>;
+  creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number;pattern?:SegmentPattern}>;
   aiOneTime?:boolean; expiresAt?:string; aiReplaceEventId?:string;
 }
 export interface SpecialDate { id:string; year:number; month:number; day:number; }
@@ -133,7 +133,7 @@ function pick<T>(items:T[],pos:number,total:number):T{
   pos=clamp(pos,0,Math.max(0,total-1));
   return items[Math.min(items.length-1,Math.floor((pos*items.length)/Math.max(1,total)))];
 }
-type CreativePhase={effect:string;speed:number;minutes:number;shift?:number};
+type CreativePhase={effect:string;speed:number;minutes:number;shift?:number;pattern?:SegmentPattern};
 
 function rotatePalette(colors:number[],shift=0){
   const out=colors.length?colors.slice(0,8):[0xffffff];
@@ -141,12 +141,44 @@ function rotatePalette(colors:number[],shift=0){
   const n=((Math.trunc(shift)%out.length)+out.length)%out.length;
   return n?[...out.slice(n),...out.slice(0,n)]:out;
 }
-function phase(effect:string,speed:number,minutes:number,shift=0):CreativePhase{
-  return {effect:canonicalEffect(effect),speed:clamp(Math.round(speed)||1,1,5),minutes:Math.max(2,Math.round(minutes)||8),shift};
+function normalizePattern(value:any,colorCount:number):SegmentPattern|undefined{
+  if(colorCount<2||!value||typeof value!=="object")return undefined;
+  const raw=Array.isArray(value.blocks)?value.blocks:[];
+  const blocks=raw.slice(0,Math.max(2,Math.min(8,colorCount))).map((v:any)=>clamp(Math.round(Number(v)||1),1,12));
+  while(blocks.length<colorCount)blocks.push(blocks[blocks.length%Math.max(1,blocks.length)]||1);
+  return blocks.length?{blocks:blocks.slice(0,colorCount),offset:Math.trunc(Number(value.offset)||0),mirror:!!value.mirror}:undefined;
+}
+function patternSeed(e:CalendarEvent){
+  const text=String(e.id||e.name||"event");let h=2166136261;
+  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
+  return h>>>0;
+}
+function defaultPattern(e:CalendarEvent,phaseIndex:number,colorCount:number):SegmentPattern|undefined{
+  if(colorCount<2)return undefined;
+  const bank=[
+    [5,3,2,4,6,2,3,1],
+    [4,2,5,3,2,6,1,4],
+    [6,3,2,5,4,1,3,2],
+    [3,2,7,2,4,3,1,5],
+    [5,2,3,6,2,4,3,1],
+    [2,4,6,3,5,2,1,4]
+  ];
+  const seed=patternSeed(e),row=bank[(seed+phaseIndex)%bank.length];
+  const blocks=Array.from({length:Math.min(8,colorCount)},(_,i)=>row[(i+phaseIndex)%row.length]);
+  const total=blocks.reduce((a,b)=>a+b,0);
+  return {blocks,offset:total?((seed>>>3)+phaseIndex*3)%total:0,mirror:((seed+phaseIndex)&3)===0};
+}
+function phase(effect:string,speed:number,minutes:number,shift=0,pattern?:SegmentPattern):CreativePhase{
+  return {effect:canonicalEffect(effect),speed:clamp(Math.round(speed)||1,1,5),minutes:Math.max(2,Math.round(minutes)||8),shift,pattern};
+}
+function patterned(e:CalendarEvent,phases:CreativePhase[]):CreativePhase[]{
+  const count=Math.max(1,Math.min(8,(e.colors||[]).length||1));
+  return phases.map((p,i)=>({...p,pattern:normalizePattern(p.pattern,count)||defaultPattern(e,i,count)}));
 }
 function creativeProgram(e:CalendarEvent):CreativePhase[]{
+  const colors=Array.isArray(e.colors)?e.colors:[],colorCount=Math.max(1,Math.min(8,colors.length||1));
   if(Array.isArray(e.creativePhases)&&e.creativePhases.length){
-    return e.creativePhases.slice(0,8).map(p=>phase(p.effect,p.speed,p.minutes,p.shift||0));
+    return patterned(e,e.creativePhases.slice(0,8).map(p=>phase(p.effect,p.speed,p.minutes,p.shift||0,normalizePattern(p.pattern,colorCount))));
   }
   const name=String(e.name||"").toLowerCase(),base=canonicalEffect(e.effect),baseSpeed=clamp(Number(e.speed)||2,1,5);
   const factory=String(e.id||"").includes("::factory:");
@@ -156,42 +188,31 @@ function creativeProgram(e:CalendarEvent):CreativePhase[]{
   const winter=/(christmas|hanukkah|kwanzaa|winter solstice)/.test(name);
   const carnival=/(mardi gras|cinco de mayo|diwali|lunar new year|st\. patrick|easter|new year)/.test(name);
   const family=/(valentine|mother.?s day|father.?s day|parents.? day|grandparents)/.test(name);
-
-  // Promoted Factory events become reliable multi-phase 0x0206 shows instead of
-  // falling back to the old multi-layer 0x020D recipe.
-  if(factory){
-    const opposite=base==="Flow2"?"Flow1":"Flow2";
-    const accent=base==="Twinkle"?"Breathe":base==="Breathe"?"Twinkle":"Breathe";
-    return [phase(base,Math.min(baseSpeed,4),10,0),phase(accent,Math.min(baseSpeed,2),8,1),phase(opposite,Math.min(baseSpeed,3),12,-1)];
-  }
-
-  // Hand-authored feature programs. Every phase reuses only the event palette.
-  if(/new year.?s eve/.test(name))return [phase("Streamlight",4,7),phase("Twinkle",5,7,1),phase("Cycle",3,8,2),phase("Flow2",3,8,-1)];
-  if(/new year.?s day/.test(name))return [phase("Flow1",3,8),phase("Twinkle",3,7,1),phase("Breathe",1,7),phase("Flow2",3,8,-1)];
-  if(/halloween/.test(name))return [phase("Streamlight",3,8),phase("Twinkle",3,7,1),phase("Breathe",2,7,2),phase("Flow2",3,8,-1)];
-  if(/christmas day/.test(name))return [phase("Flow1",2,8),phase("Breathe",1,7,1),phase("Twinkle",2,7,2),phase("Flow2",2,8,-1)];
-  if(/christmas eve/.test(name))return [phase("Breathe",1,9),phase("Flow1",2,8,1),phase("Twinkle",1,6,2),phase("Flow2",2,7,-1)];
-  if(/independence day/.test(name))return [phase("Flow1",3,8),phase("Cycle",3,7,1),phase("Twinkle",4,7,2),phase("Flow2",3,8,-1)];
-  if(/mardi gras/.test(name))return [phase("Flow1",3,7),phase("Twinkle",3,8,1),phase("Streamlight",3,7,2),phase("Flow2",3,8,-1)];
-  if(/diwali/.test(name))return [phase("Breathe",1,7),phase("Twinkle",3,8,1),phase("Streamlight",3,7,2),phase("Flow1",2,8,-1)];
-  if(/lunar new year/.test(name))return [phase("Streamlight",3,8),phase("Flow1",3,7,1),phase("Twinkle",2,7),phase("Flow2",3,8,-1)];
-  if(/valentine/.test(name))return [phase("Breathe",1,9),phase("Flow1",2,7,1),phase("Twinkle",1,6,2),phase("Flow2",2,8,-1)];
-
-  if(solemn)return [phase("Static",1,15),phase("Breathe",1,15,1)];
-  if(patriotic)return [phase("Flow1",2,10),phase("Breathe",1,8,1),phase("Flow2",2,12,-1)];
-  if(rainbow)return [phase("Flow1",3,8),phase("Flow2",3,8,1),phase("Breathe",1,7,2),phase("Streamlight",2,7,-1)];
-  if(winter)return [phase(base,Math.min(baseSpeed,2),10),phase("Twinkle",1,8,1),phase("Breathe",1,12,-1)];
-  if(carnival)return [phase(base,Math.min(baseSpeed,3),9),phase("Twinkle",2,7,1),phase("Flow2",2,7,-1),phase("Breathe",1,7,2)];
-  if(family)return [phase("Breathe",1,12),phase("Flow1",2,9,1),phase("Twinkle",1,9,-1)];
-
-  if(e.rule==="Month"){
-    if((e.colors||[]).length>=3)return [phase(base,Math.min(baseSpeed,2),12),phase("Breathe",1,8,1),phase("Flow2",2,10,-1)];
-    return [phase("Breathe",1,18),phase(base,Math.min(baseSpeed,2),12,1)];
-  }
-  if(e.kind==="Seasonal")return [phase(base,Math.min(baseSpeed,2),12),phase("Streamlight",2,8,1),phase("Breathe",1,10,-1)];
-  if(e.kind==="Holiday"&&(e.colors||[]).length>=2)return [phase(base,Math.min(baseSpeed,3),12),phase("Twinkle",1,7,1),phase("Flow2",2,11,-1)];
-  if((e.colors||[]).length>=2)return [phase(base,Math.min(baseSpeed,2),18),phase("Breathe",1,12,1)];
-  return [phase(base,Math.min(baseSpeed,2),30)];
+  const p=(effect:string,speed:number,minutes:number,shift=0)=>phase(effect,speed,minutes,shift);
+  let out:CreativePhase[];
+  if(factory){const opposite=base==="Flow2"?"Flow1":"Flow2",accent=base==="Twinkle"?"Breathe":base==="Breathe"?"Twinkle":"Breathe";out=[p(base,Math.min(baseSpeed,4),8),p(accent,Math.min(baseSpeed,2),7,1),p(opposite,Math.min(baseSpeed,3),8,-1),p("Static",1,5,2)];}
+  else if(/new year.?s eve/.test(name))out=[p("Streamlight",4,7),p("Twinkle",5,6,1),p("Cycle",3,7,2),p("Flow2",3,7,-1),p("Static",1,4,3)];
+  else if(/new year.?s day/.test(name))out=[p("Flow1",3,7),p("Twinkle",3,6,1),p("Breathe",1,7),p("Flow2",3,7,-1)];
+  else if(/halloween/.test(name))out=[p("Streamlight",3,7),p("Twinkle",3,6,1),p("Breathe",2,6,2),p("Flow2",3,7,-1),p("Static",1,4)];
+  else if(/christmas day/.test(name))out=[p("Flow1",2,7),p("Breathe",1,6,1),p("Twinkle",2,6,2),p("Flow2",2,7,-1),p("Static",1,4,1)];
+  else if(/christmas eve/.test(name))out=[p("Breathe",1,7),p("Flow1",2,7,1),p("Twinkle",1,5,2),p("Flow2",2,7,-1),p("Static",1,4)];
+  else if(/independence day/.test(name))out=[p("Flow1",3,7),p("Cycle",3,6,1),p("Twinkle",4,6,2),p("Flow2",3,7,-1),p("Static",1,4)];
+  else if(/mardi gras/.test(name))out=[p("Flow1",3,6),p("Twinkle",3,6,1),p("Streamlight",3,6,2),p("Flow2",3,7,-1),p("Breathe",1,5)];
+  else if(/diwali/.test(name))out=[p("Breathe",1,6),p("Twinkle",3,6,1),p("Streamlight",3,6,2),p("Flow1",2,7,-1),p("Static",1,5)];
+  else if(/lunar new year/.test(name))out=[p("Streamlight",3,7),p("Flow1",3,6,1),p("Twinkle",2,6),p("Flow2",3,7,-1),p("Static",1,4,2)];
+  else if(/valentine/.test(name))out=[p("Breathe",1,7),p("Flow1",2,6,1),p("Twinkle",1,5,2),p("Flow2",2,7,-1),p("Static",1,5)];
+  else if(solemn)out=[p("Static",1,10),p("Breathe",1,10,1),p("Static",1,10,-1)];
+  else if(patriotic)out=[p("Flow1",2,8),p("Breathe",1,7,1),p("Twinkle",2,6,2),p("Flow2",2,8,-1)];
+  else if(rainbow)out=[p("Flow1",3,7),p("Flow2",3,7,1),p("Breathe",1,6,2),p("Streamlight",2,6,-1),p("Twinkle",2,4,3)];
+  else if(winter)out=[p(base,Math.min(baseSpeed,2),8),p("Twinkle",1,7,1),p("Breathe",1,8,-1),p("Flow2",2,7,2)];
+  else if(carnival)out=[p(base,Math.min(baseSpeed,3),7),p("Twinkle",2,6,1),p("Flow2",2,6,-1),p("Breathe",1,6,2),p("Streamlight",2,5)];
+  else if(family)out=[p("Breathe",1,8),p("Flow1",2,7,1),p("Twinkle",1,6,-1),p("Static",1,5,2)];
+  else if(e.rule==="Month")out=colors.length>=3?[p(base,Math.min(baseSpeed,2),8),p("Breathe",1,7,1),p("Flow2",2,8,-1),p("Twinkle",1,7,2)]:[p("Breathe",1,10),p(base,Math.min(baseSpeed,2),10,1),p("Static",1,10,-1)];
+  else if(e.kind==="Seasonal")out=[p(base,Math.min(baseSpeed,2),8),p("Streamlight",2,7,1),p("Breathe",1,8,-1),p("Twinkle",1,7,2)];
+  else if(e.kind==="Holiday"&&colors.length>=2)out=[p(base,Math.min(baseSpeed,3),8),p("Twinkle",1,6,1),p("Flow2",2,8,-1),p("Breathe",1,8,2)];
+  else if(colors.length>=2)out=[p(base,Math.min(baseSpeed,2),9),p("Breathe",1,8,1),p("Flow2",2,7,-1),p("Static",1,6,2)];
+  else out=[p(base,Math.min(baseSpeed,2),15),p("Breathe",1,15)];
+  return patterned(e,out);
 }
 function sceneFor(e:CalendarEvent,brightness:number,showPosition=0):Scene{
   const colors=Array.isArray(e.colors)&&e.colors.length?e.colors.slice(0,8).map(x=>Number(x)&0xffffff):[0xffffff];
@@ -206,7 +227,8 @@ function sceneFor(e:CalendarEvent,brightness:number,showPosition=0):Scene{
     effect:chosen.effect,
     colors:rotatePalette(colors,chosen.shift||0),
     speed:chosen.speed,
-    factoryEffectName:e.factoryEffectName
+    factoryEffectName:e.factoryEffectName,
+    pattern:chosen.pattern
   };
 }
 type CalendarCandidate={id:string;name:string;scene:Scene};
@@ -225,7 +247,8 @@ function customCandidates(cfg:CalendarConfig,day:Ymd,schedule2:boolean,schedule2
         brightness:schedule2?clamp(schedule2Brightness,1,100):clamp(Number(x.brightness)||100,1,100),
         effect:x.effect||"Solid / Static",
         colors:Array.isArray(x.colors)&&x.colors.length?x.colors.slice(0,8).map(v=>Number(v)&0xffffff):[0xffffff],
-        speed:clamp(Number(x.speed)||3,1,10)
+        speed:clamp(Number(x.speed)||3,1,10),
+        pattern:Array.isArray(x.colors)&&x.colors.length>1?{blocks:x.colors.slice(0,8).map((_:any,i:number)=>i%2===0?5:3),offset:0,mirror:false}:undefined
       }
     });
   }
@@ -245,7 +268,7 @@ function combineCandidates(items:CalendarCandidate[],brightness:number,schedule2
     id:"overlap:"+items.map(x=>x.id).join("+"),
     name:names.length<=3?names.join(" + "):`${names.length} overlapping events`,
     schedule2,
-    scene:{power:true,brightness:clamp(brightness,1,100),effect:"Cycle",colors:colors.length?colors:[0xffffff],speed:1}
+    scene:{power:true,brightness:clamp(brightness,1,100),effect:"Cycle",colors:colors.length?colors:[0xffffff],speed:1,pattern:colors.length>1?{blocks:colors.map((_,i)=>i%2===0?4:2),offset:0,mirror:false}:undefined}
   };
 }
 function resolveFor(cfg:CalendarConfig,day:Ymd,minute:number,start:number,end:number,schedule2:boolean,brightness:number,programMinute=minute):CalendarResolution|null{
@@ -323,7 +346,8 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined,
       factoryEffectName:typeof raw.factoryEffectName==="string"&&raw.factoryEffectName.trim()?raw.factoryEffectName.trim().slice(0,100):undefined,
       creativePhases:Array.isArray(raw.creativePhases)?raw.creativePhases.slice(0,8).map((p:any)=>({
-        effect:canonicalEffect(p?.effect),speed:clamp(Number(p?.speed)||2,1,5),minutes:clamp(Number(p?.minutes)||6,2,30),shift:Math.trunc(Number(p?.shift)||0)
+        effect:canonicalEffect(p?.effect),speed:clamp(Number(p?.speed)||2,1,5),minutes:clamp(Number(p?.minutes)||6,2,30),shift:Math.trunc(Number(p?.shift)||0),
+        pattern:normalizePattern(p?.pattern,Math.max(1,Math.min(8,Array.isArray(raw.colors)?raw.colors.length:1)))
       })) : undefined,
       aiOneTime:raw.aiOneTime===true,
       expiresAt:typeof raw.expiresAt==="string"&&raw.expiresAt?raw.expiresAt:undefined,

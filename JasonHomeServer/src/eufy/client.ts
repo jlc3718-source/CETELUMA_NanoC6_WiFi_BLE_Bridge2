@@ -104,8 +104,8 @@ export class EufyClient {
   async status(name:string){return this.command(name,[{opcode:0x0200,fields:statusFields(),label:"STATUS"}],3000);}
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
-  async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
-    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse,brightness,s.lampCount);
+  async scene(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse,brightness,s.lampCount,pattern);
     const frames:CommandFrame[]=[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}];
     // Native personal-mode commands carry brightness in A8 on both T8L00 and T8L02.
     const result=await this.command(name,frames,3200);

@@ -1,4 +1,5 @@
 import { STYLE_TEMPLATES } from "./style-templates.js";
+import type { SegmentPattern } from "../types.js";
 import { reverseFactoryPresetDirection, rgbcw } from "./factory-presets.js";
 export const OP_SETUP=0x0201;
 export const OP_COLOR=0x0206;
@@ -16,6 +17,21 @@ export function isSolidEffect(effect:string){return effect==="Solid"||effect==="
 export function brightness(percent:number){return tlv(0xa4,new Uint8Array([clamp(percent,0,100)]));}
 function nativeColor(model:string,rgb:number){const r=(rgb>>>16)&255,g=(rgb>>>8)&255,b=rgb&255;return isE22(model)?new Uint8Array([r,g,b,0,0]):new Uint8Array([r,g,b,0]);}
 function positions(lamps:number){const out=new Uint8Array(lamps+1);out[0]=lamps;for(let i=0;i<lamps;i++)out[i+1]=i;return out;}
+function segmentAssignment(lamps:number,paletteCount:number,pattern?:SegmentPattern,reverse=false){
+  if(paletteCount<2||!pattern?.blocks?.length)return positions(lamps);
+  const blocks=Array.from({length:paletteCount},(_,i)=>clamp(Math.round(Number(pattern.blocks[i%pattern.blocks.length])||1),1,12));
+  const period=blocks.reduce((a,b)=>a+b,0),offset=((Math.trunc(Number(pattern.offset)||0)%period)+period)%period;
+  const groups:number[][]=Array.from({length:paletteCount},()=>[]);
+  for(let logical=0;logical<lamps;logical++){
+    const patternPos=pattern.mirror?Math.min(logical,lamps-1-logical):logical;
+    let p=(patternPos+offset)%period,ci=0;
+    while(ci<blocks.length-1&&p>=blocks[ci]){p-=blocks[ci];ci++;}
+    const physical=reverse?lamps-1-logical:logical;
+    groups[ci].push(physical);
+  }
+  const out:number[]=[];for(const members of groups)out.push(members.length,...members);
+  return new Uint8Array(out);
+}
 export function color(model:string,rgb:number,lampCount:number):Uint8Array{
   const lamps=clamp(lampCount,1,120),pal=concat(new Uint8Array([1]),nativeColor(model,rgb));
   if(isE22(model))return concat(tlv(0xa3,le16(LOCAL_COLOR_ID)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([5])),tlv(0xa6,concat(new Uint8Array([1]),rgbcw((rgb&0xffffff).toString(16).padStart(6,"0")))),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,le16(0)),tlv(0xac,le32(0xffffffff)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
@@ -56,25 +72,18 @@ export function e120ModeId(effect:string,reverse:boolean){
 }
 // Eufy app captures: A5 is 1..10; A9 is four bytes; no AB/AD/AF fields.
 export function e120SpeedValue(speed:number){return Math.round(clamp(speed,1,10));}
-export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100){
+export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100,pattern?:SegmentPattern,reversePattern=false){
   const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...nativeColor("T8L00",c));
   let assignment=positions(lamps);
-  if(palette.length>1){
-    const groups:number[]=[];
-    for(let group=0;group<palette.length;group++){
-      const members:number[]=[];for(let i=group;i<lamps;i+=palette.length)members.push(i);
-      groups.push(members.length,...members);
-    }
-    assignment=new Uint8Array(groups);
-  }
+  if(palette.length>1)assignment=pattern?.blocks?.length?segmentAssignment(lamps,palette.length,pattern,reversePattern):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
   return concat(tlv(0xa3,le16(mode)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawSpeed,1,10)])),
     tlv(0xa6,new Uint8Array(pal)),...(palette.length?[tlv(0xa7,assignment)]:[]),
     tlv(0xa8,new Uint8Array([clamp(level,1,100)])),tlv(0xa9,new Uint8Array(4)),tlv(0xaa,new Uint8Array([0])),
     tlv(0xac,le32(0xffffffff)),tlv(0xae,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
 }
-export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number,level=100){
-  return nativeE120Fields(e120ModeId(effect,reverse),e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level);
+export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number,level=100,pattern?:SegmentPattern){
+  return nativeE120Fields(e120ModeId(effect,reverse),e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level,pattern,reverse);
 }
 export function catalogPresetE120(dynamicId:number,catalogId:number,rawSpeed:number,colors:number[],lampCount:number,level=100){
   const lamps=clamp(lampCount,1,120),palette=(colors?.length?colors:[0xffffff]).slice(0,8),pal:number[]=[palette.length];
@@ -88,18 +97,11 @@ export function catalogPresetE120(dynamicId:number,catalogId:number,rawSpeed:num
 }
 
 const E22_A4_BY_MODE:Record<number,number|undefined>={20000:1,20001:undefined,20002:1,20003:1,20004:0,20005:0,20006:0};
-export function nativeE22Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100,reverse=false){
+export function nativeE22Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100,reverse=false,pattern?:SegmentPattern){
   const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...rgbcw((c&0xffffff).toString(16).padStart(6,"0")));
   let assignment=positions(lamps);
-  if(palette.length>1){
-    const groups:number[]=[];
-    for(let group=0;group<palette.length;group++){
-      const members:number[]=[];for(let i=group;i<lamps;i+=palette.length)members.push(i);
-      groups.push(members.length,...members);
-    }
-    assignment=new Uint8Array(groups);
-  }
+  if(palette.length>1)assignment=pattern?.blocks?.length?segmentAssignment(lamps,palette.length,pattern,reverse):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
   let direction=E22_A4_BY_MODE[mode];
   if(reverse&&(mode===20002||mode===20003)&&direction!==undefined)direction=direction?0:1;
   return concat(tlv(0xa3,le16(mode)),...(direction===undefined?[]:[tlv(0xa4,le16(direction))]),
@@ -108,12 +110,12 @@ export function nativeE22Fields(mode:number,rawSpeed:number,colors:number[],lamp
     tlv(0xa9,new Uint8Array(5)),tlv(0xaa,new Uint8Array([0])),tlv(0xac,le32(0xffffffff)),
     tlv(0xae,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
 }
-export function effectE22(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number,level=100){
+export function effectE22(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number,level=100,pattern?:SegmentPattern){
   const mode=e120ModeId(effect,reverse);
-  return nativeE22Fields(mode,e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level,reverse);
+  return nativeE22Fields(mode,e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level,reverse,pattern);
 }
-export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean,level=100,lampCount=defaultLampCount(model)):{opcode:number;fields:Uint8Array}{
+export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean,level=100,lampCount=defaultLampCount(model),pattern?:SegmentPattern):{opcode:number;fields:Uint8Array}{
   const raw=colors?.length?colors:[0xffffff];
-  if(isE22(model))return {opcode:OP_COLOR,fields:effectE22(effect,raw,speed,reverse,lampCount,level)};
-  return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,lampCount,level)};
+  if(isE22(model))return {opcode:OP_COLOR,fields:effectE22(effect,raw,speed,reverse,lampCount,level,pattern)};
+  return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,lampCount,level,pattern)};
 }
