@@ -1224,16 +1224,24 @@ for(const row of allSchedules()){
   const effect=canonicalEffect(row.effect);
   if(effect!==row.effect)db.prepare("UPDATE schedules SET effect=? WHERE id=?").run(effect,row.id);
 }
-if(meta("suicide_prevention_garden_romance_v1")!=="true"){
+if(meta("suicide_prevention_restore_original_v1")!=="true"){
   const cfg=calendarConfig();
   const e=cfg?.events?.find(x=>x.id==="evt134");
   if(cfg&&e){
-    e.factoryEffectName="Garden Romance";
+    e.name="Suicide Prevention Awareness Month";
+    e.kind="Awareness";e.rule="Month";e.month=9;e.day=0;e.weekday=0;e.nth=0;e.offsetDays=0;e.durationDays=1;
+    e.effect="Breathe";e.speed=1;e.colors=[46260,5964006,46260,5964006];
+    e.enabled=true;e.favorite=false;e.categoryIndex=9;e.major=true;
+    delete e.factoryEffectName;delete e.creativePhases;
     const revision=Math.max(Number(meta("calendar_revision")||0)||0,Number(cfg.revision||0)||0)+1;
     cfg.revision=revision;cfg.syncedAt=Date.now();
     setMeta("calendar_config",JSON.stringify(cfg));setMeta("calendar_revision",String(revision));setMeta("calendar_sync",new Date().toISOString());
   }
-  setMeta("suicide_prevention_garden_romance_v1","true");
+  try{
+    const active=parsedMeta<any>("override",null);
+    if(active?.scene?.factoryEffectName==="Garden Romance")delMeta("override");
+  }catch{}
+  setMeta("suicide_prevention_restore_original_v1","true");
 }
 server.listen(PORT,"0.0.0.0",()=>{
   console.log(`Jason Home Oracle server listening on 0.0.0.0:${PORT}`);
