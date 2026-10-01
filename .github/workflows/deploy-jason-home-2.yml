@@ -138,7 +138,9 @@ jobs:
           assert len(cloud['eufy']['readyNames'])==4
           current=(cloud.get('calendar') or {}).get('current')
           if (cloud.get('override') or {}).get('active'):
-              assert state['runningNow']['phase']=='Manual override'
+              assert state['runningNow']['phase'] in ('Manual override','Tonight override'), state['runningNow']
+              if state['runningNow']['phase']=='Tonight override':
+                  assert state['runningNow'].get('id') and state['runningNow']['id']!='manual-override', state['runningNow']
           elif current:
               assert state['runningNow']['name']==current.get('name'), (state['runningNow'],current)
               if not str(current.get('id') or '').startswith('white-override'):
