@@ -26,9 +26,22 @@ jobs:
           s=json.loads(sys.argv[1])
           print("AUTOMATION_OWNER",s.get("automationOwner"))
           print("OVERRIDE",json.dumps(s.get("override"),sort_keys=True))
+          print("CALENDAR_CURRENT",json.dumps((s.get("calendar") or {}).get("current"),sort_keys=True))
           print("LAST_COMMAND",json.dumps(s.get("lastCommand"),sort_keys=True))
           for row in s.get("desired",[]):
               try: scene=json.loads(row.get("scene") or "{}")
               except Exception: scene={"raw":row.get("scene")}
-              print("SCENE",row.get("name"),json.dumps(scene,sort_keys=True),row.get("updated_at"))
+              print("DESIRED",row.get("name"),json.dumps(scene,sort_keys=True),row.get("updated_at"))
           PY
+          for NAME in Pool House Garage Shed; do
+            PROBE="$(curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'               --data "{"target":"$NAME"}" 'http://127.0.0.1:8080/api/mqtt-probe')"
+            python3 - "$NAME" "$PROBE" <<'PY'
+          import json,sys
+          name=sys.argv[1]; p=json.loads(sys.argv[2])
+          print("PROBE",name,json.dumps({
+            "brokerAccepted":p.get("brokerAccepted"),
+            "deviceReported":p.get("deviceReported"),
+            "report":p.get("report")
+          },sort_keys=True))
+          PY
+          done
