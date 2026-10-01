@@ -1,6 +1,7 @@
 {
-  "action": "status",
-  "target": "Pool",
-  "purpose": "Read completed clean Pool native brightness capture",
-  "sequence": "1 -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100"
+  "action": "start",
+  "target": "All",
+  "purpose": "Simultaneous passive native brightness capture on Pool, House, Garage, and Shed",
+  "sequence": "For each string: 1 -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100",
+  "note": "Jason Home automation paused until capture is stopped"
 }
