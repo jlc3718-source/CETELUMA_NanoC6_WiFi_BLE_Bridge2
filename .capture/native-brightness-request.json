@@ -1,7 +1,6 @@
 {
-  "action": "start",
+  "action": "status",
   "target": "Pool",
-  "purpose": "Clean passive Pool brightness capture from 100% using 10% increments",
-  "sequence": "100 start -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100",
-  "reset": "2026-10-01T02:40:00Z"
+  "purpose": "Read completed clean Pool brightness capture",
+  "sequence": "100 start -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100"
 }
