@@ -531,8 +531,9 @@ async function state(){
   const selected=meta("target",0),names=["Pool","House","Garage","Shed"],ready=new Set(s.eufy?.readyNames||[]);
   const scene=first||{power:false,brightness:75,effect:"Solid / Static",colors:[0xffffff],speed:3};
   const scheduled=s.calendar?.current||null;
+  const overrideEventId=String(meta("running_event_id","")||"");
   const runningNow=s.override?.active
-    ? {id:"manual-override",name:String(meta("running_name","Manual override")||"Manual override"),effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Manual override",schedule2:false}
+    ? {id:overrideEventId||"manual-override",name:String(meta("running_name","Manual override")||"Manual override"),effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:overrideEventId?"Tonight override":"Manual override",schedule2:false}
     : scheduled
       ? {id:scheduled.id||"",name:scheduled.name||"Scheduled scene",effect:scheduled.scene?.effect||scene.effect||"Solid / Static",
           brightness:Number(scheduled.scene?.brightness??scene.brightness)||75,
@@ -615,6 +616,7 @@ async function route(req,res){
     const scene=resolveNightCandidateScene(bundle.cfg,bundle.night,wanted,bundle.now,nightLocation.lat,nightLocation.lon,nightLocation.tz);
     if(!scene)throw fail(409,"The selected event cannot run in the current lighting window");
     put("running_name",chosen.name);
+    put("running_event_id",wanted);
     const accepted=await upstream("/api/control","POST",{...scene,name:chosen.name,target:"All"});
     return send(res,accepted?.queued?202:200,{ok:true,selected:{id:wanted,name:chosen.name,scene:{...scene,colors:rgb(scene.colors)}},temporary:true,...accepted});
   }
@@ -625,6 +627,7 @@ async function route(req,res){
   if(method==="POST"&&path==="/api/control"){
     const body=await input(req),target=targetNames[meta("target",0)]||"All";
     if(body.colors)body.colors=colorInts(body.colors);
+    put("running_event_id","");
     if(body.name)put("running_name",String(body.name).slice(0,100));
     const accepted=await upstream("/api/control","POST",{...body,target});
     // The browser already applies manual changes optimistically. Do not block
@@ -695,7 +698,7 @@ async function route(req,res){
     await mutateCalendar(cfg=>{cfg.events=(cfg.events||[]).filter(e=>e.id!==id);cfg.special=(cfg.special||[]).filter(x=>x.id!==id);});
     return send(res,200,{ok:true,state:await aiState()});
   }
-  if(method==="POST"&&path==="/api/resume"){aiPreviewGeneration++;await upstream("/api/resume","POST",{});return send(res,200,await state());}
+  if(method==="POST"&&path==="/api/resume"){aiPreviewGeneration++;put("running_event_id","");await upstream("/api/resume","POST",{});return send(res,200,await state());}
   if(method==="POST"&&path==="/api/settings"){
     const body=await input(req);
     await mutateCalendar(cfg=>{
