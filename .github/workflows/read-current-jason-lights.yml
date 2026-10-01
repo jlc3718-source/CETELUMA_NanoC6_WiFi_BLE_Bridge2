@@ -1,4 +1,4 @@
-name: Audit segmented Jason Home events
+name: Capture native brightness all four strings
 
 on:
   push:
@@ -10,86 +10,55 @@ permissions:
   contents: read
 
 jobs:
-  audit:
+  capture-brightness:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 5
+    timeout-minutes: 18
     steps:
-      - name: Read-only audit of palettes, layers, effects and segment maps
+      - name: Capture native brightness commands and device reports
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json,ssl,socket,urllib.request
+          import json,time,urllib.request
           from pathlib import Path
-
           token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
-
-          def oracle(path):
-              req=urllib.request.Request('http://127.0.0.1:8080'+path,headers={'Authorization':'Bearer '+token})
-              return json.load(urllib.request.urlopen(req,timeout=60))
-
-          calendar=oracle('/api/calendar')['calendar']
-          originals={e['id']:e for e in calendar.get('events',[]) if not str(e.get('id','')).startswith('ai-once-')}
-
-          resolve=socket.getaddrinfo
-          socket.getaddrinfo=lambda host,port,*a,**kw: resolve('127.0.0.1' if host=='150.136.245.51' else host,port,*a,**kw)
-          base='https://150.136.245.51/jason-home-2'
-          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
-          login=opener.open(urllib.request.Request(base+'/api/session',json.dumps({'token':token}).encode(),{'Content-Type':'application/json'}),timeout=60)
-          cookie=login.headers['Set-Cookie'].split(';',1)[0]
-          def jh2(path):
-              req=urllib.request.Request(base+path,headers={'Cookie':cookie})
-              return json.load(opener.open(req,timeout=60))
-
-          displayed={}
-          for month in range(1,13):
-              for e in jh2(f'/api/events?year=2026&month={month}').get('events',[]):
-                  displayed[e['id']]=e
-
-          missing=[]
-          palette_errors=[]
-          layer_errors=[]
-          effect_errors=[]
-          audited=0
-          segmented=0
-          for eid,src in originals.items():
-              e=displayed.get(eid)
-              if not e:
-                  missing.append(eid)
-                  continue
-              audited+=1
-              expected=['#'+format(int(c)&0xffffff,'06X') for c in src.get('colors',[])]
-              if e.get('colors')!=expected:
-                  palette_errors.append({'id':eid,'name':e.get('name'),'expected':expected,'actual':e.get('colors')})
-              layers=e.get('layers') or []
-              if len(layers)<2:
-                  layer_errors.append({'id':eid,'name':e.get('name'),'reason':'fewer than two layers','layers':layers})
-                  continue
-              effects={str(x.get('effect')) for x in layers}
-              if len(effects)<2:
-                  effect_errors.append({'id':eid,'name':e.get('name'),'effects':sorted(effects)})
-              if len(expected)>=2:
-                  segmented+=1
-                  for n,x in enumerate(layers,1):
-                      p=x.get('pattern') or {}
-                      blocks=p.get('blocks') or []
-                      if len(blocks)!=len(expected) or any((not isinstance(v,int)) or v<1 or v>12 for v in blocks):
-                          layer_errors.append({'id':eid,'name':e.get('name'),'layer':n,'colors':len(expected),'pattern':p})
-                          break
-
-          print(json.dumps({
-              'oracleEvents':len(originals),
-              'displayedEvents':len(displayed),
-              'audited':audited,
-              'multiColorSegmented':segmented,
-              'missing':missing,
-              'paletteErrors':palette_errors,
-              'layerErrors':layer_errors,
-              'effectErrors':effect_errors
-          },indent=2))
-          if missing: raise SystemExit('Some Oracle events were not exposed by the 2026 event views')
-          if palette_errors: raise SystemExit('At least one event palette changed')
-          if layer_errors: raise SystemExit('At least one event failed multi-layer/segmented validation')
-          if effect_errors: raise SystemExit('At least one event failed multi-effect validation')
-          print('PASS: every event preserved its Oracle palette; every event is multi-layer/multi-effect; every multi-color layer has valid addressable blocks')
+          base='http://127.0.0.1:8080'
+          def call(path,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request(base+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              return json.load(urllib.request.urlopen(req,timeout=90))
+          names=['Pool','House','Garage','Shed']
+          levels=[1,10,20,30,40,50,60,70,80,90,100]
+          all_results={}
+          for name in names:
+              print('===',name,'===')
+              before=call('/api/mqtt-probe',{'target':name}).get('report') or {}
+              cap=call('/api/mqtt-capture/start',{'target':name})
+              if not cap.get('active'): raise SystemExit(name+' capture did not start')
+              rows=[]
+              try:
+                  for level in levels:
+                      result=call('/api/brightness-capture',{'target':name,'brightness':level})
+                      report=result.get('report') or {}
+                      row={'requested':level,'reported':report.get('brightness'),'effectId':report.get('effectId'),'cloudEffectId':report.get('cloudEffectId')}
+                      rows.append(row)
+                      print('LEVEL',name,json.dumps(row,sort_keys=True))
+                      time.sleep(.2)
+                  capstate=call('/api/mqtt-capture')
+                  samples=capstate.get('samples') or []
+                  commands=[x for x in samples if x.get('direction')=='command' and x.get('opcode')==0x0201]
+                  print('COMMANDS',name,json.dumps(commands,sort_keys=True))
+              finally:
+                  stopped=call('/api/mqtt-capture/stop',{})
+              after=call('/api/mqtt-probe',{'target':name}).get('report') or {}
+              all_results[name]={'before':before,'levels':rows,'commands':commands,'afterResume':after}
+          print('CAPTURE_RESULTS',json.dumps(all_results,sort_keys=True))
+          bad=[]
+          for name,data in all_results.items():
+              for row in data['levels']:
+                  if row['reported'] != row['requested']:
+                      bad.append((name,row['requested'],row['reported']))
+          if bad:
+              raise SystemExit('Brightness report mismatches: '+repr(bad))
+          print('PASS: native brightness command tracks requested percentage on all four strings')
           PY
