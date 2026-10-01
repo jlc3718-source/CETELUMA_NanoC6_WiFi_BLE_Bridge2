@@ -1,5 +1,5 @@
 {
-  "action": "status",
+  "action": "stop",
   "target": "All",
-  "purpose": "Read completed simultaneous brightness capture for all four strings"
+  "purpose": "Stop four-string brightness capture and restore Oracle scheduling"
 }
