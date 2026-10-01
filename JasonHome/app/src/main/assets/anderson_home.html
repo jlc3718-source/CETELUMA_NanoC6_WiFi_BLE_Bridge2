@@ -461,7 +461,7 @@ async function loadSavedColors(){try{if(API_MODE){const e=await api("/api/colors
     layerEffects.forEach(value=>{const option=document.createElement("option");option.value=value;option.textContent=value;option.selected=value===String(layer.effect||"");layerEffect.appendChild(option)});effectWrap.appendChild(layerEffect);
 
     const layerSpeedWrap=document.createElement("label");layerSpeedWrap.className="small";layerSpeedWrap.textContent="Speed (1–5)";
-    const layerSpeed=document.createElement("input");layerSpeed.type="number";layerSpeed.className="field eventLayerSpeed";layerSpeed.min="1";layerSpeed.max="5";layerSpeed.step="1";layerSpeed.value=Math.max(1,Math.min(5,Number(layer.speed)||1));layerSpeedWrap.appendChild(layerSpeed);
+    const layerSpeed=document.createElement("input");layerSpeed.type="number";layerSpeed.className="field eventLayerSpeed";layerSpeed.min=String(1);layerSpeed.max=String(5);layerSpeed.step=String(1);layerSpeed.value=Math.max(1,Math.min(5,Number(layer.speed)||1));layerSpeedWrap.appendChild(layerSpeed);
 
     const minutesWrap=document.createElement("label");minutesWrap.className="small";minutesWrap.textContent="Duration (minutes)";
     const minutes=document.createElement("input");minutes.type="number";minutes.className="field eventLayerMinutes";minutes.min="2";minutes.max="30";minutes.step="1";minutes.value=Math.max(2,Math.min(30,Number(layer.minutes)||8));minutesWrap.appendChild(minutes);
