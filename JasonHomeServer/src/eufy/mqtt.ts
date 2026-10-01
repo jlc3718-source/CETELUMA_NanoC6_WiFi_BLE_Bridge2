@@ -32,20 +32,36 @@ export function captureFrame(data:string):Buffer{
   const bytes=Buffer.from(data,"base64");
   return bytes[0]===255&&bytes[1]===9?bytes:Buffer.from(JSON.parse(bytes.toString()).data,"hex");
 }
-let commandCapture:any={active:false,samples:[]};
-let stopCaptureSocket:(()=>void)|null=null;
-export function commandCaptureStatus(){return {...commandCapture,samples:[...commandCapture.samples]};}
-export function stopCommandCapture(){stopCaptureSocket?.();stopCaptureSocket=null;commandCapture.active=false;return commandCaptureStatus();}
+const commandCaptures=new Map<string,any>();
+const stopCaptureSockets=new Map<string,()=>void>();
+function cloneCapture(value:any){return value?{...value,samples:[...(value.samples||[])],rawSamples:[...(value.rawSamples||[])]}:{active:false,samples:[],rawSamples:[]};}
+export function commandCaptureStatus(target?:string){
+  if(target)return cloneCapture(commandCaptures.get(target));
+  const captures=Object.fromEntries([...commandCaptures.entries()].map(([name,value])=>[name,cloneCapture(value)]));
+  return {active:[...commandCaptures.values()].some(x=>x?.active),captures};
+}
+export function stopCommandCapture(target?:string){
+  if(target){
+    stopCaptureSockets.get(target)?.();stopCaptureSockets.delete(target);
+    const state=commandCaptures.get(target);if(state)state.active=false;
+    return cloneCapture(state);
+  }
+  for(const stop of stopCaptureSockets.values())stop();
+  stopCaptureSockets.clear();
+  for(const state of commandCaptures.values())state.active=false;
+  return commandCaptureStatus();
+}
 export async function startCommandCapture(creds:MqttCredentials,target:MqttTarget,durationMs=1800000){
-  stopCommandCapture();
+  stopCommandCapture(target.name);
   const started=Date.now(),ends=started+durationMs;
-  commandCapture={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:target.name,model:target.model,samples:[],rawSamples:[],requestTopicsGranted:false};
-  const state=commandCapture,reader=new Reader();
+  const state:any={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:target.name,model:target.model,samples:[],rawSamples:[],requestTopicsGranted:false};
+  commandCaptures.set(target.name,state);
+  const reader=new Reader();
   const socket=tlsConnect({host:creds.endpoint_addr,port:creds.endpoint_port||8883,servername:creds.endpoint_addr,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
   socket.on("data",(data:any)=>reader.push(Buffer.from(data)));
   socket.on("error",()=>reader.fail(new Error("Capture socket error")));
   socket.on("close",()=>reader.fail(new Error("Capture socket closed")));
-  stopCaptureSocket=()=>{state.active=false;socket.destroy();};
+  stopCaptureSockets.set(target.name,()=>{state.active=false;socket.destroy();});
   try{
     await withTimeout(new Promise<void>((resolve,reject)=>{socket.once("secureConnect",resolve);socket.once("error",reject);}),8000,"Capture TLS",()=>socket.destroy());
     const captureName=target.name.toLowerCase().replace(/[^a-z0-9]+/g,"-");
@@ -120,10 +136,10 @@ export async function startCommandCapture(creds:MqttCredentials,target:MqttTarge
           }catch{}
         }
       }catch(e:any){state.error=e.message;}
-      finally{state.active=false;socket.destroy();}
+      finally{state.active=false;stopCaptureSockets.delete(target.name);socket.destroy();}
     })();
-    return commandCaptureStatus();
-  }catch(e){socket.destroy();state.active=false;throw e;}
+    return commandCaptureStatus(target.name);
+  }catch(e){socket.destroy();state.active=false;stopCaptureSockets.delete(target.name);throw e;}
 }
 
 export function effectReportMatches(report:Record<string,unknown>|undefined,effectId:number):boolean|null{
