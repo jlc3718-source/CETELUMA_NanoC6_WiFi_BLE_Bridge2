@@ -105,15 +105,22 @@ export class EufyClient {
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
-    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),fx=buildEffect(s.model,effect,colors,speed,reverse,brightness,s.lampCount,pattern);
-    const frames:CommandFrame[]=[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}];
-    // Native personal-mode commands carry brightness in A8 on both T8L00 and T8L02.
-    const result=await this.command(name,frames,3200);
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
+    const frames:CommandFrame[]=[
+      {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
+      {opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`},
+      // Captured from the Eufy app on 2026-10-01: brightness is a dedicated
+      // 0x0201 command with one-byte A4 equal to the requested percentage.
+      {opcode:OP_SETUP,fields:brightnessFields(level),label:`BRIGHTNESS ${level}%`}
+    ];
+    const result=await this.command(name,frames,3400);
     const state=await this.status(name);
     const effectId=Buffer.from(fx.fields).readUIntLE(2,fx.fields[1]);
     const verified=effectReportMatches(state.report,effectId);
+    const brightnessVerified=typeof state.report?.brightness==="number"?Number(state.report.brightness)===level:null;
     if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
-    return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified};
+    if(brightnessVerified===false)throw new Error(`${name} brightness mismatch: expected ${level}%, device reports ${state.report?.brightness}%`);
+    return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified,brightnessVerified};
   }
   async namedFactoryScene(name:string,presets:EufyFactoryPreset[],brightnessOverride?:number){
     const s=this.spec(name),wanted=presets.filter(p=>String(p?.name||"").trim().toLowerCase()===String(presets[0]?.name||"").trim().toLowerCase());
@@ -133,12 +140,15 @@ export class EufyClient {
         const fields=catalogPresetE120(dynamicId,legacy.lightId,rawSpeed,palette,s.lampCount,level);
         const r=await this.command(name,[
           {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
-          {opcode:OP_COLOR,fields,label:`FACTORY ${legacy.name||legacy.lightId}`}
-        ],3600);
+          {opcode:OP_COLOR,fields,label:`FACTORY ${legacy.name||legacy.lightId}`},
+          {opcode:OP_SETUP,fields:brightnessFields(level),label:`BRIGHTNESS ${level}%`}
+        ],3800);
         const state=await this.status(name),report=state.report||{};
         const effectOk=Number(report.effectId)===dynamicId,cloudOk=Number(report.cloudEffectId)===legacy.lightId;
+        const brightnessOk=typeof report.brightness==="number"?Number(report.brightness)===level:null;
         if(state.deviceReported&&(!effectOk||!cloudOk))throw new Error(`${name} did not select ${legacy.name||"factory effect"}: expected ${dynamicId}/${legacy.lightId}, device reports ${report.effectId}/${report.cloudEffectId}`);
-        return {...r,report:state.report,deviceReported:state.deviceReported,effectVerified:state.deviceReported?effectOk&&cloudOk:null,strategy:"native-t8l00-catalog-0206",model:s.model};
+        if(brightnessOk===false)throw new Error(`${name} brightness mismatch: expected ${level}%, device reports ${report.brightness}%`);
+        return {...r,report:state.report,deviceReported:state.deviceReported,effectVerified:state.deviceReported?effectOk&&cloudOk:null,brightnessVerified:brightnessOk,strategy:"native-t8l00-catalog-0206",model:s.model};
       }
     }
     const structured=wanted.find(p=>s.model==="T8L02"?p.buildableE22:p.buildableE120Experimental);
@@ -189,8 +199,10 @@ export class EufyClient {
     ],3600);
     const state=await this.status(name);
     const verified=effectReportMatches(state.report,preset.lightId);
+    const brightnessVerified=typeof state.report?.brightness==="number"?Number(state.report.brightness)===brightness:null;
     if(verified===false)throw new Error(`${name} did not select factory effect ${preset.lightId}: device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
-    return {...r,report:state.report,deviceReported:state.deviceReported,effectVerified:verified,strategy,model:s.model};
+    if(brightnessVerified===false)throw new Error(`${name} brightness mismatch: expected ${brightness}%, device reports ${state.report?.brightness}%`);
+    return {...r,report:state.report,deviceReported:state.deviceReported,effectVerified:verified,brightnessVerified,strategy,model:s.model};
   }
   readyNames(){return [...this.lights.keys()];}
 }

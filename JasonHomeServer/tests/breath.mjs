@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {buildEffect,OP_COLOR,OP_SHOW,nativeE120Fields,e120SpeedValue,styleDefinition} from "../dist/eufy/light-commands.js";
+import {buildEffect,brightness as brightnessFields,OP_COLOR,OP_SHOW,nativeE120Fields,e120SpeedValue,styleDefinition} from "../dist/eufy/light-commands.js";
 import {buildFactoryFields} from "../dist/eufy/factory-presets.js";
 import {effectReportMatches} from "../dist/eufy/mqtt.js";
 // Independent original SDK snapshots: mega-yfue/eufy-sdk @ 52490349627c9a177d87a2b1e67b2b43dd50cbc1.
@@ -36,6 +36,10 @@ for(const effect of ["Chase","Candy Cane"]){
 console.log("E120 native modes, all speeds, palette grouping and reversed chase PASS");
 
 function tags(bytes){const out={};for(let i=0;i<bytes.length;){const tag=bytes[i++],length=bytes[i++];out[tag.toString(16)]=Buffer.from(bytes.subarray(i,i+length)).toString("hex");i+=length;}return out;}
+for(const value of [1,10,20,30,40,50,60,70,80,90,100]){
+  assert.equal(tags(brightnessFields(value)).a4,value.toString(16).padStart(2,"0"),"native 0x0201 A4 brightness "+value);
+}
+console.log("Captured native brightness A4 encoding 1-100 PASS");
 // Live Eufy app speed-only frames, observed 2026-09-29, Pool / Breathe.
 for(const rawSpeed of [1,10])assert.deepEqual(tags(nativeE120Fields(20005,rawSpeed,[],60)),{
  a3:"254e",a4:"0000",a5:rawSpeed===1?"01":"0a",a6:"00",a8:"64",a9:"00000000",aa:"00",ac:"ffffffff",ae:"00",b0:"00"
@@ -88,8 +92,9 @@ for(const name of ["Pool","Garage"]){
   return {published:frames.length,brokerAccepted:true,deviceReported:true,report:{cmd:0x0a00,effectId:selected}};
  };
  await client.scene(name,"Breathe",[0x0000ff],5,42);
- assert.deepEqual(batches[0].map(f=>f.opcode),[0x0201,0x0206]);
+ assert.deepEqual(batches[0].map(f=>f.opcode),[0x0201,0x0206,0x0201]);
  assert.equal(tags(batches[0][1].fields).a8,"2a");
+ assert.equal(tags(batches[0][2].fields).a4,"2a");
  assert.equal(batches[1][0].opcode,0x0200);
 }
-console.log("E120 and E22 native effects include brightness; fresh effect confirmation PASS");
+console.log("E120 and E22 native effects send captured dedicated brightness and confirm fresh state PASS");
