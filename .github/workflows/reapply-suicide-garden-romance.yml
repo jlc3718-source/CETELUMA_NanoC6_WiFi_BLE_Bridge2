@@ -19,17 +19,21 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json,time,urllib.request,http.cookiejar
+          import json,time,urllib.request,ssl,socket
           from pathlib import Path
 
           token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
-          jar=http.cookiejar.CookieJar()
-          jh2=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar),urllib.request.ProxyHandler({}))
+          resolve=socket.getaddrinfo
+          socket.getaddrinfo=lambda host,port,*args,**kwargs: resolve('127.0.0.1' if host=='150.136.245.51' else host,port,*args,**kwargs)
+          base='https://150.136.245.51/jason-home-2'
+          jh2=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+          login_data=json.dumps({'token':token}).encode()
+          login=jh2.open(urllib.request.Request(base+'/api/session',login_data,{'Content-Type':'application/json'}),timeout=90)
+          session_cookie=login.headers['Set-Cookie'].split(';',1)[0]
           def jh2_call(path,body=None):
               data=None if body is None else json.dumps(body).encode()
-              req=urllib.request.Request('http://127.0.0.1:8081'+path,data,{'Content-Type':'application/json'})
+              req=urllib.request.Request(base+path,data,{'Content-Type':'application/json','Cookie':session_cookie})
               return json.load(jh2.open(req,timeout=90))
-          jh2_call('/api/session',{'token':token})
           options=jh2_call('/api/tonight-options')
           choice=next((x for x in options.get('options',[]) if x.get('id')=='evt134'),None)
           if not choice:
