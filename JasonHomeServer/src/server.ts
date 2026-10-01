@@ -1177,6 +1177,18 @@ const server=http.createServer(async(req,res)=>{
       const capture=stopCommandCapture();setMeta("automation_owner","oracle");
       return json(res,200,{...capture,reconcile:await reconcile(false,true)});
     }
+    if(method==="POST"&&path==="/api/brightness-capture"){
+      const input:any=await readJson(req),target=String(input?.target||"Pool"),value=clamp(Math.round(Number(input?.brightness)||1),1,100);
+      if(!DEVICE_NAMES.includes(target as any))throw new Error("Brightness capture target must be Pool, House, Garage, or Shed");
+      let sent:any,report:any;
+      try{
+        const c=await ensureEufy(false);
+        sent=await serializedForDevice(target,()=>c.brightness(target,value));
+        await new Promise(r=>setTimeout(r,450));
+        report=await serializedForDevice(target,()=>c.status(target));
+      }catch(e){markEufyDegraded(e);throw e;}
+      return json(res,200,{ok:true,target,requested:value,command:{published:sent.published,brokerAccepted:sent.brokerAccepted===true,deviceReported:sent.deviceReported===true,report:sent.report||null},report:report.report||null});
+    }
     if(method==="POST"&&path==="/api/mqtt-probe"){
       const input:any=await readJson(req),target=String(input?.target||"Pool");
       if(!DEVICE_NAMES.includes(target as any))throw new Error("Probe target must be Pool, House, Garage, or Shed");
