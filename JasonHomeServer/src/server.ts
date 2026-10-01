@@ -1162,15 +1162,17 @@ const server=http.createServer(async(req,res)=>{
       const c=await ensureEufy(changed);
       return json(res,200,{ok:true,changed,eufy:eufyStatus,readyNames:c.readyNames(),transport:"linux-mqtt"});
     }
-    if(method==="GET"&&path==="/api/mqtt-capture")return json(res,200,commandCaptureStatus());
+    if(method==="GET"&&path==="/api/mqtt-capture"){const target=url.searchParams.get("target")||undefined;return json(res,200,commandCaptureStatus(target));}
     if(method==="POST"&&path==="/api/mqtt-capture/start"){
       const input:any=await readJson(req),target=String(input?.target||"Pool");
-      if(!DEVICE_NAMES.includes(target as any))throw new Error("Capture target must be Pool, House, Garage, or Shed");
-      const c=await ensureEufy(false),capture=await c.startCommandCapture(target);
+      if(target!=="All"&&!DEVICE_NAMES.includes(target as any))throw new Error("Capture target must be All, Pool, House, Garage, or Shed");
+      const c=await ensureEufy(false);
       setMeta("automation_owner","direct");
+      const names=target==="All"?[...DEVICE_NAMES]:[target];
+      const started=await Promise.all(names.map(async name=>[name,await c.startCommandCapture(name)] as const));
       if(captureRestoreTimer)clearTimeout(captureRestoreTimer);
       captureRestoreTimer=setTimeout(()=>{stopCommandCapture();setMeta("automation_owner","oracle");void reconcile(false,true).catch(e=>console.error("[capture resume]",e.message));},1800000);
-      return json(res,200,capture);
+      return json(res,200,{ok:true,target,captures:Object.fromEntries(started)});
     }
     if(method==="POST"&&path==="/api/mqtt-capture/stop"){
       if(captureRestoreTimer)clearTimeout(captureRestoreTimer);
