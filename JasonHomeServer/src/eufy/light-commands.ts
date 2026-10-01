@@ -76,6 +76,17 @@ export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lam
 export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number,level=100){
   return nativeE120Fields(e120ModeId(effect,reverse),e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level);
 }
+export function catalogPresetE120(dynamicId:number,catalogId:number,rawSpeed:number,colors:number[],lampCount:number,level=100){
+  const lamps=clamp(lampCount,1,120),palette=(colors?.length?colors:[0xffffff]).slice(0,8),pal:number[]=[palette.length];
+  for(const c of palette)pal.push(...nativeColor("T8L00",c));
+  // Legacy E120 gallery effects use the captured 0x0206 dynamic id in A3 and
+  // retain the Eufy catalog id in AC. Keep the production E120 field shape.
+  return concat(tlv(0xa3,le16(dynamicId)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawSpeed,1,10)])),
+    tlv(0xa6,new Uint8Array(pal)),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([clamp(level,1,100)])),
+    tlv(0xa9,new Uint8Array(4)),tlv(0xaa,new Uint8Array([0])),tlv(0xac,le32(catalogId)),
+    tlv(0xae,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
+}
+
 const E22_A4_BY_MODE:Record<number,number|undefined>={20000:1,20001:undefined,20002:1,20003:1,20004:0,20005:0,20006:0};
 export function nativeE22Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100,reverse=false){
   const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];

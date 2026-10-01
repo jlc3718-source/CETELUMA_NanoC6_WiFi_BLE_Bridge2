@@ -4,6 +4,7 @@ export interface Scene {
   effect:string;
   colors:number[];
   speed:number;
+  factoryEffectName?:string;
 }
 export interface ScheduleRow {
   id:string;name:string;enabled:number;days:string;start_kind:string;start_value:string;end_kind:string;end_value:string;

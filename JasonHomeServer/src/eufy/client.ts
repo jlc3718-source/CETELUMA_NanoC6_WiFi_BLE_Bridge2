@@ -1,7 +1,7 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
 import { effectReportMatches, startCommandCapture, mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
-import { OP_SETUP, OP_SHOW, buildEffect, brightness as brightnessFields } from "./light-commands.js";
+import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, catalogPresetE120, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
 
@@ -114,6 +114,36 @@ export class EufyClient {
     const verified=effectReportMatches(state.report,effectId);
     if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
     return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified};
+  }
+  async namedFactoryScene(name:string,presets:EufyFactoryPreset[],brightnessOverride?:number){
+    const s=this.spec(name),wanted=presets.filter(p=>String(p?.name||"").trim().toLowerCase()===String(presets[0]?.name||"").trim().toLowerCase());
+    if(!wanted.length)throw new Error("Named factory effect is unavailable");
+    if(s.model==="T8L00"){
+      const legacy=wanted.find(p=>{
+        const e=Array.isArray((p.raw as any)?.light_effect)?(p.raw as any).light_effect[0]:null;
+        return Number.isInteger(Number(e?.dynamic))&&Number(e.dynamic)>0;
+      });
+      if(legacy){
+        const e:any=Array.isArray((legacy.raw as any)?.light_effect)?(legacy.raw as any).light_effect[0]:{};
+        const dynamicId=Number(e?.dynamic),rawSpeed=Math.max(1,Math.min(10,Math.round(Number(e?.speed??legacy.speed??5)||5)));
+        const palette=String(e?.rgb_hex??legacy.colors??"").split("|").filter(x=>/^[0-9a-fA-F]{6}$/.test(x)).slice(0,8).map(x=>parseInt(x,16));
+        const level=brightnessOverride==null
+          ?(typeof legacy.brightness==="number"?Math.max(1,Math.min(100,Math.round(legacy.brightness))):75)
+          :Math.max(1,Math.min(100,Math.round(brightnessOverride)));
+        const fields=catalogPresetE120(dynamicId,legacy.lightId,rawSpeed,palette,s.lampCount,level);
+        const r=await this.command(name,[
+          {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
+          {opcode:OP_COLOR,fields,label:`FACTORY ${legacy.name||legacy.lightId}`}
+        ],3600);
+        const state=await this.status(name),report=state.report||{};
+        const effectOk=Number(report.effectId)===dynamicId,cloudOk=Number(report.cloudEffectId)===legacy.lightId;
+        if(state.deviceReported&&(!effectOk||!cloudOk))throw new Error(`${name} did not select ${legacy.name||"factory effect"}: expected ${dynamicId}/${legacy.lightId}, device reports ${report.effectId}/${report.cloudEffectId}`);
+        return {...r,report:state.report,deviceReported:state.deviceReported,effectVerified:state.deviceReported?effectOk&&cloudOk:null,strategy:"native-t8l00-catalog-0206",model:s.model};
+      }
+    }
+    const structured=wanted.find(p=>s.model==="T8L02"?p.buildableE22:p.buildableE120Experimental);
+    if(!structured)throw new Error(`${wanted[0]?.name||"Factory effect"} has no native recipe for ${s.model}`);
+    return this.factoryScene(name,structured,brightnessOverride);
   }
   async factoryPresets():Promise<{presets:EufyFactoryPreset[];rawDiscover:unknown;scanned:number}>{
     this.requireLogin();

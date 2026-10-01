@@ -327,11 +327,22 @@ function cachedFactoryPreset(lightId:number){
     return base?applyFactoryEdit(base):null;
   }catch{return null;}
 }
+function cachedFactoryPresetsByName(name:string){
+  const raw=meta("factory_catalog"),wanted=String(name||"").trim().toLowerCase();
+  if(!raw||!wanted)return [];
+  try{return (JSON.parse(raw)?.presets||[]).filter((p:any)=>String(p?.name||"").trim().toLowerCase()===wanted).map((p:any)=>applyFactoryEdit(p));}
+  catch{return [];}
+}
 async function sendScene(name:string,scene:Scene){
   return serializedForDevice(name,async()=>{
     try{
       const c=await ensureEufy(false);
       if(!scene.power)return await c.power(name,false);
+      if(scene.factoryEffectName){
+        const presets=cachedFactoryPresetsByName(scene.factoryEffectName);
+        if(!presets.length)throw new Error("Native factory effect "+scene.factoryEffectName+" is not available in the cached Eufy catalog");
+        return await c.namedFactoryScene(name,presets,scene.brightness);
+      }
       const factoryLightId=nativeFactoryLightId(scene);
       if(factoryLightId!=null){
         const preset=cachedFactoryPreset(factoryLightId);
@@ -356,6 +367,10 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number){
       let result:any;
       if(!scene.power){
         result=await c.power(name,false);
+      }else if(scene.factoryEffectName){
+        const presets=cachedFactoryPresetsByName(scene.factoryEffectName);
+        if(!presets.length)throw new Error("Native factory effect "+scene.factoryEffectName+" is not available in the cached Eufy catalog");
+        result=await c.namedFactoryScene(name,presets,scene.brightness);
       }else{
         const factoryLightId=nativeFactoryLightId(scene);
         if(factoryLightId!=null){
@@ -1200,6 +1215,17 @@ if(previousCalendar){
 for(const row of allSchedules()){
   const effect=canonicalEffect(row.effect);
   if(effect!==row.effect)db.prepare("UPDATE schedules SET effect=? WHERE id=?").run(effect,row.id);
+}
+if(meta("suicide_prevention_garden_romance_v1")!=="true"){
+  const cfg=calendarConfig();
+  const e=cfg?.events?.find(x=>x.id==="evt134");
+  if(cfg&&e){
+    e.factoryEffectName="Garden Romance";
+    const revision=Math.max(Number(meta("calendar_revision")||0)||0,Number(cfg.revision||0)||0)+1;
+    cfg.revision=revision;cfg.syncedAt=Date.now();
+    setMeta("calendar_config",JSON.stringify(cfg));setMeta("calendar_revision",String(revision));setMeta("calendar_sync",new Date().toISOString());
+  }
+  setMeta("suicide_prevention_garden_romance_v1","true");
 }
 server.listen(PORT,"0.0.0.0",()=>{
   console.log(`Jason Home Oracle server listening on 0.0.0.0:${PORT}`);

@@ -6,7 +6,7 @@ export interface CalendarEvent {
   id:string; name:string; kind:string; rule:string;
   month:number; day:number; weekday:number; nth:number; offsetDays:number; durationDays:number;
   effect:string; speed:number; colors:number[]; enabled:boolean; favorite?:boolean; brightness?:number;
-  categoryIndex:number; major:boolean; dateRuleSourceId?:string;
+  categoryIndex:number; major:boolean; dateRuleSourceId?:string; factoryEffectName?:string;
   creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number}>;
   aiOneTime?:boolean; expiresAt?:string; aiReplaceEventId?:string;
 }
@@ -205,7 +205,8 @@ function sceneFor(e:CalendarEvent,brightness:number,showPosition=0):Scene{
     brightness:clamp(level,1,100),
     effect:chosen.effect,
     colors:rotatePalette(colors,chosen.shift||0),
-    speed:chosen.speed
+    speed:chosen.speed,
+    factoryEffectName:e.factoryEffectName
   };
 }
 type CalendarCandidate={id:string;name:string;scene:Scene};
@@ -320,6 +321,7 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       colors:Array.isArray(raw.colors)?raw.colors.slice(0,8).map(colorValue):[0xffffff],
       enabled:raw.enabled!==false,favorite:!!raw.favorite,brightness:raw.brightness==null?undefined:clamp(Number(raw.brightness)||100,1,100),categoryIndex:clamp(finiteOr(raw.categoryIndex,0),0,14),major:!!raw.major,
       dateRuleSourceId:typeof raw.dateRuleSourceId==="string"&&raw.dateRuleSourceId?raw.dateRuleSourceId:undefined,
+      factoryEffectName:typeof raw.factoryEffectName==="string"&&raw.factoryEffectName.trim()?raw.factoryEffectName.trim().slice(0,100):undefined,
       creativePhases:Array.isArray(raw.creativePhases)?raw.creativePhases.slice(0,8).map((p:any)=>({
         effect:canonicalEffect(p?.effect),speed:clamp(Number(p?.speed)||2,1,5),minutes:clamp(Number(p?.minutes)||6,2,30),shift:Math.trunc(Number(p?.shift)||0)
       })) : undefined,

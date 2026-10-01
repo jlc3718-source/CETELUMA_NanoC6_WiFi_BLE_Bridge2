@@ -23,6 +23,10 @@ assert.equal(r?.name,"Christmas Day");
 assert.equal(r?.scene.effect,"Flow1");
 assert.equal(r?.schedule2,false);
 
+const nativeFactoryDefault=normalizeCalendarConfig({...base,events:[{...base.events[0],id:"evt134",name:"Suicide Prevention Awareness Month",month:9,day:0,rule:"Month",factoryEffectName:"Garden Romance"}]});
+const nativeFactoryScene=resolveCalendar(nativeFactoryDefault,new Date("2026-09-15T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(nativeFactoryScene?.scene.factoryEffectName,"Garden Romance","Native factory default must survive calendar normalization and resolution");
+
 r=resolveCalendar(cfg,new Date("2026-12-26T04:30:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.name,"Christmas Day");
 assert.equal(r?.schedule2,true);

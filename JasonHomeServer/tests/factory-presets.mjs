@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { allowedApi } from "../dist/eufy/client.js";
 import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName, reverseFactoryPresetDirection } from "../dist/eufy/factory-presets.js";
+import { catalogPresetE120 } from "../dist/eufy/light-commands.js";
 
 assert.equal(allowedApi("app-light-us-pr.eufy.com"),true);
 assert.equal(allowedApi("app-light-eu-pr.eufy.com"),true);
@@ -80,6 +81,12 @@ assert.equal(reversed.layers[1].flow_direction,0);
 assert.equal(directional.layers[0].flow_direction,0);
 assert.ok(buildFactoryFields("T8L02",reversed).length>0);
 assert.ok(buildFactoryFields("T8L00",reversed).length>0);
+
+const garden=catalogPresetE120(30041,10057,10,[0xff7dad,0x18f538],60,80);
+const readTlv=(tag)=>{for(let i=0;i+1<garden.length;){const n=garden[i+1];if(garden[i]===tag)return garden.slice(i+2,i+2+n);i+=2+n;}return null;};
+assert.deepEqual([...readTlv(0xa3)],[0x59,0x75]);
+assert.deepEqual([...readTlv(0xac)],[0x49,0x27,0,0]);
+assert.equal(readTlv(0xa8)[0],80);
 
 const malformed=normalizeFactoryEntry({light_id:10099,name:"Bad",params:"{not-json"});
 assert.equal(malformed.layers.length,0);
