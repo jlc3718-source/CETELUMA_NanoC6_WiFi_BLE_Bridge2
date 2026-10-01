@@ -14,28 +14,22 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 5
     steps:
-      - name: Resolve current Eufy factory effects
+      - name: Resolve current native Eufy effect IDs
         shell: bash
         run: |
           set -euo pipefail
-          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
-          test -n "$TOKEN"
-          STATUS="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1')"
-          CAT="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/eufy/factory-presets?raw=1')"
-          python3 - "$STATUS" "$CAT" <<'PY'
-          import json,sys
-          s=json.loads(sys.argv[1]); c=json.loads(sys.argv[2])
-          print("CALENDAR_CURRENT",json.dumps((s.get("calendar") or {}).get("current"),sort_keys=True))
-          for row in s.get("desired",[]):
-              try: scene=json.loads(row.get("scene") or "{}")
-              except Exception: scene={"raw":row.get("scene")}
-              print("DESIRED",row.get("name"),json.dumps(scene,sort_keys=True))
-          needles=("10057","10700","30041")
-          hits=[]
-          for p in c.get("presets",[]):
-              blob=json.dumps(p,sort_keys=True)
-              if any(n in blob for n in needles):
-                  hits.append(p)
-          print("FACTORY_HITS",json.dumps(hits,sort_keys=True))
-          print("FACTORY_COUNT",len(c.get("presets",[])))
+          python3 - <<'PY'
+          import sqlite3,json
+          db=sqlite3.connect('/home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite')
+          row=db.execute("select value from meta where key='factory_catalog'").fetchone()
+          if not row:
+              raise SystemExit('factory_catalog missing')
+          catalog=json.loads(row[0])
+          wanted={10057,10700}
+          hits=[p for p in catalog.get('presets',[]) if int(p.get('lightId') or 0) in wanted]
+          print('FACTORY_MATCHES',json.dumps(hits,sort_keys=True))
+          current=db.execute("select value from meta where key='calendar_config'").fetchone()
+          cfg=json.loads(current[0]) if current else {}
+          evt=next((e for e in cfg.get('events',[]) if e.get('id')=='evt134'),None)
+          print('CURRENT_EVT134',json.dumps(evt,sort_keys=True))
           PY
