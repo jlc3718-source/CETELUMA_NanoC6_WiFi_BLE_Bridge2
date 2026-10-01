@@ -180,8 +180,9 @@ jobs:
           assert re.search(r'<input id="eventsSpeed"[^>]*max="10"',text), 'eventsSpeed'
           assert 'data-page="ai"' in text and 'id="aiSendButton"' in text and 'id="aiApplyOnceButton"' in text
           assert 'data-page="master"' not in text and 'data-page="lights"' not in text
-          assert 'c.max="10",c.value=e.speed' in text
+          assert 'speedInput.max="10"' in text, 'base event speed control'
           assert 'eventLayersEditor' in text and 'Palette shift' in text and 'layers:layerValues' in text
+          assert 'layerSpeed.max=String(5)' in text, 'layer speed must remain on Oracle 1-5 phase scale'
           ui=Path('JasonHome2Server/web/v3_mockup.js').read_text()
           assert 'id="homeSpeed" type="range" min="1" max="10"' in ui
           assert '["1","2","3","4","5","6","7","8","9","10"]' in text
