@@ -14,9 +14,14 @@
       :/white override\s*2/i.test(event.name)||String(event.id||"").startsWith("white-override-2")?"whiteOverride2Master"
       :/schedule 2/i.test(event.name)?"schedule2Master":/schedule 1/i.test(event.name)?"eventsMaster":null;
     if(scheduleControl){
-      document.querySelector('.tab[data-tab="events"]')?.click();
+      document.querySelector('.tab[data-tab="settings"]')?.click();
+      document.querySelector('[data-settings-tab="schedules"]')?.click();
       const control=document.getElementById(scheduleControl);
-      control?.closest(".card")?.scrollIntoView({block:"center",behavior:"smooth"});control?.focus({preventScroll:true});return;
+      requestAnimationFrame(()=>{
+        control?.closest(".card")?.scrollIntoView({block:"center",behavior:"smooth"});
+        control?.focus({preventScroll:true});
+      });
+      return;
     }
     if(String(event.id||"").startsWith("overlap:")&&night){
       fetch(`/jason-home-2/api/night-calendar?year=${night.year}&month=${night.month}`,{credentials:"same-origin",cache:"no-store"})
@@ -24,13 +29,17 @@
         .then(data=>{const entry=data.days.find(day=>day.day===night.day);if(entry)showNight(night.year,night.month,entry)})
         .catch(()=>{});return;
     }
-    const year=document.getElementById("yearSelect"),search=document.getElementById("eventSearch");
+    const month=document.getElementById("monthSelect"),year=document.getElementById("yearSelect"),search=document.getElementById("eventSearch");
     const date=event.at?new Date(event.at):null;
     const targetYear=night?.year||(date&&!Number.isNaN(date.getTime())?Number(new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric"}).format(date)):today().year);
+    const targetMonth=night?.month||(date&&!Number.isNaN(date.getTime())?Number(new Intl.DateTimeFormat("en-US",{timeZone:zone,month:"numeric"}).format(date)):today().month);
+    if(month)month.value=String(targetMonth);
     if(year)year.value=String(targetYear);
-    if(search)search.value=event.name||"";
+    if(search)search.value="";
     document.querySelector('.tab[data-tab="events"]')?.click();
+    month?.dispatchEvent(new Event("change",{bubbles:true}));
     year?.dispatchEvent(new Event("change",{bubbles:true}));
+    search?.dispatchEvent(new Event("input",{bubbles:true}));
     const id=String(event.id||""),factory=id.includes("::factory:")?id.split("::factory:")[1]:null;
     let tries=0;
     const seek=()=>{
@@ -48,8 +57,8 @@
     if(!node)return;
     const active=!!event&&(!!event.id||!!event.name)&&event.id!=="manual-override"&&event.phase!=="Idle";
     node.classList.toggle("v3CurrentEventLink",active);node.tabIndex=active?0:-1;
-    if(active){node.setAttribute("role","button");node.setAttribute("aria-label","Open "+event.name+" in Schedules")}
-    else{node.removeAttribute("role");node.removeAttribute("aria-label")}
+    if(active){node.setAttribute("role","button");node.setAttribute("aria-label","Open "+event.name+" in Schedules");node.title="Open this event in Schedules"}
+    else{node.removeAttribute("role");node.removeAttribute("aria-label");node.title=""}
     node.onclick=active?()=>openSchedulerEvent(event,night):null;
     node.onkeydown=active?e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSchedulerEvent(event,night)}}:null;
   }
@@ -141,7 +150,7 @@
     if(!card||!next)return;
     const wrap=document.createElement("section");wrap.className="jh2Calendar";wrap.setAttribute("aria-label","Scheduled lighting by night");
     wrap.innerHTML='<div class="jh2CalendarHead"><button type="button" aria-label="Previous month">‹</button><strong></strong><button type="button" aria-label="Next month">›</button></div><div class="jh2CalendarGrid"></div>';
-    const running=document.createElement("div");running.className="jh2RunningNow";
+    const running=document.createElement("button");running.type="button";running.className="jh2RunningNow";
     running.innerHTML='<span>RUNNING NOW</span><strong>Loading…</strong><small></small>';
     card.append(running,wrap,next);
     const schedules=document.querySelector('.page[data-page="events"]');
@@ -193,7 +202,7 @@
       #scheduledEventName{display:none!important}
       .v3ScheduleCard>#scheduleWindow{font-size:12px;line-height:1.55;overflow-wrap:normal}
       .v3ScheduleCard>#resumeSchedule{width:100%;max-width:none!important;min-height:44px;font-size:12px}
-      .jh2RunningNow{display:grid;gap:3px;margin-top:4px;padding:11px 12px;border:1px solid #8daaff28;border-radius:13px;background:#0c1a32}
+      .jh2RunningNow{display:grid;gap:3px;width:100%;margin-top:4px;padding:11px 12px;border:1px solid #8daaff28;border-radius:13px;background:#0c1a32;color:inherit;text-align:left;font:inherit;appearance:none}
       .jh2RunningNow>span{font-size:9px;font-weight:750;letter-spacing:.14em;color:#9db9e7}
       .jh2RunningNow>strong{font-size:13px;line-height:1.35;color:#f1f6ff;overflow-wrap:anywhere}
       .jh2RunningNow>small{font-size:10px;line-height:1.4;color:#a8bddf}
