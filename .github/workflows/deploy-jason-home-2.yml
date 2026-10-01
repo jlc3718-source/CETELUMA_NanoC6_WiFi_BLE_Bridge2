@@ -181,6 +181,7 @@ jobs:
           assert 'data-page="ai"' in text and 'id="aiSendButton"' in text and 'id="aiApplyOnceButton"' in text
           assert 'data-page="master"' not in text and 'data-page="lights"' not in text
           assert 'c.max="10",c.value=e.speed' in text
+          assert 'eventLayersEditor' in text and 'Palette shift' in text and 'layers:layerValues' in text
           ui=Path('JasonHome2Server/web/v3_mockup.js').read_text()
           assert 'id="homeSpeed" type="range" min="1" max="10"' in ui
           assert '["1","2","3","4","5","6","7","8","9","10"]' in text

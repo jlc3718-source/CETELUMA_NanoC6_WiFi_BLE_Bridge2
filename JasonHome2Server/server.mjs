@@ -38,24 +38,65 @@ target_event should be the exact holiday/event name when possible (for example C
 Return JSON only with this shape:
 {"reply":"natural conversational response","draft":null or {"name":"short show name","target_event":"event name or empty","date":"YYYY-MM-DD or empty","brightness":1-100,"colors":["#RRGGBB"],"layers":[{"effect":"native effect","speed":1-10,"minutes":2-30,"shift":0-7}]}}
 Never claim a draft has been applied or scheduled; the user must press a button.`;
-function creativeLayerCount(e){
-  if(Array.isArray(e?.creativePhases)&&e.creativePhases.length)return Math.min(8,e.creativePhases.length);
-  const name=String(e?.name||"").toLowerCase(),factory=String(e?.id||"").includes("::factory:");
-  const colors=Array.isArray(e?.colors)?e.colors:[];
-  if(factory)return 3;
-  if(/new year.?s eve|new year.?s day|halloween|christmas day|christmas eve|independence day|mardi gras|diwali|lunar new year|valentine/.test(name))return 4;
-  if(/remembrance|memorial|holocaust|pow\/mia|yom kippur|good friday|ash wednesday|gold star|pearl harbor|transgender day of remembrance/.test(name))return 2;
-  if(/pride|lgbtq|coming out|homophobia|transphobia/.test(name))return 4;
-  if(/flag day|veterans|armed forces|patriot day|constitution|freedom day|presidents|d-day|korean war|purple heart/.test(name))return 3;
-  if(/christmas|hanukkah|kwanzaa|winter solstice/.test(name))return 3;
-  if(/cinco de mayo|st\. patrick|easter/.test(name))return 4;
-  if(/mother.?s day|father.?s day|parents.? day|grandparents/.test(name))return 3;
-  if(e?.rule==="Month")return colors.length>=3?3:2;
-  if(e?.kind==="Seasonal")return 3;
-  if(e?.kind==="Holiday"&&colors.length>=2)return 3;
-  if(colors.length>=2)return 2;
-  return 1;
+function layerEffect(value){
+  const name=String(value||"Flow1");
+  return nativeEffects.has(name)?name:oldEffects[name]||"Flow1";
 }
+function creativePhase(effect,speed,minutes,shift=0){
+  return {
+    effect:layerEffect(effect),
+    speed:Math.max(1,Math.min(5,Math.round(Number(speed)||1))),
+    minutes:Math.max(2,Math.min(30,Math.round(Number(minutes)||8))),
+    shift:Math.max(-7,Math.min(7,Math.trunc(Number(shift)||0)))
+  };
+}
+function creativeProgram(e){
+  if(Array.isArray(e?.creativePhases)&&e.creativePhases.length){
+    return e.creativePhases.slice(0,8).map(p=>creativePhase(p.effect,p.speed,p.minutes,p.shift||0));
+  }
+  const name=String(e?.name||"").toLowerCase(),base=layerEffect(e?.effect),baseSpeed=Math.max(1,Math.min(5,Number(e?.speed)||2));
+  const factory=String(e?.id||"").includes("::factory:");
+  const colors=Array.isArray(e?.colors)?e.colors:[];
+  const solemn=/(remembrance|memorial|holocaust|pow\/mia|yom kippur|good friday|ash wednesday|gold star|pearl harbor|transgender day of remembrance)/.test(name);
+  const patriotic=/(independence|flag day|veterans|armed forces|patriot day|constitution|freedom day|presidents|memorial day|d-day|korean war|purple heart)/.test(name);
+  const rainbow=/(pride|lgbtq|coming out|homophobia|transphobia)/.test(name);
+  const winter=/(christmas|hanukkah|kwanzaa|winter solstice)/.test(name);
+  const carnival=/(mardi gras|cinco de mayo|diwali|lunar new year|st\. patrick|easter|new year)/.test(name);
+  const family=/(valentine|mother.?s day|father.?s day|parents.? day|grandparents)/.test(name);
+  const p=(effect,speed,minutes,shift=0)=>creativePhase(effect,speed,minutes,shift);
+
+  if(factory){
+    const opposite=base==="Flow2"?"Flow1":"Flow2";
+    const accent=base==="Twinkle"?"Breathe":base==="Breathe"?"Twinkle":"Breathe";
+    return [p(base,Math.min(baseSpeed,4),10,0),p(accent,Math.min(baseSpeed,2),8,1),p(opposite,Math.min(baseSpeed,3),12,-1)];
+  }
+  if(/new year.?s eve/.test(name))return [p("Streamlight",4,7),p("Twinkle",5,7,1),p("Cycle",3,8,2),p("Flow2",3,8,-1)];
+  if(/new year.?s day/.test(name))return [p("Flow1",3,8),p("Twinkle",3,7,1),p("Breathe",1,7),p("Flow2",3,8,-1)];
+  if(/halloween/.test(name))return [p("Streamlight",3,8),p("Twinkle",3,7,1),p("Breathe",2,7,2),p("Flow2",3,8,-1)];
+  if(/christmas day/.test(name))return [p("Flow1",2,8),p("Breathe",1,7,1),p("Twinkle",2,7,2),p("Flow2",2,8,-1)];
+  if(/christmas eve/.test(name))return [p("Breathe",1,9),p("Flow1",2,8,1),p("Twinkle",1,6,2),p("Flow2",2,7,-1)];
+  if(/independence day/.test(name))return [p("Flow1",3,8),p("Cycle",3,7,1),p("Twinkle",4,7,2),p("Flow2",3,8,-1)];
+  if(/mardi gras/.test(name))return [p("Flow1",3,7),p("Twinkle",3,8,1),p("Streamlight",3,7,2),p("Flow2",3,8,-1)];
+  if(/diwali/.test(name))return [p("Breathe",1,7),p("Twinkle",3,8,1),p("Streamlight",3,7,2),p("Flow1",2,8,-1)];
+  if(/lunar new year/.test(name))return [p("Streamlight",3,8),p("Flow1",3,7,1),p("Twinkle",2,7),p("Flow2",3,8,-1)];
+  if(/valentine/.test(name))return [p("Breathe",1,9),p("Flow1",2,7,1),p("Twinkle",1,6,2),p("Flow2",2,8,-1)];
+  if(solemn)return [p("Static",1,15),p("Breathe",1,15,1)];
+  if(patriotic)return [p("Flow1",2,10),p("Breathe",1,8,1),p("Flow2",2,12,-1)];
+  if(rainbow)return [p("Flow1",3,8),p("Flow2",3,8,1),p("Breathe",1,7,2),p("Streamlight",2,7,-1)];
+  if(winter)return [p(base,Math.min(baseSpeed,2),10),p("Twinkle",1,8,1),p("Breathe",1,12,-1)];
+  if(carnival)return [p(base,Math.min(baseSpeed,3),9),p("Twinkle",2,7,1),p("Flow2",2,7,-1),p("Breathe",1,7,2)];
+  if(family)return [p("Breathe",1,12),p("Flow1",2,9,1),p("Twinkle",1,9,-1)];
+  if(e?.rule==="Month"){
+    if(colors.length>=3)return [p(base,Math.min(baseSpeed,2),12),p("Breathe",1,8,1),p("Flow2",2,10,-1)];
+    return [p("Breathe",1,18),p(base,Math.min(baseSpeed,2),12,1)];
+  }
+  if(e?.kind==="Seasonal")return [p(base,Math.min(baseSpeed,2),12),p("Streamlight",2,8,1),p("Breathe",1,10,-1)];
+  if(e?.kind==="Holiday"&&colors.length>=2)return [p(base,Math.min(baseSpeed,3),12),p("Twinkle",1,7,1),p("Flow2",2,11,-1)];
+  if(colors.length>=2)return [p(base,Math.min(baseSpeed,2),18),p("Breathe",1,12,1)];
+  return [p(base,Math.min(baseSpeed,2),30)];
+}
+function creativeLayerCount(e){return creativeProgram(e).length;}
+
 normalizeEffects(catalog);
 const legacySpeed=v=>[1,3,5,8,10][Math.max(1,Math.min(5,Math.round(Number(v)||3)))-1];
 function migrateSpeeds(value){
@@ -431,6 +472,7 @@ async function config(){
       if(JSON.stringify(e.colors)!==JSON.stringify(mode===0?p.major:mode===1?p.basic:p.expanded))o.colors=e.colors;
       if(e.enabled===false)o.enabled=false;
       if(e.favorite)o.favorite=true;
+      if(Array.isArray(e.creativePhases)&&e.creativePhases.length)o.creativePhases=creativeProgram(e);
       if(Object.keys(o).length)overrides[e.id]=o;
     }
     put("event_overrides",overrides);put("initialized",true);
@@ -517,9 +559,10 @@ function displayEvents(cfg,url){
     const category=categoryByIndex.get(e.categoryIndex)||catalog.categories[0],label=when(e,year,cfg.special||[]);
     if(search&&!(e.name+" "+label+" "+e.kind+" "+category.name).toLowerCase().includes(search))continue;
     const original=eventById.get(e.id),defaults=original?.profiles;
+    const layers=creativeProgram(e),layersCustomized=Array.isArray(e.creativePhases)&&e.creativePhases.length>0;
     rows.push({id:e.id,name:e.name,kind:e.kind,categoryId:category.id,categoryName:category.name,categoryColor:category.color,
-      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:creativeLayerCount(e),enabled:e.enabled!==false,favorite:!!e.favorite,
-      customized:!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
+      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:layers.length,layers,layersCustomized,enabled:e.enabled!==false,favorite:!!e.favorite,
+      customized:layersCustomized||!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
        ||JSON.stringify(e.colors)!==JSON.stringify(mode===0?defaults.major:mode===1?defaults.basic:defaults.expanded))});
     if(!month&&rows.length>=96)break;
   }
@@ -724,12 +767,17 @@ async function route(req,res){
       if(!original)throw fail(404,"Unknown event");
       if(body.reset){const mode=Number(cfg.settings.mode||0),p=original.profiles;
         e.effect=mode===2?p.expandedEffect:original.effect;e.speed=mode===2?p.expandedSpeed:original.speed;
-        e.colors=mode===0?p.major:mode===1?p.basic:p.expanded;
+        e.colors=mode===0?p.major:mode===1?p.basic:p.expanded;delete e.creativePhases;
         const overrides=meta("event_overrides",{});delete overrides[e.id];put("event_overrides",overrides);
       }else{
         const o=meta("event_overrides",{});o[e.id]??={};
         for(const key of ["enabled","favorite","effect","speed"])if(Object.hasOwn(body,key)){e[key]=body[key];o[e.id][key]=body[key];}
         if(Array.isArray(body.colors)){e.colors=colorInts(body.colors);o[e.id].colors=e.colors;}
+        if(Array.isArray(body.layers)){
+          if(body.layers.length<1)throw fail(400,"An event must have at least one lighting layer");
+          const layers=body.layers.slice(0,8).map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift));
+          e.creativePhases=layers;o[e.id].creativePhases=layers;
+        }
         put("event_overrides",o);
       }
     });
