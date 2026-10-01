@@ -109,15 +109,19 @@
   function renderLiveState(state){
     if(!state)return;latestState=state;
     const row=document.querySelector(".jh2RunningNow"),info=state.runningNow||{};
+    const events=state.scheduledEvent?.events||[];
+    const runningTarget=info.id==="manual-override"
+      ? (events.find(event=>event.id&&event.name===info.name)||info)
+      : info;
     if(row){
       const title=row.querySelector("strong"),meta=row.querySelector("small");
       if(title)title.textContent=info.name||"No scheduled scene running";
       const brightness=Number(info.brightness),parts=[info.effect,Number.isFinite(brightness)?brightness+"%":null,info.phase].filter(Boolean);
       if(meta)meta.textContent=parts.join(" · ");
+      row.dataset.linkedEventId=runningTarget?.id||"";
     }
-    eventLink(row,info,state.scheduledEvent?.night);
+    eventLink(row,runningTarget,state.scheduledEvent?.night);
     const tonight=document.getElementById("tonightEvent");
-    const events=state.scheduledEvent?.events||[];
     if(tonight){
       tonight.replaceChildren();
       if(events.length)events.forEach((event,index)=>{
@@ -202,7 +206,9 @@
       #scheduledEventName{display:none!important}
       .v3ScheduleCard>#scheduleWindow{font-size:12px;line-height:1.55;overflow-wrap:normal}
       .v3ScheduleCard>#resumeSchedule{width:100%;max-width:none!important;min-height:44px;font-size:12px}
-      .jh2RunningNow{display:grid;gap:3px;width:100%;margin-top:4px;padding:11px 12px;border:1px solid #8daaff28;border-radius:13px;background:#0c1a32;color:inherit;text-align:left;font:inherit;appearance:none}
+      .jh2RunningNow{display:grid;gap:3px;width:100%;margin-top:4px;padding:11px 12px;border:1px solid #8daaff28;border-radius:13px;background:#0c1a32;color:inherit;text-align:left;font:inherit;appearance:none;touch-action:manipulation}
+      .jh2RunningNow.v3CurrentEventLink{cursor:pointer;border-color:#8fb7ff66}
+      .jh2RunningNow.v3CurrentEventLink:active{transform:scale(.995)}
       .jh2RunningNow>span{font-size:9px;font-weight:750;letter-spacing:.14em;color:#9db9e7}
       .jh2RunningNow>strong{font-size:13px;line-height:1.35;color:#f1f6ff;overflow-wrap:anywhere}
       .jh2RunningNow>small{font-size:10px;line-height:1.4;color:#a8bddf}
