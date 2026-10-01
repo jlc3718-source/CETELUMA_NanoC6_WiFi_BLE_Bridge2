@@ -14,35 +14,28 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 5
     steps:
-      - name: Read live scenes without changing lights
+      - name: Resolve current Eufy factory effects
         shell: bash
         run: |
           set -euo pipefail
           TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
           test -n "$TOKEN"
           STATUS="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1')"
-          python3 - "$STATUS" <<'PY'
+          CAT="$(curl -fsS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/eufy/factory-presets?raw=1')"
+          python3 - "$STATUS" "$CAT" <<'PY'
           import json,sys
-          s=json.loads(sys.argv[1])
-          print("AUTOMATION_OWNER",s.get("automationOwner"))
-          print("OVERRIDE",json.dumps(s.get("override"),sort_keys=True))
+          s=json.loads(sys.argv[1]); c=json.loads(sys.argv[2])
           print("CALENDAR_CURRENT",json.dumps((s.get("calendar") or {}).get("current"),sort_keys=True))
-          print("LAST_COMMAND",json.dumps(s.get("lastCommand"),sort_keys=True))
           for row in s.get("desired",[]):
               try: scene=json.loads(row.get("scene") or "{}")
               except Exception: scene={"raw":row.get("scene")}
-              print("DESIRED",row.get("name"),json.dumps(scene,sort_keys=True),row.get("updated_at"))
+              print("DESIRED",row.get("name"),json.dumps(scene,sort_keys=True))
+          needles=("10057","10700","30041")
+          hits=[]
+          for p in c.get("presets",[]):
+              blob=json.dumps(p,sort_keys=True)
+              if any(n in blob for n in needles):
+                  hits.append(p)
+          print("FACTORY_HITS",json.dumps(hits,sort_keys=True))
+          print("FACTORY_COUNT",len(c.get("presets",[])))
           PY
-          for NAME in Pool House Garage Shed; do
-            PAYLOAD="$(printf '{"target":"%s"}' "$NAME")"
-            PROBE="$(curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'               --data "$PAYLOAD" 'http://127.0.0.1:8080/api/mqtt-probe')"
-            python3 - "$NAME" "$PROBE" <<'PY'
-          import json,sys
-          name=sys.argv[1]; p=json.loads(sys.argv[2])
-          print("PROBE",name,json.dumps({
-            "brokerAccepted":p.get("brokerAccepted"),
-            "deviceReported":p.get("deviceReported"),
-            "report":p.get("report")
-          },sort_keys=True))
-          PY
-          done
