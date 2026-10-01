@@ -189,6 +189,8 @@ jobs:
           assert 'data-page="master"' not in text and 'data-page="lights"' not in text
           assert 'speedInput.max="10"' in text, 'base event speed control'
           assert 'eventLayersEditor' in text and 'Palette shift' in text and 'Lamp blocks (per color)' in text and 'eventLayerBlocks' in text and 'eventLayerMirror' in text and 'layers:layerValues' in text
+          assert 'eventFullEditor' in text and 'Back to Events' in text and 'Live multi-bulb preview' in text
+          assert 'segmentedPaletteIndex' in text and 'createLayeredMiniPreview?.(e.name,previewLayers)' in text
           assert 'layerSpeed.max=String(5)' in text, 'layer speed must remain on Oracle 1-5 phase scale'
           ui=Path('JasonHome2Server/web/v3_mockup.js').read_text()
           assert 'id="homeSpeed" type="range" min="1" max="10"' in ui
