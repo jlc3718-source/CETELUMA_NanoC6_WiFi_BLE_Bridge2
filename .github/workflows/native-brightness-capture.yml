@@ -1,0 +1,54 @@
+name: Native brightness capture
+
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths:
+      - '.capture/native-brightness-request.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jason-home-native-brightness-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: jason-home-cloudflare-rebuild
+      - name: Start, read, or stop passive native brightness capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          python3 - "$TOKEN" <<'PY'
+          import json,sys,urllib.request
+          token=sys.argv[1]
+          req=json.load(open('.capture/native-brightness-request.json'))
+          action=req.get('action','status')
+          target=req.get('target','Pool')
+          base='http://127.0.0.1:8080'
+          def call(path,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              request=urllib.request.Request(base+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              return json.load(urllib.request.urlopen(request,timeout=60))
+          if action=='start':
+              out=call('/api/mqtt-capture/start',{'target':target})
+          elif action=='status':
+              out=call('/api/mqtt-capture')
+          elif action=='stop':
+              out=call('/api/mqtt-capture/stop',{})
+          else:
+              raise SystemExit('Unknown action '+action)
+          print(json.dumps(out,indent=2,sort_keys=True))
+          open('/tmp/native-brightness-result.json','w').write(json.dumps({'request':req,'capture':out},indent=2,sort_keys=True)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-brightness-capture
+          path: /tmp/native-brightness-result.json
