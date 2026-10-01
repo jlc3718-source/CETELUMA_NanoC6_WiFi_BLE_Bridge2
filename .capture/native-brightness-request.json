@@ -1,6 +1,7 @@
 {
-  "action": "status",
+  "action": "start",
   "target": "Pool",
-  "purpose": "Read completed clean Pool brightness capture",
-  "sequence": "100 start -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100"
+  "purpose": "Discard prior Pool capture and start clean passive native brightness capture",
+  "sequence": "1 -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100",
+  "note": "Jason Home automation paused by capture mode; Eufy app is the only command source"
 }
