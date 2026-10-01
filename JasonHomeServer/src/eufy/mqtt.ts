@@ -39,7 +39,7 @@ export function stopCommandCapture(){stopCaptureSocket?.();stopCaptureSocket=nul
 export async function startCommandCapture(creds:MqttCredentials,target:MqttTarget,durationMs=1800000){
   stopCommandCapture();
   const started=Date.now(),ends=started+durationMs;
-  commandCapture={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:target.name,model:target.model,samples:[],requestTopicsGranted:false};
+  commandCapture={active:false,startedAt:new Date(started).toISOString(),endsAt:new Date(ends).toISOString(),target:target.name,model:target.model,samples:[],rawSamples:[],requestTopicsGranted:false};
   const state=commandCapture,reader=new Reader();
   const socket=tlsConnect({host:creds.endpoint_addr,port:creds.endpoint_port||8883,servername:creds.endpoint_addr,key:creds.private_key,cert:creds.certificate_pem,ca:creds.aws_root_ca1_pem,rejectUnauthorized:true});
   socket.on("data",(data:any)=>reader.push(Buffer.from(data)));
@@ -52,8 +52,10 @@ export async function startCommandCapture(creds:MqttCredentials,target:MqttTarge
     socket.write(connectPacket(`android-eufy_life-${creds.user_id||"u"}-${captureName}-capture-${Math.random().toString(16).slice(2)}`));
     const ack=await reader.next(8000,"Capture CONNACK");
     if(ack.type!==2||ack.data[1]!==0)throw new Error("Capture broker refused connection");
-    const base=`cmd/eufy_life/${target.model}/${target.serial}`;
-    const requested=[base+"/req",base+"/app/req",...topics(target)];
+    const base=`cmd/eufy_life/${target.model}/${target.serial}`,syncBase=`synq/eufy_life/${target.model}/${target.serial}`;
+    // Subscribe to the complete per-device namespace so Eufy app commands are
+    // captured even when the mobile app uses a request subtopic we have not seen before.
+    const requested=[base+"/#",syncBase+"/#",base+"/req",base+"/app/req",...topics(target)];
     socket.write(subscribePacket(requested));
     let sub=await reader.next(8000,"Capture SUBACK");
     while(sub.type===3){
@@ -62,7 +64,7 @@ export async function startCommandCapture(creds:MqttCredentials,target:MqttTarge
     }
     if(sub.type!==9||sub.data.length!==requested.length+2)throw new Error("Capture subscription reply invalid");
     state.subscriptions=requested.map((topic,i)=>({topic:topic.replace(target.serial,target.name),granted:sub.data[i+2]!==128}));
-    state.requestTopicsGranted=sub.data[2]!==128||sub.data[3]!==128;
+    state.requestTopicsGranted=state.subscriptions.some((x:any)=>x.granted&&String(x.topic).includes("/req"));
     if(!state.subscriptions.some((s:any)=>s.granted))throw new Error("Capture topics denied by broker");
     state.active=true;
     void (async()=>{
@@ -74,15 +76,46 @@ export async function startCommandCapture(creds:MqttCredentials,target:MqttTarge
           if(p.type!==3)continue;
           let off=2;const length=p.data.readUInt16BE(0),topic=p.data.subarray(off,off+length).toString();off+=length;
           if(p.qos===1){socket.write(pubAck(p.data.readUInt16BE(off)));off+=2;}
+          const receivedAt=new Date().toISOString(),payload=p.data.subarray(off);
+          const direction=/\/req(?:$|\/)/.test(topic)?"command":"report";
+          // First keep a bounded raw-frame observation before applying any of the
+          // legacy envelope/device filters. Account/token material is never stored.
+          const foundFrames:string[]=[];
           try{
-            const envelope=JSON.parse(p.data.subarray(off).toString()),outer=typeof envelope.payload==="string"?JSON.parse(envelope.payload):envelope.payload;
+            const root=JSON.parse(payload.toString());
+            const visit=(value:any,depth=0)=>{
+              if(depth>5||value==null)return;
+              if(typeof value==="string"){
+                if(value.length<8)return;
+                try{visit(JSON.parse(value),depth+1);}catch{}
+                try{
+                  const b=Buffer.from(value,"base64");
+                  if(b.length>=8){
+                    try{visit(JSON.parse(b.toString("utf8")),depth+1);}catch{}
+                    if(b[0]===0xff&&b[1]===9)foundFrames.push(b.toString("hex"));
+                  }
+                }catch{}
+                if(/^[0-9a-fA-F]{20,}$/.test(value)){
+                  try{const b=Buffer.from(value,"hex");if(b[0]===0xff&&b[1]===9)foundFrames.push(b.toString("hex"));}catch{}
+                }
+                return;
+              }
+              if(Array.isArray(value)){for(const x of value)visit(x,depth+1);return;}
+              if(typeof value==="object")for(const x of Object.values(value))visit(x,depth+1);
+            };
+            visit(root);
+          }catch{}
+          state.rawSamples.push({at:receivedAt,direction,topic:topic.replace(target.serial,target.name),frames:[...new Set(foundFrames)]});
+          if(state.rawSamples.length>600)state.rawSamples.shift();
+          try{
+            const envelope=JSON.parse(payload.toString()),outer=typeof envelope.payload==="string"?JSON.parse(envelope.payload):envelope.payload;
             if(!outer||((outer.sn||outer.device_sn||target.serial)!==target.serial))continue;
             const frame=captureFrame(outer.data);
             if(frame.length<10||frame[0]!==255||frame[1]!==9)continue;
             let checksum=0;for(const byte of frame)checksum^=byte;if(checksum!==0)continue;
             const opcode=frame.readUInt16BE(7),fields:Record<string,string>={};
             for(let i=opcode===0x0a00?10:9;i+1<frame.length-1;){const tag=frame[i++],size=frame[i++];if(i+size>frame.length-1)break;if(tag>=0xa3)fields[tag.toString(16)]=frame.subarray(i,i+size).toString("hex");i+=size;}
-            state.samples.push({at:new Date().toISOString(),direction:topic.endsWith("/req")?"command":"report",opcode,fields});
+            state.samples.push({at:receivedAt,direction,opcode,fields,rawFrame:frame.toString("hex")});
             if(state.samples.length>600)state.samples.shift();
           }catch{}
         }
