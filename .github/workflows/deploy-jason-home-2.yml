@@ -152,7 +152,10 @@ jobs:
           print('Running now:', json.dumps(state.get('runningNow')))
           print('Tonight:', json.dumps([{'id':e.get('id'),'name':e.get('name')} for e in expected]))
           print('Next change:', json.dumps(state.get('nextChange')))
-          assert len(read('/api/events')['events'])>0
+          event_rows=read('/api/events')['events']
+          assert len(event_rows)>0
+          suicide=next(e for e in event_rows if e['id']=='evt134')
+          assert suicide.get('nativeFactoryEffect')=='Garden Romance' and suicide.get('effect')=='Garden Romance', suicide
           assert len(read('/api/colors')['presets'])==36
           assert len(read('/api/event-categories')['categories'])==15
           assert 'presets' in read('/api/presets')

@@ -559,9 +559,9 @@ function displayEvents(cfg,url){
     const category=categoryByIndex.get(e.categoryIndex)||catalog.categories[0],label=when(e,year,cfg.special||[]);
     if(search&&!(e.name+" "+label+" "+e.kind+" "+category.name).toLowerCase().includes(search))continue;
     const original=eventById.get(e.id),defaults=original?.profiles;
-    const layers=creativeProgram(e),layersCustomized=Array.isArray(e.creativePhases)&&e.creativePhases.length>0;
+    const nativeFactoryEffect=String(e.factoryEffectName||"").trim(),layers=nativeFactoryEffect?[]:creativeProgram(e),layersCustomized=Array.isArray(e.creativePhases)&&e.creativePhases.length>0;
     rows.push({id:e.id,name:e.name,kind:e.kind,categoryId:category.id,categoryName:category.name,categoryColor:category.color,
-      when:label,effect:e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:layers.length,layers,layersCustomized,enabled:e.enabled!==false,favorite:!!e.favorite,
+      when:label,effect:nativeFactoryEffect||e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:nativeFactoryEffect?1:layers.length,layers,layersCustomized,nativeFactoryEffect:nativeFactoryEffect||null,enabled:e.enabled!==false,favorite:!!e.favorite,
       customized:layersCustomized||!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
        ||JSON.stringify(e.colors)!==JSON.stringify(mode===0?defaults.major:mode===1?defaults.basic:defaults.expanded))});
     if(!month&&rows.length>=96)break;
@@ -768,9 +768,11 @@ async function route(req,res){
       if(body.reset){const mode=Number(cfg.settings.mode||0),p=original.profiles;
         e.effect=mode===2?p.expandedEffect:original.effect;e.speed=mode===2?p.expandedSpeed:original.speed;
         e.colors=mode===0?p.major:mode===1?p.basic:p.expanded;delete e.creativePhases;
+        if(original.factoryEffectName)e.factoryEffectName=original.factoryEffectName;else delete e.factoryEffectName;
         const overrides=meta("event_overrides",{});delete overrides[e.id];put("event_overrides",overrides);
       }else{
         const o=meta("event_overrides",{});o[e.id]??={};
+        if(Object.hasOwn(body,"effect")||Object.hasOwn(body,"layers")||Array.isArray(body.colors))delete e.factoryEffectName;
         for(const key of ["enabled","favorite","effect","speed"])if(Object.hasOwn(body,key)){e[key]=body[key];o[e.id][key]=body[key];}
         if(Array.isArray(body.colors)){e.colors=colorInts(body.colors);o[e.id].colors=e.colors;}
         if(Array.isArray(body.layers)){

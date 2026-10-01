@@ -29,6 +29,7 @@ for i, row in enumerate(rows):
             "expandedEffect": design["effect"], "expandedSpeed": design["speed"],
         },
         "categoryIndex": indexes[i], "major": i in major,
+        **({"factoryEffectName": "Garden Romance"} if eid == "evt134" else {}),
     })
 
 palette_source = (root / "JasonHome/app/src/main/java/com/jasonhome/app/LightPresetCatalog.java").read_text()
