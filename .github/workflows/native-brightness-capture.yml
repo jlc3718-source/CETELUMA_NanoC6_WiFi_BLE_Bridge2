@@ -31,7 +31,7 @@ jobs:
           token=sys.argv[1]
           req=json.load(open('.capture/native-brightness-request.json'))
           action=req.get('action','status')
-          target=req.get('target','Pool')
+          target=req.get('target','All')
           base='http://127.0.0.1:8080'
           def call(path,body=None):
               data=None if body is None else json.dumps(body).encode()
