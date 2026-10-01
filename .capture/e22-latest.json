@@ -8,19 +8,19 @@
         "ok": true,
         "published": 1,
         "report": {
-          "brightness": 80,
-          "cloudEffectId": 10300,
+          "brightness": 97,
+          "cloudEffectId": 10700,
           "cmd": 2560,
           "colorGradient": false,
-          "effectId": 10300,
+          "effectId": 10700,
           "effectMode": 2,
           "lampCount": 60,
           "power": true,
           "rawFields": {
             "a3": "3c00",
-            "a4": "3c28",
+            "a4": "cc29",
             "a5": "00",
-            "a6": "3c280000",
+            "a6": "cc290000",
             "a7": "00000000000000000000000000000000",
             "a8": "02",
             "a9": "00"
@@ -35,18 +35,18 @@
         "ok": true,
         "published": 1,
         "report": {
-          "brightness": 80,
-          "cloudEffectId": 4294967295,
+          "brightness": 97,
+          "cloudEffectId": 10057,
           "cmd": 2560,
           "colorGradient": false,
-          "effectId": 20005,
+          "effectId": 30041,
           "lampCount": 60,
           "power": true,
           "rawFields": {
             "a3": "3c00",
-            "a4": "254e",
+            "a4": "5975",
             "a5": "00",
-            "a6": "ffffffff",
+            "a6": "49270000",
             "a7": "0000001e000000000000000000000000"
           }
         },
@@ -59,18 +59,18 @@
         "ok": true,
         "published": 1,
         "report": {
-          "brightness": 80,
-          "cloudEffectId": 4294967295,
+          "brightness": 97,
+          "cloudEffectId": 10057,
           "cmd": 2560,
           "colorGradient": false,
-          "effectId": 20005,
+          "effectId": 30041,
           "lampCount": 60,
           "power": true,
           "rawFields": {
             "a3": "3c00",
-            "a4": "254e",
+            "a4": "5975",
             "a5": "00",
-            "a6": "ffffffff",
+            "a6": "49270000",
             "a7": "00000000000000000000000000000000"
           }
         },
@@ -83,19 +83,19 @@
         "ok": true,
         "published": 1,
         "report": {
-          "brightness": 100,
-          "cloudEffectId": 10300,
+          "brightness": 97,
+          "cloudEffectId": 10700,
           "cmd": 2560,
           "colorGradient": false,
-          "effectId": 10300,
+          "effectId": 10700,
           "effectMode": 2,
           "lampCount": 30,
           "power": true,
           "rawFields": {
             "a3": "1e00",
-            "a4": "3c28",
+            "a4": "cc29",
             "a5": "00",
-            "a6": "3c280000",
+            "a6": "cc290000",
             "a7": "00000030000000000000000000000000",
             "a8": "02",
             "a9": "00"
@@ -105,9 +105,9 @@
       }
     }
   },
-  "readAt": "2026-09-30T02:51:00.749583+00:00",
+  "readAt": "2026-10-01T02:51:13.680709+00:00",
   "request": {
     "action": "counts",
-    "requestId": "all-string-counts-20260929-2248"
+    "requestId": "brightness-post-deploy-verify-20261001"
   }
 }
