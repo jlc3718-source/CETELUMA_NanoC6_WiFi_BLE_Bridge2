@@ -77,7 +77,9 @@ function patterned(e,phases){
 function creativeProgram(e){
   const colors=Array.isArray(e?.colors)?e.colors:[],colorCount=Math.max(1,Math.min(8,colors.length||1));
   if(Array.isArray(e?.creativePhases)&&e.creativePhases.length){
-    return patterned(e,e.creativePhases.slice(0,8).map(p=>creativePhase(p.effect,p.speed,p.minutes,p.shift||0,normalizePattern(p.pattern,colorCount))));
+    const saved=e.creativePhases.slice(0,8).map(p=>creativePhase(p.effect,p.speed,p.minutes,p.shift||0,normalizePattern(p.pattern,colorCount)));
+    if(saved.length===1){const only=saved[0],alt=only.effect==="Breathe"?"Flow1":only.effect==="Flow1"?"Breathe":"Flow1";saved.push(creativePhase(alt,Math.min(only.speed,2),Math.max(4,only.minutes),1));}
+    return patterned(e,saved);
   }
   const name=String(e?.name||"").toLowerCase(),base=layerEffect(e?.effect),baseSpeed=Math.max(1,Math.min(5,Number(e?.speed)||2));
   const factory=String(e?.id||"").includes("::factory:");
@@ -110,7 +112,7 @@ function creativeProgram(e){
   else if(e?.kind==="Seasonal")out=[p(base,Math.min(baseSpeed,2),8),p("Streamlight",2,7,1),p("Breathe",1,8,-1),p("Twinkle",1,7,2)];
   else if(e?.kind==="Holiday"&&colors.length>=2)out=[p(base,Math.min(baseSpeed,3),8),p("Twinkle",1,6,1),p("Flow2",2,8,-1),p("Breathe",1,8,2)];
   else if(colors.length>=2)out=[p(base,Math.min(baseSpeed,2),9),p("Breathe",1,8,1),p("Flow2",2,7,-1),p("Static",1,6,2)];
-  else out=[p(base,Math.min(baseSpeed,2),15),p("Breathe",1,15)];
+  else {const alt=base==="Breathe"?"Flow1":base==="Flow1"?"Breathe":"Flow1";out=[p(base,Math.min(baseSpeed,2),15),p(alt,1,15,1)];}
   return patterned(e,out);
 }
 function creativeLayerCount(e){return creativeProgram(e).length;}

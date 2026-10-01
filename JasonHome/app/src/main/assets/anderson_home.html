@@ -452,7 +452,7 @@ async function loadSavedColors(){try{if(API_MODE){const e=await api("/api/colors
     const remove=document.createElement("button");remove.type="button";remove.className="btn danger eventLayerRemove";remove.textContent="Remove";
     up.onclick=()=>{const prev=row.previousElementSibling;if(prev){layers.insertBefore(row,prev);renumberLayers()}};
     down.onclick=()=>{const next=row.nextElementSibling;if(next){layers.insertBefore(next,row);renumberLayers()}};
-    remove.onclick=()=>{if(layers.children.length<=1)return status("An event must keep at least one layer.");row.remove();renumberLayers()};
+    remove.onclick=()=>{if(layers.children.length<=2)return status("Events keep at least two layers so the show always has multiple effects.");row.remove();renumberLayers()};
     actions.append(up,down,remove);head.append(title,actions);
 
     const fields=document.createElement("div");fields.style.display="grid";fields.style.gridTemplateColumns="repeat(auto-fit,minmax(125px,1fr))";fields.style.gap="8px";
@@ -512,7 +512,7 @@ async function loadSavedColors(){try{if(API_MODE){const e=await api("/api/colors
         mirror:!!row.querySelector(".eventLayerMirror").checked
       }
     }));
-    if(!layerValues.length)return status("An event must keep at least one layer.");
+    if(layerValues.length<2)return status("An event must keep at least two layers.");
     await eventChange(e.id,{effect:effect.value,speed:+speedInput.value,colors:colorValues,layers:layerValues})&&status(e.name+" updated. The saved layers will be used by future scheduled runs.")
   };
   const restore=document.createElement("button");restore.className="btn";restore.textContent="Restore Default";
