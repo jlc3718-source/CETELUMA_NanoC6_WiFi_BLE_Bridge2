@@ -187,15 +187,23 @@ function parseColor(v:any):number|null{
 }
 function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
   const colors=Array.isArray(input?.colors)?input.colors.map(parseColor).filter((x:any)=>x!=null).slice(0,8) as number[]:base.colors;
-  return {
+  const source=input&&typeof input==="object"?input:{};
+  const hasFactory=Object.prototype.hasOwnProperty.call(source,"factoryEffectName");
+  const requestedFactory=hasFactory?String(source.factoryEffectName||"").trim().slice(0,100):"";
+  const recipeChanged=["effect","colors","speed"].some(key=>Object.prototype.hasOwnProperty.call(source,key));
+  const inheritedFactory=!hasFactory&&!recipeChanged?String(base.factoryEffectName||"").trim().slice(0,100):"";
+  const factoryEffectName=requestedFactory||inheritedFactory||undefined;
+  const scene:Scene={
     power:input?.power==null?base.power:!!input.power,
     brightness:clamp(Number(input?.brightness??base.brightness)||base.brightness,1,100),
     effect:canonicalEffect(input?.effect||base.effect),
     colors:colors.length?colors:[...base.colors],
     speed:clamp(Number(input?.speed??base.speed)||base.speed,1,10)
   };
+  if(factoryEffectName)scene.factoryEffectName=factoryEffectName;
+  return scene;
 }
-function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,brightness:scene.brightness,effect:scene.effect,colors:scene.colors,speed:scene.speed});}
+function sceneKey(scene:Scene){return JSON.stringify({power:!!scene.power,brightness:scene.brightness,effect:scene.effect,colors:scene.colors,speed:scene.speed,factoryEffectName:scene.factoryEffectName||null});}
 function offScene():Scene{return {power:false,brightness:DEFAULT_SCENE.brightness,effect:DEFAULT_SCENE.effect,colors:[...DEFAULT_SCENE.colors],speed:DEFAULT_SCENE.speed};}
 function scheduleRows():ScheduleRow[]{
   return db.prepare("SELECT * FROM schedules WHERE enabled=1 ORDER BY priority DESC,name ASC").all() as unknown as ScheduleRow[];
