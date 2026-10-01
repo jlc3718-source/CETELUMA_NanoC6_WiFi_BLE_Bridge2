@@ -576,12 +576,12 @@ async function state(){
   const scheduled=s.calendar?.current||null;
   const overrideEventId=String(meta("running_event_id","")||"");
   const runningNow=s.override?.active
-    ? {id:overrideEventId||"manual-override",name:String(meta("running_name","Manual override")||"Manual override"),effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:overrideEventId?"Tonight override":"Manual override",schedule2:false}
+    ? {id:overrideEventId||"manual-override",name:String(meta("running_name","Manual override")||"Manual override"),effect:scene.factoryEffectName||scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:overrideEventId?"Tonight override":"Manual override",schedule2:false}
     : scheduled
-      ? {id:scheduled.id||"",name:scheduled.name||"Scheduled scene",effect:scheduled.scene?.effect||scene.effect||"Solid / Static",
+      ? {id:scheduled.id||"",name:scheduled.name||"Scheduled scene",effect:scheduled.scene?.factoryEffectName||scheduled.scene?.effect||scene.factoryEffectName||scene.effect||"Solid / Static",
           brightness:Number(scheduled.scene?.brightness??scene.brightness)||75,
           phase:String(scheduled.id||"").startsWith("white-override")?"White override":scheduled.schedule2?"Schedule 2":"Schedule 1",schedule2:!!scheduled.schedule2}
-      : {id:"",name:"No scheduled scene running",effect:scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Idle",schedule2:false};
+      : {id:"",name:"No scheduled scene running",effect:scene.factoryEffectName||scene.effect||"Solid / Static",brightness:Number(scene.brightness)||75,phase:"Idle",schedule2:false};
   const nextChange=s.nextEvent?{name:s.nextEvent.name||"Next change",at:s.nextEvent.at||null,phase:s.nextEvent.phase||"",source:s.nextEvent.source||""}:null;
   const today=localDay(new Date()),night=lightingNightDate(cfg,new Date(),nightLocation.lat,nightLocation.lon,nightLocation.tz);
   const tonight=nightEvents(cfg,night),single=tonight.length===1?tonight[0]:null,id=single?.id||"";
@@ -589,7 +589,7 @@ async function state(){
     events:tonight,night,enabled:a.enabled!==false,toggleable:!!single,upcoming:false,type:id.includes("::factory:")?"factoryPromotion":id.startsWith("schedule-")?"customSchedule":id?"builtin":"none",
     custom:id.startsWith("schedule-"),factoryLightId:id.includes("::factory:")?Number(id.split("::factory:")[1]):undefined};
   return {firmwareVersion:"Jason Home 2 • Oracle Web",power:!!scene.power,brightness:scene.brightness,speed:scene.speed,
-    running:{name:runningNow.name,effect:scene.effect,colors:rgb(scene.colors)},runningNow,nextChange,
+    running:{name:runningNow.name,effect:scene.factoryEffectName||scene.effect,colors:rgb(scene.colors)},runningNow,nextChange,
     resolverAuthority:{oracleBuild:s.build?.sha||"",resolverBuild:resolverSha,inSync:!!resolverSha&&resolverSha===s.build?.sha},
     settings:{on:clock(a.on),off:clock(a.off),lead:a.lead,trail:a.trail,overlap:Number(a.overlap)||0,
       tz:"America/New_York",scheduler:a.enabled,scheduler2:a.schedule2Enabled,
@@ -647,7 +647,7 @@ async function route(req,res){
     const options=candidates.map(({id,name,source})=>{
       const scene=resolveNightCandidateScene(cfg,night,id,now,nightLocation.lat,nightLocation.lon,nightLocation.tz);
       return {id,name,type:id.includes("::factory:")?"Factory event":(cfg.customSchedules||[]).some(x=>x.id===id)?"Custom event":"Calendar event",
-        effect:String(scene?.effect||source.effect||"Static"),speed:Number(scene?.speed||source.speed||1),
+        effect:String(scene?.factoryEffectName||scene?.effect||source.factoryEffectName||source.effect||"Static"),speed:Number(scene?.speed||source.speed||1),
         colors:rgb(source.colors||scene?.colors||[]),scene:scene?{...scene,colors:rgb(scene.colors)}:null};
     }).filter(x=>x.scene);
     return send(res,200,{ok:true,night,options});
