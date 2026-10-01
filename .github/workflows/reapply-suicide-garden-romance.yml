@@ -1,0 +1,74 @@
+name: Reapply Suicide Prevention Garden Romance
+
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths:
+      - '.github/workflows/reapply-suicide-garden-romance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply-and-verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Select Suicide Prevention through Jason Home 2 and verify native Eufy IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,urllib.request,http.cookiejar
+          from pathlib import Path
+
+          token=next(line.split('=',1)[1] for line in Path('/home/ubuntu/repo/JasonHomeServer/.env').read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          jar=http.cookiejar.CookieJar()
+          jh2=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar),urllib.request.ProxyHandler({}))
+          def jh2_call(path,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request('http://127.0.0.1:8081'+path,data,{'Content-Type':'application/json'})
+              return json.load(jh2.open(req,timeout=90))
+          jh2_call('/api/session',{'token':token})
+          options=jh2_call('/api/tonight-options')
+          choice=next((x for x in options.get('options',[]) if x.get('id')=='evt134'),None)
+          if not choice:
+              raise SystemExit('evt134 is not an eligible tonight option: '+json.dumps(options))
+          print('TONIGHT_OPTION',json.dumps(choice,sort_keys=True))
+          if choice.get('scene',{}).get('factoryEffectName')!='Garden Romance':
+              raise SystemExit('Tonight option lost native factory marker: '+json.dumps(choice))
+          selected=jh2_call('/api/tonight-options',{'id':'evt134'})
+          print('SELECTED',json.dumps(selected,sort_keys=True))
+
+          def oracle(path,body=None):
+              data=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              return json.load(urllib.request.urlopen(req,timeout=90))
+          expected={
+              'Pool':(30041,10057),
+              'House':(30041,10057),
+              'Garage':(10700,10700),
+              'Shed':(10700,10700),
+          }
+          last={}
+          for attempt in range(12):
+              ok=True
+              last={}
+              for name,(effect,cloud) in expected.items():
+                  p=oracle('/api/mqtt-probe',{'target':name})
+                  report=p.get('report') or {}
+                  pair=(int(report.get('effectId') or -1),int(report.get('cloudEffectId') or -1))
+                  last[name]=pair
+                  if pair!=(effect,cloud): ok=False
+              if ok: break
+              time.sleep(2)
+          status=oracle('/api/status?refresh=1')
+          print('OVERRIDE',json.dumps(status.get('override'),sort_keys=True))
+          print('DEVICE_IDS',json.dumps(last,sort_keys=True))
+          if (status.get('override') or {}).get('scene',{}).get('factoryEffectName')!='Garden Romance':
+              raise SystemExit('Oracle override did not preserve Garden Romance marker')
+          for name,pair in last.items():
+              if tuple(pair)!=expected[name]:
+                  raise SystemExit(f'{name} wrong native state {pair}, expected {expected[name]}')
+          print('PASS: Suicide Prevention tonight override is the captured native Garden Romance state on all four strings')
+          PY
