@@ -159,6 +159,7 @@ jobs:
           assert suicide.get('speed')==1, suicide
           assert suicide.get('colors')==['#00B4B4','#5B00E6','#00B4B4','#5B00E6'], suicide
           assert not suicide.get('nativeFactoryEffect'), suicide
+          assert suicide.get('layers') and suicide['layers'][0].get('pattern',{}).get('blocks'), suicide
           assert len(read('/api/colors')['presets'])==36
           assert len(read('/api/event-categories')['categories'])==15
           assert 'presets' in read('/api/presets')
@@ -187,7 +188,7 @@ jobs:
           assert 'data-page="ai"' in text and 'id="aiSendButton"' in text and 'id="aiApplyOnceButton"' in text
           assert 'data-page="master"' not in text and 'data-page="lights"' not in text
           assert 'speedInput.max="10"' in text, 'base event speed control'
-          assert 'eventLayersEditor' in text and 'Palette shift' in text and 'layers:layerValues' in text
+          assert 'eventLayersEditor' in text and 'Palette shift' in text and 'Lamp blocks (per color)' in text and 'eventLayerBlocks' in text and 'eventLayerMirror' in text and 'layers:layerValues' in text
           assert 'layerSpeed.max=String(5)' in text, 'layer speed must remain on Oracle 1-5 phase scale'
           ui=Path('JasonHome2Server/web/v3_mockup.js').read_text()
           assert 'id="homeSpeed" type="range" min="1" max="10"' in ui

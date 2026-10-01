@@ -32,31 +32,55 @@ const AI_EFFECTS=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Brea
 const AI_SYSTEM=`You are the Jason Home lighting designer. Hold a natural back-and-forth conversation, offer concrete design ideas, and revise earlier ideas when asked.
 You can only design using these native effects: Static, Flow1, Flow2, Cycle, Streamlight, Twinkle, Breathe.
 Speeds are 1-10 in the UI, but prefer 1-5 for scheduled shows unless the user specifically asks for faster. Pool and Shed are physically reversed by the controller automatically; do not compensate in the recipe.
-A draft can have 1-8 layers. Each layer has effect, speed, minutes, and shift. shift rotates the palette order: 0 normal, 1 one step, 2 two steps, etc.
+A draft can have 1-8 layers. Each layer has effect, speed, minutes, shift, blocks, offset, and mirror. shift rotates the palette order. blocks is the repeating number of individually-addressed lamps assigned to each palette color, for example [5,3] means five of color 1 then three of color 2. offset shifts that block pattern along the string. mirror makes the pattern reflect from both ends. Use only the colors in the draft palette; never introduce a new color just for a gap.
 If the user is brainstorming or asking for alternatives, reply conversationally and draft may be null. If they have described a concrete show, provide a draft.
 target_event should be the exact holiday/event name when possible (for example Christmas Day, Halloween, Independence Day), otherwise date may be YYYY-MM-DD.
 Return JSON only with this shape:
-{"reply":"natural conversational response","draft":null or {"name":"short show name","target_event":"event name or empty","date":"YYYY-MM-DD or empty","brightness":1-100,"colors":["#RRGGBB"],"layers":[{"effect":"native effect","speed":1-10,"minutes":2-30,"shift":0-7}]}}
+{"reply":"natural conversational response","draft":null or {"name":"short show name","target_event":"event name or empty","date":"YYYY-MM-DD or empty","brightness":1-100,"colors":["#RRGGBB"],"layers":[{"effect":"native effect","speed":1-10,"minutes":2-30,"shift":0-7,"blocks":[5,3],"offset":0,"mirror":false}]}}
 Never claim a draft has been applied or scheduled; the user must press a button.`;
 function layerEffect(value){
   const name=String(value||"Flow1");
   return nativeEffects.has(name)?name:oldEffects[name]||"Flow1";
 }
-function creativePhase(effect,speed,minutes,shift=0){
+function normalizePattern(value,colorCount){
+  if(colorCount<2||!value||typeof value!=="object")return null;
+  const raw=Array.isArray(value.blocks)?value.blocks:[];
+  const blocks=raw.slice(0,Math.max(2,Math.min(8,colorCount))).map(v=>Math.max(1,Math.min(12,Math.round(Number(v)||1))));
+  while(blocks.length<colorCount)blocks.push(blocks[blocks.length%Math.max(1,blocks.length)]||1);
+  return blocks.length?{blocks:blocks.slice(0,colorCount),offset:Math.trunc(Number(value.offset)||0),mirror:!!value.mirror}:null;
+}
+function patternSeed(e){
+  const text=String(e?.id||e?.name||"event");let h=2166136261;
+  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
+  return h>>>0;
+}
+function defaultPattern(e,phaseIndex,colorCount){
+  if(colorCount<2)return null;
+  const bank=[[5,3,2,4,6,2,3,1],[4,2,5,3,2,6,1,4],[6,3,2,5,4,1,3,2],[3,2,7,2,4,3,1,5],[5,2,3,6,2,4,3,1],[2,4,6,3,5,2,1,4]];
+  const seed=patternSeed(e),row=bank[(seed+phaseIndex)%bank.length],blocks=Array.from({length:Math.min(8,colorCount)},(_,i)=>row[(i+phaseIndex)%row.length]);
+  const total=blocks.reduce((a,b)=>a+b,0);
+  return {blocks,offset:total?((seed>>>3)+phaseIndex*3)%total:0,mirror:((seed+phaseIndex)&3)===0};
+}
+function creativePhase(effect,speed,minutes,shift=0,pattern=null){
   return {
     effect:layerEffect(effect),
     speed:Math.max(1,Math.min(5,Math.round(Number(speed)||1))),
     minutes:Math.max(2,Math.min(30,Math.round(Number(minutes)||8))),
-    shift:Math.max(-7,Math.min(7,Math.trunc(Number(shift)||0)))
+    shift:Math.max(-7,Math.min(7,Math.trunc(Number(shift)||0))),
+    pattern
   };
 }
+function patterned(e,phases){
+  const count=Math.max(1,Math.min(8,(Array.isArray(e?.colors)?e.colors.length:0)||1));
+  return phases.map((p,i)=>({...p,pattern:normalizePattern(p.pattern,count)||defaultPattern(e,i,count)}));
+}
 function creativeProgram(e){
+  const colors=Array.isArray(e?.colors)?e.colors:[],colorCount=Math.max(1,Math.min(8,colors.length||1));
   if(Array.isArray(e?.creativePhases)&&e.creativePhases.length){
-    return e.creativePhases.slice(0,8).map(p=>creativePhase(p.effect,p.speed,p.minutes,p.shift||0));
+    return patterned(e,e.creativePhases.slice(0,8).map(p=>creativePhase(p.effect,p.speed,p.minutes,p.shift||0,normalizePattern(p.pattern,colorCount))));
   }
   const name=String(e?.name||"").toLowerCase(),base=layerEffect(e?.effect),baseSpeed=Math.max(1,Math.min(5,Number(e?.speed)||2));
   const factory=String(e?.id||"").includes("::factory:");
-  const colors=Array.isArray(e?.colors)?e.colors:[];
   const solemn=/(remembrance|memorial|holocaust|pow\/mia|yom kippur|good friday|ash wednesday|gold star|pearl harbor|transgender day of remembrance)/.test(name);
   const patriotic=/(independence|flag day|veterans|armed forces|patriot day|constitution|freedom day|presidents|memorial day|d-day|korean war|purple heart)/.test(name);
   const rainbow=/(pride|lgbtq|coming out|homophobia|transphobia)/.test(name);
@@ -64,36 +88,30 @@ function creativeProgram(e){
   const carnival=/(mardi gras|cinco de mayo|diwali|lunar new year|st\. patrick|easter|new year)/.test(name);
   const family=/(valentine|mother.?s day|father.?s day|parents.? day|grandparents)/.test(name);
   const p=(effect,speed,minutes,shift=0)=>creativePhase(effect,speed,minutes,shift);
-
-  if(factory){
-    const opposite=base==="Flow2"?"Flow1":"Flow2";
-    const accent=base==="Twinkle"?"Breathe":base==="Breathe"?"Twinkle":"Breathe";
-    return [p(base,Math.min(baseSpeed,4),10,0),p(accent,Math.min(baseSpeed,2),8,1),p(opposite,Math.min(baseSpeed,3),12,-1)];
-  }
-  if(/new year.?s eve/.test(name))return [p("Streamlight",4,7),p("Twinkle",5,7,1),p("Cycle",3,8,2),p("Flow2",3,8,-1)];
-  if(/new year.?s day/.test(name))return [p("Flow1",3,8),p("Twinkle",3,7,1),p("Breathe",1,7),p("Flow2",3,8,-1)];
-  if(/halloween/.test(name))return [p("Streamlight",3,8),p("Twinkle",3,7,1),p("Breathe",2,7,2),p("Flow2",3,8,-1)];
-  if(/christmas day/.test(name))return [p("Flow1",2,8),p("Breathe",1,7,1),p("Twinkle",2,7,2),p("Flow2",2,8,-1)];
-  if(/christmas eve/.test(name))return [p("Breathe",1,9),p("Flow1",2,8,1),p("Twinkle",1,6,2),p("Flow2",2,7,-1)];
-  if(/independence day/.test(name))return [p("Flow1",3,8),p("Cycle",3,7,1),p("Twinkle",4,7,2),p("Flow2",3,8,-1)];
-  if(/mardi gras/.test(name))return [p("Flow1",3,7),p("Twinkle",3,8,1),p("Streamlight",3,7,2),p("Flow2",3,8,-1)];
-  if(/diwali/.test(name))return [p("Breathe",1,7),p("Twinkle",3,8,1),p("Streamlight",3,7,2),p("Flow1",2,8,-1)];
-  if(/lunar new year/.test(name))return [p("Streamlight",3,8),p("Flow1",3,7,1),p("Twinkle",2,7),p("Flow2",3,8,-1)];
-  if(/valentine/.test(name))return [p("Breathe",1,9),p("Flow1",2,7,1),p("Twinkle",1,6,2),p("Flow2",2,8,-1)];
-  if(solemn)return [p("Static",1,15),p("Breathe",1,15,1)];
-  if(patriotic)return [p("Flow1",2,10),p("Breathe",1,8,1),p("Flow2",2,12,-1)];
-  if(rainbow)return [p("Flow1",3,8),p("Flow2",3,8,1),p("Breathe",1,7,2),p("Streamlight",2,7,-1)];
-  if(winter)return [p(base,Math.min(baseSpeed,2),10),p("Twinkle",1,8,1),p("Breathe",1,12,-1)];
-  if(carnival)return [p(base,Math.min(baseSpeed,3),9),p("Twinkle",2,7,1),p("Flow2",2,7,-1),p("Breathe",1,7,2)];
-  if(family)return [p("Breathe",1,12),p("Flow1",2,9,1),p("Twinkle",1,9,-1)];
-  if(e?.rule==="Month"){
-    if(colors.length>=3)return [p(base,Math.min(baseSpeed,2),12),p("Breathe",1,8,1),p("Flow2",2,10,-1)];
-    return [p("Breathe",1,18),p(base,Math.min(baseSpeed,2),12,1)];
-  }
-  if(e?.kind==="Seasonal")return [p(base,Math.min(baseSpeed,2),12),p("Streamlight",2,8,1),p("Breathe",1,10,-1)];
-  if(e?.kind==="Holiday"&&colors.length>=2)return [p(base,Math.min(baseSpeed,3),12),p("Twinkle",1,7,1),p("Flow2",2,11,-1)];
-  if(colors.length>=2)return [p(base,Math.min(baseSpeed,2),18),p("Breathe",1,12,1)];
-  return [p(base,Math.min(baseSpeed,2),30)];
+  let out;
+  if(factory){const opposite=base==="Flow2"?"Flow1":"Flow2",accent=base==="Twinkle"?"Breathe":base==="Breathe"?"Twinkle":"Breathe";out=[p(base,Math.min(baseSpeed,4),8),p(accent,Math.min(baseSpeed,2),7,1),p(opposite,Math.min(baseSpeed,3),8,-1),p("Static",1,5,2)];}
+  else if(/new year.?s eve/.test(name))out=[p("Streamlight",4,7),p("Twinkle",5,6,1),p("Cycle",3,7,2),p("Flow2",3,7,-1),p("Static",1,4,3)];
+  else if(/new year.?s day/.test(name))out=[p("Flow1",3,7),p("Twinkle",3,6,1),p("Breathe",1,7),p("Flow2",3,7,-1)];
+  else if(/halloween/.test(name))out=[p("Streamlight",3,7),p("Twinkle",3,6,1),p("Breathe",2,6,2),p("Flow2",3,7,-1),p("Static",1,4)];
+  else if(/christmas day/.test(name))out=[p("Flow1",2,7),p("Breathe",1,6,1),p("Twinkle",2,6,2),p("Flow2",2,7,-1),p("Static",1,4,1)];
+  else if(/christmas eve/.test(name))out=[p("Breathe",1,7),p("Flow1",2,7,1),p("Twinkle",1,5,2),p("Flow2",2,7,-1),p("Static",1,4)];
+  else if(/independence day/.test(name))out=[p("Flow1",3,7),p("Cycle",3,6,1),p("Twinkle",4,6,2),p("Flow2",3,7,-1),p("Static",1,4)];
+  else if(/mardi gras/.test(name))out=[p("Flow1",3,6),p("Twinkle",3,6,1),p("Streamlight",3,6,2),p("Flow2",3,7,-1),p("Breathe",1,5)];
+  else if(/diwali/.test(name))out=[p("Breathe",1,6),p("Twinkle",3,6,1),p("Streamlight",3,6,2),p("Flow1",2,7,-1),p("Static",1,5)];
+  else if(/lunar new year/.test(name))out=[p("Streamlight",3,7),p("Flow1",3,6,1),p("Twinkle",2,6),p("Flow2",3,7,-1),p("Static",1,4,2)];
+  else if(/valentine/.test(name))out=[p("Breathe",1,7),p("Flow1",2,6,1),p("Twinkle",1,5,2),p("Flow2",2,7,-1),p("Static",1,5)];
+  else if(solemn)out=[p("Static",1,10),p("Breathe",1,10,1),p("Static",1,10,-1)];
+  else if(patriotic)out=[p("Flow1",2,8),p("Breathe",1,7,1),p("Twinkle",2,6,2),p("Flow2",2,8,-1)];
+  else if(rainbow)out=[p("Flow1",3,7),p("Flow2",3,7,1),p("Breathe",1,6,2),p("Streamlight",2,6,-1),p("Twinkle",2,4,3)];
+  else if(winter)out=[p(base,Math.min(baseSpeed,2),8),p("Twinkle",1,7,1),p("Breathe",1,8,-1),p("Flow2",2,7,2)];
+  else if(carnival)out=[p(base,Math.min(baseSpeed,3),7),p("Twinkle",2,6,1),p("Flow2",2,6,-1),p("Breathe",1,6,2),p("Streamlight",2,5)];
+  else if(family)out=[p("Breathe",1,8),p("Flow1",2,7,1),p("Twinkle",1,6,-1),p("Static",1,5,2)];
+  else if(e?.rule==="Month")out=colors.length>=3?[p(base,Math.min(baseSpeed,2),8),p("Breathe",1,7,1),p("Flow2",2,8,-1),p("Twinkle",1,7,2)]:[p("Breathe",1,10),p(base,Math.min(baseSpeed,2),10,1),p("Static",1,10,-1)];
+  else if(e?.kind==="Seasonal")out=[p(base,Math.min(baseSpeed,2),8),p("Streamlight",2,7,1),p("Breathe",1,8,-1),p("Twinkle",1,7,2)];
+  else if(e?.kind==="Holiday"&&colors.length>=2)out=[p(base,Math.min(baseSpeed,3),8),p("Twinkle",1,6,1),p("Flow2",2,8,-1),p("Breathe",1,8,2)];
+  else if(colors.length>=2)out=[p(base,Math.min(baseSpeed,2),9),p("Breathe",1,8,1),p("Flow2",2,7,-1),p("Static",1,6,2)];
+  else out=[p(base,Math.min(baseSpeed,2),15),p("Breathe",1,15)];
+  return patterned(e,out);
 }
 function creativeLayerCount(e){return creativeProgram(e).length;}
 
@@ -275,8 +293,9 @@ const AI_SCHEMA={
       {type:"object",additionalProperties:false,required:["name","target_event","date","brightness","colors","layers"],properties:{
         name:{type:"string"},target_event:{type:"string"},date:{type:"string"},brightness:{type:"integer"},
         colors:{type:"array",items:{type:"string"}},
-        layers:{type:"array",items:{type:"object",additionalProperties:false,required:["effect","speed","minutes","shift"],properties:{
-          effect:{type:"string",enum:AI_EFFECTS},speed:{type:"integer"},minutes:{type:"integer"},shift:{type:"integer"}
+        layers:{type:"array",items:{type:"object",additionalProperties:false,required:["effect","speed","minutes","shift","blocks","offset","mirror"],properties:{
+          effect:{type:"string",enum:AI_EFFECTS},speed:{type:"integer"},minutes:{type:"integer"},shift:{type:"integer"},
+          blocks:{type:"array",items:{type:"integer"}},offset:{type:"integer"},mirror:{type:"boolean"}
         }}}
       }}
     ]}
@@ -285,10 +304,12 @@ const AI_SCHEMA={
 function sanitizeAiDraft(raw){
   if(!raw||typeof raw!=="object")return null;
   const colors=(Array.isArray(raw.colors)?raw.colors:[]).map(hex).filter(x=>/^#[0-9A-F]{6}$/.test(x)).slice(0,8);
-  const layers=(Array.isArray(raw.layers)?raw.layers:[]).slice(0,8).map(p=>({
-    effect:AI_EFFECTS.includes(String(p?.effect))?String(p.effect):"Flow1",
-    speed:clamp(p?.speed??2,1,5),minutes:clamp(p?.minutes??6,2,30),shift:Math.max(0,Math.min(7,Math.trunc(Number(p?.shift)||0)))
-  }));
+  const rawLayers=(Array.isArray(raw.layers)?raw.layers:[]).slice(0,8).map(p=>creativePhase(
+    AI_EFFECTS.includes(String(p?.effect))?String(p.effect):"Flow1",
+    clamp(p?.speed??2,1,5),clamp(p?.minutes??6,2,30),Math.max(0,Math.min(7,Math.trunc(Number(p?.shift)||0))),
+    normalizePattern({blocks:p?.blocks,offset:p?.offset,mirror:p?.mirror},Math.max(1,colors.length))
+  ));
+  const layers=patterned({id:"ai-"+String(raw.name||"draft"),name:String(raw.name||"AI Light Show"),colors},rawLayers);
   if(!colors.length||!layers.length)return null;
   return {name:String(raw.name||"AI Light Show").trim().slice(0,80)||"AI Light Show",target_event:String(raw.target_event||"").trim().slice(0,100),
     date:String(raw.date||"").trim().slice(0,10),brightness:clamp(raw.brightness??100,1,100),colors,layers};
@@ -717,7 +738,7 @@ async function route(req,res){
       for(let i=0;i<layers.length;i++){
         if(token!==aiPreviewGeneration)return;
         const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
-        await upstream("/api/control","POST",{name:"AI Preview • "+draft.name+" • Layer "+(i+1),target:"All",power:true,brightness:draft.brightness||100,effect:p.effect,colors:colorInts(palette),speed:p.speed});
+        await upstream("/api/control","POST",{name:"AI Preview • "+draft.name+" • Layer "+(i+1),target:"All",power:true,brightness:draft.brightness||100,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern});
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
     })().catch(()=>{});
@@ -777,7 +798,8 @@ async function route(req,res){
         if(Array.isArray(body.colors)){e.colors=colorInts(body.colors);o[e.id].colors=e.colors;}
         if(Array.isArray(body.layers)){
           if(body.layers.length<1)throw fail(400,"An event must have at least one lighting layer");
-          const layers=body.layers.slice(0,8).map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift));
+          const colorCount=Math.max(1,Math.min(8,(Array.isArray(e.colors)?e.colors.length:0)||1));
+          const layers=body.layers.slice(0,8).map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift,normalizePattern(p?.pattern,colorCount)));
           e.creativePhases=layers;o[e.id].creativePhases=layers;
         }
         put("event_overrides",o);
