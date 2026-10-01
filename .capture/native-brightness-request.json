@@ -1,8 +1,5 @@
 {
-  "action": "start",
+  "action": "status",
   "target": "All",
-  "purpose": "Arm verified simultaneous passive brightness capture on all four strings",
-  "sequence": "For each string: 1 -> 10 -> 20 -> 30 -> 40 -> 50 -> 60 -> 70 -> 80 -> 90 -> 100",
-  "note": "Automation paused for the full capture; no Jason Home lighting commands should run",
-  "attempt": "all-four-after-production-deploy"
+  "purpose": "Read completed simultaneous brightness capture for all four strings"
 }
