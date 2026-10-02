@@ -72,7 +72,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.67";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.68";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -614,37 +614,6 @@ void setupRoutes(){
     for(size_t i=0;i<EVENT_COUNT;i++){if(!eventAllowedInActiveSchedule(i)||!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<MAX_BUILTIN_EVENTS?eventOverrides[i].valid:false;e["speed"]=(i<MAX_BUILTIN_EVENTS&&eventOverrides[i].valid)?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
     d["overlap"]=monthly>1?String(monthly)+" month-long events enabled — overlap rule applies.":(monthly==1?"1 month-long event enabled.":"No month-long awareness themes enabled.");
     String out;serializeJson(d,out);sendJson(out);
-  });
-  server.on("/api/night-calendar",HTTP_GET,[]{
-    if(!requireUser())return;
-    int year=server.arg("year").toInt(),month=server.arg("month").toInt();
-    if(year<2020||year>2037||month<1||month>12){server.send(400,"application/json","{\"error\":\"Choose a supported month\"}");return;}
-    tm first{};first.tm_year=year-1900;first.tm_mon=month-1;first.tm_mday=1;first.tm_hour=12;first.tm_isdst=-1;mktime(&first);
-    tm next=first;next.tm_mon++;mktime(&next);next.tm_mday=0;mktime(&next);
-    const int days=next.tm_mday;const auto& settings=store.get();
-    JsonDocument output;output["year"]=year;output["month"]=month;JsonArray dates=output["days"].to<JsonArray>();
-    for(int day=1;day<=days;day++){
-      tm night=first;night.tm_mday=day;night.tm_hour=12;night.tm_min=0;night.tm_sec=0;night.tm_isdst=-1;mktime(&night);
-      JsonObject entry=dates.add<JsonObject>();entry["day"]=day;JsonArray items=entry["events"].to<JsonArray>();
-      if(!settings.schedulerEnabled&&!settings.schedule2Enabled)continue;
-      Theme custom;uint8_t customBrightness=100,customSpeed=1;String customId;
-      if(resolveCustomSchedule(night,custom,customBrightness,customSpeed,&customId)){
-        JsonObject item=items.add<JsonObject>();item["id"]=customId;item["name"]=custom.name;item["effect"]=effectName(custom.effect);item["type"]="Custom event";
-        JsonArray colors=item["colors"].to<JsonArray>();for(uint8_t c=0;c<custom.colorCount;c++)colors.add(colorHex(custom.colors[c]));continue;
-      }
-      for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-        if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;
-        const bool exact=eventActiveOn(i,night);
-        const bool window=!exact&&EVENTS[i].kind==EventKind::Holiday&&(settings.leadDays||settings.trailDays)
-          &&eventWindowActiveOn(i,night,settings.leadDays,settings.trailDays);
-        if(!exact&&!window)continue;
-        Theme theme=effectiveEventTheme(i);JsonObject item=items.add<JsonObject>();item["id"]=EVENTS[i].id;item["name"]=EVENTS[i].name;
-        item["effect"]=effectName(theme.effect);item["type"]=kindName(EVENTS[i].kind);JsonArray colors=item["colors"].to<JsonArray>();
-        for(uint8_t c=0;c<theme.colorCount;c++)colors.add(colorHex(theme.colors[c]));
-      }
-      yield();
-    }
-    String json;serializeJson(output,json);sendJson(json);
   });
   server.on("/api/tonight-options",HTTP_GET,[]{
     if(!requireUser())return;if(!timeValid()){server.send(503,"application/json","{\"ok\":false,\"error\":\"Waiting for time sync\"}");return;}
