@@ -7,15 +7,21 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 test('separate web gateway authenticates, serves the UI, and reads the shared calendar',async()=>{
-  const calendar={revision:1,settings:{mode:2,enabled:true,categoryMask:32767,on:1020,off:1380,startAtDusk:false,
-    schedule2Enabled:true,schedule2EndAtDawn:false,schedule2End:360,overlap:0},events:[],customSchedules:[
+  let calendar={revision:1,settings:{mode:2,enabled:true,categoryMask:32767,on:1020,off:1380,startAtDusk:false,
+    schedule2Enabled:true,schedule2EndAtDawn:false,schedule2End:360,overlap:0},events:[
+      {id:'evt179',name:'Halloween',kind:'Holiday',rule:'Fixed',month:10,day:31,weekday:0,nth:0,offsetDays:0,durationDays:1,effect:'Flow1',speed:2,colors:[0xff6600,0x8000ff],enabled:true,favorite:false,categoryIndex:0,major:true}
+    ],customSchedules:[
       {id:'schedule-leap',name:'Leap Night',enabled:true,annual:false,year:2028,month:2,day:29,effect:'Breath',colors:[0x123456]}
     ],special:[]};
   const reads={status:0,calendar:0};
-  const backend=http.createServer((req,res)=>{
+  const backend=http.createServer(async(req,res)=>{
     assert.equal(req.headers.authorization,'Bearer test-key');
     if(req.url==='/api/status')reads.status++;
     if(req.url==='/api/calendar')reads.calendar++;
+    if(req.url==='/api/calendar/sync'&&req.method==='POST'){
+      let raw='';for await(const chunk of req)raw+=chunk;
+      calendar=JSON.parse(raw);res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,revision:calendar.revision}));return;
+    }
     res.setHeader('content-type','application/json');
     res.end(JSON.stringify(req.url==='/api/calendar'?{ok:true,calendar}:req.url==='/api/status'?{
       eufy:{ready:true,readyNames:['Pool','House','Garage','Shed']},calendar:{current:null},desired:[]
@@ -47,9 +53,25 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.match(calendarJs,/\.v3ScheduleCard\{grid-template-columns:minmax\(0,1fr\)!important/);
     assert.match(calendarJs,/cell\.addEventListener\("click",\(\)=>showNight/);
     assert.match(calendarJs,/Show all schedules/);
-    const events=await fetch(base+'/api/events',{headers:{cookie}});
-    const eventRows=(await events.json()).events;
-    assert.equal(eventRows.length,0);
+    assert.match(html,/Restore Built-in Schedule/);
+    assert.match(html,/Entire month/);
+    assert.match(html,/Use custom time for this event/);
+    const events=await fetch(base+'/api/events?year=2026&month=10',{headers:{cookie}});
+    let eventRows=(await events.json()).events;
+    const halloween=eventRows.find(e=>e.id==='evt179');assert.ok(halloween,JSON.stringify(eventRows));
+    assert.equal(halloween.schedule.mode,'default');
+    assert.equal(halloween.schedule.customized,false);
+    const scheduleSave=await fetch(base+'/api/event',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({
+      id:'evt179',schedule:{mode:'month',annual:true,year:2026,startMonth:10,startDay:1,endMonth:10,endDay:31,customTime:true,start:'18:30',end:'23:00'}
+    })});
+    assert.equal(scheduleSave.status,200);
+    eventRows=(await (await fetch(base+'/api/events?year=2026&month=10',{headers:{cookie}})).json()).events;
+    const edited=eventRows.find(e=>e.id==='evt179');assert.equal(edited.schedule.mode,'month');assert.equal(edited.schedule.customized,true);
+    assert.equal(edited.schedule.start,'18:30');assert.equal(edited.schedule.end,'23:00');assert.match(edited.when,/all month/);assert.match(edited.when,/6:30 PM/);
+    assert.equal(calendar.events.find(e=>e.id==='evt179').scheduleOverride.mode,'month');
+    const resetSchedule=await fetch(base+'/api/event',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({id:'evt179',resetSchedule:true})});
+    assert.equal(resetSchedule.status,200);
+    assert.equal(calendar.events.find(e=>e.id==='evt179').scheduleOverride,undefined);
     const ai=await fetch(base+'/api/ai',{headers:{cookie}});
     const aiValue=await ai.json();
     assert.equal(aiValue.configured,false);
