@@ -165,6 +165,9 @@
         cell.append(dots);grid.append(cell);
       });
     }catch(error){if(sequence===request){
+      if(String(error?.message||"").toLowerCase().includes("valid profile pin")){
+        window.dispatchEvent(new Event("anderson-auth-required"));
+      }
       grid.replaceChildren();const message=document.createElement("div");message.className="andersonCalendarError";
       const text=document.createElement("span");text.textContent="Calendar unavailable"+(error?.message?": "+error.message:".");
       const retry=document.createElement("button");retry.type="button";retry.textContent="Try again";

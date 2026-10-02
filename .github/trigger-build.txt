@@ -1,1 +1,1 @@
-Anderson Home 3.1.63 Other Options for Tonight release
+Anderson Home 3.1.64 auth refresh for calendar and manual controls
