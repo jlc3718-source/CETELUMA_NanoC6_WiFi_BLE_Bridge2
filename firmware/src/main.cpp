@@ -293,9 +293,63 @@ bool eventAllowedInActiveSchedule(size_t i){
   return activeEventColorTheme==EventColorTheme::MajorUS||eventCategoryAllowsEvent(i);
 }
 
-struct EventOverrideCfg{bool valid=false;Effect effect=Effect::Jump;uint32_t colors[8]={0};uint8_t colorCount=0;uint8_t speed=1;};
+struct EventOverrideCfg{
+  bool valid=false;Effect effect=Effect::Jump;uint32_t colors[8]={0};uint8_t colorCount=0;uint8_t speed=1;
+  bool scheduleValid=false;uint8_t scheduleMode=0;uint16_t scheduleYear=0;
+  uint8_t startMonth=0,startDay=0,endMonth=0,endDay=0;bool customTime=false;uint16_t startMinutes=0,endMinutes=0;
+};
 static EventOverrideCfg eventOverrides[MAX_BUILTIN_EVENTS];
+static uint32_t eventScheduleOverrideGeneration=1;
 static String eventOverrideKey(size_t i){return String("e")+String((unsigned)i);}
+static int eventDaysInMonth(int year,int month){if(month<1||month>12)return 0;static const uint8_t days[]={31,28,31,30,31,30,31,31,30,31,30,31};if(month!=2)return days[month-1];bool leap=(year%4==0&&year%100!=0)||year%400==0;return leap?29:28;}
+static bool eventMonthDayValid(int year,int month,int day){return month>=1&&month<=12&&day>=1&&day<=eventDaysInMonth(year,month);}
+static bool eventOverrideDateActive(const EventOverrideCfg&o,const tm& local){
+  if(!o.scheduleValid||o.scheduleMode==0)return false;
+  const int year=local.tm_year+1900,month=local.tm_mon+1,day=local.tm_mday,md=month*100+day;
+  if(o.scheduleMode==3)return (!o.scheduleYear||year==o.scheduleYear)&&month==o.startMonth;
+  if(o.scheduleMode==1)return (!o.scheduleYear||year==o.scheduleYear)&&month==o.startMonth&&day==o.startDay;
+  if(o.scheduleMode!=2)return false;
+  const int startMd=o.startMonth*100+o.startDay,endMd=o.endMonth*100+o.endDay;
+  if(!o.scheduleYear)return startMd<=endMd?(md>=startMd&&md<=endMd):(md>=startMd||md<=endMd);
+  tm probe=local;probe.tm_hour=12;probe.tm_min=0;probe.tm_sec=0;probe.tm_isdst=-1;time_t current=mktime(&probe);
+  tm start{};start.tm_year=o.scheduleYear-1900;start.tm_mon=o.startMonth-1;start.tm_mday=o.startDay;start.tm_hour=12;start.tm_isdst=-1;time_t from=mktime(&start);
+  tm finish{};finish.tm_year=o.scheduleYear-1900+(endMd<startMd?1:0);finish.tm_mon=o.endMonth-1;finish.tm_mday=o.endDay;finish.tm_hour=12;finish.tm_isdst=-1;time_t to=mktime(&finish);
+  return current>=from&&current<=to;
+}
+static bool eventOverrideTimeActive(const EventOverrideCfg&o,const tm& local){
+  if(!o.scheduleValid||!o.customTime||o.startMinutes==o.endMinutes)return true;int minute=local.tm_hour*60+local.tm_min;
+  return o.startMinutes<o.endMinutes?(minute>=o.startMinutes&&minute<o.endMinutes):(minute>=o.startMinutes||minute<o.endMinutes);
+}
+bool eventEffectiveUsesMonthTier(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;const auto&o=eventOverrides[i];if(o.scheduleValid&&o.scheduleMode>0)return o.scheduleMode==3;return eventEffectiveUsesMonthTier(i);}
+bool eventEffectiveDateActiveOn(size_t i,const tm& local){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;const auto&o=eventOverrides[i];return o.scheduleValid&&o.scheduleMode>0?eventOverrideDateActive(o,local):eventActiveOn(i,local);}
+bool eventEffectiveActiveOn(size_t i,const tm& local){if(!eventEffectiveDateActiveOn(i,local))return false;return i<MAX_BUILTIN_EVENTS?eventOverrideTimeActive(eventOverrides[i],local):true;}
+bool eventEffectiveWindowDateActiveOn(size_t i,const tm& local,uint8_t lead,uint8_t trail){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;const auto&o=eventOverrides[i];if(o.scheduleValid&&o.scheduleMode>0)return false;return eventWindowActiveOn(i,local,lead,trail);}
+bool eventEffectiveWindowActiveOn(size_t i,const tm& local,uint8_t lead,uint8_t trail){if(!eventEffectiveWindowDateActiveOn(i,local,lead,trail))return false;return i<MAX_BUILTIN_EVENTS?eventOverrideTimeActive(eventOverrides[i],local):true;}
+bool eventEffectiveOccursInMonth(size_t i,int year,int month){
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;const auto&o=eventOverrides[i];if(!o.scheduleValid||o.scheduleMode==0)return eventOccursInMonth(i,year,month);
+  int days=eventDaysInMonth(year,month);for(int day=1;day<=days;day++){tm probe{};probe.tm_year=year-1900;probe.tm_mon=month-1;probe.tm_mday=day;probe.tm_hour=12;probe.tm_isdst=-1;mktime(&probe);if(eventOverrideDateActive(o,probe))return true;}return false;
+}
+static String eventMonthName(uint8_t month){static const char* names[]={"","January","February","March","April","May","June","July","August","September","October","November","December"};return month<=12?String(names[month]):String("");}
+String eventEffectiveWhen(size_t i,int year){
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return "No scheduled date";const auto&o=eventOverrides[i];String label;
+  if(!o.scheduleValid||o.scheduleMode==0)label=eventWhen(i,year);
+  else if(o.scheduleMode==3)label=String("All ")+eventMonthName(o.startMonth)+(o.scheduleYear?String(" ")+String(o.scheduleYear):String(" every year"));
+  else if(o.scheduleMode==1)label=eventMonthName(o.startMonth)+" "+String(o.startDay)+(o.scheduleYear?String(", ")+String(o.scheduleYear):String(" every year"));
+  else label=eventMonthName(o.startMonth)+" "+String(o.startDay)+" - "+eventMonthName(o.endMonth)+" "+String(o.endDay)+(o.scheduleYear?String(", ")+String(o.scheduleYear):String(" every year"));
+  if(o.scheduleValid&&o.customTime)label+=String(" • ")+fmtDisplayTime(o.startMinutes)+" - "+fmtDisplayTime(o.endMinutes);return label;
+}
+time_t eventEffectiveStartEpoch(size_t i,int year){
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return 0;const auto&o=eventOverrides[i];if(!o.scheduleValid||o.scheduleMode==0){time_t base=eventStartEpoch(i,year);if(!base||!o.scheduleValid||!o.customTime)return base;tm local{};localtime_r(&base,&local);local.tm_hour=o.startMinutes/60;local.tm_min=o.startMinutes%60;local.tm_sec=0;local.tm_isdst=-1;return mktime(&local);}
+  if(o.scheduleYear&&year!=o.scheduleYear)return 0;tm local{};local.tm_year=year-1900;local.tm_mon=o.startMonth-1;local.tm_mday=o.scheduleMode==3?1:o.startDay;local.tm_hour=o.customTime?o.startMinutes/60:0;local.tm_min=o.customTime?o.startMinutes%60:0;local.tm_sec=0;local.tm_isdst=-1;return mktime(&local);
+}
+uint32_t eventEffectiveScheduleGeneration(){return eventScheduleOverrideGeneration;}
+static void addEventScheduleJson(JsonObject e,size_t i,int year){
+  const auto&o=eventOverrides[i];JsonObject sc=e["schedule"].to<JsonObject>();sc["customized"]=o.scheduleValid;
+  sc["mode"]=!o.scheduleValid||o.scheduleMode==0?"default":(o.scheduleMode==1?"date":(o.scheduleMode==2?"range":"month"));sc["annual"]=!o.scheduleYear;sc["year"]=o.scheduleYear;
+  time_t base=eventStartEpoch(i,year);tm start{};if(base)localtime_r(&base,&start);uint8_t dm=base?(uint8_t)(start.tm_mon+1):1,dd=base?(uint8_t)start.tm_mday:1;
+  sc["startMonth"]=o.scheduleValid&&o.scheduleMode>0?o.startMonth:dm;sc["startDay"]=o.scheduleValid&&o.scheduleMode>0?o.startDay:dd;sc["endMonth"]=o.scheduleValid&&o.scheduleMode>0?o.endMonth:dm;sc["endDay"]=o.scheduleValid&&o.scheduleMode>0?o.endDay:dd;
+  sc["customTime"]=o.scheduleValid&&o.customTime;sc["start"]=fmtTime(o.startMinutes);sc["end"]=fmtTime(o.endMinutes);sc["builtIn"]=eventWhen(i,year);
+}
 static uint8_t scheduledEventSpeedHint=1;
 Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;if(i<EVENT_COUNT){if(activeEventColorTheme==EventColorTheme::MajorUS)applyMajorUsEventColors(i,t);else if(activeEventColorTheme==EventColorTheme::V3028)applyOriginalEventColors(i,t);else applyModernEventColors(t);}scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,2);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
 static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
@@ -353,8 +407,8 @@ static size_t collectTonightOptions(const tm& night,bool seen[MAX_BUILTIN_EVENTS
   auto& cfg=store.get();bool eligible[MAX_BUILTIN_EVENTS]={false};size_t candidateCount=0;
   for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
     if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;
-    const bool exact=eventActiveOn(i,night);
-    const bool window=!exact&&EVENTS[i].kind==EventKind::Holiday&&(cfg.leadDays||cfg.trailDays)&&eventWindowActiveOn(i,night,cfg.leadDays,cfg.trailDays);
+    const bool exact=eventEffectiveDateActiveOn(i,night);
+    const bool window=!exact&&EVENTS[i].kind==EventKind::Holiday&&(cfg.leadDays||cfg.trailDays)&&eventEffectiveWindowDateActiveOn(i,night,cfg.leadDays,cfg.trailDays);
     if(exact||window){eligible[i]=true;candidateCount++;}
   }
   if(!candidateCount)return 0;
@@ -366,7 +420,7 @@ static size_t collectTonightOptions(const tm& night,bool seen[MAX_BUILTIN_EVENTS
     probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;probe.tm_isdst=-1;mktime(&probe);
     Theme selected=scheduler.resolve(probe);
     for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eligible[i]&&!seen[i]){
-      if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
+      if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&eventEffectiveUsesMonthTier(i)&&eventEffectiveDateActiveOn(i,night)))seen[i]=true;
     }
   };
   for(int pos=0;pos<span;pos+=stride){mark(pos);if((pos&31)==0)yield();}
@@ -380,22 +434,46 @@ static bool tonightOptionById(const tm& night,const String& id,Theme& theme,uint
   for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i]&&id==EVENTS[i].id){theme=effectiveEventTheme(i);br=100;sp=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);return true;}
   return false;
 }
+static bool splitOverrideHead(const String& head,String* fields,size_t count){int pos=0;for(size_t i=0;i<count;i++){int bar=head.indexOf('|',pos);if(i+1==count){if(bar>=0)return false;fields[i]=head.substring(pos);return true;}if(bar<0)return false;fields[i]=head.substring(pos,bar);pos=bar+1;}return true;}
+static String serializeEventOverride(const EventOverrideCfg&o){
+  String raw=String("v5|")+(o.valid?"1":"0")+"|"+effectName(o.effect)+"|"+String(o.speed)+"|"+(o.scheduleValid?"1":"0")+"|"+String(o.scheduleMode)+"|"+String(o.scheduleYear)+"|"+String(o.startMonth)+"|"+String(o.startDay)+"|"+String(o.endMonth)+"|"+String(o.endDay)+"|"+(o.customTime?"1":"0")+"|"+String(o.startMinutes)+"|"+String(o.endMinutes)+";";
+  for(uint8_t c=0;c<o.colorCount;c++){if(c)raw+=",";raw+=colorHex(o.colors[c]);}return raw;
+}
+static bool writeEventOverride(size_t i,const EventOverrideCfg& next){
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i);Preferences p;if(!p.begin("anderson-event",false))return false;
+  if(!next.valid&&!next.scheduleValid){String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
+  String raw=serializeEventOverride(next);size_t wrote=p.putString(key.c_str(),raw);String verify=p.getString(key.c_str(),"");p.end();if(wrote!=raw.length()||verify!=raw)return false;eventOverrides[i]=next;return true;
+}
 static void loadEventOverrides(){
   for(size_t i=0;i<MAX_BUILTIN_EVENTS;i++)eventOverrides[i]=EventOverrideCfg();
   Preferences p;if(!p.begin("anderson-event",true))return;
   for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-    String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;int sep=raw.indexOf(';');if(sep<1)continue;String head=raw.substring(0,sep);EventOverrideCfg o;o.valid=true;
-    if(head.startsWith("v4|")){int b1=head.indexOf('|',3);if(b1<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1).toInt(),1,2);}
-    else if(head.startsWith("v3|")){int b1=head.indexOf('|',3);if(b1<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1).toInt(),1,2);}
-    else if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b1<0||b2<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1,b2).toInt(),1,2);}
-    else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,2);}else{o.effect=effectFromString(head);o.speed=1;}}
-    if(!head.startsWith("v4|")&&o.effect==Effect::Breath)o.effect=Effect::Jump;
-    String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}eventOverrides[i]=o;
+    String raw=p.getString(eventOverrideKey(i).c_str(),"");if(!raw.length())continue;int sep=raw.indexOf(';');if(sep<1)continue;String head=raw.substring(0,sep);EventOverrideCfg o;
+    if(head.startsWith("v5|")){
+      String part[14];if(!splitOverrideHead(head,part,14)||part[0]!="v5")continue;o.valid=part[1].toInt()!=0;o.effect=effectFromString(part[2]);o.speed=constrain(part[3].toInt(),1,2);o.scheduleValid=part[4].toInt()!=0;o.scheduleMode=constrain(part[5].toInt(),0,3);o.scheduleYear=constrain(part[6].toInt(),0,2037);o.startMonth=constrain(part[7].toInt(),0,12);o.startDay=constrain(part[8].toInt(),0,31);o.endMonth=constrain(part[9].toInt(),0,12);o.endDay=constrain(part[10].toInt(),0,31);o.customTime=part[11].toInt()!=0;o.startMinutes=constrain(part[12].toInt(),0,1439);o.endMinutes=constrain(part[13].toInt(),0,1439);
+      if(o.scheduleValid&&o.scheduleMode>0&&(!eventMonthDayValid(o.scheduleYear?o.scheduleYear:2026,o.startMonth,o.startDay)||!eventMonthDayValid(o.scheduleYear?o.scheduleYear:2026,o.endMonth,o.endDay)))o.scheduleValid=false;
+    }else{
+      o.valid=true;
+      if(head.startsWith("v4|")){int b1=head.indexOf('|',3);if(b1<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1).toInt(),1,2);}
+      else if(head.startsWith("v3|")){int b1=head.indexOf('|',3);if(b1<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1).toInt(),1,2);}
+      else if(head.startsWith("v2|")){int b1=head.indexOf('|',3),b2=b1<0?-1:head.indexOf('|',b1+1);if(b1<0||b2<0)continue;o.effect=effectFromString(head.substring(3,b1));o.speed=constrain(head.substring(b1+1,b2).toInt(),1,2);}
+      else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,2);}else{o.effect=effectFromString(head);o.speed=1;}}
+      if(!head.startsWith("v4|")&&o.effect==Effect::Breath)o.effect=Effect::Jump;
+    }
+    String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}
+    if(!o.colorCount){Theme base=themeFromEvent(i);o.colorCount=min((uint8_t)8,base.colorCount);for(uint8_t c=0;c<o.colorCount;c++)o.colors[c]=base.colors[c];}eventOverrides[i]=o;
   }
-  p.end();
+  p.end();eventScheduleOverrideGeneration++;
 }
-static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next;next.valid=true;next.effect=t.effect;next.speed=constrain(sp,1,2);next.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=andersonCorrectColor(t.colors[c]);String raw=String("v4|")+effectName(next.effect)+"|"+String(next.speed)+";";for(uint8_t c=0;c<next.colorCount;c++){if(c)raw+=",";raw+=colorHex(next.colors[c]);}Preferences p;if(!p.begin("anderson-event",false))return false;String key=eventOverrideKey(i);size_t wrote=p.putString(key.c_str(),raw);String verify=p.getString(key.c_str(),"");p.end();if(wrote!=raw.length()||verify!=raw)return false;eventOverrides[i]=next;return true;}
-static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;String key=eventOverrideKey(i);Preferences p;if(!p.begin("anderson-event",false))return false;String old=p.getString(key.c_str(),"");bool ok=!old.length()||p.remove(key.c_str());bool gone=!p.getString(key.c_str(),"").length();p.end();if(!ok||!gone)return false;eventOverrides[i]=EventOverrideCfg();return true;}
+static bool saveEventOverride(size_t i,const Theme& t,uint8_t sp=1){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next=eventOverrides[i];next.valid=true;next.effect=t.effect;next.speed=constrain(sp,1,2);next.colorCount=min((uint8_t)8,t.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=andersonCorrectColor(t.colors[c]);return writeEventOverride(i,next);}
+static bool saveEventScheduleOverride(size_t i,uint8_t mode,uint16_t year,uint8_t sm,uint8_t sd,uint8_t em,uint8_t ed,bool customTime,uint16_t startMinutes,uint16_t endMinutes){
+  if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||mode>3||year>2037)return false;EventOverrideCfg next=eventOverrides[i];next.scheduleValid=mode>0||customTime;next.scheduleMode=mode;next.scheduleYear=year;next.startMonth=sm;next.startDay=sd;next.endMonth=em;next.endDay=ed;next.customTime=customTime;next.startMinutes=startMinutes;next.endMinutes=endMinutes;
+  if(mode>0){int validateYear=year?year:2026;if(!eventMonthDayValid(validateYear,sm,sd)||!eventMonthDayValid(validateYear,em,ed))return false;}
+  if(!next.colorCount){Theme base=effectiveEventTheme(i);next.colorCount=min((uint8_t)8,base.colorCount);for(uint8_t c=0;c<next.colorCount;c++)next.colors[c]=base.colors[c];}
+  bool ok=writeEventOverride(i,next);if(ok)eventScheduleOverrideGeneration++;return ok;
+}
+static bool clearEventScheduleOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;EventOverrideCfg next=eventOverrides[i];next.scheduleValid=false;next.scheduleMode=0;next.scheduleYear=0;next.startMonth=next.startDay=next.endMonth=next.endDay=0;next.customTime=false;next.startMinutes=next.endMinutes=0;bool ok=writeEventOverride(i,next);if(ok)eventScheduleOverrideGeneration++;return ok;}
+static bool clearEventOverride(size_t i){if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS)return false;bool hadSchedule=eventOverrides[i].scheduleValid;bool ok=writeEventOverride(i,EventOverrideCfg());if(ok&&hadSchedule)eventScheduleOverrideGeneration++;return ok;}
 
 void addTheme(JsonObject o,const Theme&t){o["name"]=t.name;o["effect"]=effectName(t.effect);JsonArray a=o["colors"].to<JsonArray>();for(int i=0;i<t.colorCount;i++)a.add(colorHex(t.colors[i]));}
 String loginPreviewJson(){
@@ -411,7 +489,7 @@ String stateJson(){
     const String nextLabel=d["nextEvent"].as<String>();
     for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
       if(runningTheme.name==EVENTS[i].name){JsonObject link=d["runningEvent"].to<JsonObject>();link["id"]=EVENTS[i].id;link["name"]=EVENTS[i].name;link["year"]=l.tm_year+1900;}
-      if(nextLabel.startsWith(String(EVENTS[i].name)+" - ")){JsonObject link=d["nextScheduledEvent"].to<JsonObject>();link["id"]=EVENTS[i].id;link["name"]=EVENTS[i].name;int yy=l.tm_year+1900;if(eventStartEpoch(i,yy)<=n)yy++;link["year"]=yy;}
+      if(nextLabel.startsWith(String(EVENTS[i].name)+" - ")){JsonObject link=d["nextScheduledEvent"].to<JsonObject>();link["id"]=EVENTS[i].id;link["name"]=EVENTS[i].name;int yy=l.tm_year+1900;if(eventEffectiveStartEpoch(i,yy)<=n)yy++;link["year"]=yy;}
     }
     Theme customRunning;uint8_t customBr=100,customSp=1;String customId;if(resolveCustomSchedule(l,customRunning,customBr,customSp,&customId)&&runningTheme.name==customRunning.name){JsonObject link=d["runningEvent"].to<JsonObject>();link["id"]=customId;link["name"]=customRunning.name;link["year"]=l.tm_year+1900;}
 
@@ -419,10 +497,10 @@ String stateJson(){
     Theme scheduledTheme;uint8_t scheduledBrightness=100,scheduledSpeed=1;String scheduledCustomId;bool scheduledCustom=resolveCustomSchedule(tonight,scheduledTheme,scheduledBrightness,scheduledSpeed,&scheduledCustomId);int scheduledIndex=-1;
     bool scheduledUpcoming=false;
     if(!scheduledCustom){scheduledTheme=scheduler.resolve(tonight);for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)&&scheduledTheme.name==EVENTS[i].name){scheduledIndex=(int)i;break;}
-      if(scheduledIndex<0){for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;if(eventActiveOn(i,tonight)){scheduledIndex=(int)i;break;}}}
-      if(scheduledIndex<0&&(s.leadDays||s.trailDays)){for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].kind!=EventKind::Holiday)continue;if(eventWindowActiveOn(i,tonight,s.leadDays,s.trailDays)){scheduledIndex=(int)i;break;}}}
-      if(scheduledIndex<0){for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule!=RuleType::Month)continue;if(eventActiveOn(i,tonight)){scheduledIndex=(int)i;break;}}}
-      if(scheduledIndex<0){time_t best=0;int bestIndex=-1;const int currentYear=l.tm_year+1900;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=currentYear;yy<=currentYear+1;yy++){time_t start=eventStartEpoch(i,yy);if(start>n&&(!best||start<best)){best=start;bestIndex=(int)i;}}}if(bestIndex>=0){scheduledIndex=bestIndex;scheduledUpcoming=true;}}}
+      if(scheduledIndex<0){for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||eventEffectiveUsesMonthTier(i))continue;if(eventEffectiveDateActiveOn(i,tonight)){scheduledIndex=(int)i;break;}}}
+      if(scheduledIndex<0&&(s.leadDays||s.trailDays)){for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].kind!=EventKind::Holiday)continue;if(eventEffectiveWindowDateActiveOn(i,tonight,s.leadDays,s.trailDays)){scheduledIndex=(int)i;break;}}}
+      if(scheduledIndex<0){for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||!eventEffectiveUsesMonthTier(i))continue;if(eventEffectiveDateActiveOn(i,tonight)){scheduledIndex=(int)i;break;}}}
+      if(scheduledIndex<0){time_t best=0;int bestIndex=-1;const int currentYear=l.tm_year+1900;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||eventEffectiveUsesMonthTier(i))continue;for(int yy=currentYear;yy<=currentYear+1;yy++){time_t start=eventEffectiveStartEpoch(i,yy);if(start>n&&(!best||start<best)){best=start;bestIndex=(int)i;}}}if(bestIndex>=0){scheduledIndex=bestIndex;scheduledUpcoming=true;}}}
     JsonObject scheduled=d["scheduledEvent"].to<JsonObject>();if(scheduledCustom){scheduled["name"]=scheduledTheme.name;scheduled["id"]=scheduledCustomId;scheduled["year"]=tonight.tm_year+1900;scheduled["month"]=tonight.tm_mon+1;scheduled["enabled"]=true;scheduled["toggleable"]=false;scheduled["custom"]=true;scheduled["upcoming"]=false;}else if(scheduledIndex>=0){scheduled["name"]=EVENTS[scheduledIndex].name;scheduled["id"]=EVENTS[scheduledIndex].id;scheduled["enabled"]=true;scheduled["toggleable"]=true;scheduled["custom"]=false;scheduled["upcoming"]=scheduledUpcoming;}else{scheduled["name"]="No enabled scheduled event";scheduled["id"]="";scheduled["enabled"]=false;scheduled["toggleable"]=false;scheduled["custom"]=false;scheduled["upcoming"]=false;}
   }else{String s1Start=s.schedule1StartAtDusk?"dusk":fmtDisplayTime(s.onMinutes),s2End=s.schedule2EndAtDawn?"dawn":fmtDisplayTime(s.schedule2EndMinutes);d["scheduleWindow"]=String("Schedule 1 ")+s1Start+" - "+fmtDisplayTime(s.offMinutes)+" • Schedule 2 "+fmtDisplayTime(s.offMinutes)+" - "+s2End+" at "+String(s.schedule2Brightness)+"%";d["nextEvent"]="Waiting for time sync";JsonObject scheduled=d["scheduledEvent"].to<JsonObject>();scheduled["name"]="Waiting for time sync";scheduled["id"]="";scheduled["enabled"]=false;scheduled["toggleable"]=false;scheduled["custom"]=false;}
   JsonObject w=d["wifi"].to<JsonObject>();w["ssid"]=WiFi.status()==WL_CONNECTED?WiFi.SSID():"";w["rssi"]=WiFi.status()==WL_CONNECTED?WiFi.RSSI():0;w["ip"]=WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString();
@@ -611,7 +689,7 @@ void setupRoutes(){
   server.on("/api/events",HTTP_GET,[]{
     if(!requireUser())return;int year=server.arg("year").toInt(),month=server.arg("month").toInt();if(year<2020)year=2026;if(year>2037){server.send(400,"text/plain","Built-in variable-date calendar is supported through 2037");return;}if(month<1||month>12)month=1;
     JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();auto&s=store.get();int monthly=0;
-    for(size_t i=0;i<EVENT_COUNT;i++){if(!eventAllowedInActiveSchedule(i)||!eventOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["when"]=eventWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<MAX_BUILTIN_EVENTS?eventOverrides[i].valid:false;e["speed"]=(i<MAX_BUILTIN_EVENTS&&eventOverrides[i].valid)?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));if(EVENTS[i].rule==RuleType::Month&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
+    for(size_t i=0;i<EVENT_COUNT;i++){if(!eventAllowedInActiveSchedule(i)||!eventEffectiveOccursInMonth(i,year,month))continue;Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["when"]=eventEffectiveWhen(i,year);e["effect"]=effectName(et.effect);e["customized"]=i<MAX_BUILTIN_EVENTS?(eventOverrides[i].valid||eventOverrides[i].scheduleValid):false;e["speed"]=(i<MAX_BUILTIN_EVENTS&&eventOverrides[i].valid)?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);JsonArray c=e["colors"].to<JsonArray>();for(int j=0;j<et.colorCount;j++)c.add(colorHex(et.colors[j]));addEventScheduleJson(e,i,year);if(eventEffectiveUsesMonthTier(i)&&EVENTS[i].kind==EventKind::Awareness&&e["enabled"].as<bool>())monthly++;}
     d["overlap"]=monthly>1?String(monthly)+" month-long events enabled — overlap rule applies.":(monthly==1?"1 month-long event enabled.":"No month-long awareness themes enabled.");
     String out;serializeJson(d,out);sendJson(out);
   });
@@ -657,7 +735,7 @@ void setupRoutes(){
     JsonDocument presets;if(!deserializeJson(presets,presetStoreRaw())&&presets.is<JsonArray>())for(JsonObject p:presets.as<JsonArray>()){if(!(p["favorite"]|false))continue;JsonObject e=arr.add<JsonObject>();e["id"]=p["id"];e["name"]=p["name"];e["effect"]=p["effect"]|String("Jump");e["brightness"]=constrain(p["brightness"]|100,1,100);e["speed"]=constrain(p["speed"]|1,1,5);e["enabled"]=p["enabled"]|true;e["custom"]=true;JsonArray c=e["colors"].to<JsonArray>();for(JsonVariant v:p["colors"].as<JsonArray>())c.add(v.as<String>());}
     String out;serializeJson(d,out);sendJson(out);
   });
-  server.on("/api/events/search",HTTP_GET,[]{if(!requireUser())return;int year=server.arg("year").toInt();String query=server.arg("q");query.trim();query.toLowerCase();if(year<2020||year>2037||!query.length()){server.send(400,"text/plain","Choose a supported year and search term");return;}JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();bool truncated=false;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventAllowedInActiveSchedule(i))continue;String when=eventWhen(i,year);if(when.startsWith("No scheduled"))continue;String hay=String(EVENTS[i].name)+" "+when+" "+kindName(EVENTS[i].kind)+" "+eventCategoryDef(eventCategoryIndex(i)).name;hay.toLowerCase();if(hay.indexOf(query)<0)continue;if(arr.size()>=96){truncated=true;break;}Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["when"]=when;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);e["customized"]=eventOverrides[i].valid;JsonArray c=e["colors"].to<JsonArray>();for(uint8_t k=0;k<et.colorCount;k++)c.add(colorHex(et.colors[k]));}d["truncated"]=truncated;String out;serializeJson(d,out);sendJson(out);});
+  server.on("/api/events/search",HTTP_GET,[]{if(!requireUser())return;int year=server.arg("year").toInt();String query=server.arg("q");query.trim();query.toLowerCase();if(year<2020||year>2037||!query.length()){server.send(400,"text/plain","Choose a supported year and search term");return;}JsonDocument d;JsonArray arr=d["events"].to<JsonArray>();bool truncated=false;for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){if(!eventAllowedInActiveSchedule(i))continue;String when=eventEffectiveWhen(i,year);if(when.startsWith("No scheduled"))continue;String hay=String(EVENTS[i].name)+" "+when+" "+kindName(EVENTS[i].kind)+" "+eventCategoryDef(eventCategoryIndex(i)).name;hay.toLowerCase();if(hay.indexOf(query)<0)continue;if(arr.size()>=96){truncated=true;break;}Theme et=effectiveEventTheme(i);JsonObject e=arr.add<JsonObject>();e["id"]=EVENTS[i].id;e["name"]=EVENTS[i].name;e["when"]=when;e["kind"]=kindName(EVENTS[i].kind);const auto& cat=eventCategoryDef(eventCategoryIndex(i));e["categoryId"]=cat.id;e["categoryName"]=cat.name;e["categoryColor"]=cat.color;e["effect"]=effectName(et.effect);e["speed"]=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);e["enabled"]=eventStateEnabled(i);e["favorite"]=eventStateFavorite(i);e["customized"]=eventOverrides[i].valid||eventOverrides[i].scheduleValid;addEventScheduleJson(e,i,year);JsonArray c=e["colors"].to<JsonArray>();for(uint8_t k=0;k<et.colorCount;k++)c.add(colorHex(et.colors[k]));}d["truncated"]=truncated;String out;serializeJson(d,out);sendJson(out);});
   server.on("/api/event",HTTP_POST,[]{
     if(!requireUser())return;JsonDocument d;if(!body(d))return;String id=d["id"].as<String>();int i=eventIndexById(id);if(i<0||i>=(int)EVENT_COUNT||i>=(int)MAX_BUILTIN_EVENTS){server.send(404,"text/plain","Unknown event");return;}
     if(!d["enabled"].isNull()&&!eventStateSetEnabled(i,d["enabled"].as<bool>())){
@@ -667,7 +745,11 @@ void setupRoutes(){
       server.send(500,"text/plain","Event favorite preference write failed");return;
     }
     if(d["reset"]|false){if(!clearEventOverride(i)){server.send(500,"text/plain","Event override reset failed");return;}}
-    else if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,2);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length()==6)et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){server.send(400,"text/plain","Event must contain at least one valid color");return;}}if(!saveEventOverride(i,et,esp)){server.send(500,"text/plain","Event override write failed");return;}}
+    else{
+      if(!d["effect"].isNull()||!d["speed"].isNull()||d["colors"].is<JsonArray>()){Theme et=effectiveEventTheme(i);uint8_t esp=eventOverrides[i].valid?eventOverrides[i].speed:eventSpeed(i);if(!d["effect"].isNull())et.effect=effectFromString(d["effect"].as<String>());if(!d["speed"].isNull())esp=constrain(d["speed"].as<int>(),1,2);if(d["colors"].is<JsonArray>()){et.colorCount=0;for(JsonVariant v:d["colors"].as<JsonArray>()){if(et.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length()==6)et.colors[et.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!et.colorCount){server.send(400,"text/plain","Event must contain at least one valid color");return;}}if(!saveEventOverride(i,et,esp)){server.send(500,"text/plain","Event override write failed");return;}}
+      if(d["resetSchedule"]|false){if(!clearEventScheduleOverride(i)){server.send(500,"text/plain","Event schedule reset failed");return;}}
+      else if(d["schedule"].is<JsonObject>()){JsonObject sc=d["schedule"].as<JsonObject>();String modeName=sc["mode"]|String("default");uint8_t mode=modeName=="date"?1:(modeName=="range"?2:(modeName=="month"?3:0));bool annual=sc["annual"]|true;int requestedYear=sc["year"]|0;uint16_t sy=annual?0:(uint16_t)constrain(requestedYear,2020,2037);uint8_t sm=constrain(sc["startMonth"]|1,1,12),sd=constrain(sc["startDay"]|1,1,31),em=constrain(sc["endMonth"]|sm,1,12),ed=constrain(sc["endDay"]|sd,1,31);if(mode==1){em=sm;ed=sd;}if(mode==3){sd=1;em=sm;ed=eventDaysInMonth(sy?sy:2026,sm);}bool customTime=sc["customTime"]|false;String startText=sc["start"]|String("00:00"),endText=sc["end"]|String("00:00");auto validClock=[](const String& value){if(value.length()!=5||value[2]!=':')return false;for(int k:{0,1,3,4})if(value[k]<'0'||value[k]>'9')return false;int h=value.substring(0,2).toInt(),m=value.substring(3).toInt();return h>=0&&h<24&&m>=0&&m<60;};if(customTime&&(!validClock(startText)||!validClock(endText))){server.send(400,"text/plain","Choose valid event start and end times");return;}uint16_t startMinutes=parseTime(startText,0),endMinutes=parseTime(endText,0);if(mode==0&&!customTime){if(!clearEventScheduleOverride(i)){server.send(500,"text/plain","Event schedule reset failed");return;}}else if(!saveEventScheduleOverride(i,mode,sy,sm,sd,em,ed,customTime,startMinutes,endMinutes)){server.send(400,"text/plain","Event schedule could not be saved. Check the selected dates.");return;}}
+    }
     evaluateSchedule(true);sendJson(stateJson());
   });
 
