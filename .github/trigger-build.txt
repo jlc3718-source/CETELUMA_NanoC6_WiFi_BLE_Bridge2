@@ -1,1 +1,1 @@
-Anderson Home 3.1.65 auth races, OFF priority, and pre-UI signed boot updater
+Anderson Home 3.1.66 auth races, OFF priority, and pre-UI signed boot updater
