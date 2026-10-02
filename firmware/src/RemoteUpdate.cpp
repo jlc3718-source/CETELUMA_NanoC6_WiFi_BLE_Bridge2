@@ -115,6 +115,19 @@ bool remoteUpdateOperationBusy(){return operationOwner.load()!=OWNER_NONE;}
 bool remoteUpdateTryClaimExternalOperation(){uint8_t expected=OWNER_NONE;return operationOwner.compare_exchange_strong(expected,OWNER_EXTERNAL);}
 void remoteUpdateReleaseExternalOperation(){uint8_t expected=OWNER_EXTERNAL;operationOwner.compare_exchange_strong(expected,OWNER_NONE);}
 void remoteUpdateAutoLoop(const char*current){if(rebootRequested.load()||operationOwner.load()!=OWNER_NONE)return;uint32_t now=millis();if(!autoTimerStarted){autoTimerStarted=true;autoNextCheckAt.store(now+OTA_AUTO_FIRST_CHECK_MS);return;}if((int32_t)(now-autoNextCheckAt.load())<0)return;if(WiFi.status()!=WL_CONNECTED){scheduleAutoRetry(now);return;}queueJob(JOB_AUTO,current);}
+bool remoteUpdateBootCheck(const char*current,void (*idle)()){
+  if(WiFi.status()!=WL_CONNECTED)return false;
+  autoTimerStarted=true;
+  queueJob(JOB_AUTO,current);
+  // The existing worker bounds every manifest request and firmware download.
+  // Keep the application watchdog and the small recovery/status page responsive
+  // while the same signed, hashed, inactive-slot installer runs before BLE/UI.
+  while(operationOwner.load()==OWNER_REMOTE&&!rebootRequested.load()){
+    if(idle)idle();
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  return rebootRequested.load();
+}
 bool remoteUpdateConsumeRebootRequest(){if(!rebootRequested.exchange(false))return false;operationOwner.store(OWNER_NONE);return true;}
 
 void remoteUpdateNoteBoot(const char*currentVersion,const char*buildCommit){ensureRuntime();Preferences p;if(!p.begin(OTA_NVS,false))return;String pending=p.getString("pending","");String pendingCommit=p.getString("commit","");String prior=p.getString("lastmsg","");String msg;if(pending.length()){if(pending==currentVersion&&pendingCommit.length()&&pendingCommit==String(buildCommit)){msg=String("Remote update ")+pending+" booted successfully from commit "+pendingCommit+".";p.putString("lastver",pending);String rejected=p.getString("rejected","");if(p.getBool("hold",false)&&parseVersion(rejected).valid&&compareVersion(String(currentVersion),rejected)>0){p.remove("hold");p.remove("rejected");}}else{msg=String("Remote update ")+pending+" was pending, but running identity is "+currentVersion+" / "+buildCommit+". The rejected release is now held.";p.putBool("hold",true);p.putString("rejected",pending);}p.putString("lastmsg",msg);p.remove("pending");p.remove("sha");p.remove("commit");}else msg=prior;p.end();setMessage(msg);RemoteStatus st=snapshot();String rejected;st.updateHold=readHold(rejected);st.rejectedVersion=rejected;publish(st);}

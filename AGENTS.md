@@ -71,7 +71,8 @@ GitHub runner queue vary.
 
 ## Remote OTA behavior
 
-- Current firmware checks the signed `ota/latest.json` channel about 20 seconds after startup and every 5 minutes while Wi-Fi is healthy, with bounded retry/backoff after failures.
+- With saved Wi-Fi connected, current firmware checks and installs a verified newer release during boot, before loading the full dashboard or initializing BLE/event storage. The small boot status/recovery page stays responsive and feeds the watchdog while the existing bounded signed updater runs. Offline startup continues to normal Wi-Fi recovery; periodic checks run hourly, with bounded retry/backoff after failures.
+- Three consecutive boots that fail to reach two minutes of normal operation enter minimal recovery mode, keeping Wi-Fi, signed updates, boot status, and the existing protected APP-only recovery uploader available without starting BLE or the full dashboard. A newer firmware version or a verified recovery upload resets the boot-attempt count. Normal logout revokes only its own session and does not reboot the controller.
 - A newer release is installed automatically only after the existing ECDSA manifest
   verification, version/URL/size checks, exact streamed SHA-256 verification, and
   successful write to the inactive OTA slot. Downgrades remain blocked.

@@ -72,7 +72,24 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.64";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.65";
+static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
+static uint32_t bootHealthyAfter=0;
+static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
+static void clearBootRecoveryAttempts(){Preferences p;if(!p.begin("anderson-boot",false))return;p.putUChar("attempts",0);p.end();}
+static void noteBootAttempt(){
+  Preferences p;if(!p.begin("anderson-boot",false))return;
+  uint8_t attempts=p.getString("version","")==ANDERSON_FIRMWARE_VERSION?p.getUChar("attempts",0):0;
+  if(attempts<255)++attempts;
+  p.putUChar("attempts",attempts);p.putString("version",ANDERSON_FIRMWARE_VERSION);p.end();
+  bootRecoveryMode=attempts>=3;
+}
+static void markBootHealthy(){
+  if(bootRecoveryMode||bootMarkedHealthy||(int32_t)(millis()-bootHealthyAfter)<0)return;
+  bootHealthyAfter=millis()+30000UL;
+  Preferences p;if(!p.begin("anderson-boot",false))return;
+  bootMarkedHealthy=p.putUChar("attempts",0)>0;p.end();
+}
 static bool customScheduleRefreshPending=false;
 static uint32_t customScheduleRefreshAt=0;
 
@@ -111,7 +128,8 @@ static String issueAuthSession(uint8_t role,const String& profile){uint32_t now=
 static String sessionProfileForToken(const String& token){if(token.length()!=64)return "";for(auto&s:authSessions)if(s.token.length()&&constantTimeEqual(s.token,token))return s.profile;return "";}
 static void revokeAuthSession(const String& token){for(auto&s:authSessions)if(token.length()&&constantTimeEqual(s.token,token)){s.token="";s.profile="";s.role=ROLE_NONE;s.lastSeen=0;}}
 static uint8_t requestRole(){if(!pinProtectionEnabled)return ROLE_ADMIN;return sessionRoleForToken(server.header(AUTH_HEADER));}
-static bool requireRole(uint8_t needed){uint8_t role=requestRole();if(role>=needed)return true;server.sendHeader("Cache-Control","no-store");if(role==ROLE_NONE)server.send(401,"application/json","{\"ok\":false,\"error\":\"A valid profile PIN is required\"}");else server.send(403,"application/json","{\"ok\":false,\"error\":\"This profile cannot use that control\"}");return false;}
+static bool bootAllowsControls(){if(!bootFirmwareCheckPending&&!bootRecoveryMode)return true;server.sendHeader("Cache-Control","no-store");server.send(503,"application/json","{\"ok\":false,\"error\":\"Controller is checking firmware or in recovery mode\"}");return false;}
+static bool requireRole(uint8_t needed){if(!bootAllowsControls())return false;uint8_t role=requestRole();if(role>=needed)return true;server.sendHeader("Cache-Control","no-store");if(role==ROLE_NONE)server.send(401,"application/json","{\"ok\":false,\"error\":\"A valid profile PIN is required\"}");else server.send(403,"application/json","{\"ok\":false,\"error\":\"This profile cannot use that control\"}");return false;}
 static bool requireUser(){return requireRole(ROLE_USER);}
 static bool requireAdmin(){return requireRole(ROLE_ADMIN);}
 static PinAttemptState& currentPinAttempt(){IPAddress ip=server.client().remoteIP();uint32_t now=millis();size_t slot=0;uint32_t oldestAge=0;for(size_t i=0;i<6;i++){if(pinAttempts[i].used&&pinAttempts[i].ip==ip){pinAttempts[i].lastSeen=now;return pinAttempts[i];}if(!pinAttempts[i].used){slot=i;oldestAge=UINT32_MAX;break;}uint32_t age=(uint32_t)(now-pinAttempts[i].lastSeen);if(i==0||age>oldestAge){oldestAge=age;slot=i;}}PinAttemptState& a=pinAttempts[slot];a=PinAttemptState();a.used=true;a.ip=ip;a.lastSeen=now;return a;}
@@ -412,7 +430,7 @@ String stateJson(){
   d["manualOverride"]=manualOverride;d["tonightOptionOverride"]=tonightOptionOverride;if(tonightOptionOverride){d["tonightOptionId"]=tonightOptionId;d["tonightOptionUntil"]=(int64_t)tonightOptionUntil;}String out;serializeJson(d,out);return out;
 }
 void sendJson(const String&s,int code=200){server.sendHeader("Cache-Control","no-store");server.send(code,"application/json",s);}
-bool body(JsonDocument&d){DeserializationError e=deserializeJson(d,server.arg("plain"));if(e){server.send(400,"text/plain","Invalid JSON");return false;}return true;}
+bool body(JsonDocument&d){if(!bootAllowsControls())return false;DeserializationError e=deserializeJson(d,server.arg("plain"));if(e){server.send(400,"text/plain","Invalid JSON");return false;}return true;}
 
 
 // ANDERSON_SETTINGS_BACKUP_V3_1_21_TRANSACTIONAL
@@ -531,7 +549,20 @@ static void maintainWiFiConnection(){
 }
 void setupRoutes(){
   const char* collectedHeaders[]={AUTH_HEADER,RECOVERY_PIN_HEADER};server.collectHeaders(collectedHeaders,2);
-  server.on("/",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)WEB_UI_GZ,WEB_UI_GZ_LEN);});
+  server.on("/",HTTP_GET,[]{
+    server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");
+    if(bootFirmwareCheckPending||bootRecoveryMode){
+      server.send(200,"text/html",R"BOOT(<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anderson Home</title><style>body{background:#101c30;color:#eef4ff;font:16px system-ui;max-width:520px;margin:12vh auto;padding:24px}a{color:#adcaff}p{line-height:1.5}</style><h1>Anderson Home</h1><p id="message">Checking for a verified firmware update before loading the dashboard...</p><p><a href="/recovery">Firmware recovery</a></p><script>async function poll(){try{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);let state;try{const response=await fetch('/api/boot-status',{cache:'no-store',signal:controller.signal});state=await response.json()}finally{clearTimeout(timer)}if(state.ready){location.reload();return}document.getElementById('message').textContent=state.recovery?'Recovery mode is active after repeated short boots. '+(state.message||'Waiting for a verified update.'):(state.message||'Checking for a verified firmware update...')}catch{}setTimeout(poll,1500)}poll();</script></html>)BOOT");return;
+    }
+    server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)WEB_UI_GZ,WEB_UI_GZ_LEN);
+  });
+  server.on("/api/boot-status",HTTP_GET,[]{
+    JsonDocument state;deserializeJson(state,remoteUpdateStatusJson(ANDERSON_FIRMWARE_VERSION));
+    JsonDocument out;out["ready"]=!bootFirmwareCheckPending&&!bootRecoveryMode;out["recovery"]=bootRecoveryMode;
+    out["version"]=ANDERSON_FIRMWARE_VERSION;out["phase"]=state["phase"];out["message"]=state["message"];
+    out["downloadedBytes"]=state["downloadedBytes"]|0U;out["bytes"]=state["bytes"]|0U;
+    String json;serializeJson(out,json);sendJson(json);
+  });
   server.on("/recovery",HTTP_GET,[]{server.sendHeader("Cache-Control","no-store, no-cache, must-revalidate");server.sendHeader("X-Content-Type-Options","nosniff");server.sendHeader("Content-Encoding","gzip");server.send_P(200,"text/html",(PGM_P)RECOVERY_UI_GZ,RECOVERY_UI_GZ_LEN);});
   server.on("/api/auth/status",HTTP_GET,[]{sendJson(pinAuthStatusJson());});
   server.on("/api/auth/unlock",HTTP_POST,[]{
@@ -561,7 +592,7 @@ void setupRoutes(){
     if(!updateSingleProfilePin(profile,pin)){server.send(500,"application/json","{\"ok\":false,\"error\":\"PIN could not be saved and verified\"}");return;}
     JsonDocument out;out["ok"]=true;out["pinEnabled"]=pinProtectionEnabled;out["configured"]=allPinAuthConfigured();out["kellyConfigured"]=kellyPinConfigured();if(profile=="jason")out["token"]=issueAuthSession(ROLE_ADMIN,"jason");String json;serializeJson(out,json);sendJson(json);
   });
-  server.on("/api/login-preview",HTTP_GET,[]{sendJson(loginPreviewJson());});
+  server.on("/api/login-preview",HTTP_GET,[]{if(!bootAllowsControls())return;sendJson(loginPreviewJson());});
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
   server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
 
@@ -752,7 +783,7 @@ void setupRoutes(){
   server.on("/api/update",HTTP_POST,[]{
     if(!otaUploadAllowed){server.sendHeader("Cache-Control","no-store");server.send(otaUploadResponseCode,"text/plain",otaUploadError.length()?otaUploadError:"Firmware upload was not accepted");return;}
     if(!otaUploadOk){server.send(500,"text/plain",otaUploadError.length()?otaUploadError:"Firmware update failed");return;}
-    if(otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()){server.send(500,"text/plain","Firmware was verified, but PIN recovery could not be saved. Retry recovery before rebooting.");return;}JsonDocument d;d["ok"]=true;d["recovery"]=otaRecoveryRequest;d["pinEnabled"]=pinProtectionEnabled;d["message"]=otaRecoveryRequest?"Firmware verified and PIN protection disabled. NanoC6 will reboot automatically.":"Firmware verified. NanoC6 will reboot automatically into the new firmware.";String out;serializeJson(d,out);sendJson(out);otaAutoRebootPending=true;otaAutoRebootAt=millis()+1400;
+    if(otaRecoveryRequest&&pinProtectionEnabled&&!disablePinProtection()){server.send(500,"text/plain","Firmware was verified, but PIN recovery could not be saved. Retry recovery before rebooting.");return;}if(otaRecoveryRequest)clearBootRecoveryAttempts();JsonDocument d;d["ok"]=true;d["recovery"]=otaRecoveryRequest;d["pinEnabled"]=pinProtectionEnabled;d["message"]=otaRecoveryRequest?"Firmware verified and PIN protection disabled. NanoC6 will reboot automatically.":"Firmware verified. NanoC6 will reboot automatically into the new firmware.";String out;serializeJson(d,out);sendJson(out);otaAutoRebootPending=true;otaAutoRebootAt=millis()+1400;
   },[]{
     HTTPUpload& u=server.upload();
     feedControllerWatchdog();
@@ -837,12 +868,25 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();eventStateBegin();eventCategoriesBegin();loadPinAuthConfig();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();settingsBackupInitialize();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventColorPresetOverrides();loadEventOverrides();connectWiFi();setupMdns();ble.begin(&store.get());
+  store.begin();loadPinAuthConfig();noteBootAttempt();connectWiFi();setupMdns();
+  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();
+  remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);
+  if(remoteUpdateBootCheck(ANDERSON_FIRMWARE_VERSION,[]{server.handleClient();feedControllerWatchdog();})){delay(80);ESP.restart();return;}
+  bootFirmwareCheckPending=false;
+  if(bootRecoveryMode){digitalWrite(BLUE_LED,LOW);return;}
+  eventStateBegin();eventCategoriesBegin();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();settingsBackupInitialize();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventColorPresetOverrides();loadEventOverrides();ble.begin(&store.get());
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;
-  setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);digitalWrite(BLUE_LED,LOW);
+  evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;bootHealthyAfter=millis()+BOOT_HEALTHY_GRACE_MS;digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
+  if(bootRecoveryMode){
+    server.handleClient();maintainWiFiConnection();
+    if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
+    if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){delay(40);ESP.restart();}
+    feedControllerWatchdog();delay(4);return;
+  }
+  markBootHealthy();
   server.handleClient();ble.loop();
   if(ble.consumeConnectionChange())applyRunning(true);
   maintainWiFiConnection();maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();

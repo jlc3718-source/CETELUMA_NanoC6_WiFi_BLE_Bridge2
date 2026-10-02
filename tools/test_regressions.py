@@ -148,8 +148,10 @@ night=t('firmware/web/night_calendar.js');release=t('tools/release.py')
 assert 'server.on("/api/night-calendar",HTTP_GET' in main and 'Theme selected=scheduler.resolve(probe)' in main
 assert 'resolveCustomSchedule(night,custom,customBrightness,customSpeed,&customId)' in main
 assert 'eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)' in main
-assert 'anderson-auth-required' in night and 'valid profile pin' in night.lower()
-assert 'window.andersonAuthToken||window.andersonProfile||"none"!==currentRole' in web
+assert 'anderson-auth-required' not in night and 'if(!window.andersonProfile)return;' in night
+assert 'error?.staleSession' in night and 'response.status===401' in web
+assert 'token||window.andersonProfile||currentRole!=="none"' in web
+assert 'epoch!==window.andersonAuthEpoch||token!==(window.andersonAuthToken||"")' in web
 assert 'NIGHT_CALENDAR_JS.read_text()' in release
 assert 'cell.addEventListener("click",()=>showNight' in night and 'Show all schedules' in night
 assert 'grid-template-columns:repeat(7,minmax(0,1fr))' in night

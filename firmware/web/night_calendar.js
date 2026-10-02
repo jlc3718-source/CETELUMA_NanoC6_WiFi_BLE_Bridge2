@@ -130,12 +130,15 @@
       .andersonNightColors{display:flex;gap:5px;flex-wrap:wrap}
       .andersonNightColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}
     `;document.head.append(style);
+    window.addEventListener("anderson-profile-selected",()=>{++request;lastRefresh=0;refresh(true)});
+    window.addEventListener("anderson-profile-cleared",()=>{++request;lastRefresh=0;document.body.classList.remove("andersonDateView");detail.hidden=true});
     window.addEventListener("anderson-scheduled-event",()=>refresh(false));
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(false)});
     setInterval(()=>refresh(false),60000);
     refresh(true);
   }
   async function refresh(force){
+    if(!window.andersonProfile)return;
     const actual=today();
     if(window.andersonCurrentMonthYear!==undefined&&
        (window.andersonCurrentMonthYear!==actual.year||window.andersonCurrentMonthNumber!==actual.month)){
@@ -164,10 +167,7 @@
         entry.events.forEach(event=>{const dot=document.createElement("span");dot.className="andersonDot";dot.style.background=event.colors?.[0]||"#79a9ff";dots.append(dot)});
         cell.append(dots);grid.append(cell);
       });
-    }catch(error){if(sequence===request){
-      if(String(error?.message||"").toLowerCase().includes("valid profile pin")){
-        window.dispatchEvent(new Event("anderson-auth-required"));
-      }
+    }catch(error){if(error?.staleSession)return;if(sequence===request){
       grid.replaceChildren();const message=document.createElement("div");message.className="andersonCalendarError";
       const text=document.createElement("span");text.textContent="Calendar unavailable"+(error?.message?": "+error.message:".");
       const retry=document.createElement("button");retry.type="button";retry.textContent="Try again";
