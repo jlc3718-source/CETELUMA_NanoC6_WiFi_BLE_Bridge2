@@ -150,4 +150,11 @@ assert 'token||window.andersonProfile||currentRole!=="none"' in web
 assert 'epoch!==window.andersonAuthEpoch||token!==(window.andersonAuthToken||"")' in web
 assert '/api/night-calendar' not in main
 assert 'night_calendar.js' not in release
+assert 'EventOverrideCfg' in main and 'scheduleValid' in main and 'saveEventScheduleOverride' in main
+assert 'eventEffectiveActiveOn' in main and 'eventEffectiveWindowActiveOn' in main and 'eventEffectiveOccursInMonth' in main
+assert 'eventEffectiveActiveOn(i,l)' in sched and 'eventEffectiveUsesMonthTier(i)' in sched
+assert 'eventEffectiveScheduleGeneration()' in sched
+assert 'Restore Built-in Schedule' in web and 'Specific date' in web and 'Date range' in web and 'Entire month' in web
+assert 'Use custom time for this event' in web and 'Repeat every year' in web
+assert 'resetSchedule:true' in web and 'schedule:{mode:mode.value' in web
 print('Anderson regression source checks passed')
