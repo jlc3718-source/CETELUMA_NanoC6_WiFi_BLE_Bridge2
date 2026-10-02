@@ -31,6 +31,15 @@ static time_t now;
 extern "C" time_t time(time_t*p) noexcept{if(p)*p=now;return now;}
 bool eventStateEnabled(size_t){return true;}bool eventAllowedInActiveSchedule(size_t){return true;}
 Theme applyEventOverrideByIndex(size_t,const Theme&t){return t;}
+bool eventEffectiveUsesMonthTier(size_t i){return EVENTS[i].rule==RuleType::Month;}
+bool eventEffectiveDateActiveOn(size_t i,const tm&t){return eventActiveOn(i,t);}
+bool eventEffectiveActiveOn(size_t i,const tm&t){return eventActiveOn(i,t);}
+bool eventEffectiveWindowDateActiveOn(size_t i,const tm&t,uint8_t lead,uint8_t trail){return eventWindowActiveOn(i,t,lead,trail);}
+bool eventEffectiveWindowActiveOn(size_t i,const tm&t,uint8_t lead,uint8_t trail){return eventWindowActiveOn(i,t,lead,trail);}
+bool eventEffectiveOccursInMonth(size_t i,int year,int month){return eventOccursInMonth(i,year,month);}
+String eventEffectiveWhen(size_t i,int year){return eventWhen(i,year);}
+time_t eventEffectiveStartEpoch(size_t i,int year){return eventStartEpoch(i,year);}
+uint32_t eventEffectiveScheduleGeneration(){return 1;}
 tm date(int month,int day,int hour){tm t{};t.tm_year=126;t.tm_mon=month-1;t.tm_mday=day;t.tm_hour=hour;t.tm_isdst=-1;mktime(&t);return t;}
 int main(){setenv("TZ","EST5EDT,M3.2.0,M11.1.0",1);tzset();AppSettings cfg;Scheduler s(&cfg);
  for(auto md:{std::pair<int,int>{9,24},{3,8},{11,1},{1,1},{12,31}}){
