@@ -1,1 +1,1 @@
-Anderson Home 3.1.67 bounded calendar generation and loading recovery
+Anderson Home 3.1.68 remove 30-day calendar feature
