@@ -57,15 +57,15 @@ static uint16_t timedTierPick(const uint16_t* items,size_t count,const tm& l,con
 
 static uint32_t enabledEventHash(){
   uint32_t h=2166136261u;
-  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){h^=(uint32_t)(eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)?(i+1):0);h*=16777619u;}
+  for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){h^=(uint32_t)(eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)?(i+1):0);h*=16777619u;}h^=eventEffectiveScheduleGeneration();h*=16777619u;
   return h;
 }
 static uint8_t higherPriorityCountOn(const tm& day,const AppSettings* cfg){
   uint8_t count=0;
   for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-    if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;const auto&e=EVENTS[i];if(e.rule==RuleType::Month)continue;
-    bool active=eventActiveOn(i,day);if(active){if(count<255)count++;continue;}
-    if(e.kind==EventKind::Holiday&&(cfg->leadDays||cfg->trailDays)&&eventWindowActiveOn(i,day,cfg->leadDays,cfg->trailDays)){if(count<255)count++;}
+    if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;const auto&e=EVENTS[i];if(eventEffectiveUsesMonthTier(i))continue;
+    bool active=eventEffectiveActiveOn(i,day);if(active){if(count<255)count++;continue;}
+    if(e.kind==EventKind::Holiday&&(cfg->leadDays||cfg->trailDays)&&eventEffectiveWindowActiveOn(i,day,cfg->leadDays,cfg->trailDays)){if(count<255)count++;}
   }
   return count;
 }
@@ -109,14 +109,14 @@ Theme Scheduler::resolve(const tm& l){
   uint16_t specific[MAX_ACTIVE_TIER_EVENTS],holidayWindows[MAX_ACTIVE_TIER_EVENTS],monthly[MAX_ACTIVE_TIER_EVENTS];
   size_t specificCount=0,holidayWindowCount=0,monthlyCount=0;
   for(size_t i=0;i<EVENT_COUNT;i++){
-    if(i>=MAX_BUILTIN_EVENTS||!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;const auto&e=EVENTS[i];bool active=eventActiveOn(i,l);
+    if(i>=MAX_BUILTIN_EVENTS||!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;const auto&e=EVENTS[i];bool active=eventEffectiveActiveOn(i,l);
     if(active){
-      if(e.rule==RuleType::Month){if(monthlyCount<MAX_ACTIVE_TIER_EVENTS)monthly[monthlyCount++]=(uint16_t)i;continue;}
+      if(eventEffectiveUsesMonthTier(i)){if(monthlyCount<MAX_ACTIVE_TIER_EVENTS)monthly[monthlyCount++]=(uint16_t)i;continue;}
       // Holiday, awareness, and seasonal dates all share the specific-event tier.
       // Same-tier collisions share Schedule 1 instead of silently starving later events.
       if(specificCount<MAX_ACTIVE_TIER_EVENTS)specific[specificCount++]=(uint16_t)i;continue;
     }
-    if(e.kind==EventKind::Holiday&&(cfg->leadDays||cfg->trailDays)&&eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)){
+    if(e.kind==EventKind::Holiday&&(cfg->leadDays||cfg->trailDays)&&eventEffectiveWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)){
       if(holidayWindowCount<MAX_ACTIVE_TIER_EVENTS)holidayWindows[holidayWindowCount++]=(uint16_t)i;
     }
   }
@@ -162,5 +162,5 @@ Theme Scheduler::resolve(const tm& l){
 }
 
 String Scheduler::nextEventLabel(const tm& l) const{
-  const int year=l.tm_year+1900,offset=localUtcOffsetMinutes(l);const uint32_t stateHash=enabledEventHash();struct NextCache{int year=-1,yday=-1,hour=-1,minute=-1,offset=99999;uint32_t stateHash=0;String value;};static NextCache c;if(c.year==year&&c.yday==l.tm_yday&&c.hour==l.tm_hour&&c.minute==l.tm_min&&c.offset==offset&&c.stateHash==stateHash)return c.value;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue;for(int yy=year;yy<=year+1;yy++){time_t s=eventStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}String value="-";if(bi>=0){tm out{};localtime_r(&best,&out);value=String(EVENTS[bi].name)+" - "+eventWhen(bi,out.tm_year+1900);}c.year=year;c.yday=l.tm_yday;c.hour=l.tm_hour;c.minute=l.tm_min;c.offset=offset;c.stateHash=stateHash;c.value=value;return c.value;
+  const int year=l.tm_year+1900,offset=localUtcOffsetMinutes(l);const uint32_t stateHash=enabledEventHash();struct NextCache{int year=-1,yday=-1,hour=-1,minute=-1,offset=99999;uint32_t stateHash=0;String value;};static NextCache c;if(c.year==year&&c.yday==l.tm_yday&&c.hour==l.tm_hour&&c.minute==l.tm_min&&c.offset==offset&&c.stateHash==stateHash)return c.value;tm copy=l;time_t now=mktime(&copy),best=0;int bi=-1;for(size_t i=0;i<EVENT_COUNT;i++){if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||eventEffectiveUsesMonthTier(i))continue;for(int yy=year;yy<=year+1;yy++){time_t s=eventEffectiveStartEpoch(i,yy);if(s>now&&(!best||s<best)){best=s;bi=i;}}}String value="-";if(bi>=0){tm out{};localtime_r(&best,&out);value=String(EVENTS[bi].name)+" - "+eventEffectiveWhen(bi,out.tm_year+1900);}c.year=year;c.yday=l.tm_yday;c.hour=l.tm_hour;c.minute=l.tm_min;c.offset=offset;c.stateHash=stateHash;c.value=value;return c.value;
 }
