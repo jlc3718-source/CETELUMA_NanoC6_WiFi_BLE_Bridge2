@@ -3,7 +3,7 @@
   const zone="America/New_York",weekdays=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today=()=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(new Date());
     const n=type=>Number(parts.find(p=>p.type===type).value);return {year:n("year"),month:n("month"),day:n("day")};};
-  let shown=today(),lastRefresh=0,request=0,retryTimer=null,showNight=()=>{};
+  let shown=today(),lastRefresh=0,request=0,retryTimer=null,staleFailures=0,showNight=()=>{};
   const scheduleRetry=(delay=180)=>{clearTimeout(retryTimer);retryTimer=setTimeout(()=>{retryTimer=null;if(window.andersonProfile)refresh(true)},delay)};
 
   function openEvent(event){
@@ -131,8 +131,8 @@
       .andersonNightColors{display:flex;gap:5px;flex-wrap:wrap}
       .andersonNightColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}
     `;document.head.append(style);
-    window.addEventListener("anderson-profile-selected",()=>{clearTimeout(retryTimer);retryTimer=null;++request;lastRefresh=0;refresh(true)});
-    window.addEventListener("anderson-profile-cleared",()=>{clearTimeout(retryTimer);retryTimer=null;++request;lastRefresh=0;document.body.classList.remove("andersonDateView");detail.hidden=true});
+    window.addEventListener("anderson-profile-selected",()=>{clearTimeout(retryTimer);retryTimer=null;staleFailures=0;++request;lastRefresh=0;refresh(true)});
+    window.addEventListener("anderson-profile-cleared",()=>{clearTimeout(retryTimer);retryTimer=null;staleFailures=0;++request;lastRefresh=0;document.body.classList.remove("andersonDateView");detail.hidden=true});
     window.addEventListener("anderson-scheduled-event",()=>refresh(false));
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(false)});
     setInterval(()=>refresh(false),60000);
@@ -151,8 +151,9 @@
     document.querySelector(".andersonCalendarHead strong").textContent=new Intl.DateTimeFormat("en-US",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(shown.year,shown.month-1,1)));
     if(!grid.children.length){const loading=document.createElement("div");loading.className="andersonCalendarError";loading.textContent="Loading calendar…";grid.append(loading);}
     try{
-      const data=await api(`/api/night-calendar?year=${shown.year}&month=${shown.month}`,{},45000);
+      const data=await api(`/api/night-calendar?year=${shown.year}&month=${shown.month}`,{},10000);
       if(sequence!==request)return;
+      staleFailures=0;
       window.andersonCurrentMonthYear=actual.year;window.andersonCurrentMonthNumber=actual.month;window.andersonCurrentDay=actual.day;
       document.querySelector(".andersonCalendarHead strong").textContent=new Intl.DateTimeFormat("en-US",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(data.year,data.month-1,1)));
       grid.replaceChildren();
@@ -169,7 +170,7 @@
         entry.events.forEach(event=>{const dot=document.createElement("span");dot.className="andersonDot";dot.style.background=event.colors?.[0]||"#79a9ff";dots.append(dot)});
         cell.append(dots);grid.append(cell);
       });
-    }catch(error){if(error?.staleSession){if(sequence===request&&window.andersonProfile)scheduleRetry();return}if(sequence===request){
+    }catch(error){if(error?.staleSession){if(sequence===request&&window.andersonProfile&&++staleFailures<=2){scheduleRetry();return}error=new Error("Calendar session changed repeatedly. Tap Try again.");}if(sequence===request){
       grid.replaceChildren();const message=document.createElement("div");message.className="andersonCalendarError";
       const text=document.createElement("span");text.textContent="Calendar unavailable"+(error?.message?": "+error.message:".");
       const retry=document.createElement("button");retry.type="button";retry.textContent="Try again";
