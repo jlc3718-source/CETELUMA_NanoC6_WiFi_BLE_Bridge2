@@ -97,6 +97,11 @@ assert 'anderson-profile-selected' in calendar and 'error?.staleSession' in cale
 assert 'scheduleRetry' in calendar and 'Loading calendar' in calendar
 control=between(main,'server.on("/api/control"','server.on("/api/events"')
 assert 'sceneRequested' in control and 'else if(sceneRequested)power=true' in control
+night_calendar=between(main,'server.on("/api/night-calendar"','server.on("/api/tonight-options"')
+assert 'scheduler.resolve(' not in night_calendar
+assert 'const bool exact=eventActiveOn(i,night);' in night_calendar
+assert 'yield();' in night_calendar
+assert '10000' in calendar and 'staleFailures' in calendar
 print('PASS: pre-BLE/UI boot ordering, minimal recovery/status routes, repeated-boot recovery, and single auth-expiry owner')
 
 args=argparse.ArgumentParser();args.add_argument('--javascript-only',action='store_true');opts=args.parse_args()
@@ -130,10 +135,10 @@ class BleController{
 '''
 tests=r'''
 int main(){
- WiFi.state=0;assert(!remoteUpdateBootCheck("3.1.66",idle)&&queued==0);WiFi.state=WL_CONNECTED;
- scenario=0;assert(!remoteUpdateBootCheck("3.1.66",idle)&&queued==1&&idles==0&&autoTimerStarted);
- scenario=1;assert(!remoteUpdateBootCheck("3.1.66",idle)&&ticks==3&&idles==3);
- scenario=2;assert(remoteUpdateBootCheck("3.1.66",idle)&&ticks==3&&idles==6&&operationOwner==OWNER_REMOTE);
+ WiFi.state=0;assert(!remoteUpdateBootCheck("3.1.67",idle)&&queued==0);WiFi.state=WL_CONNECTED;
+ scenario=0;assert(!remoteUpdateBootCheck("3.1.67",idle)&&queued==1&&idles==0&&autoTimerStarted);
+ scenario=1;assert(!remoteUpdateBootCheck("3.1.67",idle)&&ticks==3&&idles==3);
+ scenario=2;assert(remoteUpdateBootCheck("3.1.67",idle)&&ticks==3&&idles==6&&operationOwner==OWNER_REMOTE);
  BleController controller;for(auto& slot:controller.slots){slot.power.pending=slot.brightness.pending=slot.color.pending=true;}
  controller.setPower(false);assert(!controller.activeValid&&controller.lastFrame[3]==0&&controller.lastFrame[5]==0);
  for(auto& slot:controller.slots)assert(slot.power.pending&&!slot.brightness.pending&&!slot.color.pending&&slot.generation==1);
