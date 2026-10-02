@@ -63,7 +63,7 @@ assert '.anderson-no-plain-effect-buttons' not in web and 'enhanceEffectButtons'
 
 assert 'd["scheduledEvent"].to<JsonObject>()' in main and 'scheduled["toggleable"]=true' in main
 assert 'eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)&&scheduledTheme.name==EVENTS[i].name' in main
-assert 'if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue' in main
+assert 'if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||eventEffectiveUsesMonthTier(i))continue' in main
 assert 'scheduled["upcoming"]=scheduledUpcoming' in main and 'No enabled scheduled event' in main
 assert 'window.andersonScheduledEvent=e.scheduledEvent||null' in web and 'anderson-scheduled-event' in web
 assert 'scheduledEventName' in mock and 'tonightEventEnabled' in mock and 'v3TonightToggleLabel","ENABLE"' in mock
