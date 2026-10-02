@@ -128,10 +128,10 @@ class BleController{
 '''
 tests=r'''
 int main(){
- WiFi.state=0;assert(!remoteUpdateBootCheck("3.1.68",idle)&&queued==0);WiFi.state=WL_CONNECTED;
- scenario=0;assert(!remoteUpdateBootCheck("3.1.68",idle)&&queued==1&&idles==0&&autoTimerStarted);
- scenario=1;assert(!remoteUpdateBootCheck("3.1.68",idle)&&ticks==3&&idles==3);
- scenario=2;assert(remoteUpdateBootCheck("3.1.68",idle)&&ticks==3&&idles==6&&operationOwner==OWNER_REMOTE);
+ WiFi.state=0;assert(!remoteUpdateBootCheck("3.1.69",idle)&&queued==0);WiFi.state=WL_CONNECTED;
+ scenario=0;assert(!remoteUpdateBootCheck("3.1.69",idle)&&queued==1&&idles==0&&autoTimerStarted);
+ scenario=1;assert(!remoteUpdateBootCheck("3.1.69",idle)&&ticks==3&&idles==3);
+ scenario=2;assert(remoteUpdateBootCheck("3.1.69",idle)&&ticks==3&&idles==6&&operationOwner==OWNER_REMOTE);
  BleController controller;for(auto& slot:controller.slots){slot.power.pending=slot.brightness.pending=slot.color.pending=true;}
  controller.setPower(false);assert(!controller.activeValid&&controller.lastFrame[3]==0&&controller.lastFrame[5]==0);
  for(auto& slot:controller.slots)assert(slot.power.pending&&!slot.brightness.pending&&!slot.color.pending&&slot.generation==1);
