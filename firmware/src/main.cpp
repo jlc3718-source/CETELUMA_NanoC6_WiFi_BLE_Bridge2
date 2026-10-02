@@ -72,7 +72,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.66";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.67";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -632,42 +632,17 @@ void setupRoutes(){
         JsonObject item=items.add<JsonObject>();item["id"]=customId;item["name"]=custom.name;item["effect"]=effectName(custom.effect);item["type"]="Custom event";
         JsonArray colors=item["colors"].to<JsonArray>();for(uint8_t c=0;c<custom.colorCount;c++)colors.add(colorHex(custom.colors[c]));continue;
       }
-      bool eligible[MAX_BUILTIN_EVENTS]={false},seen[MAX_BUILTIN_EVENTS]={false};size_t candidateCount=0;
       for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
         if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i))continue;
         const bool exact=eventActiveOn(i,night);
         const bool window=!exact&&EVENTS[i].kind==EventKind::Holiday&&(settings.leadDays||settings.trailDays)
           &&eventWindowActiveOn(i,night,settings.leadDays,settings.trailDays);
-        if(exact||window){eligible[i]=true;candidateCount++;}
-      }
-      if(!candidateCount)continue;
-      const int start=settings.schedule1StartAtDusk?scheduler.civilDuskMinutes(night):settings.onMinutes;
-      int span=(int)settings.offMinutes-start;if(span<=0)span+=1440;
-      // The narrowest overlap slice is at least 2/9 of Schedule 1 divided
-      // among one tier. Eight probes per candidate cover every occupied
-      // minute slot without resolving all 31 nights minute by minute.
-      const int stride=max(1,span/(8*(int)candidateCount));
-      for(int pos=0;pos<span;pos+=stride){
-        tm probe=night;int minute=(start+pos)%1440;probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;
-        Theme selected=scheduler.resolve(probe);
-        for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++){
-          if(!eligible[i]||seen[i])continue;
-          if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
-        }
-        if((pos&31)==0)yield();
-      }
-      // Schedule 2 continues the final Schedule 1 scene.
-      if((span-1)%stride){
-        tm probe=night;int minute=(start+span-1)%1440;probe.tm_hour=minute/60;probe.tm_min=minute%60;probe.tm_sec=0;
-        Theme selected=scheduler.resolve(probe);
-        for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(eligible[i]&&!seen[i])
-          if(selected.name==EVENTS[i].name||(selected.name=="Combined monthly events"&&EVENTS[i].rule==RuleType::Month&&eventActiveOn(i,night)))seen[i]=true;
-      }
-      for(size_t i=0;i<EVENT_COUNT&&i<MAX_BUILTIN_EVENTS;i++)if(seen[i]){
+        if(!exact&&!window)continue;
         Theme theme=effectiveEventTheme(i);JsonObject item=items.add<JsonObject>();item["id"]=EVENTS[i].id;item["name"]=EVENTS[i].name;
         item["effect"]=effectName(theme.effect);item["type"]=kindName(EVENTS[i].kind);JsonArray colors=item["colors"].to<JsonArray>();
         for(uint8_t c=0;c<theme.colorCount;c++)colors.add(colorHex(theme.colors[c]));
       }
+      yield();
     }
     String json;serializeJson(output,json);sendJson(json);
   });
