@@ -496,6 +496,7 @@ async function config(){
       if(e.enabled===false)o.enabled=false;
       if(e.favorite)o.favorite=true;
       if(Array.isArray(e.creativePhases)&&e.creativePhases.length)o.creativePhases=creativeProgram(e);
+      if(e.scheduleOverride)o.scheduleOverride=e.scheduleOverride;
       if(Object.keys(o).length)overrides[e.id]=o;
     }
     put("event_overrides",overrides);put("initialized",true);
@@ -534,7 +535,9 @@ async function tonightCandidateBundle(){
   });
   return {cfg,now,night,candidates};
 }
-function eventDate(e,year,special){
+function daysInMonth(year,month){return new Date(Date.UTC(year,month,0)).getUTCDate();}
+function validMonthDay(year,month,day){return Number.isInteger(month)&&month>=1&&month<=12&&Number.isInteger(day)&&day>=1&&day<=daysInMonth(year,month);}
+function baseEventDate(e,year,special){
   const utc=(y,m,d)=>new Date(Date.UTC(y,m-1,d));
   let d=null;
   if(e.rule==="Month")return utc(year,e.month,1);
@@ -550,25 +553,100 @@ function eventDate(e,year,special){
   }
   if(e.rule==="MonthEnd")d=utc(year,e.month+1,0);
   if(e.rule==="EasterOffset"){
-    const a=year%19,b=Math.floor(year/100),c=year%100,h=(19*a+b-Math.floor(b/4)-Math.floor((b-Math.floor((b+8)/25)+1)/3)+15)%30;
-    const l=(32+2*(b%4)+2*Math.floor(c/4)-h-(c%4))%7,m=Math.floor((a+11*h+22*l)/451),n=h+l-7*m+114;
+    const x=year%19,b=Math.floor(year/100),c=year%100,h=(19*x+b-Math.floor(b/4)-Math.floor((b-Math.floor((b+8)/25)+1)/3)+15)%30;
+    const l=(32+2*(b%4)+2*Math.floor(c/4)-h-(c%4))%7,m=Math.floor((x+11*h+22*l)/451),n=h+l-7*m+114;
     d=utc(year,Math.floor(n/31),n%31+1);
   }
   if(e.rule==="YearTable"||e.rule==="Hanukkah"){
-    const hit=special.find(s=>s.id===(e.dateRuleSourceId||e.id)&&s.year===year);
+    const hit=special.find(x=>x.id===(e.dateRuleSourceId||e.id)&&x.year===year);
     if(hit)d=utc(hit.year,hit.month,hit.day);
   }
-  if(d&&e.offsetDays&&e.rule!=="EasterOffset")d.setUTCDate(d.getUTCDate()+e.offsetDays);
-  if(d&&e.rule==="EasterOffset")d.setUTCDate(d.getUTCDate()+e.offsetDays);
+  if(d&&e.offsetDays)d.setUTCDate(d.getUTCDate()+e.offsetDays);
   return d;
 }
-function when(e,year,special){
-  if(e.rule==="Month")return new Intl.DateTimeFormat("en-US",{month:"long",timeZone:"UTC"}).format(eventDate(e,year,special))+" — all month";
-  const d=eventDate(e,year,special);
+function scheduleOverride(e){return e?.scheduleOverride&&typeof e.scheduleOverride==="object"?e.scheduleOverride:null;}
+function eventDate(e,year,special){
+  const o=scheduleOverride(e);
+  if(!o||o.mode==="default")return baseEventDate(e,year,special);
+  if(o.annual===false&&Number(o.year)!==year)return null;
+  const y=o.annual===false?Number(o.year):year,month=Number(o.startMonth),day=o.mode==="month"?1:Number(o.startDay);
+  return validMonthDay(y,month,day)?new Date(Date.UTC(y,month-1,day)):null;
+}
+function eventDurationDays(e,year){
+  const o=scheduleOverride(e);
+  if(!o||o.mode==="default")return Math.max(1,Number(e.durationDays)||1);
+  if(o.mode==="date")return 1;
+  if(o.mode==="month")return daysInMonth(year,Number(o.startMonth));
+  const sm=Number(o.startMonth),sd=Number(o.startDay),em=Number(o.endMonth),ed=Number(o.endDay);
+  if(!validMonthDay(year,sm,sd))return 1;
+  let endYear=year;if(em<sm||(em===sm&&ed<sd))endYear++;
+  if(!validMonthDay(endYear,em,ed))return 1;
+  return Math.max(1,Math.round((Date.UTC(endYear,em-1,ed)-Date.UTC(year,sm-1,sd))/86400000)+1);
+}
+function eventActiveOnDisplay(e,year,month,day,special){
+  const o=scheduleOverride(e);
+  if(o?.mode==="month"){
+    if(o.annual===false&&Number(o.year)!==year)return false;
+    return Number(o.startMonth)===month;
+  }
+  const target=Date.UTC(year,month-1,day);
+  for(let y=year-1;y<=year;y++){
+    const start=eventDate(e,y,special);if(!start)continue;
+    const startMs=Date.UTC(start.getUTCFullYear(),start.getUTCMonth(),start.getUTCDate());
+    const endMs=startMs+(eventDurationDays(e,start.getUTCFullYear())-1)*86400000;
+    if(target>=startMs&&target<=endMs)return true;
+  }
+  return false;
+}
+function eventOccursInMonth(e,year,month,special){
+  for(let day=1;day<=daysInMonth(year,month);day++)if(eventActiveOnDisplay(e,year,month,day,special))return true;
+  return false;
+}
+function scheduleClock(n){
+  n=((Number(n)||0)%1440+1440)%1440;const h=Math.floor(n/60),m=n%60,ampm=h>=12?"PM":"AM";
+  return (h%12||12)+":"+String(m).padStart(2,"0")+" "+ampm;
+}
+function baseWhen(e,year,special){
+  if(e.rule==="Month"){
+    const d=baseEventDate(e,year,special);return d?new Intl.DateTimeFormat("en-US",{month:"long",timeZone:"UTC"}).format(d)+" — all month":"No scheduled date in "+year;
+  }
+  const d=baseEventDate(e,year,special);
   if(!d)return "No scheduled date in "+year;
   const format=x=>new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric",timeZone:"UTC"}).format(x);
   if(Number(e.durationDays||1)>1){const end=new Date(d);end.setUTCDate(end.getUTCDate()+Number(e.durationDays)-1);return format(d)+" – "+format(end);}
   return format(d);
+}
+function when(e,year,special){
+  const o=scheduleOverride(e);let label;
+  if(!o||o.mode==="default")label=baseWhen(e,year,special);
+  else{
+    const months=["","January","February","March","April","May","June","July","August","September","October","November","December"];
+    const annual=o.annual!==false;
+    if(!annual&&Number(o.year)!==year)return "No scheduled date in "+year;
+    if(o.mode==="month")label=months[Number(o.startMonth)]+" — all month"+(annual?" • every year":" • "+o.year);
+    else if(o.mode==="date")label=months[Number(o.startMonth)]+" "+Number(o.startDay)+(annual?" • every year":" • "+o.year);
+    else label=months[Number(o.startMonth)]+" "+Number(o.startDay)+" – "+months[Number(o.endMonth)]+" "+Number(o.endDay)+(annual?" • every year":" • "+o.year);
+  }
+  if(o?.customTime)label+=" • "+scheduleClock(o.start)+"–"+scheduleClock(o.end);
+  return label;
+}
+function scheduleView(e,original,year,special){
+  const o=scheduleOverride(e),builtIn=baseWhen(original||e,year,catalog.special||special||[]);
+  const base=baseEventDate(original||e,year,catalog.special||special||[]);
+  const startMonth=Number(o?.startMonth)||(base?base.getUTCMonth()+1:1),startDay=Number(o?.startDay)||(base?base.getUTCDate():1);
+  return {
+    customized:!!o,
+    mode:o?.mode||"default",
+    annual:o?.annual!==false,
+    year:Number(o?.year)||year,
+    startMonth,startDay,
+    endMonth:Number(o?.endMonth)||startMonth,
+    endDay:Number(o?.endDay)||startDay,
+    customTime:!!o?.customTime,
+    start:clock(o?.start??0),
+    end:clock(o?.end??0),
+    builtIn
+  };
 }
 function displayEvents(cfg,url){
   const year=Number(url.searchParams.get("year"))||new Date().getFullYear(),month=Number(url.searchParams.get("month"))||0;
@@ -577,15 +655,15 @@ function displayEvents(cfg,url){
   for(const e of cfg.events){
     if(mode===0&&!e.major)continue;
     if((mask&(1<<e.categoryIndex))===0)continue;
-    const d=eventDate(e,year,cfg.special||[]);
-    if(month&&(!d||d.getUTCMonth()+1!==month))continue;
+    if(month&&!eventOccursInMonth(e,year,month,cfg.special||[]))continue;
     const category=categoryByIndex.get(e.categoryIndex)||catalog.categories[0],label=when(e,year,cfg.special||[]);
     if(search&&!(e.name+" "+label+" "+e.kind+" "+category.name).toLowerCase().includes(search))continue;
     const original=eventById.get(e.id),defaults=original?.profiles;
-    const nativeFactoryEffect=String(e.factoryEffectName||"").trim(),layers=nativeFactoryEffect?[]:creativeProgram(e),layersCustomized=Array.isArray(e.creativePhases)&&e.creativePhases.length>0;
+    const nativeFactoryEffect=String(e.factoryEffectName||"").trim(),layers=nativeFactoryEffect?[]:creativeProgram(e),layersCustomized=Array.isArray(e.creativePhases)&&e.creativePhases.length>0,scheduleCustomized=!!scheduleOverride(e);
     rows.push({id:e.id,name:e.name,kind:e.kind,categoryId:category.id,categoryName:category.name,categoryColor:category.color,
       when:label,effect:nativeFactoryEffect||e.effect,speed:e.speed,colors:rgb(e.colors),layerCount:nativeFactoryEffect?1:layers.length,layers,layersCustomized,nativeFactoryEffect:nativeFactoryEffect||null,enabled:e.enabled!==false,favorite:!!e.favorite,
-      customized:layersCustomized||!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
+      schedule:scheduleView(e,original,year,cfg.special||[]),
+      customized:scheduleCustomized||layersCustomized||!!defaults&&(e.effect!==(mode===2?defaults.expandedEffect:original.effect)||e.speed!==(mode===2?defaults.expandedSpeed:original.speed)
        ||JSON.stringify(e.colors)!==JSON.stringify(mode===0?defaults.major:mode===1?defaults.basic:defaults.expanded))});
     if(!month&&rows.length>=96)break;
   }
@@ -788,24 +866,53 @@ async function route(req,res){
         return;
       }
       if(!original)throw fail(404,"Unknown event");
-      if(body.reset){const mode=Number(cfg.settings.mode||0),p=original.profiles;
+      const overrides=meta("event_overrides",{});overrides[e.id]??={};
+      if(body.reset||body.resetAll){
+        const mode=Number(cfg.settings.mode||0),p=original.profiles;
         e.effect=mode===2?p.expandedEffect:original.effect;e.speed=mode===2?p.expandedSpeed:original.speed;
         e.colors=mode===0?p.major:mode===1?p.basic:p.expanded;delete e.creativePhases;
         if(original.factoryEffectName)e.factoryEffectName=original.factoryEffectName;else delete e.factoryEffectName;
-        const overrides=meta("event_overrides",{});delete overrides[e.id];put("event_overrides",overrides);
+        const keepSchedule=!body.resetAll&&e.scheduleOverride?e.scheduleOverride:null;
+        delete overrides[e.id];
+        if(keepSchedule)overrides[e.id]={scheduleOverride:keepSchedule};
       }else{
-        const o=meta("event_overrides",{});o[e.id]??={};
         if(Object.hasOwn(body,"effect")||Object.hasOwn(body,"layers")||Array.isArray(body.colors))delete e.factoryEffectName;
-        for(const key of ["enabled","favorite","effect","speed"])if(Object.hasOwn(body,key)){e[key]=body[key];o[e.id][key]=body[key];}
-        if(Array.isArray(body.colors)){e.colors=colorInts(body.colors);o[e.id].colors=e.colors;}
+        for(const key of ["enabled","favorite","effect","speed"])if(Object.hasOwn(body,key)){e[key]=body[key];overrides[e.id][key]=body[key];}
+        if(Array.isArray(body.colors)){e.colors=colorInts(body.colors);overrides[e.id].colors=e.colors;}
         if(Array.isArray(body.layers)){
           if(body.layers.length<1)throw fail(400,"An event must have at least one lighting layer");
           const colorCount=Math.max(1,Math.min(8,(Array.isArray(e.colors)?e.colors.length:0)||1));
           const layers=body.layers.slice(0,8).map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift,normalizePattern(p?.pattern,colorCount)));
-          e.creativePhases=layers;o[e.id].creativePhases=layers;
+          e.creativePhases=layers;overrides[e.id].creativePhases=layers;
         }
-        put("event_overrides",o);
       }
+      if(body.resetSchedule||body.resetAll){
+        delete e.scheduleOverride;
+        if(overrides[e.id])delete overrides[e.id].scheduleOverride;
+      }else if(body.schedule&&typeof body.schedule==="object"){
+        const sc=body.schedule,mode=["default","date","range","month"].includes(String(sc.mode))?String(sc.mode):"default";
+        const annual=sc.annual!==false,year=annual?0:Math.trunc(Number(sc.year)||0);
+        if(!annual&&(year<2020||year>2100))throw fail(400,"Choose a valid schedule year");
+        let startMonth=Math.trunc(Number(sc.startMonth)||0),startDay=Math.trunc(Number(sc.startDay)||0),endMonth=Math.trunc(Number(sc.endMonth)||0),endDay=Math.trunc(Number(sc.endDay)||0);
+        if(mode==="default"){
+          const d=baseEventDate(original,new Date().getFullYear(),catalog.special||[]);startMonth=d?d.getUTCMonth()+1:1;startDay=d?d.getUTCDate():1;endMonth=startMonth;endDay=startDay;
+        }else{
+          if(!validMonthDay(year||2028,startMonth,startDay))throw fail(400,"Choose a valid event start date");
+          if(mode==="date"){endMonth=startMonth;endDay=startDay;}
+          else if(mode==="month"){startDay=1;endMonth=startMonth;endDay=daysInMonth(year||2028,startMonth);}
+          else if(!validMonthDay((year||2028)+(endMonth<startMonth||(endMonth===startMonth&&endDay<startDay)?1:0),endMonth,endDay))throw fail(400,"Choose a valid event end date");
+        }
+        const customTime=!!sc.customTime,start=customTime?minutes(sc.start):0,end=customTime?minutes(sc.end):0;
+        if(customTime&&(start===null||end===null))throw fail(400,"Choose valid event start and end times");
+        if(mode==="default"&&!customTime){
+          delete e.scheduleOverride;if(overrides[e.id])delete overrides[e.id].scheduleOverride;
+        }else{
+          e.scheduleOverride={mode,annual,year,startMonth,startDay,endMonth,endDay,customTime,start:start??0,end:end??0};
+          overrides[e.id].scheduleOverride=e.scheduleOverride;
+        }
+      }
+      if(overrides[e.id]&&Object.keys(overrides[e.id]).length===0)delete overrides[e.id];
+      put("event_overrides",overrides);
     });
     return send(res,200,{ok:true});
   }
