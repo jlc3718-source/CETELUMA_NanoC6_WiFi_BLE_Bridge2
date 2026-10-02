@@ -2,6 +2,18 @@ import { canonicalEffect } from "./effects.js";
 import { astronomy, localParts, localToUtcMs } from "./scheduler.js";
 import type { Scene, SegmentPattern } from "./types.js";
 
+export interface EventScheduleOverride {
+  mode:"default"|"date"|"range"|"month";
+  annual:boolean;
+  year:number;
+  startMonth:number;
+  startDay:number;
+  endMonth:number;
+  endDay:number;
+  customTime:boolean;
+  start:number;
+  end:number;
+}
 export interface CalendarEvent {
   id:string; name:string; kind:string; rule:string;
   month:number; day:number; weekday:number; nth:number; offsetDays:number; durationDays:number;
@@ -9,6 +21,7 @@ export interface CalendarEvent {
   categoryIndex:number; major:boolean; dateRuleSourceId?:string; factoryEffectName?:string;
   creativePhases?:Array<{effect:string;speed:number;minutes:number;shift?:number;pattern?:SegmentPattern}>;
   aiOneTime?:boolean; expiresAt?:string; aiReplaceEventId?:string;
+  scheduleOverride?:EventScheduleOverride;
 }
 export interface SpecialDate { id:string; year:number; month:number; day:number; }
 export interface CustomCalendarItem {
@@ -65,8 +78,20 @@ function easter(year:number):Ymd{
   const month=Math.floor((h+l-7*m+114)/31),day=((h+l-7*m+114)%31)+1;
   return {year,month,day};
 }
+function validYmd(d:Ymd){return d.month>=1&&d.month<=12&&d.day>=1&&d.day<=monthDays(d.year,d.month);}
+function overrideConfig(e:CalendarEvent){return e.scheduleOverride&&typeof e.scheduleOverride==="object"?e.scheduleOverride:undefined;}
+function effectiveMonthTier(e:CalendarEvent){
+  const o=overrideConfig(e);if(o&&o.mode!=="default")return o.mode==="month";
+  return e.rule==="Month";
+}
 function startDate(e:CalendarEvent,year:number,special:SpecialDate[]):Ymd|null{
   try{
+    const o=overrideConfig(e);
+    if(o&&o.mode!=="default"){
+      if(!o.annual&&year!==o.year)return null;
+      const y=o.annual?year:o.year,month=o.startMonth,day=o.mode==="month"?1:o.startDay,d={year:y,month,day};
+      return validYmd(d)?d:null;
+    }
     let d:Ymd|null=null;
     switch(e.rule){
       case "Fixed": d={year,month:e.month,day:e.day}; break;
@@ -97,6 +122,22 @@ function startDate(e:CalendarEvent,year:number,special:SpecialDate[]):Ymd|null{
     return e.offsetDays?addDays(d,e.offsetDays):d;
   }catch{return null;}
 }
+function durationDays(e:CalendarEvent,startYear:number){
+  const o=overrideConfig(e);
+  if(!o||o.mode==="default")return Math.max(1,e.durationDays||1);
+  if(o.mode==="date")return 1;
+  if(o.mode==="month")return monthDays(startYear,o.startMonth);
+  const start={year:startYear,month:o.startMonth,day:o.startDay};
+  let endYear=startYear;
+  if(o.endMonth<o.startMonth||(o.endMonth===o.startMonth&&o.endDay<o.startDay))endYear++;
+  const end={year:endYear,month:o.endMonth,day:o.endDay};
+  if(!validYmd(start)||!validYmd(end))return 1;
+  return Math.max(1,Math.round((ymdMs(end)-ymdMs(start))/86400000)+1);
+}
+function eventTimeActive(e:CalendarEvent,minute:number){
+  const o=overrideConfig(e);if(!o?.customTime||o.start===o.end)return true;
+  return inWindow(minute,o.start,o.end);
+}
 function included(cfg:CalendarConfig,e:CalendarEvent){
   if(!e.enabled)return false;
   // Explicit one-night AI designs are user-approved overrides for that date,
@@ -107,18 +148,27 @@ function included(cfg:CalendarConfig,e:CalendarEvent){
   return Number(cfg.settings.mode||0)!==0||!!e.major;
 }
 function activeOn(cfg:CalendarConfig,e:CalendarEvent,day:Ymd){
-  if(e.rule==="Month")return day.month===e.month;
+  const o=overrideConfig(e);
+  if(effectiveMonthTier(e)){
+    const month=o&&o.mode==="month"?o.startMonth:e.month;
+    if(o&&!o.annual&&day.year!==o.year)return false;
+    return day.month===month;
+  }
   for(let y=day.year-1;y<=day.year;y++){
-    const s=startDate(e,y,cfg.special||[]);if(!s)continue;
-    const end=addDays(s,Math.max(1,e.durationDays||1)-1);
-    if(cmp(day,s)>=0&&cmp(day,end)<=0)return true;
+    const start=startDate(e,y,cfg.special||[]);if(!start)continue;
+    const end=addDays(start,durationDays(e,start.year)-1);
+    if(cmp(day,start)>=0&&cmp(day,end)<=0)return true;
   }
   return false;
 }
 function windowActive(cfg:CalendarConfig,e:CalendarEvent,day:Ymd,lead:number,trail:number){
+  const o=overrideConfig(e);
+  // A user-selected date/range/month is exact; global holiday lead/trail
+  // padding must not silently extend that override.
+  if(o&&o.mode!=="default")return false;
   for(let y=day.year-1;y<=day.year+1;y++){
-    const s=startDate(e,y,cfg.special||[]);if(!s)continue;
-    const a=addDays(s,-lead),b=addDays(s,Math.max(1,e.durationDays||1)-1+trail);
+    const start=startDate(e,y,cfg.special||[]);if(!start)continue;
+    const a=addDays(start,-lead),b=addDays(start,durationDays(e,start.year)-1+trail);
     if(cmp(day,a)>=0&&cmp(day,b)<=0)return true;
   }
   return false;
@@ -283,7 +333,7 @@ function resolveFor(cfg:CalendarConfig,day:Ymd,minute:number,start:number,end:nu
   for(const e of cfg.events||[]){
     if(!included(cfg,e))continue;
     if(!e.aiOneTime&&(replaced.has(e.id)||replaced.has(String(e.dateRuleSourceId||""))))continue;
-    const active=activeOn(cfg,e,day)||(e.kind==="Holiday"&&(lead||trail)&&windowActive(cfg,e,day,lead,trail));
+    const active=(activeOn(cfg,e,day)||(e.kind==="Holiday"&&(lead||trail)&&windowActive(cfg,e,day,lead,trail)))&&eventTimeActive(e,minute);
     if(active)candidates.push({id:e.id,name:e.name,scene:sceneFor(e,brightness,showPosition)});
   }
   if(!candidates.length)return null;
@@ -353,7 +403,20 @@ export function normalizeCalendarConfig(input:any):CalendarConfig{
       })) : undefined,
       aiOneTime:raw.aiOneTime===true,
       expiresAt:typeof raw.expiresAt==="string"&&raw.expiresAt?raw.expiresAt:undefined,
-      aiReplaceEventId:typeof raw.aiReplaceEventId==="string"&&raw.aiReplaceEventId?raw.aiReplaceEventId:undefined
+      aiReplaceEventId:typeof raw.aiReplaceEventId==="string"&&raw.aiReplaceEventId?raw.aiReplaceEventId:undefined,
+      scheduleOverride:(()=>{
+        const o=raw.scheduleOverride;
+        if(!o||typeof o!=="object")return undefined;
+        const mode=["default","date","range","month"].includes(String(o.mode))?String(o.mode) as EventScheduleOverride["mode"]:"default";
+        const annual=o.annual!==false,rawYear=Math.trunc(Number(o.year)||0);
+        const year=annual?0:(rawYear>=2020&&rawYear<=2100?rawYear:0);
+        const startMonth=clamp(Math.trunc(Number(o.startMonth)||1),1,12),startDay=clamp(Math.trunc(Number(o.startDay)||1),1,31);
+        const endMonth=clamp(Math.trunc(Number(o.endMonth)||startMonth),1,12),endDay=clamp(Math.trunc(Number(o.endDay)||startDay),1,31);
+        const customTime=!!o.customTime,start=clamp(Math.trunc(Number(o.start)||0),0,1439),end=clamp(Math.trunc(Number(o.end)||0),0,1439);
+        if(mode==="default"&&!customTime)return undefined;
+        if(!annual&&!year)return undefined;
+        return {mode,annual,year,startMonth,startDay,endMonth,endDay,customTime,start,end};
+      })()
     });
   }
   for(const raw of Array.isArray(input?.special)?input.special:[]){
@@ -515,22 +578,27 @@ export function nextCalendarTransition(cfg:CalendarConfig|null,now:Date,lat:numb
 
 export function nextCalendarEvent(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
   if(!cfg?.settings?.enabled)return null;
-  const today=localYmd(now,tz);
-  let best:Ymd|null=null,bestEvent:CalendarEvent|null=null;
+  const today=localYmd(now,tz),nowMs=now.getTime();
+  let bestAt=Number.POSITIVE_INFINITY,bestEvent:CalendarEvent|null=null;
   for(const e of cfg.events||[]){
-    if(!included(cfg,e)||e.rule==="Month")continue;
-    for(let y=today.year;y<=today.year+3;y++){
-      const d=startDate(e,y,cfg.special||[]);
-      if(d&&cmp(d,today)>0&&(!best||cmp(d,best)<0)){best=d;bestEvent=e;}
+    if(!included(cfg,e)||effectiveMonthTier(e))continue;
+    for(let y=today.year-1;y<=today.year+3;y++){
+      const day=startDate(e,y,cfg.special||[]);if(!day)continue;
+      let startMinute=cfg.settings.on;
+      if(cfg.settings.startAtDusk){
+        const noon=new Date(localToUtcMs(day.year,day.month,day.day,12,0,tz));
+        startMinute=astroMinute(noon,lat,lon,tz,false);
+      }
+      const total=span(startMinute,cfg.settings.off);
+      let firstPos=-1;
+      for(let pos=0;pos<total;pos++){if(eventTimeActive(e,(startMinute+pos)%1440)){firstPos=pos;break;}}
+      if(firstPos<0)continue;
+      const absolute=startMinute+firstPos,runDay=absolute>=1440?addDays(day,1):day,minute=absolute%1440;
+      const at=localToUtcMs(runDay.year,runDay.month,runDay.day,Math.floor(minute/60),minute%60,tz);
+      if(at>nowMs+500&&at<bestAt){bestAt=at;bestEvent=e;}
     }
   }
-  if(!best||!bestEvent)return null;
-  let hour=Math.floor(cfg.settings.on/60),minute=cfg.settings.on%60;
-  if(cfg.settings.startAtDusk){
-    const noon=new Date(localToUtcMs(best.year,best.month,best.day,12,0,tz));
-    const m=astroMinute(noon,lat,lon,tz,false);hour=Math.floor(m/60);minute=m%60;
-  }
-  return {at:localToUtcMs(best.year,best.month,best.day,hour,minute,tz),id:bestEvent.id,name:bestEvent.name,target:"All"};
+  return bestEvent?{at:bestAt,id:bestEvent.id,name:bestEvent.name,target:"All"}:null;
 }
 
 export function currentCalendarInfo(cfg:CalendarConfig|null,now:Date,lat:number,lon:number,tz:string){
