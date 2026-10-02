@@ -93,6 +93,8 @@ assert 'bootRecoveryMode=attempts>=3' in main and 'BOOT_HEALTHY_GRACE_MS=120UL*1
 control=between(main,'server.on("/api/control"','server.on("/api/events"')
 assert 'sceneRequested' in control and 'else if(sceneRequested)power=true' in control
 assert '/api/night-calendar' not in main
+assert 'saveEventScheduleOverride' in main and 'clearEventScheduleOverride' in main
+assert 'eventEffectiveOccursInMonth' in main and 'eventEffectiveWhen' in main
 print('PASS: pre-BLE/UI boot ordering, minimal recovery/status routes, repeated-boot recovery, and single auth-expiry owner')
 
 args=argparse.ArgumentParser();args.add_argument('--javascript-only',action='store_true');opts=args.parse_args()
