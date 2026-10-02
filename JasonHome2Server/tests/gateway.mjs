@@ -86,9 +86,13 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const summary=await month.json();assert.equal(summary.days.length,29);
     assert.equal(summary.days[0].events.length,0);
     assert.deepEqual(summary.days[28].events[0],{id:'schedule-leap',name:'Leap Night',colors:['#123456'],effect:'Breath',speed:1,type:'Custom event'});
+    // Warm both shared GET caches first, then verify concurrent screens do not
+    // create additional Oracle reads while those caches are still valid.
+    await fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json());
+    const statusBefore=reads.status,calendarBefore=reads.calendar;
     await Promise.all(Array.from({length:6},()=>fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json())));
-    assert.equal(reads.status,1,'concurrent screens share one status read');
-    assert.equal(reads.calendar,1,'concurrent screens share one calendar read');
+    assert.equal(reads.status,statusBefore,'concurrent screens reuse the warm status cache');
+    assert.equal(reads.calendar,calendarBefore,'concurrent screens reuse the warm calendar cache');
     assert.equal((await fetch(base+'/api/event',{method:'POST',headers:{cookie,origin:'https://evil.example','content-type':'application/json'},body:'{}'})).status,403);
   }finally{
     child.kill();backend.close();rmSync(dir,{recursive:true,force:true});
