@@ -144,27 +144,10 @@ assert 'formatClockTime(e)' in web and 'formatClockTime(e.settings.off)' in web 
 assert 'Dusk ${n.dusk||"—"} • Dawn ${n.dawn||"—"}' in web
 assert 'Dusk ${e.settings?.dusk||"—"} • Dawn ${e.settings?.dawn||"—"}' in web
 assert 'p.every(e=>"#000000"===normHex(e))' in web and 'if(g)return{c:"#000000",a:0,s:1}' in web
-night=t('firmware/web/night_calendar.js');release=t('tools/release.py')
-assert 'server.on("/api/night-calendar",HTTP_GET' in main and 'Theme selected=scheduler.resolve(probe)' in main
-assert 'resolveCustomSchedule(night,custom,customBrightness,customSpeed,&customId)' in main
-assert 'eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)' in main
-assert 'anderson-auth-required' not in night and 'if(!window.andersonProfile)return;' in night
-assert 'error?.staleSession' in night and 'response.status===401' in web
+release=t('tools/release.py')
+assert 'response.status===401' in web
 assert 'token||window.andersonProfile||currentRole!=="none"' in web
 assert 'epoch!==window.andersonAuthEpoch||token!==(window.andersonAuthToken||"")' in web
-assert 'NIGHT_CALENDAR_JS.read_text()' in release
-assert 'cell.addEventListener("click",()=>showNight' in night and 'Show all schedules' in night
-assert 'grid-template-columns:repeat(7,minmax(0,1fr))' in night
-assert 'const int stride=max(1,span/(8*(int)candidateCount))' in main
-for span in [1,2,3,5,20,60,360,1440]:
-    for count in [1,2,3,7,16,64]:
-        stride=max(1,span//(8*count)); samples=set(range(0,span,stride))|{span-1}
-        monthly=max(1,span//3); high=max(1,span-monthly); window=max(1,high//3)
-        segments=[(0,span),(0,monthly),(monthly,min(window,span-monthly)),(monthly+window,max(0,span-monthly-window))]
-        for start,length in segments:
-            if not length: continue
-            for slots in [1,count]:
-                actual={(position-start)*slots//length for position in range(start,start+length)}
-                sampled={(position-start)*slots//length for position in samples if start<=position<start+length}
-                assert sampled==actual,(span,count,start,length,slots)
+assert '/api/night-calendar' not in main
+assert 'night_calendar.js' not in release
 print('Anderson regression source checks passed')
