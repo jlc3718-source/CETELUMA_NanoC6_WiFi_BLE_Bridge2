@@ -11,7 +11,7 @@ assert 'v3FxGradient' not in mock and 'data-effect="Gradient"' not in mock
 assert 'ANDERSON_COLOR_PALETTE_COUNT' in main and 'server.on("/api/colors"' in main
 assert '/api/events/bulk' not in main+web and 'enableMonth' not in web and 'clearMonth' not in web
 assert 'eventsSchedule1Toggle' not in web and 'eventsSchedule2Toggle' not in web
-assert 'eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
+assert 'eventEffectiveWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
 assert 't.effect=Effect::Breath' not in sched
 assert 'Effect::Breath' not in ev
 assert 'if(syncTheme.effect==Effect::Breath)' in ble
@@ -32,7 +32,7 @@ speed_values=[int(x) for x in re.findall(r'\b\d+\b',speed_block.group(1))]; asse
 assert 'EVENT_SPEEDS[index]>2?2:EVENT_SPEEDS[index]' in ev
 assert 'scheduledEventSpeedHint=constrain(o.speed,1,2)' in main and 'next.speed=constrain(sp,1,2)' in main
 assert 'sp=min((uint8_t)2,qs)' in main
-assert 'String raw=String("v4|")+effectName(next.effect)' in main and '!head.startsWith("v4|")&&o.effect==Effect::Breath' in main
+assert 'String raw=String("v5|")' in main and '!head.startsWith("v4|")&&o.effect==Effect::Breath' in main
 assert re.search(r'\.max=["\']2["\']', web) and 'id="eventsSpeed" type="range" min="1" max="2"' in web
 assert 'savedColorLabels' in web and re.search(r'\.name\|\|NAMED_COLOR_PALETTE\[[^\]]+\]\?\.name', web)
 
