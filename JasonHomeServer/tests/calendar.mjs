@@ -168,6 +168,54 @@ assert.equal(r?.scene.effect,"Flow1");
 r=resolveCalendar(aiOneTime,new Date("2026-12-25T22:06:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r?.scene.effect,"Flow2","AI multi-layer recipe must advance through its saved phases");
 
+
+// Per-event scheduling overrides: built-in date, specific date, date range,
+// entire month, annual/one-year recurrence, and event-specific times.
+const halloweenBase={id:"halloween",name:"Halloween",kind:"Holiday",rule:"Fixed",month:10,day:31,weekday:0,nth:0,offsetDays:0,durationDays:1,effect:"Flow1",speed:2,colors:[0xff6600,0x8000ff],enabled:true,categoryIndex:0,major:true};
+
+const halloweenMonth=normalizeCalendarConfig({...base,events:[{
+  ...halloweenBase,
+  scheduleOverride:{mode:"month",annual:true,year:0,startMonth:10,startDay:1,endMonth:10,endDay:31,customTime:false,start:0,end:0}
+}]});
+r=resolveCalendar(halloweenMonth,new Date("2026-10-10T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Halloween","Entire-month override should run Halloween on every October lighting night");
+r=resolveCalendar(halloweenMonth,new Date("2026-11-10T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.notEqual(r?.name,"Halloween");
+
+const halloweenRange=normalizeCalendarConfig({...base,events:[{
+  ...halloweenBase,
+  scheduleOverride:{mode:"range",annual:true,year:0,startMonth:10,startDay:20,endMonth:11,endDay:2,customTime:false,start:0,end:0}
+}]});
+r=resolveCalendar(halloweenRange,new Date("2026-10-25T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Halloween");
+r=resolveCalendar(halloweenRange,new Date("2026-11-01T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Halloween","Annual date ranges may cross a month boundary");
+
+const halloweenOneYear=normalizeCalendarConfig({...base,events:[{
+  ...halloweenBase,
+  scheduleOverride:{mode:"date",annual:false,year:2026,startMonth:10,startDay:30,endMonth:10,endDay:30,customTime:false,start:0,end:0}
+}]});
+r=resolveCalendar(halloweenOneYear,new Date("2026-10-30T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Halloween");
+r=resolveCalendar(halloweenOneYear,new Date("2027-10-30T23:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.notEqual(r?.name,"Halloween","One-year date override must not recur");
+
+const timedHalloween=normalizeCalendarConfig({...base,settings:{...base.settings,on:17*60,off:23*60,schedule2Enabled:false},events:[{
+  ...halloweenBase,
+  scheduleOverride:{mode:"date",annual:true,year:0,startMonth:10,startDay:31,endMonth:10,endDay:31,customTime:true,start:20*60+30,end:22*60}
+}]});
+r=resolveCalendar(timedHalloween,new Date("2026-10-31T23:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"Event-specific start time should suppress the event before 8:30 PM local");
+r=resolveCalendar(timedHalloween,new Date("2026-11-01T01:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r?.name,"Halloween","Event-specific time window should run inside its custom clock range");
+r=resolveCalendar(timedHalloween,new Date("2026-11-01T02:30:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"Event-specific end time should stop the event before global Schedule 1 ends");
+
+const normalizedSchedule=timedHalloween.events[0].scheduleOverride;
+assert.deepEqual(normalizedSchedule,{mode:"date",annual:true,year:0,startMonth:10,startDay:31,endMonth:10,endDay:31,customTime:true,start:1230,end:1320});
+const timedNext=nextCalendarEvent(timedHalloween,new Date("2026-10-31T14:00:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(new Date(timedNext.at).toISOString(),"2026-11-01T00:30:00.000Z","Next-event time should use the event-specific start time");
+
 const whiteOverrides=normalizeCalendarConfig({
   settings:{...base.settings,enabled:false,whiteOverride1Enabled:true,whiteOverride2Enabled:true},
   special:[],customSchedules:[],events:[]
