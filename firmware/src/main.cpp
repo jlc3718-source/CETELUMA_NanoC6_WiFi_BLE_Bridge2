@@ -72,7 +72,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.65";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.66";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -598,7 +598,8 @@ void setupRoutes(){
 
   server.on("/api/control",HTTP_POST,[]{
     if(!requireUser())return;JsonDocument d;if(!body(d))return;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";manualOverride=true;
-    if(!d["power"].isNull())power=d["power"].as<bool>();
+    const bool sceneRequested=!d["name"].isNull()||!d["effect"].isNull()||d["colors"].is<JsonArray>();
+    if(!d["power"].isNull())power=d["power"].as<bool>();else if(sceneRequested)power=true;
     if(!d["brightness"].isNull())brightness=constrain(d["brightness"].as<int>(),1,100);
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
     if(!d["name"].isNull())runningTheme.name=d["name"].as<String>();
