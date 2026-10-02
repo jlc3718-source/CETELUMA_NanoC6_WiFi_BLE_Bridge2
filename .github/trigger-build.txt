@@ -1,1 +1,1 @@
-Anderson Home 3.1.68 remove 30-day calendar and add per-event date/time scheduling
+Anderson Home 3.1.68 per-event scheduling validation rerun
