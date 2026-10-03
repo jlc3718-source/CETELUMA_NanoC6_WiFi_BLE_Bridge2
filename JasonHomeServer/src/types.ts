@@ -1,7 +1,10 @@
 export interface SegmentPattern {
-  blocks:number[];
+  blocks?:number[];
   offset?:number;
   mirror?:boolean;
+  // Optional exact logical lamp addresses assigned to palette color #2.
+  // Used for fast transient overlays such as Test Halloween random flashes.
+  positions?:number[];
 }
 export interface Scene {
   power:boolean;
