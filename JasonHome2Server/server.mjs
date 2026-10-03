@@ -828,6 +828,7 @@ async function route(req,res){
     })().catch(()=>{});
     return send(res,202,{ok:true,queued:true,layers:layers.length});
   }
+  // Edited AI one-time previews accept the unsaved editor payload.
   if(method==="POST"&&path==="/api/ai/preview-edit"){
     const body=await input(req),colors=rgb(body?.colors);
     if(!colors.length)throw fail(400,"Preview needs at least one color");
