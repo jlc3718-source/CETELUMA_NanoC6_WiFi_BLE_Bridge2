@@ -154,6 +154,13 @@ assert 'EventOverrideCfg' in main and 'scheduleValid' in main and 'saveEventSche
 assert 'eventEffectiveActiveOn' in main and 'eventEffectiveWindowActiveOn' in main and 'eventEffectiveOccursInMonth' in main
 assert 'eventEffectiveActiveOn(i,l)' in sched and 'eventEffectiveUsesMonthTier(i)' in sched
 assert 'eventEffectiveScheduleGeneration()' in sched
+assert 'static time_t manualOverrideUntil=0;' in main
+assert 'manualOverrideUntil=timeValid()?nextPlannedScheduleChange(time(nullptr)):0;' in main
+assert 'if(manualOverride){if(!manualOverrideUntil){manualOverrideUntil=nextPlannedScheduleChange(n);' in main
+assert 'manualOverride=false;manualOverrideUntil=0;' in main
+assert 'if(timeValid()){time_t scheduleMinute=time(nullptr)/60;' in main and 'if(!manualOverride&&timeValid())' not in main
+assert 'manualOverrideUntilLabel' in main and 'Manual override active • automatic schedule resumes' in web
+assert 'Resume Schedule Now' in web
 assert 'Restore Built-in Schedule' in web and 'Specific date' in web and 'Date range' in web and 'Entire month' in web
 assert 'Use custom time for this event' in web and 'Repeat every year' in web
 assert 'resetSchedule:true' in web and 'schedule:{mode:mode.value' in web
