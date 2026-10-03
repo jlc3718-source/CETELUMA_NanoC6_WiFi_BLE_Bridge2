@@ -186,10 +186,18 @@ function parseColor(v:any):number|null{
   return null;
 }
 function safePattern(value:any,colorCount:number){
-  if(colorCount<2||!value||typeof value!=="object"||!Array.isArray(value.blocks)||!value.blocks.length)return undefined;
-  const blocks=value.blocks.slice(0,colorCount).map((x:any)=>clamp(Math.round(Number(x)||1),1,12));
-  while(blocks.length<colorCount)blocks.push(blocks[blocks.length%Math.max(1,blocks.length)]||1);
-  return {blocks,offset:Math.trunc(Number(value.offset)||0),mirror:!!value.mirror};
+  if(colorCount<2||!value||typeof value!=="object")return undefined;
+  const rawPositions=Array.isArray(value.positions)?value.positions:[];
+  const positions=[...new Set(rawPositions.map((x:any)=>Math.trunc(Number(x))).filter((x:any)=>Number.isInteger(x)&&x>=0&&x<120))].slice(0,120);
+  const blocks=Array.isArray(value.blocks)&&value.blocks.length
+    ?value.blocks.slice(0,colorCount).map((x:any)=>clamp(Math.round(Number(x)||1),1,12))
+    :[];
+  while(blocks.length&&blocks.length<colorCount)blocks.push(blocks[blocks.length%Math.max(1,blocks.length)]||1);
+  if(!blocks.length&&!positions.length)return undefined;
+  const out:any={offset:Math.trunc(Number(value.offset)||0),mirror:!!value.mirror};
+  if(blocks.length)out.blocks=blocks;
+  if(positions.length)out.positions=positions;
+  return out;
 }
 function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
   const colors=Array.isArray(input?.colors)?input.colors.map(parseColor).filter((x:any)=>x!=null).slice(0,8) as number[]:base.colors;
@@ -840,6 +848,30 @@ function queueManualControl(input:any){
   return {ok:true,queued:true,sequence,target,total:names.length,override};
 }
 
+async function transientControl(input:any){
+  const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
+  const detail=await Promise.all(names.map(async name=>{
+    const scene=scenes[name];
+    try{
+      const r:any=await serializedForDevice(name,async()=>{
+        const client=await ensureEufy(false);
+        if(!scene.power)return {skipped:true};
+        return client.sceneTransient(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
+      });
+      if(r?.skipped)return {name,ok:true,skipped:true};
+      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+      return {name,ok:true,brokerAccepted:r?.brokerAccepted===true,transport:r?.transport||null};
+    }catch(e:any){
+      const msg=e?.message||String(e);
+      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+      return {name,ok:false,error:msg};
+    }
+  }));
+  const failed=detail.filter((x:any)=>!x.ok);
+  if(failed.length===detail.length)throw new Error(failed.map((x:any)=>x.error).filter(Boolean).join("; ")||"No transient light command completed");
+  return {ok:failed.length===0,target,total:names.length,detail};
+}
+
 async function applyScheduled(name:string,scene:Scene,reason:string){
   const r=await sendScene(name,scene);
   const now=Date.now();
@@ -1141,6 +1173,10 @@ const server=http.createServer(async(req,res)=>{
       const jobId=url.searchParams.get("job")||"";
       const job=factoryJobs.get(jobId);
       return job?json(res,200,{ok:true,...job}):json(res,404,{ok:false,error:"Factory test job not found"});
+    }
+    if(method==="POST"&&path==="/api/control/transient"){
+      const input=await readJson(req);
+      return json(res,200,await transientControl(input));
     }
     if(method==="POST"&&path==="/api/control"){
       const input=await readJson(req);
