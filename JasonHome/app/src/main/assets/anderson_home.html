@@ -614,7 +614,7 @@ function renderAiDraft(draft){
   const panel=$("aiDraftPanel");if(!draft){panel.hidden=true;return}panel.hidden=false;
   $("aiDraftName").textContent=draft.name||"AI Draft";
   $("aiDraftLayers").textContent=(draft.layers?.length||0)+" layers";
-  $("aiDraftTarget").textContent=(draft.resolvedDate?("One time • "+draft.resolvedDate):"Date not resolved yet")+(draft.replaceEventName?" • replaces "+draft.replaceEventName:"");
+  $("aiDraftTarget").textContent=(draft.resolvedDate?((draft.defaultedToTonight?"Tonight • ":"One time • ")+draft.resolvedDate):"Tonight")+(draft.replaceEventName?" • replaces "+draft.replaceEventName:"");
   const colors=$("aiDraftColors");colors.replaceChildren();
   (draft.colors||[]).forEach(c=>{const x=document.createElement("span");x.className="colorNamePill";x.style.background=semanticColorVisual(c);x.style.color=semanticColorInk(c);x.textContent=semanticColorName(c);colors.appendChild(x)});
   const preview=$("aiDraftPreview");preview.replaceChildren();
@@ -625,7 +625,8 @@ function renderAiDraft(draft){
     row.innerHTML='<div class="row between"><strong>Layer '+(i+1)+'</strong><span class="tag eventLayerCount">'+(i+1)+'</span></div><div class="sub">'+p.effect+' • speed '+p.speed+' • '+p.minutes+' min • color shift '+p.shift+'</div>';
     const mini=window.createEventMiniPreview?.({name:"Layer "+(i+1),colors:aiPhaseColors(draft.colors,p.shift),effect:p.effect,speed:p.speed,pattern:p.pattern||null});if(mini)row.appendChild(mini);list.appendChild(row);
   });
-  $("aiApplyOnceButton").disabled=!draft.resolvedDate;
+  // An AI build is always applicable once; an undated build is resolved to tonight by the server.
+  $("aiApplyOnceButton").disabled=false;
 }
 function renderAiApplied(items){
   const host=$("aiAppliedList");host.replaceChildren();

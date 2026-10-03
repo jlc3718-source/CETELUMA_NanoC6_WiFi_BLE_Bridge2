@@ -383,11 +383,13 @@ function resolveAiTarget(draft,cfg){
       if(dateKey(y,m,day)>=dateKey(today.year,today.month,today.day))return {year:y,month:m,day,source};
     }
   }
-  return {year:0,month:0,day:0,source};
+  // "Apply one time" must always have a usable night. If the AI build did not
+  // name a date or a recognizable scheduled event, treat it as tonight.
+  return {year:today.year,month:today.month,day:today.day,source:null,defaultedToTonight:true};
 }
 function decorateAiDraft(draft,cfg){
   if(!draft)return null;const target=resolveAiTarget(draft,cfg);
-  return {...draft,resolvedDate:target.year?[target.year,String(target.month).padStart(2,"0"),String(target.day).padStart(2,"0")].join("-"):"",replaceEventId:target.source?.id||"",replaceEventName:target.source?.name||""};
+  return {...draft,resolvedDate:target.year?[target.year,String(target.month).padStart(2,"0"),String(target.day).padStart(2,"0")].join("-"):"",replaceEventId:target.source?.id||"",replaceEventName:target.source?.name||"",defaultedToTonight:target.defaultedToTonight===true};
 }
 async function aiState(){
   const cfg=await config(),draft=decorateAiDraft(meta("ai_draft",null),cfg);
