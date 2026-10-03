@@ -828,6 +828,23 @@ async function route(req,res){
     })().catch(()=>{});
     return send(res,202,{ok:true,queued:true,layers:layers.length});
   }
+  if(method==="POST"&&path==="/api/ai/preview-edit"){
+    const body=await input(req),colors=rgb(body?.colors);
+    if(!colors.length)throw fail(400,"Preview needs at least one color");
+    const colorCount=Math.max(1,Math.min(8,colors.length)),rawLayers=Array.isArray(body?.layers)?body.layers.slice(0,8):[];
+    if(!rawLayers.length)throw fail(400,"Preview needs at least one lighting layer");
+    const layers=rawLayers.map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift,normalizePattern(p?.pattern,colorCount)));
+    const name=String(body?.name||"Edited AI Event").slice(0,80),brightness=Math.round(clamp(body?.brightness??100,1,100)),token=++aiPreviewGeneration;
+    void (async()=>{
+      for(let i=0;i<layers.length;i++){
+        if(token!==aiPreviewGeneration)return;
+        const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
+        await upstream("/api/control","POST",{name:"AI Edit Preview • "+name+" • Layer "+(i+1),target:"All",power:true,brightness,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern});
+        await new Promise(resolve=>setTimeout(resolve,4000));
+      }
+    })().catch(e=>console.error("[AI edit preview]",e?.message||e));
+    return send(res,202,{ok:true,queued:true,layers:layers.length});
+  }
   if(method==="POST"&&path==="/api/ai/apply-once"){
     const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to apply");
     const cfgNow=await config(),target=resolveAiTarget(draft,cfgNow);

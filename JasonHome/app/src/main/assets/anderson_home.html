@@ -567,24 +567,39 @@ function editEventInline(e,t,n){
     if(layerValues.length<(aiOneTime?1:2))return status(aiOneTime?"An AI event must keep at least one layer.":"An event must keep at least two layers.");
     const schedule={mode:rule.value,annual:annual.checked,year:+yearInput.value,startMonth:+startMonth.value,startDay:+startDay.value,endMonth:+endMonth.value,endDay:+endDay.value,customTime:customTime.checked,start:startTime.value,end:endTime.value};
     const payload={effect:effect.value,speed:+speedInput.value,colors:colorValues,layers:layerValues};if(!aiOneTime)payload.schedule=schedule;
-    if(await eventChange(e.id,payload)){if(aiOneTime){await loadAi();status(e.name+" colors and patterns updated.")}else status(e.name+" appearance and schedule updated.")}
+    if(await eventChange(e.id,payload)){if(aiOneTime){await loadAi();status(e.name+" changes applied to its one-time event.")}else status(e.name+" appearance and schedule updated.")}
   };
   const restoreSchedule=document.createElement("button");restoreSchedule.className="btn";restoreSchedule.textContent="Restore Built-in Schedule";
   restoreSchedule.onclick=async()=>{await eventChange(e.id,{resetSchedule:true})&&status(e.name+" restored to its built-in date and normal schedule times.")};
   const restore=document.createElement("button");restore.className="btn";restore.textContent="Restore All Defaults";
   restore.onclick=async()=>{await eventChange(e.id,{resetAll:true})&&status(e.name+" restored to all built-in defaults.")};
-  if(aiOneTime){save.textContent="Save AI Colors & Patterns";buttons.append(addColorButton,save)}else buttons.append(addColorButton,save,restoreSchedule,restore);
+  const previewAiEdits=document.createElement("button");previewAiEdits.className="btn";previewAiEdits.textContent="Preview Edited Event";
+  if(aiOneTime){save.textContent="Apply Changes One Time";buttons.append(addColorButton,previewAiEdits,save)}else buttons.append(addColorButton,save,restoreSchedule,restore);
 
   const editorPreviewLabel=document.createElement("div");editorPreviewLabel.className="label";editorPreviewLabel.textContent="Live multi-bulb preview";
   const editorPreview=document.createElement("div");
+  function readEditorRawLayers(){
+    return [...layers.querySelectorAll(".eventLayerRow")].map(row=>({
+      effect:row.querySelector(".eventLayerEffect")?.value||"Static",
+      speed:+(row.querySelector(".eventLayerSpeed")?.value||1),
+      minutes:+(row.querySelector(".eventLayerMinutes")?.value||8),
+      shift:+(row.querySelector(".eventLayerShift")?.value||0),
+      pattern:{blocks:String(row.querySelector(".eventLayerBlocks")?.value||"").split(",").map(v=>Math.max(1,Math.min(12,parseInt(v)||1))).slice(0,8),offset:+(row.querySelector(".eventLayerOffset")?.value||0),mirror:!!row.querySelector(".eventLayerMirror")?.checked}
+    }));
+  }
   function readEditorLayers(){
     const palette=[...colors.querySelectorAll(".colorChip")].map(node=>normalizeLedColor(node.dataset.color));
-    return [...layers.querySelectorAll(".eventLayerRow")].map((row,i)=>{
-      const shift=Math.trunc(Number(row.querySelector(".eventLayerShift")?.value)||0),rotated=aiPhaseColors(palette,shift);
-      return {name:"Layer "+(i+1),colors:rotated,effect:row.querySelector(".eventLayerEffect")?.value||"Static",speed:+(row.querySelector(".eventLayerSpeed")?.value||1),
-        pattern:{blocks:String(row.querySelector(".eventLayerBlocks")?.value||"").split(",").map(v=>Math.max(1,Math.min(12,parseInt(v)||1))).slice(0,8),offset:+(row.querySelector(".eventLayerOffset")?.value||0),mirror:!!row.querySelector(".eventLayerMirror")?.checked}};
-    });
+    return readEditorRawLayers().map((row,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(palette,row.shift),effect:row.effect,speed:row.speed,pattern:row.pattern}));
   }
+  previewAiEdits.onclick=async()=>{
+    if(!aiOneTime)return;
+    const palette=[...colors.querySelectorAll(".colorChip")].map(node=>normalizeLedColor(node.dataset.color)),raw=readEditorRawLayers();
+    if(!palette.length||!raw.length)return status("The AI event needs at least one color and one layer.");
+    const old=previewAiEdits.textContent;previewAiEdits.disabled=true;previewAiEdits.textContent="Previewing…";
+    try{await post("/api/ai/preview-edit",{name:e.name,brightness:e.brightness||100,colors:palette,layers:raw});status(e.name+" edited version is previewing on all four strings. Use Resume Schedule when finished.")}
+    catch(err){status("Edited preview failed: "+err.message)}
+    finally{previewAiEdits.disabled=false;previewAiEdits.textContent=old}
+  };
   function refreshEditorPreview(){editorPreview.replaceChildren();const scenes=readEditorLayers();if(window.createLayeredMiniPreview)editorPreview.appendChild(window.createLayeredMiniPreview(e.name,scenes))}
   editor.addEventListener("input",refreshEditorPreview);editor.addEventListener("change",refreshEditorPreview);
   editor.append(heading,editorPreviewLabel,editorPreview,effectLabel,effect,speedLabel,speedInput,speedValue,scheduleBox,colorLabel,colors,masterLabel,favorites,layersLabel,layersHelp,layers,layerButtons,buttons);
@@ -642,10 +657,12 @@ function renderAiApplied(items){
     const preview=document.createElement("div"),scenes=(x.layers||[]).map((p,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(x.colors,p.shift||0),effect:p.effect||x.effect,speed:p.speed||x.speed||1,pattern:p.pattern||null}));
     if(window.createLayeredMiniPreview)preview.appendChild(window.createLayeredMiniPreview(x.name,scenes));
     const actions=document.createElement("div");actions.className="row wraprow";actions.style.marginTop="8px";
+    const previewSaved=document.createElement("button");previewSaved.className="btn";previewSaved.textContent="Preview";
+    previewSaved.onclick=async()=>{const old=previewSaved.textContent;previewSaved.disabled=true;previewSaved.textContent="Previewing…";try{await post("/api/ai/preview-edit",{name:x.name,brightness:x.brightness||100,colors:x.colors||[],layers:x.layers||[]});$("aiStatus").textContent=x.name+" is previewing on all four strings. Use Resume Schedule when finished."}catch(err){$("aiStatus").textContent="Preview failed: "+err.message}finally{previewSaved.disabled=false;previewSaved.textContent=old}};
     const edit=document.createElement("button");edit.className="btn primary";edit.textContent="Edit Colors & Patterns";
-    edit.onclick=()=>editEventInline({id:x.id,name:x.name,when:x.date,colors:x.colors,effect:x.effect||x.layers?.[0]?.effect||"Static",speed:x.speed||x.layers?.[0]?.speed||1,layers:x.layers||[],customized:true,aiOneTime:true},card,edit);
+    edit.onclick=()=>editEventInline({id:x.id,name:x.name,when:x.date,colors:x.colors,effect:x.effect||x.layers?.[0]?.effect||"Static",speed:x.speed||x.layers?.[0]?.speed||1,brightness:x.brightness||100,layers:x.layers||[],customized:true,aiOneTime:true},card,edit);
     const remove=document.createElement("button");remove.className="btn";remove.textContent="Remove";remove.onclick=()=>removeAiEvent(x.id);
-    actions.append(edit,remove);card.append(info,colors,preview,actions);host.appendChild(card);
+    actions.append(previewSaved,edit,remove);card.append(info,colors,preview,actions);host.appendChild(card);
   });
 }
 function renderAi(data){
