@@ -76,7 +76,15 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const aiValue=await ai.json();
     assert.equal(aiValue.configured,false);
     assert.equal(aiValue.draft,null);
-    assert.deepEqual(aiValue.applied,[]);
+    const specialHalloween=aiValue.applied.find(e=>e.id==='ai-once-special-halloween-2026');
+    assert.ok(specialHalloween,JSON.stringify(aiValue.applied));
+    assert.equal(specialHalloween.name,'Special Halloween');
+    assert.equal(specialHalloween.date,'2026-10-31');
+    assert.equal(specialHalloween.replaceEventId,'evt179');
+    assert.deepEqual(specialHalloween.colors,['#FF0D00','#5B00E6','#000000']);
+    assert.equal(specialHalloween.layerCount,8);
+    assert.deepEqual(specialHalloween.layers.map(x=>x.effect),['Flow1','Flow2','Flow1','Flow2','Flow1','Flow2','Flow1','Flow2']);
+    assert.deepEqual(specialHalloween.layers.map(x=>x.pattern.blocks),[[4,3,1],[2,5,1],[5,2,1],[3,3,2],[4,2,2],[3,4,1],[2,4,2],[5,1,2]]);
     const aiChat=await fetch(base+'/api/ai/chat',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({message:'make a Christmas idea'})});
     assert.equal(aiChat.status,409);
     const state=await fetch(base+'/api/state',{headers:{cookie}});
