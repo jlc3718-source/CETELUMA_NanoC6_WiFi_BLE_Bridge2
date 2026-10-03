@@ -450,6 +450,43 @@ const minutes=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(s||""));return m?Mat
 const clock=n=>`${String(Math.floor(Number(n||0)/60)).padStart(2,"0")}:${String(Number(n||0)%60).padStart(2,"0")}`;
 const targetNames=["All","Pool","House","Garage","Shed"];
 let aiPreviewGeneration=0;
+const TEST_HALLOWEEN_NAME="Test Halloween";
+const TEST_HALLOWEEN_PURPLE=0x5B00E6;
+const TEST_HALLOWEEN_ORANGE=0xFF0D00;
+const TEST_HALLOWEEN_STRINGS=[["Pool",60],["House",60],["Garage",60],["Shed",30]];
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function randomSubset(lamps,count,previous=[]){
+  const prior=new Set(previous);
+  for(let attempt=0;attempt<7;attempt++){
+    const pool=Array.from({length:lamps},(_,i)=>i);
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+    const next=pool.slice(0,Math.max(1,Math.min(lamps,count))).sort((a,b)=>a-b);
+    const overlap=next.reduce((n,x)=>n+(prior.has(x)?1:0),0);
+    if(!previous.length||overlap<=Math.ceil(next.length*.45)||attempt===6)return next;
+  }
+  return [];
+}
+async function runTestHalloweenPreview(token,brightness=100,durationMs=45000){
+  const level=Math.round(clamp(brightness,1,100)),previous=new Map();
+  put("running_name",TEST_HALLOWEEN_NAME);put("running_event_id","ai-once-test-halloween-2026");
+  // Establish the invariant first: every lamp is purple. Fast transient frames
+  // only borrow a random one-third of addresses for orange, then restore them.
+  await upstream("/api/control","POST",{name:TEST_HALLOWEEN_NAME,target:"All",power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1});
+  await wait(1200);
+  const until=Date.now()+durationMs;
+  while(token===aiPreviewGeneration&&Date.now()<until){
+    const bursts=TEST_HALLOWEEN_STRINGS.map(([target,lamps])=>{
+      const count=Math.max(1,Math.round(lamps/3)),positions=randomSubset(lamps,count,previous.get(target)||[]);
+      previous.set(target,positions);
+      return upstream("/api/control/transient","POST",{name:TEST_HALLOWEEN_NAME,target,power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],speed:1,pattern:{positions}});
+    });
+    await Promise.all(bursts);
+    await wait(320);
+    if(token!==aiPreviewGeneration)return;
+    await Promise.all(TEST_HALLOWEEN_STRINGS.map(([target])=>upstream("/api/control/transient","POST",{name:TEST_HALLOWEEN_NAME,target,power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1})));
+    await wait(300+Math.floor(Math.random()*351));
+  }
+}
 const nightLocation={lat:42.1507,lon:-78.9452,tz:"America/New_York"};
 const localDay=now=>{const p=new Intl.DateTimeFormat("en-US",{timeZone:nightLocation.tz,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(now);
   const get=type=>Number(p.find(x=>x.type===type)?.value);return {year:get("year"),month:get("month"),day:get("day")};};
@@ -542,6 +579,29 @@ async function config(){
     if(!saved.ok)throw fail(409,"Test Halloween event update was rejected");
     r.calendar=cleaned;
     put("test_halloween_2026_seeded_v2",true);
+  }
+  if(meta("test_halloween_2026_seeded_v3")!==true){
+    const id="ai-once-test-halloween-2026",cleaned=JSON.parse(JSON.stringify(r.calendar));
+    const existing=(cleaned.events||[]).find(e=>e.id===id);
+    const recipe={
+      name:TEST_HALLOWEEN_NAME,kind:"AI One-Time",rule:"YearTable",month:10,day:31,weekday:0,nth:0,offsetDays:0,durationDays:1,
+      effect:"Static",speed:1,brightness:100,colors:[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],
+      favorite:false,categoryIndex:Number(existing?.categoryIndex||0),major:true,dateRuleSourceId:id,
+      creativePhases:[
+        {effect:"Static",speed:1,minutes:30,shift:0,pattern:{blocks:[2,1],offset:0,mirror:false}},
+        {effect:"Static",speed:1,minutes:30,shift:0,pattern:{blocks:[2,1],offset:1,mirror:false}}
+      ],
+      randomFlash:true,flashDensity:1/3,flashMs:320,gapMinMs:300,gapMaxMs:650,previewSeconds:45,
+      aiOneTime:true,expiresAt:"2026-11-01T14:00:00.000Z",aiReplaceEventId:""
+    };
+    if(existing)Object.assign(existing,recipe,{enabled:existing.enabled===true});
+    else cleaned.events.push({id,...recipe,enabled:false});
+    cleaned.special=(cleaned.special||[]).filter(x=>x.id!==id);
+    cleaned.special.push({id,year:2026,month:10,day:31});
+    cleaned.revision=Number(cleaned.revision||0)+1;
+    const saved=await upstream("/api/calendar/sync","POST",cleaned);
+    if(!saved.ok)throw fail(409,"Test Halloween random-flash update was rejected");
+    r.calendar=cleaned;put("test_halloween_2026_seeded_v3",true);
   }
   if(meta("initialized")!==true){
     const schedules=(r.calendar.customSchedules||[]).map(x=>({...x,colors:rgb(x.colors)}));
@@ -876,6 +936,10 @@ async function route(req,res){
   if(method==="POST"&&path==="/api/ai/preview"){
     const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to preview");
     const token=++aiPreviewGeneration,colors=rgb(draft.colors),layers=draft.layers||[];
+    if(String(draft.name||"").trim().toLowerCase()===TEST_HALLOWEEN_NAME.toLowerCase()){
+      void runTestHalloweenPreview(token,draft.brightness||100).catch(e=>console.error("[Test Halloween preview]",e?.message||e));
+      return send(res,202,{ok:true,queued:true,randomFlash:true,density:"1/3",flashMs:320});
+    }
     void (async()=>{
       for(let i=0;i<layers.length;i++){
         if(token!==aiPreviewGeneration)return;
@@ -894,6 +958,10 @@ async function route(req,res){
     if(!rawLayers.length)throw fail(400,"Preview needs at least one lighting layer");
     const layers=rawLayers.map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift,normalizePattern(p?.pattern,colorCount)));
     const name=String(body?.name||"Edited AI Event").slice(0,80),brightness=Math.round(clamp(body?.brightness??100,1,100)),token=++aiPreviewGeneration;
+    if(name.trim().toLowerCase()===TEST_HALLOWEEN_NAME.toLowerCase()){
+      void runTestHalloweenPreview(token,brightness).catch(e=>console.error("[Test Halloween edit preview]",e?.message||e));
+      return send(res,202,{ok:true,queued:true,randomFlash:true,density:"1/3",flashMs:320});
+    }
     void (async()=>{
       for(let i=0;i<layers.length;i++){
         if(token!==aiPreviewGeneration)return;
