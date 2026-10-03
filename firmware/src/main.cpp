@@ -39,7 +39,7 @@ SettingsStore store;
 BleController ble;
 Scheduler scheduler(&store.get());
 
-bool manualOverride=false,power=true;
+bool manualOverride=false,power=true;\nstatic time_t manualOverrideUntil=0;
 uint8_t brightness=100,speedLevel=1;
 Theme runningTheme;
 static bool tonightOptionOverride=false;
@@ -72,7 +72,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.69";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.70";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -505,7 +505,7 @@ String stateJson(){
   }else{String s1Start=s.schedule1StartAtDusk?"dusk":fmtDisplayTime(s.onMinutes),s2End=s.schedule2EndAtDawn?"dawn":fmtDisplayTime(s.schedule2EndMinutes);d["scheduleWindow"]=String("Schedule 1 ")+s1Start+" - "+fmtDisplayTime(s.offMinutes)+" • Schedule 2 "+fmtDisplayTime(s.offMinutes)+" - "+s2End+" at "+String(s.schedule2Brightness)+"%";d["nextEvent"]="Waiting for time sync";JsonObject scheduled=d["scheduledEvent"].to<JsonObject>();scheduled["name"]="Waiting for time sync";scheduled["id"]="";scheduled["enabled"]=false;scheduled["toggleable"]=false;scheduled["custom"]=false;}
   JsonObject w=d["wifi"].to<JsonObject>();w["ssid"]=WiFi.status()==WL_CONNECTED?WiFi.SSID():"";w["rssi"]=WiFi.status()==WL_CONNECTED?WiFi.RSSI():0;w["ip"]=WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString();
   JsonObject b=d["ble"].to<JsonObject>();b["connected"]=ble.connected();b["connectedCount"]=ble.connectedCount();b["name"]=ble.name();b["address"]=ble.address();b["protocol"]=ble.protocolName();b["target"]=ble.getTarget();JsonArray ca=b["controllers"].to<JsonArray>();for(uint8_t i=0;i<2;i++){auto si=ble.slotInfo(i);if(!si.address.length())continue;JsonObject c=ca.add<JsonObject>();c["slot"]=i;c["name"]=si.name;c["address"]=si.address;c["protocol"]=si.protocol;c["connected"]=si.connected;}
-  d["manualOverride"]=manualOverride;d["tonightOptionOverride"]=tonightOptionOverride;if(tonightOptionOverride){d["tonightOptionId"]=tonightOptionId;d["tonightOptionUntil"]=(int64_t)tonightOptionUntil;}String out;serializeJson(d,out);return out;
+  d["manualOverride"]=manualOverride;if(manualOverride){d["manualOverrideUntil"]=(int64_t)manualOverrideUntil;if(manualOverrideUntil>0){tm manualEnd{};localtime_r(&manualOverrideUntil,&manualEnd);d["manualOverrideUntilLabel"]=fmtDisplayTime((uint16_t)(manualEnd.tm_hour*60+manualEnd.tm_min));}}d["tonightOptionOverride"]=tonightOptionOverride;if(tonightOptionOverride){d["tonightOptionId"]=tonightOptionId;d["tonightOptionUntil"]=(int64_t)tonightOptionUntil;}String out;serializeJson(d,out);return out;
 }
 void sendJson(const String&s,int code=200){server.sendHeader("Cache-Control","no-store");server.send(code,"application/json",s);}
 bool body(JsonDocument&d){if(!bootAllowsControls())return false;DeserializationError e=deserializeJson(d,server.arg("plain"));if(e){server.send(400,"text/plain","Invalid JSON");return false;}return true;}
@@ -570,7 +570,7 @@ void evaluateSchedule(bool force=false){
     if(n<tonightOptionUntil){if(force)applyRunning(true);return;}
     tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";
   }
-  if(manualOverride)return;tm l{};localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
+  if(manualOverride){if(!manualOverrideUntil){manualOverrideUntil=nextPlannedScheduleChange(n);if(force)applyRunning(true);return;}if(n<manualOverrideUntil){if(force)applyRunning(true);return;}manualOverride=false;manualOverrideUntil=0;}tm l{};localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
   ble.setTarget(0);brightness=100;speedLevel=1;bool schedule1Active=s.schedulerEnabled&&scheduler.inRunWindow(l);bool schedule2Active=s.schedule2Enabled&&scheduler.inSchedule2Window(l);if(!schedule1Active&&!schedule2Active){if(power){power=false;ble.setPower(false);}return;}
   tm themeLocal=l;if(schedule2Active&&!schedule1Active){int mins=l.tm_hour*60+l.tm_min;uint16_t schedule1Start=s.schedule1StartAtDusk?scheduler.civilDuskMinutes(l):s.onMinutes;if(mins<schedule1Start){themeLocal.tm_mday-=1;themeLocal.tm_isdst=-1;mktime(&themeLocal);}}
   Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=s.schedule2Brightness;bool changed=!power||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;power=true;runningTheme=t;if(changed||force)applyRunning(true);
@@ -672,10 +672,10 @@ void setupRoutes(){
   });
   server.on("/api/login-preview",HTTP_GET,[]{if(!bootAllowsControls())return;sendJson(loginPreviewJson());});
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
-  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
+  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;manualOverrideUntil=0;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
 
   server.on("/api/control",HTTP_POST,[]{
-    if(!requireUser())return;JsonDocument d;if(!body(d))return;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";manualOverride=true;
+    if(!requireUser())return;JsonDocument d;if(!body(d))return;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";manualOverride=true;manualOverrideUntil=timeValid()?nextPlannedScheduleChange(time(nullptr)):0;
     const bool sceneRequested=!d["name"].isNull()||!d["effect"].isNull()||d["colors"].is<JsonArray>();
     if(!d["power"].isNull())power=d["power"].as<bool>();else if(sceneRequested)power=true;
     if(!d["brightness"].isNull())brightness=constrain(d["brightness"].as<int>(),1,100);
@@ -920,7 +920,7 @@ void loop(){
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
-  uint32_t scheduleProbeNow=millis();if((uint32_t)(scheduleProbeNow-lastScheduleMinuteProbe)>=250UL){lastScheduleMinuteProbe=scheduleProbeNow;if(!manualOverride&&timeValid()){time_t scheduleMinute=time(nullptr)/60;if(scheduleMinute!=lastScheduleMinute){lastScheduleMinute=scheduleMinute;evaluateSchedule();}}else lastScheduleMinute=-1;}
+  uint32_t scheduleProbeNow=millis();if((uint32_t)(scheduleProbeNow-lastScheduleMinuteProbe)>=250UL){lastScheduleMinuteProbe=scheduleProbeNow;if(timeValid()){time_t scheduleMinute=time(nullptr)/60;if(scheduleMinute!=lastScheduleMinute){lastScheduleMinute=scheduleMinute;evaluateSchedule();}}else lastScheduleMinute=-1;}
   if(power)applyRunning(false);
   bool pressed=digitalRead(USER_BUTTON)==LOW;if(pressed && !buttonDown)buttonDown=millis();if(!pressed)buttonDown=0;
   if(buttonDown && millis()-buttonDown>5000){buttonDown=0;if(!firmwareOperationBusy()&&store.clearWiFi()){digitalWrite(BLUE_LED,HIGH);delay(500);ESP.restart();}}
