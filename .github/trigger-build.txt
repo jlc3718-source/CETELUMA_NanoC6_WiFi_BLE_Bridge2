@@ -1,1 +1,1 @@
-Anderson Home 3.1.70 manual override automatic schedule handoff
+Anderson Home 3.1.70 manual override schedule handoff compile fix
