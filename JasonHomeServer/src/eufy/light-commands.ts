@@ -18,8 +18,21 @@ export function brightness(percent:number){return tlv(0xa4,new Uint8Array([clamp
 function nativeColor(model:string,rgb:number){const r=(rgb>>>16)&255,g=(rgb>>>8)&255,b=rgb&255;return isE22(model)?new Uint8Array([r,g,b,0,0]):new Uint8Array([r,g,b,0]);}
 function positions(lamps:number){const out=new Uint8Array(lamps+1);out[0]=lamps;for(let i=0;i<lamps;i++)out[i+1]=i;return out;}
 function segmentAssignment(lamps:number,paletteCount:number,pattern?:SegmentPattern,reverse=false){
-  if(paletteCount<2||!pattern?.blocks?.length)return positions(lamps);
-  const blocks=Array.from({length:paletteCount},(_,i)=>clamp(Math.round(Number(pattern.blocks[i%pattern.blocks.length])||1),1,12));
+  if(paletteCount<2)return positions(lamps);
+  const explicit=Array.isArray(pattern?.positions)
+    ?[...new Set(pattern!.positions!.map(Number).filter(v=>Number.isInteger(v)&&v>=0&&v<lamps))]
+    :[];
+  if(explicit.length&&paletteCount===2){
+    const flash=new Set(explicit),groups:number[][]=[[],[]];
+    for(let logical=0;logical<lamps;logical++){
+      const physical=reverse?lamps-1-logical:logical;
+      groups[flash.has(logical)?1:0].push(physical);
+    }
+    const out:number[]=[];for(const members of groups)out.push(members.length,...members);
+    return new Uint8Array(out);
+  }
+  if(!pattern?.blocks?.length)return positions(lamps);
+  const blocks=Array.from({length:paletteCount},(_,i)=>clamp(Math.round(Number(pattern.blocks![i%pattern.blocks!.length])||1),1,12));
   const period=blocks.reduce((a,b)=>a+b,0),offset=((Math.trunc(Number(pattern.offset)||0)%period)+period)%period;
   const groups:number[][]=Array.from({length:paletteCount},()=>[]);
   for(let logical=0;logical<lamps;logical++){
@@ -76,7 +89,7 @@ export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lam
   const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...nativeColor("T8L00",c));
   let assignment=positions(lamps);
-  if(palette.length>1)assignment=pattern?.blocks?.length?segmentAssignment(lamps,palette.length,pattern,reversePattern):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
+  if(palette.length>1)assignment=(pattern?.blocks?.length||pattern?.positions?.length)?segmentAssignment(lamps,palette.length,pattern,reversePattern):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
   return concat(tlv(0xa3,le16(mode)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawSpeed,1,10)])),
     tlv(0xa6,new Uint8Array(pal)),...(palette.length?[tlv(0xa7,assignment)]:[]),
     tlv(0xa8,new Uint8Array([clamp(level,1,100)])),tlv(0xa9,new Uint8Array(4)),tlv(0xaa,new Uint8Array([0])),
@@ -101,7 +114,7 @@ export function nativeE22Fields(mode:number,rawSpeed:number,colors:number[],lamp
   const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...rgbcw((c&0xffffff).toString(16).padStart(6,"0")));
   let assignment=positions(lamps);
-  if(palette.length>1)assignment=pattern?.blocks?.length?segmentAssignment(lamps,palette.length,pattern,reverse):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
+  if(palette.length>1)assignment=(pattern?.blocks?.length||pattern?.positions?.length)?segmentAssignment(lamps,palette.length,pattern,reverse):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
   let direction=E22_A4_BY_MODE[mode];
   if(reverse&&(mode===20002||mode===20003)&&direction!==undefined)direction=direction?0:1;
   return concat(tlv(0xa3,le16(mode)),...(direction===undefined?[]:[tlv(0xa4,le16(direction))]),
