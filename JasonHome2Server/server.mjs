@@ -800,7 +800,7 @@ async function route(req,res){
   }
   if(method==="GET"&&path==="/api/cloud/config")return send(res,200,{ok:true,endpoint:"https://150.136.245.51",mode:"cloud",configured:true,automationOwner:"oracle",directReady:false,directStatus:"Jason Home 2 web controller"});
   if(method==="POST"&&path==="/api/cloud/config")return send(res,200,{ok:true,endpoint:"https://150.136.245.51",mode:"cloud",configured:true,automationOwner:"oracle"});
-  if(method==="GET"&&path==="/api/cloud/test")return send(res,200,await upstream("/api/status"));
+  if(method==="GET"&&path==="/api/cloud/test")return send(res,200,await upstream("/api/status?refresh=1"));
   if(method==="GET"&&path==="/api/cloud/health")return send(res,200,await upstream("/api/health"));
   if(method==="POST"&&path==="/api/control"){
     const body=await input(req),target=targetNames[meta("target",0)]||"All";
