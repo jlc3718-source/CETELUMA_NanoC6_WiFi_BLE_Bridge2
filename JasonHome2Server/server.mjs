@@ -485,6 +485,36 @@ async function config(){
     }
     put("master_removed_v1",true);
   }
+  if(meta("special_halloween_2026_seeded_v1")!==true){
+    const id="ai-once-special-halloween-2026";
+    if(!(r.calendar.events||[]).some(e=>e.id===id)){
+      const cleaned=JSON.parse(JSON.stringify(r.calendar));
+      const halloween=(cleaned.events||[]).find(e=>e.aiOneTime!==true&&String(e.name||"").trim().toLowerCase()==="halloween");
+      const layers=[
+        {effect:"Flow1",speed:5,minutes:2,shift:0,pattern:{blocks:[4,3,1],offset:0,mirror:false}},
+        {effect:"Flow2",speed:5,minutes:2,shift:0,pattern:{blocks:[2,5,1],offset:3,mirror:false}},
+        {effect:"Flow1",speed:4,minutes:2,shift:0,pattern:{blocks:[5,2,1],offset:6,mirror:false}},
+        {effect:"Flow2",speed:5,minutes:2,shift:0,pattern:{blocks:[3,3,2],offset:2,mirror:false}},
+        {effect:"Flow1",speed:5,minutes:2,shift:0,pattern:{blocks:[4,2,2],offset:5,mirror:false}},
+        {effect:"Flow2",speed:4,minutes:2,shift:0,pattern:{blocks:[3,4,1],offset:1,mirror:false}},
+        {effect:"Flow1",speed:5,minutes:2,shift:0,pattern:{blocks:[2,4,2],offset:7,mirror:false}},
+        {effect:"Flow2",speed:5,minutes:2,shift:0,pattern:{blocks:[5,1,2],offset:4,mirror:false}}
+      ];
+      cleaned.events.push({
+        id,name:"Special Halloween",kind:"AI One-Time",rule:"YearTable",month:10,day:31,weekday:0,nth:0,offsetDays:0,durationDays:1,
+        effect:"Flow1",speed:5,brightness:100,colors:colorInts(["#FF0D00","#5B00E6","#000000"]),
+        enabled:true,favorite:false,categoryIndex:Number(halloween?.categoryIndex||0),major:true,dateRuleSourceId:id,
+        creativePhases:layers,aiOneTime:true,expiresAt:"2026-11-01T14:00:00.000Z",aiReplaceEventId:halloween?.id||""
+      });
+      cleaned.special=(cleaned.special||[]).filter(x=>x.id!==id);
+      cleaned.special.push({id,year:2026,month:10,day:31});
+      cleaned.revision=Number(cleaned.revision||0)+1;
+      const saved=await upstream("/api/calendar/sync","POST",cleaned);
+      if(!saved.ok)throw fail(409,"Special Halloween event creation was rejected");
+      r.calendar=cleaned;
+    }
+    put("special_halloween_2026_seeded_v1",true);
+  }
   if(meta("initialized")!==true){
     const schedules=(r.calendar.customSchedules||[]).map(x=>({...x,colors:rgb(x.colors)}));
     const presets=[...new Map(schedules.filter(x=>x.presetId).map(x=>[x.presetId,
