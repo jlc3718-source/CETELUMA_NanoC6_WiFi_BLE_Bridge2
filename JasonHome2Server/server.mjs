@@ -394,7 +394,9 @@ function decorateAiDraft(draft,cfg){
 async function aiState(){
   const cfg=await config(),draft=decorateAiDraft(meta("ai_draft",null),cfg);
   const applied=(cfg.events||[]).filter(e=>e.aiOneTime===true).map(e=>{
-    const sp=(cfg.special||[]).find(x=>x.id===e.id);return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",brightness:Number(e.brightness)||100,colors:rgb(e.colors),layerCount:e.creativePhases?.length||1,expiresAt:e.expiresAt||""};
+    const sp=(cfg.special||[]).find(x=>x.id===e.id),layers=Array.isArray(e.creativePhases)&&e.creativePhases.length?e.creativePhases:creativeProgram(e);
+    return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",brightness:Number(e.brightness)||100,
+      colors:rgb(e.colors),effect:e.effect||layers[0]?.effect||"Static",speed:Number(e.speed||layers[0]?.speed)||1,layers,layerCount:layers.length||1,expiresAt:e.expiresAt||"",aiOneTime:true};
   });
   return {ok:true,configured:cloudflareAiConfigured(),provider:"Cloudflare Workers AI",freeTier:true,model:AI_MODEL,accountId:cloudflareAiConfigured()?cloudflareAiAccount():"",usage:aiUsageState(),thread:meta("ai_thread",[]),draft,applied};
 }
@@ -865,6 +867,18 @@ async function route(req,res){
       if(e.aiOneTime===true){
         if(Object.hasOwn(body,"enabled"))e.enabled=!!body.enabled;
         if(Object.hasOwn(body,"favorite"))e.favorite=!!body.favorite;
+        if(Object.hasOwn(body,"effect"))e.effect=layerEffect(body.effect);
+        if(Object.hasOwn(body,"speed"))e.speed=Math.max(1,Math.min(5,Math.round(Number(body.speed)||1)));
+        if(Array.isArray(body.colors)){
+          const nextColors=colorInts(body.colors);if(!nextColors.length)throw fail(400,"An AI event must keep at least one color");
+          e.colors=nextColors;
+        }
+        if(Array.isArray(body.layers)){
+          if(body.layers.length<1)throw fail(400,"An AI event must keep at least one lighting layer");
+          const colorCount=Math.max(1,Math.min(8,(Array.isArray(e.colors)?e.colors.length:0)||1));
+          e.creativePhases=body.layers.slice(0,8).map(p=>creativePhase(p?.effect,p?.speed,p?.minutes,p?.shift,normalizePattern(p?.pattern,colorCount)));
+          if(e.creativePhases.length){e.effect=e.creativePhases[0].effect;e.speed=e.creativePhases[0].speed;}
+        }
         return;
       }
       if(!original)throw fail(404,"Unknown event");

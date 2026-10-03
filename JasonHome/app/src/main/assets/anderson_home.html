@@ -412,12 +412,12 @@ function closeEventFullEditor(){
   overlay.remove();document.body.style.overflow="";window.scrollTo(0,eventEditorReturnY);
 }
 function editEventInline(e,t,n){
-  closeEventFullEditor();eventEditorReturnY=window.scrollY;
+  closeEventFullEditor();eventEditorReturnY=window.scrollY;const aiOneTime=!!e.aiOneTime;
   if(n){n.classList.add("active");n.setAttribute("aria-pressed","true")}
   const overlay=document.createElement("div");overlay.id="eventFullEditor";overlay.className="eventFullEditor";overlay.setAttribute("role","dialog");overlay.setAttribute("aria-modal","true");overlay.setAttribute("aria-label","Edit "+e.name);
   const shell=document.createElement("div");shell.className="eventFullEditorShell";
   const top=document.createElement("div");top.className="eventFullEditorTop";
-  const back=document.createElement("button");back.type="button";back.className="btn";back.textContent="← Back to Events";back.onclick=closeEventFullEditor;
+  const back=document.createElement("button");back.type="button";back.className="btn";back.textContent=aiOneTime?"← Back to AI":"← Back to Events";back.onclick=closeEventFullEditor;
   const titleWrap=document.createElement("div");titleWrap.className="eventFullEditorTitle";titleWrap.innerHTML=`<strong>${e.name}</strong><span class="sub">${e.when||""}</span>`;
   top.append(back,titleWrap);shell.appendChild(top);overlay.appendChild(shell);document.body.appendChild(overlay);document.body.style.overflow="hidden";
   const editor=document.createElement("div");editor.className="card eventEditor";
@@ -466,7 +466,7 @@ function editEventInline(e,t,n){
     annual.disabled=isDefault;yearInput.disabled=isDefault||annual.checked;startTime.disabled=endTime.disabled=!customTime.checked;
   };
   rule.addEventListener("change",syncScheduleUi);annual.addEventListener("change",syncScheduleUi);customTime.addEventListener("change",syncScheduleUi);syncScheduleUi();
-  scheduleBox.append(scheduleTitle,scheduleInfo,ruleLabel,rule,dateGrid,annualLabel,yearLabel,yearInput,customTimeLabel,timeGrid);
+  scheduleBox.append(scheduleTitle,scheduleInfo,ruleLabel,rule,dateGrid,annualLabel,yearLabel,yearInput,customTimeLabel,timeGrid);if(aiOneTime)scheduleBox.hidden=true;
 
   const colorLabel=document.createElement("div");colorLabel.className="label";colorLabel.textContent="Colors — tap a color to open the RGB wheel; saved colors are available inside the wheel";
   const colors=document.createElement("div");colors.className="row wraprow";
@@ -504,7 +504,7 @@ function editEventInline(e,t,n){
     const remove=document.createElement("button");remove.type="button";remove.className="btn danger eventLayerRemove";remove.textContent="Remove";
     up.onclick=()=>{const prev=row.previousElementSibling;if(prev){layers.insertBefore(row,prev);renumberLayers()}};
     down.onclick=()=>{const next=row.nextElementSibling;if(next){layers.insertBefore(next,row);renumberLayers()}};
-    remove.onclick=()=>{if(layers.children.length<=2)return status("Events keep at least two layers so the show always has multiple effects.");row.remove();renumberLayers()};
+    remove.onclick=()=>{const minimum=aiOneTime?1:2;if(layers.children.length<=minimum)return status(aiOneTime?"An AI event must keep at least one layer.":"Events keep at least two layers so the show always has multiple effects.");row.remove();renumberLayers()};
     actions.append(up,down,remove);head.append(title,actions);
 
     const fields=document.createElement("div");fields.style.display="grid";fields.style.gridTemplateColumns="repeat(auto-fit,minmax(125px,1fr))";fields.style.gap="8px";
@@ -564,15 +564,16 @@ function editEventInline(e,t,n){
         mirror:!!row.querySelector(".eventLayerMirror").checked
       }
     }));
-    if(layerValues.length<2)return status("An event must keep at least two layers.");
+    if(layerValues.length<(aiOneTime?1:2))return status(aiOneTime?"An AI event must keep at least one layer.":"An event must keep at least two layers.");
     const schedule={mode:rule.value,annual:annual.checked,year:+yearInput.value,startMonth:+startMonth.value,startDay:+startDay.value,endMonth:+endMonth.value,endDay:+endDay.value,customTime:customTime.checked,start:startTime.value,end:endTime.value};
-    await eventChange(e.id,{effect:effect.value,speed:+speedInput.value,colors:colorValues,layers:layerValues,schedule})&&status(e.name+" appearance and schedule updated.")
+    const payload={effect:effect.value,speed:+speedInput.value,colors:colorValues,layers:layerValues};if(!aiOneTime)payload.schedule=schedule;
+    if(await eventChange(e.id,payload)){if(aiOneTime){await loadAi();status(e.name+" colors and patterns updated.")}else status(e.name+" appearance and schedule updated.")}
   };
   const restoreSchedule=document.createElement("button");restoreSchedule.className="btn";restoreSchedule.textContent="Restore Built-in Schedule";
   restoreSchedule.onclick=async()=>{await eventChange(e.id,{resetSchedule:true})&&status(e.name+" restored to its built-in date and normal schedule times.")};
   const restore=document.createElement("button");restore.className="btn";restore.textContent="Restore All Defaults";
   restore.onclick=async()=>{await eventChange(e.id,{resetAll:true})&&status(e.name+" restored to all built-in defaults.")};
-  buttons.append(addColorButton,save,restoreSchedule,restore);
+  if(aiOneTime){save.textContent="Save AI Colors & Patterns";buttons.append(addColorButton,save)}else buttons.append(addColorButton,save,restoreSchedule,restore);
 
   const editorPreviewLabel=document.createElement("div");editorPreviewLabel.className="label";editorPreviewLabel.textContent="Live multi-bulb preview";
   const editorPreview=document.createElement("div");
@@ -638,7 +639,13 @@ function renderAiApplied(items){
     info.append(title,meta);
     const colors=document.createElement("div");colors.className="chips";
     (x.colors||[]).forEach(c=>{const p=document.createElement("span");p.className="colorNamePill";p.style.background=semanticColorVisual(c);p.style.color=semanticColorInk(c);p.textContent=semanticColorName(c);colors.appendChild(p)});
-    const remove=document.createElement("button");remove.className="btn";remove.textContent="Remove";remove.onclick=()=>removeAiEvent(x.id);card.append(info,colors,remove);host.appendChild(card);
+    const preview=document.createElement("div"),scenes=(x.layers||[]).map((p,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(x.colors,p.shift||0),effect:p.effect||x.effect,speed:p.speed||x.speed||1,pattern:p.pattern||null}));
+    if(window.createLayeredMiniPreview)preview.appendChild(window.createLayeredMiniPreview(x.name,scenes));
+    const actions=document.createElement("div");actions.className="row wraprow";actions.style.marginTop="8px";
+    const edit=document.createElement("button");edit.className="btn primary";edit.textContent="Edit Colors & Patterns";
+    edit.onclick=()=>editEventInline({id:x.id,name:x.name,when:x.date,colors:x.colors,effect:x.effect||x.layers?.[0]?.effect||"Static",speed:x.speed||x.layers?.[0]?.speed||1,layers:x.layers||[],customized:true,aiOneTime:true},card,edit);
+    const remove=document.createElement("button");remove.className="btn";remove.textContent="Remove";remove.onclick=()=>removeAiEvent(x.id);
+    actions.append(edit,remove);card.append(info,colors,preview,actions);host.appendChild(card);
   });
 }
 function renderAi(data){
