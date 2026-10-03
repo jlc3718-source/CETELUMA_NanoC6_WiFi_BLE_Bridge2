@@ -39,7 +39,8 @@ SettingsStore store;
 BleController ble;
 Scheduler scheduler(&store.get());
 
-bool manualOverride=false,power=true;\nstatic time_t manualOverrideUntil=0;
+bool manualOverride=false,power=true;
+static time_t manualOverrideUntil=0;
 uint8_t brightness=100,speedLevel=1;
 Theme runningTheme;
 static bool tonightOptionOverride=false;
