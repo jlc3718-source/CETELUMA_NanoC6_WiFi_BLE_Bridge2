@@ -155,6 +155,7 @@ assert 'eventEffectiveActiveOn' in main and 'eventEffectiveWindowActiveOn' in ma
 assert 'eventEffectiveActiveOn(i,l)' in sched and 'eventEffectiveUsesMonthTier(i)' in sched
 assert 'eventEffectiveScheduleGeneration()' in sched
 assert 'static time_t manualOverrideUntil=0;' in main
+assert r'\\nstatic time_t manualOverrideUntil=0;' not in main
 assert 'manualOverrideUntil=timeValid()?nextPlannedScheduleChange(time(nullptr)):0;' in main
 assert 'if(manualOverride){if(!manualOverrideUntil){manualOverrideUntil=nextPlannedScheduleChange(n);' in main
 assert 'manualOverride=false;manualOverrideUntil=0;' in main
