@@ -515,6 +515,33 @@ async function config(){
     }
     put("special_halloween_2026_seeded_v1",true);
   }
+  if(meta("test_halloween_2026_seeded_v1")!==true){
+    const id="ai-once-test-halloween-2026";
+    if(!(r.calendar.events||[]).some(e=>e.id===id)){
+      const cleaned=JSON.parse(JSON.stringify(r.calendar));
+      const halloween=(cleaned.events||[]).find(e=>e.aiOneTime!==true&&String(e.name||"").trim().toLowerCase()==="halloween");
+      // Test-only Halloween scene: keep purple dominant and use sparse orange
+      // lamps as the fast Twinkle accent. Two matching layers prevent the
+      // creative-program fallback from substituting unrelated effects.
+      const layers=[
+        {effect:"Twinkle",speed:4,minutes:30,shift:0,pattern:{blocks:[12,1],offset:0,mirror:false}},
+        {effect:"Twinkle",speed:4,minutes:30,shift:0,pattern:{blocks:[12,1],offset:6,mirror:false}}
+      ];
+      cleaned.events.push({
+        id,name:"Test Halloween",kind:"AI One-Time",rule:"YearTable",month:10,day:31,weekday:0,nth:0,offsetDays:0,durationDays:1,
+        effect:"Twinkle",speed:4,brightness:100,colors:colorInts(["#5B00E6","#FF0D00"]),
+        enabled:false,favorite:false,categoryIndex:Number(halloween?.categoryIndex||0),major:true,dateRuleSourceId:id,
+        creativePhases:layers,aiOneTime:true,expiresAt:"2026-11-01T14:00:00.000Z",aiReplaceEventId:""
+      });
+      cleaned.special=(cleaned.special||[]).filter(x=>x.id!==id);
+      cleaned.special.push({id,year:2026,month:10,day:31});
+      cleaned.revision=Number(cleaned.revision||0)+1;
+      const saved=await upstream("/api/calendar/sync","POST",cleaned);
+      if(!saved.ok)throw fail(409,"Test Halloween event creation was rejected");
+      r.calendar=cleaned;
+    }
+    put("test_halloween_2026_seeded_v1",true);
+  }
   if(meta("initialized")!==true){
     const schedules=(r.calendar.customSchedules||[]).map(x=>({...x,colors:rgb(x.colors)}));
     const presets=[...new Map(schedules.filter(x=>x.presetId).map(x=>[x.presetId,
