@@ -791,6 +791,7 @@ async function statusPayload(refresh=false){
 }
 
 async function manualControl(input:any,sequence?:number){
+  stopCalendarRandomFlash();
   const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
   const firstScene=scenes[names[0]]||DEFAULT_SCENE;
   const overrideSequence=sequence??++manualSequence;
@@ -872,6 +873,59 @@ async function transientControl(input:any){
   return {ok:failed.length===0,target,total:names.length,detail};
 }
 
+const TEST_HALLOWEEN_EVENT_ID="ai-once-test-halloween-2026";
+const TEST_HALLOWEEN_PURPLE=0x5b00e6;
+const TEST_HALLOWEEN_ORANGE=0xff0d00;
+const TEST_HALLOWEEN_LAMPS:Record<string,number>={Pool:60,House:60,Garage:60,Shed:30};
+let calendarRandomFlashGeneration=0;
+let calendarRandomFlashSignature="";
+const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+function randomFlashPositions(lamps:number,count:number,previous:number[]=[]){
+  const prior=new Set(previous);
+  for(let attempt=0;attempt<7;attempt++){
+    const pool=Array.from({length:lamps},(_,i)=>i);
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+    const next=pool.slice(0,Math.max(1,Math.min(lamps,count))).sort((a,b)=>a-b);
+    const overlap=next.reduce((n,x)=>n+(prior.has(x)?1:0),0);
+    if(!previous.length||overlap<=Math.ceil(next.length*.45)||attempt===6)return next;
+  }
+  return [];
+}
+function stopCalendarRandomFlash(){
+  calendarRandomFlashGeneration++;
+  calendarRandomFlashSignature="";
+}
+function ensureCalendarRandomFlash(names:string[],brightness:number){
+  const targets=[...new Set(names)].sort(),level=clamp(Math.round(brightness)||100,1,100);
+  if(!targets.length){stopCalendarRandomFlash();return;}
+  const signature=targets.join(",")+"|"+level;
+  if(calendarRandomFlashSignature===signature)return;
+  const token=++calendarRandomFlashGeneration;
+  calendarRandomFlashSignature=signature;
+  void (async()=>{
+    const previous=new Map<string,number[]>();
+    while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
+      const rawOverride=meta("override");
+      if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
+      await Promise.all(targets.map(name=>serializedForDevice(name,async()=>{
+        const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60,count=Math.max(1,Math.round(lamps/3));
+        const positions=randomFlashPositions(lamps,count,previous.get(name)||[]);previous.set(name,positions);
+        return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
+      })));
+      await delay(320);
+      if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)break;
+      await Promise.all(targets.map(name=>serializedForDevice(name,async()=>{
+        const client=await ensureEufy(false);
+        return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
+      })));
+      await delay(300+Math.floor(Math.random()*351));
+    }
+  })().catch(e=>{
+    console.error("[calendar random flash]",e?.message||e);
+    if(token===calendarRandomFlashGeneration)calendarRandomFlashSignature="";
+  });
+}
+
 async function applyScheduled(name:string,scene:Scene,reason:string){
   const r=await sendScene(name,scene);
   const now=Date.now();
@@ -888,6 +942,7 @@ async function reconcile(ignoreOverride=false,forceSend=false){
     const now=Date.now();pruneExpiredAiEvents(now);
     const owner=meta("automation_owner")||"oracle";
     if(owner!=="oracle"&&!ignoreOverride){
+      stopCalendarRandomFlash();
       const evalState={at:new Date(now).toISOString(),owner,paused:true,sent:0,errors:[]};
       setMeta("last_reconcile",new Date(now).toISOString());
       setMeta("last_scheduler_eval",JSON.stringify(evalState));
@@ -902,14 +957,18 @@ async function reconcile(ignoreOverride=false,forceSend=false){
       for(const name of targetNames(String(override.target||"All")))skipped.add(name);
     }
     const changes:{name:string;scene:Scene;reason:string}[]=[];
+    const flashTargets:string[]=[];let flashBrightness=100;
     const automationEnabled=rows.length>0||!!calendar?.settings?.enabled;
     if(automationEnabled){
       const resolved=rows.length?resolveScheduleState(rows,new Date(now),LAT,LON,TZ,[...DEVICE_NAMES]):{} as Record<string,any>;
       const cal=resolveCalendar(calendar,new Date(now),LAT,LON,TZ);
       for(const name of DEVICE_NAMES){
         if(skipped.has(name))continue;
-        const active=resolved[name];
-        const scene:Scene=active?active.scene:(cal?cal.scene:offScene());
+        const active=resolved[name],testHalloween=!active&&cal?.id===TEST_HALLOWEEN_EVENT_ID;
+        const scene:Scene=testHalloween
+          ?{power:true,brightness:clamp(Number(cal?.scene?.brightness)||100,1,100),effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1}
+          :(active?active.scene:(cal?cal.scene:offScene()));
+        if(testHalloween){flashTargets.push(name);flashBrightness=scene.brightness;}
         const reason=active
           ?`${active.row.name} • active ${new Date(active.start).toISOString()}–${new Date(active.end).toISOString()}`
           :(cal?`${cal.name} • ${cal.schedule2?"Schedule 2":"Schedule 1"}`:"No active holiday/custom schedule");
@@ -926,6 +985,7 @@ async function reconcile(ignoreOverride=false,forceSend=false){
       }
     }));
     const errors=results.filter((x):x is string=>!!x);
+    if(flashTargets.length)ensureCalendarRandomFlash(flashTargets,flashBrightness);else stopCalendarRandomFlash();
     setMeta("last_reconcile",new Date().toISOString());
     setMeta("last_scheduler_eval",JSON.stringify({at:new Date().toISOString(),owner:meta("automation_owner")||"oracle",action:"reconcile",sent:changes.length,errors,transport:"linux-mqtt"}));
     if(changes.length&&errors.length===changes.length)throw new Error(errors.join("; "));
