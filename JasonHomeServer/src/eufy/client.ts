@@ -122,6 +122,18 @@ export class EufyClient {
     if(brightnessVerified===false)throw new Error(`${name} brightness mismatch: expected ${level}%, device reports ${state.report?.brightness}%`);
     return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified,brightnessVerified};
   }
+  async sceneFast(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
+    const frames:CommandFrame[]=[
+      {opcode:OP_SETUP,fields:powerFields(true),label:"ON FAST"},
+      {opcode:fx.opcode,fields:fx.fields,label:`EFFECT FAST ${effect}`},
+      {opcode:OP_SETUP,fields:brightnessFields(level),label:`BRIGHTNESS FAST ${level}%`}
+    ];
+    // Some E22 strings accept the MQTT command but do not emit the status
+    // report that scene() verifies. Test Halloween only needs broker acceptance
+    // here; its live overlay loop immediately owns subsequent frames.
+    return this.command(name,frames,1500);
+  }
   async sceneTransient(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
     const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
     // Fast overlay frame: publish only the 0x0206 effect payload. Power and

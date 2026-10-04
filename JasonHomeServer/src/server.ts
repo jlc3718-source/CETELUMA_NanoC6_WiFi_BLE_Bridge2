@@ -938,6 +938,25 @@ async function applyGarageHalloweenNative(level:number){
     return false;
   }
 }
+async function applyTestHalloweenBaseFast(name:string,level:number,reason="Test Halloween base"){
+  try{
+    const result:any=await serializedForDevice(name,async()=>{
+      const client=await ensureEufy(false);
+      return client.sceneFast(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
+    });
+    const scene:Scene={power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1};
+    db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+    db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
+    logCommand(Date.now(),name,reason,true,{brokerAccepted:result?.brokerAccepted===true,transport:result?.transport||null});
+    return true;
+  }catch(e:any){
+    const msg=e?.message||String(e);
+    db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+    logCommand(Date.now(),name,reason,false,msg);
+    console.error("[Test Halloween base]",name,msg);
+    return false;
+  }
+}
 function ensureCalendarRandomFlash(names:string[],brightness:number){
   const targets=[...new Set(names)].sort(),level=clamp(Math.round(brightness)||100,1,100);
   if(!targets.length){stopCalendarRandomFlash();return;}
@@ -989,10 +1008,12 @@ function stopTestHalloweenPreview(){testHalloweenPreviewGeneration++;}
 function queueTestHalloweenPreview(brightness=100,durationMs=45000){
   const level=clamp(Math.round(brightness)||100,1,100),token=++testHalloweenPreviewGeneration;
   void (async()=>{
-    await manualControl({
-      name:"Test Halloween",target:"All",power:true,brightness:level,effect:"Static",
-      colors:[TEST_HALLOWEEN_PURPLE],speed:1
-    },undefined,true);
+    stopCalendarRandomFlash();
+    setMeta("override",JSON.stringify({
+      active:true,target:"All",scene:{power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1},
+      sequence:++manualSequence,createdAt:Date.now(),expiresAt:nextOverrideExpiry(new Date())
+    }));
+    await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,level,"Test Halloween preview base")));
     if(token!==testHalloweenPreviewGeneration)return;
     const until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
 
@@ -1059,7 +1080,7 @@ async function reconcile(ignoreOverride=false,forceSend=false){
     if(!ignoreOverride&&override?.active){
       for(const name of targetNames(String(override.target||"All")))skipped.add(name);
     }
-    const changes:{name:string;scene:Scene;reason:string}[]=[];
+    const changes:{name:string;scene:Scene;reason:string;testHalloween?:boolean}[]=[];
     const flashTargets:string[]=[];let flashBrightness=100;
     const automationEnabled=rows.length>0||!!calendar?.settings?.enabled;
     if(automationEnabled){
@@ -1076,12 +1097,17 @@ async function reconcile(ignoreOverride=false,forceSend=false){
           ?`${active.row.name} • active ${new Date(active.start).toISOString()}–${new Date(active.end).toISOString()}`
           :(cal?`${cal.name} • ${cal.schedule2?"Schedule 2":"Schedule 1"}`:"No active holiday/custom schedule");
         const stored=storedScene(name);
-        if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene))changes.push({name,scene,reason});
+        if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene))changes.push({name,scene,reason,testHalloween});
       }
     }
     const results=await Promise.all(changes.map(async c=>{
-      try{await applyScheduled(c.name,c.scene,c.reason);return null;}
-      catch(e:any){
+      try{
+        if(c.testHalloween){
+          const ok=await applyTestHalloweenBaseFast(c.name,c.scene.brightness,c.reason);
+          if(!ok)throw new Error("Test Halloween fast base was not accepted");
+        }else await applyScheduled(c.name,c.scene,c.reason);
+        return null;
+      }catch(e:any){
         const msg=e?.message||String(e);
         db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,c.name);
         return `${c.name}: ${msg}`;
