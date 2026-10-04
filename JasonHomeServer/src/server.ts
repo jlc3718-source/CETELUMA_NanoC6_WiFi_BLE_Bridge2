@@ -904,10 +904,10 @@ async function sendTestHalloweenFrame(targets:string[],level:number,orange:boole
     try{
       await serializedForDevice(name,async()=>{
         const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60;
-        if(!orange)return client.sceneTransientFast(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
+        if(!orange)return client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
         const count=Math.max(1,Math.round(lamps/3)),positions=randomFlashPositions(lamps,count,previous.get(name)||[]);
         previous.set(name,positions);
-        return client.sceneTransientFast(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
+        return client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
       });
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       return true;
@@ -927,7 +927,7 @@ async function applyGarageHalloweenNative(level:number){
       // Garage's 60-lamp E22 ignores the high-frequency segmented Static frames
       // used by the other strings. Let its controller animate purple/orange
       // natively so it continues independently of the software burst loop.
-      return client.sceneTransientFast("Garage","Twinkle",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],10,level);
+      return client.sceneTransientStream("Garage","Twinkle",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],10,level);
     });
     db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name='Garage'").run(Date.now());
     return true;
@@ -942,12 +942,12 @@ async function applyTestHalloweenBaseFast(name:string,level:number,reason="Test 
   try{
     const result:any=await serializedForDevice(name,async()=>{
       const client=await ensureEufy(false);
-      return client.sceneFast(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
+      return client.sceneStream(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
     });
     const scene:Scene={power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1};
     db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
     db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-    logCommand(Date.now(),name,reason,true,{brokerAccepted:result?.brokerAccepted===true,transport:result?.transport||null});
+    logCommand(Date.now(),name,reason,true,{socketQueued:true,transport:result?.transport||null});
     return true;
   }catch(e:any){
     const msg=e?.message||String(e);

@@ -22,7 +22,7 @@ export interface MqttSendResult {
   instance?:string;
   brokerAccepted:boolean;
   deviceReported:boolean;
-  transport?:"persistent"|"individual"|"individual-fallback";
+  transport?:"persistent"|"persistent-stream"|"individual"|"individual-fallback";
 }
 // Keep the last healthy broker route warm in memory so interactive commands avoid slow fallback addresses.
 const preferredConnectHost=new Map<string,string>();
@@ -487,6 +487,27 @@ class PersistentMqttSession{
     }
     return result;
   }
+
+  async stream(frames:CommandFrame[],spacingMs=0):Promise<MqttSendResult>{
+    if(this.failure)throw this.failure;
+    const ids=frames.map(()=>this.nextId());
+    try{
+      for(let i=0;i<frames.length;i++){
+        const ts=Math.floor(Date.now()/1000),f=frames[i],dp=dpCommand(f.opcode,this.target.account,f.fields,ts);
+        const inner={account_id:this.target.account,device_sn:this.target.serial,data:Buffer.from(dp).toString("base64"),trans:""};
+        const head={version:"1.0.0.1",client_id:this.clientId,sess_id:"0000",msg_seq:this.msgSeq++,seed:"",timestamp:ts,cmd_status:1,cmd:17,sign_code:0};
+        const payload=Buffer.from(JSON.stringify({head,payload:JSON.stringify(inner)}),"utf8");
+        this.socket.write(publishPacket(`cmd/eufy_life/${this.target.model}/${this.target.serial}/req`,ids[i],payload));
+        if(spacingMs>0&&i+1<frames.length)await new Promise(r=>setTimeout(r,spacingMs));
+      }
+      // Intentionally do not create an active ACK waiter. PUBACKs are consumed
+      // by the persistent reader and ignored when no verified send is active.
+      return {published:frames.length,instance:this.connectHost,brokerAccepted:false,deviceReported:false,transport:"persistent-stream"};
+    }catch(e){
+      this.fail(e);
+      throw e;
+    }
+  }
 }
 
 const persistentSessions=new Map<string,PersistentMqttSession>();
@@ -616,4 +637,11 @@ export async function sendMqtt(creds:MqttCredentials,target:MqttTarget,frames:Co
     return {...result,transport:"individual"};
   }
   return sendMqttPersistent(creds,target,frames,installId,waitMs);
+}
+
+export async function sendMqttStream(creds:MqttCredentials,target:MqttTarget,frames:CommandFrame[],installId:string,spacingMs=0):Promise<MqttSendResult>{
+  // Streaming is only meaningful on the warm persistent sessions. It avoids
+  // round-trip ACK/report latency between rapid animation frames.
+  const session=await getPersistentSession(creds,target,installId);
+  return session.stream(frames,spacingMs);
 }

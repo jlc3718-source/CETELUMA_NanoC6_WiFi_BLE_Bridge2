@@ -1,6 +1,6 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
-import { effectReportMatches, startCommandCapture, mqttConnectionMode, sendMqtt, warmPersistentMqtt } from "./mqtt.js";
+import { effectReportMatches, startCommandCapture, mqttConnectionMode, sendMqtt, sendMqttStream, warmPersistentMqtt } from "./mqtt.js";
 import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, catalogPresetE120, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
@@ -100,6 +100,7 @@ export class EufyClient {
     return {name,model:s.model,serial:d.device_sn,account:d.member?.admin_user_id||this.uid};
   }
   async command(name:string,frames:CommandFrame[],waitMs=2500){if(!this.creds)await this.certificate();return sendMqtt(this.creds!,this.target(name),frames,this.installId,waitMs);}
+  async commandStream(name:string,frames:CommandFrame[],spacingMs=0){if(!this.creds)await this.certificate();return sendMqttStream(this.creds!,this.target(name),frames,this.installId,spacingMs);}
   async startCommandCapture(name:string){if(!this.creds)await this.certificate();return startCommandCapture(this.creds!,this.target(name));}
   async status(name:string){return this.command(name,[{opcode:0x0200,fields:statusFields(),label:"STATUS"}],3000);}
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
@@ -145,6 +146,18 @@ export class EufyClient {
     // Halloween's rapid overlay stream must recover quickly from a missed PUBACK;
     // do not let one frame occupy a device queue for nearly a full second.
     return this.command(name,[{opcode:fx.opcode,fields:fx.fields,label:`TRANSIENT FAST ${effect}`}],350);
+  }
+  async sceneStream(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
+    return this.commandStream(name,[
+      {opcode:OP_SETUP,fields:powerFields(true),label:"ON STREAM"},
+      {opcode:fx.opcode,fields:fx.fields,label:`EFFECT STREAM ${effect}`},
+      {opcode:OP_SETUP,fields:brightnessFields(level),label:`BRIGHTNESS STREAM ${level}%`}
+    ],35);
+  }
+  async sceneTransientStream(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
+    return this.commandStream(name,[{opcode:fx.opcode,fields:fx.fields,label:`TRANSIENT STREAM ${effect}`}],0);
   }
   async namedFactoryScene(name:string,presets:EufyFactoryPreset[],brightnessOverride?:number){
     const s=this.spec(name),wanted=presets.filter(p=>String(p?.name||"").trim().toLowerCase()===String(presets[0]?.name||"").trim().toLowerCase());
