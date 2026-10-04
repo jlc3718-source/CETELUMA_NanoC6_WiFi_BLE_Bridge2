@@ -356,6 +356,7 @@ interface PersistentActiveSend{
   resolve:(r:MqttSendResult)=>void;
   reject:(e:any)=>void;
   timer:any;
+  transport?:"persistent"|"persistent-stream";
 }
 
 class PersistentMqttSession{
@@ -423,7 +424,7 @@ class PersistentMqttSession{
       instance:this.connectHost,
       brokerAccepted:true,
       deviceReported:!!active.report,
-      transport:"persistent"
+      transport:active.transport||"persistent"
     });
   }
 
@@ -490,8 +491,24 @@ class PersistentMqttSession{
 
   async stream(frames:CommandFrame[],spacingMs=0):Promise<MqttSendResult>{
     if(this.failure)throw this.failure;
-    if(this.active)throw new Error(this.target.name+" persistent MQTT session is busy with a verified command");
+    if(this.active)throw new Error(this.target.name+" persistent MQTT session is busy");
     const ids=frames.map(()=>this.nextId());
+    // Stream frames are still low-latency, but they are now strictly
+    // backpressured: one batch must receive every QoS1 PUBACK before the next
+    // batch can use this device session. This prevents rapid effects from
+    // building an unbounded broker/controller backlog.
+    const result=new Promise<MqttSendResult>((resolve,reject)=>{
+      const active:PersistentActiveSend={
+        expected:new Set(ids),acked:new Set<number>(),requireReport:false,resolve,reject,timer:null,transport:"persistent-stream"
+      };
+      active.timer=setTimeout(()=>{
+        if(this.active!==active)return;
+        this.active=null;
+        const state=mqttCompletionStatus([...active.expected],[...active.acked],false,active.report);
+        reject(new Error("Persistent MQTT stream PUBACK timeout; missing packet ids "+state.missing.join(",")));
+      },1200);
+      this.active=active;
+    });
     try{
       for(let i=0;i<frames.length;i++){
         const ts=Math.floor(Date.now()/1000),f=frames[i],dp=dpCommand(f.opcode,this.target.account,f.fields,ts);
@@ -501,13 +518,11 @@ class PersistentMqttSession{
         this.socket.write(publishPacket(`cmd/eufy_life/${this.target.model}/${this.target.serial}/req`,ids[i],payload));
         if(spacingMs>0&&i+1<frames.length)await new Promise(r=>setTimeout(r,spacingMs));
       }
-      // Intentionally do not create an active ACK waiter. PUBACKs are consumed
-      // by the persistent reader and ignored when no verified send is active.
-      return {published:frames.length,instance:this.connectHost,brokerAccepted:false,deviceReported:false,transport:"persistent-stream"};
     }catch(e){
       this.fail(e);
       throw e;
     }
+    return result;
   }
 }
 
