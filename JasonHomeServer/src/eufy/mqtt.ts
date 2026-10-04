@@ -490,6 +490,7 @@ class PersistentMqttSession{
 
   async stream(frames:CommandFrame[],spacingMs=0):Promise<MqttSendResult>{
     if(this.failure)throw this.failure;
+    if(this.active)throw new Error(this.target.name+" persistent MQTT session is busy with a verified command");
     const ids=frames.map(()=>this.nextId());
     try{
       for(let i=0;i<frames.length;i++){
@@ -511,6 +512,13 @@ class PersistentMqttSession{
 }
 
 const persistentSessions=new Map<string,PersistentMqttSession>();
+
+export function resetPersistentMqtt(reason="Persistent MQTT reset"){
+  const sessions=[...new Set(persistentSessions.values())];
+  persistentSessions.clear();
+  for(const session of sessions)session.close(reason);
+}
+
 
 function persistentKey(creds:MqttCredentials,target:MqttTarget,installId:string){
   return [creds.endpoint_addr,creds.endpoint_port||8883,target.serial,sha256(creds.certificate_pem).slice(0,12),installId].join("|");
