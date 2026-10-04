@@ -26,6 +26,7 @@ requires Android platform 35, build tools 35, and the Jason Home 2 signing
 key. Do not place those credentials in the repository.
 
 The original Android app and server source remain present. Jason Home 2
-shares the active Oracle controller for actual device operations. Do not
-use both interfaces to edit the same event concurrently: edits use Oracle
-calendar revisions and stale writes are rejected.
+shares the active Oracle controller for actual device operations. White Override 1
+and White Override 2 are scheduled Sunday through Thursday only. Do not use both
+interfaces to edit the same event concurrently: edits use Oracle calendar revisions
+and stale writes are rejected.
