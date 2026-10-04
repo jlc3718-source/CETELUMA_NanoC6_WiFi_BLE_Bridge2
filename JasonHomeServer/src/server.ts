@@ -876,6 +876,9 @@ async function transientControl(input:any){
 const TEST_HALLOWEEN_EVENT_ID="ai-once-test-halloween-2026";
 const TEST_HALLOWEEN_PURPLE=0x5b00e6;
 const TEST_HALLOWEEN_ORANGE=0xff0d00;
+const TEST_HALLOWEEN_FLASH_MS=160;
+const TEST_HALLOWEEN_GAP_MIN_MS=120;
+const TEST_HALLOWEEN_GAP_MAX_MS=260;
 const TEST_HALLOWEEN_LAMPS:Record<string,number>={Pool:60,House:60,Garage:60,Shed:30};
 let calendarRandomFlashGeneration=0;
 let calendarRandomFlashSignature="";
@@ -912,13 +915,13 @@ function ensureCalendarRandomFlash(names:string[],brightness:number){
         const positions=randomFlashPositions(lamps,count,previous.get(name)||[]);previous.set(name,positions);
         return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
       })));
-      await delay(320);
+      await delay(TEST_HALLOWEEN_FLASH_MS);
       if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)break;
       await Promise.all(targets.map(name=>serializedForDevice(name,async()=>{
         const client=await ensureEufy(false);
         return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
       })));
-      await delay(300+Math.floor(Math.random()*351));
+      await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
     }
   })().catch(e=>{
     console.error("[calendar random flash]",e?.message||e);
