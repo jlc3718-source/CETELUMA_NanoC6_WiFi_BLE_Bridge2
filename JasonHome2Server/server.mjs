@@ -819,7 +819,7 @@ async function state(){
       whiteOverride1:a.whiteOverride1Enabled!==false,whiteOverride2:a.whiteOverride2Enabled!==false,schedule1StartAtDusk:a.startAtDusk,
       schedule2End:clock(a.schedule2End),schedule2EndAtDawn:a.schedule2EndAtDawn,schedule2Brightness:a.schedule2Brightness,
       dawn:s.astronomy?.dawn||"",dusk:s.astronomy?.dusk||""},
-    scheduleWindow:`Schedule 1 ${a.startAtDusk?"dusk ("+(s.astronomy?.dusk||"")+")":clock(a.on)} - ${clock(a.off)} • Schedule 2 ${clock(a.off)} - ${a.schedule2EndAtDawn?"dawn ("+(s.astronomy?.dawn||"")+")":clock(a.schedule2End)} at ${a.schedule2Brightness}% • White 1 ${a.whiteOverride1Enabled===false?"OFF":"9:00–10:00 PM"} • White 2 ${a.whiteOverride2Enabled===false?"OFF":"6:00 AM–dawn/7:30 AM"}`,
+    scheduleWindow:`Schedule 1 ${a.startAtDusk?"dusk ("+(s.astronomy?.dusk||"")+")":clock(a.on)} - ${clock(a.off)} • Schedule 2 ${clock(a.off)} - ${a.schedule2EndAtDawn?"dawn ("+(s.astronomy?.dawn||"")+")":clock(a.schedule2End)} at ${a.schedule2Brightness}% • White 1 ${a.whiteOverride1Enabled===false?"OFF":"Sun–Thu 9:00–10:00 PM"} • White 2 ${a.whiteOverride2Enabled===false?"OFF":"Sun–Thu 6:00 AM–dawn/7:30 AM"}`,
     nextEvent:s.nextEvent?.name||"No upcoming event",scheduledEvent,localToday:today,manualOverride:!!s.override?.active,stateAuthority:"oracle",
     ble:{ready:!!s.eufy?.ready,busy:false,connected:!!s.eufy?.ready,connectedCount:ready.size,knownCount:4,seenCount:ready.size,
       name:"Saved Eufy lights",address:"",protocol:"Oracle + Eufy MQTT",connectionMode:"Oracle / Internet",target:selected,

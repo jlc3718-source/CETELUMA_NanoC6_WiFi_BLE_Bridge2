@@ -275,8 +275,8 @@ window.andersonAuthToken="";</script>
       <div class="note"><strong>Schedule 1</strong> can start at a fixed time or automatically at civil dusk for ZIP 14772. <strong>Schedule 2</strong> starts at Schedule 1's END time, keeps the same scheduled scene at its own brightness, and can end at a fixed time or automatically at civil dawn for ZIP 14772.</div>
       <div class="grid2" style="margin-top:10px"><label class="card row between" style="cursor:pointer"><span><strong>Schedule 1</strong><br><span class="sub">Normal evening schedule</span></span><input id="eventsMaster" type="checkbox" checked aria-label="Enable Schedule 1"></label><label class="card row between" style="cursor:pointer"><span><strong>Schedule 2</strong><br><span class="sub">Overnight continuation</span></span><input id="schedule2Master" type="checkbox" checked aria-label="Enable Schedule 2"></label></div>
       <div class="grid2" style="margin-top:10px">
-        <label class="card row between" style="cursor:pointer"><span><strong>White Override 1</strong><br><span class="sub">9:00–10:00 PM • All lights • Solid white • 100%</span></span><input id="whiteOverride1Master" type="checkbox" checked aria-label="Enable White Override 1"></label>
-        <label class="card row between" style="cursor:pointer"><span><strong>White Override 2</strong><br><span class="sub">6:00 AM–civil dawn or 7:30 AM, whichever comes first • All lights • 100%</span></span><input id="whiteOverride2Master" type="checkbox" checked aria-label="Enable White Override 2"></label>
+        <label class="card row between" style="cursor:pointer"><span><strong>White Override 1</strong><br><span class="sub">Sunday–Thursday • 9:00–10:00 PM • All lights • Solid white • 100%</span></span><input id="whiteOverride1Master" type="checkbox" checked aria-label="Enable White Override 1"></label>
+        <label class="card row between" style="cursor:pointer"><span><strong>White Override 2</strong><br><span class="sub">Sunday–Thursday • 6:00 AM–civil dawn or 7:30 AM, whichever comes first • All lights • 100%</span></span><input id="whiteOverride2Master" type="checkbox" checked aria-label="Enable White Override 2"></label>
       </div>
       <div class="card" style="margin-top:10px">
         <div class="label" style="margin-top:0">Schedule 1 START mode</div>
@@ -311,7 +311,7 @@ window.andersonAuthToken="";</script>
 
     
 
-    <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. White Override 1 / White Override 2 when enabled and active</div><div>3. Normal scheduled items — built-in events, monthly events, custom schedules and promoted Factory events</div><div style="margin-top:5px">If two or more normal scheduled items land on the same night, the Overlap Behavior setting controls them: Rotate nightly, Split the night, or Combine colors.</div></div></div>
+    <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. White Override 1 / White Override 2 when enabled and active (Sunday–Thursday only)</div><div>3. Normal scheduled items — built-in events, monthly events, custom schedules and promoted Factory events</div><div style="margin-top:5px">If two or more normal scheduled items land on the same night, the Overlap Behavior setting controls them: Rotate nightly, Split the night, or Combine colors.</div></div></div>
   </section>
 
   <div id="statusMsg" class="status" aria-live="polite"></div>
