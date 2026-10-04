@@ -881,13 +881,13 @@ async function transientControl(input:any){
 const TEST_HALLOWEEN_EVENT_ID="ai-once-test-halloween-2026";
 const TEST_HALLOWEEN_PURPLE=0x5b00e6;
 const TEST_HALLOWEEN_ORANGE=0xff0d00;
-const TEST_HALLOWEEN_FLASH_MS=90;
-const TEST_HALLOWEEN_GAP_MIN_MS=40;
-const TEST_HALLOWEEN_GAP_MAX_MS=100;
-// Recovery guard: the rapid server-driven overlay can saturate Eufy's MQTT path
-// and make every later command appear locked. Keep the visual base scene but
-// disable the high-frequency overlay until it is replaced with a rate-safe path.
-const TEST_HALLOWEEN_STREAMING_ENABLED=false;
+// Each visual frame contains both the steady purple base and the new random
+// orange flash set. The MQTT stream itself is PUBACK-backpressured, so a device
+// can never accumulate an unbounded queue of animation frames.
+const TEST_HALLOWEEN_FRAME_MIN_MS=70;
+const TEST_HALLOWEEN_FRAME_MAX_MS=120;
+const TEST_HALLOWEEN_MAX_FAILURES=2;
+const TEST_HALLOWEEN_ANIMATION_ENABLED=true;
 const TEST_HALLOWEEN_LAMPS:Record<string,number>={Pool:60,House:60,Garage:60,Shed:30};
 let calendarRandomFlashGeneration=0;
 let calendarRandomFlashSignature="";
@@ -899,50 +899,37 @@ function randomFlashPositions(lamps:number,count:number,previous:number[]=[]){
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
     const next=pool.slice(0,Math.max(1,Math.min(lamps,count))).sort((a,b)=>a-b);
     const overlap=next.reduce((n,x)=>n+(prior.has(x)?1:0),0);
-    if(!previous.length||overlap<=Math.ceil(next.length*.45)||attempt===6)return next;
+    if(!previous.length||overlap<=Math.ceil(next.length*.35)||attempt===6)return next;
   }
   return [];
+}
+function randomHalloweenFlashCount(lamps:number){
+  const min=Math.max(1,Math.round(lamps*.27)),max=Math.max(min,Math.round(lamps*.38));
+  return min+Math.floor(Math.random()*(max-min+1));
+}
+function halloweenFrameDelay(){
+  return TEST_HALLOWEEN_FRAME_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_FRAME_MAX_MS-TEST_HALLOWEEN_FRAME_MIN_MS+1));
 }
 function stopCalendarRandomFlash(){
   calendarRandomFlashGeneration++;
   calendarRandomFlashSignature="";
 }
-async function sendTestHalloweenFrame(targets:string[],level:number,orange:boolean,previous:Map<string,number[]>){
-  const results=await Promise.all(targets.map(async name=>{
-    try{
-      await serializedForDevice(name,async()=>{
-        const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60;
-        if(!orange)return client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
-        const count=Math.max(1,Math.round(lamps/3)),positions=randomFlashPositions(lamps,count,previous.get(name)||[]);
-        previous.set(name,positions);
-        return client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
-      });
-      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
-      return true;
-    }catch(e:any){
-      const msg=e?.message||String(e);
-      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
-      console.error("[Test Halloween transient]",name,msg);
-      return false;
-    }
-  }));
-  return results.filter(Boolean).length;
-}
-async function applyGarageHalloweenNative(level:number){
+async function sendTestHalloweenFrame(name:string,level:number,previous:Map<string,number[]>){
   try{
-    await serializedForDevice("Garage",async()=>{
-      const client=await ensureEufy(false);
-      // Garage's 60-lamp E22 ignores the high-frequency segmented Static frames
-      // used by the other strings. Let its controller animate purple/orange
-      // natively so it continues independently of the software burst loop.
-      return client.sceneTransientStream("Garage","Twinkle",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],10,level);
+    const result:any=await serializedForDevice(name,async()=>{
+      const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60;
+      const count=randomHalloweenFlashCount(lamps),positions=randomFlashPositions(lamps,count,previous.get(name)||[]);
+      previous.set(name,positions);
+      // This one frame is the whole visual state: purple on every non-flashing
+      // lamp and orange on the selected lamps. No separate purple reset frame.
+      return client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
     });
-    db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name='Garage'").run(Date.now());
-    return true;
+    db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+    return result?.brokerAccepted===true;
   }catch(e:any){
     const msg=e?.message||String(e);
-    db.prepare("UPDATE devices SET last_error=? WHERE name='Garage'").run(msg);
-    console.error("[Test Halloween Garage native]",msg);
+    db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+    console.error("[Test Halloween frame]",name,msg);
     return false;
   }
 }
@@ -955,8 +942,8 @@ async function applyTestHalloweenBaseFast(name:string,level:number,reason="Test 
     const scene:Scene={power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1};
     db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
     db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
-    logCommand(Date.now(),name,reason,true,{socketQueued:true,transport:result?.transport||null});
-    return true;
+    logCommand(Date.now(),name,reason,true,{brokerAccepted:result?.brokerAccepted===true,transport:result?.transport||null});
+    return result?.brokerAccepted===true;
   }catch(e:any){
     const msg=e?.message||String(e);
     db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
@@ -965,56 +952,42 @@ async function applyTestHalloweenBaseFast(name:string,level:number,reason="Test 
     return false;
   }
 }
+async function runTestHalloweenTarget(name:string,level:number,shouldContinue:()=>boolean){
+  const previous=new Map<string,number[]>();
+  let failures=0;
+  while(shouldContinue()){
+    const sent=await sendTestHalloweenFrame(name,level,previous);
+    if(!sent){
+      failures++;
+      if(failures>=TEST_HALLOWEEN_MAX_FAILURES){
+        console.error("[Test Halloween stopped]",name,"after",failures,"consecutive frame failures");
+        break;
+      }
+      await delay(500);
+      continue;
+    }
+    failures=0;
+    await delay(halloweenFrameDelay());
+  }
+}
 function ensureCalendarRandomFlash(names:string[],brightness:number){
   const targets=[...new Set(names)].sort(),level=clamp(Math.round(brightness)||100,1,100);
   if(!targets.length){stopCalendarRandomFlash();return;}
   const signature=targets.join(",")+"|"+level;
   if(calendarRandomFlashSignature===signature)return;
-  if(!TEST_HALLOWEEN_STREAMING_ENABLED){
+  if(!TEST_HALLOWEEN_ANIMATION_ENABLED){
     calendarRandomFlashGeneration++;
     calendarRandomFlashSignature=signature;
     return;
   }
   const token=++calendarRandomFlashGeneration;
   calendarRandomFlashSignature=signature;
-  const rapidTargets=targets.filter(name=>name!=="Garage");
-
-  // Garage runs its E22-native animation in its own loop. It is refreshed
-  // periodically, and failures here never block the other three controllers.
-  if(targets.includes("Garage")){
-    void (async()=>{
-      while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
-        const rawOverride=meta("override");
-        if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
-        await applyGarageHalloweenNative(level);
-        await delay(10000);
-      }
-    })();
-  }
-
-  // Every other string gets its own independent burst loop. A slow or dropped
-  // PUBACK on one controller cannot stall the others.
-  for(const name of rapidTargets){
-    void (async()=>{
-      const previous=new Map<string,number[]>();
-      let failures=0;
-      while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
-        const rawOverride=meta("override");
-        if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
-        const sent=await sendTestHalloweenFrame([name],level,true,previous);
-        if(!sent){
-          failures++;
-          await delay(failures>=4?250:100);
-          continue;
-        }
-        failures=0;
-        await delay(TEST_HALLOWEEN_FLASH_MS);
-        if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)break;
-        await sendTestHalloweenFrame([name],level,false,previous);
-        await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
-      }
-    })();
-  }
+  void Promise.all(targets.map(name=>runTestHalloweenTarget(name,level,()=>{
+    if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)return false;
+    const rawOverride=meta("override");
+    if(rawOverride){try{if(JSON.parse(rawOverride)?.active)return false;}catch{}}
+    return true;
+  }))).catch(e=>console.error("[Test Halloween calendar]",e?.message||e));
 }
 let testHalloweenPreviewGeneration=0;
 function stopTestHalloweenPreview(){testHalloweenPreviewGeneration++;}
@@ -1027,41 +1000,19 @@ function queueTestHalloweenPreview(brightness=100,durationMs=45000){
       sequence:++manualSequence,createdAt:Date.now(),expiresAt:nextOverrideExpiry(new Date())
     }));
     await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,level,"Test Halloween preview base")));
-    if(token!==testHalloweenPreviewGeneration)return;
-    if(!TEST_HALLOWEEN_STREAMING_ENABLED)return;
+    if(token!==testHalloweenPreviewGeneration||!TEST_HALLOWEEN_ANIMATION_ENABLED)return;
     const until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
-
-    // Garage uses the E22 controller's native twinkle engine. Keep refreshing it
-    // separately so it cannot throttle or terminate the other strings.
-    void (async()=>{
-      while(token===testHalloweenPreviewGeneration&&Date.now()<until){
-        await applyGarageHalloweenNative(level);
-        await delay(10000);
-      }
-    })();
-
-    const rapidTargets=[...DEVICE_NAMES].filter(name=>name!=="Garage");
-    for(const name of rapidTargets){
-      void (async()=>{
-        const previous=new Map<string,number[]>();
-        let failures=0;
-        while(token===testHalloweenPreviewGeneration&&Date.now()<until){
-          const sent=await sendTestHalloweenFrame([name],level,true,previous);
-          if(!sent){
-            failures++;
-            await delay(failures>=4?250:100);
-            continue;
-          }
-          failures=0;
-          await delay(TEST_HALLOWEEN_FLASH_MS);
-          if(token!==testHalloweenPreviewGeneration)return;
-          await sendTestHalloweenFrame([name],level,false,previous);
-          await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
-        }
-      })();
+    await Promise.all([...DEVICE_NAMES].map(name=>runTestHalloweenTarget(name,level,()=>token===testHalloweenPreviewGeneration&&Date.now()<until)));
+    // A completed preview should not freeze on a random orange frame.
+    if(token===testHalloweenPreviewGeneration){
+      await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,level,"Test Halloween preview finish")));
     }
   })().catch(e=>console.error("[Test Halloween preview]",e?.message||e));
-  return {ok:true,queued:true,brightness:level,durationMs,flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS,density:"1/3",garageMode:"E22 native Twinkle"};
+  return {
+    ok:true,queued:true,brightness:level,durationMs,
+    frameMinMs:TEST_HALLOWEEN_FRAME_MIN_MS,frameMaxMs:TEST_HALLOWEEN_FRAME_MAX_MS,
+    density:"random 27–38%",mode:"PUBACK-backpressured segmented Static",targets:[...DEVICE_NAMES]
+  };
 }
 
 async function applyScheduled(name:string,scene:Scene,reason:string){
