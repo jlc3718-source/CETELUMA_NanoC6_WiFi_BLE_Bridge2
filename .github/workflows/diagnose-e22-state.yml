@@ -18,14 +18,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd /home/ubuntu/repo/JasonHomeServer
-          set -a
-          . ./.env
-          set +a
-          node --input-type=module <<'NODE'
+          sudo docker exec -i jason-home node --input-type=module <<'NODE'
           import { DatabaseSync } from 'node:sqlite';
-          import { EufyClient } from './dist/eufy/client.js';
-          const db=new DatabaseSync(process.env.JASON_HOME_DB||'data/jason-home.sqlite');
+          import { EufyClient } from '/app/dist/eufy/client.js';
+          const db=new DatabaseSync(process.env.JASON_HOME_DB||'/data/jason-home.sqlite');
           const get=(k)=>db.prepare('SELECT value FROM meta WHERE key=?').get(k)?.value||'';
           const sessionRaw=get('eufy_session');
           const installId=(get('install_id')||process.env.EUFY_INSTALL_ID||'').trim().toLowerCase();
