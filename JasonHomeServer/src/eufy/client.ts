@@ -128,6 +128,12 @@ export class EufyClient {
     // brightness remain owned by the surrounding manual/scheduled scene.
     return this.command(name,[{opcode:fx.opcode,fields:fx.fields,label:`TRANSIENT ${effect}`}],900);
   }
+  async sceneTransientFast(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
+    const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
+    // Halloween's rapid overlay stream must recover quickly from a missed PUBACK;
+    // do not let one frame occupy a device queue for nearly a full second.
+    return this.command(name,[{opcode:fx.opcode,fields:fx.fields,label:`TRANSIENT FAST ${effect}`}],350);
+  }
   async namedFactoryScene(name:string,presets:EufyFactoryPreset[],brightnessOverride?:number){
     const s=this.spec(name),wanted=presets.filter(p=>String(p?.name||"").trim().toLowerCase()===String(presets[0]?.name||"").trim().toLowerCase());
     if(!wanted.length)throw new Error("Named factory effect is unavailable");
