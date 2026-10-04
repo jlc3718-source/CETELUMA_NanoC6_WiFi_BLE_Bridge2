@@ -231,6 +231,14 @@ r=resolveCalendar(whiteOverrides,new Date("2026-09-28T11:30:00Z"),42.1507,-78.94
 assert.equal(r,null,"Morning white override must be off by 7:30 AM");
 r=resolveCalendar(whiteOverrides,new Date("2026-06-21T10:05:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(r,null,"Morning white override must not start when civil dawn was before 6:00 AM");
+r=resolveCalendar(whiteOverrides,new Date("2026-10-03T01:15:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"White Override 1 must be skipped on Friday night");
+r=resolveCalendar(whiteOverrides,new Date("2026-10-04T01:15:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"White Override 1 must be skipped on Saturday night");
+r=resolveCalendar(whiteOverrides,new Date("2026-10-02T10:05:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"White Override 2 must be skipped on Friday morning");
+r=resolveCalendar(whiteOverrides,new Date("2026-10-03T10:05:00Z"),42.1507,-78.9452,"America/New_York");
+assert.equal(r,null,"White Override 2 must be skipped on Saturday morning");
 
 const whiteBoundary=nextCalendarBoundary(whiteOverrides,new Date("2026-09-28T00:00:00Z"),42.1507,-78.9452,"America/New_York");
 assert.equal(new Date(whiteBoundary.at).toISOString(),"2026-09-28T01:00:00.000Z");

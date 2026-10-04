@@ -71,6 +71,7 @@ function sameDay(a:Ymd,b:Ymd){return a.year===b.year&&a.month===b.month&&a.day==
 function monthDays(y:number,m:number){return new Date(Date.UTC(y,m,0)).getUTCDate();}
 function weekday(d:Ymd){return new Date(ymdMs(d)).getUTCDay();}
 function localYmd(date:Date,tz:string):Ymd{const p=localParts(date,tz);return {year:p.year,month:p.month,day:p.day};}
+function whiteOverrideAllowedDay(d:Ymd){const w=weekday(d);return w>=0&&w<=4;}
 
 function easter(year:number):Ymd{
   const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3);
@@ -438,12 +439,13 @@ export function resolveCalendar(cfg:CalendarConfig|null,now:Date,lat:number,lon:
   if(!cfg)return null;
   const lp=localParts(now,tz),day={year:lp.year,month:lp.month,day:lp.day},minute=lp.hour*60+lp.minute;
   const whiteScene:Scene={power:true,brightness:100,effect:"Static",colors:[0xffffff],speed:3};
+  const whiteOverrideDay=whiteOverrideAllowedDay(day);
 
-  if(cfg.settings.whiteOverride1Enabled!==false&&minute>=21*60&&minute<22*60){
+  if(whiteOverrideDay&&cfg.settings.whiteOverride1Enabled!==false&&minute>=21*60&&minute<22*60){
     return {id:"white-override-1",name:"White Override 1",schedule2:false,scene:whiteScene};
   }
 
-  if(cfg.settings.whiteOverride2Enabled!==false){
+  if(whiteOverrideDay&&cfg.settings.whiteOverride2Enabled!==false){
     const dawn=astroMinute(now,lat,lon,tz,true),morningEnd=Math.min(dawn,7*60+30);
     if(dawn>6*60&&minute>=6*60&&minute<morningEnd){
       return {id:"white-override-2",name:"White Override 2",schedule2:false,scene:whiteScene};
@@ -528,13 +530,13 @@ export function nextCalendarBoundary(cfg:CalendarConfig|null,now:Date,lat:number
   if(!cfg||(!cfg.settings.enabled&&cfg.settings.whiteOverride1Enabled===false&&cfg.settings.whiteOverride2Enabled===false))return null;
   const today=localYmd(now,tz),nowMs=now.getTime(),items:Array<{at:number;phase:string}>=[];
   for(let shift=-1;shift<=3;shift++){
-    const b=calendarDayBounds(cfg,addDays(today,shift),lat,lon,tz);
+    const date=addDays(today,shift),b=calendarDayBounds(cfg,date,lat,lon,tz),whiteOverrideDay=whiteOverrideAllowedDay(date);
     if(cfg.settings.enabled){
       items.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
       if(b.schedule2End!=null)items.push({at:b.schedule2End,phase:"schedule2-end"});
     }
-    if(cfg.settings.whiteOverride1Enabled!==false)items.push({at:b.white1Start,phase:"white-override-1-start"},{at:b.white1End,phase:"white-override-1-end"});
-    if(cfg.settings.whiteOverride2Enabled!==false&&b.white2Start!=null&&b.white2End!=null){
+    if(whiteOverrideDay&&cfg.settings.whiteOverride1Enabled!==false)items.push({at:b.white1Start,phase:"white-override-1-start"},{at:b.white1End,phase:"white-override-1-end"});
+    if(whiteOverrideDay&&cfg.settings.whiteOverride2Enabled!==false&&b.white2Start!=null&&b.white2End!=null){
       items.push({at:b.white2Start,phase:"white-override-2-start"},{at:b.white2End,phase:"white-override-2-end"});
     }
   }
@@ -545,13 +547,13 @@ export function nextCalendarTransition(cfg:CalendarConfig|null,now:Date,lat:numb
   const nowMs=now.getTime(),today=localYmd(now,tz);
   const boundaries:Array<{at:number;phase:string}>=[];
   for(let shift=-1;shift<=14;shift++){
-    const b=calendarDayBounds(cfg,addDays(today,shift),lat,lon,tz);
+    const date=addDays(today,shift),b=calendarDayBounds(cfg,date,lat,lon,tz),whiteOverrideDay=whiteOverrideAllowedDay(date);
     if(cfg.settings.enabled){
       boundaries.push({at:b.start,phase:"schedule1-start"},{at:b.end,phase:"schedule1-end"});
       if(b.schedule2End!=null)boundaries.push({at:b.schedule2End,phase:"schedule2-end"});
     }
-    if(cfg.settings.whiteOverride1Enabled!==false)boundaries.push({at:b.white1Start,phase:"white-override-1-start"},{at:b.white1End,phase:"white-override-1-end"});
-    if(cfg.settings.whiteOverride2Enabled!==false&&b.white2Start!=null&&b.white2End!=null){
+    if(whiteOverrideDay&&cfg.settings.whiteOverride1Enabled!==false)boundaries.push({at:b.white1Start,phase:"white-override-1-start"},{at:b.white1End,phase:"white-override-1-end"});
+    if(whiteOverrideDay&&cfg.settings.whiteOverride2Enabled!==false&&b.white2Start!=null&&b.white2End!=null){
       boundaries.push({at:b.white2Start,phase:"white-override-2-start"},{at:b.white2End,phase:"white-override-2-end"});
     }
   }
