@@ -375,7 +375,8 @@ async function sendScene(name:string,scene:Scene){
         const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
         return await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
       }
-      if(DEVICE_MODELS[name]==="E22")return await c.sceneFast(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
+      // Normal E22 commands must be device-verified. Broker PUBACK alone is not
+      // proof that the controller executed the frame (observed after rapid-stream lockup).
       return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
     }catch(e){markEufyDegraded(e);throw e;}
   });
@@ -405,9 +406,9 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number){
           const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
           result=await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
         }else{
-          result=DEVICE_MODELS[name]==="E22"
-            ?await c.sceneFast(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern)
-            :await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
+          // Require the controller's status report for E22 just like E120. This
+          // prevents a broker-only ACK from being recorded as a successful light change.
+          result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
         }
       }
       return {...result,skipped:false};
