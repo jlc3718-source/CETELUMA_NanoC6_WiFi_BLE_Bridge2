@@ -14,7 +14,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 5
     steps:
-      - name: Inspect sanitized Eufy device records
+      - name: Inspect E22 connection-state fields
         shell: bash
         run: |
           set -euo pipefail
@@ -23,21 +23,32 @@ jobs:
           import { EufyClient } from '/app/dist/eufy/client.js';
           const db=new DatabaseSync(process.env.JASON_HOME_DB||'/data/jason-home.sqlite');
           const get=(k)=>db.prepare('SELECT value FROM meta WHERE key=?').get(k)?.value||'';
-          const sessionRaw=get('eufy_session');
-          const installId=(get('install_id')||process.env.EUFY_INSTALL_ID||'').trim().toLowerCase();
-          if(!sessionRaw||!installId) throw new Error('Missing persisted Eufy session/install id');
-          const c=new EufyClient(installId,JSON.parse(sessionRaw));
+          const c=new EufyClient((get('install_id')||process.env.EUFY_INSTALL_ID||'').trim().toLowerCase(),JSON.parse(get('eufy_session')));
           await c.findLights();
-          const lights=c.lights;
-          const safeKey=(k)=>/status|online|connect|wifi|signal|model|category|name|firmware|version|type|station|battery|update|serial|device_sn/i.test(k)
-            && !/token|key|secret|member|admin|account|user/i.test(k);
-          for(const name of ['Garage','Shed']){
-            const d=lights.get(name)||{};
-            const safe={};
-            for(const [k,v] of Object.entries(d)){
-              if(!safeKey(k)) continue;
-              if(v==null||['string','number','boolean'].includes(typeof v)) safe[k]=v;
+          const pick=(v)=>{
+            if(v==null||['string','number','boolean'].includes(typeof v)) return v;
+            if(Array.isArray(v)) return v.slice(0,8).map(pick);
+            const out={};
+            for(const [k,x] of Object.entries(v)){
+              if(/conn|online|status|state|signal|wifi|ip|init|active|last|time|mode/i.test(k) && !/key|token|secret|account|user|member/i.test(k)){
+                if(x==null||['string','number','boolean'].includes(typeof x)) out[k]=x;
+              }
             }
-            console.log(JSON.stringify({name,safe,keys:Object.keys(d).sort()}));
+            return out;
+          };
+          for(const name of ['Garage','Shed']){
+            const d=c.lights.get(name)||{};
+            console.log(JSON.stringify({
+              name,
+              connect_type:d.connect_type,
+              app_conn:pick(d.app_conn),
+              p2p_conn:pick(d.p2p_conn),
+              is_init_complete:d.is_init_complete,
+              local_ip:d.local_ip,
+              ip_addr:d.ip_addr,
+              wifi_ssid:d.wifi_ssid,
+              params:pick(d.params),
+              setting:pick(d.setting)
+            }));
           }
           NODE
