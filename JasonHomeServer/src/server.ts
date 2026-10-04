@@ -790,8 +790,9 @@ async function statusPayload(refresh=false){
   };
 }
 
-async function manualControl(input:any,sequence?:number){
+async function manualControl(input:any,sequence?:number,preserveTestHalloweenPreview=false){
   stopCalendarRandomFlash();
+  if(!preserveTestHalloweenPreview)stopTestHalloweenPreview();
   const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
   const firstScene=scenes[names[0]]||DEFAULT_SCENE;
   const overrideSequence=sequence??++manualSequence;
@@ -876,9 +877,9 @@ async function transientControl(input:any){
 const TEST_HALLOWEEN_EVENT_ID="ai-once-test-halloween-2026";
 const TEST_HALLOWEEN_PURPLE=0x5b00e6;
 const TEST_HALLOWEEN_ORANGE=0xff0d00;
-const TEST_HALLOWEEN_FLASH_MS=160;
-const TEST_HALLOWEEN_GAP_MIN_MS=120;
-const TEST_HALLOWEEN_GAP_MAX_MS=260;
+const TEST_HALLOWEEN_FLASH_MS=90;
+const TEST_HALLOWEEN_GAP_MIN_MS=40;
+const TEST_HALLOWEEN_GAP_MAX_MS=100;
 const TEST_HALLOWEEN_LAMPS:Record<string,number>={Pool:60,House:60,Garage:60,Shed:30};
 let calendarRandomFlashGeneration=0;
 let calendarRandomFlashSignature="";
@@ -898,6 +899,27 @@ function stopCalendarRandomFlash(){
   calendarRandomFlashGeneration++;
   calendarRandomFlashSignature="";
 }
+async function sendTestHalloweenFrame(targets:string[],level:number,orange:boolean,previous:Map<string,number[]>){
+  const results=await Promise.all(targets.map(async name=>{
+    try{
+      await serializedForDevice(name,async()=>{
+        const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60;
+        if(!orange)return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
+        const count=Math.max(1,Math.round(lamps/3)),positions=randomFlashPositions(lamps,count,previous.get(name)||[]);
+        previous.set(name,positions);
+        return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
+      });
+      db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
+      return true;
+    }catch(e:any){
+      const msg=e?.message||String(e);
+      db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
+      console.error("[Test Halloween transient]",name,msg);
+      return false;
+    }
+  }));
+  return results.filter(Boolean).length;
+}
 function ensureCalendarRandomFlash(names:string[],brightness:number){
   const targets=[...new Set(names)].sort(),level=clamp(Math.round(brightness)||100,1,100);
   if(!targets.length){stopCalendarRandomFlash();return;}
@@ -907,26 +929,57 @@ function ensureCalendarRandomFlash(names:string[],brightness:number){
   calendarRandomFlashSignature=signature;
   void (async()=>{
     const previous=new Map<string,number[]>();
+    let emptyBursts=0;
     while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
       const rawOverride=meta("override");
       if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
-      await Promise.all(targets.map(name=>serializedForDevice(name,async()=>{
-        const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60,count=Math.max(1,Math.round(lamps/3));
-        const positions=randomFlashPositions(lamps,count,previous.get(name)||[]);previous.set(name,positions);
-        return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
-      })));
+      const sent=await sendTestHalloweenFrame(targets,level,true,previous);
+      if(!sent){
+        emptyBursts++;
+        if(emptyBursts>=8)throw new Error("All Test Halloween transient commands failed repeatedly");
+        await delay(150);
+        continue;
+      }
+      emptyBursts=0;
       await delay(TEST_HALLOWEEN_FLASH_MS);
       if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)break;
-      await Promise.all(targets.map(name=>serializedForDevice(name,async()=>{
-        const client=await ensureEufy(false);
-        return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
-      })));
+      await sendTestHalloweenFrame(targets,level,false,previous);
       await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
     }
   })().catch(e=>{
     console.error("[calendar random flash]",e?.message||e);
     if(token===calendarRandomFlashGeneration)calendarRandomFlashSignature="";
   });
+}
+
+let testHalloweenPreviewGeneration=0;
+function stopTestHalloweenPreview(){testHalloweenPreviewGeneration++;}
+function queueTestHalloweenPreview(brightness=100,durationMs=45000){
+  const level=clamp(Math.round(brightness)||100,1,100),token=++testHalloweenPreviewGeneration;
+  void (async()=>{
+    await manualControl({
+      name:"Test Halloween",target:"All",power:true,brightness:level,effect:"Static",
+      colors:[TEST_HALLOWEEN_PURPLE],speed:1
+    },undefined,true);
+    if(token!==testHalloweenPreviewGeneration)return;
+    const previous=new Map<string,number[]>(),targets=[...DEVICE_NAMES],until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
+    let emptyBursts=0;
+    while(token===testHalloweenPreviewGeneration&&Date.now()<until){
+      const sent=await sendTestHalloweenFrame(targets,level,true,previous);
+      if(!sent){
+        emptyBursts++;
+        if(emptyBursts>=8)throw new Error("All Test Halloween preview transient commands failed repeatedly");
+        await delay(120);
+        continue;
+      }
+      emptyBursts=0;
+      await delay(TEST_HALLOWEEN_FLASH_MS);
+      if(token!==testHalloweenPreviewGeneration)return;
+      await sendTestHalloweenFrame(targets,level,false,previous);
+      await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
+    }
+  })().catch(e=>console.error("[Test Halloween preview]",e?.message||e));
+  return {ok:true,queued:true,brightness:level,durationMs,flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS,density:"1/3"};
 }
 
 async function applyScheduled(name:string,scene:Scene,reason:string){
@@ -1241,12 +1294,20 @@ const server=http.createServer(async(req,res)=>{
       const input=await readJson(req);
       return json(res,200,await transientControl(input));
     }
+    if(method==="POST"&&path==="/api/test-halloween/preview"){
+      const input=await readJson(req);
+      return json(res,202,queueTestHalloweenPreview(
+        clamp(Math.round(Number(input?.brightness)||100),1,100),
+        clamp(Math.round(Number(input?.durationMs)||45000),5000,120000)
+      ));
+    }
     if(method==="POST"&&path==="/api/control"){
       const input=await readJson(req);
       if(url.searchParams.get("wait")==="1")return json(res,200,await manualControl(input));
       return json(res,202,queueManualControl(input));
     }
     if(method==="POST"&&(path==="/api/resume"||path==="/api/resume-schedule")){
+      stopTestHalloweenPreview();stopCalendarRandomFlash();
       delMeta("override");return json(res,200,{ok:true,resumed:true,reconcile:await reconcile(true,true)});
     }
     if(method==="POST"&&path==="/api/reconcile")return json(res,200,await reconcile(false,true));
