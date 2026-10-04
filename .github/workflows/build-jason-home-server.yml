@@ -135,6 +135,24 @@ jobs:
           print("Oracle exact-commit deploy PASS",sha)
           PY
 
+      - name: Temporary Test Halloween smoke diagnostic
+        shell: bash
+        run: |
+          set +e
+          cd /home/ubuntu/repo/JasonHomeServer
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          echo "Starting Test Halloween diagnostic..."
+          curl -sS -D /tmp/hw-halloween-headers -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'             -d '{"brightness":100,"durationMs":7000}' http://127.0.0.1:8080/api/test-halloween/preview | tee /tmp/hw-halloween-body
+          echo
+          echo "--- response headers ---"
+          cat /tmp/hw-halloween-headers
+          sleep 5
+          echo "--- Oracle device status after 5s ---"
+          curl -sS -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1' | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"eufy":d.get("eufy"),"devices":d.get("devices"),"lastCommand":d.get("lastCommand")},indent=2))'
+          echo "--- recent container log ---"
+          sudo docker logs --since 15s jason-home 2>&1 | tail -n 250
+          curl -sS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/resume >/dev/null || true
+          exit 0
 
       - name: Roll back failed candidate
         if: failure()
