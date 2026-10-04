@@ -9,7 +9,7 @@ import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factor
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
 import { currentCalendarInfo, nextCalendarBoundary, nextCalendarEvent, nextCalendarTransition, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
 import type { Scene, ScheduleRow } from "./types.js";
-import { mqttConnectionStatus, commandCaptureStatus, stopCommandCapture } from "./eufy/mqtt.js";
+import { mqttConnectionStatus, commandCaptureStatus, stopCommandCapture, resetPersistentMqtt } from "./eufy/mqtt.js";
 
 let captureRestoreTimer:ReturnType<typeof setTimeout>|null=null;
 const PORT=Math.max(1,Number(process.env.PORT||"8080"));
@@ -307,7 +307,7 @@ function markEufyDegraded(error:any){
   if(/auth|login|certificate|session|token|401/i.test(msg))eufy=null;
 }
 async function ensureEufy(force=false){
-  if(force){eufy=null;eufyReady=false;readyNames=[];preparing=null;}
+  if(force){resetPersistentMqtt("Forced Eufy reconnect");eufy=null;eufyReady=false;readyNames=[];preparing=null;}
   if(eufy&&eufyReady&&readyNames.length===4)return eufy;
   if(preparing)return preparing;
   preparing=(async()=>{
@@ -880,6 +880,10 @@ const TEST_HALLOWEEN_ORANGE=0xff0d00;
 const TEST_HALLOWEEN_FLASH_MS=90;
 const TEST_HALLOWEEN_GAP_MIN_MS=40;
 const TEST_HALLOWEEN_GAP_MAX_MS=100;
+// Recovery guard: the rapid server-driven overlay can saturate Eufy's MQTT path
+// and make every later command appear locked. Keep the visual base scene but
+// disable the high-frequency overlay until it is replaced with a rate-safe path.
+const TEST_HALLOWEEN_STREAMING_ENABLED=false;
 const TEST_HALLOWEEN_LAMPS:Record<string,number>={Pool:60,House:60,Garage:60,Shed:30};
 let calendarRandomFlashGeneration=0;
 let calendarRandomFlashSignature="";
@@ -962,6 +966,11 @@ function ensureCalendarRandomFlash(names:string[],brightness:number){
   if(!targets.length){stopCalendarRandomFlash();return;}
   const signature=targets.join(",")+"|"+level;
   if(calendarRandomFlashSignature===signature)return;
+  if(!TEST_HALLOWEEN_STREAMING_ENABLED){
+    calendarRandomFlashGeneration++;
+    calendarRandomFlashSignature=signature;
+    return;
+  }
   const token=++calendarRandomFlashGeneration;
   calendarRandomFlashSignature=signature;
   const rapidTargets=targets.filter(name=>name!=="Garage");
@@ -1015,6 +1024,7 @@ function queueTestHalloweenPreview(brightness=100,durationMs=45000){
     }));
     await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,level,"Test Halloween preview base")));
     if(token!==testHalloweenPreviewGeneration)return;
+    if(!TEST_HALLOWEEN_STREAMING_ENABLED)return;
     const until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
 
     // Garage uses the E22 controller's native twinkle engine. Keep refreshing it
