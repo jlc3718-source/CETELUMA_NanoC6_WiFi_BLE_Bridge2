@@ -1,0 +1,46 @@
+name: Diagnose Jason Home Live Control
+
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths:
+      - '.github/workflows/diagnose-jason-home.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Live authenticated control diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          test -n "$TOKEN"
+          H=(-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
+
+          echo "=== RECONNECT ==="
+          curl --max-time 45 -fsS -X POST "${H[@]}" http://127.0.0.1:8080/api/reconnect || true
+          echo
+          sleep 2
+
+          for TARGET in Pool House Garage Shed; do
+            echo "=== CONTROL $TARGET ==="
+            curl --max-time 45 -fsS -X POST "${H[@]}" \
+              "http://127.0.0.1:8080/api/control?wait=1" \
+              --data "{\"target\":\"$TARGET\",\"power\":true,\"brightness\":50,\"effect\":\"Static\",\"colors\":[16777215],\"speed\":1}" || true
+            echo
+            sleep 1
+          done
+
+          echo "=== STATUS ==="
+          curl --max-time 45 -fsS "${H[@]}" "http://127.0.0.1:8080/api/status?refresh=1" || true
+          echo
+
+          echo "=== RESUME ==="
+          curl --max-time 45 -fsS -X POST "${H[@]}" http://127.0.0.1:8080/api/resume-schedule || true
+          echo
