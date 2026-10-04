@@ -375,6 +375,7 @@ async function sendScene(name:string,scene:Scene){
         const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
         return await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
       }
+      if(DEVICE_MODELS[name]==="E22")return await c.sceneFast(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
       return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
     }catch(e){markEufyDegraded(e);throw e;}
   });
@@ -404,7 +405,9 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number){
           const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
           result=await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
         }else{
-          result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
+          result=DEVICE_MODELS[name]==="E22"
+            ?await c.sceneFast(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern)
+            :await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
         }
       }
       return {...result,skipped:false};
