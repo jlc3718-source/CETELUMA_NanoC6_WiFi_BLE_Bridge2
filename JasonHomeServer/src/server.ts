@@ -886,6 +886,12 @@ const TEST_HALLOWEEN_ORANGE=0xff0d00;
 // can never accumulate an unbounded queue of animation frames.
 const TEST_HALLOWEEN_FRAME_MIN_MS=70;
 const TEST_HALLOWEEN_FRAME_MAX_MS=120;
+// E22 must not be paced only by MQTT PUBACK. A PUBACK proves the broker
+// accepted the packet, not that the E22 controller actually processed it.
+// After every E22 Halloween frame we now require a fresh device report, then
+// leave a short recovery gap before the next frame.
+const TEST_HALLOWEEN_E22_POST_REPORT_MIN_MS=180;
+const TEST_HALLOWEEN_E22_POST_REPORT_MAX_MS=260;
 const TEST_HALLOWEEN_MAX_FAILURES=2;
 const TEST_HALLOWEEN_ANIMATION_ENABLED=true;
 const TEST_HALLOWEEN_LAMPS:Record<string,number>={Pool:60,House:60,Garage:60,Shed:30};
@@ -917,7 +923,10 @@ function randomHalloweenFlashCount(lamps:number){
   const min=Math.max(1,Math.floor(lamps*.25)),max=Math.max(min,Math.floor(lamps/3));
   return min+Math.floor(Math.random()*(max-min+1));
 }
-function halloweenFrameDelay(){
+function halloweenFrameDelay(name:string){
+  if(DEVICE_MODELS[name]==="E22"){
+    return TEST_HALLOWEEN_E22_POST_REPORT_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_E22_POST_REPORT_MAX_MS-TEST_HALLOWEEN_E22_POST_REPORT_MIN_MS+1));
+  }
   return TEST_HALLOWEEN_FRAME_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_FRAME_MAX_MS-TEST_HALLOWEEN_FRAME_MIN_MS+1));
 }
 function stopCalendarRandomFlash(){
@@ -932,10 +941,18 @@ async function sendTestHalloweenFrame(name:string,level:number,previous:Map<stri
       previous.set(name,positions);
       // This one frame is the whole visual state: purple on every non-flashing
       // lamp and orange on the selected lamps. No separate purple reset frame.
-      return client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
+      const streamed:any=await client.sceneTransientStream(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
+      if(DEVICE_MODELS[name]==="E22"){
+        // Critical E22 flow control: do not send the next Halloween frame until
+        // the controller itself has answered a fresh STATUS request. Broker
+        // PUBACK alone allowed the E22's internal queue to grow until it locked.
+        const status:any=await client.status(name);
+        return {...streamed,deviceReported:status?.deviceReported===true,report:status?.report};
+      }
+      return streamed;
     });
     db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
-    return result?.brokerAccepted===true;
+    return result?.brokerAccepted===true&&(DEVICE_MODELS[name]!=="E22"||result?.deviceReported===true);
   }catch(e:any){
     const msg=e?.message||String(e);
     db.prepare("UPDATE devices SET last_error=? WHERE name=?").run(msg,name);
@@ -977,7 +994,7 @@ async function runTestHalloweenTarget(name:string,level:number,shouldContinue:()
       continue;
     }
     failures=0;
-    await delay(halloweenFrameDelay());
+    await delay(halloweenFrameDelay(name));
   }
 }
 function ensureCalendarRandomFlash(names:string[],brightness:number){
@@ -1021,7 +1038,8 @@ function queueTestHalloweenPreview(brightness=100,durationMs=45000){
   return {
     ok:true,queued:true,brightness:level,durationMs,
     frameMinMs:TEST_HALLOWEEN_FRAME_MIN_MS,frameMaxMs:TEST_HALLOWEEN_FRAME_MAX_MS,
-    density:"random isolated singles, 25–33% (max 1/3)",mode:"PUBACK-backpressured segmented Static",targets:[...DEVICE_NAMES]
+    e22PostReportMinMs:TEST_HALLOWEEN_E22_POST_REPORT_MIN_MS,e22PostReportMaxMs:TEST_HALLOWEEN_E22_POST_REPORT_MAX_MS,
+    density:"random isolated singles, 25–33% (max 1/3)",mode:"device-verified E22 / PUBACK-backpressured E120 segmented Static",targets:[...DEVICE_NAMES]
   };
 }
 
