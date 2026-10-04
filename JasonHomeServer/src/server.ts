@@ -893,18 +893,28 @@ let calendarRandomFlashGeneration=0;
 let calendarRandomFlashSignature="";
 const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 function randomFlashPositions(lamps:number,count:number,previous:number[]=[]){
+  const wanted=Math.max(1,Math.min(Math.floor((lamps+1)/2),count));
   const prior=new Set(previous);
-  for(let attempt=0;attempt<7;attempt++){
-    const pool=Array.from({length:lamps},(_,i)=>i);
-    for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    const next=pool.slice(0,Math.max(1,Math.min(lamps,count))).sort((a,b)=>a-b);
+  // Choose k non-adjacent positions by sampling k values from a compressed
+  // range, then expanding each sorted value by its index. This guarantees that
+  // every orange lamp has at least one purple lamp between it and the next
+  // orange lamp, so orange never forms 2/3/4/5-lamp clusters.
+  for(let attempt=0;attempt<10;attempt++){
+    const compressed=Array.from({length:lamps-wanted+1},(_,i)=>i);
+    for(let i=compressed.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [compressed[i],compressed[j]]=[compressed[j],compressed[i]];
+    }
+    const base=compressed.slice(0,wanted).sort((a,b)=>a-b);
+    const next=base.map((value,index)=>value+index);
     const overlap=next.reduce((n,x)=>n+(prior.has(x)?1:0),0);
-    if(!previous.length||overlap<=Math.ceil(next.length*.35)||attempt===6)return next;
+    if(!previous.length||overlap<=Math.ceil(next.length*.35)||attempt===9)return next;
   }
   return [];
 }
 function randomHalloweenFlashCount(lamps:number){
-  const min=Math.max(1,Math.round(lamps*.27)),max=Math.max(min,Math.round(lamps*.38));
+  // Keep the effect visually busy, but never exceed one third of the string.
+  const min=Math.max(1,Math.floor(lamps*.25)),max=Math.max(min,Math.floor(lamps/3));
   return min+Math.floor(Math.random()*(max-min+1));
 }
 function halloweenFrameDelay(){
@@ -1011,7 +1021,7 @@ function queueTestHalloweenPreview(brightness=100,durationMs=45000){
   return {
     ok:true,queued:true,brightness:level,durationMs,
     frameMinMs:TEST_HALLOWEEN_FRAME_MIN_MS,frameMaxMs:TEST_HALLOWEEN_FRAME_MAX_MS,
-    density:"random 27–38%",mode:"PUBACK-backpressured segmented Static",targets:[...DEVICE_NAMES]
+    density:"random isolated singles, 25–33% (max 1/3)",mode:"PUBACK-backpressured segmented Static",targets:[...DEVICE_NAMES]
   };
 }
 
