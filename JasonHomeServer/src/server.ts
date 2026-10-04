@@ -904,10 +904,10 @@ async function sendTestHalloweenFrame(targets:string[],level:number,orange:boole
     try{
       await serializedForDevice(name,async()=>{
         const client=await ensureEufy(false),lamps=TEST_HALLOWEEN_LAMPS[name]||60;
-        if(!orange)return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
+        if(!orange)return client.sceneTransientFast(name,"Static",[TEST_HALLOWEEN_PURPLE],1,level);
         const count=Math.max(1,Math.round(lamps/3)),positions=randomFlashPositions(lamps,count,previous.get(name)||[]);
         previous.set(name,positions);
-        return client.sceneTransient(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
+        return client.sceneTransientFast(name,"Static",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],1,level,{positions});
       });
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       return true;
@@ -920,6 +920,24 @@ async function sendTestHalloweenFrame(targets:string[],level:number,orange:boole
   }));
   return results.filter(Boolean).length;
 }
+async function applyGarageHalloweenNative(level:number){
+  try{
+    await serializedForDevice("Garage",async()=>{
+      const client=await ensureEufy(false);
+      // Garage's 60-lamp E22 ignores the high-frequency segmented Static frames
+      // used by the other strings. Let its controller animate purple/orange
+      // natively so it continues independently of the software burst loop.
+      return client.sceneTransientFast("Garage","Twinkle",[TEST_HALLOWEEN_PURPLE,TEST_HALLOWEEN_ORANGE],10,level);
+    });
+    db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name='Garage'").run(Date.now());
+    return true;
+  }catch(e:any){
+    const msg=e?.message||String(e);
+    db.prepare("UPDATE devices SET last_error=? WHERE name='Garage'").run(msg);
+    console.error("[Test Halloween Garage native]",msg);
+    return false;
+  }
+}
 function ensureCalendarRandomFlash(names:string[],brightness:number){
   const targets=[...new Set(names)].sort(),level=clamp(Math.round(brightness)||100,1,100);
   if(!targets.length){stopCalendarRandomFlash();return;}
@@ -927,31 +945,45 @@ function ensureCalendarRandomFlash(names:string[],brightness:number){
   if(calendarRandomFlashSignature===signature)return;
   const token=++calendarRandomFlashGeneration;
   calendarRandomFlashSignature=signature;
-  void (async()=>{
-    const previous=new Map<string,number[]>();
-    let emptyBursts=0;
-    while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
-      const rawOverride=meta("override");
-      if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
-      const sent=await sendTestHalloweenFrame(targets,level,true,previous);
-      if(!sent){
-        emptyBursts++;
-        if(emptyBursts>=8)throw new Error("All Test Halloween transient commands failed repeatedly");
-        await delay(150);
-        continue;
-      }
-      emptyBursts=0;
-      await delay(TEST_HALLOWEEN_FLASH_MS);
-      if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)break;
-      await sendTestHalloweenFrame(targets,level,false,previous);
-      await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
-    }
-  })().catch(e=>{
-    console.error("[calendar random flash]",e?.message||e);
-    if(token===calendarRandomFlashGeneration)calendarRandomFlashSignature="";
-  });
-}
+  const rapidTargets=targets.filter(name=>name!=="Garage");
 
+  // Garage runs its E22-native animation in its own loop. It is refreshed
+  // periodically, and failures here never block the other three controllers.
+  if(targets.includes("Garage")){
+    void (async()=>{
+      while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
+        const rawOverride=meta("override");
+        if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
+        await applyGarageHalloweenNative(level);
+        await delay(10000);
+      }
+    })();
+  }
+
+  // Every other string gets its own independent burst loop. A slow or dropped
+  // PUBACK on one controller cannot stall the others.
+  for(const name of rapidTargets){
+    void (async()=>{
+      const previous=new Map<string,number[]>();
+      let failures=0;
+      while(token===calendarRandomFlashGeneration&&calendarRandomFlashSignature===signature){
+        const rawOverride=meta("override");
+        if(rawOverride){try{if(JSON.parse(rawOverride)?.active)break;}catch{}}
+        const sent=await sendTestHalloweenFrame([name],level,true,previous);
+        if(!sent){
+          failures++;
+          await delay(failures>=4?250:100);
+          continue;
+        }
+        failures=0;
+        await delay(TEST_HALLOWEEN_FLASH_MS);
+        if(token!==calendarRandomFlashGeneration||calendarRandomFlashSignature!==signature)break;
+        await sendTestHalloweenFrame([name],level,false,previous);
+        await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
+      }
+    })();
+  }
+}
 let testHalloweenPreviewGeneration=0;
 function stopTestHalloweenPreview(){testHalloweenPreviewGeneration++;}
 function queueTestHalloweenPreview(brightness=100,durationMs=45000){
@@ -962,24 +994,39 @@ function queueTestHalloweenPreview(brightness=100,durationMs=45000){
       colors:[TEST_HALLOWEEN_PURPLE],speed:1
     },undefined,true);
     if(token!==testHalloweenPreviewGeneration)return;
-    const previous=new Map<string,number[]>(),targets=[...DEVICE_NAMES],until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
-    let emptyBursts=0;
-    while(token===testHalloweenPreviewGeneration&&Date.now()<until){
-      const sent=await sendTestHalloweenFrame(targets,level,true,previous);
-      if(!sent){
-        emptyBursts++;
-        if(emptyBursts>=8)throw new Error("All Test Halloween preview transient commands failed repeatedly");
-        await delay(120);
-        continue;
+    const until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
+
+    // Garage uses the E22 controller's native twinkle engine. Keep refreshing it
+    // separately so it cannot throttle or terminate the other strings.
+    void (async()=>{
+      while(token===testHalloweenPreviewGeneration&&Date.now()<until){
+        await applyGarageHalloweenNative(level);
+        await delay(10000);
       }
-      emptyBursts=0;
-      await delay(TEST_HALLOWEEN_FLASH_MS);
-      if(token!==testHalloweenPreviewGeneration)return;
-      await sendTestHalloweenFrame(targets,level,false,previous);
-      await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
+    })();
+
+    const rapidTargets=[...DEVICE_NAMES].filter(name=>name!=="Garage");
+    for(const name of rapidTargets){
+      void (async()=>{
+        const previous=new Map<string,number[]>();
+        let failures=0;
+        while(token===testHalloweenPreviewGeneration&&Date.now()<until){
+          const sent=await sendTestHalloweenFrame([name],level,true,previous);
+          if(!sent){
+            failures++;
+            await delay(failures>=4?250:100);
+            continue;
+          }
+          failures=0;
+          await delay(TEST_HALLOWEEN_FLASH_MS);
+          if(token!==testHalloweenPreviewGeneration)return;
+          await sendTestHalloweenFrame([name],level,false,previous);
+          await delay(TEST_HALLOWEEN_GAP_MIN_MS+Math.floor(Math.random()*(TEST_HALLOWEEN_GAP_MAX_MS-TEST_HALLOWEEN_GAP_MIN_MS+1)));
+        }
+      })();
     }
   })().catch(e=>console.error("[Test Halloween preview]",e?.message||e));
-  return {ok:true,queued:true,brightness:level,durationMs,flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS,density:"1/3"};
+  return {ok:true,queued:true,brightness:level,durationMs,flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS,density:"1/3",garageMode:"E22 native Twinkle"};
 }
 
 async function applyScheduled(name:string,scene:Scene,reason:string){
