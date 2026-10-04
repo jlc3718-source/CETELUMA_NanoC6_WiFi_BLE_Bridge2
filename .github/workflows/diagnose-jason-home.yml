@@ -1,4 +1,5 @@
 name: Diagnose Jason Home Live Control
+# rerun after E22 fast-path fix
 
 on:
   push:
