@@ -1,5 +1,4 @@
-name: Diagnose Jason Home Live Control
-# rerun after E22 fast-path fix
+name: Diagnose Jason Home Recent Commands
 
 on:
   push:
@@ -13,35 +12,22 @@ permissions:
 jobs:
   diagnose:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - name: Live authenticated control diagnostics
+      - name: Inspect recent Oracle command log
         shell: bash
         run: |
           set -euo pipefail
           cd /home/ubuntu/repo/JasonHomeServer
-          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
-          test -n "$TOKEN"
-          H=(-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
-
-          echo "=== RECONNECT ==="
-          curl --max-time 45 -fsS -X POST "${H[@]}" http://127.0.0.1:8080/api/reconnect || true
-          echo
-          sleep 2
-
-          for TARGET in Pool House Garage Shed; do
-            echo "=== CONTROL $TARGET ==="
-            curl --max-time 45 -fsS -X POST "${H[@]}" \
-              "http://127.0.0.1:8080/api/control?wait=1" \
-              --data "{\"target\":\"$TARGET\",\"power\":true,\"brightness\":50,\"effect\":\"Static\",\"colors\":[16777215],\"speed\":1}" || true
-            echo
-            sleep 1
-          done
-
-          echo "=== STATUS ==="
-          curl --max-time 45 -fsS "${H[@]}" "http://127.0.0.1:8080/api/status?refresh=1" || true
-          echo
-
-          echo "=== RESUME ==="
-          curl --max-time 45 -fsS -X POST "${H[@]}" http://127.0.0.1:8080/api/resume-schedule || true
-          echo
+          python3 - <<'PY'
+          import sqlite3, json, datetime
+          db=sqlite3.connect('data/jason-home.sqlite')
+          rows=db.execute("SELECT at,target,action,ok,detail FROM command_log ORDER BY id DESC LIMIT 80").fetchall()
+          for at,target,action,ok,detail in reversed(rows):
+              ts=datetime.datetime.fromtimestamp(at/1000,datetime.timezone.utc).isoformat()
+              try:
+                  d=json.loads(detail) if detail else None
+              except Exception:
+                  d=detail
+              print(json.dumps({"ts":ts,"target":target,"action":action,"ok":bool(ok),"detail":d},separators=(',',':')))
+          PY
