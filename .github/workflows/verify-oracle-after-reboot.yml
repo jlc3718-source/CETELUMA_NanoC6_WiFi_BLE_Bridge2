@@ -1,0 +1,36 @@
+name: Verify Oracle after reboot
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths: ['.github/workflows/verify-oracle-after-reboot.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Verify host and Jason Home services
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "BOOT_TIME=$(uptime -s)"
+          echo "UPTIME=$(uptime -p)"
+          sudo systemctl is-system-running || true
+          sudo docker ps --format 'CONTAINER={{.Names}} STATUS={{.Status}}'
+          curl --noproxy '*' -fsS -m 10 http://127.0.0.1:8080/api/health
+          echo
+          curl --noproxy '*' -fsS -m 10 http://127.0.0.1:8081/api/health
+          echo
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
+          STATUS="$(curl --noproxy '*' -fsS -m 45 -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:8080/api/status?refresh=1')"
+          python3 - "$STATUS" <<'PY'
+          import json,sys
+          d=json.loads(sys.argv[1])
+          e=d.get("eufy",{})
+          print("EUFY_STATUS="+str(e.get("status")))
+          print("READY_NAMES="+",".join(e.get("readyNames",[])))
+          assert set(e.get("readyNames",[]))=={"Pool","House","Garage","Shed"}
+          PY
