@@ -1,0 +1,23 @@
+name: Reboot Oracle VM once
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths: ['.github/workflows/reboot-oracle-once.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  reboot:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Schedule full Oracle VM reboot
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Scheduling full VM reboot in 15 seconds..."
+          uptime
+          sudo systemd-run --on-active=15s --unit=chatgpt-oracle-reboot /usr/bin/systemctl reboot
+          sudo systemctl status chatgpt-oracle-reboot.timer --no-pager || true
+          echo "Reboot scheduled."
