@@ -1,4 +1,12 @@
 {
-  "id": "mova-wheel-diag-20261006",
-  "task": "mova_diag"
+  "id": "run-daily-fresh-20261006-evening",
+  "task": "batch",
+  "tasks": [
+    "jml_scan",
+    "roborock_spin",
+    "eufy_lucky",
+    "bluetti_lucky",
+    "mova_diag",
+    "instagram_brand_scan"
+  ]
 }
