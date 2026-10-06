@@ -1,8 +1,12 @@
 {
-  "id": "run-daily-browser-parallel-20261006b",
+  "id": "finish-oracle-enter-all-20261006",
   "task": "batch",
   "tasks": [
+    "reolink_subscribe",
+    "wyze_survey",
     "jml_scan",
-    "roborock_spin"
+    "roborock_spin",
+    "eufy_lucky",
+    "bluetti_lucky"
   ]
 }
