@@ -22,6 +22,22 @@ jobs:
         with:
           ref: jason-home-cloudflare-rebuild
 
+      - name: Prepare Oracle-only eufy browser credentials
+        run: |
+          set -euo pipefail
+          SRC=/home/ubuntu/repo/JasonHomeServer/.env
+          DEST=/home/ubuntu/browser-agent-data/eufy-login.env
+          test -s "$SRC"
+          sudo mkdir -p /home/ubuntu/browser-agent-data
+          EMAIL="$(sudo sed -n 's/^EUFY_EMAIL=//p' "$SRC" | head -n1)"
+          PASS="$(sudo sed -n 's/^EUFY_PASSWORD=//p' "$SRC" | head -n1)"
+          test -n "$EMAIL"
+          test -n "$PASS"
+          umask 077
+          printf 'EUFY_EMAIL=%s\nEUFY_PASSWORD=%s\n' "$EMAIL" "$PASS" | sudo tee "$DEST" >/dev/null
+          sudo chown ubuntu:ubuntu "$DEST"
+          sudo chmod 600 "$DEST"
+
       - name: Ensure current browser-agent code is deployed
         run: |
           set -euo pipefail
