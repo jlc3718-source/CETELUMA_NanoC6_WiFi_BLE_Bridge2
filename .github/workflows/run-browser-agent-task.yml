@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: oracle-browser-agent-task
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run-task:
