@@ -1,0 +1,13 @@
+{
+  "name": "oracle-browser-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright-core": "^1.55.0"
+  }
+}
