@@ -1,4 +1,4 @@
 {
-  "id": "roborock-spin-after-login-20261006",
-  "task": "roborock_spin"
+  "id": "roborock-auth-diag-20261006",
+  "task": "roborock_diag"
 }
