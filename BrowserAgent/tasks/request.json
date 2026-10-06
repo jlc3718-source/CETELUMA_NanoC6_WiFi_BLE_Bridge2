@@ -1,12 +1,10 @@
 {
-  "id": "blocked-entry-handoff-20261006",
-  "task": "login_start",
-  "profile": "daily",
-  "urls": [
-    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245",
-    "https://us.mova.tech/pages/mova-prime-day-sale",
-    "https://www.eufy.com/app_primeday",
-    "https://www.bluettipower.com/pages/prime-day/",
-    "https://reolink.com/__/lp/reolink-day/"
+  "id": "repair-blocked-promos-20261006",
+  "task": "batch",
+  "tasks": [
+    "eufy_lucky",
+    "bluetti_lucky",
+    "mova_diag",
+    "roborock_spin"
   ]
 }
