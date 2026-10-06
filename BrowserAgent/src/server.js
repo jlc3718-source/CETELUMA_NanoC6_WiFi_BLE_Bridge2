@@ -315,30 +315,76 @@ async function eufyLuckyWithContext(context) {
   const page = await context.newPage();
   try {
     await goto(page, "https://www.eufy.com/app_primeday");
-    await page.waitForTimeout(2500);
-    let body = await pageBody(page);
+    await page.waitForTimeout(3500);
+    let body = await pageBody(page, 50000);
+
     if (/log in\s*to take part|login\s*to take part|sign in\s*to take part/i.test(body)) {
       return { task: "eufy_lucky", status: "login_required", url: page.url() };
     }
-    const m = body.match(/Entries Left:\s*(\d+)/i);
-    const entries = m ? Number(m[1]) : null;
+
+    const m = body.match(/Entries Left:\s*(\d+|-)/i);
+    const entriesRaw = m ? m[1] : null;
+    const entries = entriesRaw && /^\d+$/.test(entriesRaw) ? Number(entriesRaw) : null;
     if (entries === 0) return { task: "eufy_lucky", status: "no_free_entries", url: page.url() };
-    const goButtons = page.getByRole("button", { name: /^(GO|Spin|Spin Now|Draw|Start)$/i });
-    const bc = await goButtons.count().catch(() => 0);
+
+    // The current promo page exposes a standalone "GO" for the free wheel.
+    // Never click "Redeem" or controls mentioning eufyCredits.
+    const exactGo = page.getByText(/^GO$/i, { exact: true });
+    const gc = await exactGo.count().catch(() => 0);
     let clicked = false;
-    for (let i = 0; i < Math.min(bc, 12); i++) {
-      const b = goButtons.nth(i);
-      if (!(await b.isVisible().catch(() => false))) continue;
-      const txt = cleanText(await b.innerText().catch(() => ""));
-      const parent = cleanText(await b.locator("xpath=..").innerText().catch(() => ""), 800);
-      if (/100\s*eufycredits|redeem/i.test(txt + " " + parent)) continue;
-      try { await b.click({ timeout: 3000 }); clicked = true; break; } catch {}
+    for (let i = 0; i < Math.min(gc, 12); i++) {
+      let el = exactGo.nth(i);
+      if (!(await el.isVisible().catch(() => false))) continue;
+      const txt = cleanText(await el.innerText().catch(() => ""));
+      if (!/^GO$/i.test(txt)) continue;
+      try {
+        await el.click({ timeout: 3500 });
+        clicked = true;
+        break;
+      } catch {
+        const parent = el.locator("xpath=..");
+        const ptxt = cleanText(await parent.innerText().catch(() => ""), 800);
+        if (/redeem|eufycredits/i.test(ptxt)) continue;
+        try { await parent.click({ timeout: 3500 }); clicked = true; break; } catch {}
+      }
     }
-    if (!clicked) return { task: "eufy_lucky", status: "free_spin_control_not_found", entries_left: entries, url: page.url() };
-    await page.waitForTimeout(4500);
-    body = await pageBody(page);
-    const lines = body.split(/\n+/).map(x => cleanText(x, 300)).filter(x => /(congrat|won|prize|coupon|credit|better luck|thank)/i.test(x)).slice(0, 15);
-    return { task: "eufy_lucky", status: "free_spin_attempted", entries_left_before: entries, url: page.url(), result_lines: lines };
+
+    if (!clicked) {
+      const candidates = page.locator('button,[role="button"],a,div').filter({ hasText: /^GO$/i });
+      const cc = await candidates.count().catch(() => 0);
+      for (let i=0;i<Math.min(cc,30);i++) {
+        const el=candidates.nth(i);
+        if (!(await el.isVisible().catch(()=>false))) continue;
+        const txt=cleanText(await el.innerText().catch(()=>""),100);
+        if (!/^GO$/i.test(txt)) continue;
+        const contextText=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),900);
+        if (/redeem|eufycredits/i.test(contextText)) continue;
+        try { await el.click({timeout:3500}); clicked=true; break; } catch {}
+      }
+    }
+
+    if (!clicked) {
+      return {
+        task:"eufy_lucky",
+        status:"free_spin_control_not_found",
+        entries_left: entriesRaw,
+        url:page.url(),
+        snippets: body.split(/\n+/).map(x=>cleanText(x,400)).filter(x=>/(100% Chance|Entries Left|GO|Redeem|eufyCredits|Lucky Draw)/i.test(x)).slice(0,30)
+      };
+    }
+
+    await page.waitForTimeout(5500);
+    body = await pageBody(page, 50000);
+    const lines = body.split(/\n+/).map(x => cleanText(x, 300)).filter(x => /(congrat|won|prize|coupon|credit|better luck|gift card|month plus|outdoor lights|Cam S4|Robot Vacuum E25)/i.test(x)).slice(0, 25);
+    const after = body.match(/Entries Left:\s*(\d+|-)/i)?.[1] ?? null;
+    return {
+      task:"eufy_lucky",
+      status:"free_spin_attempted",
+      entries_left_before:entriesRaw,
+      entries_left_after:after,
+      url:page.url(),
+      result_lines:lines
+    };
   } finally {
     await page.close().catch(() => {});
   }
@@ -348,32 +394,62 @@ async function bluettiLuckyWithContext(context) {
   const page = await context.newPage();
   try {
     await goto(page, "https://www.bluettipower.com/pages/prime-day/");
-    await page.waitForTimeout(2200);
-    let body = await pageBody(page);
-    if (/sign in|log in/i.test(body) && /lucky draw|spin/i.test(body)) {
-      const memberSignals = page.getByText(/sign in|log in/i);
-      if (await memberSignals.count().catch(() => 0)) {
-        return { task: "bluetti_lucky", status: "login_may_be_required", url: page.url() };
-      }
+    await page.waitForTimeout(3500);
+    let body = await pageBody(page, 50000);
+
+    // Account is considered logged in when a logout link is present.
+    const logoutCount = await page.locator('a[href*="logout"]').count().catch(()=>0);
+    const loggedIn = logoutCount > 0;
+
+    // Navigate specifically to the Lucky Draw section first.
+    const luckyText = page.getByText(/Lucky Draw/i);
+    const lc = await luckyText.count().catch(()=>0);
+    for (let i=0;i<Math.min(lc,10);i++) {
+      const el=luckyText.nth(i);
+      if (!(await el.isVisible().catch(()=>false))) continue;
+      try { await el.click({timeout:2500}); await page.waitForTimeout(1600); break; } catch {}
     }
-    const candidates = page.getByRole("button", { name: /spin|draw|try|start|go/i });
-    const bc = await candidates.count().catch(() => 0);
-    let clicked = false;
-    for (let i = 0; i < Math.min(bc, 16); i++) {
-      const b = candidates.nth(i);
-      if (!(await b.isVisible().catch(() => false))) continue;
-      const parent = cleanText(await b.locator("xpath=..").innerText().catch(() => ""), 900);
-      if (/(bucks|points).{0,30}(spend|cost|redeem)|purchase|required|pay/i.test(parent)) continue;
-      if (!/(lucky|spin|draw|free|chance)/i.test(parent + " " + cleanText(await b.innerText().catch(() => "")))) continue;
-      try { await b.click({ timeout: 3000 }); clicked = true; break; } catch {}
+
+    body = await pageBody(page, 50000);
+    const clickable = page.locator('button,[role="button"],a');
+    const cc = await clickable.count().catch(()=>0);
+    let clicked=false;
+    let clickedLabel=null;
+    for (let i=0;i<Math.min(cc,180);i++) {
+      const el=clickable.nth(i);
+      if (!(await el.isVisible().catch(()=>false))) continue;
+      const txt=cleanText((await el.innerText().catch(()=>'')) || (await el.getAttribute('aria-label').catch(()=>'')),220);
+      const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>''),900);
+      const all=txt+" "+parent;
+      if (!/(spin|draw|try now|play|start|go|chance)/i.test(all)) continue;
+      if (/(spend|redeem|cost|purchase|required|pay|\b\d+\s*(bucks|points)\b)/i.test(all)) continue;
+      if (!/(lucky|spin|draw|free|chance)/i.test(all)) continue;
+      try { await el.click({timeout:3000}); clicked=true; clickedLabel=txt || parent.slice(0,180); break; } catch {}
     }
-    if (!clicked) return { task: "bluetti_lucky", status: "free_spin_not_confirmed", url: page.url() };
-    await page.waitForTimeout(4500);
-    body = await pageBody(page);
-    const lines = body.split(/\n+/).map(x => cleanText(x, 300)).filter(x => /(congrat|won|prize|gift card|points|better luck|coupon)/i.test(x)).slice(0, 15);
-    return { task: "bluetti_lucky", status: "free_spin_attempted", url: page.url(), result_lines: lines };
+
+    if (!clicked) {
+      return {
+        task:"bluetti_lucky",
+        status:"free_spin_not_confirmed",
+        logged_in:loggedIn,
+        url:page.url(),
+        snippets:body.split(/\n+/).map(x=>cleanText(x,450)).filter(x=>/(Lucky Draw|Spin|Win|Bucks|chance|prize)/i.test(x)).slice(0,40)
+      };
+    }
+
+    await page.waitForTimeout(5500);
+    body=await pageBody(page,50000);
+    const lines=body.split(/\n+/).map(x=>cleanText(x,300)).filter(x=>/(congrat|won|prize|gift card|bucks|better luck|coupon)/i.test(x)).slice(0,25);
+    return {
+      task:"bluetti_lucky",
+      status:"free_spin_attempted",
+      logged_in:loggedIn,
+      clicked:clickedLabel,
+      url:page.url(),
+      result_lines:lines
+    };
   } finally {
-    await page.close().catch(() => {});
+    await page.close().catch(()=>{});
   }
 }
 
