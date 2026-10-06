@@ -1,9 +1,10 @@
 {
-  "id": "rescan-eufy-bluetti-jml-20261006",
+  "id": "deep-rescan-promos-20261006",
   "task": "batch",
   "tasks": [
-    "eufy_lucky",
+    "eufy_login_and_spin",
     "bluetti_lucky",
-    "jml_scan"
+    "jml_scan",
+    "instagram_diag"
   ]
 }
