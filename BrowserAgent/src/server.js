@@ -238,6 +238,7 @@ async function runTask(job) {
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
   if (task === "batch") {
+    if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
     const allowed = tasks.filter(t => ["jml_scan", "roborock_spin"].includes(String(t)));
     const settled = await Promise.allSettled(allowed.map(t => runTask({ task: t })));
