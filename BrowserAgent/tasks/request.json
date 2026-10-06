@@ -1,6 +1,8 @@
 {
-  "id": "login-roborock-oracle-20261006",
-  "task": "login_start",
-  "profile": "roborock",
-  "url": "https://account-us.roborock.com/"
+  "id": "run-daily-browser-20261006",
+  "task": "batch",
+  "tasks": [
+    "jml_scan",
+    "roborock_spin"
+  ]
 }
