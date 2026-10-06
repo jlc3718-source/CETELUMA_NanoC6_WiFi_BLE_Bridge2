@@ -237,6 +237,18 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
+  if (task === "batch") {
+    const tasks = Array.isArray(job.tasks) ? job.tasks : [];
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin"].includes(String(t)));
+    const settled = await Promise.allSettled(allowed.map(t => runTask({ task: t })));
+    return {
+      task: "batch",
+      parallel: true,
+      results: settled.map((r, i) => r.status === "fulfilled"
+        ? { task: allowed[i], ok: true, result: r.value }
+        : { task: allowed[i], ok: false, error: String(r.reason) })
+    };
+  }
   throw new Error("Unsupported task: " + task);
 }
 
