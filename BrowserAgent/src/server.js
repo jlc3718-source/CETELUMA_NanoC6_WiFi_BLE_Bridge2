@@ -882,6 +882,98 @@ async function roborockGoogleLoginAndSpinWithContext(context) {
   }
 }
 
+async function roborockWheelDiagWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page,"https://us.roborock.com/pages/points");
+    await page.waitForTimeout(2200);
+    let body=await pageBody(page,40000);
+    if(/account-us\.roborock\.com\/login/i.test(page.url())) {
+      return {task:"roborock_wheel_diag",status:"login_required",url:page.url()};
+    }
+
+    const luckyMatches=page.getByText(/lucky\s*spin|lucky\s*draw|spin/i,{exact:false});
+    const lm=await luckyMatches.count().catch(()=>0);
+    const luckyDetails=[];
+    for(let i=0;i<Math.min(lm,30);i++){
+      const el=luckyMatches.nth(i);
+      const vis=await el.isVisible().catch(()=>false);
+      const txt=cleanText(await el.innerText().catch(()=>""),300);
+      const html=await el.evaluate(e=>e.outerHTML.slice(0,2500)).catch(()=>"");
+      const anc=await el.evaluate(e=>{
+        let p=e; const out=[];
+        for(let j=0;j<5 && p;j++,p=p.parentElement){
+          out.push({
+            tag:p.tagName,
+            cls:p.className||"",
+            id:p.id||"",
+            text:(p.innerText||p.textContent||"").replace(/\s+/g," ").trim().slice(0,1200),
+            html:p.outerHTML.slice(0,3500)
+          });
+        }
+        return out;
+      }).catch(()=>[]);
+      luckyDetails.push({i,visible:vis,text:txt,html,ancestors:anc});
+    }
+
+    // Click the most promising visible Lucky Spin/Lucky Draw element.
+    let clicked=false;
+    let clickedIndex=null;
+    for(let i=0;i<Math.min(lm,30);i++){
+      const el=luckyMatches.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const txt=cleanText(await el.innerText().catch(()=>""),300);
+      if(!/(lucky\s*spin|lucky\s*draw|spin)/i.test(txt)) continue;
+      try { await el.scrollIntoViewIfNeeded().catch(()=>{}); await el.click({timeout:3000,force:true}); clicked=true; clickedIndex=i; break; } catch {}
+    }
+    await page.waitForTimeout(2500);
+
+    const frames=page.frames().map(fr=>({url:fr.url(),name:fr.name()}));
+    const frameData=[];
+    for(const fr of page.frames()){
+      try{
+        const fbody=cleanText(await fr.locator("body").innerText().catch(()=>""),12000);
+        const ctrls=await fr.locator('button,[role="button"],a,input,canvas,svg').evaluateAll((els)=>els.map((e,idx)=>({
+          idx,tag:e.tagName,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,300),
+          aria:e.getAttribute("aria-label")||"",cls:e.className?.baseVal||e.className||"",id:e.id||"",
+          href:e.getAttribute("href")||"",
+          width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,
+          x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y
+        })).filter(x=>x.width>0&&x.height>0).slice(0,250)).catch(()=>[]);
+        frameData.push({url:fr.url(),name:fr.name(),snippets:fbody.split(/\n+/).map(x=>x.trim()).filter(x=>/(lucky|spin|draw|100\s*points|100\s*pts|prize|chance|start|go)/i.test(x)).slice(0,80),controls:ctrls});
+      }catch{}
+    }
+
+    const canvases=await page.locator('canvas').evaluateAll((els)=>els.map((e,idx)=>({
+      idx,cls:e.className||"",id:e.id||"",width:e.width,height:e.height,
+      rect:{x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y,w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height},
+      parentText:(e.parentElement?.innerText||"").replace(/\s+/g," ").trim().slice(0,1500),
+      parentHtml:e.parentElement?.outerHTML.slice(0,4000)||""
+    }))).catch(()=>[]);
+
+    const dialogs=await page.locator('[role="dialog"],dialog,.modal,[class*="modal" i],[class*="drawer" i],[class*="popup" i]').evaluateAll((els)=>els.map((e,idx)=>({
+      idx,tag:e.tagName,cls:e.className||"",id:e.id||"",
+      text:(e.innerText||e.textContent||"").replace(/\s+/g," ").trim().slice(0,4000),
+      html:e.outerHTML.slice(0,6000)
+    })).filter(x=>/(lucky|spin|draw|points|prize)/i.test(x.text+x.html)).slice(0,30)).catch(()=>[]);
+
+    return {
+      task:"roborock_wheel_diag",
+      status:"inspected",
+      url:page.url(),
+      clicked,
+      clicked_index:clickedIndex,
+      lucky_details:luckyDetails,
+      frames,
+      frame_data:frameData,
+      canvases,
+      dialogs
+    };
+  } finally {
+    await page.close().catch(()=>{});
+  }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -893,6 +985,7 @@ async function taskWithContext(context, task) {
   if (task === "eufy_login_and_spin") return await eufyLoginAndSpinWithContext(context);
   if (task === "instagram_diag") return await instagramDiagWithContext(context);
   if (task === "roborock_google_login_and_spin") return await roborockGoogleLoginAndSpinWithContext(context);
+  if (task === "roborock_wheel_diag") return await roborockWheelDiagWithContext(context);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -903,7 +996,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -912,7 +1005,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
