@@ -1,4 +1,6 @@
 {
-  "id": "health-login-v2-20261006",
-  "task": "health"
+  "id": "login-roborock-oracle-20261006",
+  "task": "login_start",
+  "profile": "roborock",
+  "url": "https://account-us.roborock.com/"
 }
