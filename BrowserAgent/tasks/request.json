@@ -1,4 +1,8 @@
 {
-  "id": "instagram-brand-scan-corrected-20261006",
-  "task": "instagram_brand_scan"
+  "id": "new-floorcare-entries-20261006",
+  "task": "batch",
+  "tasks": [
+    "housework_challenge",
+    "dreame_aero_giveaway"
+  ]
 }
