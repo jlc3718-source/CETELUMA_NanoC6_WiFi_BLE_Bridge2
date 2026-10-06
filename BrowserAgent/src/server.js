@@ -80,7 +80,7 @@ async function launchProfile(name) {
   const launch = () => chromium.launchPersistentContext(userDataDir, {
     executablePath: CHROME,
     headless: false,
-    viewport: { width: 1365, height: 850 },
+    viewport: { width: 1024, height: 700 },
     timeout: 30000,
     args: [
       "--no-sandbox",
