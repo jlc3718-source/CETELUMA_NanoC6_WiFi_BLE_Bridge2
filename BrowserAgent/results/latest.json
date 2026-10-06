@@ -1,1 +1,1 @@
-{"id":"roborock-spin-20261006","ok":true,"started":"2026-10-06T17:13:39.231Z","finished":"2026-10-06T17:13:44.223Z","result":{"task":"roborock_spin","status":"login_required","url":"https://account-us.roborock.com/login?service=https://us.roborock.com/pages/points"}}
+{"id":"health-login-v2-20261006","ok":true,"started":"2026-10-06T17:17:33.502Z","finished":"2026-10-06T17:17:33.503Z","result":{"task":"health","ok":true,"time":"2026-10-06T17:17:33.503Z"}}
