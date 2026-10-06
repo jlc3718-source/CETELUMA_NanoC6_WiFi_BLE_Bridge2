@@ -1,9 +1,8 @@
 {
-  "id": "diag-promos-20261006",
+  "id": "eufy-login-spin-instagram-check-20261006",
   "task": "batch",
   "tasks": [
-    "roborock_diag",
-    "eufy_diag",
-    "bluetti_diag"
+    "eufy_login_and_spin",
+    "instagram_diag"
   ]
 }
