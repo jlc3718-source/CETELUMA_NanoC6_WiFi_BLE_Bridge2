@@ -1,8 +1,4 @@
 {
-  "id": "public-entries-20261006",
-  "task": "batch",
-  "tasks": [
-    "reolink_subscribe",
-    "wyze_survey"
-  ]
+  "id": "reolink-retry-20261006",
+  "task": "reolink_subscribe"
 }
