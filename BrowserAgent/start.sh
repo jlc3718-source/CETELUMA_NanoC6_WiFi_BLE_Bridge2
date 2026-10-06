@@ -3,7 +3,7 @@ set -euo pipefail
 mkdir -p /data/profiles /data/logs
 
 # Wide desktop used by automated Playwright runs.
-Xvfb :99 -screen 0 1365x900x24 -ac +extension RANDR >/data/logs/xvfb.log 2>&1 &
+Xvfb :99 -screen 0 1024x768x24 -ac +extension RANDR >/data/logs/xvfb.log 2>&1 &
 DISPLAY=:99 openbox >/data/logs/openbox.log 2>&1 &
 
 # Dedicated portrait desktop for manual phone logins.
