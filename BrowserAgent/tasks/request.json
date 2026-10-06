@@ -1,8 +1,4 @@
 {
-  "id": "run-daily-browser-20261006",
-  "task": "batch",
-  "tasks": [
-    "jml_scan",
-    "roborock_spin"
-  ]
+  "id": "stop-stale-login-20261006",
+  "task": "login_stop"
 }
