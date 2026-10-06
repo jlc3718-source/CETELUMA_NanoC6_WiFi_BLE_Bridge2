@@ -764,11 +764,11 @@ async function roborockGoogleLoginAndSpinWithContext(context) {
       return {task:"roborock_google_login_and_spin",status:"login_not_persisted",url:page.url()};
     }
 
-    const candidates=page.getByText(/lucky|spin|draw/i);
-    const count=await candidates.count().catch(()=>0);
+    const spinLinks=page.getByText(/lucky|spin|draw/i);
+    const count=await spinLinks.count().catch(()=>0);
     let clickedEntry=false;
     for(let i=0;i<Math.min(count,20);i++) {
-      const el=candidates.nth(i);
+      const el=spinLinks.nth(i);
       if(await el.isVisible().catch(()=>false)) {
         try { await el.click({timeout:2500}); clickedEntry=true; await page.waitForTimeout(1200); break; } catch {}
       }
