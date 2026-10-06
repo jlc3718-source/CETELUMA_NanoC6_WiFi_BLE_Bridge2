@@ -1,4 +1,8 @@
 {
-  "id": "version-check-wyze-20261006b",
-  "task": "wyze_survey"
+  "id": "public-entries-20261006",
+  "task": "batch",
+  "tasks": [
+    "reolink_subscribe",
+    "wyze_survey"
+  ]
 }
