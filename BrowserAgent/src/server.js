@@ -974,6 +974,82 @@ async function roborockWheelDiagWithContext(context) {
   }
 }
 
+async function instagramBrandScanWithContext(context) {
+  const handles = [
+    "roborockglobal",
+    "dreametech",
+    "movatech.usa",
+    "narwal.robot",
+    "tinecoglobal",
+    "eufyofficial",
+    "goveeofficial",
+    "navimow",
+    "mammotiontech",
+    "ecovacsrobotics"
+  ];
+  const keywords = /(giveaway|win\b|winner|beta|tester|testing|review program|free\b|free product|sample|trial|apply|application|launch|early access|mystery|lucky|spin|sweepstakes|contest|prize|campaign|ambassador|prototype)/i;
+
+  async function scanHandle(handle) {
+    const page = await context.newPage();
+    try {
+      await goto(page, "https://www.instagram.com/" + handle + "/");
+      await page.waitForTimeout(2200);
+      const profileBody = cleanText(await page.locator("body").innerText().catch(()=>""),18000);
+      if (/log in|sign up/i.test(profileBody) && !/(posts|followers|following)/i.test(profileBody)) {
+        return {handle,status:"login_required",url:page.url(),hits:[]};
+      }
+
+      const links = await page.locator('a[href*="/p/"],a[href*="/reel/"]').evaluateAll((els)=>{
+        const seen=new Set(), out=[];
+        for(const a of els){
+          const href=a.href;
+          if(!href || seen.has(href)) continue;
+          seen.add(href);
+          const img=a.querySelector("img");
+          const alt=(img?.getAttribute("alt")||"").replace(/\s+/g," ").trim();
+          const text=(a.innerText||a.textContent||"").replace(/\s+/g," ").trim();
+          const aria=(a.getAttribute("aria-label")||"").trim();
+          out.push({href,preview:(alt+" "+text+" "+aria).trim().slice(0,1200)});
+          if(out.length>=6) break;
+        }
+        return out;
+      }).catch(()=>[]);
+
+      const hits=[];
+      // Open recent posts to inspect captions because Instagram profile grids often hide caption text.
+      for (const item of links.slice(0,5)) {
+        let txt=item.preview||"";
+        if (!keywords.test(txt)) {
+          try {
+            await page.goto(item.href,{waitUntil:"domcontentloaded",timeout:12000});
+            await page.waitForTimeout(1300);
+            txt=cleanText(await page.locator("body").innerText().catch(()=>""),12000);
+          } catch {}
+        }
+        if(keywords.test(txt)){
+          const snippets = txt.split(/(?<=[.!?])\s+|\n+/)
+            .map(x=>cleanText(x,500))
+            .filter(x=>keywords.test(x))
+            .slice(0,12);
+          hits.push({url:item.href,snippets,preview:item.preview});
+        }
+      }
+      return {handle,status:"ok",profile_url:"https://www.instagram.com/"+handle+"/",recent_scanned:Math.min(links.length,5),hits};
+    } finally {
+      await page.close().catch(()=>{});
+    }
+  }
+
+  const settled=await Promise.allSettled(handles.map(scanHandle));
+  return {
+    task:"instagram_brand_scan",
+    authenticated:true,
+    results:settled.map((r,i)=>r.status==="fulfilled"
+      ? r.value
+      : {handle:handles[i],status:"error",error:String(r.reason),hits:[]})
+  };
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -986,6 +1062,7 @@ async function taskWithContext(context, task) {
   if (task === "instagram_diag") return await instagramDiagWithContext(context);
   if (task === "roborock_google_login_and_spin") return await roborockGoogleLoginAndSpinWithContext(context);
   if (task === "roborock_wheel_diag") return await roborockWheelDiagWithContext(context);
+  if (task === "instagram_brand_scan") return await instagramBrandScanWithContext(context);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -996,7 +1073,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -1005,7 +1082,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
