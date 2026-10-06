@@ -1,0 +1,14 @@
+services:
+  browser-agent:
+    build: .
+    container_name: oracle-browser-agent
+    restart: unless-stopped
+    shm_size: "1gb"
+    environment:
+      PORT: "8932"
+      DATA_DIR: "/data"
+      DISPLAY: ":99"
+    volumes:
+      - /home/ubuntu/browser-agent-data:/data
+    ports:
+      - "127.0.0.1:8932:8932"
