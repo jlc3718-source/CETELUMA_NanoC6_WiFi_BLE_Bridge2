@@ -1,10 +1,11 @@
 {
-  "id": "repair-blocked-promos-20261006",
+  "id": "entry-paths-current-blockers-20261006",
   "task": "batch",
   "tasks": [
-    "eufy_lucky",
-    "bluetti_lucky",
-    "mova_diag",
-    "roborock_spin"
+    "dreame_entry_path",
+    "eufy_deep_entry",
+    "bluetti_robust_entry",
+    "mova_direct_entry",
+    "reolink_day_entry"
   ]
 }
