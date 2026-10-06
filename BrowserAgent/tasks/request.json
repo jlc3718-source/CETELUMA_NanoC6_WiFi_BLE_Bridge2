@@ -1,4 +1,11 @@
 {
-  "id": "close-login-20261006",
-  "task": "login_stop"
+  "id": "post-login-enter-all-20261006",
+  "task": "batch",
+  "tasks": [
+    "jml_scan",
+    "roborock_spin",
+    "eufy_lucky",
+    "bluetti_lucky",
+    "reolink_subscribe"
+  ]
 }
