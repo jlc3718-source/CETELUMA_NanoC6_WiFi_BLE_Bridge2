@@ -678,22 +678,57 @@ async function roborockGoogleLoginAndSpinWithContext(context) {
       if (!checked) await c.check().catch(async()=>{await c.click().catch(()=>{});});
     }
 
-    const google = page.getByRole("button",{name:/sign in with google|continue with google|google/i});
-    const gc = await google.count().catch(()=>0);
+    const candidates = [
+      page.getByRole("button",{name:/sign in with google|continue with google|google/i}),
+      page.getByText(/sign in with google/i,{exact:false}),
+      page.locator('[aria-label*="Google" i]'),
+      page.locator('[class*="google" i]')
+    ];
     let popup=null;
     let clicked=false;
-    for(let i=0;i<Math.min(gc,8);i++) {
-      const b=google.nth(i);
-      if(!(await b.isVisible().catch(()=>false))) continue;
-      try {
-        const popupPromise=context.waitForEvent("page",{timeout:5000}).catch(()=>null);
-        await b.click({timeout:3500});
-        popup=await popupPromise;
-        clicked=true;
-        break;
-      } catch {}
+    let matchedText=null;
+
+    // Roborock sometimes renders Google auth as a div/span instead of a semantic button.
+    for (const google of candidates) {
+      const gc = await google.count().catch(()=>0);
+      for(let i=0;i<Math.min(gc,12);i++) {
+        const b=google.nth(i);
+        if(!(await b.isVisible().catch(()=>false))) continue;
+        const txt=cleanText(await b.innerText().catch(()=>""),200);
+        if(txt && !/google/i.test(txt)) continue;
+        try {
+          const popupPromise=context.waitForEvent("page",{timeout:5000}).catch(()=>null);
+          await b.click({timeout:3500,force:true});
+          popup=await popupPromise;
+          clicked=true;
+          matchedText=txt || "Google control";
+          break;
+        } catch {}
+      }
+      if(clicked) break;
     }
-    if(!clicked) return {task:"roborock_google_login_and_spin",status:"google_button_not_found",url:page.url()};
+
+    if(!clicked) {
+      // Last fallback: click the smallest visible element whose own text includes "Sign in with Google".
+      const raw=page.locator('div,span,p');
+      const rc=await raw.count().catch(()=>0);
+      for(let i=0;i<Math.min(rc,1200);i++) {
+        const el=raw.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        const txt=cleanText(await el.innerText().catch(()=>""),200);
+        if(!/^sign in with google$/i.test(txt)) continue;
+        try {
+          const popupPromise=context.waitForEvent("page",{timeout:5000}).catch(()=>null);
+          await el.click({timeout:3000,force:true});
+          popup=await popupPromise;
+          clicked=true;
+          matchedText=txt;
+          break;
+        } catch {}
+      }
+    }
+
+    if(!clicked) return {task:"roborock_google_login_and_spin",status:"google_control_not_clickable",url:page.url()};
 
     const authPage=popup || page;
     await authPage.waitForTimeout(1800).catch(()=>{});
