@@ -448,6 +448,44 @@ async function wyzeSurveyProbeWithContext(context) {
   }
 }
 
+async function diagnosticsWithContext(context, task) {
+  const urls = {
+    roborock_diag: "https://us.roborock.com/pages/points",
+    eufy_diag: "https://www.eufy.com/app_primeday",
+    bluetti_diag: "https://www.bluettipower.com/pages/prime-day/"
+  };
+  const url = urls[task];
+  if (!url) throw new Error("Unknown diagnostic task");
+  const page = await context.newPage();
+  try {
+    await goto(page, url);
+    await page.waitForTimeout(3200);
+    const body = await pageBody(page, 50000);
+    const controls = await page.locator('button,a,[role="button"],input[type="button"],input[type="submit"]').evaluateAll((els) =>
+      els.map((el) => ({
+        tag: el.tagName,
+        text: (el.innerText || el.textContent || el.value || "").replace(/\s+/g," ").trim().slice(0,220),
+        href: el.getAttribute("href") || "",
+        aria: el.getAttribute("aria-label") || ""
+      })).filter(x => x.text || x.href || x.aria).slice(0,120)
+    ).catch(() => []);
+    const snippets = body
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map(x => cleanText(x, 500))
+      .filter(x => /(lucky|spin|draw|entries|points|credits|bucks|login|log in|sign in|redeem|chance|prize|anniversary)/i.test(x))
+      .slice(0,60);
+    return {
+      task,
+      url: page.url(),
+      title: await page.title().catch(()=>""),
+      snippets,
+      controls
+    };
+  } finally {
+    await page.close().catch(()=>{});
+  }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -455,6 +493,7 @@ async function taskWithContext(context, task) {
   if (task === "eufy_lucky") return await eufyLuckyWithContext(context);
   if (task === "bluetti_lucky") return await bluettiLuckyWithContext(context);
   if (task === "wyze_survey") return await wyzeSurveyProbeWithContext(context);
+  if (["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) return await diagnosticsWithContext(context, task);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -465,7 +504,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey") {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -474,7 +513,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
