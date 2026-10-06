@@ -1,8 +1,4 @@
 {
-  "id": "roborock-only-login-20261006",
-  "task": "login_start",
-  "profile": "daily",
-  "urls": [
-    "https://account-us.roborock.com/login?service=https://us.roborock.com/pages/points"
-  ]
+  "id": "close-roborock-login-20261006",
+  "task": "login_stop"
 }
