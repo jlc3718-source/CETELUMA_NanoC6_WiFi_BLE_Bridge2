@@ -1186,6 +1186,246 @@ async function dreameAeroGiveawayWithContext(context) {
   } finally { await page.close().catch(()=>{}); }
 }
 
+function vaultPaths() {
+  const dir = path.join(DATA_DIR, "secure");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return {
+    dir,
+    privateKey: path.join(dir, "private.pem"),
+    publicKey: path.join(dir, "public.pem"),
+    profile: path.join(dir, "entry-profile.json")
+  };
+}
+
+function ensureVaultKeypair() {
+  const p = vaultPaths();
+  if (!fs.existsSync(p.privateKey) || !fs.existsSync(p.publicKey)) {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 3072,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" }
+    });
+    fs.writeFileSync(p.privateKey, privateKey, { mode: 0o600 });
+    fs.writeFileSync(p.publicKey, publicKey, { mode: 0o644 });
+  }
+  return p;
+}
+
+function initSecureVault() {
+  const p = ensureVaultKeypair();
+  const publicKey = fs.readFileSync(p.publicKey, "utf8");
+  return {
+    task: "vault_init",
+    status: "ready",
+    public_key_pem: publicKey,
+    fingerprint_sha256: sha256(publicKey)
+  };
+}
+
+function storeEncryptedEntryProfile(job) {
+  const p = ensureVaultKeypair();
+  const ciphertext = Buffer.from(String(job.ciphertext_b64 || ""), "base64");
+  if (!ciphertext.length) throw new Error("Missing ciphertext_b64");
+  const privateKey = fs.readFileSync(p.privateKey, "utf8");
+  const plaintext = crypto.privateDecrypt({
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: "sha256"
+  }, ciphertext);
+  const data = JSON.parse(plaintext.toString("utf8"));
+  const required = ["name","email","street","city","state","postal_code"];
+  for (const k of required) if (!String(data[k] || "").trim()) throw new Error("Missing profile field: " + k);
+  fs.writeFileSync(p.profile, JSON.stringify(data), { mode: 0o600 });
+  return {
+    task: "vault_store",
+    status: "stored",
+    fields: required,
+    state: String(data.state),
+    postal_prefix: String(data.postal_code).slice(0,3)
+  };
+}
+
+function readEntryProfile() {
+  const p = vaultPaths();
+  if (!fs.existsSync(p.profile)) throw new Error("Secure entry profile is not stored");
+  return JSON.parse(fs.readFileSync(p.profile, "utf8"));
+}
+
+async function movaPrizeWheelWithContext(context) {
+  const profile = readEntryProfile();
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://us.mova.tech/pages/mova-prime-day-sale");
+    await page.waitForTimeout(3000);
+
+    let body = await pageBody(page, 50000);
+    if (/already (entered|participated)|already spun|one spin per/i.test(body)) {
+      return {task:"mova_prize_wheel",status:"already_entered_or_spun",url:page.url()};
+    }
+
+    // Move to the prize wheel / exclusive event section if a matching control exists.
+    const sectionLinks = page.getByText(/Prize Wheel|Spin|Exclusive Event/i,{exact:false});
+    const slc = await sectionLinks.count().catch(()=>0);
+    for(let i=0;i<Math.min(slc,20);i++){
+      const el=sectionLinks.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      try {
+        await el.scrollIntoViewIfNeeded().catch(()=>{});
+        await el.click({timeout:2500}).catch(()=>{});
+        await page.waitForTimeout(1200);
+        break;
+      } catch {}
+    }
+
+    // Search main page plus embedded frames for a free-entry form.
+    const scopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
+    let scope=null;
+    let emailField=null;
+    for(const sc of scopes){
+      const c=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i],input[autocomplete="email"]');
+      const n=await c.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,10);i++){
+        const el=c.nth(i);
+        if(await el.isVisible().catch(()=>false)){scope=sc;emailField=el;break;}
+      }
+      if(emailField) break;
+    }
+
+    // If no form is immediately visible, click likely free-spin/start controls once to reveal it.
+    if(!emailField){
+      const candidates=page.locator('button,[role="button"],a,div').filter({hasText:/spin|try now|start|free entry|enter now|play/i});
+      const cc=await candidates.count().catch(()=>0);
+      for(let i=0;i<Math.min(cc,80);i++){
+        const el=candidates.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        const txt=cleanText(await el.innerText().catch(()=>""),180);
+        const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),800);
+        if(/purchase|buy|checkout|redeem|pay/i.test(txt+" "+parent)) continue;
+        try{await el.click({timeout:2500});await page.waitForTimeout(1200);}catch{continue;}
+        for(const sc of [page,...page.frames().filter(fr=>fr!==page.mainFrame())]){
+          const c=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i],input[autocomplete="email"]');
+          const n=await c.count().catch(()=>0);
+          for(let j=0;j<Math.min(n,10);j++){
+            const f=c.nth(j);
+            if(await f.isVisible().catch(()=>false)){scope=sc;emailField=f;break;}
+          }
+          if(emailField) break;
+        }
+        if(emailField) break;
+      }
+    }
+
+    if(!emailField){
+      body=await pageBody(page,50000);
+      return {
+        task:"mova_prize_wheel",
+        status:"entry_form_not_found",
+        url:page.url(),
+        snippets:body.split(/\n+/).map(x=>cleanText(x,450)).filter(x=>/(prize wheel|spin|free entry|email|mova v50|p10 pro)/i.test(x)).slice(0,40)
+      };
+    }
+
+    await emailField.fill(String(profile.email));
+
+    const fillFirst = async (selectors,value) => {
+      for(const sel of selectors){
+        const loc=scope.locator(sel);
+        const n=await loc.count().catch(()=>0);
+        for(let i=0;i<Math.min(n,8);i++){
+          const el=loc.nth(i);
+          if(await el.isVisible().catch(()=>false)){
+            const current=await el.inputValue().catch(()=>"");
+            if(!current) await el.fill(String(value)).catch(()=>{});
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    const nameParts=String(profile.name).trim().split(/\s+/);
+    await fillFirst(['input[name*="first" i]','input[autocomplete="given-name"]','input[placeholder*="first" i]'],nameParts[0]||"Jason");
+    await fillFirst(['input[name*="last" i]','input[autocomplete="family-name"]','input[placeholder*="last" i]'],nameParts.slice(1).join(" ")||"Craumer");
+    await fillFirst(['input[name="name" i]','input[name*="full" i]','input[placeholder*="name" i]'],String(profile.name));
+    await fillFirst(['input[name*="address1" i]','input[name*="address_1" i]','input[autocomplete="address-line1"]','input[placeholder*="street" i]','input[placeholder*="address" i]'],String(profile.street));
+    await fillFirst(['input[name*="city" i]','input[autocomplete="address-level2"]','input[placeholder*="city" i]'],String(profile.city));
+    await fillFirst(['input[name*="zip" i]','input[name*="postal" i]','input[autocomplete="postal-code"]','input[placeholder*="zip" i]'],String(profile.postal_code));
+
+    // State selectors / text inputs.
+    const stateSelect=scope.locator('select[name*="state" i],select[name*="province" i],select[autocomplete="address-level1"]').first();
+    if(await stateSelect.count().catch(()=>0) && await stateSelect.isVisible().catch(()=>false)){
+      await stateSelect.selectOption({label:/Pennsylvania/i}).catch(async()=>{await stateSelect.selectOption("PA").catch(()=>{});});
+    } else {
+      await fillFirst(['input[name*="state" i]','input[autocomplete="address-level1"]','input[placeholder*="state" i]'],String(profile.state));
+    }
+
+    // Do not opt into marketing unless required; required rules/terms boxes may be checked.
+    const checks=scope.locator('input[type="checkbox"],[role="checkbox"]');
+    const kc=await checks.count().catch(()=>0);
+    for(let i=0;i<Math.min(kc,20);i++){
+      const c=checks.nth(i);
+      if(!(await c.isVisible().catch(()=>false))) continue;
+      const meta=cleanText(
+        (await c.getAttribute("name").catch(()=>null))+" "+
+        (await c.getAttribute("aria-label").catch(()=>null))+" "+
+        (await c.locator("xpath=..").innerText().catch(()=>"")),700);
+      if(/newsletter|marketing|promotional|offers|email me/i.test(meta)) continue;
+      if(/terms|rules|privacy|agree|eligib/i.test(meta)){
+        const checked=await c.isChecked().catch(()=>false);
+        if(!checked) await c.check().catch(async()=>{await c.click().catch(()=>{});});
+      }
+    }
+
+    // Submit free entry.
+    const submits=scope.locator('button,input[type="submit"],[role="button"]');
+    const scount=await submits.count().catch(()=>0);
+    let submitted=false;
+    for(let i=0;i<Math.min(scount,50);i++){
+      const el=submits.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const label=cleanText((await el.innerText().catch(()=>''))||(await el.getAttribute("value").catch(()=>''))+" "+(await el.getAttribute("aria-label").catch(()=>'')),220);
+      if(!/(submit|enter|continue|spin|try now|start|play)/i.test(label)) continue;
+      if(/purchase|buy|checkout|redeem|pay|subscribe/i.test(label)) continue;
+      try{await el.click({timeout:3500});submitted=true;break;}catch{}
+    }
+    if(!submitted) return {task:"mova_prize_wheel",status:"submit_control_not_found",url:page.url()};
+
+    await page.waitForTimeout(2500);
+    body=await pageBody(page,50000);
+
+    // After successful entry, the wheel may expose a separate spin/start control.
+    let spun=false;
+    let clickedLabel=null;
+    const spinControls=page.locator('button,[role="button"],a,div').filter({hasText:/^(spin|spin now|start|play|go|try now)$/i});
+    const spc=await spinControls.count().catch(()=>0);
+    for(let i=0;i<Math.min(spc,60);i++){
+      const el=spinControls.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const label=cleanText(await el.innerText().catch(()=>""),120);
+      const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),700);
+      if(/purchase|buy|checkout|pay|redeem/i.test(label+" "+parent)) continue;
+      try{await el.click({timeout:3500});spun=true;clickedLabel=label;break;}catch{}
+    }
+
+    if(spun) await page.waitForTimeout(5000);
+    body=await pageBody(page,50000);
+    const resultLines=body.split(/\n+/).map(x=>cleanText(x,350))
+      .filter(x=>/(congrat|won|winner|prize|coupon|off|v50 ultra|p10 pro|better luck|thank)/i.test(x))
+      .slice(0,30);
+
+    return {
+      task:"mova_prize_wheel",
+      status:spun?"spin_attempted":(/thank|success|entry/i.test(body)?"entry_submitted_spin_not_found":"entry_submitted_unconfirmed"),
+      spun,
+      clicked_control:clickedLabel,
+      url:page.url(),
+      result_lines:resultLines
+    };
+  } finally {
+    await page.close().catch(()=>{});
+  }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -1199,6 +1439,7 @@ async function taskWithContext(context, task) {
   if (task === "roborock_google_login_and_spin") return await roborockGoogleLoginAndSpinWithContext(context);
   if (task === "roborock_wheel_diag") return await roborockWheelDiagWithContext(context);
   if (task === "instagram_brand_scan") return await instagramBrandScanWithContext(context);
+  if (task === "mova_prize_wheel") return await movaPrizeWheelWithContext(context);
   if (task === "housework_challenge") return await houseworkChallengeEntryWithContext(context);
   if (task === "dreame_aero_giveaway") return await dreameAeroGiveawayWithContext(context);
   throw new Error("Unsupported context task: " + task);
@@ -1207,11 +1448,13 @@ async function taskWithContext(context, task) {
 async function runTask(job) {
   const task = String(job.task || "");
   if (task === "health") return { task: "health", ok: true, time: new Date().toISOString() };
+  if (task === "vault_init") return initSecureVault();
+  if (task === "vault_store") return storeEncryptedEntryProfile(job);
   if (task === "login_start") return await startLogin(job);
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "housework_challenge" || task === "dreame_aero_giveaway" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -1220,7 +1463,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "housework_challenge", "dreame_aero_giveaway"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
