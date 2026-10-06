@@ -1436,6 +1436,314 @@ async function movaPrizeWheelWithContext(context) {
   }
 }
 
+async function gotoLoose(page, url) {
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 14000 });
+  } catch (err) {
+    if (!/Timeout/i.test(String(err))) throw err;
+  }
+  await page.waitForTimeout(3500);
+}
+
+async function dreameEntryPathWithContext(context) {
+  const page=await context.newPage();
+  try {
+    const url="https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245";
+    await gotoLoose(page,url);
+    let body=await pageBody(page,35000);
+
+    const editors=page.locator('textarea[name="message"],textarea[id*="message"],textarea,[contenteditable="true"]');
+    const ec=await editors.count().catch(()=>0);
+    let editor=null;
+    for(let i=0;i<Math.min(ec,20);i++){
+      const e=editors.nth(i);
+      if(await e.isVisible().catch(()=>false)){editor=e;break;}
+    }
+
+    if(!editor){
+      const loginLinks=page.locator('a[href*="login"],a[href*="logging"],a[href*="member.php"]');
+      const lc=await loginLinks.count().catch(()=>0);
+      let loginUrl=null;
+      for(let i=0;i<Math.min(lc,30);i++){
+        const a=loginLinks.nth(i);
+        const txt=cleanText(await a.innerText().catch(()=>""),120);
+        const href=await a.getAttribute("href").catch(()=>null);
+        if(!href) continue;
+        if(/log in|login|sign in/i.test(txt+" "+href)){ loginUrl=new URL(href,page.url()).href; break; }
+      }
+      return {
+        task:"dreame_entry_path",
+        status:/log in|sign in|login/i.test(body)?"login_required":"reply_editor_not_available",
+        url:page.url(),
+        login_url:loginUrl,
+        need:"A one-time Dreame Forum login in the Oracle daily profile"
+      };
+    }
+
+    const entryText="The Dreame Aero Wet Dry Vacuum is on my fall wishlist. I already use Dreame robot cleaning at home, and a wet/dry vacuum would make quick cleanup of tracked-in dirt and spills much easier without pulling out a separate vacuum and mop.";
+    const tag=await editor.evaluate(e=>e.tagName).catch(()=>"");
+    if(tag==="TEXTAREA"||tag==="INPUT") await editor.fill(entryText);
+    else await editor.fill(entryText).catch(async()=>{await editor.click();await page.keyboard.type(entryText);});
+
+    const buttons=page.locator('button[type="submit"],input[type="submit"],button,[role="button"]');
+    const bc=await buttons.count().catch(()=>0);
+    let submitted=false;
+    for(let i=0;i<Math.min(bc,50);i++){
+      const b=buttons.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      const label=cleanText((await b.innerText().catch(()=>''))||(await b.getAttribute("value").catch(()=>'')),120);
+      if(!/(reply|post|submit)/i.test(label)) continue;
+      try{await b.click({timeout:3500});submitted=true;break;}catch{}
+    }
+    if(!submitted) return {task:"dreame_entry_path",status:"submit_control_not_found",url:page.url()};
+    await page.waitForTimeout(2500);
+    body=await pageBody(page,35000);
+    const ok=body.includes("The Dreame Aero Wet Dry Vacuum is on my fall wishlist");
+    return {task:"dreame_entry_path",status:ok?"submitted":"submitted_unconfirmed",url:page.url()};
+  } finally { await page.close().catch(()=>{}); }
+}
+
+async function eufyDeepEntryWithContext(context) {
+  const page=await context.newPage();
+  try {
+    await gotoLoose(page,"https://www.eufy.com/app_primeday");
+    let body=await pageBody(page,50000);
+
+    const scopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
+    // First try exact visible text from the live promo.
+    const triggers=[
+      /100%\s*Chance\s*to\s*Win/i,
+      /Click\s*to\s*win\s*prizes/i,
+      /^GO$/i,
+      /Lucky\s*Draw/i
+    ];
+    let opened=false;
+    for(const sc of scopes){
+      for(const re of triggers){
+        const loc=sc.getByText(re,{exact:false});
+        const n=await loc.count().catch(()=>0);
+        for(let i=0;i<Math.min(n,20);i++){
+          const el=loc.nth(i);
+          if(!(await el.isVisible().catch(()=>false))) continue;
+          const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),1000);
+          if(/redeem|100\s*eufycredits|buy|purchase/i.test(parent)) continue;
+          try{await el.scrollIntoViewIfNeeded().catch(()=>{});await el.click({timeout:2500,force:true});opened=true;await page.waitForTimeout(1200);break;}catch{}
+        }
+        if(opened) break;
+      }
+      if(opened) break;
+    }
+
+    // Re-scan for a safe free-spin control after opening the widget.
+    const rescopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
+    for(const sc of rescopes){
+      const cand=sc.locator('button,[role="button"],a,div,span').filter({hasText:/^(GO|Spin|Spin Now|Start|Draw)$/i});
+      const n=await cand.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,60);i++){
+        const el=cand.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        const txt=cleanText(await el.innerText().catch(()=>""),100);
+        const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),1000);
+        if(/redeem|100\s*eufycredits|buy|purchase/i.test(txt+" "+parent)) continue;
+        try{
+          await el.click({timeout:3000,force:true});
+          await page.waitForTimeout(4500);
+          body=await pageBody(page,50000);
+          const lines=body.split(/\n+/).map(x=>cleanText(x,300)).filter(x=>/(congrat|won|prize|coupon|better luck|Cam S4|Robot Vacuum E25)/i.test(x)).slice(0,25);
+          return {task:"eufy_deep_entry",status:"free_spin_attempted",url:page.url(),result_lines:lines};
+        }catch{}
+      }
+    }
+
+    const frameUrls=page.frames().map(fr=>fr.url()).filter(Boolean);
+    return {
+      task:"eufy_deep_entry",
+      status:"widget_found_but_spin_control_not_exposed",
+      url:page.url(),
+      frame_urls:frameUrls.filter(u=>/eufy|anker|promo|draw|spin|widget|app/i.test(u)).slice(0,30),
+      snippets:body.split(/\n+/).map(x=>cleanText(x,350)).filter(x=>/(100% Chance|Lucky Draw|Click to win|GO|eufycredits)/i.test(x)).slice(0,30)
+    };
+  } finally { await page.close().catch(()=>{}); }
+}
+
+async function bluettiRobustEntryWithContext(context) {
+  const page=await context.newPage();
+  try {
+    await gotoLoose(page,"https://www.bluettipower.com/pages/prime-day/");
+    let body=await pageBody(page,50000);
+    const scopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
+
+    for(const sc of scopes){
+      const lucky=sc.getByText(/Lucky Draw/i,{exact:false});
+      const n=await lucky.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,20);i++){
+        const el=lucky.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        await el.scrollIntoViewIfNeeded().catch(()=>{});
+        await el.click({timeout:2500}).catch(()=>{});
+        await page.waitForTimeout(1000);
+        break;
+      }
+    }
+
+    for(const sc of [page,...page.frames().filter(fr=>fr!==page.mainFrame())]){
+      const cand=sc.locator('button,[role="button"],a,div,span').filter({hasText:/^(Spin|Spin Now|Draw|Start|Go|Try Now|Play)$/i});
+      const n=await cand.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,80);i++){
+        const el=cand.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),900);
+        if(/purchase|buy|redeem|spend|cost|pay|\d+\s*(bucks|points)/i.test(parent)) continue;
+        try{
+          await el.click({timeout:3000,force:true});
+          await page.waitForTimeout(4500);
+          body=await pageBody(page,50000);
+          return {
+            task:"bluetti_robust_entry",
+            status:"free_spin_attempted",
+            url:page.url(),
+            result_lines:body.split(/\n+/).map(x=>cleanText(x,300)).filter(x=>/(congrat|won|prize|gift card|coupon|better luck|bucks)/i.test(x)).slice(0,25)
+          };
+        }catch{}
+      }
+    }
+    return {
+      task:"bluetti_robust_entry",
+      status:"lucky_draw_present_but_control_not_exposed",
+      url:page.url(),
+      snippets:body.split(/\n+/).map(x=>cleanText(x,350)).filter(x=>/(Lucky Draw|spin|chance|prize)/i.test(x)).slice(0,30)
+    };
+  } finally { await page.close().catch(()=>{}); }
+}
+
+async function movaDirectEntryWithContext(context) {
+  const page=await context.newPage();
+  try {
+    await gotoLoose(page,"https://us.mova.tech/pages/mova-prime-day-sale");
+    let body=await pageBody(page,50000);
+    const scopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
+
+    let emailField=null, scope=null;
+    for(const sc of scopes){
+      const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,20);i++){
+        const el=loc.nth(i);
+        if(await el.isVisible().catch(()=>false)){emailField=el;scope=sc;break;}
+      }
+      if(emailField) break;
+    }
+
+    if(!emailField){
+      const texts=page.getByText(/Prize Wheel|Free Entry|Exclusive Event|Spin/i,{exact:false});
+      const n=await texts.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,30);i++){
+        const el=texts.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        try{await el.scrollIntoViewIfNeeded().catch(()=>{});await el.click({timeout:2200,force:true}).catch(()=>{});await page.waitForTimeout(800);}catch{}
+      }
+      for(const sc of [page,...page.frames().filter(fr=>fr!==page.mainFrame())]){
+        const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+        const n2=await loc.count().catch(()=>0);
+        for(let j=0;j<Math.min(n2,20);j++){
+          const el=loc.nth(j);
+          if(await el.isVisible().catch(()=>false)){emailField=el;scope=sc;break;}
+        }
+        if(emailField) break;
+      }
+    }
+
+    if(!emailField){
+      const frameUrls=page.frames().map(fr=>fr.url()).filter(Boolean);
+      return {
+        task:"mova_direct_entry",
+        status:"official_free_entry_widget_not_exposed",
+        url:page.url(),
+        frame_urls:frameUrls.filter(u=>/mova|promo|spin|draw|wheel|widget|app/i.test(u)).slice(0,40),
+        need:"No user data needed; handler needs the live widget endpoint or it must be exposed by MOVA"
+      };
+    }
+
+    await emailField.fill("jlc3718@gmail.com");
+    const submits=scope.locator('button,input[type="submit"],[role="button"]');
+    const scount=await submits.count().catch(()=>0);
+    let submitted=false;
+    for(let i=0;i<Math.min(scount,50);i++){
+      const el=submits.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const label=cleanText((await el.innerText().catch(()=>''))||(await el.getAttribute("value").catch(()=>'')),150);
+      if(!/(submit|enter|continue|spin|start|play)/i.test(label)) continue;
+      if(/newsletter|purchase|buy|checkout|pay|redeem/i.test(label)) continue;
+      try{await el.click({timeout:3000});submitted=true;break;}catch{}
+    }
+    if(!submitted) return {task:"mova_direct_entry",status:"email_form_found_submit_not_found",url:page.url()};
+
+    await page.waitForTimeout(1600);
+    for(const sc of [page,...page.frames().filter(fr=>fr!==page.mainFrame())]){
+      const spin=sc.locator('button,[role="button"],a,div,span').filter({hasText:/^(Spin|Spin Now|Start|Play|Go|Try Now)$/i});
+      const n=await spin.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,50);i++){
+        const el=spin.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),900);
+        if(/purchase|buy|pay|redeem/i.test(parent)) continue;
+        try{
+          await el.click({timeout:3000,force:true});
+          await page.waitForTimeout(4500);
+          body=await pageBody(page,50000);
+          return {
+            task:"mova_direct_entry",
+            status:"spin_attempted",
+            url:page.url(),
+            result_lines:body.split(/\n+/).map(x=>cleanText(x,320)).filter(x=>/(congrat|won|prize|coupon|V50|P10|better luck|\$10|\$20|\$100|\$300|30%)/i.test(x)).slice(0,30)
+          };
+        }catch{}
+      }
+    }
+    return {task:"mova_direct_entry",status:"entry_submitted_spin_control_not_found",url:page.url()};
+  } finally { await page.close().catch(()=>{}); }
+}
+
+async function reolinkDayEntryWithContext(context) {
+  const page=await context.newPage();
+  try {
+    await gotoLoose(page,"https://reolink.com/__/lp/reolink-day/");
+    const scopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
+    let email=null, scope=null;
+    for(const sc of scopes){
+      const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,20);i++){
+        const el=loc.nth(i);
+        if(await el.isVisible().catch(()=>false)){email=el;scope=sc;break;}
+      }
+      if(email) break;
+    }
+    if(!email) return {task:"reolink_day_entry",status:"email_field_not_found",url:page.url()};
+    await email.fill("jlc3718@gmail.com");
+    const btns=scope.locator('button,input[type="submit"],[role="button"]');
+    const n=await btns.count().catch(()=>0);
+    for(let i=0;i<Math.min(n,40);i++){
+      const b=btns.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      const label=cleanText((await b.innerText().catch(()=>''))||(await b.getAttribute("value").catch(()=>'')),150);
+      if(!/(subscribe|enter|sign up|submit|join)/i.test(label)) continue;
+      try{
+        await b.click({timeout:3000});
+        await page.waitForTimeout(2500);
+        const body=await pageBody(page,30000);
+        return {
+          task:"reolink_day_entry",
+          status:/(thank|success|subscribed|you're in|you are in|already subscribed)/i.test(body)?"submitted_or_already_subscribed":"submitted_unconfirmed",
+          url:page.url(),
+          confirmation:body.match(/.{0,100}(thank|success|subscribed|already subscribed|you're in|you are in).{0,180}/i)?.[0]||null
+        };
+      }catch{}
+    }
+    return {task:"reolink_day_entry",status:"submit_control_not_found",url:page.url()};
+  } finally { await page.close().catch(()=>{}); }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -1452,6 +1760,11 @@ async function taskWithContext(context, task) {
   if (task === "mova_prize_wheel") return await movaPrizeWheelWithContext(context);
   if (task === "housework_challenge") return await houseworkChallengeEntryWithContext(context);
   if (task === "dreame_aero_giveaway") return await dreameAeroGiveawayWithContext(context);
+  if (task === "dreame_entry_path") return await dreameEntryPathWithContext(context);
+  if (task === "eufy_deep_entry") return await eufyDeepEntryWithContext(context);
+  if (task === "bluetti_robust_entry") return await bluettiRobustEntryWithContext(context);
+  if (task === "mova_direct_entry") return await movaDirectEntryWithContext(context);
+  if (task === "reolink_day_entry") return await reolinkDayEntryWithContext(context);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -1464,7 +1777,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -1473,7 +1786,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "reolink_day_entry"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
