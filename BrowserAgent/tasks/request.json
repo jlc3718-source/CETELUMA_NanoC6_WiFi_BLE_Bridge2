@@ -1,4 +1,4 @@
 {
-  "id": "close-roborock-login-20261006",
-  "task": "login_stop"
+  "id": "roborock-spin-after-login-20261006",
+  "task": "roborock_spin"
 }
