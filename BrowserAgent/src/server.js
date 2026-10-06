@@ -66,13 +66,21 @@ loginProxy.on("upgrade", (req, socket, head) => {
 });
 loginProxy.listen(6081, "0.0.0.0");
 
+function clearStaleChromiumProfileLocks(userDataDir) {
+  for (const name of ["SingletonLock","SingletonCookie","SingletonSocket"]) {
+    try { fs.unlinkSync(path.join(userDataDir, name)); } catch {}
+  }
+}
+
 async function launchProfile(name) {
   const userDataDir = path.join(DATA_DIR, "profiles", safeProfile(name));
   fs.mkdirSync(userDataDir, { recursive: true });
-  return chromium.launchPersistentContext(userDataDir, {
+
+  const launch = () => chromium.launchPersistentContext(userDataDir, {
     executablePath: CHROME,
     headless: false,
     viewport: { width: 1365, height: 850 },
+    timeout: 30000,
     args: [
       "--no-sandbox",
       "--disable-dev-shm-usage",
@@ -81,6 +89,16 @@ async function launchProfile(name) {
       "--no-default-browser-check"
     ]
   });
+
+  try {
+    return await launch();
+  } catch (err) {
+    const msg=String(err && err.stack || err);
+    if (!/profile appears to be in use|process_singleton|SingletonLock/i.test(msg)) throw err;
+    clearStaleChromiumProfileLocks(userDataDir);
+    await new Promise(r=>setTimeout(r,500));
+    return await launch();
+  }
 }
 
 async function pageFor(context) {
@@ -129,6 +147,7 @@ async function startLogin(job) {
   const target = targets[0] || "about:blank";
   const userDataDir = path.join(DATA_DIR, "profiles", profile);
   fs.mkdirSync(userDataDir, { recursive: true });
+  clearStaleChromiumProfileLocks(userDataDir);
 
   const browser = spawn(CHROME, [
     "--no-sandbox",
