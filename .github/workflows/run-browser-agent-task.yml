@@ -22,13 +22,34 @@ jobs:
         with:
           ref: jason-home-cloudflare-rebuild
 
+      - name: Ensure current browser-agent code is deployed
+        run: |
+          set -euo pipefail
+          SRC_HASH="$(
+            sha256sum               BrowserAgent/package.json               BrowserAgent/Dockerfile               BrowserAgent/start.sh               BrowserAgent/docker-compose.yml               BrowserAgent/src/server.js             | sha256sum | awk '{print $1}'
+          )"
+          STAMP=/home/ubuntu/browser-agent-data/deployed-source-sha
+          DEPLOYED="$(cat "$STAMP" 2>/dev/null || true)"
+          if [ "$SRC_HASH" != "$DEPLOYED" ]; then
+            echo "Browser agent code changed; rebuilding once."
+            sudo mkdir -p /home/ubuntu/browser-agent-data/profiles /home/ubuntu/browser-agent-data/logs
+            sudo chown -R ubuntu:ubuntu /home/ubuntu/browser-agent-data
+            cd BrowserAgent
+            sudo docker compose up -d --build --remove-orphans
+            cd ..
+            echo "$SRC_HASH" | sudo tee "$STAMP" >/dev/null
+          else
+            echo "Browser agent already current; no rebuild needed."
+          fi
+
       - name: Wait for local browser agent
         run: |
           set -e
-          for i in $(seq 1 45); do
+          for i in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8932/health >/dev/null && exit 0
             sleep 2
           done
+          sudo docker logs --tail=200 oracle-browser-agent || true
           exit 1
 
       - name: Run sanitized task
