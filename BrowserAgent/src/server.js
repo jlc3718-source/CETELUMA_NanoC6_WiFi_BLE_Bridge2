@@ -89,8 +89,22 @@ async function pageFor(context) {
 }
 
 async function goto(page, url, timeout = 30000) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout });
-  await page.waitForTimeout(1200);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: Math.min(timeout, 16000) });
+  } catch (err) {
+    // Heavy promo pages often keep third-party assets open after the usable DOM is present.
+    // If navigation reached the requested host, stop the remaining load and continue.
+    const current = String(page.url() || "");
+    let targetHost = "";
+    try { targetHost = new URL(url).host; } catch {}
+    let currentHost = "";
+    try { currentHost = new URL(current).host; } catch {}
+    if (!current || current === "about:blank" || (targetHost && currentHost !== targetHost && !currentHost.endsWith("." + targetHost))) {
+      throw err;
+    }
+    await page.evaluate(() => window.stop()).catch(() => {});
+  }
+  await page.waitForTimeout(1400);
 }
 
 function killChild(child) {
@@ -315,78 +329,73 @@ async function eufyLuckyWithContext(context) {
   const page = await context.newPage();
   try {
     await goto(page, "https://www.eufy.com/app_primeday");
-    await page.waitForTimeout(3500);
-    let body = await pageBody(page, 50000);
+    await page.waitForTimeout(2200);
 
+    // Open the Lucky Draw tab explicitly; the GO control is hidden until this tab is activated.
+    const luckyTabs = page.getByText(/^Lucky Draw$/i, { exact: true });
+    const ltc = await luckyTabs.count().catch(() => 0);
+    for (let i=0;i<Math.min(ltc,12);i++) {
+      const el=luckyTabs.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      try { await el.click({timeout:2500}); await page.waitForTimeout(1600); break; } catch {}
+    }
+
+    let body = await pageBody(page, 50000);
     if (/log in\s*to take part|login\s*to take part|sign in\s*to take part/i.test(body)) {
       return { task: "eufy_lucky", status: "login_required", url: page.url() };
     }
 
-    const m = body.match(/Entries Left:\s*(\d+|-)/i);
-    const entriesRaw = m ? m[1] : null;
-    const entries = entriesRaw && /^\d+$/.test(entriesRaw) ? Number(entriesRaw) : null;
-    if (entries === 0) return { task: "eufy_lucky", status: "no_free_entries", url: page.url() };
+    const before = body.match(/Entries Left:\s*(\d+|-)/i)?.[1] ?? null;
+    if (before === "0") return { task: "eufy_lucky", status: "no_free_entries", url: page.url() };
 
-    // The current promo page exposes a standalone "GO" for the free wheel.
-    // Never click "Redeem" or controls mentioning eufyCredits.
-    const exactGo = page.getByText(/^GO$/i, { exact: true });
-    const gc = await exactGo.count().catch(() => 0);
-    let clicked = false;
-    for (let i = 0; i < Math.min(gc, 12); i++) {
-      let el = exactGo.nth(i);
-      if (!(await el.isVisible().catch(() => false))) continue;
-      const txt = cleanText(await el.innerText().catch(() => ""));
-      if (!/^GO$/i.test(txt)) continue;
-      try {
-        await el.click({ timeout: 3500 });
-        clicked = true;
-        break;
-      } catch {
-        const parent = el.locator("xpath=..");
-        const ptxt = cleanText(await parent.innerText().catch(() => ""), 800);
-        if (/redeem|eufycredits/i.test(ptxt)) continue;
-        try { await parent.click({ timeout: 3500 }); clicked = true; break; } catch {}
-      }
-    }
-
-    if (!clicked) {
-      const candidates = page.locator('button,[role="button"],a,div').filter({ hasText: /^GO$/i });
-      const cc = await candidates.count().catch(() => 0);
-      for (let i=0;i<Math.min(cc,30);i++) {
-        const el=candidates.nth(i);
-        if (!(await el.isVisible().catch(()=>false))) continue;
-        const txt=cleanText(await el.innerText().catch(()=>""),100);
-        if (!/^GO$/i.test(txt)) continue;
-        const contextText=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),900);
-        if (/redeem|eufycredits/i.test(contextText)) continue;
-        try { await el.click({timeout:3500}); clicked=true; break; } catch {}
-      }
-    }
+    // Find the smallest visible exact-text GO node and click it. Avoid Redeem/credits controls.
+    const clicked = await page.evaluate(() => {
+      const els = [...document.querySelectorAll("button,a,[role=button],div,span")];
+      const candidates = els.filter(el => {
+        const txt = (el.innerText || el.textContent || "").replace(/\s+/g," ").trim();
+        if (txt !== "GO") return false;
+        const r = el.getBoundingClientRect();
+        const st = getComputedStyle(el);
+        if (r.width <= 0 || r.height <= 0 || st.visibility === "hidden" || st.display === "none") return false;
+        const ptxt = (el.parentElement?.innerText || "").replace(/\s+/g," ");
+        return !/Redeem|eufyCredits/i.test(ptxt);
+      }).sort((a,b) => {
+        const ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+        return (ar.width*ar.height)-(br.width*br.height);
+      });
+      if (!candidates.length) return false;
+      candidates[0].scrollIntoView({block:"center",inline:"center"});
+      candidates[0].click();
+      return true;
+    }).catch(()=>false);
 
     if (!clicked) {
       return {
         task:"eufy_lucky",
         status:"free_spin_control_not_found",
-        entries_left: entriesRaw,
+        entries_left:before,
         url:page.url(),
-        snippets: body.split(/\n+/).map(x=>cleanText(x,400)).filter(x=>/(100% Chance|Entries Left|GO|Redeem|eufyCredits|Lucky Draw)/i.test(x)).slice(0,30)
+        snippets:body.split(/\n+/).map(x=>x.trim()).filter(x=>/(100% Chance|Entries Left|Lucky Draw|My prizes|GO)/i.test(x)).slice(0,25)
       };
     }
 
-    await page.waitForTimeout(5500);
+    await page.waitForTimeout(5000);
     body = await pageBody(page, 50000);
-    const lines = body.split(/\n+/).map(x => cleanText(x, 300)).filter(x => /(congrat|won|prize|coupon|credit|better luck|gift card|month plus|outdoor lights|Cam S4|Robot Vacuum E25)/i.test(x)).slice(0, 25);
     const after = body.match(/Entries Left:\s*(\d+|-)/i)?.[1] ?? null;
+    const lines = body.split(/\n+/).map(x=>cleanText(x,320))
+      .filter(x=>/(congrat|won|prize|coupon|gift card|credits|outdoor lights|Cam S4|Robot Vacuum E25|1-Month Plus|better luck)/i.test(x))
+      .slice(0,30);
+    const confirmed = (before && after && /^\d+$/.test(before) && /^\d+$/.test(after) && Number(after) < Number(before)) || lines.length>0;
     return {
       task:"eufy_lucky",
-      status:"free_spin_attempted",
-      entries_left_before:entriesRaw,
+      status:confirmed ? "spin_completed" : "spin_clicked_unconfirmed",
+      entries_left_before:before,
       entries_left_after:after,
       url:page.url(),
       result_lines:lines
     };
   } finally {
-    await page.close().catch(() => {});
+    await page.close().catch(()=>{});
   }
 }
 
