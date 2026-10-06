@@ -1,8 +1,4 @@
 {
-  "id": "eufy-login-spin-instagram-check-20261006b",
-  "task": "batch",
-  "tasks": [
-    "eufy_login_and_spin",
-    "instagram_diag"
-  ]
+  "id": "roborock-google-spin-20261006",
+  "task": "roborock_google_login_and_spin"
 }
