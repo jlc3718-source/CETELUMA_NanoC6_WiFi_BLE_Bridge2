@@ -486,6 +486,182 @@ async function diagnosticsWithContext(context, task) {
   }
 }
 
+function readSimpleEnvFile(filePath) {
+  const out = {};
+  const raw = fs.readFileSync(filePath, "utf8");
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line || line.trim().startsWith("#")) continue;
+    const i = line.indexOf("=");
+    if (i <= 0) continue;
+    out[line.slice(0,i).trim()] = line.slice(i+1);
+  }
+  return out;
+}
+
+async function eufyLoginAndSpinWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://www.eufy.com/app_primeday");
+    await page.waitForTimeout(2200);
+
+    let body = await pageBody(page, 30000);
+    const accountMenu = page.locator('[aria-label="account"]').first();
+    const loggedOut = /existing user\?\s*log in/i.test(body) || /sign up\s*existing user\?\s*log in/i.test(body);
+
+    if (loggedOut) {
+      const creds = readSimpleEnvFile("/run/secrets/eufy-login.env");
+      const email = creds.EUFY_EMAIL || "";
+      const password = creds.EUFY_PASSWORD || "";
+      if (!email || !password) return { task:"eufy_login_and_spin", status:"credential_file_missing" };
+
+      if (await accountMenu.count().catch(()=>0)) {
+        await accountMenu.click({ timeout:3000 }).catch(()=>{});
+        await page.waitForTimeout(800);
+      }
+
+      // Click a visible "Log in" control if present.
+      const loginText = page.getByText(/^Log in$/i);
+      const lc = await loginText.count().catch(()=>0);
+      for (let i=0;i<Math.min(lc,8);i++) {
+        const el = loginText.nth(i);
+        if (await el.isVisible().catch(()=>false)) {
+          try { await el.click({timeout:3000}); break; } catch {}
+        }
+      }
+      await page.waitForTimeout(1200);
+
+      // Work across any auth iframe/modal.
+      const scopes = [page, ...page.frames().filter(fr => fr !== page.mainFrame())];
+      let authScope = null;
+      let emailInput = null;
+      for (const sc of scopes) {
+        const cands = sc.locator('input[type="email"],input[name*="email" i],input[autocomplete="username"],input[placeholder*="email" i]');
+        if (await cands.count().catch(()=>0)) {
+          const c = cands.first();
+          if (await c.isVisible().catch(()=>false)) { authScope=sc; emailInput=c; break; }
+        }
+      }
+      if (!emailInput) return { task:"eufy_login_and_spin", status:"email_field_not_found", url:page.url() };
+
+      await emailInput.fill(email);
+
+      // Some eufy auth flows require Continue before password appears.
+      let passInput = authScope.locator('input[type="password"]').first();
+      if (!(await passInput.count().catch(()=>0)) || !(await passInput.isVisible().catch(()=>false))) {
+        const cont = authScope.getByRole("button",{name:/continue|next|log in|sign in/i});
+        const cc = await cont.count().catch(()=>0);
+        for (let i=0;i<Math.min(cc,6);i++) {
+          const b=cont.nth(i);
+          if (await b.isVisible().catch(()=>false)) {
+            try { await b.click({timeout:3000}); break; } catch {}
+          }
+        }
+        await page.waitForTimeout(1000);
+        passInput = authScope.locator('input[type="password"]').first();
+      }
+
+      if (!(await passInput.count().catch(()=>0))) {
+        return { task:"eufy_login_and_spin", status:"password_field_not_found", url:page.url() };
+      }
+      await passInput.fill(password);
+
+      // Tick required terms/privacy checkbox if present.
+      const checks = authScope.locator('input[type="checkbox"],[role="checkbox"]');
+      const nchecks = await checks.count().catch(()=>0);
+      for(let i=0;i<Math.min(nchecks,6);i++) {
+        const c=checks.nth(i);
+        if (!(await c.isVisible().catch(()=>false))) continue;
+        const checked=await c.isChecked().catch(()=>false);
+        if(!checked) await c.check().catch(async()=>{await c.click().catch(()=>{});});
+      }
+
+      const submit = authScope.getByRole("button",{name:/log in|sign in|continue/i});
+      const scount = await submit.count().catch(()=>0);
+      let submitted=false;
+      for(let i=0;i<Math.min(scount,8);i++) {
+        const b=submit.nth(i);
+        if(await b.isVisible().catch(()=>false)) {
+          try { await b.click({timeout:4000}); submitted=true; break; } catch {}
+        }
+      }
+      if(!submitted) return { task:"eufy_login_and_spin", status:"login_submit_not_found", url:page.url() };
+
+      await page.waitForTimeout(3500);
+      body = await pageBody(page,30000);
+      if (/captcha|verification code|verify/i.test(body) && /log in|sign in|code/i.test(body)) {
+        return { task:"eufy_login_and_spin", status:"human_verification_required", url:page.url() };
+      }
+      if (/existing user\?\s*log in/i.test(body)) {
+        return { task:"eufy_login_and_spin", status:"login_failed", url:page.url() };
+      }
+    }
+
+    // Navigate/scroll to the Lucky Draw section.
+    const lucky = page.getByText(/^Lucky Draw$/i);
+    const lcnt = await lucky.count().catch(()=>0);
+    for(let i=0;i<Math.min(lcnt,8);i++) {
+      const el=lucky.nth(i);
+      if(await el.isVisible().catch(()=>false)) {
+        try { await el.click({timeout:2500}); } catch { await el.scrollIntoViewIfNeeded().catch(()=>{}); }
+        await page.waitForTimeout(1200);
+        break;
+      }
+    }
+
+    body = await pageBody(page,40000);
+    const em = body.match(/Entries Left:\s*(\d+)/i);
+    const entries = em ? Number(em[1]) : null;
+    if(entries === 0) return { task:"eufy_login_and_spin", status:"no_free_entries", entries_left:0, url:page.url() };
+
+    const candidates = page.locator('button,[role="button"],a,div').filter({hasText:/^(GO|Spin|Spin Now|Draw|Start)$/i});
+    const cc = await candidates.count().catch(()=>0);
+    let clicked=false;
+    for(let i=0;i<Math.min(cc,30);i++) {
+      const el=candidates.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const txt=cleanText(await el.innerText().catch(()=>""),100);
+      const parent=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),900);
+      if(/100\s*eufycredits|redeem|buy|purchase/i.test(txt+" "+parent)) continue;
+      if(!/(lucky|draw|spin|chance|entries left|100% chance)/i.test(parent+" "+body)) continue;
+      try { await el.click({timeout:3000}); clicked=true; break; } catch {}
+    }
+
+    if(!clicked) {
+      const snippets = body.split(/(?<=[.!?])\s+|\n+/).map(x=>cleanText(x,400))
+        .filter(x=>/(lucky|draw|spin|entries left|credit|100% chance)/i.test(x)).slice(0,30);
+      return {task:"eufy_login_and_spin",status:"free_spin_control_not_found",entries_left:entries,url:page.url(),snippets};
+    }
+
+    await page.waitForTimeout(4500);
+    body = await pageBody(page,30000);
+    const resultLines=body.split(/\n+/).map(x=>cleanText(x,300))
+      .filter(x=>/(congrat|won|prize|coupon|credit|better luck|thank)/i.test(x)).slice(0,15);
+    return {task:"eufy_login_and_spin",status:"free_spin_attempted",entries_left_before:entries,url:page.url(),result_lines:resultLines};
+  } finally {
+    await page.close().catch(()=>{});
+  }
+}
+
+async function instagramDiagWithContext(context) {
+  const page=await context.newPage();
+  try {
+    await goto(page,"https://www.instagram.com/");
+    await page.waitForTimeout(2500);
+    const body=await pageBody(page,20000);
+    const loginRequired = /log in|sign up/i.test(body) && /instagram/i.test(body) &&
+      !/(home|search|explore|reels|messages|notifications|create|profile)/i.test(body);
+    return {
+      task:"instagram_diag",
+      authenticated:!loginRequired,
+      login_required:loginRequired,
+      url:page.url(),
+      markers:body.split(/\n+/).map(x=>cleanText(x,200)).filter(x=>/(log in|home|search|explore|reels|messages|notifications|profile)/i.test(x)).slice(0,15)
+    };
+  } finally {
+    await page.close().catch(()=>{});
+  }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -494,6 +670,8 @@ async function taskWithContext(context, task) {
   if (task === "bluetti_lucky") return await bluettiLuckyWithContext(context);
   if (task === "wyze_survey") return await wyzeSurveyProbeWithContext(context);
   if (["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) return await diagnosticsWithContext(context, task);
+  if (task === "eufy_login_and_spin") return await eufyLoginAndSpinWithContext(context);
+  if (task === "instagram_diag") return await instagramDiagWithContext(context);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -504,7 +682,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -513,7 +691,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
