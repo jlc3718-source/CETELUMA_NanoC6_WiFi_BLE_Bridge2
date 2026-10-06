@@ -19,7 +19,7 @@ const DISPLAY = process.env.DISPLAY || ":99";
 fs.mkdirSync(path.join(DATA_DIR, "profiles"), { recursive: true });
 
 let queue = Promise.resolve();
-let loginState = { browser: null, tunnel: null, profile: null, target: null, url: null };
+let loginState = { browser: null, tunnel: null, profile: null, target: null, targets: [], url: null };
 
 function cleanText(s, max = 12000) {
   return String(s || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -101,15 +101,18 @@ function killChild(child) {
 async function stopLogin() {
   killChild(loginState.tunnel);
   killChild(loginState.browser);
-  loginState = { browser: null, tunnel: null, profile: null, target: null, url: null };
+  loginState = { browser: null, tunnel: null, profile: null, target: null, targets: [], url: null };
   await new Promise(r => setTimeout(r, 1200));
   return { task: "login_stop", status: "stopped" };
 }
 
 async function startLogin(job) {
   await stopLogin();
-  const profile = safeProfile(job.profile || "default");
-  const target = String(job.url || "about:blank");
+  const profile = safeProfile(job.profile || "daily");
+  const targets = Array.isArray(job.urls) && job.urls.length
+    ? job.urls.map(String).filter(Boolean)
+    : [String(job.url || "about:blank")];
+  const target = targets[0] || "about:blank";
   const userDataDir = path.join(DATA_DIR, "profiles", profile);
   fs.mkdirSync(userDataDir, { recursive: true });
 
@@ -120,14 +123,14 @@ async function startLogin(job) {
     "--no-default-browser-check",
     "--window-size=1365,850",
     `--user-data-dir=${userDataDir}`,
-    target
+    ...targets
   ], { env: { ...process.env, DISPLAY }, stdio: ["ignore", "ignore", "pipe"] });
 
   const tunnel = spawn("/usr/local/bin/cloudflared", [
     "tunnel", "--url", "http://127.0.0.1:6081", "--no-autoupdate"
   ], { stdio: ["ignore", "pipe", "pipe"] });
 
-  loginState = { browser, tunnel, profile, target, url: null };
+  loginState = { browser, tunnel, profile, target, targets, url: null };
 
   const url = await new Promise((resolve, reject) => {
     let buf = "";
@@ -156,17 +159,16 @@ async function startLogin(job) {
     status: "ready",
     profile,
     target,
+    targets,
     login_url: url,
     username: "jason",
     note: "Open the temporary URL, enter the Oracle Browser Login credentials, finish the website login, then run login_stop."
   };
 }
 
-async function jmlScan() {
-  if (loginState.browser) return { task: "jml_scan", status: "login_session_active" };
-  const context = await launchProfile("anker-jml");
+async function jmlScanWithContext(context) {
+  const page = await context.newPage();
   try {
-    const page = await pageFor(context);
     await goto(page, "https://www.anker-jml.com/");
     await page.waitForTimeout(2500);
     const body = cleanText(await page.locator("body").innerText().catch(() => ""), 30000);
@@ -189,15 +191,20 @@ async function jmlScan() {
     }).catch(() => []);
     return { task: "jml_scan", authenticated: !loginRequired, login_required: loginRequired, url: page.url(), opportunities };
   } finally {
-    await context.close().catch(() => {});
+    await page.close().catch(() => {});
   }
 }
 
-async function roborockSpin() {
-  if (loginState.browser) return { task: "roborock_spin", status: "login_session_active" };
-  const context = await launchProfile("roborock");
+async function jmlScan() {
+  if (loginState.browser) return { task: "jml_scan", status: "login_session_active" };
+  const context = await launchProfile("daily");
+  try { return await jmlScanWithContext(context); }
+  finally { await context.close().catch(() => {}); }
+}
+
+async function roborockSpinWithContext(context) {
+  const page = await context.newPage();
   try {
-    const page = await pageFor(context);
     await goto(page, "https://us.roborock.com/pages/points");
     let body = cleanText(await page.locator("body").innerText().catch(() => ""), 30000);
     if (/account-us\.roborock\.com\/login/i.test(page.url()) || (/log in|sign in/i.test(body) && /roborock/i.test(body))) {
@@ -226,8 +233,15 @@ async function roborockSpin() {
     const resultLines = lines.filter(s => /(congrat|won|winner|prize|points|coupon|sorry|better luck|spin)/i.test(s)).slice(0, 20);
     return { task: "roborock_spin", status: spun ? "spin_attempted" : "spin_control_not_found", clicked_entry: clickedEntry, spun, url: page.url(), result_lines: resultLines };
   } finally {
-    await context.close().catch(() => {});
+    await page.close().catch(() => {});
   }
+}
+
+async function roborockSpin() {
+  if (loginState.browser) return { task: "roborock_spin", status: "login_session_active" };
+  const context = await launchProfile("daily");
+  try { return await roborockSpinWithContext(context); }
+  finally { await context.close().catch(() => {}); }
 }
 
 async function runTask(job) {
@@ -241,14 +255,22 @@ async function runTask(job) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
     const allowed = tasks.filter(t => ["jml_scan", "roborock_spin"].includes(String(t)));
-    const settled = await Promise.allSettled(allowed.map(t => runTask({ task: t })));
-    return {
-      task: "batch",
-      parallel: true,
-      results: settled.map((r, i) => r.status === "fulfilled"
-        ? { task: allowed[i], ok: true, result: r.value }
-        : { task: allowed[i], ok: false, error: String(r.reason) })
-    };
+    const context = await launchProfile("daily");
+    try {
+      const settled = await Promise.allSettled(allowed.map(t =>
+        t === "jml_scan" ? jmlScanWithContext(context) : roborockSpinWithContext(context)
+      ));
+      return {
+        task: "batch",
+        parallel: true,
+        shared_profile: "daily",
+        results: settled.map((r, i) => r.status === "fulfilled"
+          ? { task: allowed[i], ok: true, result: r.value }
+          : { task: allowed[i], ok: false, error: String(r.reason) })
+      };
+    } finally {
+      await context.close().catch(() => {});
+    }
   }
   throw new Error("Unsupported task: " + task);
 }
