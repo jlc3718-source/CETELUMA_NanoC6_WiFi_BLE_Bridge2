@@ -244,6 +244,159 @@ async function roborockSpin() {
   finally { await context.close().catch(() => {}); }
 }
 
+
+async function pageBody(page, max = 30000) {
+  return cleanText(await page.locator("body").innerText().catch(() => ""), max);
+}
+
+async function reolinkSubscribeWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://reolink.com/lp/reolink-day/");
+    await page.waitForTimeout(1800);
+    const bodyBefore = await pageBody(page);
+    const email = page.locator('input[type="email"]').first();
+    if (!(await email.count().catch(() => 0))) {
+      return { task: "reolink_subscribe", status: "email_field_not_found", url: page.url() };
+    }
+    await email.fill("jlc3718@gmail.com");
+    const checks = page.locator('input[type="checkbox"]');
+    const cc = await checks.count().catch(() => 0);
+    for (let i = 0; i < Math.min(cc, 6); i++) {
+      const c = checks.nth(i);
+      if (await c.isVisible().catch(() => false) && !(await c.isChecked().catch(() => false))) {
+        await c.check().catch(() => {});
+      }
+    }
+    const buttons = page.getByRole("button", { name: /subscribe|enter|sign up|join/i });
+    const bc = await buttons.count().catch(() => 0);
+    let clicked = false;
+    for (let i = 0; i < Math.min(bc, 12); i++) {
+      const b = buttons.nth(i);
+      if (await b.isVisible().catch(() => false)) {
+        try { await b.click({ timeout: 3000 }); clicked = true; break; } catch {}
+      }
+    }
+    if (!clicked) {
+      const submit = page.locator('button[type="submit"],input[type="submit"]').first();
+      if (await submit.count().catch(() => 0)) {
+        try { await submit.click({ timeout: 3000 }); clicked = true; } catch {}
+      }
+    }
+    await page.waitForTimeout(2500);
+    const body = await pageBody(page);
+    const success = /(thank|success|subscribed|already subscribed|entered|you're in|you are in)/i.test(body) &&
+                    !/(invalid email|required field|please enter)/i.test(body);
+    return {
+      task: "reolink_subscribe",
+      status: success ? "submitted_or_already_subscribed" : (clicked ? "submitted_unconfirmed" : "submit_control_not_found"),
+      url: page.url(),
+      confirmation: body.match(/.{0,80}(thank|success|subscribed|already subscribed|entered|you're in).{0,120}/i)?.[0] || null,
+      page_hint: success ? null : cleanText(bodyBefore, 2500)
+    };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+async function eufyLuckyWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://www.eufy.com/app_primeday");
+    await page.waitForTimeout(2500);
+    let body = await pageBody(page);
+    if (/log in\s*to take part|login\s*to take part|sign in\s*to take part/i.test(body)) {
+      return { task: "eufy_lucky", status: "login_required", url: page.url() };
+    }
+    const m = body.match(/Entries Left:\s*(\d+)/i);
+    const entries = m ? Number(m[1]) : null;
+    if (entries === 0) return { task: "eufy_lucky", status: "no_free_entries", url: page.url() };
+    const goButtons = page.getByRole("button", { name: /^(GO|Spin|Spin Now|Draw|Start)$/i });
+    const bc = await goButtons.count().catch(() => 0);
+    let clicked = false;
+    for (let i = 0; i < Math.min(bc, 12); i++) {
+      const b = goButtons.nth(i);
+      if (!(await b.isVisible().catch(() => false))) continue;
+      const txt = cleanText(await b.innerText().catch(() => ""));
+      const parent = cleanText(await b.locator("xpath=..").innerText().catch(() => ""), 800);
+      if (/100\s*eufycredits|redeem/i.test(txt + " " + parent)) continue;
+      try { await b.click({ timeout: 3000 }); clicked = true; break; } catch {}
+    }
+    if (!clicked) return { task: "eufy_lucky", status: "free_spin_control_not_found", entries_left: entries, url: page.url() };
+    await page.waitForTimeout(4500);
+    body = await pageBody(page);
+    const lines = body.split(/\n+/).map(x => cleanText(x, 300)).filter(x => /(congrat|won|prize|coupon|credit|better luck|thank)/i.test(x)).slice(0, 15);
+    return { task: "eufy_lucky", status: "free_spin_attempted", entries_left_before: entries, url: page.url(), result_lines: lines };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+async function bluettiLuckyWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://www.bluettipower.com/pages/prime-day/");
+    await page.waitForTimeout(2200);
+    let body = await pageBody(page);
+    if (/sign in|log in/i.test(body) && /lucky draw|spin/i.test(body)) {
+      const memberSignals = page.getByText(/sign in|log in/i);
+      if (await memberSignals.count().catch(() => 0)) {
+        return { task: "bluetti_lucky", status: "login_may_be_required", url: page.url() };
+      }
+    }
+    const candidates = page.getByRole("button", { name: /spin|draw|try|start|go/i });
+    const bc = await candidates.count().catch(() => 0);
+    let clicked = false;
+    for (let i = 0; i < Math.min(bc, 16); i++) {
+      const b = candidates.nth(i);
+      if (!(await b.isVisible().catch(() => false))) continue;
+      const parent = cleanText(await b.locator("xpath=..").innerText().catch(() => ""), 900);
+      if (/(bucks|points).{0,30}(spend|cost|redeem)|purchase|required|pay/i.test(parent)) continue;
+      if (!/(lucky|spin|draw|free|chance)/i.test(parent + " " + cleanText(await b.innerText().catch(() => "")))) continue;
+      try { await b.click({ timeout: 3000 }); clicked = true; break; } catch {}
+    }
+    if (!clicked) return { task: "bluetti_lucky", status: "free_spin_not_confirmed", url: page.url() };
+    await page.waitForTimeout(4500);
+    body = await pageBody(page);
+    const lines = body.split(/\n+/).map(x => cleanText(x, 300)).filter(x => /(congrat|won|prize|gift card|points|better luck|coupon)/i.test(x)).slice(0, 15);
+    return { task: "bluetti_lucky", status: "free_spin_attempted", url: page.url(), result_lines: lines };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+async function wyzeSurveyProbeWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://forms.gle/HwgTL8mbuzHoFAPS8");
+    await page.waitForTimeout(2200);
+    const body = await pageBody(page, 40000);
+    if (/you've already responded|already submitted|response has been recorded/i.test(body)) {
+      return { task: "wyze_survey", status: "already_submitted", url: page.url() };
+    }
+    const questions = await page.locator('[role="listitem"]').evaluateAll((els) => els.map(el => {
+      const text = (el.innerText || "").replace(/\s+/g," ").trim();
+      const radios = [...el.querySelectorAll('[role="radio"]')].map(x => (x.getAttribute("data-value") || x.getAttribute("aria-label") || x.textContent || "").trim()).filter(Boolean);
+      const checks = [...el.querySelectorAll('[role="checkbox"]')].map(x => (x.getAttribute("data-answer-value") || x.getAttribute("aria-label") || x.textContent || "").trim()).filter(Boolean);
+      const inputs = [...el.querySelectorAll('input,textarea')].map(x => ({type:x.type||x.tagName.toLowerCase(), name:x.getAttribute("aria-label")||x.getAttribute("placeholder")||""}));
+      return { text: text.slice(0,1200), radios, checks, inputs };
+    }).filter(q => q.text).slice(0,40)).catch(() => []);
+    return { task: "wyze_survey", status: "needs_answers", url: page.url(), questions };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+async function taskWithContext(context, task) {
+  if (task === "jml_scan") return await jmlScanWithContext(context);
+  if (task === "roborock_spin") return await roborockSpinWithContext(context);
+  if (task === "reolink_subscribe") return await reolinkSubscribeWithContext(context);
+  if (task === "eufy_lucky") return await eufyLuckyWithContext(context);
+  if (task === "bluetti_lucky") return await bluettiLuckyWithContext(context);
+  if (task === "wyze_survey") return await wyzeSurveyProbeWithContext(context);
+  throw new Error("Unsupported context task: " + task);
+}
+
 async function runTask(job) {
   const task = String(job.task || "");
   if (task === "health") return { task: "health", ok: true, time: new Date().toISOString() };
@@ -251,15 +404,19 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey") {
+    if (loginState.browser || loginState.tunnel) await stopLogin();
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); }
+    finally { await context.close().catch(() => {}); }
+  }
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
-      const settled = await Promise.allSettled(allowed.map(t =>
-        t === "jml_scan" ? jmlScanWithContext(context) : roborockSpinWithContext(context)
-      ));
+      const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
       return {
         task: "batch",
         parallel: true,
