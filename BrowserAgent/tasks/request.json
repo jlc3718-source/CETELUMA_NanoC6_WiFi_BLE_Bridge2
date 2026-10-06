@@ -1,4 +1,9 @@
 {
-  "id": "roborock-google-spin-20261006c",
-  "task": "roborock_google_login_and_spin"
+  "id": "rescan-eufy-bluetti-jml-20261006",
+  "task": "batch",
+  "tasks": [
+    "eufy_lucky",
+    "bluetti_lucky",
+    "jml_scan"
+  ]
 }
