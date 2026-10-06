@@ -528,7 +528,8 @@ async function diagnosticsWithContext(context, task) {
   const urls = {
     roborock_diag: "https://us.roborock.com/pages/points",
     eufy_diag: "https://www.eufy.com/app_primeday",
-    bluetti_diag: "https://www.bluettipower.com/pages/prime-day/"
+    bluetti_diag: "https://www.bluettipower.com/pages/prime-day/",
+    mova_diag: "https://us.mova.tech/pages/mova-prime-day-sale"
   };
   const url = urls[task];
   if (!url) throw new Error("Unknown diagnostic task");
@@ -1433,7 +1434,7 @@ async function taskWithContext(context, task) {
   if (task === "eufy_lucky") return await eufyLuckyWithContext(context);
   if (task === "bluetti_lucky") return await bluettiLuckyWithContext(context);
   if (task === "wyze_survey") return await wyzeSurveyProbeWithContext(context);
-  if (["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) return await diagnosticsWithContext(context, task);
+  if (["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) return await diagnosticsWithContext(context, task);
   if (task === "eufy_login_and_spin") return await eufyLoginAndSpinWithContext(context);
   if (task === "instagram_diag") return await instagramDiagWithContext(context);
   if (task === "roborock_google_login_and_spin") return await roborockGoogleLoginAndSpinWithContext(context);
@@ -1454,7 +1455,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -1463,7 +1464,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
