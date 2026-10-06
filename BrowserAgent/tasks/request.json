@@ -1,12 +1,4 @@
 {
-  "id": "finish-oracle-enter-all-20261006",
-  "task": "batch",
-  "tasks": [
-    "reolink_subscribe",
-    "wyze_survey",
-    "jml_scan",
-    "roborock_spin",
-    "eufy_lucky",
-    "bluetti_lucky"
-  ]
+  "id": "version-check-wyze-20261006",
+  "task": "wyze_survey"
 }
