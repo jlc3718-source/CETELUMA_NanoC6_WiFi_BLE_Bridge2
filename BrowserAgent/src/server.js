@@ -979,7 +979,7 @@ async function instagramBrandScanWithContext(context) {
     "roborockglobal",
     "dreametech",
     "movatech.usa",
-    "narwal.robot",
+    "narwalrobot",
     "tinecoglobal",
     "eufyofficial",
     "goveeofficial",
