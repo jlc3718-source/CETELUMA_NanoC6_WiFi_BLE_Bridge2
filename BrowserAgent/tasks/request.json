@@ -1,10 +1,8 @@
 {
-  "id": "deep-rescan-promos-20261006",
-  "task": "batch",
-  "tasks": [
-    "eufy_login_and_spin",
-    "bluetti_lucky",
-    "jml_scan",
-    "instagram_diag"
+  "id": "roborock-only-login-20261006",
+  "task": "login_start",
+  "profile": "daily",
+  "urls": [
+    "https://account-us.roborock.com/login?service=https://us.roborock.com/pages/points"
   ]
 }
