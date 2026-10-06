@@ -73,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p BrowserAgent/results
-          curl -fsS \
+          curl -fsS --connect-timeout 5 --max-time 65 \
             -H 'Content-Type: application/json' \
             --data-binary @BrowserAgent/tasks/request.json \
             http://127.0.0.1:8932/run \
