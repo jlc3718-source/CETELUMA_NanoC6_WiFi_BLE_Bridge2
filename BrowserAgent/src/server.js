@@ -1050,6 +1050,142 @@ async function instagramBrandScanWithContext(context) {
   };
 }
 
+async function houseworkChallengeEntryWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page,"https://shop.housework.com/products/fall-cleaning-challenge-2026");
+    await page.waitForTimeout(1800);
+    const body=await pageBody(page,30000);
+    if(/sold out|unavailable/i.test(body)) return {task:"housework_challenge",status:"not_available",url:page.url()};
+
+    const addBtn = page.getByRole("button",{name:/add to cart/i});
+    if(await addBtn.count().catch(()=>0)) {
+      await addBtn.first().click({timeout:4000}).catch(()=>{});
+      await page.waitForTimeout(1200);
+    }
+
+    const checkout = page.getByRole("button",{name:/check out|checkout/i});
+    if(await checkout.count().catch(()=>0)) {
+      await checkout.first().click({timeout:4000}).catch(()=>{});
+    } else {
+      await page.goto("https://shop.housework.com/cart",{waitUntil:"domcontentloaded",timeout:12000}).catch(()=>{});
+      const co=page.getByRole("button",{name:/check out|checkout/i});
+      if(await co.count().catch(()=>0)) await co.first().click({timeout:4000}).catch(()=>{});
+    }
+
+    await page.waitForTimeout(2500);
+    let txt=await pageBody(page,35000);
+
+    const email=page.locator('input[type="email"],input[name*="email" i],input[autocomplete="email"]').first();
+    if(await email.count().catch(()=>0)) await email.fill("jlc3718@gmail.com").catch(()=>{});
+
+    const first=page.locator('input[name*="first" i],input[autocomplete="given-name"]').first();
+    if(await first.count().catch(()=>0)) await first.fill("Jason").catch(()=>{});
+    const last=page.locator('input[name*="last" i],input[autocomplete="family-name"]').first();
+    if(await last.count().catch(()=>0)) await last.fill("Craumer").catch(()=>{});
+
+    const requiredUnknown=[];
+    const reqInputs=page.locator('input[required],select[required],textarea[required]');
+    const rc=await reqInputs.count().catch(()=>0);
+    for(let i=0;i<Math.min(rc,40);i++){
+      const el=reqInputs.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const val=await el.inputValue().catch(()=>"");
+      if(val) continue;
+      const nm=(await el.getAttribute("name").catch(()=>null))||"";
+      const ac=(await el.getAttribute("autocomplete").catch(()=>null))||"";
+      const ph=(await el.getAttribute("placeholder").catch(()=>null))||"";
+      const lab=(await el.getAttribute("aria-label").catch(()=>null))||"";
+      const desc=(nm+" "+ac+" "+ph+" "+lab).trim();
+      if(/email|first|given|last|family/i.test(desc)) continue;
+      requiredUnknown.push(desc||"required field");
+    }
+
+    if(requiredUnknown.length){
+      return {task:"housework_challenge",status:"blocked_missing_required_fields",url:page.url(),required_fields:[...new Set(requiredUnknown)].slice(0,20)};
+    }
+
+    const submit=page.getByRole("button",{name:/complete order|pay now|submit order|place order|download|continue/i});
+    const sc=await submit.count().catch(()=>0);
+    let clicked=false;
+    for(let i=0;i<Math.min(sc,15);i++){
+      const b=submit.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      const label=cleanText(await b.innerText().catch(()=>""),180);
+      if(/continue to (shipping|payment)/i.test(label)) continue;
+      try{await b.click({timeout:4000});clicked=true;break;}catch{}
+    }
+    if(clicked) await page.waitForTimeout(3000);
+    txt=await pageBody(page,30000);
+    const ok=/(thank you|order is confirmed|download|your order|confirmation)/i.test(txt) &&
+             !/(required|please enter|invalid)/i.test(txt);
+    return {
+      task:"housework_challenge",
+      status:ok?"submitted":"submitted_unconfirmed",
+      url:page.url(),
+      confirmation:txt.match(/.{0,100}(thank you|order is confirmed|download|confirmation).{0,180}/i)?.[0]||null
+    };
+  } finally { await page.close().catch(()=>{}); }
+}
+
+async function dreameAeroGiveawayWithContext(context) {
+  const page=await context.newPage();
+  try{
+    await goto(page,"https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245");
+    await page.waitForTimeout(2200);
+    let body=await pageBody(page,30000);
+
+    if(/log in|sign in/i.test(body) && !/(reply|post reply|quick reply)/i.test(body)){
+      return {task:"dreame_aero_giveaway",status:"login_required",url:page.url()};
+    }
+
+    const entryText="The Dreame Aero Wet Dry Vacuum is on my fall wishlist. I already use Dreame robot cleaning at home, and a wet/dry vacuum would make quick cleanup of tracked-in dirt and spills much easier without pulling out a separate vacuum and mop.";
+
+    const editors=[
+      page.locator('textarea[name="message"]'),
+      page.locator('textarea[id*="message"]'),
+      page.locator('textarea'),
+      page.locator('[contenteditable="true"]')
+    ];
+    let editor=null;
+    for(const loc of editors){
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,8);i++){
+        const e=loc.nth(i);
+        if(await e.isVisible().catch(()=>false)){editor=e;break;}
+      }
+      if(editor) break;
+    }
+    if(!editor) return {task:"dreame_aero_giveaway",status:"reply_editor_not_found",url:page.url()};
+
+    const tag=await editor.evaluate(e=>e.tagName).catch(()=>"");
+    if(tag==="TEXTAREA"||tag==="INPUT") await editor.fill(entryText);
+    else await editor.fill(entryText).catch(async()=>{await editor.click();await page.keyboard.type(entryText);});
+
+    const submitters=[
+      page.getByRole("button",{name:/reply|post|submit/i}),
+      page.locator('button[type="submit"],input[type="submit"]')
+    ];
+    let clicked=false;
+    for(const loc of submitters){
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,12);i++){
+        const b=loc.nth(i);
+        if(!(await b.isVisible().catch(()=>false))) continue;
+        const label=cleanText((await b.innerText().catch(()=>''))||(await b.getAttribute("value").catch(()=>'')),140);
+        if(!/(reply|post|submit)/i.test(label)) continue;
+        try{await b.click({timeout:4000});clicked=true;break;}catch{}
+      }
+      if(clicked) break;
+    }
+    if(!clicked) return {task:"dreame_aero_giveaway",status:"submit_control_not_found",url:page.url()};
+    await page.waitForTimeout(3000);
+    body=await pageBody(page,30000);
+    const found=body.includes("The Dreame Aero Wet Dry Vacuum is on my fall wishlist");
+    return {task:"dreame_aero_giveaway",status:found?"submitted":"submitted_unconfirmed",url:page.url()};
+  } finally { await page.close().catch(()=>{}); }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -1063,6 +1199,8 @@ async function taskWithContext(context, task) {
   if (task === "roborock_google_login_and_spin") return await roborockGoogleLoginAndSpinWithContext(context);
   if (task === "roborock_wheel_diag") return await roborockWheelDiagWithContext(context);
   if (task === "instagram_brand_scan") return await instagramBrandScanWithContext(context);
+  if (task === "housework_challenge") return await houseworkChallengeEntryWithContext(context);
+  if (task === "dreame_aero_giveaway") return await dreameAeroGiveawayWithContext(context);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -1073,7 +1211,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "housework_challenge" || task === "dreame_aero_giveaway" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -1082,7 +1220,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "housework_challenge", "dreame_aero_giveaway"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
