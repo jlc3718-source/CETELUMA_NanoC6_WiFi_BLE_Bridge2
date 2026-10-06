@@ -1,4 +1,12 @@
 {
-  "id": "reolink-retry-20261006",
-  "task": "reolink_subscribe"
+  "id": "multi-login-daily-20261006",
+  "task": "login_start",
+  "profile": "daily",
+  "urls": [
+    "https://account-us.roborock.com/",
+    "https://www.anker-jml.com/",
+    "https://www.eufy.com/app_primeday",
+    "https://www.bluettipower.com/pages/prime-day/",
+    "https://www.instagram.com/"
+  ]
 }
