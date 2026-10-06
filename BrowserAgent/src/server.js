@@ -370,18 +370,67 @@ async function wyzeSurveyProbeWithContext(context) {
   try {
     await goto(page, "https://forms.gle/HwgTL8mbuzHoFAPS8");
     await page.waitForTimeout(2200);
-    const body = await pageBody(page, 40000);
+    let body = await pageBody(page, 40000);
     if (/you've already responded|already submitted|response has been recorded/i.test(body)) {
       return { task: "wyze_survey", status: "already_submitted", url: page.url() };
     }
-    const questions = await page.locator('[role="listitem"]').evaluateAll((els) => els.map(el => {
-      const text = (el.innerText || "").replace(/\s+/g," ").trim();
-      const radios = [...el.querySelectorAll('[role="radio"]')].map(x => (x.getAttribute("data-value") || x.getAttribute("aria-label") || x.textContent || "").trim()).filter(Boolean);
-      const checks = [...el.querySelectorAll('[role="checkbox"]')].map(x => (x.getAttribute("data-answer-value") || x.getAttribute("aria-label") || x.textContent || "").trim()).filter(Boolean);
-      const inputs = [...el.querySelectorAll('input,textarea')].map(x => ({type:x.type||x.tagName.toLowerCase(), name:x.getAttribute("aria-label")||x.getAttribute("placeholder")||""}));
-      return { text: text.slice(0,1200), radios, checks, inputs };
-    }).filter(q => q.text).slice(0,40)).catch(() => []);
-    return { task: "wyze_survey", status: "needs_answers", url: page.url(), questions };
+
+    const blocks = page.locator('[role="listitem"]');
+    async function block(prefix) {
+      const c = blocks.filter({ hasText: prefix });
+      const n = await c.count().catch(() => 0);
+      for (let i = 0; i < n; i++) {
+        const t = cleanText(await c.nth(i).innerText().catch(() => ""), 1400);
+        if (t.startsWith(prefix) || t.includes(prefix)) return c.nth(i);
+      }
+      return c.first();
+    }
+    async function radio(prefix, label) {
+      const q = await block(prefix);
+      const r = q.getByRole("radio", { name: label, exact: true });
+      await r.first().click({ timeout: 4000 });
+    }
+    async function check(prefix, labels) {
+      const q = await block(prefix);
+      for (const label of labels) {
+        const c = q.getByRole("checkbox", { name: label, exact: true });
+        if (await c.count().catch(() => 0)) await c.first().click({ timeout: 3000 });
+      }
+    }
+    async function fill(prefix, value) {
+      const q = await block(prefix);
+      const input = q.locator('input[type="text"],textarea').first();
+      await input.fill(value);
+    }
+
+    await check("1.", ["Driveway / Garage", "Backyard", "Front door / Porch"]);
+    await radio("2.", "Not sure");
+    await fill("3.", "I’m evaluating an outdoor setup focused on driveway/garage, backyard, and front door coverage, with strong night visibility and useful local smart detection.");
+    await radio("4.", "Somewhat prefer seeing finer details");
+    await radio("5.", "Strongly prefer a tracking view follow person/vehicle as they move");
+    await radio("6.", "D");
+    await radio("7.", "Fixed wide view + tracking Pan/Tilt close-up view");
+    await radio("8.", "A - The wide view stays fixed on the area, while the close-up view shifts to track activity");
+    await radio("9.", "C");
+    await radio("10.", "B");
+    await radio("11.", "Fixed wide view + moving close-up view - $119");
+    await radio("12.", "The added features are worth the extra cost");
+    await fill("Any additional things", "Local recording, reliable person/vehicle detection without a required subscription, RTSP or Home Assistant support, strong night image quality, and fast notifications matter most to me.");
+    await fill("Please enter your Name & Email", "Jason Craumer - jlc3718@gmail.com");
+
+    const submit = page.getByRole("button", { name: /^Submit$/i });
+    await submit.first().click({ timeout: 5000 });
+    await page.waitForTimeout(3000);
+    body = await pageBody(page, 15000);
+    const ok = /response has been recorded|thank you|submitted/i.test(body);
+    return {
+      task: "wyze_survey",
+      status: ok ? "submitted" : "submitted_unconfirmed",
+      url: page.url(),
+      confirmation: body.match(/.{0,100}(response has been recorded|thank you|submitted).{0,160}/i)?.[0] || null
+    };
+  } catch (err) {
+    return { task: "wyze_survey", status: "blocked", error: String(err) };
   } finally {
     await page.close().catch(() => {});
   }
