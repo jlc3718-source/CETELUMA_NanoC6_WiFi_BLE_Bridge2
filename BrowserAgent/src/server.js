@@ -662,6 +662,115 @@ async function instagramDiagWithContext(context) {
   }
 }
 
+async function roborockGoogleLoginAndSpinWithContext(context) {
+  const page = await context.newPage();
+  try {
+    await goto(page, "https://account-us.roborock.com/login?service=https://us.roborock.com/pages/points");
+    await page.waitForTimeout(1800);
+
+    // Required privacy/user-agreement checkbox if present.
+    const checks = page.locator('input[type="checkbox"],[role="checkbox"]');
+    const cc = await checks.count().catch(()=>0);
+    for (let i=0;i<Math.min(cc,6);i++) {
+      const c=checks.nth(i);
+      if (!(await c.isVisible().catch(()=>false))) continue;
+      const checked=await c.isChecked().catch(()=>false);
+      if (!checked) await c.check().catch(async()=>{await c.click().catch(()=>{});});
+    }
+
+    const google = page.getByRole("button",{name:/sign in with google|continue with google|google/i});
+    const gc = await google.count().catch(()=>0);
+    let popup=null;
+    let clicked=false;
+    for(let i=0;i<Math.min(gc,8);i++) {
+      const b=google.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      try {
+        const popupPromise=context.waitForEvent("page",{timeout:5000}).catch(()=>null);
+        await b.click({timeout:3500});
+        popup=await popupPromise;
+        clicked=true;
+        break;
+      } catch {}
+    }
+    if(!clicked) return {task:"roborock_google_login_and_spin",status:"google_button_not_found",url:page.url()};
+
+    const authPage=popup || page;
+    await authPage.waitForTimeout(1800).catch(()=>{});
+    let authBody=cleanText(await authPage.locator("body").innerText().catch(()=>""),20000);
+
+    // If an account chooser appears, select the user's known Google account.
+    const account = authPage.getByText(/jlc3718@gmail\.com/i);
+    if(await account.count().catch(()=>0)) {
+      const a=account.first();
+      if(await a.isVisible().catch(()=>false)) {
+        await a.click({timeout:3500}).catch(()=>{});
+        await authPage.waitForTimeout(1800).catch(()=>{});
+        authBody=cleanText(await authPage.locator("body").innerText().catch(()=>""),20000);
+      }
+    }
+
+    // Do not attempt passwords, passkeys, CAPTCHA or 2FA.
+    if (/(enter your password|verify it's you|2-step verification|captcha|passkey|security key|check your phone|enter code)/i.test(authBody)) {
+      return {task:"roborock_google_login_and_spin",status:"human_google_verification_required",url:authPage.url()};
+    }
+
+    // Allow OAuth redirect to complete.
+    await Promise.race([
+      page.waitForURL(/us\.roborock\.com/, {timeout:12000}).catch(()=>{}),
+      popup ? popup.waitForEvent("close",{timeout:12000}).catch(()=>{}) : Promise.resolve()
+    ]);
+    await page.waitForTimeout(1800);
+
+    // Navigate explicitly to points center, then reuse the authorized one-spin logic.
+    await goto(page,"https://us.roborock.com/pages/points");
+    let body=await pageBody(page,30000);
+    if(/account-us\.roborock\.com\/login/i.test(page.url()) || (/log in|sign in/i.test(body) && /roborock/i.test(body))) {
+      return {task:"roborock_google_login_and_spin",status:"login_not_persisted",url:page.url()};
+    }
+
+    const candidates=page.getByText(/lucky|spin|draw/i);
+    const count=await candidates.count().catch(()=>0);
+    let clickedEntry=false;
+    for(let i=0;i<Math.min(count,20);i++) {
+      const el=candidates.nth(i);
+      if(await el.isVisible().catch(()=>false)) {
+        try { await el.click({timeout:2500}); clickedEntry=true; await page.waitForTimeout(1200); break; } catch {}
+      }
+    }
+
+    // Look broadly for the actual spin control, but never click purchase/redeem controls other than the authorized 100-point Lucky Spin.
+    const buttons=page.locator('button,[role="button"],a,div');
+    const bc=await buttons.count().catch(()=>0);
+    let spun=false;
+    let clickedText=null;
+    for(let i=0;i<Math.min(bc,400);i++) {
+      const b=buttons.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      const txt=cleanText(await b.innerText().catch(()=>""),160);
+      if(!/(spin|lucky|draw|go|start)/i.test(txt)) continue;
+      const parent=cleanText(await b.locator("xpath=..").innerText().catch(()=>""),900);
+      if(/purchase|buy now|checkout/i.test(parent)) continue;
+      if(!/(100\s*(points?|pts)|lucky\s*spin|spin)/i.test(parent+" "+txt)) continue;
+      try { await b.click({timeout:2500}); spun=true; clickedText=txt; break; } catch {}
+    }
+
+    if(!spun) {
+      const snippets=body.split(/(?<=[.!?])\s+|\n+/).map(x=>cleanText(x,400))
+        .filter(x=>/(lucky|spin|draw|points|prize)/i.test(x)).slice(0,30);
+      return {task:"roborock_google_login_and_spin",status:"spin_control_not_found",clicked_entry:clickedEntry,url:page.url(),snippets};
+    }
+
+    await page.waitForTimeout(5000);
+    body=await pageBody(page,30000);
+    const lines=body.split(/\n+/).map(x=>cleanText(x,300))
+      .filter(x=>/(congrat|won|winner|prize|points|coupon|sorry|better luck|spin)/i.test(x)).slice(0,20);
+    return {task:"roborock_google_login_and_spin",status:"spin_attempted",clicked_entry:clickedEntry,clicked_control:clickedText,url:page.url(),result_lines:lines};
+  } finally {
+    await page.close().catch(()=>{});
+  }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -672,6 +781,7 @@ async function taskWithContext(context, task) {
   if (["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) return await diagnosticsWithContext(context, task);
   if (task === "eufy_login_and_spin") return await eufyLoginAndSpinWithContext(context);
   if (task === "instagram_diag") return await instagramDiagWithContext(context);
+  if (task === "roborock_google_login_and_spin") return await roborockGoogleLoginAndSpinWithContext(context);
   throw new Error("Unsupported context task: " + task);
 }
 
@@ -682,7 +792,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || ["roborock_diag","eufy_diag","bluetti_diag"].includes(task)) {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -691,7 +801,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.browser || loginState.tunnel) await stopLogin();
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
