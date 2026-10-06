@@ -8,6 +8,7 @@ services:
       PORT: "8932"
       DATA_DIR: "/data"
       DISPLAY: ":99"
+      LOGIN_PASSWORD_SHA256: "e11f0e4893b2b0dbee01addc4ba6eacf2b701c755b2d3791d481acb0935a1d4e"
     volumes:
       - /home/ubuntu/browser-agent-data:/data
     ports:
