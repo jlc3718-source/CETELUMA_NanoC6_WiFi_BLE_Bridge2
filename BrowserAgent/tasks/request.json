@@ -1,8 +1,4 @@
 {
-  "id": "new-floorcare-entries-20261006",
-  "task": "batch",
-  "tasks": [
-    "housework_challenge",
-    "dreame_aero_giveaway"
-  ]
+  "id": "mova-wheel-diag-20261006",
+  "task": "mova_diag"
 }
