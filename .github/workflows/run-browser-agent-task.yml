@@ -1,0 +1,52 @@
+name: Run Oracle Browser Task
+
+on:
+  push:
+    branches: [jason-home-cloudflare-rebuild]
+    paths:
+      - 'BrowserAgent/tasks/request.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-browser-agent-task
+  cancel-in-progress: false
+
+jobs:
+  run-task:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: jason-home-cloudflare-rebuild
+
+      - name: Wait for local browser agent
+        run: |
+          set -e
+          for i in $(seq 1 45); do
+            curl -fsS http://127.0.0.1:8932/health >/dev/null && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Run sanitized task
+        run: |
+          set -euo pipefail
+          mkdir -p BrowserAgent/results
+          curl -fsS \
+            -H 'Content-Type: application/json' \
+            --data-binary @BrowserAgent/tasks/request.json \
+            http://127.0.0.1:8932/run \
+            > BrowserAgent/results/latest.json
+          python3 -m json.tool BrowserAgent/results/latest.json
+
+      - name: Publish sanitized result
+        run: |
+          set -euo pipefail
+          git config user.name "Oracle Browser Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add BrowserAgent/results/latest.json
+          git commit -m "browser-agent: publish task result [skip ci]" || exit 0
+          git push origin HEAD:jason-home-cloudflare-rebuild
