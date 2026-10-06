@@ -252,47 +252,59 @@ async function pageBody(page, max = 30000) {
 async function reolinkSubscribeWithContext(context) {
   const page = await context.newPage();
   try {
-    await goto(page, "https://reolink.com/lp/reolink-day/");
-    await page.waitForTimeout(1800);
-    const bodyBefore = await pageBody(page);
-    const email = page.locator('input[type="email"]').first();
-    if (!(await email.count().catch(() => 0))) {
-      return { task: "reolink_subscribe", status: "email_field_not_found", url: page.url() };
+    await goto(page, "https://reolink.club/reolinkday-com");
+    await page.waitForTimeout(2600);
+
+    const scopes = [page, ...page.frames().filter(f => f !== page.mainFrame())];
+    let scope = null;
+    let email = null;
+    for (const sc of scopes) {
+      const candidates = sc.locator('input[type="email"], input[placeholder*="email" i], input[name*="email" i]');
+      if (await candidates.count().catch(() => 0)) {
+        const c = candidates.first();
+        if (await c.isVisible().catch(() => false)) { scope = sc; email = c; break; }
+      }
     }
+    if (!email) {
+      return { task: "reolink_subscribe", status: "email_field_not_found", url: page.url(), title: await page.title().catch(() => "") };
+    }
+
     await email.fill("jlc3718@gmail.com");
-    const checks = page.locator('input[type="checkbox"]');
+
+    const checks = scope.locator('input[type="checkbox"], [role="checkbox"]');
     const cc = await checks.count().catch(() => 0);
-    for (let i = 0; i < Math.min(cc, 6); i++) {
+    for (let i = 0; i < Math.min(cc, 8); i++) {
       const c = checks.nth(i);
-      if (await c.isVisible().catch(() => false) && !(await c.isChecked().catch(() => false))) {
-        await c.check().catch(() => {});
+      if (!(await c.isVisible().catch(() => false))) continue;
+      const checked = await c.isChecked().catch(() => false);
+      if (!checked) {
+        await c.check().catch(async () => { await c.click().catch(() => {}); });
       }
     }
-    const buttons = page.getByRole("button", { name: /subscribe|enter|sign up|join/i });
-    const bc = await buttons.count().catch(() => 0);
+
+    const submitters = scope.locator('button, input[type="submit"]');
+    const scount = await submitters.count().catch(() => 0);
     let clicked = false;
-    for (let i = 0; i < Math.min(bc, 12); i++) {
-      const b = buttons.nth(i);
-      if (await b.isVisible().catch(() => false)) {
-        try { await b.click({ timeout: 3000 }); clicked = true; break; } catch {}
-      }
+    for (let i = 0; i < Math.min(scount, 30); i++) {
+      const b = submitters.nth(i);
+      if (!(await b.isVisible().catch(() => false))) continue;
+      const txt = cleanText((await b.innerText().catch(() => "")) || (await b.getAttribute("value").catch(() => "")), 200);
+      if (!/(subscribe|enter|sign up|join|submit)/i.test(txt)) continue;
+      try { await b.click({ timeout: 3500 }); clicked = true; break; } catch {}
     }
-    if (!clicked) {
-      const submit = page.locator('button[type="submit"],input[type="submit"]').first();
-      if (await submit.count().catch(() => 0)) {
-        try { await submit.click({ timeout: 3000 }); clicked = true; } catch {}
-      }
-    }
-    await page.waitForTimeout(2500);
-    const body = await pageBody(page);
-    const success = /(thank|success|subscribed|already subscribed|entered|you're in|you are in)/i.test(body) &&
+    if (!clicked) return { task: "reolink_subscribe", status: "submit_control_not_found", url: page.url() };
+
+    await page.waitForTimeout(3500);
+    const texts = [];
+    for (const sc of scopes) texts.push(cleanText(await sc.locator("body").innerText().catch(() => ""), 12000));
+    const body = texts.join(" ");
+    const success = /(thank|success|subscribed|already subscribed|entered|you're in|you are in|submission received)/i.test(body) &&
                     !/(invalid email|required field|please enter)/i.test(body);
     return {
       task: "reolink_subscribe",
-      status: success ? "submitted_or_already_subscribed" : (clicked ? "submitted_unconfirmed" : "submit_control_not_found"),
+      status: success ? "submitted_or_already_subscribed" : "submitted_unconfirmed",
       url: page.url(),
-      confirmation: body.match(/.{0,80}(thank|success|subscribed|already subscribed|entered|you're in).{0,120}/i)?.[0] || null,
-      page_hint: success ? null : cleanText(bodyBefore, 2500)
+      confirmation: body.match(/.{0,90}(thank|success|subscribed|already subscribed|entered|you're in|submission received).{0,160}/i)?.[0] || null
     };
   } finally {
     await page.close().catch(() => {});
