@@ -33,6 +33,21 @@ jobs:
           sudo mkdir -p /home/ubuntu/browser-agent-data/profiles /home/ubuntu/browser-agent-data/logs
           sudo chown -R ubuntu:ubuntu /home/ubuntu/browser-agent-data
 
+      - name: Prepare Oracle-only eufy browser credentials
+        run: |
+          set -euo pipefail
+          SRC=/home/ubuntu/repo/JasonHomeServer/.env
+          DEST=/home/ubuntu/browser-agent-data/eufy-login.env
+          test -s "$SRC"
+          EMAIL="$(sudo sed -n 's/^EUFY_EMAIL=//p' "$SRC" | head -n1)"
+          PASS="$(sudo sed -n 's/^EUFY_PASSWORD=//p' "$SRC" | head -n1)"
+          test -n "$EMAIL"
+          test -n "$PASS"
+          umask 077
+          printf 'EUFY_EMAIL=%s\nEUFY_PASSWORD=%s\n' "$EMAIL" "$PASS" | sudo tee "$DEST" >/dev/null
+          sudo chown ubuntu:ubuntu "$DEST"
+          sudo chmod 600 "$DEST"
+
       - name: Build and start browser agent
         working-directory: BrowserAgent
         run: |
