@@ -37,8 +37,10 @@ jobs:
         run: |
           set -euo pipefail
           SRC=/home/ubuntu/repo/JasonHomeServer/.env
-          DEST=/home/ubuntu/browser-agent-data/eufy-login.env
+          DEST=/home/ubuntu/browser-agent-data/secrets/eufy-login.env
           test -s "$SRC"
+          sudo rm -rf /home/ubuntu/browser-agent-data/eufy-login.env
+          sudo mkdir -p /home/ubuntu/browser-agent-data/secrets
           EMAIL="$(sudo sed -n 's/^EUFY_EMAIL=//p' "$SRC" | head -n1)"
           PASS="$(sudo sed -n 's/^EUFY_PASSWORD=//p' "$SRC" | head -n1)"
           test -n "$EMAIL"
