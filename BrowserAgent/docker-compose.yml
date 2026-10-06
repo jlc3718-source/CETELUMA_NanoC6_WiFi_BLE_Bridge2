@@ -11,5 +11,6 @@ services:
       LOGIN_PASSWORD_SHA256: "080bf176a72d105681656ff5e16783e6a60c1fe531a4f3b2e1e7010781534424"
     volumes:
       - /home/ubuntu/browser-agent-data:/data
+      - /home/ubuntu/browser-agent-data/eufy-login.env:/run/secrets/eufy-login.env:ro
     ports:
       - "127.0.0.1:8932:8932"
