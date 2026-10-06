@@ -1,11 +1,12 @@
 {
-  "id": "entry-paths-current-blockers-20261006",
-  "task": "batch",
-  "tasks": [
-    "dreame_entry_path",
-    "eufy_deep_entry",
-    "bluetti_robust_entry",
-    "mova_direct_entry",
-    "reolink_day_entry"
+  "id": "blocked-entry-handoff-20261006b",
+  "task": "login_start",
+  "profile": "daily",
+  "urls": [
+    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245",
+    "https://shop.housework.com/collections/free-downloads",
+    "https://us.mova.tech/pages/mova-prime-day-sale",
+    "https://www.eufy.com/app_primeday",
+    "https://www.bluettipower.com/pages/prime-day/"
   ]
 }
