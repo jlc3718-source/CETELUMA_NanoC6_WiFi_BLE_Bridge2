@@ -1,5 +1,5 @@
 {
-  "id": "run-daily-housework-mova-navimow-20261007",
+  "id": "run-daily-housework-mova-navimow-20261007-r2",
   "task": "batch",
   "lane_timeout_ms": 45000,
   "tasks": [
