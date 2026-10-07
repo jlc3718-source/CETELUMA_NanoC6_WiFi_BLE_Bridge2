@@ -1,0 +1,53 @@
+try", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag", "husqvarna_450x_entry", "powernation_entry"].includes(String(t)));
+    const context = await launchProfile("daily");
+    try {
+      const requestedTimeout = Number(job.lane_timeout_ms || 50000);
+      const laneTimeoutMs = Math.max(10000, Math.min(55000, Number.isFinite(requestedTimeout) ? requestedTimeout : 50000));
+      const runLane = (t) => Promise.race([
+        taskWithContext(context, t),
+        new Promise(resolve => setTimeout(() => resolve({
+          task: String(t),
+          status: "timeout_skipped",
+          timeout_ms: laneTimeoutMs
+        }), laneTimeoutMs))
+      ]);
+      const settled = await Promise.allSettled(allowed.map(t => runLane(t)));
+      return {
+        task: "batch",
+        parallel: true,
+        shared_profile: "daily",
+        lane_timeout_ms: laneTimeoutMs,
+        results: settled.map((r, i) => r.status === "fulfilled"
+          ? { task: allowed[i], ok: true, result: r.value }
+          : { task: allowed[i], ok: false, error: String(r.reason) })
+      };
+    } finally {
+      await context.close().catch(() => {});
+    }
+  }
+  throw new Error("Unsupported task: " + task);
+}
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "oracle-browser-agent", login_active: Boolean(loginState.browser), time: new Date().toISOString() });
+});
+
+app.post("/run", async (req, res) => {
+  const job = req.body || {};
+  const id = String(job.id || "job");
+  const started = new Date().toISOString();
+  const execute = async () => {
+    try {
+      const result = await runTask(job);
+      return { id, ok: true, started, finished: new Date().toISOString(), result };
+    } catch (err) {
+      return { id, ok: false, started, finished: new Date().toISOString(), error: String(err && err.stack || err) };
+    }
+  };
+  const p = queue.then(execute, execute);
+  queue = p.then(() => undefined, () => undefined);
+  res.json(await p);
+});
+
+app.listen(PORT, "0.0.0.0", () => console.log(`oracle-browser-agent listening on ${PORT}`));
+
