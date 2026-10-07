@@ -150,17 +150,26 @@ async function startLogin(job) {
   fs.mkdirSync(userDataDir, { recursive: true });
   clearStaleChromiumProfileLocks(userDataDir);
 
-  const browser = spawn(CHROME, [
+  const chromeArgs = [
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--no-first-run",
     "--no-default-browser-check",
-    "--window-size=700,1180",
-    "--window-position=10,40",
-    "--force-device-scale-factor=1.25",
-    `--user-data-dir=${userDataDir}`,
-    ...targets
-  ], { env: { ...process.env, DISPLAY: LOGIN_DISPLAY }, stdio: ["ignore", "ignore", "pipe"] });
+    "--window-size=470,860",
+    "--window-position=5,20",
+    "--force-device-scale-factor=1.0",
+    "--touch-events=enabled",
+    "--enable-features=OverlayScrollbar",
+    `--user-data-dir=${userDataDir}`
+  ];
+  if (targets.length === 1 && /^https?:\/\//i.test(targets[0])) {
+    // App mode removes tabs/address bar so the phone screen is almost entirely the website.
+    chromeArgs.push(`--app=${targets[0]}`);
+  } else {
+    chromeArgs.push(...targets);
+  }
+
+  const browser = spawn(CHROME, chromeArgs, { env: { ...process.env, DISPLAY: LOGIN_DISPLAY }, stdio: ["ignore", "ignore", "pipe"] });
 
   const tunnel = spawn("/usr/local/bin/cloudflared", [
     "tunnel", "--url", "http://127.0.0.1:6081", "--no-autoupdate"
@@ -176,7 +185,7 @@ async function startLogin(job) {
       const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
       if (m) {
         clearTimeout(timer);
-        resolve(m[0] + "/vnc_lite.html?autoconnect=1&resize=scale&view_only=0&quality=9&compression=4&show_dot=true");
+        resolve(m[0] + "/vnc.html?autoconnect=1&resize=scale&view_only=0&quality=9&compression=4&show_dot=true&shared=1");
       }
     };
     tunnel.stdout.on("data", onData);
