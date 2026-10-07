@@ -1,8 +1,4 @@
 {
-  "id": "dreame-direct-control-panzoom-20261006",
-  "task": "login_start",
-  "profile": "daily",
-  "urls": [
-    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245"
-  ]
+  "id": "close-manual-screen-20261006",
+  "task": "login_stop"
 }
