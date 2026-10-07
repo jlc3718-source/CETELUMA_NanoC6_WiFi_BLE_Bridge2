@@ -24,13 +24,15 @@ jobs:
           test -n "$CID"
           sudo docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");const re=/app\.(get|post|put|delete|patch)\(\s*["\x27\x60]([^"\x27\x60]+)["\x27\x60]/g;let m;while((m=re.exec(s)))console.log(m[1].toUpperCase()+" "+m[2]);' > .github/oracle-browser-routes.txt
           cat .github/oracle-browser-routes.txt
+          sudo docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");const i=s.indexOf("app.post");const j=s.indexOf("/run",i);const a=Math.max(0,j-1800),b=Math.min(s.length,j+5000);console.log(s.slice(a,b));' | sed -E 's/(token|password|secret|key)([[:space:]]*[:=][[:space:]]*)[^,;}]+/\\1\\2REDACTED/Ig' > .github/oracle-browser-run-schema.txt
+          cat .github/oracle-browser-run-schema.txt
       - name: Publish route list
         shell: bash
         run: |
           set -e
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-browser-routes.txt
+          git add .github/oracle-browser-routes.txt .github/oracle-browser-run-schema.txt
           git commit -m "Publish Oracle Browser Agent route list" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
