@@ -2329,6 +2329,95 @@ async function finishDiagWithContext(context, task) {
   throw new Error("Unknown finish diag task");
 }
 
+async function eufyAltFreeSpinWithContext(context){
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://www.eufy.com/landingpage_app_test");
+    await page.waitForTimeout(2500);
+    let body=await pageBody(page,45000);
+    if(!/100%\s*Chance to Win/i.test(body)) return {task:"eufy_alt_free_spin",status:"draw_not_found",url:page.url()};
+    const before=body.match(/Entries Left:\s*([0-9-]+)/i)?.[1]||null;
+    const credits=body.match(/EufyCredits:\s*([0-9-]+)/i)?.[1]||null;
+
+    const exact=page.getByText(/^GO$/i,{exact:true});
+    const n=await exact.count().catch(()=>0);
+    let clicked=false;
+    for(let i=0;i<Math.min(n,20);i++){
+      const el=exact.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const parentTxt=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),600);
+      if(/Redeem|200\s*eufyCredits|Reedem/i.test(parentTxt)) continue;
+      try{await el.scrollIntoViewIfNeeded().catch(()=>{});await el.click({timeout:3500,force:true});clicked=true;break;}catch{}
+    }
+    if(!clicked) return {task:"eufy_alt_free_spin",status:"go_control_not_clickable",entries_left:before,eufy_credits:credits,url:page.url()};
+    await page.waitForTimeout(5500);
+    body=await pageBody(page,45000);
+    const after=body.match(/Entries Left:\s*([0-9-]+)/i)?.[1]||null;
+    const resultLines=body.split(/\n+/).map(x=>cleanText(x,320)).filter(x=>/(congrat|won|prize|coupon|gift card|credits|better luck|Cam S4|Robot Vacuum E25|Outdoor Lights E22|Month Plus)/i.test(x)).slice(0,30);
+    return {task:"eufy_alt_free_spin",status:"go_clicked",entries_left_before:before,entries_left_after:after,eufy_credits:credits,url:page.url(),result_lines:resultLines};
+  }finally{await page.close().catch(()=>{});}
+}
+
+async function bluettiWheelStateWithContext(context){
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://www.bluettipower.com/pages/prime-day/");
+    await page.waitForTimeout(3500);
+    const id="6ab35678be3169c2d7a45d38";
+    const info=await page.evaluate(async(id)=>{
+      const safe=async(u)=>{try{const r=await fetch(u,{credentials:"include"});return {status:r.status,json:await r.json()};}catch(e){return {error:String(e)}}};
+      return {
+        lottery:await safe("https://api.bluettipower.com/activityapi/lottery/getLotteryInfo/"+id),
+        user:await safe("https://api.bluettipower.com/activityapi/admin/lottery/userInfoAggregation/"+id)
+      };
+    },id).catch(e=>({error:String(e)}));
+
+    const wheel=await page.locator('bluetti-wheel').first().evaluate(e=>({
+      attrs:Object.fromEntries([...e.attributes].map(a=>[a.name,a.value])),
+      text:(e.innerText||e.textContent||"").replace(/\s+/g," ").trim().slice(0,3500)
+    })).catch(()=>null);
+    const btn=await page.locator('[start-lottery]').first().evaluate(e=>({
+      tag:e.tagName,disabled:!!e.disabled,text:(e.innerText||e.textContent||"").replace(/\s+/g," ").trim().slice(0,300),
+      attrs:Object.fromEntries([...e.attributes].map(a=>[a.name,a.value]))
+    })).catch(()=>null);
+
+    const sanitize=(obj)=>{
+      const j=obj?.json?.data ?? obj?.json ?? null;
+      if(!j||typeof j!=="object") return {status:obj?.status||null,error:obj?.error||null};
+      const keys=["status","consumptionType","limitUser","lotteryId","id","totalTimes","surplusTimes","todaySurplusTimes","isLimitDaily","isSubscribe","isNewUser","points","userConsumption","startTime","endTime","activityName","lotteryName"];
+      const out={http_status:obj?.status||null};
+      for(const k of keys) if(k in j) out[k]=j[k];
+      if(j.lottery && typeof j.lottery==="object") for(const k of keys) if(k in j.lottery) out["lottery_"+k]=j.lottery[k];
+      if(j.customer && typeof j.customer==="object") for(const k of keys) if(k in j.customer) out["customer_"+k]=j.customer[k];
+      return out;
+    };
+    return {task:"bluetti_wheel_state",url:page.url(),lottery:sanitize(info.lottery),user:sanitize(info.user),wheel,button:btn};
+  }finally{await page.close().catch(()=>{});}
+}
+
+async function movaRevealDiagWithContext(context){
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://us.mova.tech/pages/mova-prime-day-sale");
+    await page.addScriptTag({url:"https://ext.spinwheelapp.com/external/v1/7bdb4ac5233e8720/spps.js?shop=mova-us.myshopify.com"}).catch(()=>{});
+    await page.waitForTimeout(9000);
+    const body=await pageBody(page,50000);
+    const frames=page.frames().map(f=>({url:f.url(),name:f.name()})).filter(x=>/spin|wheel|promo|app|mova/i.test(x.url));
+    const els=await page.locator('body *').evaluateAll(els=>{
+      const re=/(spin|wheel|prize|enter|email|chance|coupon|win)/i,out=[];
+      for(const e of els){
+        const r=e.getBoundingClientRect(),txt=(e.innerText||e.textContent||"").replace(/\s+/g," ").trim();
+        const attrs=[e.id,typeof e.className==="string"?e.className:"",...[...e.attributes].map(a=>a.name+"="+a.value)].join(" ");
+        if(!(r.width>0&&r.height>0)||!re.test(txt+" "+attrs)) continue;
+        out.push({tag:e.tagName,id:e.id||"",cls:typeof e.className==="string"?e.className:"",text:txt.slice(0,650),html:e.outerHTML.slice(0,2200)});
+        if(out.length>=100) break;
+      }
+      return out;
+    }).catch(()=>[]);
+    return {task:"mova_reveal_diag",url:page.url(),frames,snippets:body.split(/\n+/).map(x=>cleanText(x,400)).filter(x=>/(spin|wheel|prize|enter|email|chance|coupon|win)/i.test(x)).slice(0,60),elements:els};
+  }finally{await page.close().catch(()=>{});}
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -2350,6 +2439,9 @@ async function taskWithContext(context, task) {
   if (task === "bluetti_robust_entry") return await bluettiRobustEntryWithContext(context);
   if (task === "mova_direct_entry") return await movaDirectEntryWithContext(context);
   if (task === "reolink_day_entry") return await reolinkDayEntryWithContext(context);
+  if (task === "mova_reveal_diag") return await movaRevealDiagWithContext(context);
+  if (task === "bluetti_wheel_state") return await bluettiWheelStateWithContext(context);
+  if (task === "eufy_alt_free_spin") return await eufyAltFreeSpinWithContext(context);
   if (["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task)) return await finishDiagWithContext(context,task);
   if (task === "dreame_auth_diag") return await dreameAuthDiagWithContext(context);
   if (["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task)) return await promoPlumbingDiagWithContext(context,task);
@@ -2367,7 +2459,7 @@ async function runTask(job) {
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -2376,7 +2468,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "reolink_day_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "reolink_day_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
