@@ -33,38 +33,30 @@ jobs:
             hostname
             uname -a
             echo
-            echo "=== LISTENERS ==="
-            ss -ltn 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
+            echo "=== LISTENERS WITH PROCESS ==="
+            sudo ss -ltnp 2>/dev/null | grep -E ':(8931|8932|6080)\b' || ss -ltnp 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
             echo
-            echo "=== 8932 PROCESS ==="
-            PIDS="$(fuser -n tcp 8932 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u || true)"
-            for pid in $PIDS; do
-              echo "PID=$pid"
-              echo "EXE=$(readlink -f /proc/$pid/exe 2>/dev/null || true)"
-              echo "CWD=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
-              printf "CMD="
-              tr '\0' ' ' </proc/$pid/cmdline 2>/dev/null | sed -E 's/(token|password|secret|key)=[^ ]+/\1=REDACTED/Ig' || true
-              echo
-              cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
-              if [ -n "$cwd" ] && [ -d "$cwd" ]; then
-                echo "--- files in $cwd"
-                find "$cwd" -maxdepth 3 -type f 2>/dev/null                   | grep -Ev '/(node_modules|data|profile|\.git)/|\.env$|\.log$'                   | head -300 || true
-                echo "--- route-like source lines"
-                grep -R --line-number --binary-files=without-match                   --exclude='.env' --exclude='*.log' --exclude-dir='node_modules' --exclude-dir='data' --exclude-dir='profile'                   -E "(app\.(get|post|put|delete)|router\.(get|post|put|delete)|createServer|8932|/run|/task|/jobs|/login|profile|browser)"                   "$cwd" 2>/dev/null | head -600 || true
-              fi
+            echo "=== PROCESS CANDIDATES ==="
+            ps -eo pid,ppid,user,args --sort=pid | grep -Ei 'node|playwright|browser-agent|oracle-browser|8932' | grep -v grep | head -200 || true
+            echo
+            echo "=== LSOF 8932 ==="
+            sudo lsof -nP -iTCP:8932 -sTCP:LISTEN 2>/dev/null || lsof -nP -iTCP:8932 -sTCP:LISTEN 2>/dev/null || true
+            echo
+            echo "=== SOURCE FILE CANDIDATES ==="
+            MATCHES="$(find /home/ubuntu /opt -maxdepth 6 -type f -size -3M 2>/dev/null               | grep -Ev '/(node_modules|profile|data|\.git|_work)/|\.env$|\.log$|\.db$|\.sqlite$'               | xargs -r grep -Il -E 'oracle-browser-agent|login_active|127\.0\.0\.1:8932|PORT.?8932' 2>/dev/null               | head -80 || true)"
+            printf '%s\n' "$MATCHES"
+            for f in $MATCHES; do
+              echo "--- FILE: $f"
+              grep -nE 'app\.(get|post|put|delete)|router\.(get|post|put|delete)|/health|/run|/task|/job|/login|profile|login_active|8932|browser' "$f" 2>/dev/null | head -400 || true
             done
             echo
             echo "=== SAFE HTTP PROBES 8932 ==="
-            for p in /health /status /openapi.json /docs /; do
-              echo "--- $p"
-              curl -i -sS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 30000 || true
+            for p in /health /status /openapi.json /docs /routes /api /api/routes /jobs /tasks; do
+              echo "--- GET $p"
+              curl -i -sS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 20000 || true
               echo
-            done
-            echo
-            echo "=== SAFE HTTP PROBES 8931 ==="
-            for p in /health / /mcp; do
-              echo "--- $p"
-              curl -i -sS --max-time 4 "http://127.0.0.1:8931$p" 2>/dev/null | head -c 16000 || true
+              echo "--- OPTIONS $p"
+              curl -i -sS -X OPTIONS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 4000 || true
               echo
             done
           } > "$TMP"
