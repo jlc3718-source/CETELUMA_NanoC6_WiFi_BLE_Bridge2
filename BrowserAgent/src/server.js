@@ -1216,6 +1216,7 @@ async function goveeHalloweenEntryWithContext(context) {
     }
 
     let candidates=[...urls].slice(0,18);
+    let directTarget=null, directTargetText="";
 
     // Instagram sometimes renders an empty profile grid in browser automation.
     // Fall back to its authenticated same-origin web profile endpoint to recover recent shortcodes/captions.
@@ -1271,8 +1272,45 @@ async function goveeHalloweenEntryWithContext(context) {
       }catch{}
     }
 
-    // Public mirror fallback: use it only to recover the exact Instagram post target.
+    // Visual-grid fallback: click visible Instagram thumbnail tiles and inspect opened captions.
     if(!candidates.length){
+      try{
+        await gotoLoose(page,"https://www.instagram.com/goveeofficial/");
+        await page.waitForTimeout(2200);
+        await page.evaluate(()=>window.scrollTo(0,0)).catch(()=>{});
+        await page.waitForTimeout(500);
+        const boxes=await page.locator("main img, article img, img").evaluateAll(els=>{
+          const out=[];
+          for(const e of els){
+            const r=e.getBoundingClientRect();
+            if(r.width<95||r.height<95||r.bottom<140||r.top>760) continue;
+            out.push({x:r.left+r.width/2,y:r.top+r.height/2,w:r.width,h:r.height,alt:(e.getAttribute("alt")||"").slice(0,500)});
+          }
+          const uniq=[];
+          for(const b of out){
+            if(!uniq.some(u=>Math.abs(u.x-b.x)<8&&Math.abs(u.y-b.y)<8)) uniq.push(b);
+          }
+          return uniq.slice(0,15);
+        }).catch(()=>[]);
+        for(const b of boxes){
+          try{
+            await page.mouse.click(b.x,b.y);
+            await page.waitForTimeout(1200);
+            const txt=cleanText(await page.locator("body").innerText().catch(()=>""),24000);
+            if(/Halloween/i.test(txt) && /GoveeOutdoorLights/i.test(txt) && /(Sarah Michelle Gellar|decorating ideas|giveaway)/i.test(txt)){
+              directTarget=page.url();
+              directTargetText=txt;
+              break;
+            }
+            await page.keyboard.press("Escape").catch(()=>{});
+            await page.waitForTimeout(300);
+          }catch{}
+        }
+      }catch{}
+    }
+
+    // Public mirror fallback: use it only to recover the exact Instagram post target.
+    if(!candidates.length && !directTarget){
       try{
         await page.goto("https://jolygram.com/en/profile/goveeofficial/15903547309",{waitUntil:"domcontentloaded",timeout:15000});
         await page.waitForTimeout(1800);
@@ -1297,8 +1335,9 @@ async function goveeHalloweenEntryWithContext(context) {
       await gotoLoose(page,"https://www.instagram.com/goveeofficial/").catch(()=>{});
     }
 
-    let target=null, targetText="";
+    let target=directTarget, targetText=directTargetText;
     for(const u of candidates){
+      if(target) break;
       try{
         await page.goto(u,{waitUntil:"domcontentloaded",timeout:12000});
         await page.waitForTimeout(1200);
