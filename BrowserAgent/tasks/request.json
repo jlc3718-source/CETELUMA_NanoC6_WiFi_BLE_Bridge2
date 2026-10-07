@@ -1,9 +1,9 @@
 {
-  "id": "run-daily-mova-housework-20261007",
+  "id": "run-daily-mova-housework-probe-20261007",
   "task": "batch",
   "lane_timeout_ms": 50000,
   "tasks": [
     "mova_prize_wheel",
-    "housework_complete"
+    "housework_checkout_probe"
   ]
 }
