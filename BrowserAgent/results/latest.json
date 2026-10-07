@@ -1,1 +1,1 @@
-{"id":"run-daily-close-stalled-manual-session-20261007","ok":true,"started":"2026-10-07T05:53:32.201Z","finished":"2026-10-07T05:53:48.665Z","result":{"task":"login_stop","status":"stopped"}}
+{"id":"run-daily-suppress-ineligible-20261007","ok":true,"started":"2026-10-07T05:56:37.697Z","finished":"2026-10-07T05:56:37.702Z","result":{"task":"promo_state_patch","status":"stored","updated":2,"campaign_count":20}}
