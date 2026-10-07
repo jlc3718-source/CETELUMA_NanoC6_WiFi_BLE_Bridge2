@@ -8,45 +8,86 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect:
     runs-on: [self-hosted, oracle, jason-home]
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Inspect local Oracle Browser Agent safely
         shell: bash
         run: |
           set -u
-          echo "=== HOST ==="
-          hostname
-          uname -a
-          echo
-          echo "=== LISTENERS ==="
-          ss -ltn 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
-          echo
-          echo "=== 8932 PROCESS ==="
-          PIDS="$(fuser -n tcp 8932 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u || true)"
-          for pid in $PIDS; do
-            echo "PID=$pid"
-            echo "EXE=$(readlink -f /proc/$pid/exe 2>/dev/null || true)"
-            echo "CWD=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
-            printf "CMD="
-            tr '\0' ' ' </proc/$pid/cmdline 2>/dev/null | sed -E 's/(token|password|secret|key)=[^ ]+/\1=REDACTED/Ig' || true
+          OUT=".github/oracle-browser-inspect-result.txt"
+          TMP="${OUT}.tmp"
+          {
+            echo "=== TIME ==="
+            date -Is
             echo
-            cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
-            if [ -n "$cwd" ] && [ -d "$cwd" ]; then
-              echo "--- files in $cwd"
-              find "$cwd" -maxdepth 2 -type f 2>/dev/null                 | grep -Ev '/(node_modules|data|profile|\.git)/|\.env$|\.log$'                 | head -200 || true
-              echo "--- route-like source lines"
-              grep -R --line-number --binary-files=without-match                 --exclude='.env' --exclude='*.log' --exclude-dir='node_modules' --exclude-dir='data' --exclude-dir='profile'                 -E "(app\.(get|post|put|delete)|router\.(get|post|put|delete)|createServer|8932|/run|/task|/jobs|/login|profile)"                 "$cwd" 2>/dev/null | head -300 || true
+            echo "=== HOST ==="
+            hostname
+            uname -a
+            echo
+            echo "=== LISTENERS ==="
+            ss -ltn 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
+            echo
+            echo "=== 8932 PROCESS ==="
+            PIDS="$(fuser -n tcp 8932 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u || true)"
+            for pid in $PIDS; do
+              echo "PID=$pid"
+              echo "EXE=$(readlink -f /proc/$pid/exe 2>/dev/null || true)"
+              echo "CWD=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
+              printf "CMD="
+              tr '\0' ' ' </proc/$pid/cmdline 2>/dev/null | sed -E 's/(token|password|secret|key)=[^ ]+/\1=REDACTED/Ig' || true
+              echo
+              cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
+              if [ -n "$cwd" ] && [ -d "$cwd" ]; then
+                echo "--- files in $cwd"
+                find "$cwd" -maxdepth 3 -type f 2>/dev/null                   | grep -Ev '/(node_modules|data|profile|\.git)/|\.env$|\.log$'                   | head -300 || true
+                echo "--- route-like source lines"
+                grep -R --line-number --binary-files=without-match                   --exclude='.env' --exclude='*.log' --exclude-dir='node_modules' --exclude-dir='data' --exclude-dir='profile'                   -E "(app\.(get|post|put|delete)|router\.(get|post|put|delete)|createServer|8932|/run|/task|/jobs|/login|profile|browser)"                   "$cwd" 2>/dev/null | head -600 || true
+              fi
+            done
+            echo
+            echo "=== SAFE HTTP PROBES 8932 ==="
+            for p in /health /status /openapi.json /docs /; do
+              echo "--- $p"
+              curl -i -sS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 30000 || true
+              echo
+            done
+            echo
+            echo "=== SAFE HTTP PROBES 8931 ==="
+            for p in /health / /mcp; do
+              echo "--- $p"
+              curl -i -sS --max-time 4 "http://127.0.0.1:8931$p" 2>/dev/null | head -c 16000 || true
+              echo
+            done
+          } > "$TMP"
+
+          sed -E             -e 's/(Authorization: Bearer )[A-Za-z0-9._~+\/-]+/\1REDACTED/Ig'             -e 's/((token|password|secret|api[_-]?key)[\"'\''=: ]+)[^ ,\"'\'']+/\1REDACTED/Ig'             "$TMP" > "$OUT"
+          rm -f "$TMP"
+
+      - name: Publish inspection result
+        shell: bash
+        run: |
+          set -e
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-browser-inspect-result.txt
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Publish Oracle Browser Agent inspection result"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              exit 0
             fi
+            sleep 2
           done
-          echo
-          echo "=== SAFE HTTP PROBES 8932 ==="
-          for p in /health /status /openapi.json /docs /; do
-            echo "--- $p"
-            curl -i -sS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 12000 || true
-            echo
-          done
+          exit 1
