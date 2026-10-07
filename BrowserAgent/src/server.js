@@ -1162,6 +1162,90 @@ async function roborockWheelDiagWithContext(context) {
   }
 }
 
+
+async function goveeHalloweenEntryWithContext(context) {
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://www.instagram.com/goveeofficial/");
+    await page.waitForTimeout(2500);
+    let body=await pageBody(page,20000);
+    if(/log in|sign up/i.test(body) && !/(posts|followers|following)/i.test(body)) {
+      return {task:"govee_halloween_entry",status:"instagram_login_required",url:page.url()};
+    }
+
+    // Gather recent post/reel links from the profile. Scroll to force grid hydration.
+    const urls=new Set();
+    for(let s=0;s<4;s++){
+      const links=await page.locator('a[href*="/p/"],a[href*="/reel/"]').evaluateAll(els=>els.map(a=>a.href)).catch(()=>[]);
+      for(const u of links) if(/instagram\.com\/(p|reel)\//i.test(u)) urls.add(u);
+      await page.mouse.wheel(0,900).catch(()=>{});
+      await page.waitForTimeout(900);
+    }
+
+    const candidates=[...urls].slice(0,18);
+    let target=null, targetText="";
+    for(const u of candidates){
+      try{
+        await page.goto(u,{waitUntil:"domcontentloaded",timeout:12000});
+        await page.waitForTimeout(1200);
+        const txt=cleanText(await page.locator("body").innerText().catch(()=>""),22000);
+        if(/Halloween/i.test(txt) && /GoveeOutdoorLights/i.test(txt) && /(decorating ideas|decorate|spooky|giveaway|win)/i.test(txt)){
+          target=u; targetText=txt; break;
+        }
+      }catch{}
+    }
+
+    if(!target){
+      return {task:"govee_halloween_entry",status:"giveaway_post_not_found",profile:"https://www.instagram.com/goveeofficial/",recent_links:candidates};
+    }
+
+    // Avoid duplicate submission if the exact prepared comment is already visible.
+    const comment="Purple and orange pathway lights with a haunted-house glow, plus animated curtain lights on the porch. @250rskylar #GoveeOutdoorLights";
+    if(targetText.includes(comment)) return {task:"govee_halloween_entry",status:"already_entered",url:target};
+
+    const inputs=[
+      page.locator('textarea[aria-label*="comment" i]'),
+      page.locator('textarea[placeholder*="comment" i]'),
+      page.locator('form textarea'),
+      page.locator('[contenteditable="true"][aria-label*="comment" i]')
+    ];
+    let field=null;
+    for(const loc of inputs){
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,8);i++){
+        const el=loc.nth(i);
+        if(await el.isVisible().catch(()=>false)){field=el;break;}
+      }
+      if(field) break;
+    }
+    if(!field) return {task:"govee_halloween_entry",status:"comment_field_not_found",url:target};
+
+    try{await field.fill(comment);}catch{
+      await field.click().catch(()=>{});
+      await page.keyboard.type(comment,{delay:5}).catch(()=>{});
+    }
+
+    let posted=false;
+    const postBtn=page.getByText(/^Post$/i,{exact:true});
+    const pc=await postBtn.count().catch(()=>0);
+    for(let i=0;i<Math.min(pc,8);i++){
+      const b=postBtn.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      try{await b.click({timeout:3500});posted=true;break;}catch{}
+    }
+    if(!posted){
+      await page.keyboard.press("Enter").catch(()=>{});
+      posted=true;
+    }
+
+    await page.waitForTimeout(2500);
+    const finalText=cleanText(await page.locator("body").innerText().catch(()=>""),26000);
+    const confirmed=finalText.includes(comment) || (finalText.includes("@250rskylar") && /GoveeOutdoorLights/i.test(finalText));
+    return {task:"govee_halloween_entry",status:confirmed?"confirmed":"submitted_unconfirmed",url:target,
+      confirmation:confirmed?comment:null};
+  }finally{await page.close().catch(()=>{});}
+}
+
 async function instagramBrandScanWithContext(context) {
   const handles = [
     "roborockglobal",
@@ -2897,6 +2981,7 @@ async function prepareRestrictedSession(job) {
   const kind=String(job.kind||"");
   const targets={
     reolink:"https://reolink.com/__/lp/reolink-day/",
+    greenlee:"https://www.greenlee.com/us/en",
     gleam_lenovo_monitor:"https://gleam.io/2mt9X/win-a-custom-valheim-lenovo-legion-ultrawide-gaming-monitor",
     gleam_lenovo_chromebook:"https://gleam.io/GUZoP/lenovo-slim-3-chromebook-giveaway"
   };
@@ -3070,6 +3155,7 @@ async function powernationDeepDiagWithContext(context) {
 }
 
 async function taskWithContext(context, task) {
+  if (task === "govee_halloween_entry") return await goveeHalloweenEntryWithContext(context);
   if (task === "powernation_entry") return await powernationEntryWithContext(context);
   if (task === "husqvarna_450x_entry") return await husqvarna450xEntryWithContext(context);
   if (task === "husqvarna_terms_diag") return await husqvarnaTermsDiagWithContext(context);
@@ -3127,6 +3213,11 @@ async function runTask(job) {
     return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
   }
   if (task === "jml_scan") return await jmlScan();
+  if (["govee_halloween_entry"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
   if (["powernation_entry"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
