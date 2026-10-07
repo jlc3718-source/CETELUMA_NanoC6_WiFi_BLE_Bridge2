@@ -1,15 +1,10 @@
 {
-  "id": "run-daily-full-20261007-001",
+  "id": "run-daily-retry-core-20261007-002",
   "task": "batch",
-  "lane_timeout_ms": 45000,
+  "lane_timeout_ms": 50000,
   "tasks": [
-    "jml_scan",
     "roborock_wheel_diag",
     "eufy_alt_free_spin",
-    "bluetti_safe_spin",
-    "instagram_brand_scan",
-    "mova_prize_wheel",
-    "housework_complete",
-    "navimow_round2_check"
+    "bluetti_safe_spin"
   ]
 }
