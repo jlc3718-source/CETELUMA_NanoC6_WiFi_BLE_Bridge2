@@ -363,7 +363,7 @@ async function jmlScanWithContext(context) {
   const page = await context.newPage();
   try {
     await goto(page, "https://www.anker-jml.com/");
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(1100);
     const body = cleanText(await page.locator("body").innerText().catch(() => ""), 30000);
     const loginRequired = /sign in to unlock more testing opportunities/i.test(body);
     const opportunities = await page.locator("a,button").evaluateAll((els) => {
@@ -1419,7 +1419,7 @@ async function instagramBrandScanWithContext(context) {
     const page = await context.newPage();
     try {
       await goto(page, "https://www.instagram.com/" + handle + "/");
-      await page.waitForTimeout(2200);
+      await page.waitForTimeout(1000);
       const profileBody = cleanText(await page.locator("body").innerText().catch(()=>""),18000);
       if (/log in|sign up/i.test(profileBody) && !/(posts|followers|following)/i.test(profileBody)) {
         return {handle,status:"login_required",url:page.url(),hits:[]};
@@ -1448,7 +1448,7 @@ async function instagramBrandScanWithContext(context) {
         if (!keywords.test(txt)) {
           try {
             await page.goto(item.href,{waitUntil:"domcontentloaded",timeout:12000});
-            await page.waitForTimeout(1300);
+            await page.waitForTimeout(650);
             txt=cleanText(await page.locator("body").innerText().catch(()=>""),12000);
           } catch {}
         }
