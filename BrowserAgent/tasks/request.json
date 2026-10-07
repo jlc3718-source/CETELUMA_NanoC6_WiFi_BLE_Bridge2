@@ -1,5 +1,9 @@
 {
-  "id": "vault-store-20261007",
-  "task": "vault_store",
-  "ciphertext_b64": "NgcJINujTqArVxb14ICYKvisHsfNTBH7p3cMrudXsH9T782j45NTcoJhckAEFjMOCiFbvySYaOt7Cq4hTqgDL1gRrAQCyE8BaRvY7mnKkp9f6NGvLJp0+i6n2tV7xVfdMJXNiIysZLbMi1dCIYOsARvxCEFDLH1ZKuqIEYjJBm7mkSenRTsPahNxqSoEMsuv7v3vW5niC/8XJXRV+4LRWD7Tp/EF2trJvxZSAPKVEFv+RBPjvXkyAnc8nCstvnecfqpaRZFMRnJh2/UXEiGaJ0rVPk4s/pzF7ALjsijxRzqYNz7SGm3gOqwQqL5vKrlZqYl1A/wKTZCANDvxe2OKQH3GLZjbrt1kjl+AlKvwM6wGw84MMuQeksaCqCJ0Jwdso5KKygqlCQLj6eYv55jpfBFW07RY/p+zRxt1g9HeGQ1HlW4pHW59PU8Lz9ZzIu9bmCWL2LCVav4usZ8uBcKiSy6U/c4vx5ioe09SRAQCJzd6RBQf/X5Zon0htTIrl3rl"
+  "id": "run-daily-mova-housework-20261007",
+  "task": "batch",
+  "lane_timeout_ms": 50000,
+  "tasks": [
+    "mova_prize_wheel",
+    "housework_complete"
+  ]
 }
