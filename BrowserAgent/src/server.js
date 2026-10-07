@@ -2830,7 +2830,8 @@ async function freshOpportunityDiagWithContext(context, task) {
   } finally { await page.close().catch(()=>{}); }
 }
 
-async function taskWithContext(context, task) {\n  if (["powernation_diag","mammotion_vanguard_diag","husqvarna_450x_diag"].includes(task)) return await freshOpportunityDiagWithContext(context, task);
+async function taskWithContext(context, task) {
+  if (["powernation_diag","mammotion_vanguard_diag","husqvarna_450x_diag"].includes(task)) return await freshOpportunityDiagWithContext(context, task);
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
   if (task === "reolink_subscribe") return await reolinkSubscribeWithContext(context);
