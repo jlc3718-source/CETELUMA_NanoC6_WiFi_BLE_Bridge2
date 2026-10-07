@@ -1,0 +1,80 @@
+name: Oracle Walmart Cart
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oracle-walmart-cart.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cart:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure shopping route is live
+        shell: bash
+        run: |
+          set -e
+          D="docker"
+          if ! docker ps >/dev/null 2>&1; then D="sudo docker"; fi
+          CID="$($D ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          if ! $D exec "$CID" sh -lc "grep -q 'shopping_add_to_cart' /app/src/server.js"; then
+            TMP="$(mktemp)"
+            $D cp "$CID":/app/src/server.js "$TMP"
+            python3 .github/patch_oracle_shopping_click.py "$TMP"
+            $D cp "$TMP" "$CID":/app/src/server.js
+            rm -f "$TMP"
+            $D restart "$CID" >/dev/null
+            for i in $(seq 1 20); do
+              if curl -fsS --max-time 2 http://127.0.0.1:8932/health >/dev/null; then break; fi
+              sleep 1
+            done
+          fi
+
+      - name: Add eligible Walmart items
+        shell: bash
+        run: |
+          set -u
+          OUT=".github/oracle-walmart-cart-result.json"
+          HRAW="$(mktemp)"
+          CRAW="$(mktemp)"
+          curl -sS --max-time 45 -H 'Content-Type: application/json'             -d '{"id":"walmart-hammer","task":"shopping_add_to_cart","url":"https://www.walmart.com/ip/14527158181","latest_arrival":"2026-10-10"}'             http://127.0.0.1:8932/run > "$HRAW" || true
+          curl -sS --max-time 45 -H 'Content-Type: application/json'             -d '{"id":"walmart-cup","task":"shopping_add_to_cart","url":"https://www.walmart.com/ip/568000104","latest_arrival":"2026-10-10"}'             http://127.0.0.1:8932/run > "$CRAW" || true
+          python3 - "$HRAW" "$CRAW" "$OUT" <<'PY'
+import json,sys
+def load(p):
+    try:
+        d=json.load(open(p))
+        r=d.get("result") if isinstance(d,dict) else {}
+        if not isinstance(r,dict): r={}
+        keep=("task","status","url","arrival")
+        return {"id":d.get("id"),"ok":d.get("ok"),"error":d.get("error"),"result":{k:r.get(k) for k in keep if k in r}}
+    except Exception as e:
+        return {"ok":False,"error":"unreadable_result"}
+o={"hammer":load(sys.argv[1]),"cup":load(sys.argv[2])}
+json.dump(o,open(sys.argv[3],"w"),indent=2)
+PY
+          rm -f "$HRAW" "$CRAW"
+
+      - name: Publish cart result
+        shell: bash
+        run: |
+          set -e
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-walmart-cart-result.json
+          git commit -m "Publish Walmart cart result" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 2
+          done
+          exit 1
