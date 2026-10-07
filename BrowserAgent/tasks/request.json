@@ -1,6 +1,6 @@
 {
-  "id": "run-daily-full-from-scratch-20261007",
-  "task": "run_daily_fast",
-  "lane_timeout_ms": 18000,
-  "close_stale_manual": true
+  "id": "run-daily-lenovo-thinkbook-20261007",
+  "task": "generic_form_entry",
+  "url": "https://smbcommunity.lenovo.com/monthly-giveaway-3/na",
+  "submit": true
 }
