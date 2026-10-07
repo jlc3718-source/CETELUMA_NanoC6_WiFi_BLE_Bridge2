@@ -1,4 +1,4 @@
-name: Oracle Daily State Read
+name: Oracle Govee Halloween Entry
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  state:
+  entry:
     runs-on: [self-hosted, oracle, jason-home]
     timeout-minutes: 2
     steps:
@@ -17,23 +17,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read Oracle promo state
+      - name: Attempt Govee Halloween entry
         shell: bash
         run: |
           set -euo pipefail
           RAW="$(mktemp)"
           trap 'rm -f "$RAW"' EXIT
-          curl -sS --fail --max-time 30 -H 'Content-Type: application/json' -d '{"id":"promo-state-read","task":"promo_state_get"}' http://127.0.0.1:8932/run > "$RAW"
-          python3 -c 'import json,re,sys;d=json.load(open(sys.argv[1]));bad=re.compile(r"(address|email|phone|mobile|first.?name|last.?name|full.?name|street|city|state|zip|postal|cookie|token|secret|password|credential|profile.?data|form.?data|payload|html|screenshot|username|user.?name|handle)",re.I);mail=re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",re.I);phone=re.compile(r"\+?1?[ .()\-]*\d{3}[ .()\-]*\d{3}[ .\-]*\d{4}");zrx=re.compile(r"\b\d{5}(?:-\d{4})?\b");scrub=lambda s:zrx.sub("[REDACTED_ZIP]",phone.sub("[REDACTED_PHONE]",mail.sub("[REDACTED_EMAIL]",s.split("?")[0] if s.startswith(("http://","https://")) else s)));walk=None;walk=lambda v:{k:("[REDACTED]" if bad.search(k) else walk(x)) for k,x in v.items()} if isinstance(v,dict) else [walk(x) for x in v[:200]] if isinstance(v,list) else scrub(v) if isinstance(v,str) else v;json.dump(walk(d),open(".github/oracle-promo-state-result.json","w"),indent=2)' "$RAW"
+          curl -sS --fail --max-time 90 -H 'Content-Type: application/json' -d '{"id":"govee-halloween-daily","task":"govee_halloween_entry"}' http://127.0.0.1:8932/run > "$RAW"
+          python3 -c 'import json,re,sys;d=json.load(open(sys.argv[1]));bad=re.compile(r"(address|email|phone|mobile|first.?name|last.?name|full.?name|street|city|state|zip|postal|cookie|token|secret|password|credential|profile.?data|form.?data|payload|html|screenshot|username|user.?name)",re.I);mail=re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",re.I);phone=re.compile(r"\+?1?[ .()\-]*\d{3}[ .()\-]*\d{3}[ .\-]*\d{4}");zrx=re.compile(r"\b\d{5}(?:-\d{4})?\b");scrub=lambda s:zrx.sub("[REDACTED_ZIP]",phone.sub("[REDACTED_PHONE]",mail.sub("[REDACTED_EMAIL]",s.split("?")[0] if s.startswith(("http://","https://")) else s)));walk=None;walk=lambda v:{k:("[REDACTED]" if bad.search(k) else walk(x)) for k,x in v.items()} if isinstance(v,dict) else [walk(x) for x in v[:100]] if isinstance(v,list) else scrub(v) if isinstance(v,str) else v;json.dump(walk(d),open(".github/oracle-govee-halloween-result.json","w"),indent=2)' "$RAW"
 
-      - name: Publish scrubbed promo state
+      - name: Publish scrubbed entry result
         shell: bash
         run: |
           set -e
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-promo-state-result.json
-          git commit -m "Publish scrubbed Oracle promo state" || exit 0
+          git add .github/oracle-govee-halloween-result.json
+          git commit -m "Publish scrubbed Govee Halloween entry result" || exit 0
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin HEAD:main; then exit 0; fi
