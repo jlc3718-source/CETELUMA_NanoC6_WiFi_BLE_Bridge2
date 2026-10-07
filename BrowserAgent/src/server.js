@@ -20,7 +20,7 @@ const LOGIN_DISPLAY = process.env.LOGIN_DISPLAY || ":100";
 fs.mkdirSync(path.join(DATA_DIR, "profiles"), { recursive: true });
 
 let queue = Promise.resolve();
-let loginState = { browser: null, tunnel: null, profile: null, target: null, targets: [], url: null };
+let loginState = { context: null, tunnel: null, profile: null, target: null, targets: [], url: null, activePage: 0 };
 
 function cleanText(s, max = 12000) {
   return String(s || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -48,22 +48,160 @@ function authOk(req) {
   }
 }
 
-const proxy = httpProxy.createProxyServer({ target: "http://127.0.0.1:6080", ws: true });
-const loginProxy = http.createServer((req, res) => {
+
+function activeLoginPage() {
+  if (!loginState.context) return null;
+  const pages = loginState.context.pages().filter(p => !p.isClosed());
+  if (!pages.length) return null;
+  if (loginState.activePage >= pages.length) loginState.activePage = pages.length - 1;
+  return pages[Math.max(0, loginState.activePage)];
+}
+
+async function readJsonBody(req) {
+  return await new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", c => {
+      data += c;
+      if (data.length > 65536) reject(new Error("request too large"));
+    });
+    req.on("end", () => {
+      try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); }
+    });
+    req.on("error", reject);
+  });
+}
+
+const CONTROL_HTML = String.raw\`<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Oracle Browser</title>
+<style>
+  html,body{margin:0;background:#111;color:#fff;font-family:system-ui,sans-serif;height:100%;overflow:hidden}
+  #top{height:48px;display:flex;align-items:center;gap:6px;padding:4px 6px;box-sizing:border-box;background:#1b1b1b}
+  button{font-size:16px;min-height:38px;padding:6px 10px;border-radius:8px;border:0;background:#333;color:#fff}
+  #screenWrap{position:absolute;top:48px;bottom:58px;left:0;right:0;overflow:auto;background:#222;touch-action:none}
+  #screen{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;touch-action:none}
+  #bottom{position:absolute;bottom:0;left:0;right:0;height:58px;display:flex;gap:6px;padding:6px;box-sizing:border-box;background:#1b1b1b}
+  #text{flex:1;font-size:17px;border-radius:8px;border:1px solid #555;padding:8px;background:#fff;color:#000;min-width:0}
+  #status{font-size:12px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+</style>
+</head>
+<body>
+<div id="top">
+  <button onclick="cmd('/back')">←</button>
+  <button onclick="cmd('/reload')">↻</button>
+  <button onclick="scrollByRemote(-520)">↑</button>
+  <button onclick="scrollByRemote(520)">↓</button>
+  <button onclick="prevTab()">◀Tab</button>
+  <button onclick="nextTab()">Tab▶</button>
+  <span id="status">Connecting…</span>
+</div>
+<div id="screenWrap"><img id="screen" alt="Remote browser"></div>
+<div id="bottom">
+  <input id="text" autocomplete="off" autocapitalize="none" placeholder="Tap a field above, type here">
+  <button onclick="sendText()">Type</button>
+  <button onclick="sendKey('Enter')">Enter</button>
+</div>
+<script>
+const img=document.getElementById('screen'), statusEl=document.getElementById('status'), text=document.getElementById('text');
+let busy=false, tabIndex=0, tabCount=1;
+async function post(path,obj={}){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}).then(r=>r.json()).catch(()=>({}));}
+async function cmd(path){await post(path); refresh();}
+async function sendKey(key){await post('/key',{key}); refresh();}
+async function sendText(){if(!text.value)return; await post('/text',{text:text.value}); text.value=''; refresh();}
+async function scrollByRemote(dy){await post('/scroll',{dy}); refresh();}
+async function tabs(){
+  const r=await fetch('/tabs',{cache:'no-store'}).then(r=>r.json()).catch(()=>({pages:[]}));
+  tabCount=Math.max(1,(r.pages||[]).length); tabIndex=r.active||0;
+  const p=(r.pages||[])[tabIndex]; if(p) statusEl.textContent=(tabIndex+1)+'/'+tabCount+' '+(p.title||p.url||'');
+}
+async function prevTab(){tabIndex=(tabIndex-1+tabCount)%tabCount;await post('/select-tab',{index:tabIndex});refresh();}
+async function nextTab(){tabIndex=(tabIndex+1)%tabCount;await post('/select-tab',{index:tabIndex});refresh();}
+async function clickAt(ev){
+  ev.preventDefault();
+  if(busy)return; busy=true;
+  const rect=img.getBoundingClientRect();
+  const pt=ev.touches?ev.touches[0]:ev;
+  const x=(pt.clientX-rect.left)*(img.naturalWidth/rect.width);
+  const y=(pt.clientY-rect.top)*(img.naturalHeight/rect.height);
+  await post('/click',{x,y});
+  busy=false; setTimeout(refresh,120);
+}
+img.addEventListener('click',clickAt,{passive:false});
+img.addEventListener('touchend',ev=>{
+  if(ev.changedTouches&&ev.changedTouches[0]){
+    const t=ev.changedTouches[0];
+    clickAt({preventDefault:()=>ev.preventDefault(),clientX:t.clientX,clientY:t.clientY});
+  }
+},{passive:false});
+function refresh(){img.src='/frame.jpg?t='+Date.now();}
+img.onload=()=>tabs();
+setInterval(refresh,850);
+setInterval(tabs,2500);
+refresh();
+</script>
+</body></html>\`;
+
+const loginProxy = http.createServer(async (req, res) => {
   if (!authOk(req)) {
     res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Oracle Browser Login"' });
     res.end("Authentication required");
     return;
   }
-  proxy.web(req, res);
-});
-loginProxy.on("upgrade", (req, socket, head) => {
-  if (!authOk(req)) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-    socket.destroy();
-    return;
+  const u = new URL(req.url, "http://localhost");
+  try {
+    if (req.method === "GET" && (u.pathname === "/" || u.pathname === "/control")) {
+      res.writeHead(200, {"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"});
+      res.end(CONTROL_HTML); return;
+    }
+    const page = activeLoginPage();
+    if (!page && u.pathname !== "/tabs") {
+      res.writeHead(503, {"Content-Type":"application/json"});
+      res.end(JSON.stringify({ok:false,error:"No active browser page"})); return;
+    }
+    if (req.method === "GET" && u.pathname === "/frame.jpg") {
+      const buf = await page.screenshot({type:"jpeg",quality:72});
+      res.writeHead(200, {"Content-Type":"image/jpeg","Cache-Control":"no-store","Content-Length":buf.length});
+      res.end(buf); return;
+    }
+    if (req.method === "GET" && u.pathname === "/tabs") {
+      const pages = loginState.context ? loginState.context.pages().filter(p=>!p.isClosed()) : [];
+      const out = [];
+      for (const p of pages) out.push({title:await p.title().catch(()=>""),url:p.url()});
+      res.writeHead(200, {"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({active:loginState.activePage,pages:out})); return;
+    }
+    if (req.method === "POST") {
+      const body = await readJsonBody(req);
+      if (u.pathname === "/click") {
+        await page.mouse.click(Number(body.x)||0, Number(body.y)||0);
+      } else if (u.pathname === "/scroll") {
+        await page.mouse.wheel(0, Number(body.dy)||0);
+      } else if (u.pathname === "/key") {
+        await page.keyboard.press(String(body.key||"Enter"));
+      } else if (u.pathname === "/text") {
+        await page.keyboard.insertText(String(body.text||""));
+      } else if (u.pathname === "/back") {
+        await page.goBack({waitUntil:"domcontentloaded",timeout:10000}).catch(()=>{});
+      } else if (u.pathname === "/reload") {
+        await page.reload({waitUntil:"domcontentloaded",timeout:10000}).catch(()=>{});
+      } else if (u.pathname === "/select-tab") {
+        const pages=loginState.context ? loginState.context.pages().filter(p=>!p.isClosed()) : [];
+        const i=Math.max(0,Math.min(pages.length-1,Number(body.index)||0));
+        loginState.activePage=i;
+        if(pages[i]) await pages[i].bringToFront().catch(()=>{});
+      } else {
+        res.writeHead(404); res.end(); return;
+      }
+      res.writeHead(200, {"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({ok:true})); return;
+    }
+    res.writeHead(404); res.end();
+  } catch (err) {
+    res.writeHead(500, {"Content-Type":"application/json"});
+    res.end(JSON.stringify({ok:false,error:String(err)}));
   }
-  proxy.ws(req, socket, head);
 });
 loginProxy.listen(6081, "0.0.0.0");
 
@@ -133,9 +271,11 @@ function killChild(child) {
 
 async function stopLogin() {
   killChild(loginState.tunnel);
-  killChild(loginState.browser);
-  loginState = { browser: null, tunnel: null, profile: null, target: null, targets: [], url: null };
-  await new Promise(r => setTimeout(r, 1200));
+  if (loginState.context) {
+    try { await loginState.context.close(); } catch {}
+  }
+  loginState = { context: null, tunnel: null, profile: null, target: null, targets: [], url: null, activePage: 0 };
+  await new Promise(r => setTimeout(r, 900));
   return { task: "login_stop", status: "stopped" };
 }
 
@@ -150,32 +290,37 @@ async function startLogin(job) {
   fs.mkdirSync(userDataDir, { recursive: true });
   clearStaleChromiumProfileLocks(userDataDir);
 
-  const chromeArgs = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--window-size=470,860",
-    "--window-position=5,20",
-    "--force-device-scale-factor=1.0",
-    "--touch-events=enabled",
-    "--enable-features=OverlayScrollbar",
-    `--user-data-dir=${userDataDir}`
-  ];
-  if (targets.length === 1 && /^https?:\/\//i.test(targets[0])) {
-    // App mode removes tabs/address bar so the phone screen is almost entirely the website.
-    chromeArgs.push(`--app=${targets[0]}`);
-  } else {
-    chromeArgs.push(...targets);
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    executablePath: CHROME,
+    headless: false,
+    viewport: { width: 430, height: 760 },
+    screen: { width: 430, height: 760 },
+    env: { ...process.env, DISPLAY: LOGIN_DISPLAY },
+    args: [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=430,760"
+    ]
+  });
+  const first = context.pages()[0] || await context.newPage();
+  await goto(first, target).catch(()=>{});
+  for (const extra of targets.slice(1)) {
+    const p = await context.newPage();
+    await goto(p, extra).catch(()=>{});
   }
-
-  const browser = spawn(CHROME, chromeArgs, { env: { ...process.env, DISPLAY: LOGIN_DISPLAY }, stdio: ["ignore", "ignore", "pipe"] });
+  context.on("page", p => {
+    const pages=context.pages().filter(x=>!x.isClosed());
+    loginState.activePage=Math.max(0,pages.indexOf(p));
+  });
 
   const tunnel = spawn("/usr/local/bin/cloudflared", [
     "tunnel", "--url", "http://127.0.0.1:6081", "--no-autoupdate"
   ], { stdio: ["ignore", "pipe", "pipe"] });
 
-  loginState = { browser, tunnel, profile, target, targets, url: null };
+  loginState = { context, tunnel, profile, target, targets, url: null, activePage: 0 };
 
   const url = await new Promise((resolve, reject) => {
     let buf = "";
@@ -185,7 +330,7 @@ async function startLogin(job) {
       const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
       if (m) {
         clearTimeout(timer);
-        resolve(m[0] + "/vnc.html?autoconnect=1&resize=scale&view_only=0&quality=9&compression=4&show_dot=true&shared=1");
+        resolve(m[0] + "/control");
       }
     };
     tunnel.stdout.on("data", onData);
@@ -241,7 +386,7 @@ async function jmlScanWithContext(context) {
 }
 
 async function jmlScan() {
-  if (loginState.browser) return { task: "jml_scan", status: "login_session_active" };
+  if (loginState.context) return { task: "jml_scan", status: "login_session_active" };
   const context = await launchProfile("daily");
   try { return await jmlScanWithContext(context); }
   finally { await context.close().catch(() => {}); }
@@ -283,7 +428,7 @@ async function roborockSpinWithContext(context) {
 }
 
 async function roborockSpin() {
-  if (loginState.browser) return { task: "roborock_spin", status: "login_session_active" };
+  if (loginState.context) return { task: "roborock_spin", status: "login_session_active" };
   const context = await launchProfile("daily");
   try { return await roborockSpinWithContext(context); }
   finally { await context.close().catch(() => {}); }
@@ -1809,13 +1954,13 @@ async function runTask(job) {
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
   if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
-    if (loginState.browser || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
     finally { await context.close().catch(() => {}); }
   }
   if (task === "batch") {
-    if (loginState.browser || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
+    if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
     const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "reolink_day_entry"].includes(String(t)));
     const context = await launchProfile("daily");
