@@ -1,8 +1,14 @@
 {
-  "id": "dreame-mobile-login-20261006b",
+  "id": "phone-layout-test-20261006",
   "task": "login_start",
   "profile": "daily",
   "urls": [
+    "https://us.roborock.com/pages/points",
+    "https://www.anker-jml.com/",
+    "https://www.eufy.com/app_primeday",
+    "https://www.bluettipower.com/pages/prime-day/",
+    "https://us.mova.tech/pages/mova-prime-day-sale",
+    "https://www.instagram.com/",
     "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245"
   ]
 }
