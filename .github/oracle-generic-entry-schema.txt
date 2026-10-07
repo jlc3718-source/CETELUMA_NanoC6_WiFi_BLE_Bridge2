@@ -1,0 +1,139 @@
+FILE=/app/src/server.js
+ntryPathWithContext(context);
+  if (task === "eufy_deep_entry") return await eufyDeepEntryWithContext(context);
+  if (task === "bluetti_robust_entry") return await bluettiRobustEntryWithContext(context);
+  if (task === "mova_direct_entry") return await movaDirectEntryWithContext(context);
+  if (task === "reolink_day_entry") return await reolinkDayEntryWithContext(context);
+  if (task === "housework_complete") return await houseworkCompleteWithContext(context);
+  if (task === "bluetti_safe_spin") return await bluettiSafeSpinWithContext(context);
+  if (task === "reolink_confirmed_entry") return await reolinkConfirmedEntryWithContext(context);
+  if (task === "housework_checkout_probe") return await houseworkCheckoutProbeWithContext(context);
+  if (task === "mova_reveal_diag") return await movaRevealDiagWithContext(context);
+  if (task === "mova_widget_api_diag") return await movaWidgetApiDiagWithContext(context);
+  if (task === "navimow_round2_check") return await navimowRound2CheckWithContext(context);
+  if (task === "bluetti_wheel_state") return await bluettiWheelStateWithContext(context);
+  if (task === "eufy_alt_free_spin") return await eufyAltFreeSpinWithContext(context);
+  if (["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task)) return await finishDiagWithContext(context,task);
+  if (task === "dreame_auth_diag") return await dreameAuthDiagWithContext(context);
+  if (["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task)) return await promoPlumbingDiagWithContext(context,task);
+  throw new Error("Unsupported context task: " + task);
+}
+
+const fastDaily = createFastDaily({
+  dataDir: DATA_DIR,
+  getLoginState: () => loginState,
+  stopLogin,
+  launchProfile,
+  taskWithContext,
+  prepareRestrictedSession,
+  readEntryProfile
+});
+
+async function runTask(job) {
+  const task = String(job.task || "");
+  if (task === "health") return { task: "health", ok: true, time: new Date().toISOString() };
+  if (task === "run_daily_fast") return await fastDaily.runDailyFast(job);
+  if (task === "promo_state_patch") return fastDaily.promoStatePatch(job);
+  if (task === "promo_state_get") return fastDaily.promoStateGet();
+  if (task === "manual_queue_add") return fastDaily.manualQueueAdd(job);
+  if (task === "manual_queue_clear") return fastDaily.manualQueueClear(job);
+  if (task === "manual_queue_open") return await fastDaily.manualQueueOpen(job);
+  if (task === "generic_form_entry") return await fastDaily.genericFormEntry(job);
+  if (task === "instagram_comment_entry") return await fastDaily.instagramCommentEntry(job);
+  if (task === "entry_profile_key") return initSecureVault();
+  if (task === "entry_profile_store") return storeEncryptedEntryProfile(job);
+  if (task === "vault_init") return initSecureVault();
+  if (task === "vault_store") return storeEncryptedEntryProfile(job);
+  if (task === "vault_patch") return patchEncryptedEntryProfile(job);
+  if (task === "dreame_otp_start") return await dreameOtpStart();
+  if (task === "dreame_otp_finish") return await dreameOtpFinish(job);
+  if (task === "login_start") return await startLogin(job);
+  if (task === "login_stop") return await stopLogin();
+  if (task === "prepare_restricted") return await prepareRestrictedSession(job);
+  if (["reolink_subscribe","reolink_day_entry","reolink_confirmed_entry"].includes(task)) {
+    return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
+  }
+  if (task === "jml_scan") return await jmlScan();
+  if (["govee_mirror_diag"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
+  if (["govee_halloween_entry"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
+  if (["powernation_entry"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
+  if (["husqvarna_450x_entry"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
+  if (task === "roborock_spin") return await roborockSpin();
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag","mova_widget_api_diag","navimow_round2_check"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); }
+    finally { await context.close().catch(() => {}); }
+  }
+  if (task === "batch") {
+    if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
+    const tasks = Array.isArray(job.tasks) ? job.tasks : [];
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag", "husqvarna_450x_entry", "powernation_entry"].includes(String(t)));
+    const context = await launchProfile("daily");
+    try {
+      const requestedTimeout = Number(job.lane_timeout_ms || 50000);
+      const laneTimeoutMs = Math.max(10000, Math.min(55000, Number.isFinite(requestedTimeout) ? requestedTimeout : 50000));
+      const runLane = (t) => Promise.race([
+        taskWithContext(context, t),
+        new Promise(resolve => setTimeout(() => resolve({
+          task: String(t),
+          status: "timeout_skipped",
+          timeout_ms: laneTimeoutMs
+        }), laneTimeoutMs))
+      ]);
+      const settled = await Promise.allSettled(allowed.map(t => runLane(t)));
+      return {
+        task: "batch",
+        parallel: true,
+        shared_profile: "daily",
+        lane_timeout_ms: laneTimeoutMs,
+        results: settled.map((r, i) => r.status === "fulfilled"
+          ? { task: allowed[i], ok: true, result: r.value }
+          : { task: allowed[i], ok: false, error: String(r.reason) })
+      };
+    } finally {
+      await context.close().catch(() => {});
+    }
+  }
+  throw new Error("Unsupported task: " + task);
+}
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "oracle-browser-agent", login_active: Boolean(loginState.browser), time: new Date().toISOString() });
+});
+
+app.post("/run", async (req, res) => {
+  const job = req.body || {};
+  const id = String(job.id || "job");
+  const started = new Date().toISOString();
+  const execute = async () => {
+    try {
+      const result = await runTask(job);
+      return { id, ok: true, started, finished: new Date().toISOString(), result };
+    } catch (err) {
+      return { id, ok: false, started, finished: new Date().toISOString(), error: String(err && err.stack || err) };
+    }
+  };
+  const p = queue.then(execute, execute);
+  queue = p.then(() => undefined, () => undefined);
+  res.json(await p);
+});
+
+app.listen(PORT, "0.0.0.0", () => console.log(`oracle-browser-agent listening on ${PORT}`));
+
