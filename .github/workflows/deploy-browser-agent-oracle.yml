@@ -55,6 +55,17 @@ jobs:
         run: |
           sudo docker compose up -d --build --remove-orphans
 
+      - name: Record deployed source hash
+        run: |
+          set -euo pipefail
+          SRC_HASH="$(
+            {
+              sha256sum BrowserAgent/package.json BrowserAgent/Dockerfile BrowserAgent/start.sh BrowserAgent/docker-compose.yml
+              find BrowserAgent/src -maxdepth 1 -type f -name '*.js' -print0 | sort -z | xargs -0 sha256sum
+            } | sha256sum | awk '{print $1}'
+          )"
+          echo "$SRC_HASH" | sudo tee /home/ubuntu/browser-agent-data/deployed-source-sha >/dev/null
+
       - name: Verify local browser API
         run: |
           set -e
