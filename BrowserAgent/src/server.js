@@ -78,10 +78,10 @@ const CONTROL_HTML = String.raw`<!doctype html>
 <title>Oracle Browser</title>
 <style>
   html,body{margin:0;background:#111;color:#fff;font-family:system-ui,sans-serif;height:100%;overflow:hidden}
-  #top{height:48px;display:flex;align-items:center;gap:6px;padding:4px 6px;box-sizing:border-box;background:#1b1b1b}
+  #top{height:48px;display:flex;align-items:center;gap:6px;padding:4px 6px;box-sizing:border-box;background:#1b1b1b;overflow-x:auto;white-space:nowrap}
   button{font-size:16px;min-height:38px;padding:6px 10px;border-radius:8px;border:0;background:#333;color:#fff}
-  #screenWrap{position:absolute;top:48px;bottom:58px;left:0;right:0;overflow:auto;background:#222;touch-action:none}
-  #screen{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;touch-action:none}
+  #screenWrap{position:absolute;top:48px;bottom:58px;left:0;right:0;overflow:auto;background:#222;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+  #screen{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;touch-action:pan-x pan-y;max-width:none}
   #bottom{position:absolute;bottom:0;left:0;right:0;height:58px;display:flex;gap:6px;padding:6px;box-sizing:border-box;background:#1b1b1b}
   #text{flex:1;font-size:17px;border-radius:8px;border:1px solid #555;padding:8px;background:#fff;color:#000;min-width:0}
   #status{font-size:12px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
@@ -93,6 +93,9 @@ const CONTROL_HTML = String.raw`<!doctype html>
   <button onclick="cmd('/reload')">↻</button>
   <button onclick="scrollByRemote(-520)">↑</button>
   <button onclick="scrollByRemote(520)">↓</button>
+  <button onclick="zoomOut()">−</button>
+  <button onclick="zoomFit()">Fit</button>
+  <button onclick="zoomIn()">＋</button>
   <button onclick="prevTab()">◀Tab</button>
   <button onclick="nextTab()">Tab▶</button>
   <span id="status">Connecting…</span>
@@ -105,7 +108,7 @@ const CONTROL_HTML = String.raw`<!doctype html>
 </div>
 <script>
 const img=document.getElementById('screen'), statusEl=document.getElementById('status'), text=document.getElementById('text');
-let busy=false, tabIndex=0, tabCount=1;
+let busy=false, tabIndex=0, tabCount=1, zoom=1;
 async function post(path,obj={}){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}).then(r=>r.json()).catch(()=>({}));}
 async function cmd(path){await post(path); refresh();}
 async function sendKey(key){await post('/key',{key}); refresh();}
@@ -118,6 +121,10 @@ async function tabs(){
 }
 async function prevTab(){tabIndex=(tabIndex-1+tabCount)%tabCount;await post('/select-tab',{index:tabIndex});refresh();}
 async function nextTab(){tabIndex=(tabIndex+1)%tabCount;await post('/select-tab',{index:tabIndex});refresh();}
+function applyZoom(){img.style.width=(zoom*100)+'%';}
+function zoomIn(){zoom=Math.min(3,zoom+0.25);applyZoom();}
+function zoomOut(){zoom=Math.max(0.75,zoom-0.25);applyZoom();}
+function zoomFit(){zoom=1;applyZoom();const w=document.getElementById('screenWrap');w.scrollLeft=0;w.scrollTop=0;}
 async function clickAt(ev){
   ev.preventDefault();
   if(busy)return; busy=true;
@@ -129,12 +136,6 @@ async function clickAt(ev){
   busy=false; setTimeout(refresh,120);
 }
 img.addEventListener('click',clickAt,{passive:false});
-img.addEventListener('touchend',ev=>{
-  if(ev.changedTouches&&ev.changedTouches[0]){
-    const t=ev.changedTouches[0];
-    clickAt({preventDefault:()=>ev.preventDefault(),clientX:t.clientX,clientY:t.clientY});
-  }
-},{passive:false});
 function refresh(){img.src='/frame.jpg?t='+Date.now();}
 img.onload=()=>tabs();
 setInterval(refresh,850);
