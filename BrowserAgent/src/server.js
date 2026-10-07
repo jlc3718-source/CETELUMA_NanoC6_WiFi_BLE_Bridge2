@@ -2618,23 +2618,78 @@ async function bluettiSafeSpinWithContext(context){
   }finally{await page.close().catch(()=>{});}
 }
 
+async function movaWidgetApiDiagWithContext(context){
+  const scriptUrl="https://ext.spinwheelapp.com/external/v1/7bdb4ac5233e8720/spps.js?shop=mova-us.myshopify.com";
+  try{
+    const resp=await context.request.get(scriptUrl,{timeout:12000,failOnStatusCode:false});
+    const js=await resp.text().catch(()=>"");
+    const urls=[...new Set((js.match(/https?:\\/\\/[^"'\\s)]+/g)||[]))]
+      .filter(u=>/spin|wheel|api|campaign|prize|external|shopify/i.test(u)).slice(0,80);
+    const paths=[...new Set((js.match(/["'`]\\/(?:[^"'\\s]{1,180})/g)||[]).map(x=>x.slice(1)))]
+      .filter(p=>/api|spin|wheel|campaign|prize|entry|customer|submit|play/i.test(p)).slice(0,100);
+    const snippets=[];
+    const re=/(fetch\\(|axios|XMLHttpRequest|campaign|spin|wheel|prize|entry|customer|submit|play)/ig;
+    let m;
+    while((m=re.exec(js))&&snippets.length<80){
+      snippets.push(js.slice(Math.max(0,m.index-260),Math.min(js.length,m.index+700)).replace(/\\s+/g," "));
+      re.lastIndex=m.index+Math.max(1,m[0].length);
+    }
+    return {task:"mova_widget_api_diag",status:resp.status(),script_url:scriptUrl,script_bytes:js.length,urls,paths,snippets};
+  }catch(err){
+    return {task:"mova_widget_api_diag",status:"request_failed",error:String(err)};
+  }
+}
+
 async function houseworkCompleteWithContext(context){
   const profile=readEntryProfile();
   const page=await context.newPage();
   try{
-    await gotoLoose(page,"https://shop.housework.com/products/fall-cleaning-challenge-2026");
-    await page.waitForTimeout(900);
-    const buy=page.getByRole("button",{name:/BUY IT NOW/i}).first();
-    if(await buy.count().catch(()=>0)) await buy.click({timeout:4000}).catch(()=>{});
-    else {
-      const add=page.getByRole("button",{name:/ADD TO CART/i}).first();
-      if(await add.count().catch(()=>0)) await add.click({timeout:4000});
-      await page.waitForTimeout(800);
-      await page.goto("https://shop.housework.com/cart",{waitUntil:"domcontentloaded",timeout:15000});
-      const co=page.getByRole("button",{name:/check out|checkout/i}).first();
-      if(await co.count().catch(()=>0)) await co.click({timeout:4000});
+    const productUrl="https://shop.housework.com/products/fall-cleaning-challenge-2026";
+    await gotoLoose(page,productUrl);
+    await page.waitForTimeout(700);
+
+    // Prefer the normal Shopify product form. The accelerated "Buy It Now" path
+    // can leave a headless/automated session on an empty cart.
+    let added=false;
+    const form=page.locator('form[action*="/cart/add"]').first();
+    if(await form.count().catch(()=>0)){
+      const variant=await form.locator('input[name="id"],select[name="id"]').first().inputValue().catch(()=>"");
+      if(variant){
+        const addResult=await page.evaluate(async(id)=>{
+          try{
+            const r=await fetch("/cart/add.js",{
+              method:"POST",
+              headers:{"Content-Type":"application/json","Accept":"application/json"},
+              credentials:"include",
+              body:JSON.stringify({items:[{id:Number(id),quantity:1}]})
+            });
+            let data=null; try{data=await r.json();}catch{}
+            return {ok:r.ok,status:r.status,data};
+          }catch(e){return {ok:false,error:String(e)}}
+        },variant).catch(e=>({ok:false,error:String(e)}));
+        added=Boolean(addResult&&addResult.ok);
+      }
     }
-    await page.waitForTimeout(2500);
+    if(!added){
+      const add=page.getByRole("button",{name:/ADD TO CART/i}).first();
+      if(await add.count().catch(()=>0)){
+        await add.click({timeout:4000}).catch(()=>{});
+        await page.waitForTimeout(1200);
+      }
+    }
+
+    const cart=await page.evaluate(async()=>{
+      try{
+        const r=await fetch("/cart.js",{credentials:"include"});
+        const j=await r.json();
+        return {item_count:j.item_count||0,items:(j.items||[]).map(x=>({title:x.product_title||x.title,handle:x.handle,price:x.final_line_price}))};
+      }catch(e){return {item_count:0,error:String(e),items:[]}}
+    }).catch(e=>({item_count:0,error:String(e),items:[]}));
+    const hasChallenge=(cart.items||[]).some(x=>/fall cleaning challenge 2026/i.test(String(x.title||""))||/fall-cleaning-challenge-2026/i.test(String(x.handle||"")));
+    if(!hasChallenge) return {task:"housework_complete",status:"cart_add_failed",url:page.url(),cart_item_count:cart.item_count||0};
+
+    await page.goto("https://shop.housework.com/checkout",{waitUntil:"domcontentloaded",timeout:15000}).catch(()=>{});
+    await page.waitForTimeout(2200);
 
     const fillFirst=async(selectors,value)=>{
       for(const sel of selectors){
@@ -2727,6 +2782,7 @@ async function taskWithContext(context, task) {
   if (task === "reolink_confirmed_entry") return await reolinkConfirmedEntryWithContext(context);
   if (task === "housework_checkout_probe") return await houseworkCheckoutProbeWithContext(context);
   if (task === "mova_reveal_diag") return await movaRevealDiagWithContext(context);
+  if (task === "mova_widget_api_diag") return await movaWidgetApiDiagWithContext(context);
   if (task === "bluetti_wheel_state") return await bluettiWheelStateWithContext(context);
   if (task === "eufy_alt_free_spin") return await eufyAltFreeSpinWithContext(context);
   if (["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task)) return await finishDiagWithContext(context,task);
@@ -2751,7 +2807,7 @@ async function runTask(job) {
   }
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag","mova_widget_api_diag"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -2760,7 +2816,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const requestedTimeout = Number(job.lane_timeout_ms || 50000);
