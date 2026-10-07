@@ -21,6 +21,7 @@ fs.mkdirSync(path.join(DATA_DIR, "profiles"), { recursive: true });
 
 let queue = Promise.resolve();
 let loginState = { context: null, tunnel: null, profile: null, target: null, targets: [], url: null, activePage: 0 };
+let dreameOtpState = { context:null, page:null, privateKey:null, started:null };
 
 function cleanText(s, max = 12000) {
   return String(s || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -2022,6 +2023,156 @@ async function promoPlumbingDiagWithContext(context, task) {
   }
 }
 
+async function stopDreameOtpState() {
+  try { if (dreameOtpState.page && !dreameOtpState.page.isClosed()) await dreameOtpState.page.close().catch(()=>{}); } catch {}
+  try { if (dreameOtpState.context) await dreameOtpState.context.close().catch(()=>{}); } catch {}
+  dreameOtpState={context:null,page:null,privateKey:null,started:null};
+}
+
+async function dreameOtpStart() {
+  await stopDreameOtpState();
+  if (loginState.context || loginState.tunnel) return {task:"dreame_otp_start",status:"manual_login_session_active"};
+
+  const context=await launchProfile("daily");
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://us-account.dreame.tech/login?lang=en&country=US&client_id=eu_discover_web&tenantId=000000&redirect_url=https%3A%2F%2Fus.forum.dreametech.com%2Fapi%2Fdreame%2Fcallback.php");
+    await page.waitForTimeout(1200);
+
+    let codeTab=page.getByRole("button",{name:/Code Login/i}).first();
+    if(!(await codeTab.count().catch(()=>0))){
+      codeTab=page.getByText(/^Code Login$/i,{exact:true}).first();
+    }
+    if(await codeTab.count().catch(()=>0)) await codeTab.click({timeout:3000});
+    await page.waitForTimeout(900);
+
+    const allInputs=page.locator('input');
+    const ic=await allInputs.count().catch(()=>0);
+    let email=null;
+    for(let i=0;i<Math.min(ic,20);i++){
+      const el=allInputs.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const ph=String(await el.getAttribute("placeholder").catch(()=>null)||"");
+      const type=String(await el.getAttribute("type").catch(()=>null)||"");
+      if(/email|dreame id/i.test(ph) || type==="email"){email=el;break;}
+    }
+    if(!email) throw new Error("Dreame code-login email field not found");
+    await email.fill("jlc3718@gmail.com");
+
+    const checks=page.locator('input[type="checkbox"],[role="checkbox"]');
+    const cc=await checks.count().catch(()=>0);
+    for(let i=0;i<Math.min(cc,8);i++){
+      const c=checks.nth(i);
+      if(!(await c.isVisible().catch(()=>false))) continue;
+      const checked=await c.isChecked().catch(()=>false);
+      if(!checked) await c.check().catch(async()=>{await c.click().catch(()=>{});});
+    }
+
+    const controls=page.locator('button,[role="button"],a,div,span');
+    const n=await controls.count().catch(()=>0);
+    let sent=false, sentLabel=null;
+    for(let i=0;i<Math.min(n,180);i++){
+      const b=controls.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      const label=cleanText(await b.innerText().catch(()=>""),160);
+      if(!/(send|get|verification).*code|code.*(send|get)/i.test(label)) continue;
+      if(/^Code Login$/i.test(label)) continue;
+      try { await b.click({timeout:3000}); sent=true; sentLabel=label; break; } catch {}
+    }
+    if(!sent){
+      const body=await pageBody(page,20000);
+      await page.close().catch(()=>{});
+      await context.close().catch(()=>{});
+      return {task:"dreame_otp_start",status:"send_code_control_not_found",url:page.url(),snippets:body.split(/\n+/).filter(x=>/code|email|verification/i.test(x)).slice(0,20)};
+    }
+
+    await page.waitForTimeout(1200);
+
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa",{
+      modulusLength:2048,
+      publicKeyEncoding:{type:"spki",format:"pem"},
+      privateKeyEncoding:{type:"pkcs8",format:"pem"}
+    });
+    dreameOtpState={context,page,privateKey,started:Date.now()};
+
+    return {
+      task:"dreame_otp_start",
+      status:"code_requested",
+      sent_control:sentLabel,
+      public_key_pem:publicKey,
+      expires_seconds:300
+    };
+  } catch(err){
+    await page.close().catch(()=>{});
+    await context.close().catch(()=>{});
+    throw err;
+  }
+}
+
+async function dreameOtpFinish(job) {
+  if(!dreameOtpState.context || !dreameOtpState.page || !dreameOtpState.privateKey){
+    return {task:"dreame_otp_finish",status:"no_active_otp_session"};
+  }
+  if(Date.now()-Number(dreameOtpState.started||0)>300000){
+    await stopDreameOtpState();
+    return {task:"dreame_otp_finish",status:"otp_session_expired"};
+  }
+
+  const cipher=Buffer.from(String(job.ciphertext_b64||""),"base64");
+  if(!cipher.length) return {task:"dreame_otp_finish",status:"missing_ciphertext"};
+  const plain=crypto.privateDecrypt({
+    key:dreameOtpState.privateKey,
+    padding:crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash:"sha256"
+  },cipher).toString("utf8");
+  const payload=JSON.parse(plain);
+  const code=String(payload.code||"").replace(/\D/g,"");
+  if(code.length<4 || code.length>10) return {task:"dreame_otp_finish",status:"invalid_code_shape"};
+
+  const page=dreameOtpState.page;
+  const context=dreameOtpState.context;
+  try{
+    const inputs=page.locator('input');
+    const n=await inputs.count().catch(()=>0);
+    let codeInput=null;
+    for(let i=0;i<Math.min(n,20);i++){
+      const el=inputs.nth(i);
+      if(!(await el.isVisible().catch(()=>false))) continue;
+      const ph=String(await el.getAttribute("placeholder").catch(()=>null)||"");
+      const type=String(await el.getAttribute("type").catch(()=>null)||"");
+      if(/code|verification|otp/i.test(ph) || type==="number" || type==="tel"){codeInput=el;break;}
+    }
+    if(!codeInput){
+      const body=await pageBody(page,20000);
+      return {task:"dreame_otp_finish",status:"code_input_not_found",snippets:body.split(/\n+/).filter(x=>/code|verification|email/i.test(x)).slice(0,20)};
+    }
+    await codeInput.fill(code);
+
+    const buttons=page.locator('button,[role="button"]');
+    const bc=await buttons.count().catch(()=>0);
+    let clicked=false;
+    for(let i=0;i<Math.min(bc,30);i++){
+      const b=buttons.nth(i);
+      if(!(await b.isVisible().catch(()=>false))) continue;
+      const label=cleanText(await b.innerText().catch(()=>""),120);
+      if(!/^(Log In|Login|Sign In|Continue)$/i.test(label)) continue;
+      try{await b.click({timeout:3500});clicked=true;break;}catch{}
+    }
+    if(!clicked) return {task:"dreame_otp_finish",status:"login_submit_not_found"};
+
+    await page.waitForTimeout(4000);
+    const body=await pageBody(page,25000);
+    if(/invalid|incorrect|expired|try again/i.test(body) && /code/i.test(body)){
+      return {task:"dreame_otp_finish",status:"code_rejected",url:page.url()};
+    }
+
+    const entry=await dreameEntryPathWithContext(context);
+    return {task:"dreame_otp_finish",status:"login_completed",entry};
+  } finally {
+    await stopDreameOtpState();
+  }
+}
+
 async function taskWithContext(context, task) {
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
@@ -2053,6 +2204,8 @@ async function runTask(job) {
   if (task === "health") return { task: "health", ok: true, time: new Date().toISOString() };
   if (task === "vault_init") return initSecureVault();
   if (task === "vault_store") return storeEncryptedEntryProfile(job);
+  if (task === "dreame_otp_start") return await dreameOtpStart();
+  if (task === "dreame_otp_finish") return await dreameOtpFinish(job);
   if (task === "login_start") return await startLogin(job);
   if (task === "login_stop") return await stopLogin();
   if (task === "jml_scan") return await jmlScan();
