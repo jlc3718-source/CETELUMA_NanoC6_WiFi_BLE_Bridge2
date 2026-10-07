@@ -1,0 +1,120 @@
+=== TIME ===
+2026-10-07T20:24:06+00:00
+
+=== HOST ===
+jason-home-vnic
+Linux jason-home-vnic 7.0.0-1012-oracle #12~24.04.1-Ubuntu SMP PREEMPT Mon Sep 14 05:33:27 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+
+=== LISTENERS ===
+LISTEN 0      4096       127.0.0.1:8932       0.0.0.0:*          
+
+=== 8932 PROCESS ===
+
+=== SAFE HTTP PROBES 8932 ===
+--- /health
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 99
+ETag: W/"63-NRWwyCzAiUMbfqFNu2ZUuiSjq1c"
+Date: Wed, 07 Oct 2026 20:24:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"ok":true,"service":"oracle-browser-agent","login_active":false,"time":"2026-10-07T20:24:06.799Z"}
+--- /status
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Security-Policy: default-src 'none'
+X-Content-Type-Options: nosniff
+Content-Type: text/html; charset=utf-8
+Content-Length: 145
+Date: Wed, 07 Oct 2026 20:24:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /status</pre>
+</body>
+</html>
+
+--- /openapi.json
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Security-Policy: default-src 'none'
+X-Content-Type-Options: nosniff
+Content-Type: text/html; charset=utf-8
+Content-Length: 151
+Date: Wed, 07 Oct 2026 20:24:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /openapi.json</pre>
+</body>
+</html>
+
+--- /docs
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Security-Policy: default-src 'none'
+X-Content-Type-Options: nosniff
+Content-Type: text/html; charset=utf-8
+Content-Length: 143
+Date: Wed, 07 Oct 2026 20:24:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /docs</pre>
+</body>
+</html>
+
+--- /
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Security-Policy: default-src 'none'
+X-Content-Type-Options: nosniff
+Content-Type: text/html; charset=utf-8
+Content-Length: 139
+Date: Wed, 07 Oct 2026 20:24:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /</pre>
+</body>
+</html>
+
+
+=== SAFE HTTP PROBES 8931 ===
+--- /health
+
+--- /
+
+--- /mcp
+
