@@ -1,8 +1,4 @@
 {
-  "id": "finish-housework-reolink-20261006",
-  "task": "batch",
-  "tasks": [
-    "housework_checkout_probe",
-    "reolink_confirmed_entry"
-  ]
+  "id": "eufy-alt-free-spin-20261006",
+  "task": "eufy_alt_free_spin"
 }
