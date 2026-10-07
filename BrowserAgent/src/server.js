@@ -155,9 +155,9 @@ async function startLogin(job) {
     "--disable-dev-shm-usage",
     "--no-first-run",
     "--no-default-browser-check",
-    "--window-size=1880,980",
-    "--force-device-scale-factor=1.0",
-    "--start-maximized",
+    "--window-size=700,1180",
+    "--window-position=10,40",
+    "--force-device-scale-factor=1.25",
     `--user-data-dir=${userDataDir}`,
     ...targets
   ], { env: { ...process.env, DISPLAY: LOGIN_DISPLAY }, stdio: ["ignore", "ignore", "pipe"] });
@@ -176,7 +176,7 @@ async function startLogin(job) {
       const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
       if (m) {
         clearTimeout(timer);
-        resolve(m[0] + "/vnc.html?autoconnect=1&resize=scale&view_only=0&quality=7&compression=6");
+        resolve(m[0] + "/vnc_lite.html?autoconnect=1&resize=scale&view_only=0&quality=9&compression=4&show_dot=true");
       }
     };
     tunnel.stdout.on("data", onData);
