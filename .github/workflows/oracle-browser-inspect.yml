@@ -1,0 +1,58 @@
+name: Oracle Browser Agent Inspect
+
+on:
+  push:
+    paths:
+      - ".github/oracle-browser-inspect.trigger"
+      - ".github/workflows/oracle-browser-inspect.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect local Oracle Browser Agent safely
+        shell: bash
+        run: |
+          set -u
+          echo "=== HOST ==="
+          hostname
+          uname -a
+          echo
+          echo "=== LISTENERS ==="
+          ss -ltn 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
+          echo
+          echo "=== DOCKER ==="
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' 2>/dev/null | grep -Ei 'browser|playwright|mcp|agent|NAMES' || true
+          echo
+          echo "=== SERVICES ==="
+          systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'browser|playwright|mcp|agent' || true
+          echo
+          echo "=== SAFE HTTP PROBES 8932 ==="
+          for p in /health /status /openapi.json /docs /; do
+            echo "--- $p"
+            curl -fsS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 12000 || true
+            echo
+          done
+          echo
+          echo "=== SAFE HTTP PROBES 8931 ==="
+          for p in /health / /mcp; do
+            echo "--- $p"
+            curl -i -sS --max-time 4 "http://127.0.0.1:8931$p" 2>/dev/null | head -c 8000 || true
+            echo
+          done
+          echo
+          echo "=== PROJECT CANDIDATES ==="
+          find /home/ubuntu -maxdepth 4 -type f \( -name 'package.json' -o -name 'pyproject.toml' -o -name 'requirements.txt' -o -name 'README.md' -o -name '*.service' \) 2>/dev/null             | grep -Ei 'browser|agent|mcp|oracle' | head -100 || true
+          echo
+          echo "=== 8932 SOURCE REFERENCES (secrets excluded) ==="
+          for d in /home/ubuntu/browser-agent /home/ubuntu/oracle-browser-agent /home/ubuntu/oracle-browser-mcp /opt/oracle-browser-agent /opt/browser-agent; do
+            if [ -d "$d" ]; then
+              echo "--- $d"
+              grep -R --line-number --binary-files=without-match --exclude='.env' --exclude='*.log' --exclude-dir='data' --exclude-dir='node_modules' '8932\|/run\|/task\|profile' "$d" 2>/dev/null | head -120 || true
+            fi
+          done
