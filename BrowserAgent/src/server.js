@@ -2068,16 +2068,24 @@ async function dreameOtpStart() {
       if(!checked) await c.check().catch(async()=>{await c.click().catch(()=>{});});
     }
 
-    const controls=page.locator('button,[role="button"],a,div,span');
-    const n=await controls.count().catch(()=>0);
     let sent=false, sentLabel=null;
-    for(let i=0;i<Math.min(n,180);i++){
-      const b=controls.nth(i);
+    const exactCode=page.getByText(/^Get Verification Code$/i,{exact:true});
+    const exactCount=await exactCode.count().catch(()=>0);
+    for(let i=0;i<Math.min(exactCount,10);i++){
+      const b=exactCode.nth(i);
       if(!(await b.isVisible().catch(()=>false))) continue;
-      const label=cleanText(await b.innerText().catch(()=>""),160);
-      if(!/(send|get|verification).*code|code.*(send|get)/i.test(label)) continue;
-      if(/^Code Login$/i.test(label)) continue;
-      try { await b.click({timeout:3000}); sent=true; sentLabel=label; break; } catch {}
+      try { await b.click({timeout:3000}); sent=true; sentLabel="Get Verification Code"; break; } catch {}
+    }
+    if(!sent){
+      const controls=page.locator('button,[role="button"],a,span');
+      const n=await controls.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,120);i++){
+        const b=controls.nth(i);
+        if(!(await b.isVisible().catch(()=>false))) continue;
+        const label=cleanText(await b.innerText().catch(()=>""),160);
+        if(!/^(Get Verification Code|Send Code|Get Code|Send Verification Code)$/i.test(label)) continue;
+        try { await b.click({timeout:3000}); sent=true; sentLabel=label; break; } catch {}
+      }
     }
     if(!sent){
       const body=await pageBody(page,20000);
