@@ -1,9 +1,8 @@
 {
-  "id": "finish-eufy-bluetti-mova-20261006",
+  "id": "finish-housework-reolink-20261006",
   "task": "batch",
   "tasks": [
-    "eufy_alt_free_spin",
-    "bluetti_wheel_state",
-    "mova_reveal_diag"
+    "housework_checkout_probe",
+    "reolink_confirmed_entry"
   ]
 }
