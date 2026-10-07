@@ -1251,6 +1251,26 @@ async function goveeHalloweenEntryWithContext(context) {
       }
     }
 
+    // Authenticated user-feed fallback by Govee's public Instagram user id.
+    if(!candidates.length){
+      try{
+        const resp=await context.request.get("https://www.instagram.com/api/v1/feed/user/15903547309/?count=20",{
+          headers:{"X-IG-App-ID":"936619743392459","Accept":"*/*","Referer":"https://www.instagram.com/goveeofficial/"}
+        });
+        if(resp.ok()){
+          const data=await resp.json().catch(()=>null);
+          for(const item of (data?.items||[])){
+            const cap=item?.caption?.text||"";
+            const code=item?.code||item?.shortcode||"";
+            if(!code) continue;
+            if(/Halloween/i.test(cap) && /(GoveeOutdoorLights|Sarah Michelle Gellar|decorating ideas|giveaway)/i.test(cap)){
+              candidates.push("https://www.instagram.com/p/"+code+"/");
+            }
+          }
+        }
+      }catch{}
+    }
+
     // Public mirror fallback: use it only to recover the exact Instagram post target.
     if(!candidates.length){
       try{
