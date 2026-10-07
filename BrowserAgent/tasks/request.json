@@ -1,4 +1,9 @@
 {
-  "id": "dreame-enter-mobile-reply-20261006",
-  "task": "dreame_entry_path"
+  "id": "finish-eufy-bluetti-mova-20261006",
+  "task": "batch",
+  "tasks": [
+    "eufy_alt_free_spin",
+    "bluetti_wheel_state",
+    "mova_reveal_diag"
+  ]
 }
