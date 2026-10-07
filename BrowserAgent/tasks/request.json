@@ -1,4 +1,10 @@
 {
-  "id": "dreame-auth-diag-after-login-20261006",
-  "task": "dreame_auth_diag"
+  "id": "remaining-entry-diag-20261006",
+  "task": "batch",
+  "tasks": [
+    "dreame_forum_diag",
+    "eufy_alt_draw_diag",
+    "promo_script_diag",
+    "housework_diag"
+  ]
 }
