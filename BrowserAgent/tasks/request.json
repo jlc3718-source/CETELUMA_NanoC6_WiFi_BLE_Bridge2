@@ -1,4 +1,14 @@
 {
-  "id": "close-gleam-manual-session-20261007",
-  "task": "login_stop"
+  "id": "run-daily-discovery-scan-20261007-r2",
+  "task": "batch",
+  "lane_timeout_ms": 45000,
+  "tasks": [
+    "jml_scan",
+    "instagram_brand_scan",
+    "navimow_round2_check",
+    "roborock_wheel_diag",
+    "eufy_alt_free_spin",
+    "bluetti_safe_spin",
+    "mova_widget_api_diag"
+  ]
 }
