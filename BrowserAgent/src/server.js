@@ -2748,6 +2748,9 @@ async function runTask(job) {
   if (task === "dreame_otp_finish") return await dreameOtpFinish(job);
   if (task === "login_start") return await startLogin(job);
   if (task === "login_stop") return await stopLogin();
+  if (["reolink_subscribe","reolink_day_entry","reolink_confirmed_entry"].includes(task)) {
+    return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
+  }
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
   if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
@@ -2759,14 +2762,25 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "reolink_subscribe", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "reolink_day_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "housework_checkout_probe", "reolink_confirmed_entry", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
-      const settled = await Promise.allSettled(allowed.map(t => taskWithContext(context, t)));
+      const requestedTimeout = Number(job.lane_timeout_ms || 50000);
+      const laneTimeoutMs = Math.max(10000, Math.min(55000, Number.isFinite(requestedTimeout) ? requestedTimeout : 50000));
+      const runLane = (t) => Promise.race([
+        taskWithContext(context, t),
+        new Promise(resolve => setTimeout(() => resolve({
+          task: String(t),
+          status: "timeout_skipped",
+          timeout_ms: laneTimeoutMs
+        }), laneTimeoutMs))
+      ]);
+      const settled = await Promise.allSettled(allowed.map(t => runLane(t)));
       return {
         task: "batch",
         parallel: true,
         shared_profile: "daily",
+        lane_timeout_ms: laneTimeoutMs,
         results: settled.map((r, i) => r.status === "fulfilled"
           ? { task: allowed[i], ok: true, result: r.value }
           : { task: allowed[i], ok: false, error: String(r.reason) })
