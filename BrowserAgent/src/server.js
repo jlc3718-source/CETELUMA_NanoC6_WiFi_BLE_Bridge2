@@ -1431,6 +1431,33 @@ function storeEncryptedEntryProfile(job) {
   };
 }
 
+
+function patchEncryptedEntryProfile(job) {
+  const p = ensureVaultKeypair();
+  if (!fs.existsSync(p.profile)) throw new Error("Secure entry profile is not stored");
+  const ciphertext = Buffer.from(String(job.ciphertext_b64 || ""), "base64");
+  if (!ciphertext.length) throw new Error("Missing ciphertext_b64");
+  const privateKey = fs.readFileSync(p.privateKey, "utf8");
+  const plaintext = crypto.privateDecrypt({
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: "sha256"
+  }, ciphertext);
+  const patch = JSON.parse(plaintext.toString("utf8"));
+  const allowed = ["phone"];
+  const current = JSON.parse(fs.readFileSync(p.profile, "utf8"));
+  const updated = [];
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(patch, k) && String(patch[k] || "").trim()) {
+      current[k] = String(patch[k]).trim();
+      updated.push(k);
+    }
+  }
+  if (!updated.length) throw new Error("No supported profile fields supplied");
+  fs.writeFileSync(p.profile, JSON.stringify(current), { mode: 0o600 });
+  return { task:"vault_patch", status:"stored", fields:updated };
+}
+
 function readEntryProfile() {
   const p = vaultPaths();
   if (!fs.existsSync(p.profile)) throw new Error("Secure entry profile is not stored");
@@ -2796,6 +2823,118 @@ async function houseworkCompleteWithContext(context){
 }
 
 
+
+async function husqvarna450xEntryWithContext(context) {
+  const profile=readEntryProfile();
+  const missing=["name","email","phone"].filter(k=>!String(profile[k]||"").trim());
+  if(missing.length) return {task:"husqvarna_450x_entry",status:"missing_profile_fields",fields:missing};
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://na-pages.husqvarna.com/us-450x-giveaway-26");
+    await page.waitForTimeout(1200);
+
+    const termsLink=page.getByRole("link",{name:/giveaway terms/i}).first();
+    let termsText="", termsUrl=null, termsStatus=null;
+    if(await termsLink.count().catch(()=>0)){
+      termsUrl=await termsLink.getAttribute("href").catch(()=>null);
+      if(termsUrl){
+        try{
+          const resp=await context.request.get(termsUrl,{timeout:12000});
+          termsStatus=resp.status();
+          termsText=cleanText(await resp.text(),50000);
+        }catch{}
+      }
+    }
+    const automationBan=/(automated|automation|script|macro|bot|robotic|mechanical)\s+(entry|entries|system|means|method|device)/i.test(termsText) ||
+      /(entries|entry).{0,120}(automated|script|macro|bot|robotic|mechanical)/i.test(termsText);
+
+    const parts=String(profile.name).trim().split(/\s+/);
+    const first=parts[0]||"";
+    const last=parts.slice(1).join(" ");
+    const fill=async(sel,val)=>{
+      const el=page.locator(sel).first();
+      if(await el.count().catch(()=>0)){await el.fill(String(val)).catch(()=>{});return true;}
+      return false;
+    };
+    await fill('input[name="firstName"]',first);
+    await fill('input[name="lastName"]',last);
+    await fill('input[name="emailAddress"]',profile.email);
+    await fill('input[name="mobilePhone"]',profile.phone);
+
+    const usage=page.locator('select[name="usageWhoareyou1"]').first();
+    if(await usage.count().catch(()=>0)){
+      await usage.selectOption({label:"Residential / Homeowner"}).catch(async()=>await usage.selectOption("Residential / Homeowner").catch(()=>{}));
+    }
+
+    // Do not opt into the optional newsletter unless explicitly requested.
+    const newsletter=page.locator('input[type="checkbox"][name="singleCheckbox"]').first();
+    if(await newsletter.count().catch(()=>0) && await newsletter.isChecked().catch(()=>false)) await newsletter.uncheck().catch(()=>{});
+
+    const requiredMissing=[];
+    for(const sel of ['input[name="firstName"]','input[name="lastName"]','input[name="emailAddress"]','input[name="mobilePhone"]','select[name="usageWhoareyou1"]']){
+      const el=page.locator(sel).first();
+      if(!(await el.count().catch(()=>0)) || !String(await el.inputValue().catch(()=>"")).trim()) requiredMissing.push(sel);
+    }
+    if(requiredMissing.length) return {task:"husqvarna_450x_entry",status:"form_incomplete",missing:requiredMissing,url:page.url()};
+
+    if(automationBan){
+      return {task:"husqvarna_450x_entry",status:"manual_submit_required_by_rules",url:page.url(),terms_url:termsUrl,terms_status:termsStatus};
+    }
+
+    const submit=page.locator('input[type="submit"],button[type="submit"],button').filter({hasText:/submit|enter/i}).first();
+    if(!(await submit.count().catch(()=>0))) return {task:"husqvarna_450x_entry",status:"submit_control_not_found",url:page.url()};
+    await submit.click({timeout:5000}).catch(()=>{});
+    await page.waitForTimeout(3500);
+    const body=await pageBody(page,30000);
+    const confirmed=/(thank you|thanks for entering|entry received|successfully entered|submission received)/i.test(body);
+    return {task:"husqvarna_450x_entry",status:confirmed?"confirmed":"submitted_unconfirmed",url:page.url(),
+      confirmation:body.match(/.{0,120}(thank you|thanks for entering|entry received|successfully entered|submission received).{0,180}/i)?.[0]||null};
+  }finally{await page.close().catch(()=>{});}
+}
+
+async function prepareRestrictedSession(job) {
+  const profile=readEntryProfile();
+  const kind=String(job.kind||"");
+  const targets={
+    reolink:"https://reolink.com/__/lp/reolink-day/",
+    gleam_lenovo_monitor:"https://gleam.io/2mt9X/win-a-custom-valheim-lenovo-legion-ultrawide-gaming-monitor",
+    gleam_lenovo_chromebook:"https://gleam.io/GUZoP/lenovo-slim-3-chromebook-giveaway"
+  };
+  const url=targets[kind]||String(job.url||"");
+  if(!url) throw new Error("Missing restricted-entry URL");
+  const session=await startLogin({profile:"daily",url});
+  const page=activeLoginPage();
+  if(!page) return {...session,status:"browser_started_but_page_missing"};
+  await page.waitForTimeout(1800);
+
+  const fillVisible=async(selectors,value)=>{
+    for(const sel of selectors){
+      const loc=page.locator(sel);
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,12);i++){
+        const el=loc.nth(i);
+        if(!(await el.isVisible().catch(()=>false))) continue;
+        try{await el.fill(String(value));return true;}catch{}
+      }
+    }
+    return false;
+  };
+
+  const parts=String(profile.name||"").trim().split(/\s+/);
+  await fillVisible(['input[type="email"]','input[autocomplete="email"]','input[name*="email" i]'],profile.email||"");
+  await fillVisible(['input[autocomplete="given-name"]','input[name*="first" i]','input[placeholder*="first" i]'],parts[0]||"");
+  await fillVisible(['input[autocomplete="family-name"]','input[name*="last" i]','input[placeholder*="last" i]'],parts.slice(1).join(" "));
+  if(profile.phone) await fillVisible(['input[type="tel"]','input[name*="phone" i]','input[autocomplete="tel"]'],profile.phone);
+
+  const buttons=await page.locator('button,input[type="submit"],[role="button"]').evaluateAll(els=>els.map((e,i)=>{
+    const r=e.getBoundingClientRect();
+    return {i,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,180),visible:r.width>0&&r.height>0};
+  }).filter(x=>x.visible&&/(submit|enter|continue|login|log in|verify|complete|done)/i.test(x.text)).slice(0,30)).catch(()=>[]);
+  const body=await pageBody(page,12000);
+  return {...session,task:"prepare_restricted",status:"ready_for_manual_action",kind,url:page.url(),buttons,
+    note:/gleam/i.test(page.url()+body)?"Gleam final retry prepared; complete the visible final action manually.":"Form prepared; complete the visible final submit manually."};
+}
+
 async function freshOpportunityDiagWithContext(context, task) {
   const targets = {
     powernation_diag: "https://generaltire.powernationtv.com/",
@@ -2876,6 +3015,7 @@ async function powernationDeepDiagWithContext(context) {
 }
 
 async function taskWithContext(context, task) {
+  if (task === "husqvarna_450x_entry") return await husqvarna450xEntryWithContext(context);
   if (task === "husqvarna_terms_diag") return await husqvarnaTermsDiagWithContext(context);
   if (task === "powernation_deep_diag") return await powernationDeepDiagWithContext(context);
   if (["powernation_diag","mammotion_vanguard_diag","husqvarna_450x_diag"].includes(task)) return await freshOpportunityDiagWithContext(context, task);
@@ -2921,14 +3061,21 @@ async function runTask(job) {
   if (task === "entry_profile_store") return storeEncryptedEntryProfile(job);
   if (task === "vault_init") return initSecureVault();
   if (task === "vault_store") return storeEncryptedEntryProfile(job);
+  if (task === "vault_patch") return patchEncryptedEntryProfile(job);
   if (task === "dreame_otp_start") return await dreameOtpStart();
   if (task === "dreame_otp_finish") return await dreameOtpFinish(job);
   if (task === "login_start") return await startLogin(job);
   if (task === "login_stop") return await stopLogin();
+  if (task === "prepare_restricted") return await prepareRestrictedSession(job);
   if (["reolink_subscribe","reolink_day_entry","reolink_confirmed_entry"].includes(task)) {
     return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
   }
   if (task === "jml_scan") return await jmlScan();
+  if (["husqvarna_450x_entry"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
   if (task === "roborock_spin") return await roborockSpin();
   if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag","mova_widget_api_diag","navimow_round2_check"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
@@ -2939,7 +3086,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag", "husqvarna_450x_entry"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const requestedTimeout = Number(job.lane_timeout_ms || 50000);
