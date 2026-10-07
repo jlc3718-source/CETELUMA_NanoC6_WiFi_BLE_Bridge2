@@ -1,4 +1,8 @@
 {
-  "id": "powernation-field-details-20261007",
-  "task": "powernation_deep_diag"
+  "id": "powernation-field-details-20261007-r2",
+  "task": "batch",
+  "lane_timeout_ms": 30000,
+  "tasks": [
+    "powernation_deep_diag"
+  ]
 }
