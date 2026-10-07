@@ -1,6 +1,72 @@
 {
-  "id": "run-daily-lenovo-legion-go-s-20261007",
-  "task": "generic_form_entry",
-  "url": "https://gaming.lenovo.com/monthly-giveaway-2",
-  "submit": true
+  "id": "run-daily-save-new-findings-20261007",
+  "task": "promo_state_patch",
+  "items": [
+    {
+      "id": "lenovo-thinkbook-14x-oct-2026",
+      "title": "Lenovo ThinkBook 14x October Giveaway",
+      "url": "https://smbcommunity.lenovo.com/monthly-giveaway-3/na",
+      "status": "manual_required",
+      "ends": "2026-11-02T04:59:00"
+    },
+    {
+      "id": "lenovo-legion-go-s-oct-2026",
+      "title": "Lenovo Legion Go S October Giveaway",
+      "url": "https://gaming.lenovo.com/monthly-giveaway-2",
+      "status": "manual_required",
+      "ends": "2026-11-02T04:59:00"
+    },
+    {
+      "id": "anker-tech-discovery-box-2026",
+      "title": "Anker Tech Discovery Box",
+      "url": "https://www.anker.com/anker-tech",
+      "status": "manual_login_quiz"
+    },
+    {
+      "id": "govee-halloween-ideas-2026",
+      "title": "Govee Halloween Decorating Ideas",
+      "url": "https://www.instagram.com/goveeofficial/",
+      "status": "manual_post_lookup",
+      "ends": "2026-10-13T23:59:00-04:00"
+    },
+    {
+      "id": "reolink-day-monthly-2026",
+      "title": "Reolink Day Monthly Lucky Draw",
+      "url": "https://reolink.com/__/lp/reolink-day/",
+      "status": "manual_only_rules_prohibit_automation"
+    },
+    {
+      "id": "greenlee-service-sticker-2026",
+      "title": "Greenlee Service Sticker Giveaway",
+      "status": "needs_email_confirmation",
+      "ends": "2026-12-31T23:59:59"
+    },
+    {
+      "id": "ridgid-odometer-challenge-2026",
+      "title": "RIDGID Odometer Challenge",
+      "url": "https://www.ridgid.com/us/en/odometer-challenge-giveaway",
+      "status": "needs_seesnake_serial_and_mileage",
+      "ends": "2026-12-31T23:59:59-05:00"
+    },
+    {
+      "id": "ridgid-k4310-survey-2026",
+      "title": "RIDGID K-4310 Survey Giveaway",
+      "url": "https://www.ridgid.com/us/en/k-4310-survey",
+      "status": "questionnaire_link_not_found",
+      "ends": "2026-10-13T23:59:59-05:00"
+    },
+    {
+      "id": "betabound-inseego-fx5100-2026",
+      "title": "Betabound Inseego FX5100 Router Test",
+      "url": "https://inseego.centercode.com/FX5100",
+      "status": "eligibility_unknown_tmobile_business_fwa"
+    },
+    {
+      "id": "klein-new-product-expedition-2026",
+      "title": "Klein New Product Expedition",
+      "url": "https://www.kleintools.com/2026q3promo",
+      "status": "needs_distributor_qr",
+      "ends": "2026-10-31T23:59:59-05:00"
+    }
+  ]
 }
