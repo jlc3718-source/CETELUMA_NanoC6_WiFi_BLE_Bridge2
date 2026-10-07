@@ -1182,7 +1182,42 @@ async function goveeHalloweenEntryWithContext(context) {
       await page.waitForTimeout(900);
     }
 
-    const candidates=[...urls].slice(0,18);
+    let candidates=[...urls].slice(0,18);
+
+    // Instagram sometimes renders an empty profile grid in browser automation.
+    // Fall back to its authenticated same-origin web profile endpoint to recover recent shortcodes/captions.
+    if(!candidates.length){
+      const api=await page.evaluate(async()=>{
+        try{
+          const r=await fetch("/api/v1/users/web_profile_info/?username=goveeofficial",{
+            credentials:"include",
+            headers:{"X-IG-App-ID":"936619743392459","Accept":"*/*"}
+          });
+          return {status:r.status,json:await r.json()};
+        }catch(e){return {status:0,error:String(e)};}
+      }).catch(()=>null);
+      const user=api?.json?.data?.user || api?.json?.user || null;
+      const buckets=[
+        user?.edge_owner_to_timeline_media?.edges,
+        user?.edge_felix_video_timeline?.edges
+      ].filter(Array.isArray);
+      const seen=new Set();
+      for(const edges of buckets){
+        for(const edge of edges){
+          const n=edge?.node||{};
+          const code=n.shortcode||n.code||"";
+          const cap=n?.edge_media_to_caption?.edges?.[0]?.node?.text || n.caption?.text || "";
+          if(!code || seen.has(code)) continue;
+          seen.add(code);
+          if(/Halloween/i.test(cap) || /GoveeOutdoorLights/i.test(cap) || /giveaway/i.test(cap)){
+            candidates.push("https://www.instagram.com/p/"+code+"/");
+          }
+          if(candidates.length>=18) break;
+        }
+        if(candidates.length>=18) break;
+      }
+    }
+
     let target=null, targetText="";
     for(const u of candidates){
       try{
