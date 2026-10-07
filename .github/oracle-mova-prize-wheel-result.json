@@ -1,0 +1,11 @@
+{
+  "id": "mova-prize-wheel-daily",
+  "ok": true,
+  "started": "2026-10-07T20:40:12.471Z",
+  "finished": "2026-10-07T20:41:03.123Z",
+  "result": {
+    "task": "mova_prize_wheel",
+    "status": "submit_control_not_found",
+    "url": "https://us.mova.tech/pages/mova-prime-day-sale"
+  }
+}
