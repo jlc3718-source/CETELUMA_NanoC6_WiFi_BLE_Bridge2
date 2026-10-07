@@ -364,8 +364,13 @@ function createFastDaily(deps) {
         };
       }
 
-      const submit=page.locator('button[type="submit"],input[type="submit"]').filter({visible:true}).first();
-      if (!(await submit.count().catch(()=>0))) return {task:"generic_form_entry",status:"submit_control_not_found",url:page.url(),prepared:true};
+      const submits=page.locator('button[type="submit"],input[type="submit"]');
+      let submit=null;
+      for(let i=0;i<Math.min(await submits.count().catch(()=>0),20);i++){
+        const candidate=submits.nth(i);
+        if(await candidate.isVisible().catch(()=>false)){ submit=candidate; break; }
+      }
+      if (!submit) return {task:"generic_form_entry",status:"submit_control_not_found",url:page.url(),prepared:true};
       await submit.click({timeout:3500});
       await page.waitForTimeout(1800);
       const final=(await page.locator("body").innerText().catch(()=>"")).slice(0,30000);
