@@ -23,24 +23,8 @@ jobs:
           set -euo pipefail
           RAW="$(mktemp)"
           trap 'rm -f "$RAW"' EXIT
-          curl -sS --fail --max-time 30 \
-            -H 'Content-Type: application/json' \
-            -d '{"id":"promo-state-read","task":"promo_state_get"}' \
-            http://127.0.0.1:8932/run > "$RAW"
-          python3 -c 'import json,re,sys,urllib.parse; d=json.load(open(sys.argv[1])); bad=re.compile(r"(address|email|phone|mobile|first.?name|last.?name|full.?name|street|city|state|zip|postal|cookie|token|secret|password|credential|profile.?data|form.?data|payload|html|screenshot|username|user.?name|handle)",re.I); rxmail=re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",re.I); rxzip=re.compile(r"\\b\\d{5}(?:-\\d{4})?\\b"); rxphone=re.compile(r"\\+?1?[ .()\\-]*\\d{3}[ .()\\-]*\\d{3}[ .\\-]*\\d{4}");
-
-def walk(v,k=""):
-    if isinstance(v,dict): return {q:("[REDACTED]" if bad.search(q) else walk(z,q)) for q,z in v.items()}
-    if isinstance(v,list): return [walk(x,k) for x in v[:200]]
-    if isinstance(v,str):
-        x=rxmail.sub("[REDACTED_EMAIL]",v); x=rxzip.sub("[REDACTED_ZIP]",x); x=rxphone.sub("[REDACTED_PHONE]",x)
-        if x.startswith(("http://","https://")):
-            try:
-                u=urllib.parse.urlsplit(x); x=urllib.parse.urlunsplit((u.scheme,u.netloc,u.path,"",""))
-            except: pass
-        return x[:2000]
-    return v
-json.dump(walk(d),open(".github/oracle-promo-state-result.json","w"),indent=2)' "$RAW"
+          curl -sS --fail --max-time 30 -H 'Content-Type: application/json' -d '{"id":"promo-state-read","task":"promo_state_get"}' http://127.0.0.1:8932/run > "$RAW"
+          python3 -c 'import json,re,sys;d=json.load(open(sys.argv[1]));bad=re.compile(r"(address|email|phone|mobile|first.?name|last.?name|full.?name|street|city|state|zip|postal|cookie|token|secret|password|credential|profile.?data|form.?data|payload|html|screenshot|username|user.?name|handle)",re.I);mail=re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",re.I);phone=re.compile(r"\+?1?[ .()\-]*\d{3}[ .()\-]*\d{3}[ .\-]*\d{4}");zrx=re.compile(r"\b\d{5}(?:-\d{4})?\b");scrub=lambda s:zrx.sub("[REDACTED_ZIP]",phone.sub("[REDACTED_PHONE]",mail.sub("[REDACTED_EMAIL]",s.split("?")[0] if s.startswith(("http://","https://")) else s)));walk=None;walk=lambda v:{k:("[REDACTED]" if bad.search(k) else walk(x)) for k,x in v.items()} if isinstance(v,dict) else [walk(x) for x in v[:200]] if isinstance(v,list) else scrub(v) if isinstance(v,str) else v;json.dump(walk(d),open(".github/oracle-promo-state-result.json","w"),indent=2)' "$RAW"
 
       - name: Publish scrubbed promo state
         shell: bash
