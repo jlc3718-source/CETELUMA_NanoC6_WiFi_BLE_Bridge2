@@ -1,5 +1,5 @@
 {
-  "id": "run-daily-fast-benchmark-20261007",
+  "id": "run-daily-fast-benchmark-20261007-r2",
   "task": "run_daily_fast",
   "lane_timeout_ms": 18000,
   "close_stale_manual": true
