@@ -1,0 +1,12 @@
+{
+  "id": "govee-halloween-daily",
+  "ok": true,
+  "started": "2026-10-07T20:38:38.360Z",
+  "finished": "2026-10-07T20:39:14.310Z",
+  "result": {
+    "task": "govee_halloween_entry",
+    "status": "giveaway_post_not_found",
+    "profile": "https://www.instagram.com/goveeofficial/",
+    "recent_links": []
+  }
+}
