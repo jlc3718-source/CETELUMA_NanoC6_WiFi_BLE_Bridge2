@@ -1469,7 +1469,7 @@ async function movaPrizeWheelWithContext(context) {
     let scope=null;
     let emailField=null;
     for(const sc of scopes){
-      const c=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i],input[autocomplete="email"]');
+      const c=sc.locator('input[type="email"],input:not([type="checkbox"]):not([type="radio"])[name*="email" i],input:not([type="checkbox"]):not([type="radio"])[placeholder*="email" i],input[autocomplete="email"]');
       const n=await c.count().catch(()=>0);
       for(let i=0;i<Math.min(n,10);i++){
         const el=c.nth(i);
@@ -1490,7 +1490,7 @@ async function movaPrizeWheelWithContext(context) {
         if(/purchase|buy|checkout|redeem|pay/i.test(txt+" "+parent)) continue;
         try{await el.click({timeout:2500});await page.waitForTimeout(1200);}catch{continue;}
         for(const sc of [page,...page.frames().filter(fr=>fr!==page.mainFrame())]){
-          const c=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i],input[autocomplete="email"]');
+          const c=sc.locator('input[type="email"],input:not([type="checkbox"]):not([type="radio"])[name*="email" i],input:not([type="checkbox"]):not([type="radio"])[placeholder*="email" i],input[autocomplete="email"]');
           const n=await c.count().catch(()=>0);
           for(let j=0;j<Math.min(n,10);j++){
             const f=c.nth(j);
@@ -1849,7 +1849,7 @@ async function movaDirectEntryWithContext(context) {
 
     let emailField=null, scope=null;
     for(const sc of scopes){
-      const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+      const loc=sc.locator('input[type="email"],input:not([type="checkbox"]):not([type="radio"])[name*="email" i],input:not([type="checkbox"]):not([type="radio"])[placeholder*="email" i]');
       const n=await loc.count().catch(()=>0);
       for(let i=0;i<Math.min(n,20);i++){
         const el=loc.nth(i);
@@ -1867,7 +1867,7 @@ async function movaDirectEntryWithContext(context) {
         try{await el.scrollIntoViewIfNeeded().catch(()=>{});await el.click({timeout:2200,force:true}).catch(()=>{});await page.waitForTimeout(800);}catch{}
       }
       for(const sc of [page,...page.frames().filter(fr=>fr!==page.mainFrame())]){
-        const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+        const loc=sc.locator('input[type="email"],input:not([type="checkbox"]):not([type="radio"])[name*="email" i],input:not([type="checkbox"]):not([type="radio"])[placeholder*="email" i]');
         const n2=await loc.count().catch(()=>0);
         for(let j=0;j<Math.min(n2,20);j++){
           const el=loc.nth(j);
@@ -1935,7 +1935,7 @@ async function reolinkDayEntryWithContext(context) {
     const scopes=[page,...page.frames().filter(fr=>fr!==page.mainFrame())];
     let email=null, scope=null;
     for(const sc of scopes){
-      const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+      const loc=sc.locator('input[type="email"],input:not([type="checkbox"]):not([type="radio"])[name*="email" i],input:not([type="checkbox"]):not([type="radio"])[placeholder*="email" i]');
       const n=await loc.count().catch(()=>0);
       for(let i=0;i<Math.min(n,20);i++){
         const el=loc.nth(i);
@@ -2505,7 +2505,7 @@ async function reolinkConfirmedEntryWithContext(context){
     const scopes=[page,...page.frames().filter(f=>f!==page.mainFrame())];
     let email=null,scope=null;
     for(const sc of scopes){
-      const loc=sc.locator('input[type="email"],input[name*="email" i],input[placeholder*="email" i]');
+      const loc=sc.locator('input[type="email"],input:not([type="checkbox"]):not([type="radio"])[name*="email" i],input:not([type="checkbox"]):not([type="radio"])[placeholder*="email" i]');
       const n=await loc.count().catch(()=>0);
       for(let i=0;i<Math.min(n,10);i++){
         const el=loc.nth(i);
