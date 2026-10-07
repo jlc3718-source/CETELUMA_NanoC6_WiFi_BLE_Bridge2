@@ -1,10 +1,4 @@
 {
-  "id": "finish-plumbing-diag-20261006",
-  "task": "batch",
-  "tasks": [
-    "dreame_auth_diag",
-    "eufy_plumbing_diag",
-    "bluetti_plumbing_diag",
-    "mova_plumbing_diag"
-  ]
+  "id": "dreame-otp-start-20261006",
+  "task": "dreame_otp_start"
 }
