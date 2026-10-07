@@ -1,0 +1,36 @@
+name: Oracle Browser Route List
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oracle-browser-route-list.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  routes:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract route list
+        shell: bash
+        run: |
+          set -e
+          CID="$(docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");const re=/app\.(get|post|put|delete|patch)\(\s*["\x27\x60]([^"\x27\x60]+)["\x27\x60]/g;let m;while((m=re.exec(s)))console.log(m[1].toUpperCase()+" "+m[2]);' > .github/oracle-browser-routes.txt
+          cat .github/oracle-browser-routes.txt
+      - name: Publish route list
+        shell: bash
+        run: |
+          set -e
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-browser-routes.txt
+          git commit -m "Publish Oracle Browser Agent route list" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
