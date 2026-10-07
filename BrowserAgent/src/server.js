@@ -2900,14 +2900,17 @@ async function prepareRestrictedSession(job) {
     gleam_lenovo_monitor:"https://gleam.io/2mt9X/win-a-custom-valheim-lenovo-legion-ultrawide-gaming-monitor",
     gleam_lenovo_chromebook:"https://gleam.io/GUZoP/lenovo-slim-3-chromebook-giveaway"
   };
-  const url=targets[kind]||String(job.url||"");
-  if(!url) throw new Error("Missing restricted-entry URL");
-  const session=await startLogin({profile:"daily",url});
-  const page=activeLoginPage();
-  if(!page) return {...session,status:"browser_started_but_page_missing"};
-  await page.waitForTimeout(1800);
+  const defaultUrls = kind==="gleam_final_retry"
+    ? ["https://gleam.io/2mt9X/win-a-custom-valheim-lenovo-legion-ultrawide-gaming-monitor",
+       "https://gleam.io/GUZoP/lenovo-slim-3-chromebook-giveaway"]
+    : [];
+  const urls=Array.isArray(job.urls)&&job.urls.length?job.urls.map(String):defaultUrls.length?defaultUrls:[targets[kind]||String(job.url||"")].filter(Boolean);
+  if(!urls.length) throw new Error("Missing restricted-entry URL");
+  const session=await startLogin({profile:"daily",urls});
+  const pages=loginState.context?loginState.context.pages().filter(p=>!p.isClosed()):[];
+  if(!pages.length) return {...session,status:"browser_started_but_page_missing"};
 
-  const fillVisible=async(selectors,value)=>{
+  const fillVisible=async(page,selectors,value)=>{
     for(const sel of selectors){
       const loc=page.locator(sel);
       const n=await loc.count().catch(()=>0);
@@ -2921,18 +2924,67 @@ async function prepareRestrictedSession(job) {
   };
 
   const parts=String(profile.name||"").trim().split(/\s+/);
-  await fillVisible(['input[type="email"]','input[autocomplete="email"]','input[name*="email" i]'],profile.email||"");
-  await fillVisible(['input[autocomplete="given-name"]','input[name*="first" i]','input[placeholder*="first" i]'],parts[0]||"");
-  await fillVisible(['input[autocomplete="family-name"]','input[name*="last" i]','input[placeholder*="last" i]'],parts.slice(1).join(" "));
-  if(profile.phone) await fillVisible(['input[type="tel"]','input[name*="phone" i]','input[autocomplete="tel"]'],profile.phone);
+  const prepared=[];
+  for(const page of pages){
+    await page.waitForTimeout(1400);
+    await fillVisible(page,['input[type="email"]','input[autocomplete="email"]','input[name*="email" i]'],profile.email||"");
+    await fillVisible(page,['input[autocomplete="given-name"]','input[name*="first" i]','input[placeholder*="first" i]'],parts[0]||"");
+    await fillVisible(page,['input[autocomplete="family-name"]','input[name*="last" i]','input[placeholder*="last" i]'],parts.slice(1).join(" "));
+    if(profile.phone) await fillVisible(page,['input[type="tel"]','input[name*="phone" i]','input[autocomplete="tel"]'],profile.phone);
+    const buttons=await page.locator('button,input[type="submit"],[role="button"]').evaluateAll(els=>els.map((e,i)=>{
+      const r=e.getBoundingClientRect();
+      return {i,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,180),visible:r.width>0&&r.height>0};
+    }).filter(x=>x.visible&&/(submit|enter|continue|login|log in|verify|complete|done)/i.test(x.text)).slice(0,30)).catch(()=>[]);
+    const body=await pageBody(page,12000);
+    prepared.push({url:page.url(),title:await page.title().catch(()=>""),buttons,gleam:/gleam/i.test(page.url()+body)});
+  }
+  if(kind==="gleam_final_retry"){
+    const p=vaultPaths();
+    fs.writeFileSync(path.join(path.dirname(p.profile),"gleam-final-attempted.json"),JSON.stringify({at:new Date().toISOString(),urls}),{mode:0o600});
+  }
+  return {...session,task:"prepare_restricted",status:"ready_for_manual_action",kind,pages:prepared,
+    note:kind==="gleam_final_retry"?"Final Gleam retry prepared; complete visible final actions manually. Future daily sweeps should suppress these if not completed.":"Form prepared; complete the visible final submit manually."};
+}
 
-  const buttons=await page.locator('button,input[type="submit"],[role="button"]').evaluateAll(els=>els.map((e,i)=>{
-    const r=e.getBoundingClientRect();
-    return {i,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,180),visible:r.width>0&&r.height>0};
-  }).filter(x=>x.visible&&/(submit|enter|continue|login|log in|verify|complete|done)/i.test(x.text)).slice(0,30)).catch(()=>[]);
-  const body=await pageBody(page,12000);
-  return {...session,task:"prepare_restricted",status:"ready_for_manual_action",kind,url:page.url(),buttons,
-    note:/gleam/i.test(page.url()+body)?"Gleam final retry prepared; complete the visible final action manually.":"Form prepared; complete the visible final submit manually."};
+
+async function powernationEntryWithContext(context) {
+  const profile=readEntryProfile();
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,"https://generaltire.powernationtv.com/");
+    await page.waitForTimeout(5000);
+    const frame=page.frames().find(fr=>/app\.viralsweep\.com\/vrlswp\/full\//i.test(fr.url()));
+    if(!frame) return {task:"powernation_entry",status:"entry_frame_not_found",url:page.url()};
+
+    const body=cleanText(await frame.locator("body").innerText().catch(()=>""),50000);
+    if(/You're Entered!/i.test(body)) return {task:"powernation_entry",status:"already_entered_this_period",url:page.url()};
+
+    const first=String(profile.name||"").trim().split(/\s+/)[0]||"";
+    await frame.locator('input[name="first_name"]').fill(first).catch(()=>{});
+    await frame.locator('input[name="email"]').fill(String(profile.email||"")).catch(()=>{});
+    await frame.locator('select[name="90595_1727107357"]').selectOption("2009").catch(()=>{});
+    await frame.locator('select[name="41586_1727107386"]').selectOption({label:"CHEVROLET"}).catch(async()=>await frame.locator('select[name="41586_1727107386"]').selectOption("CHEVROLET").catch(()=>{}));
+    await frame.locator('input[name="71247_1727107408"]').fill("Silverado 2500 HD").catch(()=>{});
+
+    const agree=frame.locator('input[name="agree_to_rules"]').first();
+    if(await agree.count().catch(()=>0) && !(await agree.isChecked().catch(()=>false))) await agree.check().catch(()=>{});
+
+    const challenge=page.frames().some(fr=>/challenges\.cloudflare\.com/i.test(fr.url()));
+    const requiredEmpty=await frame.locator('select[required],input[required]').evaluateAll(els=>els.filter(e=>!String(e.value||"").trim()).map(e=>e.name||e.id||e.type)).catch(()=>[]);
+    if(requiredEmpty.length) return {task:"powernation_entry",status:"form_incomplete",missing:requiredEmpty,url:page.url()};
+
+    if(challenge) {
+      return {task:"powernation_entry",status:"manual_final_required_challenge",url:page.url(),prepared:true};
+    }
+
+    const submit=frame.locator('input[type="submit"],button[type="submit"]').first();
+    if(!(await submit.count().catch(()=>0))) return {task:"powernation_entry",status:"submit_control_not_found",url:page.url()};
+    await submit.click({timeout:5000}).catch(()=>{});
+    await page.waitForTimeout(3500);
+    const fin=cleanText(await frame.locator("body").innerText().catch(()=>""),30000);
+    return {task:"powernation_entry",status:/You're Entered!/i.test(fin)?"confirmed":"submitted_unconfirmed",url:page.url(),
+      confirmation:fin.match(/.{0,100}You're Entered!.{0,180}/i)?.[0]||null};
+  } finally { await page.close().catch(()=>{}); }
 }
 
 async function freshOpportunityDiagWithContext(context, task) {
@@ -3018,6 +3070,7 @@ async function powernationDeepDiagWithContext(context) {
 }
 
 async function taskWithContext(context, task) {
+  if (task === "powernation_entry") return await powernationEntryWithContext(context);
   if (task === "husqvarna_450x_entry") return await husqvarna450xEntryWithContext(context);
   if (task === "husqvarna_terms_diag") return await husqvarnaTermsDiagWithContext(context);
   if (task === "powernation_deep_diag") return await powernationDeepDiagWithContext(context);
@@ -3074,6 +3127,11 @@ async function runTask(job) {
     return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
   }
   if (task === "jml_scan") return await jmlScan();
+  if (["powernation_entry"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
   if (["husqvarna_450x_entry"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
@@ -3089,7 +3147,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag", "husqvarna_450x_entry"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag", "husqvarna_450x_entry", "powernation_entry"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const requestedTimeout = Number(job.lane_timeout_ms || 50000);
