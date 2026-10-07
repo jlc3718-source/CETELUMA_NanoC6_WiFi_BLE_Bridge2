@@ -1,9 +1,10 @@
 {
-  "id": "run-daily-retry-mova-housework-20261007-003",
+  "id": "run-daily-new-opportunities-20261007-004",
   "task": "batch",
-  "lane_timeout_ms": 50000,
+  "lane_timeout_ms": 40000,
   "tasks": [
-    "mova_prize_wheel",
-    "housework_complete"
+    "powernation_diag",
+    "mammotion_vanguard_diag",
+    "husqvarna_450x_diag"
   ]
 }
