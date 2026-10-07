@@ -1,10 +1,9 @@
 {
-  "id": "run-daily-retry-core-20261007-002",
+  "id": "run-daily-retry-mova-housework-20261007-003",
   "task": "batch",
   "lane_timeout_ms": 50000,
   "tasks": [
-    "roborock_wheel_diag",
-    "eufy_alt_free_spin",
-    "bluetti_safe_spin"
+    "mova_prize_wheel",
+    "housework_complete"
   ]
 }
