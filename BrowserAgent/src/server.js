@@ -1218,6 +1218,32 @@ async function goveeHalloweenEntryWithContext(context) {
       }
     }
 
+    // Public mirror fallback: use it only to recover the exact Instagram post target.
+    if(!candidates.length){
+      try{
+        await page.goto("https://jolygram.com/en/profile/goveeofficial/15903547309",{waitUntil:"domcontentloaded",timeout:15000});
+        await page.waitForTimeout(1800);
+        const recovered=await page.evaluate(()=>{
+          const out=[];
+          const nodes=[...document.querySelectorAll("img,[alt],article,div,a")];
+          for(const el of nodes){
+            const txt=((el.getAttribute&&el.getAttribute("alt"))||el.innerText||el.textContent||"").replace(/\s+/g," ").trim();
+            if(!/(Celebrate Halloween with Govee|Share your Halloween decorating ideas|Sarah Michelle Gellar)/i.test(txt)) continue;
+            let p=el;
+            for(let i=0;i<7&&p;i++,p=p.parentElement){
+              const links=[...p.querySelectorAll("a[href]")].map(a=>a.href).filter(Boolean);
+              for(const h of links) if(/instagram\.com\/(p|reel)\//i.test(h)) out.push(h);
+              const own=p.getAttribute&&p.getAttribute("href");
+              if(own&&/instagram\.com\/(p|reel)\//i.test(own)) out.push(own);
+            }
+          }
+          return [...new Set(out)].slice(0,10);
+        }).catch(()=>[]);
+        candidates.push(...recovered);
+      }catch{}
+      await gotoLoose(page,"https://www.instagram.com/goveeofficial/").catch(()=>{});
+    }
+
     let target=null, targetText="";
     for(const u of candidates){
       try{
