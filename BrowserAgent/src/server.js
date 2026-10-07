@@ -1626,58 +1626,105 @@ async function gotoLoose(page, url) {
 async function dreameEntryPathWithContext(context) {
   const page=await context.newPage();
   try {
-    const url="https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245";
+    const url="https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245&back=index&pa=1&mobile=2#reply";
     await gotoLoose(page,url);
+    await page.waitForTimeout(1800);
     let body=await pageBody(page,35000);
 
-    const editors=page.locator('textarea[name="message"],textarea[id*="message"],textarea,[contenteditable="true"]');
+    const entryText="The Dreame Aero Wet Dry Vacuum is on my fall wishlist. I already use Dreame robot cleaning at home, and a wet/dry vacuum would make quick cleanup of tracked-in dirt and spills much easier without pulling out a separate vacuum and mop.";
+
+    // Avoid duplicate post if it is already present.
+    if(body.includes("The Dreame Aero Wet Dry Vacuum is on my fall wishlist")){
+      return {task:"dreame_entry_path",status:"already_submitted",url:page.url()};
+    }
+
+    const editors=page.locator(
+      'textarea[name="message"],textarea[id*="message"],textarea[name*="message"],textarea[name*="reply"],textarea,[contenteditable="true"]'
+    );
     const ec=await editors.count().catch(()=>0);
     let editor=null;
-    for(let i=0;i<Math.min(ec,20);i++){
+    for(let i=0;i<Math.min(ec,30);i++){
       const e=editors.nth(i);
       if(await e.isVisible().catch(()=>false)){editor=e;break;}
     }
 
     if(!editor){
-      const loginLinks=page.locator('a[href*="login"],a[href*="logging"],a[href*="member.php"]');
-      const lc=await loginLinks.count().catch(()=>0);
-      let loginUrl=null;
-      for(let i=0;i<Math.min(lc,30);i++){
-        const a=loginLinks.nth(i);
-        const txt=cleanText(await a.innerText().catch(()=>""),120);
-        const href=await a.getAttribute("href").catch(()=>null);
-        if(!href) continue;
-        if(/log in|login|sign in/i.test(txt+" "+href)){ loginUrl=new URL(href,page.url()).href; break; }
-      }
       return {
         task:"dreame_entry_path",
         status:/log in|sign in|login/i.test(body)?"login_required":"reply_editor_not_available",
         url:page.url(),
-        login_url:loginUrl,
-        need:"A one-time Dreame Forum login in the Oracle daily profile"
+        need:/log in|sign in|login/i.test(body)?"Dreame login":"Dreame reply form not exposed"
       };
     }
 
-    const entryText="The Dreame Aero Wet Dry Vacuum is on my fall wishlist. I already use Dreame robot cleaning at home, and a wet/dry vacuum would make quick cleanup of tracked-in dirt and spills much easier without pulling out a separate vacuum and mop.";
     const tag=await editor.evaluate(e=>e.tagName).catch(()=>"");
     if(tag==="TEXTAREA"||tag==="INPUT") await editor.fill(entryText);
     else await editor.fill(entryText).catch(async()=>{await editor.click();await page.keyboard.type(entryText);});
 
-    const buttons=page.locator('button[type="submit"],input[type="submit"],button,[role="button"]');
-    const bc=await buttons.count().catch(()=>0);
     let submitted=false;
-    for(let i=0;i<Math.min(bc,50);i++){
-      const b=buttons.nth(i);
-      if(!(await b.isVisible().catch(()=>false))) continue;
-      const label=cleanText((await b.innerText().catch(()=>''))||(await b.getAttribute("value").catch(()=>'')),120);
-      if(!/(reply|post|submit)/i.test(label)) continue;
-      try{await b.click({timeout:3500});submitted=true;break;}catch{}
+    let method=null;
+
+    const selectors=[
+      'button[name="replysubmit"]',
+      'input[name="replysubmit"]',
+      '#postsubmit',
+      'button[id*="postsubmit"]',
+      'input[id*="postsubmit"]',
+      'button[type="submit"]',
+      'input[type="submit"]',
+      '[role="button"]'
+    ];
+    for(const sel of selectors){
+      const loc=page.locator(sel);
+      const n=await loc.count().catch(()=>0);
+      for(let i=0;i<Math.min(n,25);i++){
+        const b=loc.nth(i);
+        if(!(await b.isVisible().catch(()=>false))) continue;
+        const label=cleanText(
+          (await b.innerText().catch(()=>''))+" "+
+          (await b.getAttribute("value").catch(()=>''))+" "+
+          (await b.getAttribute("name").catch(()=>''))+" "+
+          (await b.getAttribute("id").catch(()=>''))
+        ,180);
+        if(sel==='[role="button"]' && !/(reply|post|submit)/i.test(label)) continue;
+        try{await b.click({timeout:3500});submitted=true;method=sel;break;}catch{}
+      }
+      if(submitted) break;
     }
-    if(!submitted) return {task:"dreame_entry_path",status:"submit_control_not_found",url:page.url()};
-    await page.waitForTimeout(2500);
-    body=await pageBody(page,35000);
+
+    // Last resort: submit the form containing the editor itself.
+    if(!submitted){
+      const form=editor.locator("xpath=ancestor::form[1]");
+      if(await form.count().catch(()=>0)){
+        try{
+          await form.evaluate(f=>{
+            if(typeof f.requestSubmit==="function") f.requestSubmit();
+            else f.submit();
+          });
+          submitted=true;
+          method="form.requestSubmit";
+        }catch{}
+      }
+    }
+
+    if(!submitted){
+      const forms=await page.locator("form").evaluateAll(fs=>fs.map((f,i)=>({
+        i,action:f.action,method:f.method,id:f.id,name:f.getAttribute("name")||"",
+        text:(f.innerText||"").replace(/\s+/g," ").trim().slice(0,1200)
+      })).filter(x=>/reply|post|message|submit/i.test(x.action+" "+x.id+" "+x.name+" "+x.text)).slice(0,20)).catch(()=>[]);
+      return {task:"dreame_entry_path",status:"submit_control_not_found",url:page.url(),forms};
+    }
+
+    await page.waitForTimeout(3500);
+    body=await pageBody(page,40000);
     const ok=body.includes("The Dreame Aero Wet Dry Vacuum is on my fall wishlist");
-    return {task:"dreame_entry_path",status:ok?"submitted":"submitted_unconfirmed",url:page.url()};
+    const loginReturned=/log in|sign in/i.test(body) && !/home\.php\?mod=space&uid=/i.test(body);
+    return {
+      task:"dreame_entry_path",
+      status:ok?"submitted":(loginReturned?"login_lost_after_submit":"submitted_unconfirmed"),
+      url:page.url(),
+      submit_method:method
+    };
   } finally { await page.close().catch(()=>{}); }
 }
 
