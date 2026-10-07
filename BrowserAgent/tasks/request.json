@@ -1,14 +1,11 @@
 {
-  "id": "phone-layout-test-20261006",
+  "id": "expanded-login-round-20261006",
   "task": "login_start",
   "profile": "daily",
   "urls": [
-    "https://us.roborock.com/pages/points",
-    "https://www.anker-jml.com/",
+    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245",
+    "https://us-account.mova-tech.com/login?lang=en&country=US&client_id=shopify_web_login&redirect_url=https%3A%2F%2Fus.mova.tech%2Fpages%2Fmova-prime-day-sale&tenantId=000002",
     "https://www.eufy.com/app_primeday",
-    "https://www.bluettipower.com/pages/prime-day/",
-    "https://us.mova.tech/pages/mova-prime-day-sale",
-    "https://www.instagram.com/",
-    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245"
+    "https://www.bluettipower.com/pages/prime-day/"
   ]
 }
