@@ -1,12 +1,10 @@
 {
-  "id": "finish-all-current-entries-20261006",
+  "id": "finish-plumbing-diag-20261006",
   "task": "batch",
   "tasks": [
-    "dreame_entry_path",
-    "mova_direct_entry",
-    "eufy_deep_entry",
-    "bluetti_robust_entry",
-    "reolink_day_entry",
-    "housework_challenge"
+    "dreame_auth_diag",
+    "eufy_plumbing_diag",
+    "bluetti_plumbing_diag",
+    "mova_plumbing_diag"
   ]
 }
