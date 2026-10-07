@@ -1,0 +1,78 @@
+name: Oracle Run Daily Now
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oracle-run-daily-now.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  daily:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Daily through Oracle Browser Agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$(mktemp)"
+          SAFE="$(mktemp)"
+          trap 'rm -f "$RAW" "$SAFE"' EXIT
+          curl -sS --fail --max-time 150 \
+            -H 'Content-Type: application/json' \
+            -d '{"id":"run-daily-now","task":"run_daily_fast","fresh":true,"force_rescan":true,"lane_timeout_ms":55000}' \
+            http://127.0.0.1:8932/run > "$RAW"
+
+          node - "$RAW" "$SAFE" <<'NODE'
+          const fs=require('fs');
+          const [src,dst]=process.argv.slice(2);
+          const data=JSON.parse(fs.readFileSync(src,'utf8'));
+          const sensitive=/address|email|phone|mobile|first.?name|last.?name|full.?name|street|city|state|zip|postal|cookie|token|secret|password|credential|profile.?data|form.?data|payload|html|screenshot/i;
+          const safeKeys=/^(id|ok|task|status|action|outcome|result|results|parallel|lane_timeout_ms|entered|entry|entry_status|confirmation|confirmed|already_entered|skipped|skip_reason|reason|manual|manual_action|title|prize|brand|site|source|url|href|message|detail|details|new|changed|found|count|time|started|finished|elapsed_ms|duration_ms|error)$/i;
+          const sanitizeString=(s,key='')=>{
+            if(/^https?:\/\//i.test(s)){
+              try{const u=new URL(s); return u.origin+u.pathname;}catch{}
+            }
+            s=s.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[REDACTED_EMAIL]');
+            s=s.replace(/\+?1?[\s.(\-]*\d{3}[\s.)\-]*\d{3}[\s.\-]*\d{4}/g,'[REDACTED_PHONE]');
+            s=s.replace(/\b\d{1,6}\s+[A-Za-z0-9 .'-]+\s(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Ct|Court|Way)\b[^,\n]*/gi,'[REDACTED_ADDRESS]');
+            return s.length>1200?s.slice(0,1200)+'…':s;
+          };
+          const walk=(v,key='')=>{
+            if(v===null||typeof v==='number'||typeof v==='boolean') return v;
+            if(typeof v==='string') return sanitizeString(v,key);
+            if(Array.isArray(v)) return v.slice(0,100).map(x=>walk(x,key));
+            if(typeof v==='object'){
+              const o={};
+              for(const [k,val] of Object.entries(v)){
+                if(sensitive.test(k)){o[k]='[REDACTED]'; continue;}
+                if(safeKeys.test(k)||key==='results'||key==='result') o[k]=walk(val,k);
+              }
+              return o;
+            }
+            return String(v);
+          };
+          fs.writeFileSync(dst, JSON.stringify(walk(data),null,2));
+NODE
+          cp "$SAFE" .github/oracle-run-daily-result.json
+
+      - name: Publish scrubbed Daily result
+        shell: bash
+        run: |
+          set -e
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-run-daily-result.json
+          git commit -m "Publish scrubbed Oracle Run Daily result" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 2
+          done
+          exit 1
