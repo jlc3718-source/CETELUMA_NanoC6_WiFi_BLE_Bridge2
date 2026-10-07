@@ -1,4 +1,5 @@
 {
-  "id": "vault-init-phone-20261007",
-  "task": "vault_init"
+  "id": "vault-patch-phone-20261007",
+  "task": "vault_patch",
+  "ciphertext_b64": "Y4k8OcDG1EBrz7nC/wJor6zbiR76wtC91a4e10T2G/6zMb7dPx0X5ou5Cpt/CL5LVEefU+TYai6enuuW+m2t391vuS18wwdULbYixZ6aHXm342EbJR2a+v6ZhP/jN3QJCEC2Tsp+YrGCLVi39wcRdBvQUvp8vZNeO5/dGVxBco0Vt3neCgdkuA7Dn1ErBrNVKuyh09rT3TV5my2EQZbERq85OGU3hHDPz6ZRE6z9jH307xYzX2HwCYq8+8fgEx736dE2WzwU/NIQjTTUe7wmvVmHot3fBQk2zQrwXc8HaQbVc60g1GgPcvdG4S4sSj2ddSw3FGoUWJBllRwV/cGfCMNNxaSIKrlqKi0Fo1IBoqOl2s8tSVDwimdPWEekJYfPKIt6hnxBFr97RR+O69qOrevsI27SDOPQpr/LBi3XeZ950qqRG9fxFg0FJPszogImqKPw59nX3SlBLAu8bndhnJjSC2ENqe/YsHmEPpss4EMRiczuJ1bsPHzAXtLMGtkw"
 }
