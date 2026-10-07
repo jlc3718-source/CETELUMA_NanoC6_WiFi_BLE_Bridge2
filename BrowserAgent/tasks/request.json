@@ -1,4 +1,14 @@
 {
-  "id": "eufy-final-free-spin-20261006c",
-  "task": "eufy_alt_free_spin"
+  "id": "run-daily-actionable-20261007-001",
+  "task": "batch",
+  "tasks": [
+    "jml_scan",
+    "roborock_wheel_diag",
+    "eufy_alt_free_spin",
+    "bluetti_safe_spin",
+    "instagram_brand_scan",
+    "dreame_entry_path",
+    "mova_prize_wheel",
+    "housework_complete"
+  ]
 }
