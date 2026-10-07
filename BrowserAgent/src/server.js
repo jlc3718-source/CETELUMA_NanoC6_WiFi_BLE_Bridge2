@@ -2999,7 +2999,10 @@ async function powernationDeepDiagWithContext(context) {
       const fields=await fr.locator("input,select,textarea").evaluateAll(els=>els.map((e,i)=>{
         const r=e.getBoundingClientRect();
         return {i,tag:e.tagName,type:e.getAttribute("type")||"",name:e.getAttribute("name")||"",id:e.id||"",
-          placeholder:e.getAttribute("placeholder")||"",required:e.required===true,visible:r.width>0&&r.height>0};
+          placeholder:e.getAttribute("placeholder")||"",required:e.required===true,visible:r.width>0&&r.height>0,
+          label:(e.labels&&e.labels.length?Array.from(e.labels).map(x=>(x.innerText||x.textContent||"").replace(/\\s+/g," ").trim()).join(" | "):""),
+          parent:(e.parentElement?(e.parentElement.innerText||e.parentElement.textContent||"").replace(/\\s+/g," ").trim().slice(0,500):""),
+          options:e.tagName==="SELECT"?Array.from(e.options||[]).map(o=>({text:(o.textContent||"").replace(/\\s+/g," ").trim(),value:o.value})).slice(0,80):[]};
       }).filter(x=>x.visible).slice(0,120)).catch(()=>[]);
       const controls=await fr.locator("button,a,[role=button],input[type=submit]").evaluateAll(els=>els.map((e,i)=>{
         const r=e.getBoundingClientRect();
