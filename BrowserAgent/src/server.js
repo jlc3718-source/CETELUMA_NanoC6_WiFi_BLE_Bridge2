@@ -6,6 +6,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const httpProxy = require("http-proxy");
 const { chromium } = require("playwright-core");
+const { createFastDaily } = require("./fast-daily");
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
@@ -3363,9 +3364,27 @@ async function taskWithContext(context, task) {
   throw new Error("Unsupported context task: " + task);
 }
 
+const fastDaily = createFastDaily({
+  dataDir: DATA_DIR,
+  getLoginState: () => loginState,
+  stopLogin,
+  launchProfile,
+  taskWithContext,
+  prepareRestrictedSession,
+  readEntryProfile
+});
+
 async function runTask(job) {
   const task = String(job.task || "");
   if (task === "health") return { task: "health", ok: true, time: new Date().toISOString() };
+  if (task === "run_daily_fast") return await fastDaily.runDailyFast(job);
+  if (task === "promo_state_patch") return fastDaily.promoStatePatch(job);
+  if (task === "promo_state_get") return fastDaily.promoStateGet();
+  if (task === "manual_queue_add") return fastDaily.manualQueueAdd(job);
+  if (task === "manual_queue_clear") return fastDaily.manualQueueClear(job);
+  if (task === "manual_queue_open") return await fastDaily.manualQueueOpen(job);
+  if (task === "generic_form_entry") return await fastDaily.genericFormEntry(job);
+  if (task === "instagram_comment_entry") return await fastDaily.instagramCommentEntry(job);
   if (task === "entry_profile_key") return initSecureVault();
   if (task === "entry_profile_store") return storeEncryptedEntryProfile(job);
   if (task === "vault_init") return initSecureVault();
