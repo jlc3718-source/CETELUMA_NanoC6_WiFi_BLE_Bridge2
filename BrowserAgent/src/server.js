@@ -3163,9 +3163,8 @@ async function prepareRestrictedSession(job) {
   };
 
   const parts=String(profile.name||"").trim().split(/\s+/);
-  const prepared=[];
-  for(const page of pages){
-    await page.waitForTimeout(1400);
+  const prepared=await Promise.all(pages.map(async(page)=>{
+    await page.waitForTimeout(750);
     await fillVisible(page,['input[type="email"]','input[autocomplete="email"]','input[name*="email" i]'],profile.email||"");
     await fillVisible(page,['input[autocomplete="given-name"]','input[name*="first" i]','input[placeholder*="first" i]'],parts[0]||"");
     await fillVisible(page,['input[autocomplete="family-name"]','input[name*="last" i]','input[placeholder*="last" i]'],parts.slice(1).join(" "));
@@ -3188,8 +3187,8 @@ async function prepareRestrictedSession(job) {
       return {i,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,180),visible:r.width>0&&r.height>0};
     }).filter(x=>x.visible&&/(submit|enter|continue|login|log in|verify|complete|done)/i.test(x.text)).slice(0,30)).catch(()=>[]);
     const body=await pageBody(page,12000);
-    prepared.push({url:page.url(),title:await page.title().catch(()=>""),buttons,gleam:/gleam/i.test(page.url()+body)});
-  }
+    return {url:page.url(),title:await page.title().catch(()=>""),buttons,gleam:/gleam/i.test(page.url()+body)};
+  }));
   if(kind==="gleam_final_retry"){
     const p=vaultPaths();
     fs.writeFileSync(path.join(path.dirname(p.profile),"gleam-final-attempted.json"),JSON.stringify({at:new Date().toISOString(),urls}),{mode:0o600});
