@@ -2623,15 +2623,15 @@ async function movaWidgetApiDiagWithContext(context){
   try{
     const resp=await context.request.get(scriptUrl,{timeout:12000,failOnStatusCode:false});
     const js=await resp.text().catch(()=>"");
-    const urls=[...new Set((js.match(/https?:\\/\\/[^"'\\s)]+/g)||[]))]
+    const urls=[...new Set((js.match(/https?:\/\/[^"'\s)]+/g)||[]))]
       .filter(u=>/spin|wheel|api|campaign|prize|external|shopify/i.test(u)).slice(0,80);
-    const paths=[...new Set((js.match(/["'`]\\/(?:[^"'\\s]{1,180})/g)||[]).map(x=>x.slice(1)))]
+    const paths=[...new Set((js.match(/["']\/(?:[^"'\s]{1,180})/g)||[]).map(x=>x.slice(1)))]
       .filter(p=>/api|spin|wheel|campaign|prize|entry|customer|submit|play/i.test(p)).slice(0,100);
     const snippets=[];
-    const re=/(fetch\\(|axios|XMLHttpRequest|campaign|spin|wheel|prize|entry|customer|submit|play)/ig;
+    const re=/(fetch\(|axios|XMLHttpRequest|campaign|spin|wheel|prize|entry|customer|submit|play)/ig;
     let m;
     while((m=re.exec(js))&&snippets.length<80){
-      snippets.push(js.slice(Math.max(0,m.index-260),Math.min(js.length,m.index+700)).replace(/\\s+/g," "));
+      snippets.push(js.slice(Math.max(0,m.index-260),Math.min(js.length,m.index+700)).replace(/\s+/g," "));
       re.lastIndex=m.index+Math.max(1,m[0].length);
     }
     return {task:"mova_widget_api_diag",status:resp.status(),script_url:scriptUrl,script_bytes:js.length,urls,paths,snippets};
