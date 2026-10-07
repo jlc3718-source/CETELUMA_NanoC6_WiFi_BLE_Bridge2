@@ -1,5 +1,68 @@
 {
-  "id": "greenlee-manual-final-20261007-r2",
-  "task": "prepare_restricted",
-  "kind": "greenlee"
+  "id": "run-daily-seed-state-20261007",
+  "task": "promo_state_patch",
+  "items": [
+    {
+      "id": "dreame-aero-2026",
+      "title": "Dreame Aero Wet Dry Vacuum giveaway",
+      "status": "submitted",
+      "suppress": true
+    },
+    {
+      "id": "husqvarna-450x-2026",
+      "title": "Husqvarna 450X giveaway",
+      "status": "confirmed",
+      "suppress": true
+    },
+    {
+      "id": "powernation-general-tire-fall-2026",
+      "title": "General Tire PowerNation Fall 2026",
+      "status": "already_entered",
+      "suppress": true,
+      "recurring": "weekly"
+    },
+    {
+      "id": "tineco-fall-spin-2026",
+      "title": "Tineco Fall Spin",
+      "status": "completed",
+      "suppress": true
+    },
+    {
+      "id": "govee-friday-night-lights-2026",
+      "title": "Govee Friday Night Lights",
+      "status": "completed",
+      "suppress": true
+    },
+    {
+      "id": "wyze-camera-survey-2026",
+      "title": "Wyze camera survey",
+      "status": "submitted",
+      "suppress": true
+    },
+    {
+      "id": "housework-fall-cleaning-2026",
+      "title": "Housework Fall Cleaning Challenge",
+      "status": "submitted",
+      "suppress": true,
+      "confirmation": "unconfirmed"
+    },
+    {
+      "id": "gleam-lenovo-valheim-2026",
+      "title": "Lenovo Valheim monitor Gleam",
+      "status": "blocked_suppress",
+      "suppress": true
+    },
+    {
+      "id": "gleam-lenovo-chromebook-2026",
+      "title": "Lenovo Slim 3 Chromebook Gleam",
+      "status": "suppressed",
+      "suppress": true
+    },
+    {
+      "id": "mammotion-vanguard-round1-2026",
+      "title": "Mammotion Vanguard Round 1",
+      "status": "closed",
+      "suppress": true
+    }
+  ]
 }
