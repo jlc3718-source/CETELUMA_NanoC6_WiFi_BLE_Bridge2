@@ -46,7 +46,7 @@ jobs:
           OUT=".github/oracle-walmart-cart-result.json"
           HRAW="$(mktemp)"
           CRAW="$(mktemp)"
-          curl -sS --max-time 45 -H 'Content-Type: application/json'             -d '{"id":"walmart-hammer","task":"shopping_add_to_cart","url":"https://www.walmart.com/ip/14527158181","latest_arrival":"2026-10-10"}'             http://127.0.0.1:8932/run > "$HRAW" || true
+          curl -sS --max-time 45 -H 'Content-Type: application/json'             -d '{"id":"walmart-hammer","task":"shopping_add_to_cart","url":"https://www.walmart.com/ip/18688804676","latest_arrival":"2026-10-10"}'             http://127.0.0.1:8932/run > "$HRAW" || true
           curl -sS --max-time 45 -H 'Content-Type: application/json'             -d '{"id":"walmart-cup","task":"shopping_add_to_cart","url":"https://www.walmart.com/ip/568000104","latest_arrival":"2026-10-10"}'             http://127.0.0.1:8932/run > "$CRAW" || true
           python3 - "$HRAW" "$CRAW" "$OUT" <<'PY'
 import json,sys
