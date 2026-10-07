@@ -1,1 +1,1 @@
-{"id":"run-daily-lenovo-legion-go-s-20261007","ok":true,"started":"2026-10-07T05:50:17.316Z","finished":"2026-10-07T05:50:29.148Z","result":{"task":"generic_form_entry","status":"submit_control_not_found","url":"https://gaming.lenovo.com/monthly-giveaway-2","prepared":true}}
+{"id":"run-daily-save-new-findings-20261007","ok":true,"started":"2026-10-07T05:51:36.264Z","finished":"2026-10-07T05:51:36.266Z","result":{"task":"promo_state_patch","status":"stored","updated":10,"campaign_count":20}}
