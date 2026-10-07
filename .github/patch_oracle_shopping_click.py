@@ -17,6 +17,20 @@ async function shoppingAddToCart(job = {}) {
     if (walmart && /(Sign In Account|Sign in or create account)/i.test(before)) {
       return {task:"shopping_add_to_cart",status:"login_required",url:page.url()};
     }
+    const arrivalMatch=before.match(/Arrives(?: by)?\s+(?:[A-Za-z]{3,9},\s+)?([A-Za-z]{3,9})\s+(\d{1,2})/i);
+    let arrival=null;
+    if(arrivalMatch){
+      arrival=arrivalMatch[1]+" "+arrivalMatch[2];
+      if(job.latest_arrival){
+        const months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11};
+        const m=months[arrivalMatch[1].slice(0,4).toLowerCase()] ?? months[arrivalMatch[1].slice(0,3).toLowerCase()];
+        if(m!==undefined){
+          const d=new Date(2026,m,Number(arrivalMatch[2]));
+          const cutoff=new Date(String(job.latest_arrival)+"T23:59:59");
+          if(d>cutoff) return {task:"shopping_add_to_cart",status:"delivery_too_late",url:page.url(),arrival};
+        }
+      }
+    }
     const buttons=page.getByRole("button",{name:/^Add to cart$/i});
     let target=null;
     const n=await buttons.count().catch(()=>0);
@@ -26,14 +40,14 @@ async function shoppingAddToCart(job = {}) {
     }
     if(!target){
       const controls=await page.locator("button").evaluateAll(els=>els.filter(e=>e.offsetParent!==null).map(e=>(e.innerText||e.textContent||"").trim()).filter(Boolean).slice(0,80)).catch(()=>[]);
-      return {task:"shopping_add_to_cart",status:"add_to_cart_not_found",url:page.url(),visible_controls:controls};
+      return {task:"shopping_add_to_cart",status:"add_to_cart_not_found",url:page.url(),arrival,visible_controls:controls};
     }
     await target.click({timeout:5000});
     await page.waitForTimeout(2200);
     const final=(await page.locator("body").innerText().catch(()=>"")).slice(0,60000);
-    const confirmed=/(Added to cart|In cart|Go to cart|View cart|1 item in cart|Cart \(1\)|Cart \(2\)|2 items in cart)/i.test(final);
+    const confirmed=/(Added to cart|In cart|Go to cart|View cart|\bCart\b[\s\S]{0,80}\b[12]\b)/i.test(final);
     const challenge=page.frames().some(fr=>/captcha|turnstile|recaptcha|hcaptcha/i.test(fr.url())) || /verify you are human|captcha|turnstile/i.test(final);
-    return {task:"shopping_add_to_cart",status:challenge?"manual_challenge":confirmed?"confirmed":"clicked_unconfirmed",url:page.url()};
+    return {task:"shopping_add_to_cart",status:challenge?"manual_challenge":confirmed?"confirmed":"clicked_unconfirmed",url:page.url(),arrival};
   } finally {
     await context.close().catch(()=>{});
   }
