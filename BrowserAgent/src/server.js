@@ -2334,28 +2334,50 @@ async function eufyAltFreeSpinWithContext(context){
   const page=await context.newPage();
   try{
     await gotoLoose(page,"https://www.eufy.com/landingpage_app_test");
+    const exact=page.getByRole("button",{name:/^GO$/i}).first();
+    if(!(await exact.count().catch(()=>0))) return {task:"eufy_alt_free_spin",status:"go_control_not_found",url:page.url()};
+    await exact.scrollIntoViewIfNeeded().catch(()=>{});
     await page.waitForTimeout(2500);
-    let body=await pageBody(page,45000);
-    if(!/100%\s*Chance to Win/i.test(body)) return {task:"eufy_alt_free_spin",status:"draw_not_found",url:page.url()};
-    const before=body.match(/Entries Left:\s*([0-9-]+)/i)?.[1]||null;
-    const credits=body.match(/EufyCredits:\s*([0-9-]+)/i)?.[1]||null;
 
-    const exact=page.getByText(/^GO$/i,{exact:true});
-    const n=await exact.count().catch(()=>0);
-    let clicked=false;
-    for(let i=0;i<Math.min(n,20);i++){
-      const el=exact.nth(i);
-      if(!(await el.isVisible().catch(()=>false))) continue;
-      const parentTxt=cleanText(await el.locator("xpath=..").innerText().catch(()=>""),600);
-      if(/Redeem|200\s*eufyCredits|Reedem/i.test(parentTxt)) continue;
-      try{await el.scrollIntoViewIfNeeded().catch(()=>{});await el.click({timeout:3500,force:true});clicked=true;break;}catch{}
+    const readState=async()=>{
+      const body=await pageBody(page,45000);
+      const entryRaw=body.match(/Entries Left:\s*([0-9-]+)/i)?.[1]||null;
+      const credits=body.match(/EufyCredits:\s*([0-9-]+)/i)?.[1]||null;
+      const prizeLines=body.split(/\n+/).map(x=>cleanText(x,320)).filter(x=>/(congrat|you won|prize|coupon|gift card|better luck|Cam S4|Robot Vacuum E25|Outdoor Lights E22|Month Plus)/i.test(x)).slice(0,30);
+      return {body,entryRaw,credits,prizeLines};
+    };
+
+    let st=await readState();
+    // The user-specific stats load lazily when the draw is brought into view.
+    for(let i=0;i<8 && (!st.entryRaw || st.entryRaw==="-");i++){
+      await page.waitForTimeout(1000);
+      st=await readState();
     }
-    if(!clicked) return {task:"eufy_alt_free_spin",status:"go_control_not_clickable",entries_left:before,eufy_credits:credits,url:page.url()};
-    await page.waitForTimeout(5500);
-    body=await pageBody(page,45000);
-    const after=body.match(/Entries Left:\s*([0-9-]+)/i)?.[1]||null;
-    const resultLines=body.split(/\n+/).map(x=>cleanText(x,320)).filter(x=>/(congrat|won|prize|coupon|gift card|credits|better luck|Cam S4|Robot Vacuum E25|Outdoor Lights E22|Month Plus)/i.test(x)).slice(0,30);
-    return {task:"eufy_alt_free_spin",status:"go_clicked",entries_left_before:before,entries_left_after:after,eufy_credits:credits,url:page.url(),result_lines:resultLines};
+
+    // If still unloaded, one GO interaction initializes the widget without consuming credits.
+    if(!st.entryRaw || st.entryRaw==="-"){
+      await exact.click({timeout:3500,force:true});
+      await page.waitForTimeout(4500);
+      st=await readState();
+    }
+
+    const freeCount=/^\d+$/.test(String(st.entryRaw||""))?Number(st.entryRaw):null;
+    if(freeCount===0) return {task:"eufy_alt_free_spin",status:"no_free_entries",entries_left:st.entryRaw,eufy_credits:st.credits,url:page.url()};
+    if(freeCount===null) return {task:"eufy_alt_free_spin",status:"free_entry_state_unresolved",entries_left:st.entryRaw,eufy_credits:st.credits,url:page.url()};
+
+    // Only the standalone GO button is clicked. Never touch "Redeem 200 eufyCredits".
+    await exact.click({timeout:3500,force:true});
+    await page.waitForTimeout(6000);
+    const fin=await readState();
+    return {
+      task:"eufy_alt_free_spin",
+      status:"free_spin_attempted",
+      entries_left_before:freeCount,
+      entries_left_after:fin.entryRaw,
+      eufy_credits:fin.credits,
+      url:page.url(),
+      result_lines:fin.prizeLines
+    };
   }finally{await page.close().catch(()=>{});}
 }
 
