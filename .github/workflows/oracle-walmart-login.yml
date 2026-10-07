@@ -1,0 +1,52 @@
+name: Oracle Walmart Login
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oracle-walmart-login.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  login:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Start Walmart login session
+        shell: bash
+        run: |
+          set -u
+          RAW="$(mktemp)"
+          OUT=".github/oracle-walmart-login-result.json"
+          curl -sS --max-time 30 -H 'Content-Type: application/json'             -d '{"id":"walmart-login","task":"login_start","profile":"daily","url":"https://www.walmart.com/account/login"}'             http://127.0.0.1:8932/run > "$RAW" || true
+          python3 - "$RAW" "$OUT" <<'PY'
+import json,sys,re
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    d={"ok":False,"error":"unreadable_result"}
+s=json.dumps(d)
+s=re.sub(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}','[REDACTED_EMAIL]',s,flags=re.I)
+s=re.sub(r'\b\d{5}(?:-\d{4})?\b','[REDACTED_ZIP]',s)
+open(sys.argv[2],"w").write(json.dumps(json.loads(s),indent=2))
+PY
+          rm -f "$RAW"
+      - name: Publish login result
+        shell: bash
+        run: |
+          set -e
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-walmart-login-result.json
+          git commit -m "Publish Walmart login result" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 2
+          done
+          exit 1
