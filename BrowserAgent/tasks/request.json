@@ -1,4 +1,18 @@
 {
-  "id": "run-daily-close-stalled-manual-session-20261007",
-  "task": "login_stop"
+  "id": "run-daily-suppress-ineligible-20261007",
+  "task": "promo_state_patch",
+  "items": [
+    {
+      "id": "betabound-inseego-fx5100-2026",
+      "title": "Betabound Inseego FX5100 Router Test",
+      "status": "ineligible_no_tmobile_business_fwa",
+      "suppress": true
+    },
+    {
+      "id": "ridgid-odometer-challenge-2026",
+      "title": "RIDGID Odometer Challenge",
+      "status": "ineligible_no_seesnake",
+      "suppress": true
+    }
+  ]
 }
