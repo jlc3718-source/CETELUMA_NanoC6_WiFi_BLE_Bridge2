@@ -26,33 +26,27 @@ jobs:
           echo "=== LISTENERS ==="
           ss -ltn 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
           echo
-          echo "=== DOCKER ==="
-          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' 2>/dev/null | grep -Ei 'browser|playwright|mcp|agent|NAMES' || true
-          echo
-          echo "=== SERVICES ==="
-          systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'browser|playwright|mcp|agent' || true
+          echo "=== 8932 PROCESS ==="
+          PIDS="$(fuser -n tcp 8932 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u || true)"
+          for pid in $PIDS; do
+            echo "PID=$pid"
+            echo "EXE=$(readlink -f /proc/$pid/exe 2>/dev/null || true)"
+            echo "CWD=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
+            printf "CMD="
+            tr '\0' ' ' </proc/$pid/cmdline 2>/dev/null | sed -E 's/(token|password|secret|key)=[^ ]+/\1=REDACTED/Ig' || true
+            echo
+            cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
+            if [ -n "$cwd" ] && [ -d "$cwd" ]; then
+              echo "--- files in $cwd"
+              find "$cwd" -maxdepth 2 -type f 2>/dev/null                 | grep -Ev '/(node_modules|data|profile|\.git)/|\.env$|\.log$'                 | head -200 || true
+              echo "--- route-like source lines"
+              grep -R --line-number --binary-files=without-match                 --exclude='.env' --exclude='*.log' --exclude-dir='node_modules' --exclude-dir='data' --exclude-dir='profile'                 -E "(app\.(get|post|put|delete)|router\.(get|post|put|delete)|createServer|8932|/run|/task|/jobs|/login|profile)"                 "$cwd" 2>/dev/null | head -300 || true
+            fi
+          done
           echo
           echo "=== SAFE HTTP PROBES 8932 ==="
           for p in /health /status /openapi.json /docs /; do
             echo "--- $p"
-            curl -fsS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 12000 || true
+            curl -i -sS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 12000 || true
             echo
-          done
-          echo
-          echo "=== SAFE HTTP PROBES 8931 ==="
-          for p in /health / /mcp; do
-            echo "--- $p"
-            curl -i -sS --max-time 4 "http://127.0.0.1:8931$p" 2>/dev/null | head -c 8000 || true
-            echo
-          done
-          echo
-          echo "=== PROJECT CANDIDATES ==="
-          find /home/ubuntu -maxdepth 4 -type f \( -name 'package.json' -o -name 'pyproject.toml' -o -name 'requirements.txt' -o -name 'README.md' -o -name '*.service' \) 2>/dev/null             | grep -Ei 'browser|agent|mcp|oracle' | head -100 || true
-          echo
-          echo "=== 8932 SOURCE REFERENCES (secrets excluded) ==="
-          for d in /home/ubuntu/browser-agent /home/ubuntu/oracle-browser-agent /home/ubuntu/oracle-browser-mcp /opt/oracle-browser-agent /opt/browser-agent; do
-            if [ -d "$d" ]; then
-              echo "--- $d"
-              grep -R --line-number --binary-files=without-match --exclude='.env' --exclude='*.log' --exclude-dir='data' --exclude-dir='node_modules' '8932\|/run\|/task\|profile' "$d" 2>/dev/null | head -120 || true
-            fi
           done
