@@ -1,5 +1,4 @@
 {
-  "id": "run-daily-open-manual-queue-20261007",
-  "task": "manual_queue_open",
-  "max_tabs": 8
+  "id": "run-daily-close-stalled-manual-session-20261007",
+  "task": "login_stop"
 }
