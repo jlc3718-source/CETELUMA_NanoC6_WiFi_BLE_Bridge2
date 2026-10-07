@@ -1427,9 +1427,7 @@ function storeEncryptedEntryProfile(job) {
   return {
     task: "vault_store",
     status: "stored",
-    fields: required,
-    state: String(data.state),
-    postal_prefix: String(data.postal_code).slice(0,3)
+    fields: required
   };
 }
 
