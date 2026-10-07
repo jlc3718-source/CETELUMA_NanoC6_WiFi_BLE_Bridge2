@@ -3042,7 +3042,7 @@ async function prepareRestrictedSession(job) {
   const kind=String(job.kind||"");
   const targets={
     reolink:"https://reolink.com/__/lp/reolink-day/",
-    greenlee:"https://www.greenlee.com/us/en",
+    greenlee:"https://www.greenlee.com/us/en/mailing-list",
     gleam_lenovo_monitor:"https://gleam.io/2mt9X/win-a-custom-valheim-lenovo-legion-ultrawide-gaming-monitor",
     gleam_lenovo_chromebook:"https://gleam.io/GUZoP/lenovo-slim-3-chromebook-giveaway"
   };
@@ -3077,6 +3077,19 @@ async function prepareRestrictedSession(job) {
     await fillVisible(page,['input[autocomplete="given-name"]','input[name*="first" i]','input[placeholder*="first" i]'],parts[0]||"");
     await fillVisible(page,['input[autocomplete="family-name"]','input[name*="last" i]','input[placeholder*="last" i]'],parts.slice(1).join(" "));
     if(profile.phone) await fillVisible(page,['input[type="tel"]','input[name*="phone" i]','input[autocomplete="tel"]'],profile.phone);
+    if(kind==="greenlee"){
+      const sels=page.locator("select");
+      const sn=await sels.count().catch(()=>0);
+      for(let si=0;si<Math.min(sn,12);si++){
+        const s=sels.nth(si);
+        if(!(await s.isVisible().catch(()=>false))) continue;
+        const opts=await s.locator("option").allTextContents().catch(()=>[]);
+        if(opts.some(x=>/United States/i.test(x))){
+          await s.selectOption({label:"United States"}).catch(async()=>await s.selectOption({label:/United States/i}).catch(()=>{}));
+          break;
+        }
+      }
+    }
     const buttons=await page.locator('button,input[type="submit"],[role="button"]').evaluateAll(els=>els.map((e,i)=>{
       const r=e.getBoundingClientRect();
       return {i,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,180),visible:r.width>0&&r.height>0};
