@@ -2795,7 +2795,42 @@ async function houseworkCompleteWithContext(context){
   }finally{await page.close().catch(()=>{});}
 }
 
-async function taskWithContext(context, task) {
+
+async function freshOpportunityDiagWithContext(context, task) {
+  const targets = {
+    powernation_diag: "https://generaltire.powernationtv.com/",
+    mammotion_vanguard_diag: "https://mammotion.com/pages/vanguard-survey",
+    husqvarna_450x_diag: "https://na-pages.husqvarna.com/us-450x-giveaway-26"
+  };
+  const url=targets[task];
+  if(!url) throw new Error("Unknown fresh opportunity diagnostic");
+  const page=await context.newPage();
+  try{
+    await gotoLoose(page,url);
+    await page.waitForTimeout(2500);
+    const body=await pageBody(page,40000);
+    const fields=await page.locator("input,select,textarea").evaluateAll(els=>els.map((e,i)=>{
+      const r=e.getBoundingClientRect();
+      const opts=e.tagName==="SELECT"?Array.from(e.options||[]).slice(0,30).map(o=>(o.textContent||"").replace(/\s+/g," ").trim()).filter(Boolean):[];
+      return {
+        i,tag:e.tagName,type:e.getAttribute("type")||"",name:e.getAttribute("name")||"",
+        id:e.id||"",placeholder:e.getAttribute("placeholder")||"",autocomplete:e.getAttribute("autocomplete")||"",
+        aria:e.getAttribute("aria-label")||"",required:e.required===true,visible:r.width>0&&r.height>0,
+        options:opts
+      };
+    }).filter(x=>x.visible).slice(0,120)).catch(()=>[]);
+    const controls=await page.locator("button,a,[role=button],input[type=submit]").evaluateAll(els=>els.map((e,i)=>{
+      const r=e.getBoundingClientRect();
+      return {i,tag:e.tagName,text:(e.innerText||e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,250),
+        href:e.getAttribute("href")||"",visible:r.width>0&&r.height>0};
+    }).filter(x=>x.visible && /(enter|submit|apply|next|continue|sweep|giveaway|terms)/i.test(x.text+x.href)).slice(0,80)).catch(()=>[]);
+    const snippets=body.split(/\n+/).map(x=>cleanText(x,500))
+      .filter(x=>/(enter|submit|apply|giveaway|sweepstakes|phone|email|address|usage|lawn|acre|yard|tester|vanguard|terms)/i.test(x)).slice(0,80);
+    return {task,status:"inspected",url:page.url(),title:await page.title().catch(()=>""),fields,controls,snippets};
+  } finally { await page.close().catch(()=>{}); }
+}
+
+async function taskWithContext(context, task) {\n  if (["powernation_diag","mammotion_vanguard_diag","husqvarna_450x_diag"].includes(task)) return await freshOpportunityDiagWithContext(context, task);
   if (task === "jml_scan") return await jmlScanWithContext(context);
   if (task === "roborock_spin") return await roborockSpinWithContext(context);
   if (task === "reolink_subscribe") return await reolinkSubscribeWithContext(context);
@@ -2856,7 +2891,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const requestedTimeout = Number(job.lane_timeout_ms || 50000);
