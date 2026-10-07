@@ -3,7 +3,7 @@ name: Oracle Walmart Login
 on:
   push:
     paths:
-      - ".github/workflows/oracle-walmart-login.yml"
+      - ".github/workflows/oracle-walmart-login.yml"\n      - ".github/oracle-walmart-login.trigger"
   workflow_dispatch:
 
 permissions:
