@@ -20,9 +20,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          CID="$(docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
           test -n "$CID"
-          docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");const re=/app\.(get|post|put|delete|patch)\(\s*["\x27\x60]([^"\x27\x60]+)["\x27\x60]/g;let m;while((m=re.exec(s)))console.log(m[1].toUpperCase()+" "+m[2]);' > .github/oracle-browser-routes.txt
+          sudo docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");const re=/app\.(get|post|put|delete|patch)\(\s*["\x27\x60]([^"\x27\x60]+)["\x27\x60]/g;let m;while((m=re.exec(s)))console.log(m[1].toUpperCase()+" "+m[2]);' > .github/oracle-browser-routes.txt
           cat .github/oracle-browser-routes.txt
       - name: Publish route list
         shell: bash
