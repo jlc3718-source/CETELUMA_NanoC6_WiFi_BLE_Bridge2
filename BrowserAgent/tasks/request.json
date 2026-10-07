@@ -1,4 +1,5 @@
 {
-  "id": "powernation-entry-20261007",
-  "task": "powernation_entry"
+  "id": "gleam-final-retry-20261007",
+  "task": "prepare_restricted",
+  "kind": "gleam_final_retry"
 }
