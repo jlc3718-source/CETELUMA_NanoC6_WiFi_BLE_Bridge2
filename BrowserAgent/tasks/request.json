@@ -1,10 +1,10 @@
 {
-  "id": "run-daily-plumbing-20261007",
+  "id": "run-daily-housework-mova-navimow-20261007",
   "task": "batch",
   "lane_timeout_ms": 45000,
   "tasks": [
-    "mova_plumbing_diag",
-    "eufy_plumbing_diag",
-    "housework_diag"
+    "housework_complete",
+    "mova_widget_api_diag",
+    "navimow_round2_check"
   ]
 }
