@@ -1163,6 +1163,39 @@ async function roborockWheelDiagWithContext(context) {
 }
 
 
+
+async function goveeMirrorDiagWithContext(context){
+  const page=await context.newPage();
+  try{
+    await page.goto("https://jolygram.com/en/profile/goveeofficial/15903547309",{waitUntil:"domcontentloaded",timeout:15000});
+    await page.waitForTimeout(2200);
+    const matches=await page.evaluate(()=>{
+      const out=[];
+      const all=[...document.querySelectorAll("img,[alt],article,div,a")];
+      for(const el of all){
+        const alt=(el.getAttribute&&el.getAttribute("alt"))||"";
+        const txt=(alt||el.innerText||el.textContent||"").replace(/\s+/g," ").trim();
+        if(!/(Celebrate Halloween with Govee|Share your Halloween decorating ideas|Sarah Michelle Gellar)/i.test(txt)) continue;
+        let p=el, depth=0;
+        const ancestry=[];
+        while(p&&depth<7){
+          ancestry.push({
+            tag:p.tagName,
+            href:p.getAttribute&&p.getAttribute("href"),
+            attrs:p.getAttributeNames?p.getAttributeNames().reduce((o,k)=>(o[k]=p.getAttribute(k),o),{}):{},
+            html:(p.outerHTML||"").slice(0,7000)
+          });
+          p=p.parentElement; depth++;
+        }
+        out.push({text:txt.slice(0,1800),ancestry});
+        if(out.length>=8) break;
+      }
+      return out;
+    }).catch(()=>[]);
+    return {task:"govee_mirror_diag",status:"inspected",url:page.url(),matches};
+  }finally{await page.close().catch(()=>{});}
+}
+
 async function goveeHalloweenEntryWithContext(context) {
   const page=await context.newPage();
   try{
@@ -3229,6 +3262,7 @@ async function powernationDeepDiagWithContext(context) {
 }
 
 async function taskWithContext(context, task) {
+  if (task === "govee_mirror_diag") return await goveeMirrorDiagWithContext(context);
   if (task === "govee_halloween_entry") return await goveeHalloweenEntryWithContext(context);
   if (task === "powernation_entry") return await powernationEntryWithContext(context);
   if (task === "husqvarna_450x_entry") return await husqvarna450xEntryWithContext(context);
@@ -3287,6 +3321,11 @@ async function runTask(job) {
     return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
   }
   if (task === "jml_scan") return await jmlScan();
+  if (["govee_mirror_diag"].includes(task)) {
+    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+    const context = await launchProfile("daily");
+    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+  }
   if (["govee_halloween_entry"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
