@@ -1,11 +1,8 @@
 {
-  "id": "phone-login-round-fixed-20261006",
+  "id": "dreame-direct-control-20261006",
   "task": "login_start",
   "profile": "daily",
   "urls": [
-    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245",
-    "https://us-account.mova-tech.com/login?lang=en&country=US&client_id=shopify_web_login&redirect_url=https%3A%2F%2Fus.mova.tech%2Fpages%2Fmova-prime-day-sale&tenantId=000002",
-    "https://www.eufy.com/app_primeday",
-    "https://www.bluettipower.com/pages/prime-day/"
+    "https://us.forum.dreametech.com/forum.php?mod=viewthread&tid=11245"
   ]
 }
