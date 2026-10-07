@@ -1,4 +1,4 @@
 {
-  "id": "close-greenlee-for-govee-20261007",
-  "task": "login_stop"
+  "id": "govee-mirror-diag-20261007",
+  "task": "govee_mirror_diag"
 }
