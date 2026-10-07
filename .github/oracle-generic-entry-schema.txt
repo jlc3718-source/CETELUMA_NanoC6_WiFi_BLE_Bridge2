@@ -1,139 +1,225 @@
-FILE=/app/src/server.js
-ntryPathWithContext(context);
-  if (task === "eufy_deep_entry") return await eufyDeepEntryWithContext(context);
-  if (task === "bluetti_robust_entry") return await bluettiRobustEntryWithContext(context);
-  if (task === "mova_direct_entry") return await movaDirectEntryWithContext(context);
-  if (task === "reolink_day_entry") return await reolinkDayEntryWithContext(context);
-  if (task === "housework_complete") return await houseworkCompleteWithContext(context);
-  if (task === "bluetti_safe_spin") return await bluettiSafeSpinWithContext(context);
-  if (task === "reolink_confirmed_entry") return await reolinkConfirmedEntryWithContext(context);
-  if (task === "housework_checkout_probe") return await houseworkCheckoutProbeWithContext(context);
-  if (task === "mova_reveal_diag") return await movaRevealDiagWithContext(context);
-  if (task === "mova_widget_api_diag") return await movaWidgetApiDiagWithContext(context);
-  if (task === "navimow_round2_check") return await navimowRound2CheckWithContext(context);
-  if (task === "bluetti_wheel_state") return await bluettiWheelStateWithContext(context);
-  if (task === "eufy_alt_free_spin") return await eufyAltFreeSpinWithContext(context);
-  if (["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task)) return await finishDiagWithContext(context,task);
-  if (task === "dreame_auth_diag") return await dreameAuthDiagWithContext(context);
-  if (["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task)) return await promoPlumbingDiagWithContext(context,task);
-  throw new Error("Unsupported context task: " + task);
-}
+FILE=/app/src/fast-daily.js
+v])=>[k,{
+        last_seen_at:v.last_seen_at,
+        last_changed_at:v.last_changed_at,
+        status:v.status
+      }]))
+    };
+  }
 
-const fastDaily = createFastDaily({
-  dataDir: DATA_DIR,
-  getLoginState: () => loginState,
-  stopLogin,
-  launchProfile,
-  taskWithContext,
-  prepareRestrictedSession,
-  readEntryProfile
-});
+  function manualQueueAdd(job = {}) {
+    const queue = readManualQueue();
+    const items = Array.isArray(job.items) ? job.items : [];
+    const now = new Date().toISOString();
+    const by\1\2REDACTED, x]));
 
-async function runTask(job) {
-  const task = String(job.task || "");
-  if (task === "health") return { task: "health", ok: true, time: new Date().toISOString() };
-  if (task === "run_daily_fast") return await fastDaily.runDailyFast(job);
-  if (task === "promo_state_patch") return fastDaily.promoStatePatch(job);
-  if (task === "promo_state_get") return fastDaily.promoStateGet();
-  if (task === "manual_queue_add") return fastDaily.manualQueueAdd(job);
-  if (task === "manual_queue_clear") return fastDaily.manualQueueClear(job);
-  if (task === "manual_queue_open") return await fastDaily.manualQueueOpen(job);
-  if (task === "generic_form_entry") return await fastDaily.genericFormEntry(job);
-  if (task === "instagram_comment_entry") return await fastDaily.instagramCommentEntry(job);
-  if (task === "entry_profile_key") return initSecureVault();
-  if (task === "entry_profile_store") return storeEncryptedEntryProfile(job);
-  if (task === "vault_init") return initSecureVault();
-  if (task === "vault_store") return storeEncryptedEntryProfile(job);
-  if (task === "vault_patch") return patchEncryptedEntryProfile(job);
-  if (task === "dreame_otp_start") return await dreameOtpStart();
-  if (task === "dreame_otp_finish") return await dreameOtpFinish(job);
-  if (task === "login_start") return await startLogin(job);
-  if (task === "login_stop") return await stopLogin();
-  if (task === "prepare_restricted") return await prepareRestrictedSession(job);
-  if (["reolink_subscribe","reolink_day_entry","reolink_confirmed_entry"].includes(task)) {
-    return { task, status:"manual_only_rules_prohibit_automation", need:"Complete the Reolink entry manually; Oracle will not submit it." };
+    for (const raw of items) {
+      const url = String(raw?.url || "").trim();
+      if (!/^https?:\/\//i.test(url)) continue;
+      const \1\2REDACTED;
+      byKey.set(key, {
+        ...byKey.get(key),
+        id:key,
+        title:String(raw?.title || byKey.get(key)?.title || url),
+        url,
+        reason:String(raw?.reason || byKey.get(key)?.reason || "manual final action"),
+        source:String(raw?.source || byKey.get(key)?.source || ""),
+        added_at:byKey.get(key)?.added_at || now,
+        updated_at:now
+      });
+    }
+
+    queue.items = [...byKey.values()].slice(0, 30);
+    writeJsonAtomic(manualFile, queue);
+    return { task:"manual_queue_add", status:"stored", count:queue.items.length, items:queue.items };
   }
-  if (task === "jml_scan") return await jmlScan();
-  if (["govee_mirror_diag"].includes(task)) {
-    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
-    const context = await launchProfile("daily");
-    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+
+  function manualQueueClear(job = {}) {
+    const queue = readManualQueue();
+    const ids = new Set((Array.isArray(job.ids) ? job.ids : []).map(String));
+    if (!ids.size) queue.items = [];
+    else queue.items = queue.items.filter(x => !ids.has(String(x.id || x.url)));
+    writeJsonAtomic(manualFile, queue);
+    return { task:"manual_queue_clear", status:"stored", count:queue.items.length };
   }
-  if (["govee_halloween_entry"].includes(task)) {
-    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
-    const context = await launchProfile("daily");
-    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
+
+  async function manualQueueOpen(job = {}) {
+    const queue = readManualQueue();
+    if (!queue.items.length) return { task:"manual_queue_open", status:"empty", count:0 };
+
+    const maxTabs = clamp(job.max_tabs, 1, 20, 12);
+    const selected = queue.items.slice(0, maxTabs);
+    const session = await prepareRestrictedSession({
+      kind:"queue",
+      urls:selected.map(x => x.url)
+    });
+
+    return {
+      ...session,
+      task:"manual_queue_open",
+      status:"ready_for_manual_action",
+      queue_count:queue.items.length,
+      opened:selected.map((x,i)=>({index:i,title:x.title,url:x.url,reason:x.reason,id:x.id}))
+    };
   }
-  if (["powernation_entry"].includes(task)) {
-    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
+
+  async function genericFormEntry(job = {}) {
+    const url = String(job.url || "");
+    if (!/^https?:\/\//i.test(url)) throw new Error("Missing valid form URL");
+    const profile = readEntryProfile();
     const context = await launchProfile("daily");
-    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
-  }
-  if (["husqvarna_450x_entry"].includes(task)) {
-    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
-    const context = await launchProfile("daily");
-    try { return await taskWithContext(context, task); } finally { await context.close().catch(() => {}); }
-  }
-  if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag","mova_widget_api_diag","navimow_round2_check"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
-    if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
-    const context = await launchProfile("daily");
-    try { return await taskWithContext(context, task); }
-    finally { await context.close().catch(() => {}); }
-  }
-  if (task === "batch") {
-    if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
-    const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete", "powernation_diag", "mammotion_vanguard_diag", "husqvarna_450x_diag", "husqvarna_terms_diag", "powernation_deep_diag", "husqvarna_450x_entry", "powernation_entry"].includes(String(t)));
-    const context = await launchProfile("daily");
+    const page = context.pages()[0] || await context.newPage();
+
     try {
-      const requestedTimeout = Number(job.lane_timeout_ms || 50000);
-      const laneTimeoutMs = Math.max(10000, Math.min(55000, Number.isFinite(requestedTimeout) ? requestedTimeout : 50000));
-      const runLane = (t) => Promise.race([
-        taskWithContext(context, t),
-        new Promise(resolve => setTimeout(() => resolve({
-          task: String(t),
-          status: "timeout_skipped",
-          timeout_ms: laneTimeoutMs
-        }), laneTimeoutMs))
-      ]);
-      const settled = await Promise.allSettled(allowed.map(t => runLane(t)));
+      await page.goto(url, { waitUntil:"domcontentloaded", timeout:12000 }).catch(async()=>{ await page.evaluate(()=>window.stop()).catch(()=>{}); });
+      await page.waitForTimeout(800);
+
+      const fillOne = async (selectors, value) => {
+        if (value == null || value === "") return false;
+        for (const sel of selectors) {
+          const loc = page.locator(sel);
+          const n = await loc.count().catch(()=>0);
+          for (let i=0;i<Math.min(n,10);i++) {
+            const el=loc.nth(i);
+            if (!(await el.isVisible().catch(()=>false))) continue;
+            try {
+              const cur=await el.inputValue().catch(()=>"");
+              if (!cur) await el.fill(String(value));
+              return true;
+            } catch {}
+          }
+        }
+        return false;
+      };
+
+      const names=String(profile.name||"").trim().split(/\s+/);
+      await fillOne(['input[autocomplete="given-name"]','input[name*="first" i]','input[placeholder*="first" i]'],names[0]||"");
+      await fillOne(['input[autocomplete="family-name"]','input[name*="last" i]','input[placeholder*="last" i]'],names.slice(1).join(" "));
+      await fillOne(['input[type="email"]','input[autocomplete="email"]','input[name*="email" i]'],profile.email);
+      await fillOne(['input[type="tel"]','input[autocomplete="tel"]','input[name*="phone" i]'],profile.phone);
+      await fillOne(['input[autocomplete="address-line1"]','input[name*="address" i]','input[placeholder*="street" i]'],profile.street);
+      await fillOne(['input[autocomplete="address-level2"]','input[name*="city" i]'],profile.city);
+      await fillOne(['input[autocomplete="postal-code"]','input[name*="zip" i]','input[name*="postal" i]'],profile.postal_code);
+
+      const supplied = job.fields && typeof job.fields === "object" ? job.fields : {};
+      for (const [selector,value] of Object.entries(supplied)) {
+        const loc=page.locator(selector).first();
+        if (!(await loc.count().catch(()=>0))) continue;
+        const tag=await loc.evaluate(el=>el.tagName).catch(()=>"");
+        if (tag==="SELECT") await loc.selectOption(String(value)).catch(()=>{});
+        else await loc.fill(String(value)).catch(()=>{});
+      }
+
+      // Only required terms/rules checkboxes are selected automatically; optional marketing remains untouched.
+      const requiredChecks=page.locator('input[type="checkbox"][required]');
+      for(let i=0;i<Math.min(await requiredChecks.count().catch(()=>0),15);i++){
+        const c=requiredChecks.nth(i);
+        if(await c.isVisible().catch(()=>false) && !(await c.isChecked().catch(()=>false))) await c.check().catch(()=>{});
+      }
+
+      const body=(await page.locator("body").innerText().catch(()=>"")).slice(0,40000);
+      const challenge=page.frames().some(fr=>/captcha|turnstile|recaptcha|hcaptcha/i.test(fr.url())) ||
+        /verify you are human|captcha|turnstile/i.test(body);
+
+      const requiredEmpty=await page.locator('input[required],select[required],textarea[required]').evaluateAll(els=>
+        els.filter(e=>e.offsetParent!==null && !String(e.value||"").trim() && e.type!=="checkbox")
+          .map(e=>e.name||e.id||e.placeholder||e.type)
+      ).catch(()=>[]);
+
+      if (requiredEmpty.length || challenge || job.submit !== true) {
+        return {
+          task:"generic_form_entry",
+          status:challenge?"manual_final_required_challenge":requiredEmpty.length?"missing_required_fields":"prepared",
+          url:page.url(),
+          missing:[...new Set(requiredEmpty)].slice(0,20),
+          challenge,
+          prepared:true
+        };
+      }
+
+      const submits=page.locator('button[type="submit"],input[type="submit"]');
+      let submit=null;
+      for(let i=0;i<Math.min(await submits.count().catch(()=>0),20);i++){
+        const candidate=submits.nth(i);
+        if(await candidate.isVisible().catch(()=>false)){ submit=candidate; break; }
+      }
+      if (!submit) return {task:"generic_form_entry",status:"submit_control_not_found",url:page.url(),prepared:true};
+      await submit.click({timeout:3500});
+      await page.waitForTimeout(1800);
+      const final=(await page.locator("body").innerText().catch(()=>"")).slice(0,30000);
+      const confirmed=/(thank you|thanks for entering|entry received|successfully entered|submission received|you.?re entered)/i.test(final);
       return {
-        task: "batch",
-        parallel: true,
-        shared_profile: "daily",
-        lane_timeout_ms: laneTimeoutMs,
-        results: settled.map((r, i) => r.status === "fulfilled"
-          ? { task: allowed[i], ok: true, result: r.value }
-          : { task: allowed[i], ok: false, error: String(r.reason) })
+        task:"generic_form_entry",
+        status:confirmed?"confirmed":"submitted_unconfirmed",
+        url:page.url(),
+        confirmation:confirmed?(final.match(/.{0,100}(thank you|thanks for entering|entry received|successfully entered|submission received|you.?re entered).{0,160}/i)?.[0]||null):null
       };
     } finally {
-      await context.close().catch(() => {});
+      await context.close().catch(()=>{});
     }
   }
-  throw new Error("Unsupported task: " + task);
+
+  async function instagramCommentEntry(job = {}) {
+    const url=String(job.url||"");
+    const comment=String(job.comment||"").trim();
+    if (!/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//i.test(url)) throw new Error("Exact Instagram post/reel URL required");
+    if (!comment) throw new Error("Comment text required");
+
+    const context=await launchProfile("daily");
+    const page=context.pages()[0] || await context.newPage();
+    try{
+      await page.goto(url,{waitUntil:"domcontentloaded",timeout:12000}).catch(async()=>{await page.evaluate(()=>window.stop()).catch(()=>{});});
+      await page.waitForTimeout(1000);
+      const body=(await page.locator("body").innerText().catch(()=>"")).slice(0,30000);
+      if (/log in|sign up/i.test(body) && !/add a comment/i.test(body)) {
+        return {task:"instagram_comment_entry",status:"login_required",url:page.url()};
+      }
+      if (body.includes(comment)) return {task:"instagram_comment_entry",status:"already_entered",url:page.url()};
+
+      const candidates=[
+        page.locator('textarea[aria-label*="comment" i]'),
+        page.locator('textarea[placeholder*="comment" i]'),
+        page.locator('[contenteditable="true"][aria-label*="comment" i]')
+      ];
+      let field=null;
+      for(const loc of candidates){
+        const n=await loc.count().catch(()=>0);
+        for(let i=0;i<Math.min(n,8);i++){
+          const el=loc.nth(i);
+          if(await el.isVisible().catch(()=>false)){field=el;break;}
+        }
+        if(field) break;
+      }
+      if(!field) return {task:"instagram_comment_entry",status:"comment_field_not_found",url:page.url()};
+
+      try{await field.fill(comment);}catch{await field.click();await page.keyboard.type(comment,{delay:3});}
+      const post=page.getByText(/^Post$/i,{exact:true});
+      let clicked=false;
+      for(let i=0;i<Math.min(await post.count().catch(()=>0),8);i++){
+        const b=post.nth(i);
+        if(!(await b.isVisible().catch(()=>false))) continue;
+        try{await b.click({timeout:2500});clicked=true;break;}catch{}
+      }
+      if(!clicked) await page.keyboard.press("Enter").catch(()=>{});
+      await page.waitForTimeout(1500);
+      const final=(await page.locator("body").innerText().catch(()=>"")).slice(0,35000);
+      return {task:"instagram_comment_entry",status:final.includes(comment)?"confirmed":"submitted_unconfirmed",url:page.url()};
+    }finally{
+      await context.close().catch(()=>{});
+    }
+  }
+
+  return {
+    runDailyFast,
+    promoStatePatch,
+    promoStateGet,
+    manualQueueAdd,
+    manualQueueClear,
+    manualQueueOpen,
+    genericFormEntry,
+    instagramCommentEntry
+  };
 }
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "oracle-browser-agent", login_active: Boolean(loginState.browser), time: new Date().toISOString() });
-});
-
-app.post("/run", async (req, res) => {
-  const job = req.body || {};
-  const id = String(job.id || "job");
-  const started = new Date().toISOString();
-  const execute = async () => {
-    try {
-      const result = await runTask(job);
-      return { id, ok: true, started, finished: new Date().toISOString(), result };
-    } catch (err) {
-      return { id, ok: false, started, finished: new Date().toISOString(), error: String(err && err.stack || err) };
-    }
-  };
-  const p = queue.then(execute, execute);
-  queue = p.then(() => undefined, () => undefined);
-  res.json(await p);
-});
-
-app.listen(PORT, "0.0.0.0", () => console.log(`oracle-browser-agent listening on ${PORT}`));
+module.exports = { createFastDaily };
 
