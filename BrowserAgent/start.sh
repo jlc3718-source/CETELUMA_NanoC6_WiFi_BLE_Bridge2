@@ -6,8 +6,9 @@ mkdir -p /data/profiles /data/logs
 Xvfb :99 -screen 0 1024x768x24 -ac +extension RANDR >/data/logs/xvfb.log 2>&1 &
 DISPLAY=:99 openbox >/data/logs/openbox.log 2>&1 &
 
-# Large desktop for manual phone logins; noVNC scales it to the handset while preserving full browser workspace.
-Xvfb :100 -screen 0 1920x1080x24 -ac +extension RANDR >/data/logs/xvfb-login.log 2>&1 &
+# Portrait-sized desktop for manual phone logins. This prevents a 1080p desktop
+# from being crushed into a tiny unreadable view on a handset.
+Xvfb :100 -screen 0 720x1280x24 -ac +extension RANDR >/data/logs/xvfb-login.log 2>&1 &
 DISPLAY=:100 openbox >/data/logs/openbox-login.log 2>&1 &
 
 x11vnc -display :100 -forever -shared -nopw -rfbport 5900 -listen 127.0.0.1 >/data/logs/x11vnc.log 2>&1 &
