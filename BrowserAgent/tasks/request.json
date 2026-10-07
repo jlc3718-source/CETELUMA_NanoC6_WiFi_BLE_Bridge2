@@ -1,9 +1,5 @@
 {
-  "id": "govee-greenlee-manual-final-20261007",
+  "id": "greenlee-manual-final-20261007-r2",
   "task": "prepare_restricted",
-  "kind": "greenlee",
-  "urls": [
-    "https://www.instagram.com/goveeofficial/",
-    "https://www.greenlee.com/us/en/mailing-list"
-  ]
+  "kind": "greenlee"
 }
