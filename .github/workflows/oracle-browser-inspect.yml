@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Inspect local Oracle Browser Agent safely
+      - name: Inspect Oracle Browser Agent container routes safely
         shell: bash
         run: |
           set -u
@@ -29,36 +29,32 @@ jobs:
             echo "=== TIME ==="
             date -Is
             echo
-            echo "=== HOST ==="
-            hostname
-            uname -a
+            echo "=== HEALTH ==="
+            curl -sS --max-time 4 http://127.0.0.1:8932/health || true
             echo
-            echo "=== LISTENERS WITH PROCESS ==="
-            sudo ss -ltnp 2>/dev/null | grep -E ':(8931|8932|6080)\b' || ss -ltnp 2>/dev/null | grep -E ':(8931|8932|6080)\b' || true
             echo
-            echo "=== PROCESS CANDIDATES ==="
-            ps -eo pid,ppid,user,args --sort=pid | grep -Ei 'node|playwright|browser-agent|oracle-browser|8932' | grep -v grep | head -200 || true
+            echo "=== DOCKER PS ==="
+            docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || sudo docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || true
             echo
-            echo "=== LSOF 8932 ==="
-            sudo lsof -nP -iTCP:8932 -sTCP:LISTEN 2>/dev/null || lsof -nP -iTCP:8932 -sTCP:LISTEN 2>/dev/null || true
-            echo
-            echo "=== SOURCE FILE CANDIDATES ==="
-            MATCHES="$(find /home/ubuntu /opt -maxdepth 6 -type f -size -3M 2>/dev/null               | grep -Ev '/(node_modules|profile|data|\.git|_work)/|\.env$|\.log$|\.db$|\.sqlite$'               | xargs -r grep -Il -E 'oracle-browser-agent|login_active|127\.0\.0\.1:8932|PORT.?8932' 2>/dev/null               | head -80 || true)"
-            printf '%s\n' "$MATCHES"
-            for f in $MATCHES; do
-              echo "--- FILE: $f"
-              grep -nE 'app\.(get|post|put|delete)|router\.(get|post|put|delete)|/health|/run|/task|/job|/login|profile|login_active|8932|browser' "$f" 2>/dev/null | head -400 || true
-            done
-            echo
-            echo "=== SAFE HTTP PROBES 8932 ==="
-            for p in /health /status /openapi.json /docs /routes /api /api/routes /jobs /tasks; do
-              echo "--- GET $p"
-              curl -i -sS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 20000 || true
+            CID="$(docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+            if [ -z "$CID" ]; then
+              CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+            fi
+            echo "CID=$CID"
+            if [ -n "$CID" ]; then
               echo
-              echo "--- OPTIONS $p"
-              curl -i -sS -X OPTIONS --max-time 4 "http://127.0.0.1:8932$p" 2>/dev/null | head -c 4000 || true
+              echo "=== CONTAINER PROCESS ==="
+              (docker exec "$CID" sh -lc 'ps -ef 2>/dev/null || ps aux 2>/dev/null' || sudo docker exec "$CID" sh -lc 'ps -ef 2>/dev/null || ps aux 2>/dev/null') 2>/dev/null | head -100 || true
               echo
-            done
+              echo "=== /app/src/server.js ROUTES ==="
+              (docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|req\\.query|req\\.params|/health|/run|/task|/job|/login|profile|browser' /app/src/server.js 2>/dev/null" || sudo docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|req\\.query|req\\.params|/health|/run|/task|/job|/login|profile|browser' /app/src/server.js 2>/dev/null") 2>/dev/null | head -1000 || true
+              echo
+              echo "=== /app/src/server.js ==="
+              (docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null' || sudo docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null') 2>/dev/null | head -1600 || true
+              echo
+              echo "=== /app FILES ==="
+              (docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -300" || sudo docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -300") 2>/dev/null || true
+            fi
           } > "$TMP"
 
           sed -E             -e 's/(Authorization: Bearer )[A-Za-z0-9._~+\/-]+/\1REDACTED/Ig'             -e 's/((token|password|secret|api[_-]?key)[\"'\''=: ]+)[^ ,\"'\'']+/\1REDACTED/Ig'             "$TMP" > "$OUT"
@@ -74,7 +70,7 @@ jobs:
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "Publish Oracle Browser Agent inspection result"
+          git commit -m "Publish Oracle Browser Agent container routes"
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin HEAD:main; then
