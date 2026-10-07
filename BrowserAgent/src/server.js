@@ -2640,6 +2640,45 @@ async function movaWidgetApiDiagWithContext(context){
   }
 }
 
+async function navimowRound2CheckWithContext(context){
+  const api="https://www.reddit.com/r/Navimow_Segway/about.json";
+  let subscribers=null, apiStatus=null, error=null;
+  try{
+    const resp=await context.request.get(api,{
+      timeout:12000,
+      failOnStatusCode:false,
+      headers:{"User-Agent":"Mozilla/5.0 OracleBrowserAgent/1.0"}
+    });
+    apiStatus=resp.status();
+    const j=await resp.json().catch(()=>null);
+    const n=Number(j?.data?.subscribers);
+    if(Number.isFinite(n)&&n>=0) subscribers=n;
+  }catch(e){error=String(e)}
+  if(subscribers===null){
+    const page=await context.newPage();
+    try{
+      await gotoLoose(page,"https://www.reddit.com/r/Navimow_Segway/");
+      const body=await pageBody(page,20000);
+      const m=body.match(/([0-9][0-9,.]*[Kk]?)\s+(?:members|member)/i);
+      if(m){
+        const raw=m[1].replace(/,/g,"").toLowerCase();
+        subscribers=raw.endsWith("k")?Math.round(parseFloat(raw)*1000):Number(raw);
+      }
+    }finally{await page.close().catch(()=>{});}
+  }
+  return {
+    task:"navimow_round2_check",
+    status:subscribers===null?"count_unresolved":(subscribers>=11000?"trigger_reached":"waiting"),
+    subscribers,
+    threshold:11000,
+    remaining:subscribers===null?null:Math.max(0,11000-subscribers),
+    round2_unlocked:subscribers!==null&&subscribers>=11000,
+    official_post:"https://www.reddit.com/r/Navimow_Segway/comments/1vw6ff9/join_rnavimow_segway_for_mowing_tips_updates_and/",
+    api_status:apiStatus,
+    error:error
+  };
+}
+
 async function houseworkCompleteWithContext(context){
   const profile=readEntryProfile();
   const page=await context.newPage();
@@ -2783,6 +2822,7 @@ async function taskWithContext(context, task) {
   if (task === "housework_checkout_probe") return await houseworkCheckoutProbeWithContext(context);
   if (task === "mova_reveal_diag") return await movaRevealDiagWithContext(context);
   if (task === "mova_widget_api_diag") return await movaWidgetApiDiagWithContext(context);
+  if (task === "navimow_round2_check") return await navimowRound2CheckWithContext(context);
   if (task === "bluetti_wheel_state") return await bluettiWheelStateWithContext(context);
   if (task === "eufy_alt_free_spin") return await eufyAltFreeSpinWithContext(context);
   if (["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task)) return await finishDiagWithContext(context,task);
@@ -2807,7 +2847,7 @@ async function runTask(job) {
   }
   if (task === "jml_scan") return await jmlScan();
   if (task === "roborock_spin") return await roborockSpin();
-  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag","mova_widget_api_diag"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
+  if (task === "reolink_subscribe" || task === "eufy_lucky" || task === "bluetti_lucky" || task === "wyze_survey" || task === "eufy_login_and_spin" || task === "instagram_diag" || task === "roborock_google_login_and_spin" || task === "roborock_wheel_diag" || task === "instagram_brand_scan" || task === "mova_prize_wheel" || task === "housework_challenge" || task === "dreame_aero_giveaway" || task === "dreame_entry_path" || task === "eufy_deep_entry" || task === "bluetti_robust_entry" || task === "mova_direct_entry" || task === "reolink_day_entry" || ["bluetti_safe_spin","housework_complete"].includes(task) || ["housework_checkout_probe","reolink_confirmed_entry"].includes(task) || ["eufy_alt_free_spin","bluetti_wheel_state","mova_reveal_diag","mova_widget_api_diag","navimow_round2_check"].includes(task) || ["dreame_forum_diag","eufy_alt_draw_diag","promo_script_diag","housework_diag"].includes(task) || task === "dreame_auth_diag" || ["eufy_plumbing_diag","bluetti_plumbing_diag","mova_plumbing_diag"].includes(task) || ["roborock_diag","eufy_diag","bluetti_diag","mova_diag"].includes(task)) {
     if (loginState.context || loginState.tunnel) return { task, status:"manual_login_session_active" };
     const context = await launchProfile("daily");
     try { return await taskWithContext(context, task); }
@@ -2816,7 +2856,7 @@ async function runTask(job) {
   if (task === "batch") {
     if (loginState.context || loginState.tunnel) return { task:"batch", status:"manual_login_session_active", parallel:false };
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
+    const allowed = tasks.filter(t => ["jml_scan", "roborock_spin", "eufy_lucky", "bluetti_lucky", "wyze_survey", "roborock_diag", "eufy_diag", "bluetti_diag", "mova_diag", "eufy_login_and_spin", "instagram_diag", "roborock_google_login_and_spin", "roborock_wheel_diag", "instagram_brand_scan", "mova_prize_wheel", "housework_challenge", "dreame_aero_giveaway", "dreame_entry_path", "eufy_deep_entry", "bluetti_robust_entry", "mova_direct_entry", "dreame_auth_diag", "eufy_plumbing_diag", "bluetti_plumbing_diag", "mova_plumbing_diag", "dreame_forum_diag", "eufy_alt_draw_diag", "promo_script_diag", "housework_diag", "eufy_alt_free_spin", "bluetti_wheel_state", "mova_reveal_diag", "mova_widget_api_diag", "navimow_round2_check", "housework_checkout_probe", "bluetti_safe_spin", "housework_complete"].includes(String(t)));
     const context = await launchProfile("daily");
     try {
       const requestedTimeout = Number(job.lane_timeout_ms || 50000);
