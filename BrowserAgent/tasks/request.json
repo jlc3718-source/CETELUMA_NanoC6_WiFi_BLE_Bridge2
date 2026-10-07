@@ -1,6 +1,7 @@
 {
-  "id": "run-daily-actionable-20261007-001",
+  "id": "run-daily-actionable-20261007-002",
   "task": "batch",
+  "lane_timeout_ms": 50000,
   "tasks": [
     "jml_scan",
     "roborock_wheel_diag",
