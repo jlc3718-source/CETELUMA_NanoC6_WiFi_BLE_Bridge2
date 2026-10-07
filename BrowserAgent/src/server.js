@@ -71,7 +71,7 @@ async function readJsonBody(req) {
   });
 }
 
-const CONTROL_HTML = String.raw\`<!doctype html>
+const CONTROL_HTML = String.raw`<!doctype html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -141,7 +141,7 @@ setInterval(refresh,850);
 setInterval(tabs,2500);
 refresh();
 </script>
-</body></html>\`;
+</body></html>`;
 
 const loginProxy = http.createServer(async (req, res) => {
   if (!authOk(req)) {
