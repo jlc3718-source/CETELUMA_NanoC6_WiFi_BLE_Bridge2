@@ -28,13 +28,17 @@ jobs:
           cat .github/oracle-browser-run-schema.txt
           sudo docker exec "$CID" sh -lc "grep -nE 'task ===|task ==|const allowed|allowed =|includes\\(String\\(t\\)\\)|runTask|case ' /app/src/server.js" > .github/oracle-browser-task-list.txt
           cat .github/oracle-browser-task-list.txt
+          sudo docker exec "$CID" sh -lc 'grep -R -n "genericFormEntry" /app/src 2>/dev/null | head -20' > .github/oracle-generic-entry-locations.txt
+          cat .github/oracle-generic-entry-locations.txt
+          sudo docker exec "$CID" node -e 'const fs=require("fs"),cp=require("child_process");const m=cp.execSync("grep -R -l genericFormEntry /app/src 2>/dev/null | head -1").toString().trim();if(!m)process.exit(2);const s=fs.readFileSync(m,"utf8");const j=s.indexOf("genericFormEntry");console.log("FILE="+m);console.log(s.slice(Math.max(0,j-2500),Math.min(s.length,j+8500)));' | sed -E 's/(token|password|secret|key)([[:space:]]*[:=][[:space:]]*)[^,;}]+/\\1\\2REDACTED/Ig' > .github/oracle-generic-entry-schema.txt
+          cat .github/oracle-generic-entry-schema.txt
       - name: Publish route list
         shell: bash
         run: |
           set -e
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-browser-routes.txt .github/oracle-browser-run-schema.txt .github/oracle-browser-task-list.txt
+          git add .github/oracle-browser-routes.txt .github/oracle-browser-run-schema.txt .github/oracle-browser-task-list.txt .github/oracle-generic-entry-locations.txt .github/oracle-generic-entry-schema.txt
           git commit -m "Publish Oracle Browser Agent route list" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
