@@ -16,6 +16,7 @@ const CHROME = process.env.CHROMIUM_PATH || "/usr/bin/chromium";
 const LOGIN_HASH = String(process.env.LOGIN_PASSWORD_SHA256 || "");
 const DISPLAY = process.env.DISPLAY || ":99";
 const LOGIN_DISPLAY = process.env.LOGIN_DISPLAY || ":100";
+const LOGIN_DISPLAY = process.env.LOGIN_DISPLAY || ":100";
 
 fs.mkdirSync(path.join(DATA_DIR, "profiles"), { recursive: true });
 
