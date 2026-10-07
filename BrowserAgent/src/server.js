@@ -16,7 +16,6 @@ const CHROME = process.env.CHROMIUM_PATH || "/usr/bin/chromium";
 const LOGIN_HASH = String(process.env.LOGIN_PASSWORD_SHA256 || "");
 const DISPLAY = process.env.DISPLAY || ":99";
 const LOGIN_DISPLAY = process.env.LOGIN_DISPLAY || ":100";
-const LOGIN_DISPLAY = process.env.LOGIN_DISPLAY || ":100";
 
 fs.mkdirSync(path.join(DATA_DIR, "profiles"), { recursive: true });
 
@@ -156,8 +155,9 @@ async function startLogin(job) {
     "--disable-dev-shm-usage",
     "--no-first-run",
     "--no-default-browser-check",
-    "--window-size=720,1180",
-    "--force-device-scale-factor=1.15",
+    "--window-size=1880,980",
+    "--force-device-scale-factor=1.0",
+    "--start-maximized",
     `--user-data-dir=${userDataDir}`,
     ...targets
   ], { env: { ...process.env, DISPLAY: LOGIN_DISPLAY }, stdio: ["ignore", "ignore", "pipe"] });
@@ -176,7 +176,7 @@ async function startLogin(job) {
       const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
       if (m) {
         clearTimeout(timer);
-        resolve(m[0] + "/vnc.html?autoconnect=1&resize=remote&view_only=0&quality=6&compression=7");
+        resolve(m[0] + "/vnc.html?autoconnect=1&resize=scale&view_only=0&quality=7&compression=6");
       }
     };
     tunnel.stdout.on("data", onData);
