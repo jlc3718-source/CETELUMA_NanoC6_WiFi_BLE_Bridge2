@@ -1,0 +1,200 @@
+{
+  "id": "promo-state-read",
+  "ok": true,
+  "started": "2026-10-07T20:37:53.300Z",
+  "finished": "2026-10-07T20:37:53.302Z",
+  "result": {
+    "task": "promo_state_get",
+    "status": "ready",
+    "last_run_at": "2026-10-07T20:35:10.216Z",
+    "campaigns": [
+      {
+        "id": "dreame-aero-2026",
+        "status": "submitted",
+        "suppress": true,
+        "title": "Dreame Aero Wet Dry Vacuum giveaway",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "husqvarna-450x-2026",
+        "status": "confirmed",
+        "suppress": true,
+        "title": "Husqvarna 450X giveaway",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "powernation-general-tire-fall-2026",
+        "recurring": "weekly",
+        "status": "already_entered",
+        "suppress": true,
+        "title": "General Tire PowerNation Fall 2026",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "tineco-fall-spin-2026",
+        "status": "completed",
+        "suppress": true,
+        "title": "Tineco Fall Spin",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "govee-friday-night-lights-2026",
+        "status": "completed",
+        "suppress": true,
+        "title": "Govee Friday Night Lights",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "wyze-camera-survey-2026",
+        "status": "submitted",
+        "suppress": true,
+        "title": "Wyze camera survey",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "confirmation": "unconfirmed",
+        "id": "housework-fall-cleaning-2026",
+        "status": "submitted",
+        "suppress": true,
+        "title": "Housework Fall Cleaning Challenge",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "gleam-lenovo-valheim-2026",
+        "status": "blocked_suppress",
+        "suppress": true,
+        "title": "Lenovo Valheim monitor Gleam",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "gleam-lenovo-chromebook-2026",
+        "status": "suppressed",
+        "suppress": true,
+        "title": "Lenovo Slim 3 Chromebook Gleam",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "id": "mammotion-vanguard-round1-2026",
+        "status": "closed",
+        "suppress": true,
+        "title": "Mammotion Vanguard Round 1",
+        "updated_at": "2026-10-07T05:38:28.437Z"
+      },
+      {
+        "ends": "2026-11-02T04:59:00",
+        "id": "lenovo-thinkbook-14x-oct-2026",
+        "status": "manual_required",
+        "title": "Lenovo ThinkBook 14x October Giveaway",
+        "url": "https://smbcommunity.lenovo.com/monthly-giveaway-3/na",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "ends": "2026-11-02T04:59:00",
+        "id": "lenovo-legion-go-s-oct-2026",
+        "status": "manual_required",
+        "title": "Lenovo Legion Go S October Giveaway",
+        "url": "https://gaming.lenovo.com/monthly-giveaway-2",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "id": "anker-tech-discovery-box-2026",
+        "status": "manual_login_quiz",
+        "title": "Anker Tech Discovery Box",
+        "url": "https://www.anker.com/anker-tech",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "ends": "2026-10-13T23:59:00-04:00",
+        "id": "govee-halloween-ideas-2026",
+        "status": "manual_post_lookup",
+        "title": "Govee Halloween Decorating Ideas",
+        "url": "https://www.instagram.com/goveeofficial/",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "id": "reolink-day-monthly-2026",
+        "status": "manual_only_rules_prohibit_automation",
+        "title": "Reolink Day Monthly Lucky Draw",
+        "url": "https://reolink.com/__/lp/reolink-day/",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "ends": "2026-12-31T23:59:59",
+        "id": "greenlee-service-sticker-2026",
+        "status": "needs_email_confirmation",
+        "title": "Greenlee Service Sticker Giveaway",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "ends": "2026-12-31T23:59:59-05:00",
+        "id": "ridgid-odometer-challenge-2026",
+        "status": "ineligible_no_seesnake",
+        "title": "RIDGID Odometer Challenge",
+        "url": "https://www.ridgid.com/us/en/odometer-challenge-giveaway",
+        "updated_at": "2026-10-07T05:56:37.701Z",
+        "suppress": true
+      },
+      {
+        "ends": "2026-10-13T23:59:59-05:00",
+        "id": "ridgid-k4310-survey-2026",
+        "status": "questionnaire_link_not_found",
+        "title": "RIDGID K-4310 Survey Giveaway",
+        "url": "https://www.ridgid.com/us/en/k-4310-survey",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      },
+      {
+        "id": "betabound-inseego-fx5100-2026",
+        "status": "ineligible_no_tmobile_business_fwa",
+        "title": "Betabound Inseego FX5100 Router Test",
+        "url": "https://inseego.centercode.com/FX5100",
+        "updated_at": "2026-10-07T05:56:37.701Z",
+        "suppress": true
+      },
+      {
+        "ends": "2026-10-31T23:59:59-05:00",
+        "id": "klein-new-product-expedition-2026",
+        "status": "needs_distributor_qr",
+        "title": "Klein New Product Expedition",
+        "url": "https://www.kleintools.com/2026q3promo",
+        "updated_at": "2026-10-07T05:51:36.264Z"
+      }
+    ],
+    "lanes": {
+      "jml_scan": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T20:35:10.216Z",
+        "status": "timeout_skipped"
+      },
+      "instagram_brand_scan": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T20:35:10.216Z",
+        "status": ""
+      },
+      "navimow_round2_check": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T05:39:12.842Z",
+        "status": "count_unresolved"
+      },
+      "roborock_wheel_diag": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T20:35:10.216Z",
+        "status": "timeout_skipped"
+      },
+      "eufy_alt_free_spin": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T20:35:10.216Z",
+        "status": "timeout_skipped"
+      },
+      "bluetti_safe_spin": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T20:35:10.216Z",
+        "status": "timeout_skipped"
+      },
+      "mova_widget_api_diag": {
+        "last_seen_at": "2026-10-07T20:35:10.216Z",
+        "last_changed_at": "2026-10-07T05:39:12.842Z",
+        "status": "200"
+      }
+    }
+  }
+}
