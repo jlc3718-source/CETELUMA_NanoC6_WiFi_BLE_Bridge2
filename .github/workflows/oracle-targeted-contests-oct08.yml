@@ -33,7 +33,7 @@ jobs:
             ("existing_entries", {"task": "promo_state_get", "id": "contest-dedupe-oct08"}),
             ("bosch_dream_form", {"task": "generic_form_entry", "id": "bosch-dream-prep-oct08", "url": "https://form.bshpersona.com/Bosch/?cid=BoschtoberLP&promoIdExt=ab522287-930b-4813-acae-076751a2f9b7", "submit": False}),
             ("social_handoff", {"task": "prepare_restricted", "id": "oct08-social-manual", "kind": "queue", "urls": [
-              "https://www.bosch-home.com/us/en/c/spotlight/blt067440a18acc1db0/Boschtober",
+              "https://form.bshpersona.com/Bosch/?cid=BoschtoberLP&promoIdExt=ab522287-930b-4813-acae-076751a2f9b7",
               "https://www.instagram.com/boschhomeus/",
               "https://www.instagram.com/narwalrobot/",
               "https://www.facebook.com/groups/ankersolixusers/"
@@ -59,7 +59,7 @@ jobs:
                       rec["missing"]= [scrub(x) for x in result.get("missing",[])][:12]
                       rec["challenge"]=result.get("challenge")
                   if label == "social_handoff":
-                      rec["opened_tabs"]=result.get("opened")
+                      rec["pages"]=[{"url":x.get("url"),"title":x.get("title"),"buttons":x.get("buttons")} for x in (result.get("pages") or [])]
                       rec["manual_url"]=str(result.get("manual_url") or result.get("viewer_url") or result.get("interactive_url") or "")[:250]
                       rec["control_url"]=str(result.get("control_url") or "")[:250]
                       rec["session_status"]=result.get("status")
