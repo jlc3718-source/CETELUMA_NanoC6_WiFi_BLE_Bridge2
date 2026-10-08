@@ -1,0 +1,92 @@
+name: Oracle Daily Entry Followup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oracle-daily-entry-followup.yml"
+      - ".github/oracle-daily-entry-followup.trigger"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-daily-entry-followup
+  cancel-in-progress: false
+
+jobs:
+  entries:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run parallel daily lanes and preserve safe lane evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime, json, pathlib, re, urllib.request, urllib.parse
+          from zoneinfo import ZoneInfo
+
+          stamp = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H-%M-%S")
+          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required authenticated opportunities brand handle links posts post_urls latest_posts matches text caption captions href source type kind matched".split())
+
+          def clean_string(value):
+              value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", value, flags=re.I)
+              value = re.sub(r"(?<!\d)(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}(?!\d)", "[REDACTED_PHONE]", value)
+              value = re.sub(r"\b\d{1,6}\s+[A-Za-z .]+\s(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Boulevard|Blvd)\b", "[REDACTED_ADDRESS]", value, flags=re.I)
+              value = re.sub(r"\b\d{5}(?:-\d{4})?\b", "[REDACTED_ZIP]", value)
+              value = re.sub(r"(?i)(Bearer\s+|(?:token|password|secret|api[_-]?key)[\"'=: ]+)[^\s,\"']+", r"\1[REDACTED]", value)
+              return value[:1600]
+
+          def safe(value, parent=""):
+              if isinstance(value, dict):
+                  if parent == "lanes":
+                      return [{"task": clean_string(str(k)), **safe(v)} for k, v in value.items() if isinstance(v, dict)]
+                  output = {k: safe(v, k) for k, v in value.items() if k in keep}
+                  if parent == "result": output["available_result_keys"] = list(value.keys())
+                  return output
+              if isinstance(value, list):
+                  return [safe(v, parent) for v in value[:60]]
+              if isinstance(value, str):
+                  if value.startswith(("http://", "https://")):
+                      parts = urllib.parse.urlsplit(value)
+                      value = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+                  return clean_string(value)
+              return value
+
+          for stem, job, request_timeout in [
+              ("oracle-daily-discovery-detail-result", {"id": "daily-discovery-details-" + stamp, "task": "batch", "lane_timeout_ms": 50000, "tasks": ["jml_scan", "instagram_brand_scan"]}, 58),
+              ("oracle-slickdeals-result", {"id": "slickdeals-daily-" + stamp, "task": "generic_form_entry", "url": "https://slickdeals.net/giveaway/daily-draw/2026-10-08/", "submit": True}, 58),
+              ("oracle-on-tester-result", {"id": "on-lifestyle-prepare-" + stamp, "task": "generic_form_entry", "url": "https://form.typeform.com/to/vDq8DBlZ", "submit": False}, 58),
+          ]:
+              try:
+                  request = urllib.request.Request("http://127.0.0.1:8932/run", data=json.dumps(job).encode(), headers={"Content-Type": "application/json"})
+                  with urllib.request.urlopen(request, timeout=request_timeout) as response:
+                      data = json.load(response)
+                  output = safe(data)
+                  if isinstance(data.get("result"), dict):
+                      output.setdefault("result", {})["available_result_keys"] = list(data["result"].keys())
+              except Exception as exc:
+                  output = {"id": job["id"], "ok": False, "error": clean_string(str(exc)), "result": {"task": job["task"], "status": "blocked_or_timeout"}}
+              pathlib.Path(".github/" + stem + ".json").write_text(json.dumps(output, indent=2) + "\n")
+          PY
+
+      - name: Publish scrubbed daily results
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-daily-discovery-detail-result.json .github/oracle-slickdeals-result.json .github/oracle-on-tester-result.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish scrubbed daily lane outcomes"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
