@@ -70,15 +70,7 @@ jobs:
                       if private_url.startswith("https://"):
                           import base64, subprocess
                           key_path="/tmp/oracle-oct08-public.pem"
-                          pathlib.Path(key_path).write_text("""-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0nmQO7/92mYXp0z4I0iL
-wmdrt0EXs77wAalsExpdeN3wuQjooSHsnQ02gLSQq22snyBirbGzzRMhcUGeI1GR
-UJpk05OFOOprI2fhsedTr758ywpJoWuTCmzJ+PpJzmL5Le4pdZYwPfpq5qo49Fda
-h5QlL6kSuhTn55Xvb/tFr3DAMqAn6IX8VpFws/0uTlxAWPk8wFwNJcBbEdxKkJa9
-yfLoIGkGcGNDV0aqwJY2Cro+yp2BvNdaAzTYUDah1ZNEzvQn7ldyVh6fCNEeH++A
-kvwmh4SgQpHXJ6HsyWPv/VagA1XF+pkveuoqCoTrbDS/Ml1aBMSiUttw4g7Aw4mv
-KQIDAQAB
------END PUBLIC KEY-----\n""")
+                          pathlib.Path(key_path).write_text("-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0nmQO7/92mYXp0z4I0iL\nwmdrt0EXs77wAalsExpdeN3wuQjooSHsnQ02gLSQq22snyBirbGzzRMhcUGeI1GR\nUJpk05OFOOprI2fhsedTr758ywpJoWuTCmzJ+PpJzmL5Le4pdZYwPfpq5qo49Fda\nh5QlL6kSuhTn55Xvb/tFr3DAMqAn6IX8VpFws/0uTlxAWPk8wFwNJcBbEdxKkJa9\nyfLoIGkGcGNDV0aqwJY2Cro+yp2BvNdaAzTYUDah1ZNEzvQn7ldyVh6fCNEeH++A\nkvwmh4SgQpHXJ6HsyWPv/VagA1XF+pkveuoqCoTrbDS/Ml1aBMSiUttw4g7Aw4mv\nKQIDAQAB\n-----END PUBLIC KEY-----\n")
                           ciphertext=subprocess.run(["openssl","pkeyutl","-encrypt","-pubin","-inkey",key_path,"-pkeyopt","rsa_padding_mode:oaep"],input=private_url.encode(),capture_output=True,check=True).stdout
                           rec["encrypted_viewer_url"]=base64.b64encode(ciphertext).decode()
                           pathlib.Path(key_path).unlink(missing_ok=True)
