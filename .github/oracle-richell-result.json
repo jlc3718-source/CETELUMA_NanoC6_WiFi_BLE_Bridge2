@@ -1,0 +1,22 @@
+{
+  "id": "richell-fall-fun-2026-prepare",
+  "ok": true,
+  "started": "2026-10-08T04:43:37.506Z",
+  "finished": "2026-10-08T04:43:47.189Z",
+  "result": {
+    "task": "generic_form_entry",
+    "status": "manual_final_required_challenge",
+    "url": "https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/",
+    "missing": [],
+    "challenge": true,
+    "prepared": true,
+    "available_result_keys": [
+      "task",
+      "status",
+      "url",
+      "missing",
+      "challenge",
+      "prepared"
+    ]
+  }
+}

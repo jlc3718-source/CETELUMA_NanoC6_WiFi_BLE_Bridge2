@@ -1,12 +1,12 @@
 {
   "id": "promo-state-2026-10-08",
   "ok": true,
-  "started": "2026-10-08T04:41:48.134Z",
-  "finished": "2026-10-08T04:41:48.134Z",
+  "started": "2026-10-08T04:43:37.502Z",
+  "finished": "2026-10-08T04:43:37.502Z",
   "result": {
     "task": "promo_state_get",
     "status": "ready",
-    "last_run_at": "2026-10-08T04:41:48.127Z",
+    "last_run_at": "2026-10-08T04:43:37.494Z",
     "campaigns": [
       {
         "id": "dreame-aero-2026",
@@ -162,43 +162,43 @@
     "lanes": [
       {
         "task": "jml_scan",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
-        "last_changed_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
+        "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
       {
         "task": "instagram_brand_scan",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
-        "last_changed_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
+        "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
       {
         "task": "navimow_round2_check",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "count_unresolved"
       },
       {
         "task": "roborock_wheel_diag",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
-        "last_changed_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
+        "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
       {
         "task": "eufy_alt_free_spin",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
-        "last_changed_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
+        "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
       {
         "task": "bluetti_safe_spin",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
-        "last_changed_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
+        "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
       {
         "task": "mova_widget_api_diag",
-        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_seen_at": "2026-10-08T04:43:37.494Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "200"
       }

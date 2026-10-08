@@ -1,0 +1,61 @@
+{
+  "id": "richell-manual-2026-10-08",
+  "ok": true,
+  "started": "2026-10-08T04:43:47.192Z",
+  "finished": "2026-10-08T04:43:47.193Z",
+  "result": {
+    "task": "manual_queue_add",
+    "status": "stored",
+    "count": 6,
+    "items": [
+      {
+        "id": "lenovo-thinkbook-14x-oct-2026",
+        "title": "Lenovo ThinkBook 14x October Giveaway",
+        "url": "https://smbcommunity.lenovo.com/monthly-giveaway-3/na",
+        "reason": "Community login / final Enter action",
+        "updated_at": "2026-10-07T05:51:59.543Z"
+      },
+      {
+        "id": "lenovo-legion-go-s-oct-2026",
+        "title": "Lenovo Legion Go S October Giveaway",
+        "url": "https://gaming.lenovo.com/monthly-giveaway-2",
+        "reason": "Community login / final Enter action",
+        "updated_at": "2026-10-07T05:51:59.543Z"
+      },
+      {
+        "id": "anker-tech-discovery-box-2026",
+        "title": "Anker Tech Discovery Box",
+        "url": "https://www.anker.com/anker-tech",
+        "reason": "Log in and answer one tech question",
+        "updated_at": "2026-10-07T05:51:59.543Z"
+      },
+      {
+        "id": "reolink-day-monthly-2026",
+        "title": "Reolink Day Monthly Lucky Draw",
+        "url": "https://reolink.com/__/lp/reolink-day/",
+        "reason": "Manual-only entry because rules prohibit automated participation",
+        "updated_at": "2026-10-07T05:51:59.543Z"
+      },
+      {
+        "id": "govee-halloween-ideas-2026",
+        "title": "Govee Halloween Decorating Ideas",
+        "url": "https://www.instagram.com/goveeofficial/",
+        "reason": "Find the current Halloween giveaway post and submit the qualifying comment",
+        "updated_at": "2026-10-07T05:51:59.543Z"
+      },
+      {
+        "id": "richell-fall-fun-2026",
+        "title": "Richell Fall into Fun 2026",
+        "url": "https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/",
+        "reason": "Choose pet carrier or stroller; required newsletter and CAPTCHA; one entry per household",
+        "updated_at": "2026-10-08T04:43:47.192Z"
+      }
+    ],
+    "available_result_keys": [
+      "task",
+      "status",
+      "count",
+      "items"
+    ]
+  }
+}
