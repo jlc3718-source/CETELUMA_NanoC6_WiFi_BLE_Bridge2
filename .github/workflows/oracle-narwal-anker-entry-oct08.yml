@@ -51,3 +51,5 @@ jobs:
             if git push origin HEAD:main; then exit 0; fi
           done
           exit 1
+
+# Retry using exact post link discovery from live sweepstakes listing
