@@ -1,0 +1,53 @@
+name: Oracle Narwal Anker Entry Oct 8
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oracle-narwal-anker-entry-oct08.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: oracle-narwal-anker-entry-oct08
+  cancel-in-progress: false
+jobs:
+  entries:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Release parked manual browser and submit verified posts through Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request
+          try:
+              j=json.dumps({"id":"oct08-release-login-before-social","task":"login_stop"}).encode()
+              req=urllib.request.Request("http://127.0.0.1:8932/run",data=j,headers={"Content-Type":"application/json"})
+              with urllib.request.urlopen(req,timeout=18) as resp:
+                  result=json.load(resp)
+              print("Oracle profile release:",bool(result.get("ok")))
+          except Exception as e:
+              print("Oracle profile release unavailable:",str(e)[:120])
+          PY
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          sudo docker cp .github/oracle-narwal-anker-entry-oct08.js "$CID":/tmp/oracle-narwal-anker-entry-oct08.js
+          timeout 175s sudo docker exec -e DISPLAY=:99 "$CID" node /tmp/oracle-narwal-anker-entry-oct08.js || true
+          sudo docker cp "$CID":/tmp/oracle-social-entry-oct08-result.json .github/oracle-social-entry-oct08-result.json || printf '{"status":"browser_execution_failed"}\n' > .github/oracle-social-entry-oct08-result.json
+      - name: Publish status only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          git add .github/oracle-social-entry-oct08-result.json
+          git commit -m "Record October 8 Narwal and Anker entry attempt results" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
