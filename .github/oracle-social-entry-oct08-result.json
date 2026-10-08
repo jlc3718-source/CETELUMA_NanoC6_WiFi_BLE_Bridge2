@@ -1,0 +1,18 @@
+{
+  "runAt": "2026-10-08T19:20:56.995Z",
+  "source": "oracle-persistent-daily",
+  "narwal": {
+    "status": "specific_giveaway_post_not_found",
+    "account": "narwalrobot",
+    "follow": "already_following_or_button_unavailable",
+    "liked": false,
+    "commentSubmitted": false,
+    "commentConfirmed": false,
+    "post_url": null,
+    "candidatesChecked": 0,
+    "postsFound": 0
+  },
+  "anker": {
+    "status": "facebook_login_required"
+  }
+}
