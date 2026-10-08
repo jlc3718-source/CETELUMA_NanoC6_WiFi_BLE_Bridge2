@@ -26,11 +26,22 @@ async function narwalEntry(ctx){
     const follow=p.getByRole("button",{name:/^Follow$/i});
     if(await maybeClick(follow)){res.follow="clicked"}else{res.follow="already_following_or_button_unavailable"}
     await sleep(800);
+    let directoryLinks=[];
+    const dir=await ctx.newPage();
+    try {
+      await goto(dir,"https://www.sweepsadvantage.com/vacuum-sweepstakes",12000);
+      directoryLinks=await dir.locator('a').evaluateAll(els=>els.map(a=>({text:(a.textContent||"").replace(/\s+/g," ").trim().slice(0,140),href:a.href})).filter(x=>/narwal|flow 2|prime day robot/i.test(x.text)).slice(0,10)).catch(()=>[]);
+    } catch(e) {}
+    finally {await dir.close().catch(()=>{});}
+    res.directoryLinks=directoryLinks.filter(x=>/^https?:/.test(x.href)).slice(0,8);
     const links=await p.locator('a[href*="/p/"],a[href*="/reel/"]').evaluateAll(els=>{
       const seen=new Set(),out=[];
       for(const a of els){const h=a.href;if(!h||seen.has(h)||!/^https:\/\/www\.instagram\.com\/(p|reel)\//.test(h))continue;seen.add(h);const im=a.querySelector('img');out.push({url:h,preview:(im?.alt||"").slice(0,500)});if(out.length>=30)break;}
       return out;
     }).catch(()=>[]);
+    for(const x of directoryLinks){
+      if(/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//.test(x.href) && !links.some(l=>l.url===x.href))links.unshift({url:x.href,preview:x.text});
+    }
     res.postsFound=links.length;
     let chosen=null;
     const start=Date.now();
