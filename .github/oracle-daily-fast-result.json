@@ -1,179 +1,165 @@
 {
-  "id": "full-daily-2026-10-08",
+  "id": "full-daily-2026-10-08T06-11-59",
   "ok": true,
-  "started": "2026-10-08T04:43:09.291Z",
-  "finished": "2026-10-08T04:43:37.495Z",
+  "started": "2026-10-08T10:12:01.111Z",
+  "finished": "2026-10-08T10:12:52.913Z",
   "result": {
-    "task": "run_daily_fast",
-    "status": "complete",
+    "task": "batch",
     "parallel": true,
-    "profile": "daily",
-    "lane_timeout_ms": 25000,
-    "manual_session_closed": false,
-    "scanned_lanes": 7,
-    "changed_lanes": [
+    "shared_profile": "daily",
+    "lane_timeout_ms": 50000,
+    "results": [
       {
         "task": "jml_scan",
+        "ok": true,
         "result": {
-          "status": "timeout_skipped",
           "task": "jml_scan",
-          "timeout_ms": 25000,
+          "login_required": false,
+          "url": "https://www.anker-jml.com/",
           "available_result_keys": [
-            "status",
             "task",
-            "timeout_ms"
+            "authenticated",
+            "login_required",
+            "url",
+            "opportunities"
           ]
         }
       },
       {
         "task": "instagram_brand_scan",
+        "ok": true,
         "result": {
-          "status": "timeout_skipped",
           "task": "instagram_brand_scan",
-          "timeout_ms": 25000,
+          "results": [
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            },
+            {
+              "status": "ok"
+            }
+          ],
           "available_result_keys": [
-            "status",
             "task",
-            "timeout_ms"
+            "authenticated",
+            "results"
           ]
         }
       },
       {
         "task": "roborock_wheel_diag",
+        "ok": true,
         "result": {
-          "status": "timeout_skipped",
           "task": "roborock_wheel_diag",
-          "timeout_ms": 25000,
+          "status": "timeout_skipped",
+          "timeout_ms": 50000,
           "available_result_keys": [
-            "status",
             "task",
+            "status",
             "timeout_ms"
           ]
         }
       },
       {
         "task": "eufy_alt_free_spin",
+        "ok": true,
         "result": {
-          "status": "timeout_skipped",
           "task": "eufy_alt_free_spin",
-          "timeout_ms": 25000,
+          "status": "timeout_skipped",
+          "timeout_ms": 50000,
           "available_result_keys": [
-            "status",
             "task",
+            "status",
             "timeout_ms"
           ]
         }
       },
       {
         "task": "bluetti_safe_spin",
+        "ok": true,
         "result": {
-          "status": "timeout_skipped",
           "task": "bluetti_safe_spin",
-          "timeout_ms": 25000,
+          "status": "spin_control_not_found",
+          "points": 0,
+          "url": "https://www.bluettipower.com/pages/bluetti-discount",
           "available_result_keys": [
-            "status",
             "task",
-            "timeout_ms"
+            "status",
+            "consumption_type",
+            "surplus_times",
+            "points",
+            "subscribed",
+            "url"
+          ]
+        }
+      },
+      {
+        "task": "mova_widget_api_diag",
+        "ok": true,
+        "result": {
+          "task": "mova_widget_api_diag",
+          "status": 200,
+          "available_result_keys": [
+            "task",
+            "status",
+            "script_url",
+            "script_bytes",
+            "urls",
+            "paths",
+            "snippets"
+          ]
+        }
+      },
+      {
+        "task": "navimow_round2_check",
+        "ok": true,
+        "result": {
+          "task": "navimow_round2_check",
+          "status": "count_unresolved",
+          "error": null,
+          "available_result_keys": [
+            "task",
+            "status",
+            "subscribers",
+            "threshold",
+            "remaining",
+            "round2_unlocked",
+            "official_post",
+            "api_status",
+            "error"
           ]
         }
       }
     ],
-    "unchanged_lanes": 2,
-    "errors": [],
-    "unresolved_campaigns": [
-      {
-        "ends": "2026-11-02T04:59:00",
-        "id": "lenovo-thinkbook-14x-oct-2026",
-        "status": "manual_required",
-        "title": "Lenovo ThinkBook 14x October Giveaway",
-        "url": "https://smbcommunity.lenovo.com/monthly-giveaway-3/na",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "ends": "2026-11-02T04:59:00",
-        "id": "lenovo-legion-go-s-oct-2026",
-        "status": "manual_required",
-        "title": "Lenovo Legion Go S October Giveaway",
-        "url": "https://gaming.lenovo.com/monthly-giveaway-2",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "id": "anker-tech-discovery-box-2026",
-        "status": "manual_login_quiz",
-        "title": "Anker Tech Discovery Box",
-        "url": "https://www.anker.com/anker-tech",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "ends": "2026-10-13T23:59:00-04:00",
-        "id": "govee-halloween-ideas-2026",
-        "status": "manual_post_lookup",
-        "title": "Govee Halloween Decorating Ideas",
-        "url": "https://www.instagram.com/goveeofficial/",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "id": "reolink-day-monthly-2026",
-        "status": "manual_only_rules_prohibit_automation",
-        "title": "Reolink Day Monthly Lucky Draw",
-        "url": "https://reolink.com/__/lp/reolink-day/",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "ends": "2026-12-31T23:59:59",
-        "id": "greenlee-service-sticker-2026",
-        "status": "needs_email_confirmation",
-        "title": "Greenlee Service Sticker Giveaway",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "ends": "2026-12-31T23:59:59-05:00",
-        "id": "ridgid-odometer-challenge-2026",
-        "status": "ineligible_no_seesnake",
-        "title": "RIDGID Odometer Challenge",
-        "url": "https://www.ridgid.com/us/en/odometer-challenge-giveaway",
-        "updated_at": "2026-10-07T05:56:37.701Z",
-        "suppress": true
-      },
-      {
-        "ends": "2026-10-13T23:59:59-05:00",
-        "id": "ridgid-k4310-survey-2026",
-        "status": "questionnaire_link_not_found",
-        "title": "RIDGID K-4310 Survey Giveaway",
-        "url": "https://www.ridgid.com/us/en/k-4310-survey",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      },
-      {
-        "id": "betabound-inseego-fx5100-2026",
-        "status": "ineligible_no_tmobile_business_fwa",
-        "title": "Betabound Inseego FX5100 Router Test",
-        "url": "https://inseego.centercode.com/FX5100",
-        "updated_at": "2026-10-07T05:56:37.701Z",
-        "suppress": true
-      },
-      {
-        "ends": "2026-10-31T23:59:59-05:00",
-        "id": "klein-new-product-expedition-2026",
-        "status": "needs_distributor_qr",
-        "title": "Klein New Product Expedition",
-        "url": "https://www.kleintools.com/2026q3promo",
-        "updated_at": "2026-10-07T05:51:36.264Z"
-      }
-    ],
-    "manual_queue_count": 5,
     "available_result_keys": [
       "task",
-      "status",
       "parallel",
-      "profile",
+      "shared_profile",
       "lane_timeout_ms",
-      "manual_session_closed",
-      "scanned_lanes",
-      "changed_lanes",
-      "unchanged_lanes",
-      "errors",
-      "unresolved_campaigns",
-      "manual_queue_count"
+      "results"
     ]
   }
 }

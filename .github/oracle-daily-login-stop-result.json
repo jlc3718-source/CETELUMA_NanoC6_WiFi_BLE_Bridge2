@@ -1,0 +1,14 @@
+{
+  "id": "daily-close-manual-2026-10-08T06-11-59",
+  "ok": true,
+  "started": "2026-10-08T10:11:59.825Z",
+  "finished": "2026-10-08T10:12:01.106Z",
+  "result": {
+    "task": "login_stop",
+    "status": "stopped",
+    "available_result_keys": [
+      "task",
+      "status"
+    ]
+  }
+}
