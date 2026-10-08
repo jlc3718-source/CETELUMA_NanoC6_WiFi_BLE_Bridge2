@@ -19,14 +19,14 @@ jobs:
           set -euo pipefail
           CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
           test -n "$CID"
-          sudo docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");let i=s.indexOf("async function prepareRestrictedSession");if(i<0){console.log("NOT FOUND");process.exit(0)}let j=s.indexOf("\nasync function ",i+40);if(j<0||j-i>13000)j=i+11000;const v=s.slice(i,j);const lines=v.split("\n").filter(l=>!/(token|password|secret|cookie|authorization|apikey|entryProfile|email|street|phone|postal)/i.test(l));process.stdout.write(lines.join("\n").slice(0,9000));' > .github/oracle-contest-session-capability.txt
+          sudo docker exec "$CID" node -e 'const fs=require("fs");const s=fs.readFileSync("/app/src/server.js","utf8");let i=s.indexOf("async function startLogin");if(i<0){console.log("NOT FOUND");process.exit(0)}let j=s.indexOf("\nasync function ",i+40);if(j<0||j-i>13000)j=i+11000;const v=s.slice(i,j);const lines=v.split("\n").filter(l=>!/(token|password|secret|cookie|authorization|apikey|entryProfile|email|street|phone|postal)/i.test(l));process.stdout.write(lines.join("\n").slice(0,9000));' > .github/oracle-contest-login-capability.txt
       - name: Publish sanitized code section
         shell: bash
         run: |
           set -e
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-contest-session-capability.txt
+          git add .github/oracle-contest-login-capability.txt
           git commit -m "Inspect Oracle manual entry session behavior" || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
