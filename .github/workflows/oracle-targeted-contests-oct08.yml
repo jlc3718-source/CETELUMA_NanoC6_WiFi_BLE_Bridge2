@@ -1,0 +1,84 @@
+name: Oracle Targeted Contest Entries October 8
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oracle-targeted-contests-oct08.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-targeted-contests-oct08
+  cancel-in-progress: false
+
+jobs:
+  entries:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Stage authorized contest entries through Oracle, never duplicate completed Govee
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime, json, pathlib, urllib.request, urllib.parse, re
+          stamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          base = "http://127.0.0.1:8932/run"
+          jobs = [
+            ("existing_entries", {"task": "promo_state_get", "id": "contest-dedupe-oct08"}),
+            ("bosch_dream_form", {"task": "generic_form_entry", "id": "bosch-dream-prep-oct08", "url": "https://form.bshpersona.com/Bosch/?cid=BoschtoberLP&promoIdExt=ab522287-930b-4813-acae-076751a2f9b7", "submit": False}),
+            ("social_handoff", {"task": "prepare_restricted", "id": "oct08-social-manual", "kind": "queue", "urls": [
+              "https://www.bosch-home.com/us/en/c/spotlight/blt067440a18acc1db0/Boschtober",
+              "https://www.instagram.com/boschhomeus/",
+              "https://www.instagram.com/narwalrobot/",
+              "https://www.facebook.com/groups/ankersolixusers/"
+            ]})
+          ]
+          out = {"created_utc": stamp, "method": "Oracle browser agent only", "entries": []}
+          def scrub(s):
+              s = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", str(s), flags=re.I)
+              s = re.sub(r"\+?1?\s*\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}", "[REDACTED_PHONE]", s)
+              s = re.sub(r"\b\d{5}(?:-\d{4})?\b", "[REDACTED_ZIP]", s)
+              return s[:300]
+          for label, job in jobs:
+              try:
+                  req = urllib.request.Request(base, data=json.dumps(job).encode(), headers={"Content-Type": "application/json"})
+                  with urllib.request.urlopen(req,timeout=58) as resp: raw=json.load(resp)
+                  result=raw.get("result") or {}
+                  rec={"label":label,"ok":bool(raw.get("ok")),"task":result.get("task"),"status":result.get("status"),"error":scrub(raw.get("error")) if not raw.get("ok") else None}
+                  if label == "existing_entries":
+                      existing=result.get("campaigns") or []
+                      rec["govee_already_completed"]=any(x.get("id")=="govee-friday-night-lights-2026" and x.get("status") in ("completed","confirmed","already_entered") for x in existing)
+                  if label == "bosch_dream_form":
+                      rec["prepared"]=result.get("prepared")
+                      rec["missing"]= [scrub(x) for x in result.get("missing",[])][:12]
+                      rec["challenge"]=result.get("challenge")
+                  if label == "social_handoff":
+                      rec["opened_tabs"]=result.get("opened")
+                      rec["manual_url"]=str(result.get("manual_url") or result.get("viewer_url") or result.get("interactive_url") or "")[:250]
+                      rec["control_url"]=str(result.get("control_url") or "")[:250]
+                      rec["session_status"]=result.get("status")
+                  out["entries"].append(rec)
+              except Exception as exc:
+                  out["entries"].append({"label":label,"ok":False,"status":"unavailable_or_timeout","error":scrub(exc)})
+          pathlib.Path(".github/oracle-targeted-contests-oct08-result.json").write_text(json.dumps(out,indent=2)+"\n")
+          PY
+      - name: Publish only scrubbed statuses, never personal entry values
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-targeted-contests-oct08-result.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish redacted October contest handoff statuses"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
