@@ -1,12 +1,12 @@
 {
-  "id": "promo-state-read",
+  "id": "promo-state-2026-10-08",
   "ok": true,
-  "started": "2026-10-07T20:37:53.300Z",
-  "finished": "2026-10-07T20:37:53.302Z",
+  "started": "2026-10-08T04:41:48.134Z",
+  "finished": "2026-10-08T04:41:48.134Z",
   "result": {
     "task": "promo_state_get",
     "status": "ready",
-    "last_run_at": "2026-10-07T20:35:10.216Z",
+    "last_run_at": "2026-10-08T04:41:48.127Z",
     "campaigns": [
       {
         "id": "dreame-aero-2026",
@@ -159,42 +159,56 @@
         "updated_at": "2026-10-07T05:51:36.264Z"
       }
     ],
-    "lanes": {
-      "jml_scan": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
-        "last_changed_at": "2026-10-07T20:35:10.216Z",
+    "lanes": [
+      {
+        "task": "jml_scan",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_changed_at": "2026-10-08T04:41:48.127Z",
         "status": "timeout_skipped"
       },
-      "instagram_brand_scan": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
-        "last_changed_at": "2026-10-07T20:35:10.216Z",
-        "status": ""
+      {
+        "task": "instagram_brand_scan",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_changed_at": "2026-10-08T04:41:48.127Z",
+        "status": "timeout_skipped"
       },
-      "navimow_round2_check": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
+      {
+        "task": "navimow_round2_check",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "count_unresolved"
       },
-      "roborock_wheel_diag": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
-        "last_changed_at": "2026-10-07T20:35:10.216Z",
+      {
+        "task": "roborock_wheel_diag",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_changed_at": "2026-10-08T04:41:48.127Z",
         "status": "timeout_skipped"
       },
-      "eufy_alt_free_spin": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
-        "last_changed_at": "2026-10-07T20:35:10.216Z",
+      {
+        "task": "eufy_alt_free_spin",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_changed_at": "2026-10-08T04:41:48.127Z",
         "status": "timeout_skipped"
       },
-      "bluetti_safe_spin": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
-        "last_changed_at": "2026-10-07T20:35:10.216Z",
+      {
+        "task": "bluetti_safe_spin",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
+        "last_changed_at": "2026-10-08T04:41:48.127Z",
         "status": "timeout_skipped"
       },
-      "mova_widget_api_diag": {
-        "last_seen_at": "2026-10-07T20:35:10.216Z",
+      {
+        "task": "mova_widget_api_diag",
+        "last_seen_at": "2026-10-08T04:41:48.127Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "200"
       }
-    }
+    ],
+    "available_result_keys": [
+      "task",
+      "status",
+      "last_run_at",
+      "campaigns",
+      "lanes"
+    ]
   }
 }
