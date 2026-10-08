@@ -19,7 +19,7 @@ jobs:
           set -euo pipefail
           CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
           test -n "$CID"
-          sudo docker exec "$CID" node - <<'NODE' > .github/oracle-social-probe-oct08.json
+          sudo docker exec -i "$CID" node - <<'NODE' > .github/oracle-social-probe-oct08.json
           const fs=require("fs"),path=require("path");
           const s=fs.readFileSync("/app/src/server.js","utf8");
           const lines=s.split("\n");
