@@ -1,0 +1,53 @@
+name: Oracle Social Login Handoff October 8
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/oracle-social-login-oct08.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  auth:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Open exact social sites and encrypt temporary login link
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request,subprocess,pathlib,base64
+          job={"id":"oct08-reconnect-social","task":"prepare_restricted","kind":"queue","urls":["https://www.instagram.com/narwalrobot/","https://www.facebook.com/AnkerSOLIXofficial/posts/-halloween-giveaway-forget-ghosts-what-really-scares-you-during-a-power-outage-n/1110759521943126/"]}
+          result={"status":"unavailable"}
+          try:
+              req=urllib.request.Request("http://127.0.0.1:8932/run",data=json.dumps(job).encode(),headers={"Content-Type":"application/json"})
+              with urllib.request.urlopen(req,timeout=58) as resp: data=json.load(resp)
+              payload=data.get("result") or {}
+              result={"ok":bool(data.get("ok")),"status":payload.get("status"),"pages":[{"url":str(p.get("url","")).split("?")[0],"title":str(p.get("title",""))[:90]} for p in (payload.get("pages") or [])]}
+              private_url=str(payload.get("login_url") or "")
+              if private_url.startswith("https://"):
+                  key_path="/tmp/oracle-auth-oct08-public.pem"
+                  pathlib.Path(key_path).write_text("-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjo9MIqNfllgPuDWksLKJ\nDfCqxb3U9xUdwWsvJbViriFNo+7EQTO8py0MgaB45jjaqfdJR2+/uZpu1jwoDXrW\nkvpcIz8+myAQPob4NgEPfDP0GSsmdW5eCDrucsRgFIRi41mc6xQFuKaqeJMlrCFf\n+0JD150yc7HgoMMcbU1WASVCrPx4Top3z6f30Xk5+339SzSRvLAi+oPeLWWiGpzI\nilMri2Bb1PUL4wiShPgTN589o/zhQxMGVtYkE1ot55j/fagSyJmOtsVxLdzTcW3r\nzLeE2qWtfWezgxK/01057PxxrTXDQruMuv6H6z20I3N9gCtPsXAa8MBxEw6yVdyT\nJwIDAQAB\n-----END PUBLIC KEY-----\n")
+                  encrypted=subprocess.run(["openssl","pkeyutl","-encrypt","-pubin","-inkey",key_path,"-pkeyopt","rsa_padding_mode:oaep"],input=private_url.encode(),capture_output=True,check=True).stdout
+                  result["encrypted_control_url"]=base64.b64encode(encrypted).decode()
+                  pathlib.Path(key_path).unlink(missing_ok=True)
+          except Exception as e:
+              result={"ok":False,"status":"error","detail":str(e)[:150]}
+          pathlib.Path(".github/oracle-social-login-oct08-result.json").write_text(json.dumps(result,indent=2)+"\n")
+          PY
+      - name: Publish encrypted URL and redacted status
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          git add .github/oracle-social-login-oct08-result.json
+          git commit -m "Publish encrypted private Oracle social login handoff" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
