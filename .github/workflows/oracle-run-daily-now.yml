@@ -33,7 +33,7 @@ jobs:
           from zoneinfo import ZoneInfo
 
           day = datetime.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
-          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required".split())
+          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required".split())
 
           def clean_string(value):
               value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", value, flags=re.I)
@@ -60,8 +60,10 @@ jobs:
               return value
 
           for stem, job in [
-              ("oracle-daily-fast-result", {"id": "full-daily-" + day, "task": "run_daily_fast", "lane_timeout_ms": 18000}),
+              ("oracle-daily-fast-result", {"id": "full-daily-" + day, "task": "run_daily_fast", "lane_timeout_ms": 45000}),
               ("oracle-promo-state-result", {"id": "promo-state-" + day, "task": "promo_state_get"}),
+              ("oracle-richell-result", {"id": "richell-fall-fun-2026-prepare", "task": "generic_form_entry", "url": "https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/", "submit": False}),
+              ("oracle-manual-queue-result", {"id": "richell-manual-" + day, "task": "manual_queue_add", "items": [{"id": "richell-fall-fun-2026", "title": "Richell Fall into Fun 2026", "url": "https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/", "reason": "Choose pet carrier or stroller; required newsletter and CAPTCHA; one entry per household", "source": "Official sponsor page"}]}),
           ]:
               try:
                   request = urllib.request.Request("http://127.0.0.1:8932/run", data=json.dumps(job).encode(), headers={"Content-Type": "application/json"})
@@ -81,7 +83,7 @@ jobs:
           set -euo pipefail
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-daily-fast-result.json .github/oracle-promo-state-result.json
+          git add .github/oracle-daily-fast-result.json .github/oracle-promo-state-result.json .github/oracle-richell-result.json .github/oracle-manual-queue-result.json
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "Publish scrubbed daily lane outcomes"
           for attempt in 1 2 3; do
