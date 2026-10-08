@@ -1,56 +1,91 @@
-name: Oracle Daily Follow-up Entries
+name: Oracle Run Daily
 
 on:
   push:
+    branches: [main]
     paths:
       - ".github/workflows/oracle-run-daily-now.yml"
+      - ".github/oracle-run-daily.trigger"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: oracle-run-daily
+  cancel-in-progress: false
+
 jobs:
   entries:
     runs-on: [self-hosted, oracle, jason-home]
-    timeout-minutes: 6
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run follow-up entry paths
+      - name: Run parallel daily lanes and preserve safe lane evidence
         shell: bash
         run: |
-          set -u
-          run_one() {
-            NAME="$1"
-            PAYLOAD="$2"
-            RAW="$(mktemp)"
-            OUT=".github/${NAME}.json"
-            if curl -sS --fail --max-time 65 -H 'Content-Type: application/json' -d "$PAYLOAD" http://127.0.0.1:8932/run > "$RAW"; then
-              python3 -c 'import json,re,sys;d=json.load(open(sys.argv[1]));r=d.get("result") if isinstance(d,dict) else {};r=r if isinstance(r,dict) else {};keys=("task","status","url","confirmation","missing","challenge","prepared","reason","need","action","confirmed","prize","message","detail","count","eligible");o={"id":d.get("id"),"ok":d.get("ok"),"started":d.get("started"),"finished":d.get("finished"),"error":d.get("error"),"result":{k:r.get(k) for k in keys if k in r}};s=json.dumps(o);s=re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}","[REDACTED_EMAIL]",s,flags=re.I);s=re.sub(r"\b\d{5}(?:-\d{4})?\b","[REDACTED_ZIP]",s);print(s)' "$RAW" > "$OUT"
-            else
-              printf '{"id":"%s","ok":false,"error":"oracle_request_failed_or_timed_out"}\n' "$NAME" > "$OUT"
-            fi
-            rm -f "$RAW"
-          }
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime, json, pathlib, re, urllib.request, urllib.parse
+          from zoneinfo import ZoneInfo
 
-          run_one "oracle-daily-fast-result" '{"id":"full-daily-2026-10-07-2217","task":"run_daily_fast","lane_timeout_ms":45000}'
-          run_one "oracle-mova-direct-result" '{"id":"mova-direct-daily","task":"mova_direct_entry"}'
-          run_one "oracle-slickdeals-result" '{"id":"slickdeals-daily-2026-10-07","task":"generic_form_entry","url":"https://slickdeals.net/giveaway/daily-draw/2026-10-07/","submit":true}'
-          run_one "oracle-lenovo-legion-result" '{"id":"lenovo-legion-oct-2026","task":"generic_form_entry","url":"https://gaming.lenovo.com/giveaways/post/na-eu-uk-jp-october-2026-giveaway---legion-go-s-cDL2Bea0XrQajM4","submit":true}'
-          run_one "oracle-lenovo-thinkbook-result" '{"id":"lenovo-thinkbook-oct-2026","task":"generic_form_entry","url":"https://smbcommunity.lenovo.com/giveaways/post/na-october-2026-giveaway---thinkbook-14x-intel-qlhrgOWeowlMofo","submit":true}'
+          day = datetime.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required".split())
 
-      - name: Publish scrubbed follow-up results
+          def clean_string(value):
+              value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", value, flags=re.I)
+              value = re.sub(r"(?<!\d)(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}(?!\d)", "[REDACTED_PHONE]", value)
+              value = re.sub(r"\b\d{1,6}\s+[A-Za-z .]+\s(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Boulevard|Blvd)\b", "[REDACTED_ADDRESS]", value, flags=re.I)
+              value = re.sub(r"\b\d{5}(?:-\d{4})?\b", "[REDACTED_ZIP]", value)
+              value = re.sub(r"(?i)(Bearer\s+|(?:token|password|secret|api[_-]?key)[\"'=: ]+)[^\s,\"']+", r"\1[REDACTED]", value)
+              return value[:1600]
+
+          def safe(value, parent=""):
+              if isinstance(value, dict):
+                  if parent == "lanes":
+                      return [{"task": clean_string(str(k)), **safe(v)} for k, v in value.items() if isinstance(v, dict)]
+                  output = {k: safe(v, k) for k, v in value.items() if k in keep}
+                  if parent == "result": output["available_result_keys"] = list(value.keys())
+                  return output
+              if isinstance(value, list):
+                  return [safe(v, parent) for v in value[:60]]
+              if isinstance(value, str):
+                  if parent == "url":
+                      parts = urllib.parse.urlsplit(value)
+                      value = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+                  return clean_string(value)
+              return value
+
+          for stem, job in [
+              ("oracle-daily-fast-result", {"id": "full-daily-" + day, "task": "run_daily_fast", "lane_timeout_ms": 18000}),
+              ("oracle-promo-state-result", {"id": "promo-state-" + day, "task": "promo_state_get"}),
+          ]:
+              try:
+                  request = urllib.request.Request("http://127.0.0.1:8932/run", data=json.dumps(job).encode(), headers={"Content-Type": "application/json"})
+                  with urllib.request.urlopen(request, timeout=58) as response:
+                      data = json.load(response)
+                  output = safe(data)
+                  if isinstance(data.get("result"), dict):
+                      output.setdefault("result", {})["available_result_keys"] = list(data["result"].keys())
+              except Exception as exc:
+                  output = {"id": job["id"], "ok": False, "error": clean_string(str(exc)), "result": {"task": job["task"], "status": "blocked_or_timeout"}}
+              pathlib.Path(".github/" + stem + ".json").write_text(json.dumps(output, indent=2) + "\n")
+          PY
+
+      - name: Publish scrubbed daily results
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-daily-fast-result.json .github/oracle-mova-direct-result.json .github/oracle-slickdeals-result.json .github/oracle-lenovo-legion-result.json .github/oracle-lenovo-thinkbook-result.json
-          git commit -m "Publish scrubbed Daily follow-up entry results" || exit 0
+          git add .github/oracle-daily-fast-result.json .github/oracle-promo-state-result.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish scrubbed daily lane outcomes"
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin HEAD:main; then exit 0; fi
-            sleep 2
           done
           exit 1
