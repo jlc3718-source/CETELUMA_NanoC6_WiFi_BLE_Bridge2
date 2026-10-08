@@ -34,6 +34,7 @@ jobs:
             rm -f "$RAW"
           }
 
+          run_one "oracle-daily-fast-result" '{"id":"full-daily-2026-10-07-2217","task":"run_daily_fast","lane_timeout_ms":45000}'
           run_one "oracle-mova-direct-result" '{"id":"mova-direct-daily","task":"mova_direct_entry"}'
           run_one "oracle-slickdeals-result" '{"id":"slickdeals-daily-2026-10-07","task":"generic_form_entry","url":"https://slickdeals.net/giveaway/daily-draw/2026-10-07/","submit":true}'
           run_one "oracle-lenovo-legion-result" '{"id":"lenovo-legion-oct-2026","task":"generic_form_entry","url":"https://gaming.lenovo.com/giveaways/post/na-eu-uk-jp-october-2026-giveaway---legion-go-s-cDL2Bea0XrQajM4","submit":true}'
@@ -45,7 +46,7 @@ jobs:
           set -e
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-mova-direct-result.json .github/oracle-slickdeals-result.json .github/oracle-lenovo-legion-result.json .github/oracle-lenovo-thinkbook-result.json
+          git add .github/oracle-daily-fast-result.json .github/oracle-mova-direct-result.json .github/oracle-slickdeals-result.json .github/oracle-lenovo-legion-result.json .github/oracle-lenovo-thinkbook-result.json
           git commit -m "Publish scrubbed Daily follow-up entry results" || exit 0
           for attempt in 1 2 3; do
             git pull --rebase origin main
