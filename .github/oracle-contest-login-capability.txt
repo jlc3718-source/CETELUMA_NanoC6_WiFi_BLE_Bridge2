@@ -1,0 +1,76 @@
+async function startLogin(job) {
+  await stopLogin();
+  const profile = safeProfile(job.profile || "daily");
+  const targets = Array.isArray(job.urls) && job.urls.length
+    ? job.urls.map(String).filter(Boolean)
+    : [String(job.url || "about:blank")];
+  const target = targets[0] || "about:blank";
+  const userDataDir = path.join(DATA_DIR, "profiles", profile);
+  fs.mkdirSync(userDataDir, { recursive: true });
+  clearStaleChromiumProfileLocks(userDataDir);
+
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    executablePath: CHROME,
+    headless: false,
+    viewport: { width: 430, height: 760 },
+    screen: { width: 430, height: 760 },
+    env: { ...process.env, DISPLAY: LOGIN_DISPLAY },
+    args: [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=430,760"
+    ]
+  });
+  const first = context.pages()[0] || await context.newPage();
+  await goto(first, target).catch(()=>{});
+  for (const extra of targets.slice(1)) {
+    const p = await context.newPage();
+    await goto(p, extra).catch(()=>{});
+  }
+  context.on("page", p => {
+    const pages=context.pages().filter(x=>!x.isClosed());
+    loginState.activePage=Math.max(0,pages.indexOf(p));
+  });
+
+  const tunnel = spawn("/usr/local/bin/cloudflared", [
+    "tunnel", "--url", "http://127.0.0.1:6081", "--no-autoupdate"
+  ], { stdio: ["ignore", "pipe", "pipe"] });
+
+  loginState = { context, tunnel, profile, target, targets, url: null, activePage: 0 };
+
+  const url = await new Promise((resolve, reject) => {
+    let buf = "";
+    const timer = setTimeout(() => reject(new Error("Timed out starting temporary login tunnel")), 25000);
+    const onData = (chunk) => {
+      buf += chunk.toString();
+      const m = buf.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
+      if (m) {
+        clearTimeout(timer);
+        resolve(m[0] + "/control");
+      }
+    };
+    tunnel.stdout.on("data", onData);
+    tunnel.stderr.on("data", onData);
+    tunnel.once("exit", code => {
+      if (!loginState.url) {
+        clearTimeout(timer);
+        reject(new Error("cloudflared exited before tunnel URL, code " + code));
+      }
+    });
+  });
+
+  loginState.url = url;
+  return {
+    task: "login_start",
+    status: "ready",
+    profile,
+    target,
+    targets,
+    login_url: url,
+    username: "jason",
+    note: "Open the temporary URL, enter the Oracle Browser Login credentials, finish the website login, then run login_stop."
+  };
+}
