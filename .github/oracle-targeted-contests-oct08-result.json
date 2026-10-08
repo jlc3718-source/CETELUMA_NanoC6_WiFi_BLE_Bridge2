@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-10-08T18:57:08.910803+00:00",
+  "created_utc": "2026-10-08T18:59:48.106345+00:00",
   "method": "Oracle browser agent only",
   "entries": [
     {
@@ -62,7 +62,8 @@
       ],
       "manual_url": "",
       "control_url": "",
-      "session_status": "ready_for_manual_action"
+      "session_status": "ready_for_manual_action",
+      "encrypted_viewer_url": "oEZr5ACCJkCl7MxUrEG/r14pMkNUDkSCV6dG0gNm7/Z1PnT9DYLtAXGa6muNhRduwBesCL31NG6n7o6k9ke1vG6q5XsWG+PEpMiWov72rhb99w4ywjHYA9FxqRZmx2pppfGUnJJPpRCTiQPJOLOYGOsrQrI0GriPECZv32qzHGnjM1g4J4g40BGHHOW6R2oMig53qOQ+uI4Y75AYWgS70a+vrgnT6+likCwfleAYAqhNoxHL2z41YKosK4iKBvkXp17isd9KJFCQ/ebZZIJ+da5nrHR6SKYTT/e+3Lua211eW4P1zQLct9os/AvEDFWVdvSJtHW5pYeyZCiVuAwYtA=="
     }
   ]
 }
