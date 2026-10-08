@@ -1,0 +1,39 @@
+name: Oracle Social Contest Probe Oct 8
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/oracle-social-probe-oct08.yml"]
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect capability safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          sudo docker exec "$CID" node - <<'NODE' > .github/oracle-social-probe-oct08.json
+          const fs=require("fs"),path=require("path");
+          const s=fs.readFileSync("/app/src/server.js","utf8");
+          const lines=s.split("\n");
+          const fn=(pattern,count)=>{const i=lines.findIndex(x=>x.includes(pattern));return i<0?[]:lines.slice(i,Math.min(lines.length,i+count)).filter(x=>!/(token|password|secret|apikey|entryProfile|privateKey)/i.test(x));};
+          const p=["/app/node_modules/playwright","/app/node_modules/playwright-core","/data/profiles/daily","/app/data/profiles/daily","/app/src/data/profiles/daily","/home/node/.cache/ms-playwright"];
+          process.stdout.write(JSON.stringify({paths:p.map(x=>({path:x,exists:fs.existsSync(x)})),launch:fn("async function launchProfile(",75),ig:fn("async function instagramBrandScanWithContext(",100),login:fn("const LOGIN_DISPLAY",4),data:fn("const DATA_DIR",4)},null,2)+"\n");
+          NODE
+      - name: Commit no user secrets
+        shell: bash
+        run: |
+          set -e
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          git add .github/oracle-social-probe-oct08.json
+          git commit -m "Publish sanitized Oracle social browser capabilities" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
