@@ -1,0 +1,53 @@
+{
+  "id": "daily-discovery-details-2026-10-08T06-16-50",
+  "ok": true,
+  "started": "2026-10-08T10:16:50.994Z",
+  "finished": "2026-10-08T10:17:43.214Z",
+  "result": {
+    "task": "batch",
+    "parallel": true,
+    "shared_profile": "daily",
+    "lane_timeout_ms": 50000,
+    "results": [
+      {
+        "task": "jml_scan",
+        "ok": true,
+        "result": {
+          "task": "jml_scan",
+          "authenticated": true,
+          "login_required": false,
+          "url": "https://www.anker-jml.com/",
+          "opportunities": [],
+          "available_result_keys": [
+            "task",
+            "authenticated",
+            "login_required",
+            "url",
+            "opportunities"
+          ]
+        }
+      },
+      {
+        "task": "instagram_brand_scan",
+        "ok": true,
+        "result": {
+          "task": "instagram_brand_scan",
+          "status": "timeout_skipped",
+          "timeout_ms": 50000,
+          "available_result_keys": [
+            "task",
+            "status",
+            "timeout_ms"
+          ]
+        }
+      }
+    ],
+    "available_result_keys": [
+      "task",
+      "parallel",
+      "shared_profile",
+      "lane_timeout_ms",
+      "results"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "on-lifestyle-prepare-2026-10-08T06-16-50",
+  "ok": true,
+  "started": "2026-10-08T10:17:50.999Z",
+  "finished": "2026-10-08T10:17:54.613Z",
+  "result": {
+    "task": "generic_form_entry",
+    "status": "prepared",
+    "url": "https://form.typeform.com/to/vDq8DBlZ",
+    "missing": [],
+    "challenge": false,
+    "prepared": true,
+    "available_result_keys": [
+      "task",
+      "status",
+      "url",
+      "missing",
+      "challenge",
+      "prepared"
+    ]
+  }
+}

@@ -1,1 +1,24 @@
-{"id": "slickdeals-daily-2026-10-07", "ok": true, "started": "2026-10-08T02:20:42.181Z", "finished": "2026-10-08T02:20:50.744Z", "error": null, "result": {"task": "generic_form_entry", "status": "missing_required_fields", "url": "https://slickdeals.net/giveaway/daily-draw/2026-10-07/", "missing": ["q"], "challenge": false, "prepared": true}}
+{
+  "id": "slickdeals-daily-2026-10-08T06-16-50",
+  "ok": true,
+  "started": "2026-10-08T10:17:43.219Z",
+  "finished": "2026-10-08T10:17:50.995Z",
+  "result": {
+    "task": "generic_form_entry",
+    "status": "missing_required_fields",
+    "url": "https://slickdeals.net/giveaway/daily-draw/2026-10-08/",
+    "missing": [
+      "q"
+    ],
+    "challenge": false,
+    "prepared": true,
+    "available_result_keys": [
+      "task",
+      "status",
+      "url",
+      "missing",
+      "challenge",
+      "prepared"
+    ]
+  }
+}
