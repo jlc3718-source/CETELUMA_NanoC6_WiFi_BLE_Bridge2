@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-10-08T18:54:26.745846+00:00",
+  "created_utc": "2026-10-08T18:57:08.910803+00:00",
   "method": "Oracle browser agent only",
   "entries": [
     {
@@ -12,13 +12,13 @@
     },
     {
       "label": "bosch_dream_form",
-      "ok": true,
-      "task": "generic_form_entry",
-      "status": "prepared",
-      "error": null,
-      "prepared": true,
+      "ok": false,
+      "task": null,
+      "status": null,
+      "error": "browserType.launchPersistentContext: Opening in existing browser session. This usually means that the profile is already in use by another instance of Chromium.\nCall log:\n  - <launching> /usr/bin/chromium --disable-field-trial-config --disable-background-networking --disable-background-timer-throttl",
+      "prepared": null,
       "missing": [],
-      "challenge": false
+      "challenge": null
     },
     {
       "label": "social_handoff",
@@ -26,7 +26,40 @@
       "task": "prepare_restricted",
       "status": "ready_for_manual_action",
       "error": null,
-      "opened_tabs": null,
+      "pages": [
+        {
+          "url": "https://form.bshpersona.com/Bosch/?cid=BoschtoberLP&promoIdExt=ab522287-930b-4813-acae-076751a2f9b7",
+          "title": "Boschtober Dream Kitchen Sweepstakes",
+          "buttons": [
+            {
+              "i": 2,
+              "text": "SUBMIT",
+              "visible": true
+            }
+          ]
+        },
+        {
+          "url": "https://www.instagram.com/boschhomeus/",
+          "title": "Instagram",
+          "buttons": []
+        },
+        {
+          "url": "https://www.instagram.com/narwalrobot/",
+          "title": "Instagram",
+          "buttons": []
+        },
+        {
+          "url": "https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Fgroups%2Fankersolixusers%2F",
+          "title": "Facebook",
+          "buttons": [
+            {
+              "i": 0,
+              "text": "Log in",
+              "visible": true
+            }
+          ]
+        }
+      ],
       "manual_url": "",
       "control_url": "",
       "session_status": "ready_for_manual_action"
