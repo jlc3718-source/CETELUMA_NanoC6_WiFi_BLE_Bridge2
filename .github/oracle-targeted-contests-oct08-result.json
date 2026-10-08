@@ -1,0 +1,35 @@
+{
+  "created_utc": "2026-10-08T18:54:26.745846+00:00",
+  "method": "Oracle browser agent only",
+  "entries": [
+    {
+      "label": "existing_entries",
+      "ok": true,
+      "task": "promo_state_get",
+      "status": "ready",
+      "error": null,
+      "govee_already_completed": true
+    },
+    {
+      "label": "bosch_dream_form",
+      "ok": true,
+      "task": "generic_form_entry",
+      "status": "prepared",
+      "error": null,
+      "prepared": true,
+      "missing": [],
+      "challenge": false
+    },
+    {
+      "label": "social_handoff",
+      "ok": true,
+      "task": "prepare_restricted",
+      "status": "ready_for_manual_action",
+      "error": null,
+      "opened_tabs": null,
+      "manual_url": "",
+      "control_url": "",
+      "session_status": "ready_for_manual_action"
+    }
+  ]
+}
