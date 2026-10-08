@@ -1,5 +1,5 @@
 {
-  "runAt": "2026-10-08T19:20:56.995Z",
+  "runAt": "2026-10-08T19:22:33.818Z",
   "source": "oracle-persistent-daily",
   "narwal": {
     "status": "specific_giveaway_post_not_found",
@@ -10,6 +10,7 @@
     "commentConfirmed": false,
     "post_url": null,
     "candidatesChecked": 0,
+    "directoryLinks": [],
     "postsFound": 0
   },
   "anker": {
