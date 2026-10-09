@@ -36,12 +36,10 @@ jobs:
             echo "Running $id"
             curl -sS --max-time 65 -X POST http://127.0.0.1:8932/run \
               -H 'Content-Type: application/json' --data "$payload" |
-              python3 -c 'import sys,json; x=json.load(sys.stdin); r=x.get("result") or {}; o={"id":x.get("id",""),"ok":bool(x.get("ok")),"task":r.get("task",""),"status":r.get("status",r.get("state","")),"submitted":r.get("submitted",r.get("entry_submitted")),"confirmation":r.get("confirmation",r.get("confirmation_text","")),"reason":r.get("reason",r.get("need_action","")),"missing":r.get("missing",[]),"error":None if x.get("ok") else "agent_task_failed"}; print(json.dumps(o))' >> "$OUT"
+              python3 -c 'import sys,json,re; x=json.load(sys.stdin); r=x.get("result") or {}; o={"id":x.get("id",""),"ok":bool(x.get("ok")),"task":r.get("task",""),"status":r.get("status",r.get("state","")),"submitted":r.get("submitted",r.get("entry_submitted")),"confirmation":r.get("confirmation",r.get("confirmation_text","")),"reason":r.get("reason",r.get("need_action","")),"missing":r.get("missing",[]),"error":None if x.get("ok") else re.sub(r"[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}", "[EMAIL]", str(x.get("error","")))[:300]}; print(json.dumps(o))' >> "$OUT"
           }
 
-          run_job "housecalls-ryobi" '{"id":"daily-housecalls-2026-10-09","task":"generic_form_entry","url":"https://housecallsdiy.com/sweepstakes","submit":true}'
-          run_job "toolnut-monthly" '{"id":"daily-toolnut-2026-10-09","task":"generic_form_entry","url":"https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools","submit":true}'
-          run_job "skilled-trades-study-prepare" '{"id":"daily-trades-study-2026-10-09","task":"generic_form_entry","url":"https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals","submit":false}'
+          run_job "housecalls-diagnostic-no-submit" '{"id":"daily-housecalls-diagnostic","task":"generic_form_entry","url":"https://housecallsdiy.com/sweepstakes","submit":false}'
 
           cat "$OUT"
 
