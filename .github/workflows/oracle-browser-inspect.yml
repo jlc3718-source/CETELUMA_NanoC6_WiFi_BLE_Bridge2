@@ -39,8 +39,18 @@ jobs:
             echo "=== DOCKER CONTAINERS ==="
             (docker ps --format '{{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || sudo docker ps --format '{{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || true)
             echo
+            echo "=== CHROMIUM PROCESSES ==="
+            (ps -ef | grep -E '[c]hromium|[c]hrome|[p]laywright' | head -80 || true)
+            echo
+            echo "=== PROFILE LOCK METADATA ==="
+            (sudo find /home/ubuntu/browser-agent-data/daily -maxdepth 2 -name 'Singleton*' -ls 2>/dev/null || find /home/ubuntu/browser-agent-data/daily -maxdepth 2 -name 'Singleton*' -ls 2>/dev/null || true)
+            echo
             echo "=== PROFILE DIRECTORY METADATA ==="
             (sudo ls -ld /home/ubuntu/browser-agent-data /home/ubuntu/browser-agent-data/daily 2>/dev/null || ls -ld /home/ubuntu/browser-agent-data /home/ubuntu/browser-agent-data/daily 2>/dev/null || true)
+            echo
+            echo "=== CONTAINER CHROMIUM PROCESSES ==="
+            CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\\.0\\.0\\.1:8932->8932/{print $1; exit}')"
+            if [ -n "$CID" ]; then sudo docker exec "$CID" sh -lc "ps -ef | grep -E '[c]hromium|[c]hrome|[p]laywright' | head -80" 2>/dev/null || true; fi
           } > "$OUT"
           cat "$OUT"
 
