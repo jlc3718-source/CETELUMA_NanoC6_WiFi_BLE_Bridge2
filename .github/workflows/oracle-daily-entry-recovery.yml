@@ -30,6 +30,20 @@ jobs:
           OUT=".github/oracle-daily-entry-recovery-result.jsonl"
           : > "$OUT"
 
+          HEALTH="$(curl -sS --max-time 5 http://127.0.0.1:8932/health || true)"
+          echo "Agent health: $HEALTH"
+          if echo "$HEALTH" | grep -q '"login_active":true'; then
+            echo "A tracked login session is active; refusing to terminate its browser."
+            exit 2
+          fi
+          CID="$(sudo docker ps --filter name=oracle-browser-agent --format '{{.ID}}' | head -1)"
+          if [ -z "$CID" ]; then echo "Oracle browser container not found"; exit 3; fi
+          echo "Checking for stale Chromium processes holding the daily profile."
+          sudo docker exec "$CID" sh -lc 'pkill -TERM -f "^/usr/lib/chromium/chromium .*--user-data-dir=/data/profiles/daily" || true'
+          sleep 2
+          echo "Remaining daily-profile Chromium processes:"
+          sudo docker exec "$CID" sh -lc 'ps -ef | grep -E "[c]hromium .*--user-data-dir=/data/profiles/daily" || true'
+
           run_job() {
             local id="$1"
             local payload="$2"
