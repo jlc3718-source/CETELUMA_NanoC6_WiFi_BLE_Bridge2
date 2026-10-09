@@ -36,14 +36,7 @@ jobs:
             echo "Running $id"
             curl -sS --max-time 65 -X POST http://127.0.0.1:8932/run \
               -H 'Content-Type: application/json' --data "$payload" |
-              node -e '
-                let s="";
-                process.stdin.on("data",d=>s+=d).on("end",()=>{
-                  let x={}; try{x=JSON.parse(s)}catch(e){console.log(JSON.stringify({ok:false,error:"invalid_agent_response"}));process.exit(0)}
-                  const r=x.result||{};
-                  const out={id:x.id||"",ok:!!x.ok,task:r.task||"",status:r.status||r.state||"",submitted:r.submitted??r.entry_submitted??null,confirmation:r.confirmation||r.confirmation_text||"",reason:r.reason||r.need_action||"",missing:r.missing||[],error:x.ok?undefined:"agent_task_failed"};
-                  console.log(JSON.stringify(out));
-                });' >> "$OUT"
+              python3 -c 'import sys,json; x=json.load(sys.stdin); r=x.get("result") or {}; o={"id":x.get("id",""),"ok":bool(x.get("ok")),"task":r.get("task",""),"status":r.get("status",r.get("state","")),"submitted":r.get("submitted",r.get("entry_submitted")),"confirmation":r.get("confirmation",r.get("confirmation_text","")),"reason":r.get("reason",r.get("need_action","")),"missing":r.get("missing",[]),"error":None if x.get("ok") else "agent_task_failed"}; print(json.dumps(o))' >> "$OUT"
           }
 
           run_job "housecalls-ryobi" '{"id":"daily-housecalls-2026-10-09","task":"generic_form_entry","url":"https://housecallsdiy.com/sweepstakes","submit":true}'
