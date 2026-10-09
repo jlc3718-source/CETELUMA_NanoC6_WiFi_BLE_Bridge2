@@ -1,1 +1,3 @@
-{"id": "daily-housecalls-diagnostic", "ok": true, "task": "generic_form_entry", "status": "manual_final_required_challenge", "submitted": null, "confirmation": "", "reason": "", "missing": [], "error": null}
+{"id": "daily-toolnut-2026-10-09", "ok": true, "task": "generic_form_entry", "status": "manual_final_required_challenge", "submitted": null, "confirmation": "", "reason": "", "missing": ["email"], "error": null}
+{"id": "daily-trades-study-2026-10-09", "ok": true, "task": "generic_form_entry", "status": "manual_final_required_challenge", "submitted": null, "confirmation": "", "reason": "", "missing": [], "error": null}
+{"id": "daily-manual-queue-2026-10-09", "ok": true, "task": "manual_queue_add", "status": "stored", "submitted": null, "confirmation": "", "reason": "", "missing": [], "error": null}
