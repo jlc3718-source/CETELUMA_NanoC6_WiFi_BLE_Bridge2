@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Inspect Oracle Browser Agent container routes safely
+      - name: Inspect Oracle Browser Agent safely
         shell: bash
         run: |
           set -u
@@ -35,7 +35,6 @@ jobs:
             echo
             echo "=== DOCKER PS ==="
             docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || sudo docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || true
-            echo
             CID="$(docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
             if [ -z "$CID" ]; then
               CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
@@ -46,18 +45,25 @@ jobs:
               echo "=== CONTAINER PROCESS ==="
               (docker exec "$CID" sh -lc 'ps -ef 2>/dev/null || ps aux 2>/dev/null' || sudo docker exec "$CID" sh -lc 'ps -ef 2>/dev/null || ps aux 2>/dev/null') 2>/dev/null | head -100 || true
               echo
-              echo "=== /app/src/server.js ROUTES ==="
-              (docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|req\\.query|req\\.params|/health|/run|/task|/job|/login|profile|browser' /app/src/server.js 2>/dev/null" || sudo docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|req\\.query|req\\.params|/health|/run|/task|/job|/login|profile|browser' /app/src/server.js 2>/dev/null") 2>/dev/null | head -1000 || true
+              echo "=== SERVER ROUTES ==="
+              (docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|/health|/run|/login|profile|browser' /app/src/server.js 2>/dev/null" || sudo docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|/health|/run|/login|profile|browser' /app/src/server.js 2>/dev/null") 2>/dev/null | head -500 || true
               echo
-              echo "=== /app/src/server.js ==="
-              (docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null' || sudo docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null') 2>/dev/null | head -1600 || true
+              echo "=== SERVER SOURCE ==="
+              (docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null' || sudo docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null') 2>/dev/null | head -1200 || true
               echo
-              echo "=== /app FILES ==="
-              (docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -300" || sudo docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -300") 2>/dev/null || true
+              echo "=== APP FILES ==="
+              (docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -250" || sudo docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -250") 2>/dev/null || true
             fi
           } > "$TMP"
 
-          sed -E             -e 's/(Authorization: Bearer )[A-Za-z0-9._~+\/-]+/\1REDACTED/Ig'             -e 's/((token|password|secret|api[_-]?key)[\"'\''=: ]+)[^ ,\"'\'']+/\1REDACTED/Ig'             "$TMP" > "$OUT"
+          python3 - "$TMP" "$OUT" <<'PY'
+          import re, sys
+          src, dst = sys.argv[1:]
+          s = open(src, encoding="utf-8", errors="replace").read()
+          s = re.sub(r'(?i)(Authorization:\\s*Bearer\\s+)[^\\s]+', r'\\1REDACTED', s)
+          s = re.sub(r'''(?i)((?:token|password|secret|api[_-]?key)["'=: ]+)[^ ,"']+''', r'\\1REDACTED', s)
+          open(dst, "w", encoding="utf-8").write(s)
+          PY
           rm -f "$TMP"
 
       - name: Publish inspection result
@@ -70,7 +76,7 @@ jobs:
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "Publish Oracle Browser Agent container routes"
+          git commit -m "Publish Oracle Browser Agent inspection"
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin HEAD:main; then
