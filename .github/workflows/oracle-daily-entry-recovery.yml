@@ -53,7 +53,9 @@ jobs:
               python3 -c 'import sys,json,re; x=json.load(sys.stdin); r=x.get("result") or {}; o={"id":x.get("id",""),"ok":bool(x.get("ok")),"task":r.get("task",""),"status":r.get("status",r.get("state","")),"submitted":r.get("submitted",r.get("entry_submitted")),"confirmation":r.get("confirmation",r.get("confirmation_text","")),"reason":r.get("reason",r.get("need_action","")),"missing":r.get("missing",[]),"error":None if x.get("ok") else re.sub(r"[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}", "[EMAIL]", str(x.get("error","")))[:300]}; print(json.dumps(o))' >> "$OUT"
           }
 
-          run_job "housecalls-diagnostic-no-submit" '{"id":"daily-housecalls-diagnostic","task":"generic_form_entry","url":"https://housecallsdiy.com/sweepstakes","submit":false}'
+          run_job "toolnut-monthly" '{"id":"daily-toolnut-2026-10-09","task":"generic_form_entry","url":"https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools","submit":true}'
+          run_job "skilled-trades-study-prepare" '{"id":"daily-trades-study-2026-10-09","task":"generic_form_entry","url":"https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals","submit":false}'
+          run_job "manual-only-queue" '{"id":"daily-manual-queue-2026-10-09","task":"manual_queue_add","items":[{"id":"concrete-tools-direct-oct-2026","title":"Concrete Tools Direct $1,039 Tool Bundle","url":"https://concretetoolsdirect.com/pages/sweepstakes","reason":"Official rules prohibit automated entry; manual entry only"},{"id":"klein-tools-expedition-oct-2026","title":"Klein Tools New Product Expedition","url":"https://www.kleintools.com/2026q3promo","reason":"Official rules require distributor QR or mail-in entry; manual entry only"}]}'
 
           cat "$OUT"
 
