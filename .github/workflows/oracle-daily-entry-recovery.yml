@@ -1,0 +1,69 @@
+name: Oracle Daily Entry Recovery
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oracle-daily-entry-recovery.yml"
+      - ".github/oracle-daily-entry-recovery.trigger"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-daily-entry-recovery
+  cancel-in-progress: false
+
+jobs:
+  entries:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test agent and submit eligible online entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=".github/oracle-daily-entry-recovery-result.jsonl"
+          : > "$OUT"
+
+          run_job() {
+            local id="$1"
+            local payload="$2"
+            echo "Running $id"
+            curl -sS --max-time 65 -X POST http://127.0.0.1:8932/run \
+              -H 'Content-Type: application/json' --data "$payload" |
+              node -e '
+                let s="";
+                process.stdin.on("data",d=>s+=d).on("end",()=>{
+                  let x={}; try{x=JSON.parse(s)}catch(e){console.log(JSON.stringify({ok:false,error:"invalid_agent_response"}));process.exit(0)}
+                  const r=x.result||{};
+                  const out={id:x.id||"",ok:!!x.ok,task:r.task||"",status:r.status||r.state||"",submitted:r.submitted??r.entry_submitted??null,confirmation:r.confirmation||r.confirmation_text||"",reason:r.reason||r.need_action||"",missing:r.missing||[],error:x.ok?undefined:"agent_task_failed"};
+                  console.log(JSON.stringify(out));
+                });' >> "$OUT"
+          }
+
+          run_job "housecalls-ryobi" '{"id":"daily-housecalls-2026-10-09","task":"generic_form_entry","url":"https://housecallsdiy.com/sweepstakes","submit":true}'
+          run_job "toolnut-monthly" '{"id":"daily-toolnut-2026-10-09","task":"generic_form_entry","url":"https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools","submit":true}'
+          run_job "skilled-trades-study-prepare" '{"id":"daily-trades-study-2026-10-09","task":"generic_form_entry","url":"https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals","submit":false}'
+
+          cat "$OUT"
+
+      - name: Publish scrubbed entry results
+        shell: bash
+        run: |
+          set -e
+          git config user.name "oracle-runner"
+          git config user.email "oracle-runner@users.noreply.github.com"
+          git add .github/oracle-daily-entry-recovery-result.jsonl
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish Oracle daily entry recovery results"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 2
+          done
+          exit 1
