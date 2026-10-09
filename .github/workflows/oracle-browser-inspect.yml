@@ -19,52 +19,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Inspect Oracle Browser Agent safely
+      - name: Test Oracle Browser Agent API and persistent profile
         shell: bash
         run: |
           set -u
           OUT=".github/oracle-browser-inspect-result.txt"
-          TMP="${OUT}.tmp"
           {
             echo "=== TIME ==="
             date -Is
             echo
             echo "=== HEALTH ==="
-            curl -sS --max-time 4 http://127.0.0.1:8932/health || true
+            curl -sS --max-time 5 http://127.0.0.1:8932/health || true
             echo
             echo
-            echo "=== DOCKER PS ==="
-            docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || sudo docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || true
-            CID="$(docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
-            if [ -z "$CID" ]; then
-              CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' 2>/dev/null | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
-            fi
-            echo "CID=$CID"
-            if [ -n "$CID" ]; then
-              echo
-              echo "=== CONTAINER PROCESS ==="
-              (docker exec "$CID" sh -lc 'ps -ef 2>/dev/null || ps aux 2>/dev/null' || sudo docker exec "$CID" sh -lc 'ps -ef 2>/dev/null || ps aux 2>/dev/null') 2>/dev/null | head -100 || true
-              echo
-              echo "=== SERVER ROUTES ==="
-              (docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|/health|/run|/login|profile|browser' /app/src/server.js 2>/dev/null" || sudo docker exec "$CID" sh -lc "grep -nE 'app\\.(get|post|put|delete|use)|router\\.(get|post|put|delete)|req\\.body|/health|/run|/login|profile|browser' /app/src/server.js 2>/dev/null") 2>/dev/null | head -500 || true
-              echo
-              echo "=== SERVER SOURCE ==="
-              (docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null' || sudo docker exec "$CID" sh -lc 'cat /app/src/server.js 2>/dev/null') 2>/dev/null | head -1200 || true
-              echo
-              echo "=== APP FILES ==="
-              (docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -250" || sudo docker exec "$CID" sh -lc "find /app -maxdepth 3 -type f 2>/dev/null | grep -Ev '/node_modules/|\\.env$|\\.log$' | head -250") 2>/dev/null || true
-            fi
-          } > "$TMP"
-
-          python3 - "$TMP" "$OUT" <<'PY'
-          import re, sys
-          src, dst = sys.argv[1:]
-          s = open(src, encoding="utf-8", errors="replace").read()
-          s = re.sub(r'(?i)(Authorization:\\s*Bearer\\s+)[^\\s]+', r'\\1REDACTED', s)
-          s = re.sub(r'''(?i)((?:token|password|secret|api[_-]?key)["'=: ]+)[^ ,"']+''', r'\\1REDACTED', s)
-          open(dst, "w", encoding="utf-8").write(s)
-          PY
-          rm -f "$TMP"
+            echo "=== READ-ONLY AGENT HEALTH TASK ==="
+            curl -sS --max-time 15 -X POST http://127.0.0.1:8932/run -H 'Content-Type: application/json' --data '{"id":"agent-health-recovery","task":"health"}' || true
+            echo
+            echo
+            echo "=== DOCKER CONTAINERS ==="
+            (docker ps --format '{{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || sudo docker ps --format '{{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null || true)
+            echo
+            echo "=== PROFILE DIRECTORY METADATA ==="
+            (sudo ls -ld /home/ubuntu/browser-agent-data /home/ubuntu/browser-agent-data/daily 2>/dev/null || ls -ld /home/ubuntu/browser-agent-data /home/ubuntu/browser-agent-data/daily 2>/dev/null || true)
+          } > "$OUT"
+          cat "$OUT"
 
       - name: Publish inspection result
         shell: bash
@@ -76,7 +54,7 @@ jobs:
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "Publish Oracle Browser Agent inspection"
+          git commit -m "Publish Oracle Browser Agent health check"
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin HEAD:main; then
