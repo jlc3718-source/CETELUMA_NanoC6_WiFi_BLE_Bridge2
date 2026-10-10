@@ -2,7 +2,7 @@ TAP version 13
 # Subtest: real browser fills both emails, ignores q, checks rules and submits only the entry form
 not ok 1 - real browser fills both emails, ignores q, checks rules and submits only the entry form
   ---
-  duration_ms: 1894.041064
+  duration_ms: 1828.451824
   type: 'test'
   location: '/tmp/daily-reliability-checks/tests/browser.test.js:43:1'
   failureType: 'testCodeFailure'
@@ -26,13 +26,13 @@ not ok 1 - real browser fills both emails, ignores q, checks rules and submits o
 # Subtest: an access-denied page cannot report prepared
 ok 2 - an access-denied page cannot report prepared
   ---
-  duration_ms: 1043.472405
+  duration_ms: 1015.593367
   type: 'test'
   ...
 # Subtest: visible human verification stops submission
 not ok 3 - visible human verification stops submission
   ---
-  duration_ms: 1097.665352
+  duration_ms: 1110.699109
   type: 'test'
   location: '/tmp/daily-reliability-checks/tests/browser.test.js:56:1'
   failureType: 'testCodeFailure'
@@ -54,7 +54,7 @@ not ok 3 - visible human verification stops submission
 # Subtest: a hidden badge does not pretend that a human challenge is visible
 not ok 4 - a hidden badge does not pretend that a human challenge is visible
   ---
-  duration_ms: 1058.421493
+  duration_ms: 1059.618467
   type: 'test'
   location: '/tmp/daily-reliability-checks/tests/browser.test.js:60:1'
   failureType: 'testCodeFailure'
@@ -78,7 +78,7 @@ not ok 4 - a hidden badge does not pretend that a human challenge is visible
 # Subtest: unchecked required radio groups prevent invented screener answers
 not ok 5 - unchecked required radio groups prevent invented screener answers
   ---
-  duration_ms: 1066.223922
+  duration_ms: 1040.303861
   type: 'test'
   location: '/tmp/daily-reliability-checks/tests/browser.test.js:64:1'
   failureType: 'testCodeFailure'
@@ -102,7 +102,7 @@ not ok 5 - unchecked required radio groups prevent invented screener answers
 # Subtest: a confirmation already visible before the click cannot confirm a new entry
 not ok 6 - a confirmation already visible before the click cannot confirm a new entry
   ---
-  duration_ms: 1203.061742
+  duration_ms: 1129.296349
   type: 'test'
   location: '/tmp/daily-reliability-checks/tests/browser.test.js:68:1'
   failureType: 'testCodeFailure'
@@ -126,7 +126,7 @@ not ok 6 - a confirmation already visible before the click cannot confirm a new 
 # Subtest: multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
 not ok 7 - multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
   ---
-  duration_ms: 1571.176758
+  duration_ms: 1545.31186
   type: 'test'
   location: '/tmp/daily-reliability-checks/tests/browser.test.js:74:1'
   failureType: 'testCodeFailure'
@@ -143,49 +143,49 @@ not ok 7 - multi-tab preparation is parallel, returns a retrievable URL and reta
 # Subtest: search and newsletter controls cannot displace a real entry form
 ok 8 - search and newsletter controls cannot displace a real entry form
   ---
-  duration_ms: 1.950657
+  duration_ms: 1.889737
   type: 'test'
   ...
 # Subtest: equally plausible entry forms require an adapter rather than the first submit
 ok 9 - equally plausible entry forms require an adapter rather than the first submit
   ---
-  duration_ms: 0.457724
+  duration_ms: 0.430444
   type: 'test'
   ...
 # Subtest: email confirmation and state are filled from known contact data
 ok 10 - email confirmation and state are filled from known contact data
   ---
-  duration_ms: 0.906928
+  duration_ms: 0.908008
   type: 'test'
   ...
 # Subtest: PA cannot replace an eligible NY residence or invent a missing address
 ok 11 - PA cannot replace an eligible NY residence or invent a missing address
   ---
-  duration_ms: 0.566325
+  duration_ms: 0.534844
   type: 'test'
   ...
 # Subtest: daily and monthly duplicate keys use the user's local calendar
 ok 12 - daily and monthly duplicate keys use the user's local calendar
   ---
-  duration_ms: 19.958092
+  duration_ms: 20.80146
   type: 'test'
   ...
 # Subtest: sanitization preserves caption evidence, query parameters and numeric study IDs
 ok 13 - sanitization preserves caption evidence, query parameters and numeric study IDs
   ---
-  duration_ms: 2.359501
+  duration_ms: 1.998897
   type: 'test'
   ...
 # Subtest: timed out lanes close only their pages and reject late page creation
 ok 14 - timed out lanes close only their pages and reject late page creation
   ---
-  duration_ms: 22.606835
+  duration_ms: 22.427874
   type: 'test'
   ...
 # Subtest: completed jobs survive a restart and repeated IDs do not repeat an action
 ok 15 - completed jobs survive a restart and repeated IDs do not repeat an action
   ---
-  duration_ms: 7.112062
+  duration_ms: 11.378258
   type: 'test'
   ...
 1..15
@@ -196,4 +196,4 @@ ok 15 - completed jobs survive a restart and repeated IDs do not repeat an actio
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 9806.797828
+# duration_ms 9601.143963
