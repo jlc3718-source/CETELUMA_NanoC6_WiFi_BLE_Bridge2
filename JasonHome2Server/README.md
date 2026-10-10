@@ -30,3 +30,9 @@ shares the active Oracle controller for actual device operations. White Override
 and White Override 2 are scheduled Sunday through Thursday only. Do not use both
 interfaces to edit the same event concurrently: edits use Oracle calendar revisions
 and stale writes are rejected.
+
+## Oracle controller synchronization
+
+After a controller-only update, redeploy this web gateway so its generated
+scheduler resolver records the same live Oracle build SHA. The deployment
+verifies `resolverAuthority.inSync` before accepting the gateway as healthy.
