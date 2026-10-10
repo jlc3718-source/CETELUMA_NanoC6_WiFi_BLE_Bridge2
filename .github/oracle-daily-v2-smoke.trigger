@@ -1,1 +1,1 @@
-Final read-only verification after the delayed-form and login prerequisite repairs.
+Final read-only verification of deployed handoff settings, interrupted-job hold and retained partial Instagram evidence.
