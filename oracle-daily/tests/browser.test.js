@@ -1,7 +1,7 @@
 "use strict";
 const test=require("node:test"),assert=require("node:assert/strict"),http=require("node:http"),fs=require("node:fs"),os=require("node:os"),path=require("node:path"),{PassThrough}=require("node:stream"),{EventEmitter}=require("node:events");
 const {chromium}=require("/app/node_modules/playwright-core");
-const {create}=require("../runtime");
+const {create,navigate,inspectAndFill}=require("../runtime");
 const profile={name:"Example Tester",email:"example@invalid.test",phone:"2025550123",street:"123 Example Street",city:"Example",state:"NY",postal_code:"14772"};
 let browser,server,base,temp,posted=[];
 const markup=(extra="",message="")=>`<form><input required name="q" type="search"><button type="submit">Search</button></form>
@@ -19,6 +19,8 @@ test.before(async()=>{
     res.setHeader("Content-Type","text/html; charset=utf-8");
     if(req.method==="POST"){let body="";req.on("data",x=>body+=x);req.on("end",()=>{posted.push(new URLSearchParams(body));res.end(req.url==="/ambiguous-submit"?markup("","<p>You're entered</p>"):"<p>Entry received for the fixture giveaway</p>");});return;}
     if(req.url==="/denied"){res.writeHead(403);res.end("<title>Access to this page has been denied</title>");return;}
+    if(req.url==="/delayed-dom"){res.end('<body><div id="mount"></div><script src="/delayed-js"></script>');return;}
+    if(req.url==="/delayed-js"){res.setHeader("Content-Type","text/javascript");setTimeout(()=>res.end("document.querySelector('#mount').innerHTML="+JSON.stringify(markup())+";"),900);return;}
     if(req.url==="/redirect"){res.writeHead(302,{Location:"http://localhost:"+server.address().port+"/entry"});res.end();return;}
     if(req.url.startsWith("/slow/")){setTimeout(()=>res.end(markup()),180);return;}
     if(req.url==="/challenge"){res.end(markup('<iframe src="/captcha-anchor" width="304" height="78"></iframe>'));return;}
@@ -84,6 +86,14 @@ test("a confirmation already visible before the click cannot confirm a new entry
 test("an embedded form loaded after navigation is still filled",async()=>{
   const {runtime}=agent();const r=await runtime.formEntry({url:base+"/deferred",submit:false});
   assert.equal(r.status,"prepared");assert.ok(r.filled.includes("emailConfirm"));
+});
+test("a navigation timeout leaves required embedded scripts able to finish",async()=>{
+  const context=await browser.newContext(),page=await context.newPage();
+  try{
+    await navigate(page,base+"/delayed-dom",100);
+    const r=await inspectAndFill(page,{submit:false},profile);
+    assert.equal(r.status,"prepared");assert.ok(r.filled.includes("emailConfirm"));
+  }finally{await context.close();}
 });
 test("study login prerequisites are reported explicitly",async()=>{
   const {runtime}=agent();const r=await runtime.formEntry({url:base+"/study-login",submit:false});
