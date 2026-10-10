@@ -1,108 +1,23 @@
 {
-  "id": "smoke-2026-10-10T05-07-12",
+  "id": "smoke-2026-10-10T05-15-24",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:07:12.710Z",
-  "finished": "2026-10-10T09:07:57.799Z",
+  "started": "2026-10-10T09:15:24.481Z",
+  "finished": "2026-10-10T09:16:09.909Z",
   "result": {
     "task": "batch",
     "parallel": true,
     "lane_timeout_ms": 45000,
-    "elapsed_ms": 45087,
+    "elapsed_ms": 45426,
     "results": [
       {
         "task": "instagram_brand_scan",
-        "ok": true,
+        "ok": false,
         "result": {
           "task": "instagram_brand_scan",
-          "authenticated": false,
-          "results": [
-            {
-              "handle": "roborockglobal",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/roborockglobal/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "dreametech",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/dreametech/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "movatech.usa",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/movatech.usa/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "narwalrobot",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/narwalrobot/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "tinecoglobal",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/tinecoglobal/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "eufyofficial",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/eufyofficial/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "goveeofficial",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/goveeofficial/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "navimow",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/navimow/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "mammotiontech",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/mammotiontech/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            },
-            {
-              "handle": "ecovacsrobotics",
-              "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/ecovacsrobotics/",
-              "recent_scanned": 0,
-              "posts": [],
-              "hits": []
-            }
-          ],
-          "coverage": {
-            "handles_requested": 10,
-            "handles_scanned": 0,
-            "posts_scanned": 0
-          }
+          "status": "timeout_cancelled",
+          "timeout_ms": 45000,
+          "error": "bounded_timeout"
         }
       },
       {
@@ -117,16 +32,24 @@
       },
       {
         "task": "bluetti_safe_spin",
-        "ok": false,
+        "ok": true,
         "result": {
-          "task": "bluetti_safe_spin",
-          "status": "timeout_cancelled",
-          "timeout_ms": 45000,
-          "error": "bounded_timeout"
+          "task": "bluetti_wheel_state",
+          "url": "https://www.bluettipower.com/pages/bluetti-discount",
+          "lottery": {
+            "status": null,
+            "error": "TypeError: Failed to fetch"
+          },
+          "user": {
+            "status": null,
+            "error": "TypeError: Failed to fetch"
+          },
+          "wheel": null,
+          "button": null
         }
       }
     ],
-    "last_run_at": "2026-10-10T09:07:57.796Z",
+    "last_run_at": "2026-10-10T09:16:09.903Z",
     "manual_session_preserved": true
   }
 }
