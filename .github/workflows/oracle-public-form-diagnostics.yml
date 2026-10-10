@@ -1,0 +1,39 @@
+name: Oracle Public Form Diagnostics
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oracle-public-form-diagnostics.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: oracle-daily-runtime-maintenance
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect current public form structure in isolated Oracle contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\\.0\\.0\\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          sudo docker cp oracle-daily/inspect-public-forms.js "$CID":/tmp/inspect-public-forms.js
+          timeout 45s sudo docker exec "$CID" node /tmp/inspect-public-forms.js > .github/oracle-public-form-diagnostics.json
+      - name: Publish public diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          git add .github/oracle-public-form-diagnostics.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Publish public form structure for targeted adapters"
+          git pull --rebase origin main
+          git push origin HEAD:main
