@@ -25,6 +25,9 @@ test.before(async()=>{
     if(req.url==="/badge"){res.end(markup('<iframe src="/captcha-badge" width="60" height="18" style="visibility:hidden"></iframe>'));return;}
     if(req.url==="/captcha-badge"){res.end("badge");return;}
     if(req.url==="/unknown"){res.end(markup('<label><input required type="radio" name="workType" value="electrician">Electrician</label><label><input required type="radio" name="workType" value="other">Other</label>'));return;}
+    if(req.url==="/deferred"){res.end(`<div id="mount"></div><script>setTimeout(()=>document.querySelector('#mount').innerHTML=${JSON.stringify(markup())},800)</script>`);return;}
+    if(req.url==="/study-login"){res.end('<title>Research Study</title><a href="/login?next=/study">Login to Apply</a>');return;}
+    if(req.url==="/custom"){res.end(markup().replace('<form id="entry" action="/submit" method="post">','<div id="entry">').replace('</form>\n<form><h2>Newsletter','</div>\n<form><h2>Newsletter'));return;}
     if(req.url==="/ambiguous"){res.end(markup("","<p>You're entered</p>").replace('action="/submit"','action="/ambiguous-submit"'));return;}
     res.end(markup());
   });
@@ -71,6 +74,18 @@ test("a confirmation already visible before the click cannot confirm a new entry
   assert.equal(r.status,"submitted_unconfirmed");assert.equal(r.confirmed,false);
   const second=await runtime.formEntry({url:base+"/ambiguous",submit:true,rules_verified:true});
   assert.equal(second.status,"prior_submission_needs_verification");
+});
+test("an embedded form loaded after navigation is still filled",async()=>{
+  const {runtime}=agent();const r=await runtime.formEntry({url:base+"/deferred",submit:false});
+  assert.equal(r.status,"prepared");assert.ok(r.filled.includes("emailConfirm"));
+});
+test("study login prerequisites are reported explicitly",async()=>{
+  const {runtime}=agent();const r=await runtime.formEntry({url:base+"/study-login",submit:false});
+  assert.equal(r.status,"login_required");assert.equal(r.login_url,base+"/login?next=/study");
+});
+test("a custom embedded contact container can be prepared",async()=>{
+  const {runtime}=agent();const r=await runtime.formEntry({url:base+"/custom",submit:false});
+  assert.equal(r.status,"prepared");assert.ok(r.filled.includes("emailConfirm"));
 });
 test("multi-tab preparation is parallel, returns a retrievable URL and retains filled pages",async()=>{
   const {runtime,deps}=agent();const urls=[base+"/slow/a",base+"/slow/b",base+"/slow/c"];
