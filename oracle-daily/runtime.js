@@ -218,7 +218,14 @@ function create(deps) {
     if(!state?.context) {
       const userDataDir=path.join(deps.dataDir,"profiles",profile);
       fs.mkdirSync(userDataDir,{recursive:true});
-      const context=await deps.chromium.launchPersistentContext(userDataDir,{executablePath:deps.chrome,headless:false,viewport:{width:1280,height:850},screen:{width:1280,height:850},env:{...process.env,DISPLAY:deps.display},timeout:18000,args:["--no-sandbox","--disable-dev-shm-usage","--no-first-run","--no-default-browser-check","--window-size=1280,850"]});
+      const launch=()=>deps.chromium.launchPersistentContext(userDataDir,{executablePath:deps.chrome,headless:false,viewport:{width:1280,height:850},screen:{width:1280,height:850},env:{...process.env,DISPLAY:deps.display},timeout:18000,args:["--no-sandbox","--disable-dev-shm-usage","--no-first-run","--no-default-browser-check","--window-size=1280,850"]});
+      let context;
+      try{context=await launch();}catch(e){
+        if(!/profile appears to be in use|process_singleton|SingletonLock/i.test(String(e.message)))throw e;
+        if(deps.getLoginState()?.context)throw e;
+        deps.clearProfileLocks?.(userDataDir);
+        context=await launch();
+      }
       state={context,tunnel:null,profile,target:null,targets:[],url:null,activePage:0};
       deps.setLoginState(state);
       const tunnel=deps.spawn("/usr/local/bin/cloudflared",["tunnel","--url","http://127.0.0.1:6081","--no-autoupdate"],{stdio:["ignore","pipe","pipe"]});
@@ -337,7 +344,8 @@ function create(deps) {
       const results=await Promise.all(tasks.map(async(task)=>{
         const lane=isolatedContext(context);
         try {
-          const work=task==="instagram_brand_scan"?instagram(lane.context,job):deps.taskWithContext(lane.context,task);
+          const diagnostic=job.read_only?({eufy_alt_free_spin:"eufy_alt_draw_diag",bluetti_safe_spin:"bluetti_wheel_state",roborock_spin:"roborock_wheel_diag"}[task]||task):task;
+          const work=task==="instagram_brand_scan"?instagram(lane.context,job):deps.taskWithContext(lane.context,diagnostic);
           const result=await deadline(work,timeout,lane.close);
           return {task,ok:true,result};
         }catch(e){return {task,ok:false,result:{task,status:e.code==="BOUNDED_TIMEOUT"?"timeout_cancelled":"browser_error",timeout_ms:timeout,error:e.message}};}
