@@ -60,7 +60,8 @@ async function challengeVisible(page) {
 function rankForm(f) {
   const text=(f.text||"").toLowerCase();
   const identity=f.fields.some(x=>/first|last|full.?name|given-name|family-name|your.?name|\bname\b/i.test(x.name+" "+x.autocomplete+" "+x.label));
-  if ((/search|sign in|log in/.test(text)||(/newsletter|subscribe/.test(text)&&!identity)) && !/giveaway|sweepstakes|enter to win|application/.test(text)) return -100;
+  const entryButton=f.buttons.some(x=>/enter|submit|apply|next|continue/i.test(x.text));
+  if ((/search|sign in|log in/.test(text)||(/newsletter|subscribe/.test(text)&&(!identity||!entryButton))) && !/giveaway|sweepstakes|enter to win|application/.test(text)) return -100;
   let score=0;
   if(f.fields.some(x=>x.type==="email"||/email/i.test(x.name+" "+x.label)))score+=4;
   if(identity)score+=4;
@@ -86,7 +87,7 @@ async function identifyForm(page,job={}) {
           if(!visible(email)||email.closest("form,[role='form']"))continue;
           let p=email.parentElement;
           for(let i=0;p&&i<7;i++,p=p.parentElement) {
-            if(p.querySelectorAll("input").length>=3&&p.querySelector("button")) {roots.push(p);break;}
+            if(p.querySelectorAll("input").length>=2&&p.querySelector("button,input[type='submit']")) {roots.push(p);break;}
           }
         }
       }
@@ -181,9 +182,19 @@ async function inspectAndFill(page,job,profile) {
   const body=await page.locator("body").innerText().catch(()=>"");
   if(/access (?:to this page has been )?denied|request rejected|not authorized|pardon our interruption/i.test(title+" "+body))return {status:"entry_page_access_denied",prepared:false,url:page.url(),title};
   if(page.frames().some(f=>/gleam\.io/i.test(f.url())))return {status:"excluded_gleam",prepared:false,url:page.url()};
-  const form=await identifyForm(page,job);
+  let form=await identifyForm(page,job);
+  const until=Date.now()+6500;
+  while(!form&&Date.now()<until){
+    await page.waitForTimeout(350);
+    form=await identifyForm(page,job);
+  }
   const challenge=await challengeVisible(page);
-  if(!form)return {status:challenge?"manual_verification_required":"entry_form_not_found",prepared:false,challenge,url:page.url(),title};
+  if(!form){
+    const applicationLogin=page.getByRole("link",{name:/login to apply|register to apply/i}).first();
+    const loginRequired=await applicationLogin.isVisible().catch(()=>false)||/^(?:log ?in|sign ?in)(?:\s|$)/i.test(title);
+    return {status:challenge?"manual_verification_required":loginRequired?"login_required":"entry_form_not_found",prepared:false,challenge,url:page.url(),title,
+      ...(loginRequired?{login_url:await applicationLogin.getAttribute("href").then(u=>new URL(u,page.url()).href).catch(()=>page.url())}:{})};
+  }
   const filled=await fillContact(page,form,profile,job);
   return {status:challenge?"manual_verification_required":filled.missing.length?"missing_required_fields":"prepared",
     prepared:filled.filled.length>0,challenge,url:page.url(),title,filled:filled.filled,missing:filled.missing,form,root:filled.root};
@@ -226,7 +237,7 @@ function create(deps) {
         deps.clearProfileLocks?.(userDataDir);
         context=await launch();
       }
-      state={context,tunnel:null,profile,target:null,targets:[],url:null,activePage:0};
+      state={context,tunnel:null,profile,target:null,targets:[],url:null,activePage:0,prepared_day:entryKey({frequency:"daily",campaign_id:"manual"}).slice(7)};
       deps.setLoginState(state);
       const tunnel=deps.spawn("/usr/local/bin/cloudflared",["tunnel","--url","http://127.0.0.1:6081","--no-autoupdate"],{stdio:["ignore","pipe","pipe"]});
       state.tunnel=tunnel;
@@ -251,6 +262,7 @@ function create(deps) {
       return page;
     }));
     state.target=urls[0];state.activePage=Math.max(0,state.context.pages().indexOf(opened[0]));
+    state.prepared_day=entryKey({frequency:"daily",campaign_id:"manual"}).slice(7);
     atomic(sessionFile,loginStatus());
     return {...loginStatus(),task:"login_start",status:"ready",pages:opened.map(p=>({url:p.url()}))};
   }
@@ -273,7 +285,9 @@ function create(deps) {
     const key=entryKey(job),entries=read(entriesFile,{});
     if(entries[key]&&["confirmed","submitted_unconfirmed","submitting"].includes(entries[key].status))return {task:"generic_form_entry",status:entries[key].status==="confirmed"?"already_entered":"prior_submission_needs_verification",entry_key:key,submitted:false,confirmed:false,prior:entries[key]};
     const manual=deps.getLoginState();
-    if(job.submit===true&&manual?.context&&manual.targets?.includes(job.url))return {...loginStatus(),task:"generic_form_entry",status:"manual_entry_pending",submitted:false,confirmed:false};
+    if(job.submit===true&&manual?.context&&manual.targets?.includes(job.url)&&
+      (job.frequency!=="daily"||!manual.prepared_day||manual.prepared_day===entryKey({frequency:"daily",campaign_id:"manual"}).slice(7)))
+      return {...loginStatus(),task:"generic_form_entry",status:"manual_entry_pending",submitted:false,confirmed:false};
     const profile=resolveProfile(deps.readEntryProfile(),job);
     const borrowed=Boolean(manual?.context&&manual.profile==="daily");
     const context=borrowed?manual.context:await deps.launchProfile("daily");
@@ -282,6 +296,8 @@ function create(deps) {
     const work=(async()=>{
       const initial=await navigate(page,job.url,10000);
       if(initial.access_denied||initial.http_status>=400)return {task:"generic_form_entry",status:"entry_page_access_denied",prepared:false,submitted:false,url:page.url(),title:initial.title,http_status:initial.http_status};
+      const allowedHosts=[new URL(job.url).hostname.replace(/^www\./,""),...(job.allowed_entry_hosts||[])];
+      if(!allowedHosts.includes(new URL(page.url()).hostname.replace(/^www\./,"")))return {task:"generic_form_entry",status:"unexpected_entry_redirect",prepared:false,submitted:false,url:page.url(),source_url:job.url,title:initial.title};
       const r=await inspectAndFill(page,job,profile),{form,root,...out}=r;
       const base={task:"generic_form_entry",...out,submitted:false,confirmed:false};
       if(!form||out.challenge||out.missing?.length||job.submit!==true)return base;
@@ -316,6 +332,7 @@ function create(deps) {
       try {
         const n=await navigate(page,item.profile_url,6500);
         if(n.access_denied){item.status="access_denied";return;}
+        await page.locator('a[href*="/p/"],a[href*="/reel/"]').first().waitFor({state:"attached",timeout:5000}).catch(()=>{});
         const links=await page.locator('a[href*="/p/"],a[href*="/reel/"]').evaluateAll(els=>[...new Map(els.map(a=>[a.href,{url:a.href,preview:(a.querySelector("img")?.alt||a.innerText||"").slice(0,1500)}])).values()].slice(0,5));
         if(!links.length){item.status=/log in|sign up/i.test(n.body)?"login_required":"posts_unavailable";return;}
         const finish=Date.now()+28000;
