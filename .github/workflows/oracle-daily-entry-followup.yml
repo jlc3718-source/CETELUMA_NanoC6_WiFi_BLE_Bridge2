@@ -18,7 +18,7 @@ concurrency:
 jobs:
   entries:
     runs-on: [self-hosted, oracle, jason-home]
-    timeout-minutes: 4
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +33,7 @@ jobs:
           from zoneinfo import ZoneInfo
 
           stamp = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H-%M-%S")
-          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required authenticated opportunities brand handle links posts post_urls latest_posts matches text caption captions href source type kind matched".split())
+          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required authenticated opportunities submitted entry_submitted confirmation_text missing_required_fields brand handle links posts post_urls latest_posts matches text caption captions href source type kind matched".split())
 
           def clean_string(value):
               value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", value, flags=re.I)
@@ -59,10 +59,14 @@ jobs:
                   return clean_string(value)
               return value
 
+          day = datetime.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
           for stem, job, request_timeout in [
               ("oracle-daily-discovery-detail-result", {"id": "daily-discovery-details-" + stamp, "task": "batch", "lane_timeout_ms": 50000, "tasks": ["jml_scan", "instagram_brand_scan"]}, 58),
-              ("oracle-slickdeals-result", {"id": "slickdeals-daily-" + stamp, "task": "generic_form_entry", "url": "https://slickdeals.net/giveaway/daily-draw/2026-10-08/", "submit": True}, 58),
-              ("oracle-on-tester-result", {"id": "on-lifestyle-prepare-" + stamp, "task": "generic_form_entry", "url": "https://form.typeform.com/to/vDq8DBlZ", "submit": False}, 58),
+              ("oracle-housecalls-result", {"id": "housecalls-daily-" + day, "task": "generic_form_entry", "url": "https://housecallsdiy.com/sweepstakes", "submit": True}, 58),
+              ("oracle-toolnut-result", {"id": "toolnut-monthly-" + day, "task": "generic_form_entry", "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools", "submit": True}, 58),
+              ("oracle-slickdeals-result", {"id": "slickdeals-prepare-" + day, "task": "generic_form_entry", "url": "https://slickdeals.net/giveaway/daily-draw/" + day + "/", "submit": False}, 58),
+              ("oracle-concrete-tools-result", {"id": "concrete-tools-prepare-" + day, "task": "generic_form_entry", "url": "https://concretetoolsdirect.com/pages/sweepstakes", "submit": False}, 58),
+              ("oracle-trades-study-result", {"id": "trades-study-prepare-" + day, "task": "generic_form_entry", "url": "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals", "submit": False}, 58),
           ]:
               try:
                   request = urllib.request.Request("http://127.0.0.1:8932/run", data=json.dumps(job).encode(), headers={"Content-Type": "application/json"})
@@ -82,7 +86,7 @@ jobs:
           set -euo pipefail
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-daily-discovery-detail-result.json .github/oracle-slickdeals-result.json .github/oracle-on-tester-result.json
+          git add .github/oracle-daily-discovery-detail-result.json .github/oracle-housecalls-result.json .github/oracle-toolnut-result.json .github/oracle-slickdeals-result.json .github/oracle-concrete-tools-result.json .github/oracle-trades-study-result.json
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "Publish scrubbed daily lane outcomes"
           for attempt in 1 2 3; do
