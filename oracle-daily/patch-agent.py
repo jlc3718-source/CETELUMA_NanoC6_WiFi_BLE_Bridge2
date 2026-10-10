@@ -8,7 +8,7 @@ import sys
 
 def patch(source, patches):
     if "DAILY_RELIABILITY_V2" in source:
-        return source
+        return source.replace("return await goto(page, url, 10000);",'return await require("./daily-runtime-v2/runtime").navigate(page, url, 10000);',1)
     if hashlib.sha256(source.encode()).hexdigest() != patches["expected_server_sha"]:
         raise RuntimeError("Deployed agent changed since inspection; refusing a blind patch")
     for item in patches["functions"]:
@@ -18,7 +18,7 @@ def patch(source, patches):
     header=re.search(r"async function gotoLoose\(page,\s*url[^\n]*\)\s*\{",source)
     if not header:
         raise RuntimeError("Missing bounded navigation hook")
-    source=source[:header.end()]+"\n  return await goto(page, url, 10000);\n"+source[header.end():]
+    source=source[:header.end()]+'\n  return await require("./daily-runtime-v2/runtime").navigate(page, url, 10000);\n'+source[header.end():]
     hook='''// DAILY_RELIABILITY_V2
 const dailyV2 = require("./daily-runtime-v2/runtime").create({
   dataDir: DATA_DIR,
