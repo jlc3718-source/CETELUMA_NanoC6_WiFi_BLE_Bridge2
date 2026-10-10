@@ -1,14 +1,14 @@
 {
-  "id": "smoke-2026-10-10T05-23-30",
+  "id": "smoke-2026-10-10T05-36-47",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:23:30.381Z",
-  "finished": "2026-10-10T09:23:54.010Z",
+  "started": "2026-10-10T09:36:47.967Z",
+  "finished": "2026-10-10T09:37:20.542Z",
   "result": {
     "task": "batch",
     "parallel": true,
     "lane_timeout_ms": 45000,
-    "elapsed_ms": 23628,
+    "elapsed_ms": 32571,
     "results": [
       {
         "task": "instagram_brand_scan",
@@ -18,17 +18,17 @@
           "authenticated": false,
           "results": [
             {
-              "handle": "dreametech",
+              "handle": "roborockglobal",
               "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/dreametech/",
+              "profile_url": "https://www.instagram.com/roborockglobal/",
               "recent_scanned": 0,
               "posts": [],
               "hits": []
             },
             {
-              "handle": "roborockglobal",
+              "handle": "dreametech",
               "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/roborockglobal/",
+              "profile_url": "https://www.instagram.com/dreametech/",
               "recent_scanned": 0,
               "posts": [],
               "hits": []
@@ -42,17 +42,17 @@
               "hits": []
             },
             {
-              "handle": "tinecoglobal",
+              "handle": "narwalrobot",
               "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/tinecoglobal/",
+              "profile_url": "https://www.instagram.com/narwalrobot/",
               "recent_scanned": 0,
               "posts": [],
               "hits": []
             },
             {
-              "handle": "narwalrobot",
+              "handle": "tinecoglobal",
               "status": "posts_unavailable",
-              "profile_url": "https://www.instagram.com/narwalrobot/",
+              "profile_url": "https://www.instagram.com/tinecoglobal/",
               "recent_scanned": 0,
               "posts": [],
               "hits": []
@@ -113,7 +113,408 @@
           "url": "https://www.eufy.com/landingpage_app_test",
           "title": "landingpage_app_test - eufy US",
           "snippets": [],
-          "controls": []
+          "controls": [
+            {
+              "i": 0,
+              "tag": "DIV",
+              "id": "__next",
+              "cls": "",
+              "text": "Anker Innovations \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> Security Clean Mom & Baby New Home eufyMake Security Solution Fall Sale Hot Business Support Explore Flash Deals Sale Perks Hot Deals Bundle Deals Member Deals Lucky Draw Referral Spend More, Save More! rules Hot Deals Sort By Top Picks O",
+              "visible": true
+            },
+            {
+              "i": 2,
+              "tag": "DIV",
+              "id": "",
+              "cls": "Layout_root__7vH_G Layout_NavEmpty__WAFer",
+              "text": "Anker Innovations \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> Security Clean Mom & Baby New Home eufyMake Security Solution Fall Sale Hot Business Support Explore Flash Deals Sale Perks Hot Deals Bundle Deals Member Deals Lucky Draw Referral Spend More, Save More! rules Hot Deals Sort By Top Picks O",
+              "visible": true
+            },
+            {
+              "i": 25,
+              "tag": "DIV",
+              "id": "announcementBar",
+              "cls": "relative z-30",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 26,
+              "tag": "DIV",
+              "id": "",
+              "cls": "swiper swiper-initialized swiper-vertical swiper-pointer-events",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 27,
+              "tag": "DIV",
+              "id": "",
+              "cls": "swiper-wrapper",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>> \ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 28,
+              "tag": "DIV",
+              "id": "",
+              "cls": "swiper-slide swiper-slide-duplicate swiper-slide-duplicate-active swiper-slide-prev !flex items-center justify-center text-center",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 29,
+              "tag": "DIV",
+              "id": "",
+              "cls": "layer",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 30,
+              "tag": "DIV",
+              "id": "",
+              "cls": "content leading-[1.05]",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 31,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex items-center justify-center gap-3 leading-[1.05] min-md:gap-5",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 32,
+              "tag": "A",
+              "id": "",
+              "cls": "full-width line-clamp-2 text-left text-[12px] font-semibold hover:underline min-md:text-center min-md:text-[14px]",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 34,
+              "tag": "DIV",
+              "id": "",
+              "cls": "swiper-slide swiper-slide-active swiper-slide-duplicate-next swiper-slide-duplicate-prev !flex items-center justify-center text-center",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 35,
+              "tag": "DIV",
+              "id": "",
+              "cls": "layer",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 36,
+              "tag": "DIV",
+              "id": "",
+              "cls": "content leading-[1.05]",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 37,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex items-center justify-center gap-3 leading-[1.05] min-md:gap-5",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 38,
+              "tag": "A",
+              "id": "",
+              "cls": "full-width line-clamp-2 text-left text-[12px] font-semibold hover:underline min-md:text-center min-md:text-[14px]",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 40,
+              "tag": "DIV",
+              "id": "",
+              "cls": "swiper-slide swiper-slide-duplicate swiper-slide-duplicate-active swiper-slide-next !flex items-center justify-center text-center",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 41,
+              "tag": "DIV",
+              "id": "",
+              "cls": "layer",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 42,
+              "tag": "DIV",
+              "id": "",
+              "cls": "content leading-[1.05]",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 43,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex items-center justify-center gap-3 leading-[1.05] min-md:gap-5",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 44,
+              "tag": "A",
+              "id": "",
+              "cls": "full-width line-clamp-2 text-left text-[12px] font-semibold hover:underline min-md:text-center min-md:text-[14px]",
+              "text": "\ud83c\udf89 Last Chance to Save Big This Fall Shop Now>>",
+              "visible": true
+            },
+            {
+              "i": 734,
+              "tag": "DIV",
+              "id": "",
+              "cls": "relative",
+              "text": "Flash Deals Sale Perks Hot Deals Bundle Deals Member Deals Lucky Draw Referral Spend More, Save More! rules Hot Deals Sort By Top Picks Outdoor Cameras Smart Cleaning NVR System Indoor Cameras Smart Locks Lawn Mower Video Doorbells Mom & Baby Lights Bundle Deals SoloCam S340 (4-Cam Pack) + HomeBase\u2122 S380 + [REDACTED_ADDRESS] $599.99 Saved $480.00 Add to Cart Buy Now eufy Robot Vacuum Omni S2 + Access",
+              "visible": true
+            },
+            {
+              "i": 735,
+              "tag": "DIV",
+              "id": "",
+              "cls": "",
+              "text": "Flash Deals Sale Perks Hot Deals Bundle Deals Member Deals Lucky Draw Referral Spend More, Save More! rules Hot Deals Sort By Top Picks Outdoor Cameras Smart Cleaning NVR System Indoor Cameras Smart Locks Lawn Mower Video Doorbells Mom & Baby Lights Bundle Deals SoloCam S340 (4-Cam Pack) + HomeBase\u2122 S380 + [REDACTED_ADDRESS] $599.99 Saved $480.00 Add to Cart Buy Now eufy Robot Vacuum Omni S2 + Access",
+              "visible": true
+            },
+            {
+              "i": 755,
+              "tag": "DIV",
+              "id": "",
+              "cls": "mx-auto max-w-[1920px] px-[16px] py-[32px] min-md:px-[32px] min-l:px-[64px] min-l:py-[48px] min-xl1:px-[128px] min-xl1:py-[64px] no-scrollbar flex items-center justify-start gap-[16px] overflow-auto overflow-y-hidden whitespace-nowrap bg-transparent !py-[12px] min-md:justify-center min-md:gap-[24px]",
+              "text": "Flash Deals Sale Perks Hot Deals Bundle Deals Member Deals Lucky Draw Referral",
+              "visible": true
+            },
+            {
+              "i": 761,
+              "tag": "A",
+              "id": "",
+              "cls": "cursor-pointer rounded-3xl px-[14px] py-[7px] text-center text-[14px] font-bold leading-[1.4] text-white transition-all duration-200",
+              "text": "Lucky Draw",
+              "visible": true
+            },
+            {
+              "i": 1128,
+              "tag": "DIV",
+              "id": "",
+              "cls": "block-style_4q5q4x ipc_container relative z-10 w-full",
+              "text": "100% Chance to Win Click to win prizes worth up to $999.99.Rules eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1129,
+              "tag": "DIV",
+              "id": "",
+              "cls": "lg-desktop:max-w-full mx-auto size-full tablet:px-8 laptop:px-16 desktop:px-16 lg-desktop:px-[calc(50%-832px)] px-4 none none none",
+              "text": "100% Chance to Win Click to win prizes worth up to $999.99.Rules eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1130,
+              "tag": "DIV",
+              "id": "",
+              "cls": "laptop:gap-4 grid grid-cols-12 gap-3 container_grid",
+              "text": "100% Chance to Win Click to win prizes worth up to $999.99.Rules eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1131,
+              "tag": "DIV",
+              "id": "",
+              "cls": "col-span-12 col-start-1 col-end-13 tablet:col-start-1 tablet:col-end-13",
+              "text": "100% Chance to Win Click to win prizes worth up to $999.99.Rules eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1132,
+              "tag": "DIV",
+              "id": "",
+              "cls": "mx-auto max-w-[1920px] pt-[40px] min-xl1:px-[128px] min-xl1:py-[80px]",
+              "text": "100% Chance to Win Click to win prizes worth up to $999.99.Rules eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1133,
+              "tag": "DIV",
+              "id": "",
+              "cls": "relative z-[1] mb-[24px] flex flex-col gap-[8px] min-md:mb-[40px] items-center px-[16px]",
+              "text": "100% Chance to Win Click to win prizes worth up to $999.99.Rules",
+              "visible": true
+            },
+            {
+              "i": 1134,
+              "tag": "SPAN",
+              "id": "",
+              "cls": "text-pretty tracking font-bold !leading-[1] tracking-[-0.04em] text-[32px] min-md:text-[40px] min-xl:text-[48px] text-center",
+              "text": "100% Chance to Win",
+              "visible": true
+            },
+            {
+              "i": 1139,
+              "tag": "DIV",
+              "id": "",
+              "cls": "px-[16px] py-[40px] min-md:rounded-[16px] min-md:px-[32px] min-md:py-[60px] min-l:px-[64px] min-l:py-[60px] min-xl1:px-[90px] min-xl1:py-[60px]",
+              "text": "eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1140,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex flex-col items-center gap-[24px] min-l:flex-row min-l:items-center min-l:justify-center min-l:gap-[40px] min-xl:gap-[80px]",
+              "text": "eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1142,
+              "tag": "DIV",
+              "id": "",
+              "cls": "relative flex-shrink-0",
+              "text": "eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits",
+              "visible": true
+            },
+            {
+              "i": 1143,
+              "tag": "DIV",
+              "id": "",
+              "cls": "relative",
+              "text": "eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits",
+              "visible": true
+            },
+            {
+              "i": 1144,
+              "tag": "DIV",
+              "id": "",
+              "cls": "relative z-10 grid gap-[6px] p-[12px] grid-cols-3 grid-rows-3 w-full max-w-[330px] min-md:w-[480px] min-md:max-w-[480px] min-md:gap-[8px] min-md:p-[16px] min-xl:w-[550px] min-xl:max-w-[550px] min-xl:p-[20px]",
+              "text": "eufy Cam S4 20% Off Coupon eufy Robot Vacuum E25 eufy 1-Month Plus GO 55% Off Coupon(Appliance) eufy Outdoor Lights E22 $5 Gift Card 200 eufy Credits",
+              "visible": true
+            },
+            {
+              "i": 1173,
+              "tag": "DIV",
+              "id": "",
+              "cls": "",
+              "text": "GO",
+              "visible": true
+            },
+            {
+              "i": 1174,
+              "tag": "BUTTON",
+              "id": "",
+              "cls": "relative flex flex-col items-center justify-center overflow-hidden rounded-[12px] shadow-[0px_2.792px_5.585px_0px_rgba(94,52,0,0.35)] h-[100px] w-full min-md:h-[150px] min-xl:h-[178px] disabled:cursor-not-allowed transition-transform active:scale-95",
+              "text": "GO",
+              "visible": true
+            },
+            {
+              "i": 1176,
+              "tag": "DIV",
+              "id": "",
+              "cls": "relative flex flex-col items-center gap-[2px] text-center text-white min-md:gap-[4px]",
+              "text": "GO",
+              "visible": true
+            },
+            {
+              "i": 1177,
+              "tag": "SPAN",
+              "id": "",
+              "cls": "text-pretty tracking-[-0.02em] tracking font-extrabold uppercase !leading-none text-[32px] min-md:text-[50px] min-xl:text-[75px]",
+              "text": "GO",
+              "visible": true
+            },
+            {
+              "i": 1207,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex w-full flex-col items-center gap-[24px] min-md:w-[508px] min-md:gap-[47px] l:!w-[100%] min-xl:w-[678px]",
+              "text": "My prizes Entries Left: - EufyCredits: - Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1210,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex w-full gap-[12px] min-md:w-[360px] min-md:flex-col min-md:gap-[40px] min-xl:w-[480px]",
+              "text": "Entries Left: - EufyCredits: -",
+              "visible": true
+            },
+            {
+              "i": 1211,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex flex-1 items-center justify-center rounded-[80px] h-[32px] px-[16px] min-md:h-[50px] min-md:flex-none min-md:px-[46px]",
+              "text": "Entries Left: -",
+              "visible": true
+            },
+            {
+              "i": 1212,
+              "tag": "SPAN",
+              "id": "",
+              "cls": "text-pretty tracking-[-0.02em] tracking text-center font-semibold text-[16px] leading-[1.2] min-md:text-[22.5px] min-xl:text-[30px]",
+              "text": "Entries Left: -",
+              "visible": true
+            },
+            {
+              "i": 1213,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex flex-1 items-center justify-center rounded-[80px] h-[32px] px-[16px] min-md:h-[50px] min-md:flex-none min-md:px-[40px]",
+              "text": "EufyCredits: -",
+              "visible": true
+            },
+            {
+              "i": 1214,
+              "tag": "SPAN",
+              "id": "",
+              "cls": "text-pretty tracking-[-0.02em] tracking text-center font-semibold text-[16px] leading-[1.2] min-md:text-[22.5px] min-xl:text-[30px]",
+              "text": "EufyCredits: -",
+              "visible": true
+            },
+            {
+              "i": 1215,
+              "tag": "DIV",
+              "id": "",
+              "cls": "flex flex-col gap-[8px] min-md:gap-[12px]",
+              "text": "Want more rounds to win? 1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1217,
+              "tag": "SPAN",
+              "id": "",
+              "cls": "text-pretty tracking-[-0.02em] tracking font-normal text-[#657a80] text-[15px] leading-[normal] min-md:text-[20px]",
+              "text": "1. Redeem 200 eufyCredits for 1 more entry. Up to 3 redemptions per day. Reedem Now",
+              "visible": true
+            },
+            {
+              "i": 1317,
+              "tag": "DIV",
+              "id": "",
+              "cls": "h-0 overflow-hidden min-l:!h-auto min-l:!overflow-visible",
+              "text": "Order Tracker My Codes eufyCredits Rewards Program Refer Friends to get up to $80 per referral Myeufy Prizes",
+              "visible": true
+            },
+            {
+              "i": 1320,
+              "tag": "A",
+              "id": "",
+              "cls": "",
+              "text": "eufyCredits Rewards Program",
+              "visible": true
+            }
+          ]
         }
       },
       {
@@ -135,7 +536,7 @@
         }
       }
     ],
-    "last_run_at": "2026-10-10T09:23:54.003Z",
+    "last_run_at": "2026-10-10T09:37:20.531Z",
     "manual_session_preserved": true
   }
 }
