@@ -14,6 +14,10 @@ test("equally plausible entry forms require an adapter rather than the first sub
   const form={text:"Giveaway",fields:[{name:"email",type:"email"}],buttons:[{text:"Enter"}]};
   assert.equal(chooseForm([{...form,id:"a"},{...form,id:"b"}]),null);
 });
+test("a newsletter asking for a name is still excluded without an entry control",()=>{
+  const newsletter={text:"Newsletter",fields:[{name:"name",type:"text"},{name:"email",type:"email"}],buttons:[{text:"Subscribe"}]};
+  assert.equal(chooseForm([newsletter]),null);
+});
 test("email confirmation and state are filled from known contact data",()=>{
   assert.equal(contactValue({name:"emailConfirm",type:"text",id:"",label:"Confirm email",autocomplete:""},profile),profile.email);
   assert.equal(contactValue({name:"state",type:"text",id:"",label:"State",autocomplete:""},profile),"NY");
