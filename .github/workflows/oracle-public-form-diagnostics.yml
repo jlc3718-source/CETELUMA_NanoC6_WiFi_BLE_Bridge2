@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\\.0\\.0\\.1:8932->8932/{print $1; exit}')"
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk 'index($0,"127.0.0.1:8932->8932"){print $1; exit}')"
           test -n "$CID"
           sudo docker cp oracle-daily/inspect-public-forms.js "$CID":/tmp/inspect-public-forms.js
           timeout 45s sudo docker exec "$CID" node /tmp/inspect-public-forms.js > .github/oracle-public-form-diagnostics.json
