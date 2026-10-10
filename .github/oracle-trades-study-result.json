@@ -1,16 +1,17 @@
 {
-  "id": "trades-study-98633-2026-10-10T05-05-08",
+  "id": "trades-study-98633-2026-10-10T05-13-00",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:05:58.220Z",
-  "finished": "2026-10-10T09:06:05.409Z",
+  "started": "2026-10-10T09:13:53.588Z",
+  "finished": "2026-10-10T09:14:04.772Z",
   "result": {
     "task": "generic_form_entry",
-    "status": "entry_form_not_found",
+    "status": "login_required",
     "prepared": false,
     "challenge": false,
     "url": "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
     "title": "Current Feedback Opportunity for Skilled Trades Professionals Paid Research Study | Focus Group Placement",
+    "login_url": "https://www.focusgroupplacement.com/register?next=%2Fstudy%2F98633%2Ffeedback-opportunity-for-skilled-trades-professionals",
     "submitted": false,
     "confirmed": false
   }
