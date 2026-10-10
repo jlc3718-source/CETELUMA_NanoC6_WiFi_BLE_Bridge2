@@ -1,0 +1,25 @@
+{
+  "id": "concrete-tools-prepare-2026-10-10",
+  "ok": true,
+  "started": "2026-10-10T08:00:00.181Z",
+  "finished": "2026-10-10T08:00:20.234Z",
+  "result": {
+    "task": "generic_form_entry",
+    "status": "manual_final_required_challenge",
+    "url": "https://concretetoolsdirect.com/pages/sweepstakes",
+    "missing": [
+      "emailConfirm",
+      "email"
+    ],
+    "challenge": true,
+    "prepared": true,
+    "available_result_keys": [
+      "task",
+      "status",
+      "url",
+      "missing",
+      "challenge",
+      "prepared"
+    ]
+  }
+}

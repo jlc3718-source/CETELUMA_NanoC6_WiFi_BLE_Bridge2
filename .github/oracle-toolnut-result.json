@@ -1,0 +1,22 @@
+{
+  "id": "toolnut-monthly-2026-10-10",
+  "ok": true,
+  "started": "2026-10-10T07:59:33.837Z",
+  "finished": "2026-10-10T07:59:52.068Z",
+  "result": {
+    "task": "generic_form_entry",
+    "status": "manual_final_required_challenge",
+    "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+    "missing": [],
+    "challenge": true,
+    "prepared": true,
+    "available_result_keys": [
+      "task",
+      "status",
+      "url",
+      "missing",
+      "challenge",
+      "prepared"
+    ]
+  }
+}

@@ -1,8 +1,8 @@
 {
-  "id": "daily-discovery-details-2026-10-08T06-16-50",
+  "id": "daily-discovery-details-2026-10-10T03-58-52",
   "ok": true,
-  "started": "2026-10-08T10:16:50.994Z",
-  "finished": "2026-10-08T10:17:43.214Z",
+  "started": "2026-10-10T07:58:52.698Z",
+  "finished": "2026-10-10T07:59:26.039Z",
   "result": {
     "task": "batch",
     "parallel": true,
@@ -32,12 +32,53 @@
         "ok": true,
         "result": {
           "task": "instagram_brand_scan",
-          "status": "timeout_skipped",
-          "timeout_ms": 50000,
+          "authenticated": true,
+          "results": [
+            {
+              "handle": "roborockglobal",
+              "status": "ok"
+            },
+            {
+              "handle": "dreametech",
+              "status": "ok"
+            },
+            {
+              "handle": "movatech.usa",
+              "status": "ok"
+            },
+            {
+              "handle": "narwalrobot",
+              "status": "ok"
+            },
+            {
+              "handle": "tinecoglobal",
+              "status": "ok"
+            },
+            {
+              "handle": "eufyofficial",
+              "status": "ok"
+            },
+            {
+              "handle": "goveeofficial",
+              "status": "ok"
+            },
+            {
+              "handle": "navimow",
+              "status": "ok"
+            },
+            {
+              "handle": "mammotiontech",
+              "status": "ok"
+            },
+            {
+              "handle": "ecovacsrobotics",
+              "status": "ok"
+            }
+          ],
           "available_result_keys": [
             "task",
-            "status",
-            "timeout_ms"
+            "authenticated",
+            "results"
           ]
         }
       }
