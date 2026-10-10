@@ -25,7 +25,8 @@ const dailyV2 = require("./daily-runtime-v2/runtime").create({
   getLoginState: () => loginState,
   setLoginState: value => { loginState = value; },
   readEntryProfile, launchProfile, taskWithContext, stopLogin,
-  chromium, chrome: CHROME, display: LOGIN_DISPLAY, safeProfile, spawn
+  chromium, chrome: CHROME, display: LOGIN_DISPLAY, safeProfile, spawn,
+  clearProfileLocks: clearStaleChromiumProfileLocks
 });
 
 '''
