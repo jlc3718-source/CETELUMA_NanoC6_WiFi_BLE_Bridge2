@@ -61,7 +61,7 @@ jobs:
 
           for stem, job in [
               ("oracle-manual-queue-cleanup-result", {"id": "daily-queue-cleanup-" + day, "task": "manual_queue_clear", "ids": ["anker-tech-discovery-box-2026", "govee-halloween-ideas-2026"]}),
-              ("oracle-manual-handoff-result", {"id": "housecalls-manual-open-" + day, "task": "prepare_restricted", "kind": "queue", "urls": ["https://housecallsdiy.com/sweepstakes"]}),
+              ("oracle-manual-handoff-result", {"id": "richell-manual-open-" + day, "task": "prepare_restricted", "kind": "queue", "urls": ["https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/"]}),
               ("oracle-promo-state-result", {"id": "promo-state-final-" + day, "task": "promo_state_get"}),
           ]:
               try:
