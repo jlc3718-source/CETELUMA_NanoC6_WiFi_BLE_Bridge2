@@ -1,9 +1,9 @@
 {
-  "id": "manual-2026-10-10T05-27-32",
+  "id": "manual-2026-10-10T05-35-04",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:27:32.576Z",
-  "finished": "2026-10-10T09:28:17.585Z",
+  "started": "2026-10-10T09:35:04.847Z",
+  "finished": "2026-10-10T09:35:12.077Z",
   "result": {
     "task": "prepare_restricted",
     "status": "ready_for_manual_action",
@@ -23,16 +23,27 @@
     "version": "2026.10.10.1",
     "pages": [
       {
-        "url": "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
-        "status": "preparation_timeout",
+        "status": "login_required",
         "prepared": false,
-        "error": "bounded_timeout"
+        "challenge": false,
+        "url": "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
+        "title": "Current Feedback Opportunity for Skilled Trades Professionals Paid Research Study | Focus Group Placement",
+        "login_url": "https://www.focusgroupplacement.com/register?next=%2Fstudy%2F98633%2Ffeedback-opportunity-for-skilled-trades-professionals"
       },
       {
+        "status": "manual_verification_required",
+        "prepared": true,
+        "challenge": true,
         "url": "https://concretetoolsdirect.com/pages/sweepstakes",
-        "status": "preparation_timeout",
-        "prepared": false,
-        "error": "bounded_timeout"
+        "title": "Concrete Tools Direct Monthly Giveaway | Enter to Win Free Tools",
+        "filled": [
+          "firstName",
+          "lastName",
+          "email",
+          "emailConfirm",
+          "phone"
+        ],
+        "missing": []
       },
       {
         "status": "prepared",
@@ -41,6 +52,7 @@
         "url": "https://housecallsdiy.com/sweepstakes",
         "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
         "filled": [
+          "first_name",
           "last_name",
           "email"
         ],
