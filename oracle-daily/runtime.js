@@ -330,10 +330,17 @@ function create(deps) {
     catch(e){return {task:"generic_form_entry",status:e.code==="BOUNDED_TIMEOUT"?"timeout_cancelled":"browser_error",prepared:false,submitted:clicked,confirmed:false,error:e.message,url:job.url};}
     finally {await page.close().catch(()=>{});if(!borrowed)await context.close().catch(()=>{});}
   }
-  async function instagram(context,job={}) {
+  function instagramSnapshot(progress,status) {
+    const results=progress.results.map(item=>({...item,status:item.status==="started"?"partial_timeout":item.status}));
+    return {task:"instagram_brand_scan",...(status?{status}:{}),authenticated:results.some(x=>x.recent_scanned>0),results,
+      coverage:{handles_requested:progress.handles_requested,handles_scanned:results.filter(x=>x.recent_scanned>0).length,posts_scanned:results.reduce((n,x)=>n+x.recent_scanned,0)}};
+  }
+  async function instagram(context,job={},progress) {
     const handles=job.handles||["roborockglobal","dreametech","movatech.usa","narwalrobot","tinecoglobal","eufyofficial","goveeofficial","navimow","mammotiontech","ecovacsrobotics"];
     const keywords=/giveaway|win\b|beta|tester|testing|free product|sample|apply|early access|mystery|lucky|spin|sweepstakes|contest|prize/i;
-    const results=[];
+    progress||={results:[],handles_requested:handles.length};
+    progress.handles_requested=handles.length;
+    const results=progress.results;
     await Promise.all(handles.map(async(handle)=>{
       const page=await context.newPage(),item={handle,status:"started",profile_url:"https://www.instagram.com/"+handle+"/",recent_scanned:0,posts:[],hits:[]};results.push(item);
       try {
@@ -357,7 +364,7 @@ function create(deps) {
       }catch(e){item.status="browser_error";item.error=e.message;}
       finally{await page.close().catch(()=>{});}
     }));
-    return {task:"instagram_brand_scan",authenticated:results.some(x=>x.recent_scanned>0),results,coverage:{handles_requested:handles.length,handles_scanned:results.filter(x=>x.recent_scanned>0).length,posts_scanned:results.reduce((n,x)=>n+x.recent_scanned,0)}};
+    return instagramSnapshot(progress);
   }
   async function batch(job) {
     const started=Date.now(),manual=deps.getLoginState(),borrowed=Boolean(manual?.context&&manual.profile==="daily");
@@ -367,12 +374,13 @@ function create(deps) {
     try {
       const results=await Promise.all(tasks.map(async(task)=>{
         const lane=isolatedContext(context);
+        const progress={results:[],handles_requested:job.handles?.length||10};
         try {
           const diagnostic=job.read_only?({eufy_alt_free_spin:"eufy_alt_draw_diag",bluetti_safe_spin:"bluetti_wheel_state",roborock_spin:"roborock_wheel_diag"}[task]||task):task;
-          const work=task==="instagram_brand_scan"?instagram(lane.context,job):deps.taskWithContext(lane.context,diagnostic);
+          const work=task==="instagram_brand_scan"?instagram(lane.context,job,progress):deps.taskWithContext(lane.context,diagnostic);
           const result=await deadline(work,timeout,lane.close);
           return {task,ok:true,result};
-        }catch(e){return {task,ok:false,result:{task,status:e.code==="BOUNDED_TIMEOUT"?"timeout_cancelled":"browser_error",timeout_ms:timeout,error:e.message}};}
+        }catch(e){return {task,ok:false,result:{...(task==="instagram_brand_scan"?instagramSnapshot(progress,"partial_timeout"):{}),task,status:e.code==="BOUNDED_TIMEOUT"?"timeout_cancelled":"browser_error",timeout_ms:timeout,error:e.message}};}
         finally {await lane.close();}
       }));
       const file=path.join(dir,"state.json"),state=read(file,{version:1,lanes:{},campaigns:{}});
