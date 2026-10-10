@@ -1,8 +1,8 @@
 {
-  "id": "full-daily-2026-10-08T06-11-59",
+  "id": "full-daily-2026-10-10T03-55-37",
   "ok": true,
-  "started": "2026-10-08T10:12:01.111Z",
-  "finished": "2026-10-08T10:12:52.913Z",
+  "started": "2026-10-10T07:55:38.828Z",
+  "finished": "2026-10-10T07:56:30.411Z",
   "result": {
     "task": "batch",
     "parallel": true,
@@ -74,12 +74,12 @@
         "ok": true,
         "result": {
           "task": "roborock_wheel_diag",
-          "status": "timeout_skipped",
-          "timeout_ms": 50000,
+          "status": "login_required",
+          "url": "https://account-us.roborock.com/login",
           "available_result_keys": [
             "task",
             "status",
-            "timeout_ms"
+            "url"
           ]
         }
       },
@@ -102,17 +102,12 @@
         "ok": true,
         "result": {
           "task": "bluetti_safe_spin",
-          "status": "spin_control_not_found",
-          "points": 0,
-          "url": "https://www.bluettipower.com/pages/bluetti-discount",
+          "status": "timeout_skipped",
+          "timeout_ms": 50000,
           "available_result_keys": [
             "task",
             "status",
-            "consumption_type",
-            "surplus_times",
-            "points",
-            "subscribed",
-            "url"
+            "timeout_ms"
           ]
         }
       },
