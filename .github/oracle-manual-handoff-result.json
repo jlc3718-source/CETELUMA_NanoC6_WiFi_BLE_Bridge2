@@ -1,19 +1,18 @@
 {
-  "id": "manual-2026-10-10T05-14-05",
+  "id": "manual-2026-10-10T05-22-40",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:14:05.791Z",
-  "finished": "2026-10-10T09:14:40.283Z",
+  "started": "2026-10-10T09:22:40.120Z",
+  "finished": "2026-10-10T09:23:11.152Z",
   "result": {
     "task": "prepare_restricted",
     "status": "ready_for_manual_action",
     "active": true,
     "profile": "daily",
-    "login_url": "https://observations-book-gotta-coalition.trycloudflare.com/control",
+    "login_url": "https://carbon-athletics-enforcement-sheep.trycloudflare.com/control",
     "targets": [
       "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
       "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
-      "https://concretetoolsdirect.com/pages/sweepstakes",
       "https://housecallsdiy.com/sweepstakes"
     ],
     "viewport": {
@@ -34,26 +33,20 @@
         "status": "entry_form_not_found",
         "prepared": false,
         "challenge": false,
-        "url": "https://www.google.com/",
-        "title": "Google"
-      },
-      {
-        "status": "entry_form_not_found",
-        "prepared": false,
-        "challenge": false,
-        "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
-        "title": "Tool Nut Monthly Giveaway - Win Free Tools!"
-      },
-      {
-        "status": "prepared",
-        "prepared": true,
-        "challenge": false,
         "url": "https://housecallsdiy.com/sweepstakes",
-        "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
+        "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls"
+      },
+      {
+        "status": "manual_verification_required",
+        "prepared": true,
+        "challenge": true,
+        "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+        "title": "Tool Nut Monthly Giveaway - Win Free Tools!",
         "filled": [
+          "email",
+          "phone",
           "first_name",
-          "last_name",
-          "email"
+          "last_name"
         ],
         "missing": []
       }

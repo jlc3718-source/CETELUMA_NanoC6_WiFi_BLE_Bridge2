@@ -2,153 +2,141 @@ TAP version 13
 # Subtest: real browser fills both emails, ignores q, checks rules and submits only the entry form
 ok 1 - real browser fills both emails, ignores q, checks rules and submits only the entry form
   ---
-  duration_ms: 4046.95014
+  duration_ms: 3996.899651
   type: 'test'
   ...
 # Subtest: an access-denied page cannot report prepared
 ok 2 - an access-denied page cannot report prepared
   ---
-  duration_ms: 1097.404894
+  duration_ms: 1089.925456
   type: 'test'
   ...
 # Subtest: an unverified off-site redirect cannot receive contact data
-not ok 3 - an unverified off-site redirect cannot receive contact data
+ok 3 - an unverified off-site redirect cannot receive contact data
   ---
-  duration_ms: 595.070302
+  duration_ms: 1183.502255
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:61:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    + actual - expected
-    
-    + 'browser_error'
-    - 'unexpected_entry_redirect'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'unexpected_entry_redirect'
-  actual: 'browser_error'
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:65:10)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: visible human verification stops submission
 ok 4 - visible human verification stops submission
   ---
-  duration_ms: 1722.22581
+  duration_ms: 1526.35894
   type: 'test'
   ...
 # Subtest: a hidden badge does not pretend that a human challenge is visible
 ok 5 - a hidden badge does not pretend that a human challenge is visible
   ---
-  duration_ms: 1497.505418
+  duration_ms: 1409.381822
   type: 'test'
   ...
 # Subtest: unchecked required radio groups prevent invented screener answers
 ok 6 - unchecked required radio groups prevent invented screener answers
   ---
-  duration_ms: 1428.453952
+  duration_ms: 1554.445261
   type: 'test'
   ...
 # Subtest: a confirmation already visible before the click cannot confirm a new entry
 ok 7 - a confirmation already visible before the click cannot confirm a new entry
   ---
-  duration_ms: 2912.078774
+  duration_ms: 2937.164257
   type: 'test'
   ...
 # Subtest: an embedded form loaded after navigation is still filled
 ok 8 - an embedded form loaded after navigation is still filled
   ---
-  duration_ms: 1746.412538
+  duration_ms: 1679.960972
   type: 'test'
   ...
 # Subtest: study login prerequisites are reported explicitly
 ok 9 - study login prerequisites are reported explicitly
   ---
-  duration_ms: 7893.488965
+  duration_ms: 7843.604124
   type: 'test'
   ...
 # Subtest: a custom embedded contact container can be prepared
 ok 10 - a custom embedded contact container can be prepared
   ---
-  duration_ms: 1402.400735
+  duration_ms: 1442.141946
   type: 'test'
   ...
 # Subtest: multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
 ok 11 - multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
   ---
-  duration_ms: 4228.961911
+  duration_ms: 4065.855376
+  type: 'test'
+  ...
+# Subtest: a cancelled Instagram lane retains its partial evidence and coverage
+ok 12 - a cancelled Instagram lane retains its partial evidence and coverage
+  ---
+  duration_ms: 1206.87686
   type: 'test'
   ...
 # Subtest: search and newsletter controls cannot displace a real entry form
-ok 12 - search and newsletter controls cannot displace a real entry form
+ok 13 - search and newsletter controls cannot displace a real entry form
   ---
-  duration_ms: 2.018337
+  duration_ms: 2.045857
   type: 'test'
   ...
 # Subtest: equally plausible entry forms require an adapter rather than the first submit
-ok 13 - equally plausible entry forms require an adapter rather than the first submit
+ok 14 - equally plausible entry forms require an adapter rather than the first submit
   ---
-  duration_ms: 0.551045
+  duration_ms: 0.572165
   type: 'test'
   ...
 # Subtest: a newsletter asking for a name is still excluded without an entry control
-ok 14 - a newsletter asking for a name is still excluded without an entry control
+ok 15 - a newsletter asking for a name is still excluded without an entry control
   ---
-  duration_ms: 0.188522
+  duration_ms: 0.187441
   type: 'test'
   ...
 # Subtest: email confirmation and state are filled from known contact data
-ok 15 - email confirmation and state are filled from known contact data
+ok 16 - email confirmation and state are filled from known contact data
   ---
-  duration_ms: 1.20429
+  duration_ms: 0.880207
   type: 'test'
   ...
 # Subtest: PA cannot replace an eligible NY residence or invent a missing address
-ok 16 - PA cannot replace an eligible NY residence or invent a missing address
+ok 17 - PA cannot replace an eligible NY residence or invent a missing address
   ---
-  duration_ms: 0.720966
+  duration_ms: 0.726486
   type: 'test'
   ...
 # Subtest: daily and monthly duplicate keys use the user's local calendar
-ok 17 - daily and monthly duplicate keys use the user's local calendar
+ok 18 - daily and monthly duplicate keys use the user's local calendar
   ---
-  duration_ms: 23.821042
+  duration_ms: 24.876052
   type: 'test'
   ...
 # Subtest: sanitization preserves caption evidence, query parameters and numeric study IDs
-ok 18 - sanitization preserves caption evidence, query parameters and numeric study IDs
+ok 19 - sanitization preserves caption evidence, query parameters and numeric study IDs
   ---
-  duration_ms: 2.450621
+  duration_ms: 2.43798
   type: 'test'
   ...
 # Subtest: timed out lanes close only their pages and reject late page creation
-ok 19 - timed out lanes close only their pages and reject late page creation
+ok 20 - timed out lanes close only their pages and reject late page creation
   ---
-  duration_ms: 23.740723
+  duration_ms: 31.513949
   type: 'test'
   ...
 # Subtest: completed jobs survive a restart and repeated IDs do not repeat an action
-ok 20 - completed jobs survive a restart and repeated IDs do not repeat an action
+ok 21 - completed jobs survive a restart and repeated IDs do not repeat an action
   ---
-  duration_ms: 12.591188
+  duration_ms: 20.694136
   type: 'test'
   ...
 # Subtest: interrupted jobs cannot repeat an unknown action after restart
-ok 21 - interrupted jobs cannot repeat an unknown action after restart
+ok 22 - interrupted jobs cannot repeat an unknown action after restart
   ---
-  duration_ms: 2.016217
+  duration_ms: 2.912265
   type: 'test'
   ...
-1..21
-# tests 21
+1..22
+# tests 22
 # suites 0
-# pass 20
-# fail 1
+# pass 22
+# fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 29536.526295
+# duration_ms 30851.155686
