@@ -2,123 +2,147 @@ TAP version 13
 # Subtest: real browser fills both emails, ignores q, checks rules and submits only the entry form
 ok 1 - real browser fills both emails, ignores q, checks rules and submits only the entry form
   ---
-  duration_ms: 4014.521282
+  duration_ms: 4249.756216
   type: 'test'
   ...
 # Subtest: an access-denied page cannot report prepared
 ok 2 - an access-denied page cannot report prepared
   ---
-  duration_ms: 1060.634803
+  duration_ms: 1151.322009
   type: 'test'
   ...
-# Subtest: visible human verification stops submission
-ok 3 - visible human verification stops submission
+# Subtest: an unverified off-site redirect cannot receive contact data
+not ok 3 - an unverified off-site redirect cannot receive contact data
   ---
-  duration_ms: 1581.1625
+  duration_ms: 582.19966
+  type: 'test'
+  location: '/tmp/daily-reliability-checks/tests/browser.test.js:61:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'browser_error'
+    - 'unexpected_entry_redirect'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'unexpected_entry_redirect'
+  actual: 'browser_error'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:65:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: visible human verification stops submission
+ok 4 - visible human verification stops submission
+  ---
+  duration_ms: 1718.590103
   type: 'test'
   ...
 # Subtest: a hidden badge does not pretend that a human challenge is visible
-ok 4 - a hidden badge does not pretend that a human challenge is visible
+ok 5 - a hidden badge does not pretend that a human challenge is visible
   ---
-  duration_ms: 1434.424792
+  duration_ms: 1492.654867
   type: 'test'
   ...
 # Subtest: unchecked required radio groups prevent invented screener answers
-ok 5 - unchecked required radio groups prevent invented screener answers
+ok 6 - unchecked required radio groups prevent invented screener answers
   ---
-  duration_ms: 1446.030213
+  duration_ms: 1498.065233
   type: 'test'
   ...
 # Subtest: a confirmation already visible before the click cannot confirm a new entry
-ok 6 - a confirmation already visible before the click cannot confirm a new entry
+ok 7 - a confirmation already visible before the click cannot confirm a new entry
   ---
-  duration_ms: 3021.662984
+  duration_ms: 2915.692785
   type: 'test'
   ...
 # Subtest: an embedded form loaded after navigation is still filled
-ok 7 - an embedded form loaded after navigation is still filled
+ok 8 - an embedded form loaded after navigation is still filled
   ---
-  duration_ms: 1705.396893
+  duration_ms: 1766.482273
   type: 'test'
   ...
 # Subtest: study login prerequisites are reported explicitly
-ok 8 - study login prerequisites are reported explicitly
+ok 9 - study login prerequisites are reported explicitly
   ---
-  duration_ms: 7814.872634
+  duration_ms: 7901.197192
   type: 'test'
   ...
 # Subtest: a custom embedded contact container can be prepared
-ok 9 - a custom embedded contact container can be prepared
+ok 10 - a custom embedded contact container can be prepared
   ---
-  duration_ms: 1410.702347
+  duration_ms: 1429.661858
   type: 'test'
   ...
 # Subtest: multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
-ok 10 - multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
+ok 11 - multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
   ---
-  duration_ms: 4196.730897
+  duration_ms: 5184.700183
   type: 'test'
   ...
 # Subtest: search and newsletter controls cannot displace a real entry form
-ok 11 - search and newsletter controls cannot displace a real entry form
+ok 12 - search and newsletter controls cannot displace a real entry form
   ---
-  duration_ms: 2.102539
+  duration_ms: 1.985936
   type: 'test'
   ...
 # Subtest: equally plausible entry forms require an adapter rather than the first submit
-ok 12 - equally plausible entry forms require an adapter rather than the first submit
+ok 13 - equally plausible entry forms require an adapter rather than the first submit
   ---
-  duration_ms: 0.567645
+  duration_ms: 0.529685
   type: 'test'
   ...
 # Subtest: a newsletter asking for a name is still excluded without an entry control
-ok 13 - a newsletter asking for a name is still excluded without an entry control
+ok 14 - a newsletter asking for a name is still excluded without an entry control
   ---
-  duration_ms: 0.190481
+  duration_ms: 0.183282
   type: 'test'
   ...
 # Subtest: email confirmation and state are filled from known contact data
-ok 14 - email confirmation and state are filled from known contact data
+ok 15 - email confirmation and state are filled from known contact data
   ---
-  duration_ms: 1.341892
+  duration_ms: 0.897568
   type: 'test'
   ...
 # Subtest: PA cannot replace an eligible NY residence or invent a missing address
-ok 15 - PA cannot replace an eligible NY residence or invent a missing address
+ok 16 - PA cannot replace an eligible NY residence or invent a missing address
   ---
-  duration_ms: 0.543765
+  duration_ms: 0.539685
   type: 'test'
   ...
 # Subtest: daily and monthly duplicate keys use the user's local calendar
-ok 16 - daily and monthly duplicate keys use the user's local calendar
+ok 17 - daily and monthly duplicate keys use the user's local calendar
   ---
-  duration_ms: 21.545786
+  duration_ms: 21.078819
   type: 'test'
   ...
 # Subtest: sanitization preserves caption evidence, query parameters and numeric study IDs
-ok 17 - sanitization preserves caption evidence, query parameters and numeric study IDs
+ok 18 - sanitization preserves caption evidence, query parameters and numeric study IDs
   ---
-  duration_ms: 3.751912
+  duration_ms: 2.715303
   type: 'test'
   ...
 # Subtest: timed out lanes close only their pages and reject late page creation
-ok 18 - timed out lanes close only their pages and reject late page creation
+ok 19 - timed out lanes close only their pages and reject late page creation
   ---
-  duration_ms: 28.989491
+  duration_ms: 30.190737
   type: 'test'
   ...
 # Subtest: completed jobs survive a restart and repeated IDs do not repeat an action
-ok 19 - completed jobs survive a restart and repeated IDs do not repeat an action
+ok 20 - completed jobs survive a restart and repeated IDs do not repeat an action
   ---
-  duration_ms: 11.284337
+  duration_ms: 16.912384
   type: 'test'
   ...
-1..19
-# tests 19
+1..20
+# tests 20
 # suites 0
 # pass 19
-# fail 0
+# fail 1
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 28635.886469
+# duration_ms 30826.099962
