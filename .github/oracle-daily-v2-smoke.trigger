@@ -1,1 +1,1 @@
-Verify the final deployed runtime with partial evidence retained and late resources left active within bounded deadlines.
+Final sequential read-only verification after successful retained-tab and conflict-safe publishing checks.
