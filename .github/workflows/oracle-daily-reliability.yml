@@ -1,0 +1,62 @@
+name: Oracle Daily Reliability
+on:
+  push:
+    branches: [main]
+    paths:
+      - "oracle-daily/runtime.js"
+      - "oracle-daily/patch-agent.py"
+      - "oracle-daily/deploy-agent.py"
+      - "oracle-daily/legacy-patches.json"
+      - "oracle-daily/tests/**"
+      - ".github/workflows/oracle-daily-reliability.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: oracle-daily-runtime-maintenance
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run isolated browser regression checks before changing the agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          sudo docker cp oracle-daily "$CID":/tmp/daily-reliability-checks
+          timeout 55s sudo docker exec "$CID" node --test /tmp/daily-reliability-checks/tests/runtime.test.js /tmp/daily-reliability-checks/tests/browser.test.js | tee .github/oracle-daily-v2-tests.txt
+      - name: Deploy persistent mounts with automatic rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          sudo python3 oracle-daily/deploy-agent.py "$CID" oracle-daily | tee .github/oracle-daily-v2-deploy.json
+      - name: Verify current forms and the official recall endpoint without submitting entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 oracle-daily/run-agent.py verify
+          python3 oracle-daily/run-agent.py handoff
+      - name: Publish validation and current handoff evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          for file in .github/oracle-daily-v2-tests.txt .github/oracle-daily-v2-deploy.json .github/oracle-housecalls-result.json .github/oracle-toolnut-result.json .github/oracle-concrete-tools-result.json .github/oracle-trades-study-result.json .github/oracle-recall-result.json .github/oracle-selfcheck-result.json .github/oracle-current-session-result.json .github/oracle-manual-handoff-result.json; do
+            if [ -f "$file" ]; then git add "$file"; fi
+          done
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish tested daily-runtime deployment and current manual handoff"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
