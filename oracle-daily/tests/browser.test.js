@@ -16,6 +16,7 @@ test.before(async()=>{
   temp=fs.mkdtempSync(path.join(os.tmpdir(),"oracle-browser-regression-"));
   browser=await chromium.launch({executablePath:"/usr/bin/chromium",headless:true,args:["--no-sandbox","--disable-dev-shm-usage"]});
   server=http.createServer((req,res)=>{
+    res.setHeader("Content-Type","text/html; charset=utf-8");
     if(req.method==="POST"){let body="";req.on("data",x=>body+=x);req.on("end",()=>{posted.push(new URLSearchParams(body));res.end(req.url==="/ambiguous-submit"?markup("","<p>You're entered</p>"):"<p>Entry received for the fixture giveaway</p>");});return;}
     if(req.url==="/denied"){res.writeHead(403);res.end("<title>Access to this page has been denied</title>");return;}
     if(req.url.startsWith("/slow/")){setTimeout(()=>res.end(markup()),180);return;}
