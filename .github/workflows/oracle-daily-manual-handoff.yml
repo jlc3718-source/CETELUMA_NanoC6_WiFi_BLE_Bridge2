@@ -18,22 +18,55 @@ concurrency:
 jobs:
   entries:
     runs-on: [self-hosted, oracle, jason-home]
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run parallel daily lanes and preserve safe lane evidence
+      - name: Inspect the PA-eligible Sweetwater form and prepare the current manual queue
         shell: bash
         run: |
           set -euo pipefail
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          cat > /tmp/oracle-sweetwater-probe.js <<'JS'
+          "use strict";
+          const {chromium}=require("/app/node_modules/playwright-core");
+          const fs=require("fs");
+          const out={checked_at:new Date().toISOString(),status:"not_checked",url:"https://www.sweetwater.com/giveaway/"};
+          (async()=>{
+            let ctx=null;
+            try{
+              ctx=await chromium.launchPersistentContext("/data/profiles/daily",{executablePath:"/usr/bin/chromium",headless:true,viewport:{width:1280,height:900},timeout:20000,args:["--no-sandbox","--disable-dev-shm-usage"]});
+              const p=ctx.pages()[0]||await ctx.newPage();
+              await p.goto(out.url,{waitUntil:"domcontentloaded",timeout:15000}).catch(()=>{});
+              await p.waitForTimeout(1500);
+              out.url=p.url();
+              out.title=await p.title();
+              out.forms=await p.locator("form").evaluateAll(forms=>forms.map((f,i)=>({
+                index:i,id:f.id,action:f.getAttribute("action"),visible:!!(f.getBoundingClientRect().width&&f.getBoundingClientRect().height),
+                fields:[...f.querySelectorAll("input,select,textarea")].filter(e=>e.offsetParent!==null).map(e=>({tag:e.tagName,type:e.type,name:e.name,id:e.id,required:e.required,autocomplete:e.autocomplete,options:e.tagName==="SELECT"?[...e.options].map(o=>({label:o.label,value:o.value})).slice(0,65):undefined})),
+                submits:[...f.querySelectorAll('button[type="submit"],input[type="submit"]')].filter(e=>e.offsetParent!==null).map(e=>({text:(e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,120)}))
+              })).filter(f=>f.visible)).catch(()=>[]);
+              out.visible_submits=await p.locator('button[type="submit"],input[type="submit"]').evaluateAll(els=>els.filter(e=>e.offsetParent!==null).map(e=>({text:(e.textContent||e.value||"").replace(/\s+/g," ").trim().slice(0,120),form_id:e.form?.id||"",form_index:e.form?[...document.forms].indexOf(e.form):-1}))).catch(()=>[]);
+              out.challenge=p.frames().some(f=>/captcha|recaptcha|hcaptcha|turnstile/i.test(f.url()));
+              out.visible_entry_message=await p.getByText(/you're entered in our giveaway/i).first().isVisible().catch(()=>false);
+              out.status="inspected";
+            }catch(e){out.status="blocked";out.error=String(e.message||e).slice(0,200);}
+            finally{if(ctx)await ctx.close().catch(()=>{});}
+            fs.writeFileSync("/tmp/oracle-sweetwater-probe-result.json",JSON.stringify(out,null,2)+"\n");
+          })();
+          JS
+          sudo docker cp /tmp/oracle-sweetwater-probe.js "$CID":/tmp/oracle-sweetwater-probe.js
+          timeout 55s sudo docker exec "$CID" node /tmp/oracle-sweetwater-probe.js || true
+          sudo docker cp "$CID":/tmp/oracle-sweetwater-probe-result.json .github/oracle-sweetwater-probe-result.json || printf '{"status":"blocked"}\n' > .github/oracle-sweetwater-probe-result.json
           python3 - <<'PY'
           import datetime, json, pathlib, re, urllib.request, urllib.parse
           from zoneinfo import ZoneInfo
 
           day = datetime.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
-          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys control_url viewer_url interactive_url vnc_url novnc_url manual_url manual_session_url session_url login_url scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required".split())
+          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys control_url viewer_url interactive_url vnc_url novnc_url manual_url manual_session_url session_url login_url scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed pages buttons gleam kind note text visible fields submitted entry_submitted confirmation_text items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required".split())
 
           def clean_string(value):
               value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", value, flags=re.I)
@@ -59,9 +92,25 @@ jobs:
                   return clean_string(value)
               return value
 
+          probe = json.loads(pathlib.Path(".github/oracle-sweetwater-probe-result.json").read_text())
+          forms = probe.get("forms", [])
+          candidates = [f for f in forms if any(x.get("type") == "email" for x in f.get("fields", [])) and any(re.search(r"enter|giveaway", x.get("text", ""), re.I) for x in f.get("submits", []))]
+          first = (probe.get("visible_submits") or [{}])[0]
+          form = candidates[0] if len(candidates) == 1 else {}
+          address_fields = any(re.search(r"address|street|city", (x.get("name", "") + " " + x.get("autocomplete", "")), re.I) for x in form.get("fields", []))
+          safe_submit = bool(form and first.get("form_index") == form.get("index") and not address_fields and not probe.get("visible_entry_message") and not probe.get("challenge"))
+          pa_fields = {'input[autocomplete="postal-code"]': '15851', 'input[name*="zip" i]': '15851', 'input[name*="postal" i]': '15851', 'select[name*="state" i]': 'PA', 'input[name*="state" i]': 'PA'}
           for stem, job in [
+              ("oracle-sweetwater-result", {"id": "sweetwater-october-" + day, "task": "generic_form_entry", "url": "https://www.sweetwater.com/giveaway/", "fields": pa_fields, "submit": safe_submit}),
               ("oracle-manual-queue-cleanup-result", {"id": "daily-queue-cleanup-" + day, "task": "manual_queue_clear", "ids": ["anker-tech-discovery-box-2026", "govee-halloween-ideas-2026"]}),
-              ("oracle-manual-handoff-result", {"id": "richell-manual-open-" + day, "task": "prepare_restricted", "kind": "queue", "urls": ["https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/"]}),
+              ("oracle-manual-handoff-result", {"id": "daily-manual-open-" + day, "task": "prepare_restricted", "kind": "queue", "urls": [
+                  "https://housecallsdiy.com/sweepstakes",
+                  "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+                  "https://concretetoolsdirect.com/pages/sweepstakes",
+                  "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
+                  "https://www.sweetwater.com/giveaway/",
+                  "https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/"
+              ]}),
               ("oracle-promo-state-result", {"id": "promo-state-final-" + day, "task": "promo_state_get"}),
           ]:
               try:
@@ -82,7 +131,7 @@ jobs:
           set -euo pipefail
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-manual-queue-cleanup-result.json .github/oracle-manual-handoff-result.json .github/oracle-promo-state-result.json
+          git add .github/oracle-sweetwater-probe-result.json .github/oracle-sweetwater-result.json .github/oracle-manual-queue-cleanup-result.json .github/oracle-manual-handoff-result.json .github/oracle-promo-state-result.json
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "Publish scrubbed daily lane outcomes"
           for attempt in 1 2 3; do
