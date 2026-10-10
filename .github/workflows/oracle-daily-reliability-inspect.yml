@@ -1,0 +1,63 @@
+name: Oracle Daily Reliability Inspect
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/oracle-daily-reliability-inspect.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect code and persistence without touching browser state
+        shell: bash
+        run: |
+          set -euo pipefail
+          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
+          test -n "$CID"
+          sudo docker inspect --format '{{json .Mounts}}' "$CID" > /tmp/oracle-daily-mounts.json
+          sudo docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID" > /tmp/oracle-daily-project-dir.txt
+          sudo docker exec -i "$CID" node - <<'JS' > .github/oracle-daily-reliability-inspect.json
+          const fs=require("fs"),crypto=require("crypto");
+          const names=["goto","launchProfile","stopLogin","instagramBrandScanWithContext","jmlScanWithContext","roborockWheelDiagWithContext","eufyAltFreeSpinWithContext","bluettiSafeSpinWithContext","prepareRestrictedSession","startLogin"];
+          function redact(s){
+            return s.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,"[REDACTED_EMAIL]")
+              .replace(/((?:password|secret|api[_-]?key|authorization)\s*[:=]\s*)["'][^"'\n]+["']/gi,"$1\"[REDACTED]\"");
+          }
+          const source=fs.readFileSync("/app/src/server.js","utf8"),fast=fs.readFileSync("/app/src/fast-daily.js","utf8");
+          function excerpt(src,name){
+            const re=new RegExp("^(?:async )?function "+name+"\\b","m"),m=re.exec(src);
+            if(!m)return null;
+            const tail=src.slice(m.index);
+            const next=/\n(?:async )?function \w+\s*\(/.exec(tail.slice(1));
+            return redact(tail.slice(0,next?next.index+1:Math.min(tail.length,18000)));
+          }
+          const out={checked_at:new Date().toISOString(),server_sha:crypto.createHash("sha256").update(source).digest("hex"),fast_sha:crypto.createHash("sha256").update(fast).digest("hex"),functions:Object.fromEntries(names.map(n=>[n,excerpt(source,n)])),fast_prefix:redact(fast.split("\n").slice(0,130).join("\n")),fast_binding:redact(source.split("\n").filter((l,i,a)=>/const fastDaily/.test(a.slice(Math.max(0,i-1),i+12).join("\n"))).slice(0,30).join("\n")),playwright_version:require("/app/node_modules/playwright-core/package.json").version};
+          console.log(JSON.stringify(out,null,2));
+          JS
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path(".github/oracle-daily-reliability-inspect.json")
+          j=json.loads(p.read_text())
+          j["mounts"]=[{k:m.get(k) for k in ("Type","Source","Destination","RW")} for m in json.loads(pathlib.Path("/tmp/oracle-daily-mounts.json").read_text())]
+          j["project_directory"]=pathlib.Path("/tmp/oracle-daily-project-dir.txt").read_text().strip()
+          p.write_text(json.dumps(j,indent=2)+"\n")
+          PY
+      - name: Publish code inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          git add .github/oracle-daily-reliability-inspect.json
+          git commit -m "Record daily-agent function and persistence diagnostics" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
