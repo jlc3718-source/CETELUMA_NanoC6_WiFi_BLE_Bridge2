@@ -1,33 +1,119 @@
 {
-  "id": "smoke-2026-10-10T05-15-24",
+  "id": "smoke-2026-10-10T05-23-30",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:15:24.481Z",
-  "finished": "2026-10-10T09:16:09.909Z",
+  "started": "2026-10-10T09:23:30.381Z",
+  "finished": "2026-10-10T09:23:54.010Z",
   "result": {
     "task": "batch",
     "parallel": true,
     "lane_timeout_ms": 45000,
-    "elapsed_ms": 45426,
+    "elapsed_ms": 23628,
     "results": [
       {
         "task": "instagram_brand_scan",
-        "ok": false,
+        "ok": true,
         "result": {
           "task": "instagram_brand_scan",
-          "status": "timeout_cancelled",
-          "timeout_ms": 45000,
-          "error": "bounded_timeout"
+          "authenticated": false,
+          "results": [
+            {
+              "handle": "dreametech",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/dreametech/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "roborockglobal",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/roborockglobal/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "movatech.usa",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/movatech.usa/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "tinecoglobal",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/tinecoglobal/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "narwalrobot",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/narwalrobot/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "eufyofficial",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/eufyofficial/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "goveeofficial",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/goveeofficial/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "navimow",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/navimow/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "mammotiontech",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/mammotiontech/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            },
+            {
+              "handle": "ecovacsrobotics",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/ecovacsrobotics/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
+            }
+          ],
+          "coverage": {
+            "handles_requested": 10,
+            "handles_scanned": 0,
+            "posts_scanned": 0
+          }
         }
       },
       {
         "task": "eufy_alt_free_spin",
-        "ok": false,
+        "ok": true,
         "result": {
-          "task": "eufy_alt_free_spin",
-          "status": "browser_error",
-          "timeout_ms": 45000,
-          "error": "page.goto: Timeout 10000ms exceeded.\nCall log:\n  - navigating to \"https://www.eufy.com/landingpage_app_test\", waiting until \"domcontentloaded\"\n"
+          "task": "eufy_alt_draw_diag",
+          "url": "https://www.eufy.com/landingpage_app_test",
+          "title": "landingpage_app_test - eufy US",
+          "snippets": [],
+          "controls": []
         }
       },
       {
@@ -49,7 +135,7 @@
         }
       }
     ],
-    "last_run_at": "2026-10-10T09:16:09.903Z",
+    "last_run_at": "2026-10-10T09:23:54.003Z",
     "manual_session_preserved": true
   }
 }

@@ -1,13 +1,17 @@
 {
-  "id": "session-2026-10-10T05-21-31",
+  "id": "smoke-session-2026-10-10T05-23-30",
   "ok": true,
   "result": {
     "task": "login_status",
-    "status": "closed",
-    "active": false,
-    "profile": null,
-    "login_url": null,
-    "targets": [],
+    "status": "ready",
+    "active": true,
+    "profile": "daily",
+    "login_url": "https://carbon-athletics-enforcement-sheep.trycloudflare.com/control",
+    "targets": [
+      "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
+      "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+      "https://housecallsdiy.com/sweepstakes"
+    ],
     "viewport": {
       "width": 1280,
       "height": 850
