@@ -1,0 +1,6 @@
+[
+  {"campaign_id":"housecalls-october-2026","stem":"oracle-housecalls-result","url":"https://housecallsdiy.com/sweepstakes","frequency":"daily","submit":true,"rules_verified":true,"automation_allowed":true,"eligibility":{"age_verified":true},"ends":"2026-10-31T23:59:59-04:00"},
+  {"campaign_id":"toolnut-monthly-2026-10","stem":"oracle-toolnut-result","url":"https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools","frequency":"monthly","submit":false,"rules_verified":false,"ends":"2026-10-31T23:59:59-04:00"},
+  {"campaign_id":"concrete-tools-october-2026","stem":"oracle-concrete-tools-result","url":"https://concretetoolsdirect.com/pages/sweepstakes","frequency":"once","submit":false,"rules_verified":true,"automation_allowed":false,"eligibility":{"age_verified":true},"ends":"2026-10-31T23:59:59-04:00"},
+  {"campaign_id":"trades-study-98633","stem":"oracle-trades-study-result","url":"https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals","frequency":"once","submit":false,"rules_verified":true,"ends":"2026-10-12T23:59:59-04:00"}
+]
