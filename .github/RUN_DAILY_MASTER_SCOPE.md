@@ -1,6 +1,6 @@
 # RUN DAILY — REQUIRED MASTER SCOPE
 
-This file is authoritative for the Run Daily project. A Run Daily execution is incomplete unless every REQUIRED section below is checked and reported as either a verified hit, a known/suppressed item, a timeout/blocked lane, or "nothing new verified".
+This file is authoritative for the Run Daily project. A Run Daily execution is incomplete unless every REQUIRED section below is checked and reported as either a verified hit, a known/suppressed item, a timeout/blocked lane, or "nothing new verified" after an actual fresh check. Omitted, not-run and incomplete checks must be named explicitly.
 
 ## REQUIRED 1 — Giveaways / entries / promos
 - Giveaways, sweepstakes, contests, daily/weekly/recurring entries, instant-win, surveys, alternate-entry methods
@@ -61,9 +61,19 @@ Reddit findings must be verified against an official/current source where possib
 
 ## REQUIRED 6 — Entry follow-up / unresolved
 Retain IDs/statuses for all selected programs and unresolved opportunities.
-Attempt eligible automated paths using Oracle Browser Agent and persistent profile 'daily'.
+Attempt to complete and submit every eligible free entry automatically using Oracle Browser Agent and persistent profile 'daily'. Prefill first when an unavoidable manual step remains. Preparation alone does not complete the task.
 Never claim success without positive confirmation.
 If no automated entry path exists, reduce it to the minimum manual action required.
+
+## REQUIRED 7 — Other standing tasks
+- Fluke and IDEAL student, educator, apprentice, training-program, donation and trade-program opportunities.
+- Silverado EV hard tonneau covers for the 2025 Extended Range LT, with both Multi-Flex Midgate and Multi-Flex Tailgate compatibility verified.
+- The exact Husqvarna MZ54 model 967696001 deck rebuild kit with cast-iron spindles only.
+- Genuine GM/Bosch MDI 2; CRAFTSMAN/Kobalt; water filtration/plumbing; outdoor/shop equipment; SOOCAS heads; existing IGK price watches; and pet free/near-free offers.
+- The established privacy/exposure and removal-reply follow-up lane, retaining all identity-matching limits, source exclusions and ignored-record suppressions. Never publish personal profile/address details in this repository. An unrecovered matching/suppression rule means incomplete coverage, not an all-clear.
+- The previously selected official New York unclaimed-funds follow-up, retained as unresolved until current search evidence exists. Do not submit claims or upload identity documents.
+- The pool-closing watch for ZIP 14772: current/local forecast, near-term trend, available monthly outlook, the user's (high + low)/2 temperature proxy clearly labeled as an estimate, sustained cool conditions and freeze risk.
+- Separately paused legacy reminders retain their paused state; do not reactivate them or treat a completed one-time reminder as a new task.
 
 ## Permanent execution rules
 - Run independent lanes in parallel.
@@ -91,6 +101,8 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Schedules remain in their existing enabled/paused state unless the user requests a scheduling change.
 
 ## REQUIRED REPORT CONTRACT
+Put the results directly in chat. A report file is optional backup, never the primary answer. Every explicitly requested Run Daily must show the status of every required category, including checked/no new verified result, hit, blocked, partial/incomplete, suppressed/DONE, or not run. Never use a generic "nothing new" for an omitted lane.
+
 Every Run Daily report must visibly cover:
 1. New actionable entries/promos
 2. Confirmed automated entries
@@ -106,6 +118,12 @@ Every Run Daily report must visibly cover:
 12. Reddit/social/community finds
 13. Standing product watches
 14. Timeouts/blocked lanes
-15. "Nothing new verified" for any required category with no hit
+15. "Nothing new verified" for any required category actually checked with no hit
+16. Fluke / IDEAL / apprenticeship and training opportunities
+17. Exact Silverado tonneau / MZ54 cast-iron kit / GM MDI 2 / SOOCAS / IGK standing watches
+18. Privacy/exposure and removal-reply follow-ups
+19. Retained official NY unclaimed-funds follow-up
+20. Pool-closing weather assessment
+21. Tasks not run, incomplete checks and preserved schedule state
 
 A report that omits any required category is incomplete.
