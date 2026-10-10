@@ -229,7 +229,7 @@ function create(deps) {
     if(!state?.context) {
       const userDataDir=path.join(deps.dataDir,"profiles",profile);
       fs.mkdirSync(userDataDir,{recursive:true});
-      const launch=()=>deps.chromium.launchPersistentContext(userDataDir,{executablePath:deps.chrome,headless:false,viewport:{width:1280,height:850},screen:{width:1280,height:850},env:{...process.env,DISPLAY:deps.display},timeout:18000,args:["--no-sandbox","--disable-dev-shm-usage","--no-first-run","--no-default-browser-check","--window-size=1280,850"]});
+      const launch=()=>deps.chromium.launchPersistentContext(userDataDir,{executablePath:deps.chrome,headless:false,viewport:{width:1280,height:850},screen:{width:1280,height:850},env:{...process.env,DISPLAY:deps.display},timeout:18000,args:["--no-sandbox","--disable-dev-shm-usage","--no-first-run","--no-default-browser-check","--disable-blink-features=AutomationControlled","--window-size=1280,850"]});
       let context;
       try{context=await launch();}catch(e){
         if(!/profile appears to be in use|process_singleton|SingletonLock/i.test(String(e.message)))throw e;
@@ -238,6 +238,7 @@ function create(deps) {
         context=await launch();
       }
       state={context,tunnel:null,profile,target:null,targets:[],url:null,activePage:0,prepared_day:entryKey({frequency:"daily",campaign_id:"manual"}).slice(7)};
+      context.on("page",p=>{state.activePage=Math.max(0,context.pages().filter(x=>!x.isClosed()).indexOf(p));});
       deps.setLoginState(state);
       const tunnel=deps.spawn("/usr/local/bin/cloudflared",["tunnel","--url","http://127.0.0.1:6081","--no-autoupdate"],{stdio:["ignore","pipe","pipe"]});
       state.tunnel=tunnel;
@@ -263,17 +264,23 @@ function create(deps) {
     }));
     state.target=urls[0];state.activePage=Math.max(0,state.context.pages().indexOf(opened[0]));
     state.prepared_day=entryKey({frequency:"daily",campaign_id:"manual"}).slice(7);
+    state.lastOpened=opened;
+    state.pageTargets=new Map(opened.map((p,i)=>[p,urls[i]]));
     atomic(sessionFile,loginStatus());
-    return {...loginStatus(),task:"login_start",status:"ready",pages:opened.map(p=>({url:p.url()}))};
+    return {...loginStatus(),task:"login_start",status:"ready",pages:opened.map((p,i)=>({url:p.url(),source_url:urls[i]}))};
   }
   async function prepare(job) {
     const started=Date.now();
     const session=await startLogin(job);
     const profile=resolveProfile(deps.readEntryProfile(),job);
-    const urls=new Set(session.pages.map(p=>p.url));
-    const pages=deps.getLoginState().context.pages().filter(p=>urls.has(p.url()));
+    const state=deps.getLoginState();
+    const pages=state.lastOpened.filter(p=>!p.isClosed());
     const result=await Promise.all(pages.map(async(page)=>{
-      try { const r=await deadline(inspectAndFill(page,{...job,submit:false},profile),Math.max(1000,45000-(Date.now()-started)),()=>Promise.resolve());
+      try {
+        const source=state.pageTargets.get(page);
+        const allowedHosts=[new URL(source).hostname.replace(/^www\./,""),...(job.allowed_entry_hosts||[])];
+        if(!allowedHosts.includes(new URL(page.url()).hostname.replace(/^www\./,"")))return {url:page.url(),source_url:source,status:"unexpected_entry_redirect",prepared:false};
+        const r=await deadline(inspectAndFill(page,{...job,submit:false},profile),Math.max(1000,45000-(Date.now()-started)),()=>Promise.resolve());
         const {form,root,...safe}=r;return safe;
       }catch(e){return {url:page.url(),status:"preparation_timeout",prepared:false,error:e.message};}
     }));
