@@ -55,3 +55,11 @@ test("completed jobs survive a restart and repeated IDs do not repeat an action"
   const b=create(deps);const again=await b.submit(job,async()=>{calls++;return {status:"confirmed"};});
   assert.equal(calls,1);assert.equal(again.result.status,"confirmed");fs.rmSync(dataDir,{recursive:true,force:true});
 });
+test("interrupted jobs cannot repeat an unknown action after restart",async()=>{
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"daily-interrupted-")),dir=path.join(dataDir,"run-daily");
+  fs.mkdirSync(dir);fs.writeFileSync(path.join(dir,"jobs-v2.json"),JSON.stringify({"unknown-action":{id:"unknown-action",task:"test",status:"running"}}));
+  const runtime=create({dataDir,getLoginState:()=>({}),readEntryProfile:()=>profile});let calls=0;
+  const r=await runtime.submit({id:"unknown-action",task:"test"},async()=>{calls++;return {status:"confirmed"};});
+  assert.equal(r.result.status,"interrupted_reconcile_required");assert.equal(calls,0);
+  fs.rmSync(dataDir,{recursive:true,force:true});
+});
