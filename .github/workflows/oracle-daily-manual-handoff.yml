@@ -18,42 +18,63 @@ concurrency:
 jobs:
   entries:
     runs-on: [self-hosted, oracle, jason-home]
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Recover status of the already prepared Oracle session
+      - name: Run parallel daily lanes and preserve safe lane evidence
         shell: bash
         run: |
           set -euo pipefail
-          CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
-          test -n "$CID"
-          sudo docker exec -i "$CID" node - <<'JS' > .github/oracle-current-session-result.json
-          const fs=require("fs");
-          const http=require("http");
-          const source=fs.readFileSync("/app/src/server.js","utf8");
-          const match=source.match(/if\s*\(task\s*===\s*["'](login_status|login_state|login_get)["']\)\s*\{/);
-          const route=source.match(/app\.get\(["'](\/(?:login|session)\/(?:status|state))["']/);
-          const allowed=["task","status","profile","target","targets","login_url","control_url","url","active","pages","title","ready","login_active"];
-          function safe(v){
-            if(Array.isArray(v))return v.slice(0,15).map(safe);
-            if(v&&typeof v==="object"){let o={};for(const k of allowed){if(k in v)o[k]=safe(v[k]);}return o;}
-            if(typeof v==="string")return v.slice(0,300);
-            return v;
-          }
-          if(!match&&!route){console.log(JSON.stringify({status:"status_retrieval_unavailable",login_task_lines:source.split("\n").filter(x=>/task\s*===.*login/.test(x)).map(x=>x.trim()).slice(0,15)},null,2));}
-          else{
-            const data=match?JSON.stringify({id:"daily-existing-session-status",task:match[1]}):null;
-            const req=http.request({host:"127.0.0.1",port:8932,path:match?"/run":route[1],method:match?"POST":"GET",headers:match?{"Content-Type":"application/json","Content-Length":Buffer.byteLength(data)}:{}},res=>{
-              let body="";res.on("data",x=>body+=x);res.on("end",()=>{try{const j=JSON.parse(body);console.log(JSON.stringify({checked_at:new Date().toISOString(),ok:j.ok,status:"retrieved",result:safe(j.result||j)},null,2));}catch{console.log(JSON.stringify({status:"invalid_status_response"}));}});
-            });
-            req.setTimeout(12000,()=>req.destroy(new Error("status_timeout")));
-            req.on("error",e=>console.log(JSON.stringify({status:"blocked",error:String(e.message).slice(0,100)})));
-            req.end(data);
-          }
-          JS
+          python3 - <<'PY'
+          import datetime, json, pathlib, re, urllib.request, urllib.parse
+          from zoneinfo import ZoneInfo
+
+          day = datetime.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+          keep = set("result id ok started finished task status parallel profile shared_profile lane_timeout_ms timeout_ms elapsed_ms error results lanes checks findings campaigns changed changes new actionable blocked suppressed summary counts confirmation missing challenge prepared reason need action confirmed prize title message detail count eligible url ends updated_at last_run_at last_seen_at last_changed_at suppress recurring available_result_keys control_url viewer_url interactive_url vnc_url novnc_url manual_url manual_session_url session_url login_url scanned_lanes changed_lanes unchanged_lanes errors unresolved_campaigns manual_session_closed items opened queue_count control_url manual_url new_or_changed new_or_changed_count manual_queue_count skipped ended balance spins_available points login_required".split())
+
+          def clean_string(value):
+              value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[REDACTED_EMAIL]", value, flags=re.I)
+              value = re.sub(r"(?<!\d)(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}(?!\d)", "[REDACTED_PHONE]", value)
+              value = re.sub(r"\b\d{1,6}\s+[A-Za-z .]+\s(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Boulevard|Blvd)\b", "[REDACTED_ADDRESS]", value, flags=re.I)
+              value = re.sub(r"\b\d{5}(?:-\d{4})?\b", "[REDACTED_ZIP]", value)
+              value = re.sub(r"(?i)(Bearer\s+|(?:token|password|secret|api[_-]?key)[\"'=: ]+)[^\s,\"']+", r"\1[REDACTED]", value)
+              return value[:1600]
+
+          def safe(value, parent=""):
+              if isinstance(value, dict):
+                  if parent == "lanes":
+                      return [{"task": clean_string(str(k)), **safe(v)} for k, v in value.items() if isinstance(v, dict)]
+                  output = {k: safe(v, k) for k, v in value.items() if k in keep}
+                  if parent == "result": output["available_result_keys"] = list(value.keys())
+                  return output
+              if isinstance(value, list):
+                  return [safe(v, parent) for v in value[:60]]
+              if isinstance(value, str):
+                  if parent.endswith("_url") or parent == "url":
+                      parts = urllib.parse.urlsplit(value)
+                      value = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+                  return clean_string(value)
+              return value
+
+          for stem, job in [
+              ("oracle-manual-queue-cleanup-result", {"id": "daily-queue-cleanup-" + day, "task": "manual_queue_clear", "ids": ["anker-tech-discovery-box-2026", "govee-halloween-ideas-2026"]}),
+              ("oracle-manual-handoff-result", {"id": "richell-manual-open-" + day, "task": "prepare_restricted", "kind": "queue", "urls": ["https://www.richellusa.com/richell-fall-into-fun-sweepstakes-2026/"]}),
+              ("oracle-promo-state-result", {"id": "promo-state-final-" + day, "task": "promo_state_get"}),
+          ]:
+              try:
+                  request = urllib.request.Request("http://127.0.0.1:8932/run", data=json.dumps(job).encode(), headers={"Content-Type": "application/json"})
+                  with urllib.request.urlopen(request, timeout=58) as response:
+                      data = json.load(response)
+                  output = safe(data)
+                  if isinstance(data.get("result"), dict):
+                      output.setdefault("result", {})["available_result_keys"] = list(data["result"].keys())
+              except Exception as exc:
+                  output = {"id": job["id"], "ok": False, "error": clean_string(str(exc)), "result": {"task": job["task"], "status": "blocked_or_timeout"}}
+              pathlib.Path(".github/" + stem + ".json").write_text(json.dumps(output, indent=2) + "\n")
+          PY
 
       - name: Publish scrubbed daily results
         shell: bash
@@ -61,7 +82,7 @@ jobs:
           set -euo pipefail
           git config user.name "oracle-runner"
           git config user.email "oracle-runner@users.noreply.github.com"
-          git add .github/oracle-current-session-result.json
+          git add .github/oracle-manual-queue-cleanup-result.json .github/oracle-manual-handoff-result.json .github/oracle-promo-state-result.json
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "Publish scrubbed daily lane outcomes"
           for attempt in 1 2 3; do
