@@ -1,1 +1,1 @@
-Final read-only verification of deployed handoff settings, interrupted-job hold and retained partial Instagram evidence.
+Verify the final deployed runtime with partial evidence retained and late resources left active within bounded deadlines.
