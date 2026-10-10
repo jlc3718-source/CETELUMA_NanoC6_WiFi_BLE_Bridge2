@@ -55,13 +55,33 @@ def write(stem,job):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument("mode",choices=["daily","followup","handoff","verify"])
+    parser.add_argument("mode",choices=["daily","followup","handoff","verify","smoke","walmart-login","walmart-cart"])
+    parser.add_argument("--url",default="https://www.walmart.com/account/login")
+    parser.add_argument("--latest-arrival")
     args=parser.parse_args()
     now=datetime.datetime.now(ZoneInfo("America/New_York"))
     stamp=now.strftime("%Y-%m-%dT%H-%M-%S")
     check=post({"id":"runtime-health-"+stamp,"task":"agent_selfcheck"})
     if check.get("result",{}).get("version")!="2026.10.10.1":raise RuntimeError("Reliable daily runtime is not deployed")
-    if args.mode=="daily":
+    if args.mode in ("walmart-login","walmart-cart"):
+        url=urllib.parse.urlsplit(args.url)
+        if url.scheme!="https" or url.hostname not in ("www.walmart.com","walmart.com","accounts.walmart.com"):
+            raise ValueError("A current Walmart HTTPS URL is required")
+        if args.mode=="walmart-login":
+            write("oracle-walmart-login-result",{"id":"walmart-login-"+stamp,"task":"login_start","profile":"daily","url":args.url})
+        else:
+            if not args.latest_arrival or datetime.date.fromisoformat(args.latest_arrival)<now.date():
+                raise ValueError("Latest arrival must be today or later")
+            session=get("/login/status")
+            if session.get("active"):
+                pathlib.Path(".github/oracle-walmart-cart-result.json").write_text(json.dumps({"ok":True,"result":{"task":"shopping_add_to_cart","status":"manual_session_active","login_url":session.get("login_url"),"url":args.url}},indent=2)+"\n")
+            else:
+                write("oracle-walmart-cart-result",{"id":"walmart-cart-"+stamp,"task":"shopping_add_to_cart","url":args.url,"latest_arrival":args.latest_arrival})
+    elif args.mode=="smoke":
+        write("oracle-daily-v2-smoke-result",{"id":"smoke-"+stamp,"task":"batch","read_only":True,"lane_timeout_ms":45000,"tasks":["instagram_brand_scan","eufy_alt_free_spin","bluetti_safe_spin"]})
+        write("oracle-promo-state-result",{"id":"smoke-state-"+stamp,"task":"promo_state_get"})
+        write("oracle-current-session-result",{"id":"smoke-session-"+stamp,"task":"login_status"})
+    elif args.mode=="daily":
         write("oracle-daily-fast-result",{"id":"daily-"+stamp,"task":"run_daily_fast","lane_timeout_ms":45000})
         write("oracle-recall-result",{"id":"recall-"+stamp,"task":"recall_check","make":"CHEVROLET","model":"SILVERADO EV","year":2025})
         write("oracle-promo-state-result",{"id":"state-"+stamp,"task":"promo_state_get"})
