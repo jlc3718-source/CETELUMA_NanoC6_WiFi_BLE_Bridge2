@@ -19,7 +19,7 @@ test.before(async()=>{
     res.setHeader("Content-Type","text/html; charset=utf-8");
     if(req.method==="POST"){let body="";req.on("data",x=>body+=x);req.on("end",()=>{posted.push(new URLSearchParams(body));res.end(req.url==="/ambiguous-submit"?markup("","<p>You're entered</p>"):"<p>Entry received for the fixture giveaway</p>");});return;}
     if(req.url==="/denied"){res.writeHead(403);res.end("<title>Access to this page has been denied</title>");return;}
-    if(req.url==="/redirect"){res.writeHead(302,{Location:"http://blocked.invalid/entry"});res.end();return;}
+    if(req.url==="/redirect"){res.writeHead(302,{Location:"http://localhost:"+server.address().port+"/entry"});res.end();return;}
     if(req.url.startsWith("/slow/")){setTimeout(()=>res.end(markup()),180);return;}
     if(req.url==="/challenge"){res.end(markup('<iframe src="/captcha-anchor" width="304" height="78"></iframe>'));return;}
     if(req.url==="/captcha-anchor"){res.end('<div role="checkbox" aria-checked="false">Human verification fixture</div>');return;}
@@ -59,10 +59,9 @@ test("an access-denied page cannot report prepared",async()=>{
   assert.equal(r.status,"entry_page_access_denied");assert.equal(r.prepared,false);
 });
 test("an unverified off-site redirect cannot receive contact data",async()=>{
-  const {runtime,deps}=agent();
-  deps.launchProfile=async()=>{const c=await browser.newContext();await c.route("http://blocked.invalid/**",r=>r.fulfill({body:markup(),contentType:"text/html"}));return c;};
+  const {runtime}=agent();
   const r=await runtime.formEntry({url:base+"/redirect",submit:true,rules_verified:true});
-  assert.equal(r.status,"unexpected_entry_redirect");assert.equal(r.prepared,false);assert.equal(r.submitted,false);
+  assert.equal(r.status,"unexpected_entry_redirect",JSON.stringify(r));assert.equal(r.prepared,false);assert.equal(r.submitted,false);
 });
 test("visible human verification stops submission",async()=>{
   const {runtime}=agent(),before=posted.length;const r=await runtime.formEntry({url:base+"/challenge",submit:true,rules_verified:true});
@@ -104,4 +103,12 @@ test("multi-tab preparation is parallel, returns a retrievable URL and retains f
   const preserved=await runtime.formEntry({url:urls[0],submit:true,rules_verified:true});
   assert.equal(preserved.status,"manual_entry_pending");assert.equal((await runtime.dispatch({task:"login_status"})).active,true);
   await deps.stopLogin();
+});
+test("a cancelled Instagram lane retains its partial evidence and coverage",async()=>{
+  const {runtime,deps}=agent();
+  deps.launchProfile=async()=>{const c=await browser.newContext();await c.route("https://www.instagram.com/**",r=>r.fulfill({contentType:"text/html",body:r.request().url().includes("/p/")?"<article>Fixture giveaway caption</article>":'<a href="https://www.instagram.com/p/fixture/">Fixture post</a>'}));return c;};
+  const r=await runtime.batch({tasks:["instagram_brand_scan"],handles:["fixturebrand"],lane_timeout_ms:1000,read_only:true});
+  const result=r.results[0].result;
+  assert.equal(result.task,"instagram_brand_scan");assert.equal(result.results.length,1);assert.equal(result.results[0].handle,"fixturebrand");
+  assert.equal(result.coverage.handles_requested,1);assert.ok(r.elapsed_ms<6000);
 });
