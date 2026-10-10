@@ -1,8 +1,8 @@
 {
   "id": "promo-state-final-2026-10-10",
   "ok": true,
-  "started": "2026-10-10T08:11:17.032Z",
-  "finished": "2026-10-10T08:11:32.417Z",
+  "started": "2026-10-10T08:15:33.831Z",
+  "finished": "2026-10-10T08:15:33.832Z",
   "result": {
     "task": "promo_state_get",
     "status": "ready",

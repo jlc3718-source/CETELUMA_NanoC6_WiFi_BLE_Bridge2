@@ -1,9 +1,24 @@
 {
-  "id": "daily-manual-open-2026-10-10",
-  "ok": false,
-  "error": "timed out",
+  "id": "housecalls-manual-open-2026-10-10",
+  "ok": true,
+  "started": "2026-10-10T08:15:21.092Z",
+  "finished": "2026-10-10T08:15:33.819Z",
   "result": {
     "task": "prepare_restricted",
-    "status": "blocked_or_timeout"
+    "status": "ready_for_manual_action",
+    "profile": "daily",
+    "login_url": "https://committee-publish-jones-kingston.trycloudflare.com/control",
+    "available_result_keys": [
+      "task",
+      "status",
+      "profile",
+      "target",
+      "targets",
+      "login_url",
+      "username",
+      "note",
+      "kind",
+      "pages"
+    ]
   }
 }
