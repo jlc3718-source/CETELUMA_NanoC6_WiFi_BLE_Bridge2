@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { allowedApi } from "../dist/eufy/client.js";
-import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName, reverseFactoryPresetDirection } from "../dist/eufy/factory-presets.js";
-import { catalogPresetE120 } from "../dist/eufy/light-commands.js";
+import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName, reverseFactoryPresetDirection, rgbcw } from "../dist/eufy/factory-presets.js";
+import { catalogPresetE120, nativeE22Fields, color as solidColorFields } from "../dist/eufy/light-commands.js";
 
 assert.equal(allowedApi("app-light-us-pr.eufy.com"),true);
 assert.equal(allowedApi("app-light-eu-pr.eufy.com"),true);
@@ -83,10 +83,18 @@ assert.ok(buildFactoryFields("T8L02",reversed).length>0);
 assert.ok(buildFactoryFields("T8L00",reversed).length>0);
 
 const garden=catalogPresetE120(30041,10057,10,[0xff7dad,0x18f538],60,80);
-const readTlv=(tag)=>{for(let i=0;i+1<garden.length;){const n=garden[i+1];if(garden[i]===tag)return garden.slice(i+2,i+2+n);i+=2+n;}return null;};
+const readTlv=(tag,payload=garden)=>{for(let i=0;i+1<payload.length;){const n=payload[i+1];if(payload[i]===tag)return payload.slice(i+2,i+2+n);i+=2+n;}return null;};
 assert.deepEqual([...readTlv(0xa3)],[0x59,0x75]);
 assert.deepEqual([...readTlv(0xac)],[0x49,0x27,0,0]);
 assert.equal(readTlv(0xa8)[0],80);
+
+// E22 selected purple must remain #5B00E6 in both custom scene and solid paths.
+assert.deepEqual([...rgbcw("5B00E6")],[0x5b,0,0xe6,0,0]);
+assert.deepEqual([...rgbcw("5b00e6")],[0x5b,0,0xe6,0,0]);
+const e22PurpleOrange=nativeE22Fields(20006,1,[0x5b00e6,0xff0d00],60,100);
+assert.deepEqual([...readTlv(0xa6,e22PurpleOrange).slice(0,6)],[2,0x5b,0,0xe6,0,0]);
+const e22PurpleSolid=solidColorFields("T8L02",0x5b00e6,30);
+assert.deepEqual([...readTlv(0xa6,e22PurpleSolid)],[1,0x5b,0,0xe6,0,0]);
 
 const malformed=normalizeFactoryEntry({light_id:10099,name:"Bad",params:"{not-json"});
 assert.equal(malformed.layers.length,0);
