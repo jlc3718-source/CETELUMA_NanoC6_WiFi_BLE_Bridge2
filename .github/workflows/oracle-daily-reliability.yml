@@ -29,7 +29,8 @@ jobs:
           set -euo pipefail
           CID="$(sudo docker ps --format '{{.ID}} {{.Ports}}' | awk '/127\.0\.0\.1:8932->8932/{print $1; exit}')"
           test -n "$CID"
-          sudo docker cp oracle-daily "$CID":/tmp/daily-reliability-checks
+          sudo docker exec "$CID" mkdir -p /tmp/daily-reliability-checks
+          sudo docker cp oracle-daily/. "$CID":/tmp/daily-reliability-checks/
           timeout 55s sudo docker exec "$CID" node --test /tmp/daily-reliability-checks/tests/runtime.test.js /tmp/daily-reliability-checks/tests/browser.test.js | tee .github/oracle-daily-v2-tests.txt
       - name: Deploy persistent mounts with automatic rollback
         shell: bash
