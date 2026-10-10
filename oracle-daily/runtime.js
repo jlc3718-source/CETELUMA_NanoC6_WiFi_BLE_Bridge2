@@ -36,7 +36,7 @@ async function navigate(page,url,ms=10000) {
   page.setDefaultNavigationTimeout(ms);
   let response;
   try { response=await page.goto(url,{waitUntil:"domcontentloaded",timeout:ms}); }
-  catch(e) { if(page.url()==="about:blank") throw e; await page.evaluate(()=>window.stop()).catch(()=>{}); }
+  catch(e) { if(page.url()==="about:blank") throw e; }
   await page.waitForTimeout(450);
   const title=await page.title().catch(()=>"");
   const body=(await page.locator("body").innerText().catch(()=>"")).slice(0,45000);
