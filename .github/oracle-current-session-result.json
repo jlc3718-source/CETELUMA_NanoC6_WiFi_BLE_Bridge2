@@ -1,10 +1,17 @@
 {
-  "status": "status_retrieval_unavailable",
-  "login_task_lines": [
-    "if (task === \"eufy_login_and_spin\") return await eufyLoginAndSpinWithContext(context);",
-    "if (task === \"roborock_google_login_and_spin\") return await roborockGoogleLoginAndSpinWithContext(context);",
-    "if (task === \"login_start\") return await startLogin(job);",
-    "if (task === \"login_stop\") return await stopLogin();",
-    "if (task === \"reolink_subscribe\" || task === \"eufy_lucky\" || task === \"bluetti_lucky\" || task === \"wyze_survey\" || task === \"eufy_login_and_spin\" || task === \"instagram_diag\" || task === \"roborock_google_login_and_spin\" || task === \"roborock_wheel_diag\" || task === \"instagram_brand_scan\" || task === \"mova_prize_wheel\" || task === \"housework_challenge\" || task === \"dreame_aero_giveaway\" || task === \"dreame_entry_path\" || task === \"eufy_deep_entry\" || task === \"bluetti_robust_entry\" || task === \"mova_direct_entry\" || task === \"reolink_day_entry\" || [\"bluetti_safe_spin\",\"housework_complete\"].includes(task) || [\"housework_checkout_probe\",\"reolink_confirmed_entry\"].includes(task) || [\"eufy_alt_free_spin\",\"bluetti_wheel_state\",\"mova_reveal_diag\",\"mova_widget_api_diag\",\"navimow_round2_check\"].includes(task) || [\"dreame_forum_diag\",\"eufy_alt_draw_diag\",\"promo_script_diag\",\"housework_diag\"].includes(task) || task === \"dreame_auth_diag\" || [\"eufy_plumbing_diag\",\"bluetti_plumbing_diag\",\"mova_plumbing_diag\"].includes(task) || [\"roborock_diag\",\"eufy_diag\",\"bluetti_diag\",\"mova_diag\"].includes(task)) {"
-  ]
+  "id": "session-2026-10-10T05-05-08",
+  "ok": true,
+  "result": {
+    "task": "login_status",
+    "status": "closed",
+    "active": false,
+    "profile": null,
+    "login_url": null,
+    "targets": [],
+    "viewport": {
+      "width": 1280,
+      "height": 850
+    },
+    "version": "2026.10.10.1"
+  }
 }

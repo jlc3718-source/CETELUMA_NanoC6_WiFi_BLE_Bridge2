@@ -1,25 +1,17 @@
 {
-  "id": "concrete-tools-prepare-2026-10-10",
+  "id": "concrete-tools-october-2026-2026-10-10T05-05-08",
   "ok": true,
-  "started": "2026-10-10T08:00:00.181Z",
-  "finished": "2026-10-10T08:00:20.234Z",
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-10T09:05:41.873Z",
+  "finished": "2026-10-10T09:05:58.160Z",
   "result": {
     "task": "generic_form_entry",
-    "status": "manual_final_required_challenge",
+    "status": "entry_form_not_found",
+    "prepared": false,
+    "challenge": false,
     "url": "https://concretetoolsdirect.com/pages/sweepstakes",
-    "missing": [
-      "emailConfirm",
-      "email"
-    ],
-    "challenge": true,
-    "prepared": true,
-    "available_result_keys": [
-      "task",
-      "status",
-      "url",
-      "missing",
-      "challenge",
-      "prepared"
-    ]
+    "title": "Concrete Tools Direct Monthly Giveaway | Enter to Win Free Tools",
+    "submitted": false,
+    "confirmed": false
   }
 }

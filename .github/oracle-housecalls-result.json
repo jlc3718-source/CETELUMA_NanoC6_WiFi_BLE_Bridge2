@@ -1,22 +1,23 @@
 {
-  "id": "housecalls-daily-2026-10-10",
+  "id": "housecalls-october-2026-2026-10-10T05-05-08",
   "ok": true,
-  "started": "2026-10-10T07:59:26.045Z",
-  "finished": "2026-10-10T07:59:33.834Z",
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-10T09:05:08.407Z",
+  "finished": "2026-10-10T09:05:21.610Z",
   "result": {
     "task": "generic_form_entry",
-    "status": "manual_final_required_challenge",
-    "url": "https://housecallsdiy.com/sweepstakes",
-    "missing": [],
-    "challenge": true,
+    "status": "prepared",
     "prepared": true,
-    "available_result_keys": [
-      "task",
-      "status",
-      "url",
-      "missing",
-      "challenge",
-      "prepared"
-    ]
+    "challenge": false,
+    "url": "https://housecallsdiy.com/sweepstakes",
+    "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
+    "filled": [
+      "first_name",
+      "last_name",
+      "email"
+    ],
+    "missing": [],
+    "submitted": false,
+    "confirmed": false
   }
 }

@@ -1,0 +1,37 @@
+{
+  "id": "recall-verify-2026-10-10T05-05-08",
+  "ok": true,
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-10T09:06:05.480Z",
+  "finished": "2026-10-10T09:06:05.584Z",
+  "result": {
+    "task": "recall_check",
+    "status": "verified",
+    "verified": true,
+    "url": "https://api.nhtsa.gov/recalls/recallsByVehicle?make=CHEVROLET&model=SILVERADO+EV&modelYear=2025",
+    "make": "CHEVROLET",
+    "model": "SILVERADO EV",
+    "year": 2025,
+    "count": 1,
+    "results": [
+      {
+        "Manufacturer": "General Motors, LLC",
+        "NHTSACampaignNumber": "24V937000",
+        "parkIt": false,
+        "parkOutSide": false,
+        "overTheAirUpdate": false,
+        "ReportReceivedDate": "18/12/2024",
+        "Component": "FORWARD COLLISION AVOIDANCE: WARNINGS:EXTERNAL/PEDESTRIAN ALERT",
+        "Summary": "General Motors LLC (GM) is recalling certain 2025 Chevrolet Silverado EV work trucks.  The pedestrian alert sound system may not produce sound at a sufficient volume.  As such, these vehicles fail to comply with the requirements of Federal Motor Vehicle Safety Standard (FMVSS) number 141, \"Minimum Sound Requirements for Hybrid and Electric Vehicles.\"",
+        "Consequence": "A vehicle that fails to make sufficient sound may result in pedestrians being unaware of an approaching vehicle, increasing the risk of injury.",
+        "Remedy": "Dealers will update the software in the body control module (BCM), free of charge.  Owner notification letters were mailed January 22, 2025.  Owners may contact Chevrolet customer service at [REDACTED_PHONE].  GM's number for this recall is N242483530.",
+        "Notes": "Owners may also contact the National Highway Traffic Safety Administration Vehicle Safety Hotline at [REDACTED_PHONE] (TTY [REDACTED_PHONE]) or go to www.nhtsa.gov.",
+        "ModelYear": "2025",
+        "Make": "CHEVROLET",
+        "Model": "SILVERADO EV"
+      }
+    ],
+    "vin_specific": false,
+    "checked_at": "2026-10-10T09:06:05.583Z"
+  }
+}

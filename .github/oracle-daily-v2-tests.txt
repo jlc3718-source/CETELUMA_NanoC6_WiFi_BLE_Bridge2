@@ -1,199 +1,100 @@
 TAP version 13
 # Subtest: real browser fills both emails, ignores q, checks rules and submits only the entry form
-not ok 1 - real browser fills both emails, ignores q, checks rules and submits only the entry form
+ok 1 - real browser fills both emails, ignores q, checks rules and submits only the entry form
   ---
-  duration_ms: 1828.451824
+  duration_ms: 3607.813242
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:43:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    + actual - expected
-    
-    + 'entry_form_not_found'
-    - 'confirmed'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'confirmed'
-  actual: 'entry_form_not_found'
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:46:10)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
   ...
 # Subtest: an access-denied page cannot report prepared
 ok 2 - an access-denied page cannot report prepared
   ---
-  duration_ms: 1015.593367
+  duration_ms: 1046.955643
   type: 'test'
   ...
 # Subtest: visible human verification stops submission
-not ok 3 - visible human verification stops submission
+ok 3 - visible human verification stops submission
   ---
-  duration_ms: 1110.699109
+  duration_ms: 1480.80875
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:56:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    
-    false !== true
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: true
-  actual: false
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:58:10)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a hidden badge does not pretend that a human challenge is visible
-not ok 4 - a hidden badge does not pretend that a human challenge is visible
+ok 4 - a hidden badge does not pretend that a human challenge is visible
   ---
-  duration_ms: 1059.618467
+  duration_ms: 1331.472941
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:60:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    + actual - expected
-    
-    + 'entry_form_not_found'
-    - 'prepared'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'prepared'
-  actual: 'entry_form_not_found'
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:62:42)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: unchecked required radio groups prevent invented screener answers
-not ok 5 - unchecked required radio groups prevent invented screener answers
+ok 5 - unchecked required radio groups prevent invented screener answers
   ---
-  duration_ms: 1040.303861
+  duration_ms: 1312.822339
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:64:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    + actual - expected
-    
-    + 'entry_form_not_found'
-    - 'missing_required_fields'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'missing_required_fields'
-  actual: 'entry_form_not_found'
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:66:10)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a confirmation already visible before the click cannot confirm a new entry
-not ok 6 - a confirmation already visible before the click cannot confirm a new entry
+ok 6 - a confirmation already visible before the click cannot confirm a new entry
   ---
-  duration_ms: 1129.296349
+  duration_ms: 2833.671796
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:68:1'
-  failureType: 'testCodeFailure'
-  error: |-
-    Expected values to be strictly equal:
-    + actual - expected
-    
-    + 'entry_form_not_found'
-    - 'submitted_unconfirmed'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'submitted_unconfirmed'
-  actual: 'entry_form_not_found'
-  operator: 'strictEqual'
-  stack: |-
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:70:10)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
-not ok 7 - multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
+ok 7 - multi-tab preparation is parallel, returns a retrievable URL and retains filled pages
   ---
-  duration_ms: 1545.31186
+  duration_ms: 3908.144597
   type: 'test'
-  location: '/tmp/daily-reliability-checks/tests/browser.test.js:74:1'
-  failureType: 'testCodeFailure'
-  error: "Cannot read properties of undefined (reading 'includes')"
-  code: 'ERR_TEST_FAILURE'
-  name: 'TypeError'
-  stack: |-
-    /tmp/daily-reliability-checks/tests/browser.test.js:78:91
-    Array.every (<anonymous>)
-    TestContext.<anonymous> (/tmp/daily-reliability-checks/tests/browser.test.js:78:73)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: search and newsletter controls cannot displace a real entry form
 ok 8 - search and newsletter controls cannot displace a real entry form
   ---
-  duration_ms: 1.889737
+  duration_ms: 1.959817
   type: 'test'
   ...
 # Subtest: equally plausible entry forms require an adapter rather than the first submit
 ok 9 - equally plausible entry forms require an adapter rather than the first submit
   ---
-  duration_ms: 0.430444
+  duration_ms: 0.461764
   type: 'test'
   ...
 # Subtest: email confirmation and state are filled from known contact data
 ok 10 - email confirmation and state are filled from known contact data
   ---
-  duration_ms: 0.908008
+  duration_ms: 0.941688
   type: 'test'
   ...
 # Subtest: PA cannot replace an eligible NY residence or invent a missing address
 ok 11 - PA cannot replace an eligible NY residence or invent a missing address
   ---
-  duration_ms: 0.534844
+  duration_ms: 0.525925
   type: 'test'
   ...
 # Subtest: daily and monthly duplicate keys use the user's local calendar
 ok 12 - daily and monthly duplicate keys use the user's local calendar
   ---
-  duration_ms: 20.80146
+  duration_ms: 20.704739
   type: 'test'
   ...
 # Subtest: sanitization preserves caption evidence, query parameters and numeric study IDs
 ok 13 - sanitization preserves caption evidence, query parameters and numeric study IDs
   ---
-  duration_ms: 1.998897
+  duration_ms: 2.137619
   type: 'test'
   ...
 # Subtest: timed out lanes close only their pages and reject late page creation
 ok 14 - timed out lanes close only their pages and reject late page creation
   ---
-  duration_ms: 22.427874
+  duration_ms: 28.106523
   type: 'test'
   ...
 # Subtest: completed jobs survive a restart and repeated IDs do not repeat an action
 ok 15 - completed jobs survive a restart and repeated IDs do not repeat an action
   ---
-  duration_ms: 11.378258
+  duration_ms: 5.443447
   type: 'test'
   ...
 1..15
 # tests 15
 # suites 0
-# pass 9
-# fail 6
+# pass 15
+# fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 9601.143963
+# duration_ms 16369.823874

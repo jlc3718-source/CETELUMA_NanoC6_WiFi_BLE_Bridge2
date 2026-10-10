@@ -1,0 +1,22 @@
+{
+  "id": "selfcheck-2026-10-10T05-05-08",
+  "ok": true,
+  "result": {
+    "task": "agent_selfcheck",
+    "status": "ready",
+    "version": "2026.10.10.1",
+    "profile_fields": [
+      "name",
+      "email",
+      "street",
+      "city",
+      "state",
+      "postal_code",
+      "phone"
+    ],
+    "login_active": false,
+    "persistent_jobs": true,
+    "scoped_forms": true,
+    "parallel_handoff": true
+  }
+}

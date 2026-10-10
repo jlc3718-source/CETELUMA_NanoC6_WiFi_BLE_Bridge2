@@ -1,22 +1,24 @@
 {
-  "id": "toolnut-monthly-2026-10-10",
+  "id": "toolnut-monthly-2026-10-2026-10-10T05-05-08",
   "ok": true,
-  "started": "2026-10-10T07:59:33.837Z",
-  "finished": "2026-10-10T07:59:52.068Z",
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-10T09:05:21.875Z",
+  "finished": "2026-10-10T09:05:41.818Z",
   "result": {
     "task": "generic_form_entry",
-    "status": "manual_final_required_challenge",
-    "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
-    "missing": [],
-    "challenge": true,
+    "status": "manual_verification_required",
     "prepared": true,
-    "available_result_keys": [
-      "task",
-      "status",
-      "url",
-      "missing",
-      "challenge",
-      "prepared"
-    ]
+    "challenge": true,
+    "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+    "title": "Tool Nut Monthly Giveaway - Win Free Tools!",
+    "filled": [
+      "email",
+      "phone",
+      "first_name",
+      "last_name"
+    ],
+    "missing": [],
+    "submitted": false,
+    "confirmed": false
   }
 }

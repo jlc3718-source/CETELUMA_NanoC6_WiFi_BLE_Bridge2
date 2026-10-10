@@ -1,24 +1,47 @@
 {
-  "id": "housecalls-manual-open-2026-10-10",
+  "id": "manual-2026-10-10T05-06-06",
   "ok": true,
-  "started": "2026-10-10T08:15:21.092Z",
-  "finished": "2026-10-10T08:15:33.819Z",
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-10T09:06:06.215Z",
+  "finished": "2026-10-10T09:06:29.531Z",
   "result": {
     "task": "prepare_restricted",
     "status": "ready_for_manual_action",
+    "active": true,
     "profile": "daily",
-    "login_url": "https://committee-publish-jones-kingston.trycloudflare.com/control",
-    "available_result_keys": [
-      "task",
-      "status",
-      "profile",
-      "target",
-      "targets",
-      "login_url",
-      "username",
-      "note",
-      "kind",
-      "pages"
-    ]
+    "login_url": "https://wearing-letter-fires-mysimon.trycloudflare.com/control",
+    "targets": [
+      "https://housecallsdiy.com/sweepstakes",
+      "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools"
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 850
+    },
+    "version": "2026.10.10.1",
+    "pages": [
+      {
+        "status": "prepared",
+        "prepared": true,
+        "challenge": false,
+        "url": "https://housecallsdiy.com/sweepstakes",
+        "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
+        "filled": [
+          "first_name",
+          "last_name",
+          "email"
+        ],
+        "missing": []
+      },
+      {
+        "status": "entry_form_not_found",
+        "prepared": false,
+        "challenge": false,
+        "url": "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+        "title": "Tool Nut Monthly Giveaway - Win Free Tools!"
+      }
+    ],
+    "submitted": false,
+    "confirmed": false
   }
 }

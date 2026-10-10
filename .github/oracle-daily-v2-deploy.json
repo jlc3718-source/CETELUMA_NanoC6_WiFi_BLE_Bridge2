@@ -1,0 +1,1 @@
+{"deployed": true, "version": "2026.10.10.1", "persistent_bind_mounts": true, "backup_container": "oracle-browser-agent-before-daily-v2-090453", "rollback_directory": "/home/ubuntu/browser-agent-data/daily-runtime-backup-20261010T090453Z", "health": {"ok": true, "service": "oracle-browser-agent", "login_active": false, "time": "2026-10-10T09:05:08.277Z"}}
