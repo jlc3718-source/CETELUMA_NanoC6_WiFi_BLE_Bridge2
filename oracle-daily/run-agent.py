@@ -95,7 +95,7 @@ def main():
             try:started=datetime.datetime.fromisoformat(j.get("started","").replace("Z","+00:00")).astimezone(ZoneInfo("America/New_York")).date().isoformat()
             except ValueError:continue
             if started!=today:continue
-            if r.get("status") in ("manual_verification_required","missing_required_fields","manual_submission_required_by_rules","prepared","manual_entry_pending"):
+            if r.get("status") in ("manual_verification_required","missing_required_fields","manual_submission_required_by_rules","prepared","manual_entry_pending","login_required"):
                 url=r.get("url")
                 if url and "gleam.io" not in url:urls.append(url)
         if not urls:
