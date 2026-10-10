@@ -1,0 +1,40 @@
+name: Oracle Daily Read-only Verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/oracle-daily-v2-smoke.yml"
+      - ".github/oracle-daily-v2-smoke.trigger"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: oracle-daily-runtime-maintenance
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Instagram and wheel bounds with manual session preserved
+        run: python3 oracle-daily/run-agent.py smoke
+      - name: Publish fresh evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          for file in .github/oracle-daily-v2-smoke-result.json .github/oracle-promo-state-result.json .github/oracle-current-session-result.json; do
+            test ! -f "$file" || git add "$file"
+          done
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish live read-only wheel and Instagram verification"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
