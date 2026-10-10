@@ -43,7 +43,7 @@ This file is authoritative for the Run Daily project. A Run Daily execution is i
 - Pet-product freebies/deals
 
 ## REQUIRED 4 — Product / release watches
-- Roborock F25 Ultra Steam Gen 2: alert ONLY when actually purchasable in the U.S.; do not alert for announcements, reviews, release-date rumors, product pages or coming-soon pages
+- Roborock F25 Ultra Steam Gen 2: report only a newly verified meaningful U.S. discount, coupon, misprice, clearance, used, refurb or open-box bargain. Availability by itself is no longer an alert trigger.
 - Relevant new robotic / steam floor-cleaning launches
 - Relevant Govee/light-curtain releases
 - Relevant Anker/SOLIX/eufy launches/promos
@@ -69,15 +69,26 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Run independent lanes in parallel.
 - Skip a site/lane that stalls for about 60 seconds and continue.
 - Treat each Run Daily as a fresh consolidated sweep.
-- Pennsylvania eligibility is valid where PA residency is allowed; New York exclusions alone do not disqualify an opportunity.
+- New York is the default residence. Use Pennsylvania only when official rules or the live form explicitly exclude NY and accept PA; use only the user's provided PA details.
 - Do not publish private address/profile data into the public GitHub repo.
 - No TinyFish.
 - No YepCode.
 - No Gleam.
 - Suppress completed/expired/ineligible/already-entered items unless a genuinely new round appears.
 - Tineco Fall Spin is DONE; suppress unless there is a new round.
-- F25 Ultra Steam Gen 2: only surface when actually for sale in the U.S.
+- F25 Ultra Steam Gen 2: only surface newly verified meaningful discounts or bargains; suppress availability-only updates.
 - Preserve existing purchased/DONE exclusions and other standing suppression rules.
+
+## Durable Oracle execution and evidence
+- Use the versioned runtime in oracle-daily/ and the bounded client oracle-daily/run-agent.py. Deploy through Oracle Daily Reliability; tests must pass before deployment. The agent runtime is mounted from persistent Oracle storage, and failed upgrades roll back.
+- Submit asynchronous jobs with unique IDs and retrieve GET /jobs/:id. If a response times out, retrieve the existing job before retrying any action. GET /login/status exposes the current protected handoff URL without waiting behind browser work.
+- Use scoped entry forms, fill primary and confirmation email fields, and ignore unrelated search/newsletter controls. Leave unknown screener answers for the user. Visible human verification and rules prohibiting automation require manual action.
+- Never report entry confirmation from HTTP 200, page loading, form preparation or a generic pre-existing thank-you. Retain confirmation evidence and New York local-day/month duplicate limits.
+- Wheel actions require a verified positive free balance; unresolved counters and paid points remain blocked. Timeouts cancel owned browser pages and requests without closing the user's manual tabs.
+- Publish scrubbed complete result metadata: Instagram handle/post coverage, captions, hits, numeric study IDs, campaign identifiers and verification errors. Report partial coverage explicitly. Preserve campaign history when updating last-run state.
+- Check current connector availability on each run. For Gmail, test the connected profile and then perform the requested searches; do not carry an old tool-unavailable diagnosis forward. Empty searches and connector failures are different outcomes.
+- Recall checks use the official NHTSA API. Make/model/year results do not establish VIN-specific recall applicability or an all-clear.
+- Schedules remain in their existing enabled/paused state unless the user requests a scheduling change.
 
 ## REQUIRED REPORT CONTRACT
 Every Run Daily report must visibly cover:
