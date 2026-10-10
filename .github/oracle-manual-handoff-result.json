@@ -1,18 +1,19 @@
 {
-  "id": "manual-2026-10-10T05-22-40",
+  "id": "manual-2026-10-10T05-27-32",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:22:40.120Z",
-  "finished": "2026-10-10T09:23:11.152Z",
+  "started": "2026-10-10T09:27:32.576Z",
+  "finished": "2026-10-10T09:28:17.585Z",
   "result": {
     "task": "prepare_restricted",
     "status": "ready_for_manual_action",
     "active": true,
     "profile": "daily",
-    "login_url": "https://carbon-athletics-enforcement-sheep.trycloudflare.com/control",
+    "login_url": "https://dollars-forming-apparently-builders.trycloudflare.com/control",
     "targets": [
       "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
       "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+      "https://concretetoolsdirect.com/pages/sweepstakes",
       "https://housecallsdiy.com/sweepstakes"
     ],
     "viewport": {
@@ -22,19 +23,28 @@
     "version": "2026.10.10.1",
     "pages": [
       {
-        "status": "login_required",
-        "prepared": false,
-        "challenge": false,
         "url": "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
-        "title": "Current Feedback Opportunity for Skilled Trades Professionals Paid Research Study | Focus Group Placement",
-        "login_url": "https://www.focusgroupplacement.com/register?next=%2Fstudy%2F98633%2Ffeedback-opportunity-for-skilled-trades-professionals"
+        "status": "preparation_timeout",
+        "prepared": false,
+        "error": "bounded_timeout"
       },
       {
-        "status": "entry_form_not_found",
+        "url": "https://concretetoolsdirect.com/pages/sweepstakes",
+        "status": "preparation_timeout",
         "prepared": false,
+        "error": "bounded_timeout"
+      },
+      {
+        "status": "prepared",
+        "prepared": true,
         "challenge": false,
         "url": "https://housecallsdiy.com/sweepstakes",
-        "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls"
+        "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
+        "filled": [
+          "last_name",
+          "email"
+        ],
+        "missing": []
       },
       {
         "status": "manual_verification_required",
