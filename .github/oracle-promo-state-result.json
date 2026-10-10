@@ -1,12 +1,13 @@
 {
-  "id": "promo-state-final-2026-10-10",
+  "id": "smoke-state-2026-10-10T05-07-12",
   "ok": true,
-  "started": "2026-10-10T08:15:33.831Z",
-  "finished": "2026-10-10T08:15:33.832Z",
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-10T09:07:58.183Z",
+  "finished": "2026-10-10T09:07:58.185Z",
   "result": {
     "task": "promo_state_get",
     "status": "ready",
-    "last_run_at": "2026-10-08T04:43:37.494Z",
+    "last_run_at": "2026-10-10T09:07:57.796Z",
     "campaigns": [
       {
         "id": "dreame-aero-2026",
@@ -159,56 +160,42 @@
         "updated_at": "2026-10-07T05:51:36.264Z"
       }
     ],
-    "lanes": [
-      {
-        "task": "jml_scan",
+    "lanes": {
+      "jml_scan": {
         "last_seen_at": "2026-10-08T04:43:37.494Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
-      {
-        "task": "instagram_brand_scan",
-        "last_seen_at": "2026-10-08T04:43:37.494Z",
+      "instagram_brand_scan": {
+        "last_seen_at": "2026-10-10T09:07:57.796Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
-        "status": "timeout_skipped"
+        "status": "checked"
       },
-      {
-        "task": "navimow_round2_check",
+      "navimow_round2_check": {
         "last_seen_at": "2026-10-08T04:43:37.494Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "count_unresolved"
       },
-      {
-        "task": "roborock_wheel_diag",
+      "roborock_wheel_diag": {
         "last_seen_at": "2026-10-08T04:43:37.494Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_skipped"
       },
-      {
-        "task": "eufy_alt_free_spin",
-        "last_seen_at": "2026-10-08T04:43:37.494Z",
+      "eufy_alt_free_spin": {
+        "last_seen_at": "2026-10-10T09:07:57.796Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
-        "status": "timeout_skipped"
+        "status": "browser_error"
       },
-      {
-        "task": "bluetti_safe_spin",
-        "last_seen_at": "2026-10-08T04:43:37.494Z",
+      "bluetti_safe_spin": {
+        "last_seen_at": "2026-10-10T09:07:57.796Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
-        "status": "timeout_skipped"
+        "status": "timeout_cancelled"
       },
-      {
-        "task": "mova_widget_api_diag",
+      "mova_widget_api_diag": {
         "last_seen_at": "2026-10-08T04:43:37.494Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "200"
       }
-    ],
-    "available_result_keys": [
-      "task",
-      "status",
-      "last_run_at",
-      "campaigns",
-      "lanes"
-    ]
+    }
   }
 }
