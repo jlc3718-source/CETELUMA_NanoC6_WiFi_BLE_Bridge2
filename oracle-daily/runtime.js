@@ -411,6 +411,7 @@ function create(deps) {
     const id=String(job.id||crypto.randomUUID());
     if(job.task==="login_status"||job.task==="job_status"||job.task==="health"||job.task==="agent_selfcheck")return {id,ok:true,result:await execute(job)};
     if(jobs[id]&&jobs[id].status==="completed")return jobs[id].response;
+    if(jobs[id]?.status==="interrupted")return {id,ok:false,agent_version:VERSION,result:{task:"job_status",status:"interrupted_reconcile_required",job_id:id,error:"Agent restarted before the outcome was recorded; reconcile the existing action before submitting a new job."}};
     if(jobs[id]&&["running","queued"].includes(jobs[id].status))return {id,ok:true,result:{task:"job_status",status:jobs[id].status,job_id:id}};
     jobs[id]={id,task:job.task,status:"queued",queued_at:new Date().toISOString()};remember();
     const p=queue.then(async()=>{
