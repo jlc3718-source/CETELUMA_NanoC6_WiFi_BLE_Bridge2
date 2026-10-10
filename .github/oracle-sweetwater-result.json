@@ -1,0 +1,22 @@
+{
+  "id": "sweetwater-october-2026-10-10",
+  "ok": true,
+  "started": "2026-10-10T08:10:12.303Z",
+  "finished": "2026-10-10T08:10:18.959Z",
+  "result": {
+    "task": "generic_form_entry",
+    "status": "prepared",
+    "url": "https://www.sweetwater.com/giveaway/",
+    "missing": [],
+    "challenge": false,
+    "prepared": true,
+    "available_result_keys": [
+      "task",
+      "status",
+      "url",
+      "missing",
+      "challenge",
+      "prepared"
+    ]
+  }
+}
