@@ -115,6 +115,9 @@ const MRGB=[[RGBCW_X.R[0],RGBCW_X.G[0],RGBCW_X.B[0]],[RGBCW_X.R[1],RGBCW_X.G[1],
 const MRGB_INV=inv3(MRGB);
 export function rgbcw(hex:string):Uint8Array{
   if(!HEX.test(hex))throw new Error("Factory preset color is not six-digit RGB");
+  // The E22 saturation transform shifts the approved purple toward blue.
+  // Send the selected #5B00E6 as its literal RGB and leave W/C off.
+  if(hex.toLowerCase()==="5b00e6")return new Uint8Array([0x5b,0,0xe6,0,0]);
   const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);
   const target=mul3(MRGB,[dec(r),dec(g),dec(b)]);
   const warm=Math.max(0,Math.min(1,((r-b)/255)*2+0.42));
