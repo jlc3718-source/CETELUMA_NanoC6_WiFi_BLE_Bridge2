@@ -1,9 +1,9 @@
 {
-  "id": "recall-2026-10-10T22-05-01",
+  "id": "recall-2026-10-11T00-33-47",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-11T02:05:48.138Z",
-  "finished": "2026-10-11T02:05:48.387Z",
+  "started": "2026-10-11T04:34:33.591Z",
+  "finished": "2026-10-11T04:34:33.634Z",
   "result": {
     "task": "recall_check",
     "status": "verified",
@@ -32,6 +32,6 @@
       }
     ],
     "vin_specific": false,
-    "checked_at": "2026-10-11T02:05:48.387Z"
+    "checked_at": "2026-10-11T04:34:33.634Z"
   }
 }
