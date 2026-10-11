@@ -1,28 +1,24 @@
 {
-  "id": "full-daily-2026-10-10T03-55-37",
+  "id": "daily-2026-10-10T22-05-01",
   "ok": true,
-  "started": "2026-10-10T07:55:38.828Z",
-  "finished": "2026-10-10T07:56:30.411Z",
+  "agent_version": "2026.10.10.1",
+  "started": "2026-10-11T02:05:01.974Z",
+  "finished": "2026-10-11T02:05:47.632Z",
   "result": {
-    "task": "batch",
+    "task": "run_daily_fast",
     "parallel": true,
-    "shared_profile": "daily",
-    "lane_timeout_ms": 50000,
+    "lane_timeout_ms": 45000,
+    "elapsed_ms": 45656,
     "results": [
       {
         "task": "jml_scan",
         "ok": true,
         "result": {
           "task": "jml_scan",
+          "authenticated": true,
           "login_required": false,
           "url": "https://www.anker-jml.com/",
-          "available_result_keys": [
-            "task",
-            "authenticated",
-            "login_required",
-            "url",
-            "opportunities"
-          ]
+          "opportunities": []
         }
       },
       {
@@ -30,43 +26,94 @@
         "ok": true,
         "result": {
           "task": "instagram_brand_scan",
+          "authenticated": false,
           "results": [
             {
-              "status": "ok"
+              "handle": "roborockglobal",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/roborockglobal/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "dreametech",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/dreametech/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "movatech.usa",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/movatech.usa/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "narwalrobot",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/narwalrobot/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "tinecoglobal",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/tinecoglobal/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "eufyofficial",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/eufyofficial/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "goveeofficial",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/goveeofficial/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "navimow",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/navimow/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "mammotiontech",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/mammotiontech/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             },
             {
-              "status": "ok"
+              "handle": "ecovacsrobotics",
+              "status": "posts_unavailable",
+              "profile_url": "https://www.instagram.com/ecovacsrobotics/",
+              "recent_scanned": 0,
+              "posts": [],
+              "hits": []
             }
           ],
-          "available_result_keys": [
-            "task",
-            "authenticated",
-            "results"
-          ]
+          "coverage": {
+            "handles_requested": 10,
+            "handles_scanned": 0,
+            "posts_scanned": 0
+          }
         }
       },
       {
@@ -75,26 +122,17 @@
         "result": {
           "task": "roborock_wheel_diag",
           "status": "login_required",
-          "url": "https://account-us.roborock.com/login",
-          "available_result_keys": [
-            "task",
-            "status",
-            "url"
-          ]
+          "url": "https://account-us.roborock.com/login?service=https%3A%2F%2Fus.roborock.com%2Fpages%2Fpoints"
         }
       },
       {
         "task": "eufy_alt_free_spin",
-        "ok": true,
+        "ok": false,
         "result": {
           "task": "eufy_alt_free_spin",
-          "status": "timeout_skipped",
-          "timeout_ms": 50000,
-          "available_result_keys": [
-            "task",
-            "status",
-            "timeout_ms"
-          ]
+          "status": "timeout_cancelled",
+          "timeout_ms": 45000,
+          "error": "bounded_timeout"
         }
       },
       {
@@ -102,13 +140,12 @@
         "ok": true,
         "result": {
           "task": "bluetti_safe_spin",
-          "status": "timeout_skipped",
-          "timeout_ms": 50000,
-          "available_result_keys": [
-            "task",
-            "status",
-            "timeout_ms"
-          ]
+          "status": "spin_control_not_found",
+          "consumption_type": 0,
+          "surplus_times": 0,
+          "points": 0,
+          "subscribed": false,
+          "url": "https://www.bluettipower.com/pages/bluetti-discount"
         }
       },
       {
@@ -117,15 +154,11 @@
         "result": {
           "task": "mova_widget_api_diag",
           "status": 200,
-          "available_result_keys": [
-            "task",
-            "status",
-            "script_url",
-            "script_bytes",
-            "urls",
-            "paths",
-            "snippets"
-          ]
+          "script_url": "https://ext.spinwheelapp.com/external/v1/7bdb4ac5233e8720/spps.js?shop=mova-us.myshopify.com",
+          "script_bytes": 1,
+          "urls": [],
+          "paths": [],
+          "snippets": []
         }
       },
       {
@@ -134,27 +167,17 @@
         "result": {
           "task": "navimow_round2_check",
           "status": "count_unresolved",
-          "error": null,
-          "available_result_keys": [
-            "task",
-            "status",
-            "subscribers",
-            "threshold",
-            "remaining",
-            "round2_unlocked",
-            "official_post",
-            "api_status",
-            "error"
-          ]
+          "subscribers": null,
+          "threshold": 11000,
+          "remaining": null,
+          "round2_unlocked": false,
+          "official_post": "https://www.reddit.com/r/Navimow_Segway/comments/1vw6ff9/join_rnavimow_segway_for_mowing_tips_updates_and/",
+          "api_status": 403,
+          "error": null
         }
       }
     ],
-    "available_result_keys": [
-      "task",
-      "parallel",
-      "shared_profile",
-      "lane_timeout_ms",
-      "results"
-    ]
+    "last_run_at": "2026-10-11T02:05:47.626Z",
+    "manual_session_preserved": true
   }
 }
