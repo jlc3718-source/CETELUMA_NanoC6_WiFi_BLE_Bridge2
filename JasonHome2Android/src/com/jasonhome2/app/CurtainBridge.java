@@ -75,6 +75,42 @@ public final class CurtainBridge {
     private Frame writing;
     private Runnable writeTimeout;
     private Runnable connectTimeout;
+    private boolean sequenceRunning=false;
+    private int[] sequenceEffects=new int[0];
+    private int sequencePosition=0;
+    private long sequenceIntervalMs=60000L;
+    private Runnable sequenceTask;
+    private void stopSequence() {
+        sequenceRunning=false;
+        if(sequenceTask!=null)main.removeCallbacks(sequenceTask);
+        sequenceTask=null;
+        sequenceEffects=new int[0];
+        sequencePosition=0;
+    }
+    private void queueNativeEffect(int num,String callbackId) {
+        int group=num<55?15924:CAPTURED_PATTERN_GROUPS[num-55];
+        int index=num<55?num:CAPTURED_PATTERN_INDEXES[num-55];
+        frames.add(new Frame(frame(0x096a,new byte[0]),false,null));
+        byte[] groupBytes=varint(group),indexBytes=varint(index);
+        byte[] payload=new byte[2+groupBytes.length+indexBytes.length];
+        int n=0;payload[n++]=8;for(byte b:groupBytes)payload[n++]=b;
+        payload[n++]=16;for(byte b:indexBytes)payload[n++]=b;
+        frames.add(new Frame(frame(0x0a2e,payload),false,callbackId));
+        writeNext();
+    }
+    private void sequenceStep(){
+        if(!sequenceRunning||!ready||gatt==null){stopSequence();return;}
+        if(writing!=null||!frames.isEmpty()){
+            sequenceTask=this::sequenceStep;
+            main.postDelayed(sequenceTask,250);
+            return;
+        }
+        int effect=sequenceEffects[sequencePosition%sequenceEffects.length];
+        sequencePosition=(sequencePosition+1)%sequenceEffects.length;
+        queueNativeEffect(effect,null);
+        sequenceTask=this::sequenceStep;
+        main.postDelayed(sequenceTask,sequenceIntervalMs);
+    }
     private final Runnable heartTask = new Runnable() {
         @Override public void run() {
             if (ready && heartbeat != null && frames.isEmpty() && writing == null) {
@@ -115,7 +151,7 @@ public final class CurtainBridge {
     private void finish(String id,boolean ok,String message,boolean connected) {
         if (id==null) return;
         JSONObject reply = new JSONObject();
-        try { reply.put("ok",ok); reply.put("message",message); reply.put("error",ok?JSONObject.NULL:message); reply.put("connected",connected); reply.put("devices",discoveredJson()); }
+        try { reply.put("ok",ok); reply.put("message",message); reply.put("error",ok?JSONObject.NULL:message); reply.put("connected",connected); reply.put("devices",discoveredJson()); reply.put("sequenceRunning",sequenceRunning); reply.put("sequenceIntervalSeconds",sequenceIntervalMs/1000); reply.put("sequenceCount",sequenceEffects.length); }
         catch(Exception ignored) { }
         main.post(() -> {
             if (web != null) web.evaluateJavascript("window.__curtainNativeResult&&window.__curtainNativeResult(" +
@@ -201,13 +237,38 @@ public final class CurtainBridge {
             beginConnect(id,address,false);return;
         }
         if (!ready || writer==null || gatt==null) {finish(id,false,"Not connected: tap Connect first",false);return;}
+        if("sequenceStop".equals(action)){
+            stopSequence();
+            finish(id,true,"Effect sequence stopped",ready);
+            return;
+        }
+        if("sequenceStart".equals(action)){
+            if(!ready){finish(id,false,"Connect to the curtain first",false);return;}
+            JSONArray ids=json.optJSONArray("effects");
+            int seconds=json.optInt("intervalSeconds",-1);
+            if(ids==null||ids.length()<2||ids.length()>88||seconds<5||seconds>3600)
+                throw new IllegalArgumentException("Select 2–88 captured effects, interval 5–3600 seconds");
+            int[] chosen=new int[ids.length()];
+            for(int i=0;i<chosen.length;i++){
+                chosen[i]=ids.optInt(i,-1);
+                if(chosen[i]<0||chosen[i]>87)
+                    throw new IllegalArgumentException("Sequence effect must be E-0 through E-87");
+                for(int j=0;j<i;j++)if(chosen[j]==chosen[i])
+                    throw new IllegalArgumentException("Sequence effect repeated: E-"+chosen[i]);
+            }
+            stopSequence();
+            sequenceEffects=chosen;sequenceIntervalMs=seconds*1000L;sequenceRunning=true;
+            sequenceStep();
+            finish(id,true,"Playing "+chosen.length+" effects, "+seconds+" seconds each",true);
+            return;
+        }
         switch(action) {
             case "power": addCommand(json.optBoolean("value")?0x09d2:0x09d3,new byte[0],id); break;
             case "brightness": {
                 int percent = validatePct(json.optInt("value",-1));
                 addCommand(0x09cd,field(Math.round(percent*255f/100f)),id);break;
             }
-            case "speed": {int percent=validatePct(json.optInt("value",-1));addCommand(0x09db,field(percent),id);break;}
+            case "speed": {int level=validatePct(json.optInt("value",-1));addCommand(0x09db,field(nativeSpeedFromUi(level)),id);break;}
             case "layout": {
                 int v=json.optInt("value",-1);
                 if (v!=0 && v!=4 && v!=5 && v!=6) throw new IllegalArgumentException("Unknown layout value");
@@ -215,18 +276,18 @@ public final class CurtainBridge {
             }
             case "effect": {
                 int num=json.optInt("id",-1);if(num<0||num>87)throw new IllegalArgumentException("Effect must be E-0 to E-87");
-                int group=num<55?15924:CAPTURED_PATTERN_GROUPS[num-55];
-                int index=num<55?num:CAPTURED_PATTERN_INDEXES[num-55];
-                // First select native scene mode, then the independently captured group/index.
-                frames.add(new Frame(frame(0x096a,new byte[0]),false,null));
-                byte[] g=varint(group),ix=varint(index),payload=new byte[2+g.length+ix.length];
-                int n=0;payload[n++]=8;for(byte b:g)payload[n++]=b;payload[n++]=16;for(byte b:ix)payload[n++]=b;
-                frames.add(new Frame(frame(0x0a2e,payload),false,id));writeNext();break;
+                stopSequence(); // A manually chosen effect cancels automatic sequence.
+                queueNativeEffect(num,id);break;
             }
             default: finish(id,false,"Unknown curtain command: "+action,ready);break;
         }
     }
 
+    /** Curtain controller values 1–3 extinguish LEDs; UI 1 maps to safe raw 4. */
+    static int nativeSpeedFromUi(int ui) {
+        if(ui<1||ui>100)throw new IllegalArgumentException("Curtain speed must be 1–100");
+        return Math.max(4,Math.min(100,4+Math.round((ui-1)*96f/99f)));
+    }
     private static int validatePct(int v) { if(v<1||v>100)throw new IllegalArgumentException("Setting must be 1–100%");return v; }
     private static byte[] varint(int v) {
         byte[] out = new byte[5];int i=0;
@@ -415,6 +476,7 @@ public final class CurtainBridge {
         if(old!=null){try{old.disconnect();}catch(Throwable ignored){}try{old.close();}catch(Throwable ignored){}}
     }
     private void disconnectInternal(){
+        stopSequence();
         generation++;cancelConnectTimeout();clearWriteTimeout();stopScan();closeGatt();
         ready=false;writer=null;heartbeat=null;candidate=null;connectId=null;
         if(writing!=null)finish(writing.completionId,false,"Bluetooth disconnected",false);

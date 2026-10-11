@@ -44,3 +44,11 @@
  display:grid;place-items:center;min-height:100px;font-size:13px;
  background:#060d1a;color:#c7d6ea;border:1px dashed #8ca4bc;
 }
+
+.jh2-curtain-page .jh2-sequence-enable {display:flex;gap:10px;align-items:center;margin:12px 0;font-size:14px}
+.jh2-curtain-page .jh2-sequence-enable input {width:20px;height:20px;accent-color:#38bdf8}
+.jh2-curtain-page .jh2-curtain-sequence-list{display:grid;gap:6px;margin:12px 0}
+.jh2-curtain-page .jh2-curtain-sequence-item{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;background:#101b2e;border:1px solid #34516b;border-radius:9px;padding:7px}
+.jh2-curtain-page .jh2-curtain-sequence-item .btn{min-width:35px;min-height:38px;padding:5px}
+.jh2-curtain-page .jh2-curtain-effect.in-sequence{border-color:#29d9b2;box-shadow:0 0 0 1px #29d9b255}
+.jh2-curtain-page .jh2-sequence-position{font-weight:800;color:#7af1b9}

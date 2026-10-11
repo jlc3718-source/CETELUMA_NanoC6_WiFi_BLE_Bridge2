@@ -1,0 +1,51 @@
+name: Verify Curtain sequences and safe speed floor
+on:
+  push:
+    branches: [feature/jh2-curtain-multiselect-sequence-20261011]
+  pull_request:
+    branches: [jason-home-2-web]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check JasonHome2Server/curtain.js
+      - name: Assert sequence is opt-in and native speed cannot go below 4
+        run: |
+          node - <<'JS'
+          const fs=require('fs'),assert=require('assert');
+          const ui=fs.readFileSync('JasonHome2Server/curtain.js','utf8');
+          const bridge=fs.readFileSync('JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java','utf8');
+          assert(ui.includes('jh2CurtainSequenceEnable'));
+          assert(ui.includes("perform('sequenceStart'"));
+          assert(ui.includes("perform('sequenceStop'"));
+          assert(ui.includes("playlist.length<2"));
+          assert(ui.includes('min="5" max="3600"'));
+          assert(ui.includes('current raw')||ui.includes('device raw 4'));
+          assert(bridge.includes('nativeSpeedFromUi(level)'));
+          assert(bridge.includes('Math.max(4,Math.min(100,4+Math.round((ui-1)*96f/99f)))'));
+          assert(bridge.includes('stopSequence(); // A manually chosen effect cancels automatic sequence.'));
+          assert(bridge.includes('private void disconnectInternal(){\n        stopSequence();'));
+          assert(bridge.includes('if(chosen[i]<0||chosen[i]>87)'));
+          for(let x=1;x<=100;x++){
+            const raw=Math.max(4,Math.min(100,4+Math.round((x-1)*96/99)));
+            assert(raw>=4&&raw<=100);
+          }
+          console.log('Sequencer enabled gate, order, interval, E-88 guard and speed 4 floor: PASS');
+          JS
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile Android BLE bridge
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          test -s "$SDK/platforms/android-35/android.jar"
+          mkdir -p /tmp/jh2-curtain-class
+          javac --release 17 -cp "$SDK/platforms/android-35/android.jar" -d /tmp/jh2-curtain-class JasonHome2Android/src/com/jasonhome2/app/*.java
