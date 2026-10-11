@@ -54,6 +54,7 @@ final class AndersonApiBridge {
     private final EufyCloudController cloud;
     private final CloudflareApiClient cloudApi;
     private final AndersonSchedule schedule;
+    private final SmartDawnCurtainController curtain;
     private final SharedPreferences prefs;
     private volatile String cloudStatus = "Wi-Fi cloud starting";
     private JSONObject cloudSnapshotCache;
@@ -76,6 +77,7 @@ final class AndersonApiBridge {
         this.cloud = cloud;
         this.cloudApi = cloudApi;
         this.schedule = schedule;
+        this.curtain = new SmartDawnCurtainController(this.context);
         this.prefs = this.context.getSharedPreferences("anderson_android", Context.MODE_PRIVATE);
         ensureDefaults();
     }
@@ -243,6 +245,11 @@ final class AndersonApiBridge {
             String path = uri.getPath() == null ? "/" : uri.getPath();
             JSONObject input = parseBody(body);
             String cloudPath=path+(uri.getEncodedQuery()==null?"":"?"+uri.getEncodedQuery());
+
+            if ("/api/curtain/status".equals(path) && "GET".equals(m)) return ok(curtain.statusJson());
+            if ("/api/curtain/connect".equals(path) && "POST".equals(m)) return ok(curtain.connect());
+            if ("/api/curtain/disconnect".equals(path) && "POST".equals(m)) return ok(curtain.disconnect());
+            if ("/api/curtain/control".equals(path) && "POST".equals(m)) return ok(curtain.control(input));
 
             if ("/api/cloud/config".equals(path) && "GET".equals(m)) return cloudConfig(input,false);
             if ("/api/cloud/config".equals(path) && "POST".equals(m)) return cloudConfig(input,true);
@@ -456,7 +463,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Craumer Home • 5.4.11 Oracle");
+        d.put("firmwareVersion","Jason Home 2 • 5.4.13 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));
