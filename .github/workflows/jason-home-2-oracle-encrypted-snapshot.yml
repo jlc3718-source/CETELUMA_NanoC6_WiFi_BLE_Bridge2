@@ -33,7 +33,7 @@ jobs:
           sudo -n test -s /opt/jason-home-2/private.env
           sudo -n docker inspect jason-home-2-web >/dev/null
           test ! -e /home/ubuntu/jh2-private-snapshot/oracle-recovery.tar.gz.aes || { echo 'An existing encrypted backup must not be overwritten; aborting.'; exit 1; }
-      - name: Snapshot live SQLite consistently, encrypt all private runtime data and verify
+      - name: Capture consistent live SQLite and verify encrypted private runtime backup
         shell: bash
         run: |
           set -euo pipefail
