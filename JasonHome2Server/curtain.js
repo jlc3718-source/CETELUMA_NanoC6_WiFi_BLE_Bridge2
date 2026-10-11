@@ -3,7 +3,7 @@
 const patternGroups=[15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494];
 const patternIndexes=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33];
 const catalog=Array.from({length:88},(_,id)=>({id,name:`E-${id}`,group:id<55?15924:patternGroups[id-55],index:id<55?id:patternIndexes[id-55],type:id<55?3:1,verified:true}));
-catalog.push({id:88,name:'E-88',group:null,index:null,type:0,verified:false});
+
 const $=id=>document.getElementById(id);
 const create=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e};
 let selected=null,connected=false,busy=false;
@@ -16,10 +16,10 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   const page=create('section','page jh2-curtain-page');page.dataset.page='curtain';page.hidden=true;
   page.innerHTML='<div class="v3PageTitle"><span>SMARTDAWN DN5E58</span><h2>Curtain Lights</h2></div>'+
     '<div class="panel"><strong>Bluetooth controller</strong><div class="sub">Connect directly to the SmartDawn curtain from this phone. Close the SmartDawn app before connecting here.</div><div class="jh2-curtain-row" style="margin-top:12px"><button class="btn primary" id="jh2CurtainConnect" type="button">Connect</button><button class="btn" id="jh2CurtainScan" type="button">Scan devices</button><button class="btn" id="jh2CurtainDisconnect" type="button">Disconnect</button><button class="btn" id="jh2CurtainRefresh" type="button">Refresh</button></div><div id="jh2CurtainStatus" class="jh2-curtain-status" role="status">Disconnected</div><div id="jh2CurtainDevices" class="jh2-curtain-devices" aria-label="Nearby Bluetooth devices"></div></div>'+
-    '<div class="panel"><strong>Power and speed</strong><div class="jh2-curtain-row" style="margin-top:12px"><button id="jh2CurtainOn" class="btn primary" type="button">On</button><button id="jh2CurtainOff" class="btn" type="button">Off</button></div><label class="jh2-curtain-label" for="jh2CurtainBrightness">Brightness <output id="jh2CurtainBrightnessOutput">100%</output></label><input id="jh2CurtainBrightness" type="range" min="1" max="100" value="100"><label class="jh2-curtain-label" for="jh2CurtainSpeed">Speed <output id="jh2CurtainSpeedOutput">100 / 100</output></label><input id="jh2CurtainSpeed" type="range" min="1" max="100" value="100"><div class="sub">Speed 1 = device raw 4 (lowest safe level). Values below raw 4 are never sent.</div></div>'+
+    '<div class="panel"><strong>Power, brightness and speed</strong><div class="jh2-curtain-row" style="margin-top:12px"><button id="jh2CurtainOn" class="btn primary" type="button">On</button><button id="jh2CurtainOff" class="btn" type="button">Off</button></div><label class="jh2-curtain-label" for="jh2CurtainBrightness">Brightness <output id="jh2CurtainBrightnessOutput">100 / 100</output></label><input id="jh2CurtainBrightness" type="range" min="1" max="100" value="100"><div class="sub">Brightness 1 = actual curtain level 4 (lowest usable level). Brightness levels below 4 are never sent.</div><label class="jh2-curtain-label" for="jh2CurtainSpeed">Speed <output id="jh2CurtainSpeedOutput">100 / 100</output></label><input id="jh2CurtainSpeed" type="range" min="1" max="100" value="100"><div class="sub">Speed uses the original controller range of 1–100, unchanged.</div></div>'+
     '<div class="panel"><strong>Layout correction</strong><div class="sub">Layout writes are experimental: the original capture did not verify these opcodes. The matrix below shows the requested orientation locally. Check the physical curtain after connecting.</div><div class="jh2-curtain-matrix-wrap"><div id="jh2CurtainMatrixPreview" class="jh2-curtain-matrix" aria-label="40 by 40 curtain orientation illustration"><span>TOP</span><b>↖</b><b>↗</b><span>LEFT</span><strong>CURTAIN</strong><span>RIGHT</span><b>↙</b><b>↘</b><span>BOTTOM</span></div></div><div class="jh2-curtain-layout" style="margin-top:10px"><button class="btn" data-jh2-layout="0">Reset</button><button class="btn" data-jh2-layout="4">Rotate 180°</button><button class="btn" data-jh2-layout="5">Flip Top/Bottom</button><button class="btn" data-jh2-layout="6">Flip Left/Right</button></div></div>'+
     '<div class="panel"><strong>Effect sequence</strong><div class="sub">Enable selection mode to choose multiple original SmartDawn effects. Arrange their playback order, then choose the number of seconds each should play. Playback is handled by Android while connected; it stops on disconnect or when the app process is closed.</div><label class="jh2-sequence-enable"><input type="checkbox" id="jh2CurtainSequenceEnable"> Enable effect sequence selection</label><label class="jh2-curtain-label" for="jh2CurtainSequenceSeconds">Time per effect (seconds, 5–3600)</label><input class="field" id="jh2CurtainSequenceSeconds" type="number" min="5" max="3600" step="1" value="60"><div id="jh2CurtainSequenceList" class="jh2-curtain-sequence-list"></div><div class="jh2-curtain-row"><button class="btn primary" type="button" id="jh2CurtainSequenceStart">Play sequence</button><button class="btn" type="button" id="jh2CurtainSequenceStop">Stop sequence</button></div><div class="sub" id="jh2CurtainSequenceStatus" role="status">Disabled • select two or more effects</div></div>'+
-    '<div class="panel"><strong>88 SmartDawn effects</strong><div class="sub">Captured catalog: E-0 through E-87 (88 effects). The requested E-88 has no verified code yet and is shown separately. All 88 still preview images are recovered directly from your original SmartDawn screenshots.</div><input id="jh2CurtainSearch" class="field" placeholder="Find effect (e.g. E-55)" style="margin-top:10px" aria-label="Search curtain effects"><div id="jh2CurtainEffects" class="jh2-curtain-effect-grid"></div></div>';
+    '<div class="panel"><strong>88 SmartDawn effects</strong><div class="sub">Captured catalog: E-0 through E-87 (88 effects). All 88 still preview images are recovered directly from your original SmartDawn screenshots.</div><input id="jh2CurtainSearch" class="field" placeholder="Find effect (e.g. E-55)" style="margin-top:10px" aria-label="Search curtain effects"><div id="jh2CurtainEffects" class="jh2-curtain-effect-grid"></div></div>';
   container.appendChild(page);
   const status=(message,level='')=>{const n=$('jh2CurtainStatus');n.textContent=message;n.className='jh2-curtain-status '+level};
   const setBusy=b=>{busy=b;page.querySelectorAll('button').forEach(x=>x.disabled=b)};
@@ -109,7 +109,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   $('jh2CurtainOn').addEventListener('click',()=>perform('power',{value:true},'Power on'));
   $('jh2CurtainOff').addEventListener('click',()=>perform('power',{value:false},'Power off'));
   for(const k of ['Brightness','Speed']){
-    const field=$('jh2Curtain'+k),out=$('jh2Curtain'+k+'Output');field.addEventListener('input',()=>out.textContent= k==='Speed'?field.value+' / 100':field.value+'%');field.addEventListener('change',()=>perform(k.toLowerCase(),{value:Number(field.value)},k));
+    const field=$('jh2Curtain'+k),out=$('jh2Curtain'+k+'Output');field.addEventListener('input',()=>out.textContent=field.value+' / 100');field.addEventListener('change',()=>perform(k.toLowerCase(),{value:Number(field.value)},k));
   }
   page.querySelectorAll('[data-jh2-layout]').forEach(b=>b.addEventListener('click',async()=>{
     const value=Number(b.dataset.jh2Layout),matrix=$('jh2CurtainMatrixPreview');
@@ -123,7 +123,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     // NOT an invented animated pattern.
     if(!effect.verified) {
       const label=create('div','jh2-effect-preview missing-preview','?');
-      label.setAttribute('aria-label','E-88 not present in the captured controller catalog');
+      label.setAttribute('aria-label','Unverified effect image is unavailable');
       return label;
     }
     const src=(window.JH2_CURTAIN_IMAGE_SRC||{})[String(effect.id)];
@@ -169,7 +169,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
       const at=playlist.indexOf(e.id);
       if(at>=0){b.classList.add('in-sequence');b.append(create('small','jh2-sequence-position','#'+String(at+1)));}
       b.addEventListener('click',async()=>{
-        if(!e.verified){status('E-88 is not in the captured 88-effect catalog. Please capture its real group/index before use.','error');return;}
+        
         if($('jh2CurtainSequenceEnable').checked){
           const at=playlist.indexOf(e.id);
           if(at>=0)playlist.splice(at,1);

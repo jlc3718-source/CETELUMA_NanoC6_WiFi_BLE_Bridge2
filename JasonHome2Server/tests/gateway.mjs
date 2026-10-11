@@ -57,6 +57,13 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.match(curtainText,/length:88/);
     assert.match(curtainText,/AndroidCurtain/);
     assert.match(curtainText,/jh2CurtainScan/);
+    assert.match(curtainText,/jh2CurtainSequenceEnable/);
+    assert.match(curtainText,/jh2CurtainSequenceSeconds/);
+    assert.match(curtainText,/jh2CurtainSequenceStart/);
+    assert.match(curtainText,/jh2CurtainSequenceStop/);
+    assert.match(curtainText,/Brightness 1 = actual curtain level 4/);
+    assert.match(curtainText,/Speed uses the original controller range of 1/);
+    assert.doesNotMatch(curtainText,/E-88|id:88|catalog\.push\(\{id:88/);
     assert.match(curtainText,/renderDevices/);
     // Every original SmartDawn screenshot tile must be present. Never silently
     // substitute procedural preview artwork if a shard is missing.

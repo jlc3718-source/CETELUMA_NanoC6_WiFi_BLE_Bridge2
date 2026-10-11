@@ -25,7 +25,7 @@ jobs:
       - name: Verify every screenshot thumbnail SHA-256
         run: |
           node --test JasonHome2Server/tests/curtain-images.mjs
-      - name: Validate presentation and exact observed mapping without asserting unverified E-88
+      - name: Validate 88 real screenshot previews and no fake E-88
         shell: bash
         run: |
           set -euo pipefail
@@ -36,8 +36,8 @@ jobs:
           const native=fs.readFileSync('JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java','utf8');
           const css=fs.readFileSync('JasonHome2Server/curtain.css','utf8');
           assert(js.includes('length:88'));
-          assert(js.includes('id:88'));
-          assert(js.includes('verified:false'));
+          assert(!js.includes('id:88'));
+          assert(!js.includes('E-88'));
           assert(js.includes('83494'));
           assert(js.includes('15224,15225,83494'));
           assert(js.includes('function previewIcon'));

@@ -265,10 +265,16 @@ public final class CurtainBridge {
         switch(action) {
             case "power": addCommand(json.optBoolean("value")?0x09d2:0x09d3,new byte[0],id); break;
             case "brightness": {
-                int percent = validatePct(json.optInt("value",-1));
-                addCommand(0x09cd,field(Math.round(percent*255f/100f)),id);break;
+                int level=validatePct(json.optInt("value",-1));
+                // Displayed brightness 1 maps to controller level 4. Never issue 1-3,
+                // which extinguish this curtain. Scale back to native 0-255 payload.
+                addCommand(0x09cd,field(Math.round(nativeBrightnessFromUi(level)*255f/100f)),id);break;
             }
-            case "speed": {int level=validatePct(json.optInt("value",-1));addCommand(0x09db,field(nativeSpeedFromUi(level)),id);break;}
+            case "speed": {
+                // Original speed 1-100, with no brightness offset applied.
+                int level=validatePct(json.optInt("value",-1));
+                addCommand(0x09db,field(level),id);break;
+            }
             case "layout": {
                 int v=json.optInt("value",-1);
                 if (v!=0 && v!=4 && v!=5 && v!=6) throw new IllegalArgumentException("Unknown layout value");
@@ -283,9 +289,9 @@ public final class CurtainBridge {
         }
     }
 
-    /** Curtain controller values 1–3 extinguish LEDs; UI 1 maps to safe raw 4. */
-    static int nativeSpeedFromUi(int ui) {
-        if(ui<1||ui>100)throw new IllegalArgumentException("Curtain speed must be 1–100");
+    /** Minimum safe physical Curtain brightness is 4; UI 1 maps to 4. */
+    static int nativeBrightnessFromUi(int ui) {
+        if(ui<1||ui>100)throw new IllegalArgumentException("Curtain brightness must be 1–100");
         return Math.max(4,Math.min(100,4+Math.round((ui-1)*96f/99f)));
     }
     private static int validatePct(int v) { if(v<1||v>100)throw new IllegalArgumentException("Setting must be 1–100%");return v; }
