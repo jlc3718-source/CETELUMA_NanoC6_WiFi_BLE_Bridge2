@@ -56,6 +56,19 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const curtainText=await curtainScript.text();
     assert.match(curtainText,/length:88/);
     assert.match(curtainText,/AndroidCurtain/);
+    // The prior Curtain navigation implementation set [hidden] on *every*
+    // existing page. That suppressed the Home house and event mini previews
+    // when navigating back, despite their registered animation callbacks.
+    assert.doesNotMatch(curtainText,/p\.hidden=!isCurtain/);
+    assert.match(curtainText,/page\.hidden=false/);
+    assert.match(html,/window\.createEventMiniPreview/);
+    assert.match(html,/window\.createLayeredMiniPreview/);
+    assert.match(html,/id="aiDraftPreview"/);
+    assert.match(html,/class="housePreview"/);
+    const factoryJs=await (await fetch(base+'/android_eufy_ui.js',{headers:{cookie}})).text();
+    assert.match(factoryJs,/factoryPreviewScene/);
+    assert.match(factoryJs,/createEventMiniPreview/);
+
     assert.match(curtainText,/dataset\.tab='curtain'/);
     const curtainCss=await fetch(base+'/curtain.css',{headers:{cookie}});
     assert.equal(curtainCss.status,200);
