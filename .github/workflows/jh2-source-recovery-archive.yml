@@ -30,8 +30,25 @@ jobs:
           test -s /tmp/jh2-recovery/controller/JasonHomeServer/src/eufy/client.ts
           printf 'canonical Jason Home 2 release: %s\ncurrent Oracle production controller: %s\n' "$APP_SHA" "$SERVER_SHA" > /tmp/jh2-recovery/IMMUTABLE_SOURCE_REVISIONS.txt
           tar -czf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz -C /tmp/jh2-recovery .
-          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz | grep -q '^./app/JasonHome2Server/server.mjs$'
-          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz | grep -q '^./controller/JasonHomeServer/src/server.ts$'
+          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz > /tmp/jh2-recovery-file-list.txt
+          grep -q '^./app/JasonHome2Server/server.mjs
+          (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-v2.0.4-SOURCE-RECOVERY
+          path: jh2-source-recovery/
+          if-no-files-found: error
+          retention-days: 90
+ /tmp/jh2-recovery-file-list.txt
+          grep -q '^./controller/JasonHomeServer/src/server.ts
+          (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-v2.0.4-SOURCE-RECOVERY
+          path: jh2-source-recovery/
+          if-no-files-found: error
+          retention-days: 90
+ /tmp/jh2-recovery-file-list.txt
           (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
