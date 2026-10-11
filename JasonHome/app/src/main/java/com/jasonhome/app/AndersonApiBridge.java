@@ -463,7 +463,7 @@ final class AndersonApiBridge {
 
     private JSONObject stateJson() throws Exception {
         JSONObject d=new JSONObject();
-        d.put("firmwareVersion","Jason Home 2 • 5.4.13 Oracle");
+        d.put("firmwareVersion","Jason Home 2 • 5.4.14 Oracle");
         d.put("power",prefs.getBoolean("power",false));
         d.put("brightness",prefs.getInt("brightness",75));
         d.put("speed",prefs.getInt("speed",3));

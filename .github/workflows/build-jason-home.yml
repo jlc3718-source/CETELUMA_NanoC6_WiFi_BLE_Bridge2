@@ -70,8 +70,8 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Jason Home 2 • 5.4.13 Oracle' not in bridge:
-              raise SystemExit('Bridge version is not Jason Home 2 5.4.13 Oracle')
+          if 'Jason Home 2 • 5.4.14 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not Jason Home 2 5.4.14 Oracle')
           for nav_marker in ['v3CurrentEventLink','openCurrentScheduledEvent','scheduledEventCard']:
               if nav_marker not in js:
                   raise SystemExit('Home current-event schedule jump missing '+nav_marker)

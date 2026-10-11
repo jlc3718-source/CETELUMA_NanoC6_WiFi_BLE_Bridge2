@@ -47,13 +47,27 @@ final class SmartDawnCurtainController {
         BluetoothManager bm=(BluetoothManager)context.getSystemService(Context.BLUETOOTH_SERVICE);
         BluetoothAdapter adapter=bm==null?null:bm.getAdapter();
         if(adapter==null||!adapter.isEnabled())throw new IOException("Bluetooth is off");
-        BluetoothDevice device=findDevice(adapter);
-        if(device==null)throw new IOException("DN5E58 not found. Keep the curtain powered on and nearby.");
+        IOException last=null;
+        for(int attempt=1;attempt<=2;attempt++){
+            closeGatt();
+            BluetoothDevice device=findDevice(adapter);
+            if(device==null)throw new IOException("DN5E58 not found. Keep the curtain powered on and nearby.");
+            try{return connectDevice(device,attempt);}
+            catch(IOException e){
+                last=e;
+                closeGatt();
+                if(attempt<2)Thread.sleep(650);
+            }
+        }
+        throw last==null?new IOException("Curtain Bluetooth connect failed"):last;
+    }
+
+    private JSONObject connectDevice(BluetoothDevice device,int attempt) throws Exception{
         CountDownLatch servicesReady=new CountDownLatch(1);
         final IOException[] error=new IOException[1];
         BluetoothGattCallback cb=new BluetoothGattCallback(){
             @Override public void onConnectionStateChange(BluetoothGatt g,int s,int newState){
-                if(s!=BluetoothGatt.GATT_SUCCESS){error[0]=new IOException("Bluetooth connect failed: "+s);servicesReady.countDown();return;}
+                if(s!=BluetoothGatt.GATT_SUCCESS){error[0]=new IOException(connectErrorMessage(s));servicesReady.countDown();return;}
                 if(newState==android.bluetooth.BluetoothProfile.STATE_CONNECTED){status="Discovering services";g.discoverServices();}
                 else if(newState==android.bluetooth.BluetoothProfile.STATE_DISCONNECTED){status="Disconnected";writer=null;servicesReady.countDown();}
             }
@@ -69,18 +83,17 @@ final class SmartDawnCurtainController {
                 servicesReady.countDown();
             }
         };
-        status="Connecting";seq=1;tx=1;
+        status=attempt>1?"Retrying Bluetooth connection":"Connecting";seq=1;tx=1;
         gatt=device.connectGatt(context,false,cb,BluetoothDevice.TRANSPORT_LE);
         if(!servicesReady.await(15,TimeUnit.SECONDS))throw new IOException("Bluetooth connect timed out");
-        if(error[0]!=null){disconnect();throw error[0];}
+        if(error[0]!=null)throw error[0];
         send(OP_INFO,new byte[0]);
         send(OP_CAP,new byte[0]);
         return statusJson();
     }
 
     synchronized JSONObject disconnect() throws Exception{
-        if(gatt!=null){try{gatt.disconnect();}catch(Throwable ignored){} try{gatt.close();}catch(Throwable ignored){}}
-        gatt=null;writer=null;status="Offline";return statusJson();
+        closeGatt();status="Offline";return statusJson();
     }
 
     synchronized JSONObject control(JSONObject in) throws Exception{
@@ -113,6 +126,18 @@ final class SmartDawnCurtainController {
         if(Build.VERSION.SDK_INT>=31){
             if(context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED||context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)!=PackageManager.PERMISSION_GRANTED)throw new IOException("Bluetooth permission is not granted. Reopen Jason Home 2 and allow Nearby devices.");
         }else if(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED)throw new IOException("Location permission is required for Bluetooth scan on this Android version.");
+    }
+
+    private void closeGatt(){
+        if(gatt!=null){try{gatt.disconnect();}catch(Throwable ignored){} try{gatt.close();}catch(Throwable ignored){}}
+        gatt=null;writer=null;
+    }
+
+    private static String connectErrorMessage(int code){
+        if(code==200)return "Bluetooth connect was cancelled by Android (200). Turn the curtain off/on, wait five seconds, then tap Connect again.";
+        if(code==133)return "Android Bluetooth stack failed to open the GATT connection (133). Toggle phone Bluetooth off/on and reconnect.";
+        if(code==62)return "Bluetooth connection timed out (62). Move closer to DN5E58 and reconnect.";
+        return "Bluetooth connect failed: "+code;
     }
 
     private void send(int opcode,byte[] payload) throws Exception{
