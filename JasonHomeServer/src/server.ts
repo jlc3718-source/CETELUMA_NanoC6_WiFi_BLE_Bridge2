@@ -373,7 +373,7 @@ async function sendScene(name:string,scene:Scene,brightnessOnly=false){
   return serializedForDevice(name,async()=>{
     try{
       const c=await ensureEufy(false);
-      if(brightnessOnly)return await c.brightness(name,scene.brightness);
+      if(brightnessOnly)return await c.brightness(name,scene.brightness,scene);
       if(!scene.power)return await c.power(name,false);
       if(scene.factoryEffectName){
         const presets=cachedFactoryPresetsByName(scene.factoryEffectName);
@@ -405,7 +405,7 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number,brightnes
       if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
       let result:any;
       if(brightnessOnly){
-        result=await c.brightness(name,scene.brightness);
+        result=await c.brightness(name,scene.brightness,scene);
       }else if(!scene.power){
         result=await c.power(name,false);
       }else if(scene.factoryEffectName){
