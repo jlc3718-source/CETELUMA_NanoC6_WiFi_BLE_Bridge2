@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { EufyClient, type EufySession } from "./eufy/client.js";
+import { isBrightnessOnlyControl } from "./eufy/light-commands.js";
 import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
 import { currentCalendarInfo, nextCalendarBoundary, nextCalendarEvent, nextCalendarTransition, normalizeCalendarConfig, resolveCalendar, type CalendarConfig } from "./calendar.js";
@@ -168,7 +169,7 @@ function activeOverrideScene(name:string):Scene|null{
     const raw=meta("override");if(!raw)return null;
     const o=JSON.parse(raw);if(!o?.active||!o?.scene)return null;
     if(!targetNames(String(o.target||"All")).includes(name))return null;
-    return safeScene(o.scene,DEFAULT_SCENE);
+    return safeScene(o.scenes?.[name]||o.scene,DEFAULT_SCENE);
   }catch{return null;}
 }
 function manualScenes(input:any,names:string[]){
@@ -274,10 +275,11 @@ function cachedFactoryPreset(lightId:number){
     return base?applyFactoryEdit(base):null;
   }catch{return null;}
 }
-async function sendScene(name:string,scene:Scene){
+async function sendScene(name:string,scene:Scene,brightnessOnly=false){
   return serializedForDevice(name,async()=>{
     try{
       const c=await ensureEufy(false);
+      if(brightnessOnly)return await c.brightness(name,scene.brightness);
       if(!scene.power)return await c.power(name,false);
       const factoryLightId=nativeFactoryLightId(scene);
       if(factoryLightId!=null){
@@ -293,15 +295,17 @@ async function sendScene(name:string,scene:Scene){
 let manualSequence=0;
 const latestManualSequence=new Map<string,number>();
 
-async function sendSceneLatest(name:string,scene:Scene,sequence:number){
+async function sendSceneLatest(name:string,scene:Scene,sequence:number,brightnessOnly=false){
   return serializedForDevice(name,async()=>{
     if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
     try{
       const c=await ensureEufy(false);
       if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
-      const result=scene.power
-        ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
-        : await c.power(name,false);
+      const result=brightnessOnly
+        ? await c.brightness(name,scene.brightness)
+        : scene.power
+          ? await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness)
+          : await c.power(name,false);
       return {...result,skipped:false};
     }catch(e){markEufyDegraded(e);throw e;}
   });
@@ -687,6 +691,7 @@ async function statusPayload(refresh=false){
 
 async function manualControl(input:any,sequence?:number){
   const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
+  const brightnessOnly=isBrightnessOnlyControl(input);
   const firstScene=scenes[names[0]]||DEFAULT_SCENE;
   const overrideSequence=sequence??++manualSequence;
   // Do not let calendar bookkeeping delay the physical command. The scheduler
@@ -698,7 +703,7 @@ async function manualControl(input:any,sequence?:number){
   const detail=await Promise.all(names.map(async name=>{
     const scene=scenes[name];
     try{
-      const r:any=sequence==null?await sendScene(name,scene):await sendSceneLatest(name,scene,sequence);
+      const r:any=sequence==null?await sendScene(name,scene,brightnessOnly):await sendSceneLatest(name,scene,sequence,brightnessOnly);
       if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
