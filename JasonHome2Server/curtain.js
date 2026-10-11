@@ -123,7 +123,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     // NOT an invented animated pattern.
     if(!effect.verified) {
       const label=create('div','jh2-effect-preview missing-preview','?');
-      label.setAttribute('aria-label','E-88 not present in the captured controller catalog');
+      label.setAttribute('aria-label','Unverified effect image is unavailable');
       return label;
     }
     const src=(window.JH2_CURTAIN_IMAGE_SRC||{})[String(effect.id)];
