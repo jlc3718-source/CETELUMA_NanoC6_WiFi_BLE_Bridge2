@@ -97,6 +97,11 @@ print("Jason Home 2 hosted UI ready")
 # The curtain controls are independent of the AI/Factory and scheduled event interfaces.
 for asset in ("curtain.js", "curtain.css"):
     shutil.copyfile(Path(__file__).resolve().parent / asset, target / asset)
+# User-provided SmartDawn screenshot tiles are split into lazy-loaded, per-page shards.
+# Never load these on Home/AI/Schedules: preserve interface responsiveness.
+for number in range(11):
+    asset = f"curtain_real_{number:02d}.js"
+    shutil.copyfile(Path(__file__).resolve().parent / asset, target / asset)
 page = target / "anderson_home.html"
 html = page.read_text()
 if html.count("</head>") != 1 or html.count("</body>") != 1:
