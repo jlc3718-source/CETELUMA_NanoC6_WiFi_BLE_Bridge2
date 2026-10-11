@@ -1,20 +1,18 @@
 {
-  "id": "manual-2026-10-11T13-38-41",
+  "id": "manual-2026-10-11T13-42-31",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-11T17:38:41.099Z",
-  "finished": "2026-10-11T17:38:48.173Z",
+  "started": "2026-10-11T17:42:34.852Z",
+  "finished": "2026-10-11T17:43:04.212Z",
   "result": {
     "task": "prepare_restricted",
     "status": "ready_for_manual_action",
     "active": true,
     "profile": "daily",
-    "login_url": "https://dollars-forming-apparently-builders.trycloudflare.com/control",
+    "login_url": "https://bacon-involved-ana-minerals.trycloudflare.com/control",
     "targets": [
       "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
-      "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
-      "https://concretetoolsdirect.com/pages/sweepstakes",
-      "https://housecallsdiy.com/sweepstakes"
+      "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools"
     ],
     "viewport": {
       "width": 1280,
@@ -29,21 +27,6 @@
         "url": "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
         "title": "Current Feedback Opportunity for Skilled Trades Professionals Paid Research Study | Focus Group Placement",
         "login_url": "https://www.focusgroupplacement.com/register?next=%2Fstudy%2F98633%2Ffeedback-opportunity-for-skilled-trades-professionals"
-      },
-      {
-        "status": "manual_verification_required",
-        "prepared": true,
-        "challenge": true,
-        "url": "https://concretetoolsdirect.com/pages/sweepstakes",
-        "title": "Concrete Tools Direct Monthly Giveaway | Enter to Win Free Tools",
-        "filled": [
-          "firstName",
-          "lastName",
-          "email",
-          "emailConfirm",
-          "phone"
-        ],
-        "missing": []
       },
       {
         "status": "manual_verification_required",
