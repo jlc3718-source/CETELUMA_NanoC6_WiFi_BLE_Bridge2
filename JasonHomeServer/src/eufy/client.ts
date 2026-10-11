@@ -97,7 +97,7 @@ export class EufyClient {
   async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number){
     const s=this.spec(name),fx=buildEffect(s.model,effect,colors,speed,false);
-    return this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`}],3200);
+    return this.command(name,[{opcode:OP_SETUP,fields:powerFields(true),label:"ON"},{opcode:fx.opcode,fields:fx.fields,label:`EFFECT ${effect}`},{opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"}],3200);
   }
   async factoryPresets():Promise<{presets:EufyFactoryPreset[];rawDiscover:unknown;scanned:number}>{
     this.requireLogin();
@@ -137,8 +137,8 @@ export class EufyClient {
     const strategy=s.model==="T8L02"?"native-t8l02-020d-experimental":"native-t8l00-020d-experimental";
     const r=await this.command(name,[
       {opcode:OP_SETUP,fields:powerFields(true),label:"ON"},
-      {opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"},
-      {opcode:OP_SHOW,fields,label:`FACTORY ${preset.lightId}`}
+      {opcode:OP_SHOW,fields,label:`FACTORY ${preset.lightId}`},
+      {opcode:OP_SETUP,fields:brightnessFields(brightness),label:"BRIGHTNESS"}
     ],3600);
     return {...r,strategy,model:s.model};
   }
