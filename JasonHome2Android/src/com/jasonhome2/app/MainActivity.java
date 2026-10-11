@@ -33,6 +33,7 @@ public final class MainActivity extends Activity {
     private static final String HOST = "150.136.245.51";
     private static final int REQUEST_RECORD_AUDIO = 41;
     private WebView web;
+    private CurtainBridge curtain;
     private LinearLayout error;
     private boolean loadFailed=false;
     private PermissionRequest pendingAudioRequest;
@@ -65,6 +66,8 @@ public final class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.addJavascriptInterface(new VoiceBridge(), "AndroidVoice");
+        curtain=new CurtainBridge(this,web);
+        web.addJavascriptInterface(curtain,"AndroidCurtain");
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> {
@@ -146,6 +149,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode==CurtainBridge.PERMISSIONS_REQUEST){if(curtain!=null)curtain.onPermissionsResult(requestCode,permissions,grantResults);return;}
         if(requestCode!=REQUEST_RECORD_AUDIO)return;
         boolean granted=grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED;
         if(pendingAudioRequest!=null){
@@ -280,7 +284,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy(){
         stopNativeVoiceRecorder(false);
-        if(web!=null){web.removeJavascriptInterface("AndroidVoice");web.destroy();web=null;}
+        if(curtain!=null){curtain.close();curtain=null;}
+        if(web!=null){web.removeJavascriptInterface("AndroidCurtain");web.removeJavascriptInterface("AndroidVoice");web.destroy();web=null;}
         super.onDestroy();
     }
 }
