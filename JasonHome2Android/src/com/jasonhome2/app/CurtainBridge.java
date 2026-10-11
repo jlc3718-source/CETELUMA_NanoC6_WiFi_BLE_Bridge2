@@ -37,6 +37,17 @@ public final class CurtainBridge {
     private static final UUID SERVICE = UUID.fromString("00000074-1972-1925-3022-077119514e44");
     private static final UUID WRITE = UUID.fromString("01020074-1972-1925-3022-077119514e44");
     private static final UUID HEARTBEAT = UUID.fromString("02020074-1972-1925-3022-077119514e44");
+    // Catalog ids 55–87 are *not* a continuous SmartDawn group sequence;
+    // these exact identifiers were captured on 2026-10-11.
+    private static final int[] CAPTURED_PATTERN_GROUPS = {
+        15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,
+        15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,
+        15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494
+    };
+    private static final int[] CAPTURED_PATTERN_INDEXES = {
+        0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
+        17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33
+    };
     private static final int GATT_SUCCESS = 0;
     private final Activity activity;
     private final WebView web;
@@ -204,8 +215,8 @@ public final class CurtainBridge {
             }
             case "effect": {
                 int num=json.optInt("id",-1);if(num<0||num>87)throw new IllegalArgumentException("Effect must be E-0 to E-87");
-                int group=num<55?15924:15193+num-55;
-                int index=num<55?num:num-55;
+                int group=num<55?15924:CAPTURED_PATTERN_GROUPS[num-55];
+                int index=num<55?num:CAPTURED_PATTERN_INDEXES[num-55];
                 // First select native scene mode, then the independently captured group/index.
                 frames.add(new Frame(frame(0x096a,new byte[0]),false,null));
                 byte[] g=varint(group),ix=varint(index),payload=new byte[2+g.length+ix.length];
