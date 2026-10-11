@@ -56,7 +56,7 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const curtainText=await curtainScript.text();
     assert.match(curtainText,/length:88/);
     assert.match(curtainText,/AndroidCurtain/);
-    assert.match(curtainText,/data-tab='curtain'/);
+    assert.match(curtainText,/dataset\.tab='curtain'/);
     const curtainCss=await fetch(base+'/curtain.css',{headers:{cookie}});
     assert.equal(curtainCss.status,200);
 
