@@ -1,0 +1,19 @@
+name: Verify Jason Home 2 AI brightness and queue backpressure
+on:
+  push:
+    branches: [fix/jh2-ai-live-brightness-latency-20261011]
+  pull_request:
+    branches: [jason-home-2-web]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check JasonHome2Server/server.mjs
+      - run: node --test JasonHome2Server/tests/*.mjs
