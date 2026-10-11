@@ -36,3 +36,7 @@ and stale writes are rejected.
 After a controller-only update, redeploy this web gateway so its generated
 scheduler resolver records the same live Oracle build SHA. The deployment
 verifies `resolverAuthority.inSync` before accepting the gateway as healthy.
+
+## October 11, 2026 release sync
+
+Jason Home 2 version 2.0.3 adds the isolated SmartDawn Curtain tab and signed Android BLE bridge, without changing AI/Factory/event data. The production Eufy brightness-only optimization is deployed from current Oracle controller commit `8202a5af4336b9a992feb7e51ebf3dc0acb111b7` and keeps the existing E120/E22 purple and Halloween effect encoding. Regenerate the web gateway resolver against the **live Oracle commit** on every deploy; fail closed if hashes differ.
