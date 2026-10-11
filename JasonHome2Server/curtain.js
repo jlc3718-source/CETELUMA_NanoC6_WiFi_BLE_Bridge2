@@ -31,8 +31,21 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   page.querySelectorAll('[data-jh2-layout]').forEach(b=>b.addEventListener('click',()=>perform('layout',{value:Number(b.dataset.jh2Layout)},b.textContent.trim())));
   const list=$('jh2CurtainEffects');function render(){const needle=$('jh2CurtainSearch').value.trim().toLowerCase();list.replaceChildren();catalog.filter(x=>!needle||x.name.toLowerCase().includes(needle)||String(x.id).includes(needle)).forEach(e=>{const b=create('button','jh2-curtain-effect'+(selected===e.id?' active':''));b.type='button';b.dataset.effect=String(e.id);b.setAttribute('aria-label',`${e.name} ${e.type===3?'scene':'pattern'}`);b.append(create('strong','',e.name),create('small','',e.type===3?'Scene':'Pattern'));b.addEventListener('click',async()=>{selected=e.id;render();await perform('effect',{id:e.id,group:e.group,index:e.index},e.name)});list.append(b)});}
   $('jh2CurtainSearch').addEventListener('input',render);render();
-  tab.addEventListener('click',()=>{document.querySelectorAll('.page').forEach(p=>{const isCurtain=p===page;p.classList.toggle('active',isCurtain);p.hidden=!isCurtain});nav.querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b===tab)});document.body.dataset.page='curtain';window.scrollTo({top:0,behavior:'smooth'});});
-  nav.querySelectorAll('.tab:not([data-tab="curtain"])').forEach(b=>b.addEventListener('click',()=>{page.classList.remove('active');page.hidden=true;document.querySelectorAll('.page:not([data-page="curtain"])').forEach(p=>p.hidden=false);},false));
+  // Switch with the existing .page.active router. Do not set [hidden] on the
+  // Home, AI, Schedules or Factory pages: those contain independently animated
+  // previews, and [hidden] can keep them invisible after a later navigation.
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p===page));
+    page.hidden=false;
+    nav.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b===tab));
+    document.body.dataset.page='curtain';
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+  nav.querySelectorAll('.tab:not([data-tab="curtain"])').forEach(b=>b.addEventListener('click',()=>{
+    page.classList.remove('active');page.hidden=true;
+    // Avoid touching the visibility of any original preview-containing page.
+    if(typeof window.kickAnimation==='function')window.kickAnimation();
+  }));
   if(!window.AndroidCurtain)status('Install the Jason Home 2 curtain-enabled APK to connect directly over Bluetooth.');
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,0));else setTimeout(init,0);
