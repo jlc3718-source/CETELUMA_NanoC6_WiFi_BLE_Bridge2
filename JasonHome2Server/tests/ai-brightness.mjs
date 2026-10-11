@@ -21,7 +21,7 @@ test('AI brightness persists across layers and can differ per Eufy string',()=>{
   assert.equal(commands[0].effect,'Flow2');assert.deepEqual(Array.from(commands[0].colors),base.colors);
   p.overrideAiPreviewBrightness('Pool',18);
   commands=p.aiPreviewLayerCommands(base);
-  assert.deepEqual(commands.map(c=>[c.target,c.brightness]),[
+  assert.deepEqual(JSON.parse(JSON.stringify(commands.map(c=>[c.target,c.brightness]))),[
     ['Pool',18],['House',36],['Garage',36],['Shed',36]]);
   p.stopAiPreviewBrightness();
   p.beginAiPreviewBrightness(1,50);
