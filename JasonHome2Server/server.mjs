@@ -4,6 +4,7 @@ import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { lightingNightDate, resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene } from "./night_resolver.mjs";
+import { createNanoC6BrightnessSync } from "./nanoc6_sync.mjs";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -139,6 +140,7 @@ const db=new DatabaseSync(join(dataDir,"jason-home-2.sqlite"));
 db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
+const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 if(!meta("speed_scale_10")){
   db.exec("BEGIN");
@@ -849,7 +851,7 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","nano_sync.js"]);
   if(!allowed.has(name)&&!/^curtain_real_(?:0[0-9]|10)\.js$/.test(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
@@ -881,6 +883,13 @@ async function route(req,res){
     if(req.headers["sec-fetch-site"]==="cross-site")throw fail(403,"Cross-site request blocked");
   }
   if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);
+  if(method==="GET"&&path==="/api/nanoc6/sync")return send(res,200,nanoC6BrightnessSync.status());
+  if(method==="POST"&&path==="/api/nanoc6/sync"){
+    const body=await input(req);
+    if(typeof body?.enabled!=="boolean")throw fail(400,"NanoC6 Enable/Disable must be a boolean");
+    try{return send(res,200,await nanoC6BrightnessSync.setEnabled(body.enabled));}
+    catch(e){throw fail(409,String(e.message||e));}
+  }
   if(method==="GET"&&path==="/api/state")return send(res,200,await state());
   if(method==="GET"&&path==="/api/night-calendar"){
     const today=localDay(new Date()),year=Number(url.searchParams.get("year")||today.year),month=Number(url.searchParams.get("month")||today.month);
