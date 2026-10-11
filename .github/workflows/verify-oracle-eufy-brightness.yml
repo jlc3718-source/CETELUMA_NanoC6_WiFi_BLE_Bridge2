@@ -1,0 +1,30 @@
+name: Verify current Oracle Eufy brightness patch
+on:
+  push:
+    branches:
+      - fix/oracle-current-eufy-brightness-20261011
+  pull_request:
+    branches:
+      - jason-home-cloudflare-rebuild
+    paths:
+      - 'JasonHomeServer/**'
+      - '.github/workflows/verify-oracle-eufy-brightness.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: JasonHomeServer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: JasonHomeServer/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
