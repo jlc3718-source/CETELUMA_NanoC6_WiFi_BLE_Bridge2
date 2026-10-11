@@ -470,11 +470,11 @@ function overrideAiPreviewBrightness(target,level){
 }
 function aiPreviewLayerCommands(data){
   const values=AI_EUFY_TARGETS.map(name=>aiPreviewLevels.get(name)??data.brightness);
-  if(values.every(value=>value===values[0]))return [{...data,target:"All",brightness:values[0]}];
+  if(values.every(value=>value===values[0]))return [{...data,target:"All",brightness:values[0],previewFast:true}];
   // Keep ONE shared Oracle override while retaining different brightness
   // levels for all four strings. Four independent /api/control writes would
   // overwrite each other's global manual override and disrupt the AI pattern.
-  return [{...data,target:"All",scenes:Object.fromEntries(AI_EUFY_TARGETS.map((name,i)=>[name,{brightness:values[i]}]))}];
+  return [{...data,target:"All",previewFast:true,scenes:Object.fromEntries(AI_EUFY_TARGETS.map((name,i)=>[name,{brightness:values[i]}]))}];
 }
 function stopAiPreviewBrightness(){
   aiPreviewActiveGeneration=0;aiPreviewLevels.clear();
@@ -1000,17 +1000,18 @@ async function route(req,res){
   }
   if(method==="POST"&&path==="/api/ai/preview"){
     const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to preview");
-    const token=++aiPreviewGeneration,colors=rgb(draft.colors),layers=draft.layers||[];
-    beginAiPreviewBrightness(token,draft.brightness??100);
+    const body=await input(req),token=++aiPreviewGeneration,colors=rgb(draft.colors),layers=draft.layers||[];
+    const selectedBrightness=Math.round(clamp(body?.brightness??draft.brightness??100,1,100));
+    beginAiPreviewBrightness(token,selectedBrightness);
     if(String(draft.name||"").trim().toLowerCase()===TEST_HALLOWEEN_NAME.toLowerCase()){
-      void runTestHalloweenPreview(token,draft.brightness||100).catch(e=>console.error("[Test Halloween preview]",e?.message||e));
+      void runTestHalloweenPreview(token,selectedBrightness).catch(e=>console.error("[Test Halloween preview]",e?.message||e));
       return send(res,202,{ok:true,queued:true,randomFlash:true,density:"1/3",flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS});
     }
     void (async()=>{
       for(let i=0;i<layers.length;i++){
         if(token!==aiPreviewGeneration)return;
         const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
-        const layer={name:"AI Preview • "+draft.name+" • Layer "+(i+1),power:true,brightness:draft.brightness??100,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern};
+        const layer={name:"AI Preview • "+draft.name+" • Layer "+(i+1),power:true,brightness:selectedBrightness,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern};
         await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control","POST",command)));
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
