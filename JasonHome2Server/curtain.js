@@ -18,10 +18,56 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     '<div class="panel"><strong>Bluetooth controller</strong><div class="sub">Connect directly to the SmartDawn curtain from this phone. Close the SmartDawn app before connecting here.</div><div class="jh2-curtain-row" style="margin-top:12px"><button class="btn primary" id="jh2CurtainConnect" type="button">Connect</button><button class="btn" id="jh2CurtainScan" type="button">Scan devices</button><button class="btn" id="jh2CurtainDisconnect" type="button">Disconnect</button><button class="btn" id="jh2CurtainRefresh" type="button">Refresh</button></div><div id="jh2CurtainStatus" class="jh2-curtain-status" role="status">Disconnected</div><div id="jh2CurtainDevices" class="jh2-curtain-devices" aria-label="Nearby Bluetooth devices"></div></div>'+
     '<div class="panel"><strong>Power and speed</strong><div class="jh2-curtain-row" style="margin-top:12px"><button id="jh2CurtainOn" class="btn primary" type="button">On</button><button id="jh2CurtainOff" class="btn" type="button">Off</button></div><label class="jh2-curtain-label" for="jh2CurtainBrightness">Brightness <output id="jh2CurtainBrightnessOutput">100%</output></label><input id="jh2CurtainBrightness" type="range" min="1" max="100" value="100"><label class="jh2-curtain-label" for="jh2CurtainSpeed">Speed <output id="jh2CurtainSpeedOutput">100%</output></label><input id="jh2CurtainSpeed" type="range" min="1" max="100" value="100"></div>'+
     '<div class="panel"><strong>Layout correction</strong><div class="sub">Layout writes are experimental: the original capture did not verify these opcodes. The matrix below shows the requested orientation locally. Check the physical curtain after connecting.</div><div class="jh2-curtain-matrix-wrap"><div id="jh2CurtainMatrixPreview" class="jh2-curtain-matrix" aria-label="40 by 40 curtain orientation illustration"><span>TOP</span><b>↖</b><b>↗</b><span>LEFT</span><strong>CURTAIN</strong><span>RIGHT</span><b>↙</b><b>↘</b><span>BOTTOM</span></div></div><div class="jh2-curtain-layout" style="margin-top:10px"><button class="btn" data-jh2-layout="0">Reset</button><button class="btn" data-jh2-layout="4">Rotate 180°</button><button class="btn" data-jh2-layout="5">Flip Top/Bottom</button><button class="btn" data-jh2-layout="6">Flip Left/Right</button></div></div>'+
+    '<div class="panel"><strong>Effect sequence</strong><div class="sub">Enable selection mode to choose multiple original SmartDawn effects. Arrange their playback order, then choose the number of seconds each should play. Playback is handled by Android while connected; it stops on disconnect or when the app process is closed.</div><label class="jh2-sequence-enable"><input type="checkbox" id="jh2CurtainSequenceEnable"> Enable effect sequence selection</label><label class="jh2-curtain-label" for="jh2CurtainSequenceSeconds">Time per effect (seconds, 5–3600)</label><input class="field" id="jh2CurtainSequenceSeconds" type="number" min="5" max="3600" step="1" value="60"><div id="jh2CurtainSequenceList" class="jh2-curtain-sequence-list"></div><div class="jh2-curtain-row"><button class="btn primary" type="button" id="jh2CurtainSequenceStart">Play sequence</button><button class="btn" type="button" id="jh2CurtainSequenceStop">Stop sequence</button></div><div class="sub" id="jh2CurtainSequenceStatus" role="status">Disabled • select two or more effects</div></div>'+
     '<div class="panel"><strong>88 SmartDawn effects</strong><div class="sub">Captured catalog: E-0 through E-87 (88 effects). The requested E-88 has no verified code yet and is shown separately. All 88 still preview images are recovered directly from your original SmartDawn screenshots.</div><input id="jh2CurtainSearch" class="field" placeholder="Find effect (e.g. E-55)" style="margin-top:10px" aria-label="Search curtain effects"><div id="jh2CurtainEffects" class="jh2-curtain-effect-grid"></div></div>';
   container.appendChild(page);
   const status=(message,level='')=>{const n=$('jh2CurtainStatus');n.textContent=message;n.className='jh2-curtain-status '+level};
   const setBusy=b=>{busy=b;page.querySelectorAll('button').forEach(x=>x.disabled=b)};
+  let playlist=[],sequencePlaying=false;
+  try{
+    const saved=JSON.parse(localStorage.getItem('jh2-smartdawn-sequence-v1')||'{}');
+    if(Array.isArray(saved.effects))playlist=[...new Set(saved.effects.map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=87))];
+    $('jh2CurtainSequenceSeconds').value=String(Number.isInteger(saved.seconds)&&saved.seconds>=5&&saved.seconds<=3600?saved.seconds:60);
+    $('jh2CurtainSequenceEnable').checked=saved.enabled===true;
+  }catch(_){}
+  function persistSequence(){
+    try{localStorage.setItem('jh2-smartdawn-sequence-v1',JSON.stringify({
+      enabled:$('jh2CurtainSequenceEnable').checked,
+      effects:playlist,seconds:Number($('jh2CurtainSequenceSeconds').value)
+    }));}catch(_){}
+  }
+  function renderSequence(){
+    const list=$('jh2CurtainSequenceList');list.replaceChildren();
+    for(let index=0;index<playlist.length;index++){
+      const id=playlist[index],item=create('div','jh2-curtain-sequence-item'),name=create('strong','',String(index+1)+'. E-'+id);
+      const up=create('button','btn','↑'),down=create('button','btn','↓'),remove=create('button','btn','×');
+      for(const b of [up,down,remove])b.type='button';
+      up.disabled=index===0;down.disabled=index===playlist.length-1;
+      up.addEventListener('click',()=>{[playlist[index-1],playlist[index]]=[playlist[index],playlist[index-1]];persistSequence();renderSequence();render();});
+      down.addEventListener('click',()=>{[playlist[index+1],playlist[index]]=[playlist[index],playlist[index+1]];persistSequence();renderSequence();render();});
+      remove.addEventListener('click',()=>{playlist.splice(index,1);persistSequence();renderSequence();render();});
+      item.append(name,up,down,remove);list.append(item);
+    }
+    const enabled=$('jh2CurtainSequenceEnable').checked;
+    $('jh2CurtainSequenceStatus').textContent=sequencePlaying?'Sequence playing • '+playlist.map(id=>'E-'+id).join(' → '):
+      enabled?playlist.length+' effects selected — tap preview tiles to add/remove':'Sequence selection disabled — individual effects play normally';
+    $('jh2CurtainSequenceStart').disabled=playlist.length<2||!enabled;
+  }
+  $('jh2CurtainSequenceEnable').addEventListener('change',()=>{persistSequence();renderSequence();render();});
+  $('jh2CurtainSequenceSeconds').addEventListener('change',()=>{persistSequence();renderSequence();});
+  $('jh2CurtainSequenceStart').addEventListener('click',async()=>{
+    if(playlist.length<2||!$('jh2CurtainSequenceEnable').checked){status('Enable sequence mode and select at least two captured effects.','error');return;}
+    const seconds=Number($('jh2CurtainSequenceSeconds').value);
+    if(!Number.isInteger(seconds)||seconds<5||seconds>3600){status('Select a whole-number interval of 5 to 3600 seconds.','error');return;}
+    persistSequence();
+    const answer=await perform('sequenceStart',{effects:[...playlist],intervalSeconds:seconds},'Play sequence');
+    if(answer){sequencePlaying=answer.sequenceRunning===true;renderSequence();}
+  });
+  $('jh2CurtainSequenceStop').addEventListener('click',async()=>{
+    const answer=await perform('sequenceStop',{},'Stop sequence');
+    if(answer){sequencePlaying=false;renderSequence();}
+  });
+
   function renderDevices(devices){
     const area=$('jh2CurtainDevices');if(!area)return;
     area.replaceChildren();
@@ -47,6 +93,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     try{
       const r=await call(action,data);
       connected=!!r.connected;
+      if(typeof r.sequenceRunning==='boolean'){sequencePlaying=r.sequenceRunning;renderSequence();}
       if(action==='scan'||Array.isArray(r.devices)&&r.devices.length)renderDevices(r.devices);
       status(`${label}: ${r.message||'Command delivered. Check the curtain lights.'}`,'success');
       return r;
@@ -119,14 +166,23 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
       b.type='button';b.dataset.effect=String(e.id);
       b.setAttribute('aria-label',e.verified?`${e.name} original SmartDawn screenshot preview`:`${e.name} is not in the captured device catalog`);
       b.append(previewIcon(e),create('strong','',e.name),create('small','',!e.verified?'Not captured':e.type===3?'Scene':'Pattern'));
+      const at=playlist.indexOf(e.id);
+      if(at>=0){b.classList.add('in-sequence');b.append(create('small','jh2-sequence-position','#'+String(at+1)));}
       b.addEventListener('click',async()=>{
         if(!e.verified){status('E-88 is not in the captured 88-effect catalog. Please capture its real group/index before use.','error');return;}
+        if($('jh2CurtainSequenceEnable').checked){
+          const at=playlist.indexOf(e.id);
+          if(at>=0)playlist.splice(at,1);
+          else playlist.push(e.id);
+          persistSequence();renderSequence();render();
+          return;
+        }
         selected=e.id;render();await perform('effect',{id:e.id,group:e.group,index:e.index},e.name);
       });
       list.append(b);
     });
   }
-  $('jh2CurtainSearch').addEventListener('input',render);render();
+  $('jh2CurtainSearch').addEventListener('input',render);render();renderSequence();
   // Switch with the existing .page.active router. Do not set [hidden] on the
   // Home, AI, Schedules or Factory pages: those contain independently animated
   // previews, and [hidden] can keep them invisible after a later navigation.
