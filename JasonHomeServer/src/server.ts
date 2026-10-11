@@ -254,7 +254,15 @@ function activeOverrideScene(name:string):Scene|null{
 }
 function manualScenes(input:any,names:string[]){
   const out:Record<string,Scene>={};
-  for(const name of names)out[name]=safeScene(input,activeOverrideScene(name)||storedScene(name)||DEFAULT_SCENE);
+  // One "All" AI-layer command can preserve distinct manual brightness
+  // settings for Pool, House, Garage and Shed, without replacing the global
+  // override four times. Per-target values are validated by safeScene().
+  const perName=input?.scenes&&typeof input.scenes==="object"&&!Array.isArray(input.scenes)?input.scenes:{};
+  for(const name of names){
+    const own=perName[name];
+    const scoped=own&&typeof own==="object"&&!Array.isArray(own)?{...input,...own}:input;
+    out[name]=safeScene(scoped,activeOverrideScene(name)||storedScene(name)||DEFAULT_SCENE);
+  }
   return out;
 }
 function json(res:http.ServerResponse,status:number,value:unknown){
