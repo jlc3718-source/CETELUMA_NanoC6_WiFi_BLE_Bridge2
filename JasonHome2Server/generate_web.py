@@ -93,3 +93,14 @@ text = text.replace('setInterval(()=>{if(!document.hidden)refreshEufyStatus();},
 eufy.write_text(text)
 print("Jason Home 2 hosted UI ready")
 
+
+# The curtain controls are independent of the AI/Factory and scheduled event interfaces.
+for asset in ("curtain.js", "curtain.css"):
+    shutil.copyfile(Path(__file__).resolve().parent / asset, target / asset)
+page = target / "anderson_home.html"
+html = page.read_text()
+if html.count("</head>") != 1 or html.count("</body>") != 1:
+    raise SystemExit("Jason Home 2 page structure changed; refusing to break AI UI")
+html = html.replace("</head>", '<link rel="stylesheet" href="curtain.css">\n</head>', 1)
+html = html.replace("</body>", '<script src="curtain.js"></script>\n</body>', 1)
+page.write_text(html)
