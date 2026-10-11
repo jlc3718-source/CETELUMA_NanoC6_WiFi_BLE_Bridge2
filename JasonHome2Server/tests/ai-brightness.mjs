@@ -31,8 +31,9 @@ test('AI brightness persists across layers and can differ per Eufy string',()=>{
 });
 test('All AI preview entry points apply brightness dynamically and manual slider saves it',()=>{
   assert.match(source,/if\(brightnessOnly\)overrideAiPreviewBrightness\(target,body\.brightness\)/);
+  assert.ok(source.indexOf('if(brightnessOnly)overrideAiPreviewBrightness(target,body.brightness);')<source.indexOf('const accepted=await upstream("/api/control","POST",{...body,target});'),'Brightness must update before awaiting network IO');
   assert.match(source,/if\(!brightnessOnly&&aiPreviewActiveGeneration===aiPreviewGeneration\)/);
-  assert.match(source,/aiPreviewLayerCommands\(layer\)\.map\(command=>upstream\("\/api\/control"/g);
+  assert.match(source,/aiPreviewLayerCommands\(layer\)\.map\(command=>upstream\("\/api\/control\?wait=1"/g);
   assert.doesNotMatch(source,/brightness:draft\.brightness\|\|100,effect:p\.effect/);
   assert.doesNotMatch(source,/target:"All",power:true,brightness,effect:p\.effect/);
   assert.match(source,/stopAiPreviewBrightness\(\);put\("running_event_id"/);
