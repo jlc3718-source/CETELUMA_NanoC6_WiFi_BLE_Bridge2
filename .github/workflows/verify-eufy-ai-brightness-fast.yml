@@ -1,0 +1,26 @@
+name: Verify fast Eufy AI brightness
+on:
+  push:
+    branches: [fix/oracle-eufy-ai-brightness-responsive-20261011]
+  pull_request:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['JasonHomeServer/**']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: JasonHomeServer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: JasonHomeServer/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
