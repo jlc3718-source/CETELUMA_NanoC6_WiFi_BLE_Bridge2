@@ -47,3 +47,11 @@ verifies `resolverAuthority.inSync` before accepting the gateway as healthy.
 - Restore the live SQLite database and private environment (not contained in GitHub), plus nginx/TLS configuration, from a PRIVATE Oracle snapshot. Source zip plus APK is NOT a complete runtime backup.
 - The exact recovery package, signed APK, and restore instructions are filed in the owner's Google Drive: `Jason Home 2/Recovery/v2.0.4/`. DO NOT delete legacy recovery until a private database snapshot and restore rehearsal succeed.
 - Curtain E-88 **is not in** the captured 88-entry catalog (E-0–E-87); no BLE command is verified. Flip/rotate opcodes are unverified in the original capture and must not be described as physically verified.
+
+## October 11, 2026 — current release: AI brightness/response repair
+
+- Android package remains **Jason Home 2 `com.jasonhome2.app` v2.0.7**. The AI responsiveness update is served over Oracle HTTPS; installing an old APK or restoring an old branch will roll the interface back.
+- Fixed preview buttons that forcibly set AI/saved-event brightness to 100%; the AI tab now has a debounced live brightness slider synchronized with Home. Layer transitions keep per-device manual brightness overrides.
+- Oracle Eufy controller source commit: `4d55d618069f35f9ea0df67615aae01183ea404b`; always generate resolver from **live controller /api/health**, not an older pinned resolver. This commit optimizes AI E120 scene acknowledgments and continues strict E22 status verification.
+- Restore source archive: `Jason Home 2/Recovery/v2.0.7/Jason-Home-2-CURRENT-AI-SOURCE-RECOVERY.zip` in owner's Google Drive.
+- Keep the private SQLite database, Oracle .env, nginx/TLS and encrypted Android release signing backup when cleaning up obsolete installers. The source ZIP alone is not a complete Oracle runtime backup.
