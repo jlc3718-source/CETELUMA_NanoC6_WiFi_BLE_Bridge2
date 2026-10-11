@@ -132,3 +132,11 @@ export function buildEffect(model:string,effect:string,colors:number[],speed:num
   if(isE22(model))return {opcode:OP_COLOR,fields:effectE22(effect,raw,speed,reverse,lampCount,level,pattern)};
   return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,lampCount,level,pattern)};
 }
+
+/** A brightness slider request should not resend the Eufy power/effect/color recipe. */
+export function isBrightnessOnlyControl(input:unknown):boolean{
+  if(!input||typeof input!=="object"||Array.isArray(input))return false;
+  const req=input as Record<string,unknown>,value=Number(req.brightness);
+  return req.brightness!=null&&Number.isFinite(value)&&value>=1&&value<=100
+    &&Object.keys(req).every(key=>key==="target"||key==="brightness");
+}
