@@ -193,11 +193,12 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.deepEqual(second[0].colors,[0xff0000,0x0000ff]);
     await post('/api/ble/target',{target:1});
     await post('/api/control',{brightness:18});
-    await waitFor(()=>controlWrites.filter(w=>w.name?.includes('Layer 3')).length===4);
+    await waitFor(()=>controlWrites.filter(w=>w.name?.includes('Layer 3')).length===1);
     const third=controlWrites.filter(w=>w.name?.includes('Layer 3'));
-    assert.deepEqual(Object.fromEntries(third.map(w=>[w.target,w.brightness])),
-      {Pool:18,House:36,Garage:36,Shed:36});
-    assert.ok(third.every(w=>w.effect==='Twinkle'),'Keep AI layer effects intact');
+    assert.equal(third[0].target,'All','One Oracle override, not four competing overrides');
+    assert.deepEqual(third[0].scenes,
+      {Pool:{brightness:18},House:{brightness:36},Garage:{brightness:36},Shed:{brightness:36}});
+    assert.equal(third[0].effect,'Twinkle','Keep AI layer effects intact');
     await post('/api/resume',{});
 
   }finally{
