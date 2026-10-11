@@ -58,6 +58,24 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.match(curtainText,/AndroidCurtain/);
     assert.match(curtainText,/jh2CurtainScan/);
     assert.match(curtainText,/renderDevices/);
+    // Every original SmartDawn screenshot tile must be present. Never silently
+    // substitute procedural preview artwork if a shard is missing.
+    assert.match(curtainText,/loadOriginalSmartDawnPreviews/);
+    assert.match(curtainText,/JH2_CURTAIN_IMAGE_SRC/);
+    assert.doesNotMatch(curtainText,/seed\*41\+185/);
+    let observedImageCount=0;
+    for(let shard=0;shard<11;shard++){
+      const name='curtain_real_'+String(shard).padStart(2,'0')+'.js';
+      const resp=await fetch(base+'/'+name,{headers:{cookie}});
+      assert.equal(resp.status,200,'Missing original SmartDawn images '+name);
+      const body=await resp.text();
+      assert.match(body,/data:image\/webp;base64,/);
+      const ids=[...body.matchAll(/"(\d+)":"data:image\/webp;base64,/g)].map(m=>+m[1]);
+      assert.deepEqual(ids,Array.from({length:8},(_,i)=>shard*8+i));
+      observedImageCount+=ids.length;
+    }
+    assert.equal(observedImageCount,88);
+
     assert.match(curtainText,/perform\('connect',\{address\}/);
     // The prior Curtain navigation implementation set [hidden] on *every*
     // existing page. That suppressed the Home house and event mini previews
