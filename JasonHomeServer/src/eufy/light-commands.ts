@@ -40,3 +40,11 @@ function e120Catalog(localId:number,catalogId:number,rawA5:number,colors:number[
 function e120Grouped(localId:number,catalogId:number,rawA5:number,colors:number[],lampCount:number){const lamps=clamp(lampCount,2,120),src=colors?.length?colors:[0xffffff],count=Math.max(1,Math.min(8,src.length)),pal:number[]=[count];for(let i=0;i<count;i++)pal.push(...nativeColor("T8L00",src[i]));const groups:number[]=[];for(let g=0;g<count;g++){const pos:number[]=[];for(let i=g;i<lamps;i+=count)pos.push(i);groups.push(pos.length,...pos);}return concat(tlv(0xa3,le16(localId)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([clamp(rawA5,1,5)])),tlv(0xa6,new Uint8Array(pal)),tlv(0xa7,new Uint8Array(groups)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,new Uint8Array([0,0])),tlv(0xac,le32(catalogId)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));}
 export function effectE120(effect:string,colors:number[],speed:number,reverse:boolean,lampCount:number){const src=colors?.length?colors:[0xffffff],palette=src.slice(0,8),mode=e120ModeId(effect,reverse),sp=clamp(speed,1,5);return palette.length>1?e120Grouped(mode,10034,sp,palette,lampCount):e120Catalog(mode,10034,sp,palette,lampCount);}
 export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean):{opcode:number;fields:Uint8Array}{const safe=colors?.length?colors:[0xffffff];if(isSolidEffect(effect))return {opcode:OP_COLOR,fields:color(model,safe[0],defaultLampCount(model))};if(isE22(model))return {opcode:OP_SHOW,fields:show(model,effect,safe,speed,reverse)};return {opcode:OP_COLOR,fields:effectE120(effect,safe,speed,reverse,defaultLampCount(model))};}
+
+/** A brightness slider action should never resend the power/effect/color recipe. */
+export function isBrightnessOnlyControl(input:unknown):boolean{
+  if(!input||typeof input!=="object"||Array.isArray(input))return false;
+  const req=input as Record<string,unknown>,value=Number(req.brightness);
+  return req.brightness!=null&&Number.isFinite(value)&&value>=1&&value<=100
+    &&Object.keys(req).every(key=>key==="target"||key==="brightness");
+}
