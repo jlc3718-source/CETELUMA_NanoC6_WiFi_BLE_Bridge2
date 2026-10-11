@@ -87,6 +87,15 @@ def main():
         write("oracle-promo-state-result",{"id":"state-"+stamp,"task":"promo_state_get"})
     elif args.mode=="handoff":
         urls=[]
+        campaigns=json.loads(pathlib.Path("oracle-daily/campaigns.json").read_text())
+        allowed_urls={c["url"] for c in campaigns if c.get("preparation_allowed",True)
+            and (not c.get("ends") or now<=datetime.datetime.fromisoformat(c["ends"]))}
+        # Concrete Tools rules prohibit third-party assistance, including preparation.
+        session=get("/login/status")
+        if any(urllib.parse.urlsplit(u).hostname in ("concretetoolsdirect.com","www.concretetoolsdirect.com")
+               for u in session.get("targets",[])):
+            reset=call({"id":"manual-remove-restricted-"+stamp,"task":"login_stop"})
+            if not reset.get("ok"):raise RuntimeError("Could not clear restricted manual tabs")
         today=now.date().isoformat()
         for p in pathlib.Path(".github").glob("oracle-*-result.json"):
             try:j=json.loads(p.read_text());r=j.get("result",{})
@@ -97,10 +106,10 @@ def main():
             if started!=today:continue
             if r.get("status") in ("manual_verification_required","missing_required_fields","manual_submission_required_by_rules","prepared","manual_entry_pending","login_required","entry_form_not_found","unexpected_entry_redirect"):
                 url=r.get("source_url") or r.get("url")
-                if url and "gleam.io" not in url:urls.append(url)
+                if url in allowed_urls and "gleam.io" not in url:urls.append(url)
         if not urls:
             queue=pathlib.Path(".github/oracle-manual-handoff-urls.json")
-            if queue.exists():urls=json.loads(queue.read_text()).get("urls",[])
+            if queue.exists():urls=[u for u in json.loads(queue.read_text()).get("urls",[]) if u in allowed_urls and "gleam.io" not in u]
         if not urls:
             pathlib.Path(".github/oracle-manual-handoff-result.json").write_text(json.dumps({"ok":True,"result":{"task":"prepare_restricted","status":"no_current_manual_items"}})+"\n")
         else:write("oracle-manual-handoff-result",{"id":"manual-"+stamp,"task":"prepare_restricted","profile":"daily","urls":list(dict.fromkeys(urls))[:10],"eligibility":{"age_verified":True}})
