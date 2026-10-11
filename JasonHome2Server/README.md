@@ -2,7 +2,7 @@
 
 Jason Home 2 is a separate Android package (`com.jasonhome2.app`) and a
 hosted web gateway. It reuses the running Oracle scheduler and Eufy transport,
-so this test installation does not start a second scheduler.
+and DOES NOT start a second scheduler.
 
 The gateway runs on loopback port 8081 behind the existing HTTPS nginx server
 at `/jason-home-2/`. It uses its own SQLite file for web-only settings.
@@ -25,7 +25,7 @@ to a private persistent directory. The independent Android build script
 requires Android platform 35, build tools 35, and the Jason Home 2 signing
 key. Do not place those credentials in the repository.
 
-The original Android app and server source remain present. Jason Home 2
+Legacy Jason Home 5.4.x source remains as a compatibility input for existing preview assets ONLY. Never build or install the original Jason Home as Jason Home 2. Jason Home 2
 shares the active Oracle controller for actual device operations. White Override 1
 and White Override 2 are scheduled Sunday through Thursday only. Do not use both
 interfaces to edit the same event concurrently: edits use Oracle calendar revisions
@@ -37,6 +37,13 @@ After a controller-only update, redeploy this web gateway so its generated
 scheduler resolver records the same live Oracle build SHA. The deployment
 verifies `resolverAuthority.inSync` before accepting the gateway as healthy.
 
-## October 11, 2026 release sync
+## Canonical production identity — DO NOT REPLACE WITH LEGACY PROJECTS
 
-Jason Home 2 version 2.0.3 adds the isolated SmartDawn Curtain tab and signed Android BLE bridge, without changing AI/Factory/event data. The production Eufy brightness-only optimization is deployed from current Oracle controller commit `8202a5af4336b9a992feb7e51ebf3dc0acb111b7` and keeps the existing E120/E22 purple and Halloween effect encoding. Regenerate the web gateway resolver against the **live Oracle commit** on every deploy; fail closed if hashes differ.
+- **Android package:** `com.jasonhome2.app`; v2.0.4 is the frozen, restore-verified baseline; v2.0.5 restores illustrative Curtain effect previews and exact observed E-85–E-87 catalog mappings.
+- **Active Android/UI branch:** `jason-home-2-web`, with immutable recovery branch `release/jason-home-2-v2.0.4-baseline-20261010` (SHA `d32967c76c5bee2e3af8482cf74687926122508d`).
+- **Production Oracle Eufy controller:** commit `8202a5af4336b9a992feb7e51ebf3dc0acb111b7`, frozen as `release/jason-home-2-oracle-controller-20261010`.
+- The older GitHub branch named `jason-home-cloudflare-rebuild` is MISNAMED: it actually holds the latest **Oracle** Eufy controller source. **Do not deploy Cloudflare.** Do not use any APK version 5.4.x or source from `JasonHome` for this Android package.
+- Oracle E120/E22 purple and Halloween effect encoding, Factory and AI Event Builder must remain unchanged in Curtain-only releases.
+- Restore the live SQLite database and private environment (not contained in GitHub), plus nginx/TLS configuration, from a PRIVATE Oracle snapshot. Source zip plus APK is NOT a complete runtime backup.
+- The exact recovery package, signed APK, and restore instructions are filed in the owner's Google Drive: `Jason Home 2/Recovery/v2.0.4/`. DO NOT delete legacy recovery until a private database snapshot and restore rehearsal succeed.
+- Curtain E-88 **is not in** the captured 88-entry catalog (E-0–E-87); no BLE command is verified. Flip/rotate opcodes are unverified in the original capture and must not be described as physically verified.

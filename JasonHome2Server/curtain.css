@@ -18,3 +18,18 @@
 .jh2-curtain-page .jh2-curtain-layout {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .jh2-curtain-page .jh2-curtain-label {display:flex;justify-content:space-between;font-size:13px;margin:12px 0 6px}
 @media(max-width:420px){.jh2-curtain-page .jh2-curtain-effect-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.v3BottomNav .tab[data-tab="curtain"] span{font-size:9px}}
+/* Captured SmartDawn effect catalog: sample thumbnails, NOT device frame captures. */
+.jh2-curtain-page .jh2-curtain-effect {gap:3px;min-height:100px;padding:5px 4px;overflow:hidden}
+.jh2-curtain-page .jh2-effect-preview {display:block;width:100%;max-width:110px;height:auto;aspect-ratio:98/48;border:1px solid rgba(115,185,255,.25);border-radius:6px}
+.jh2-curtain-page .jh2-preview-light {animation:jh2-captured-sample-glow 2.4s ease-in-out infinite alternate}
+@keyframes jh2-captured-sample-glow {0%{opacity:.16}50%{opacity:.78}100%{opacity:1}}
+.jh2-curtain-page .jh2-curtain-effect.unverified {border-style:dashed;opacity:.75}
+.jh2-curtain-page .jh2-curtain-matrix-wrap {display:flex;justify-content:center;padding:12px 4px 5px}
+.jh2-curtain-page .jh2-curtain-matrix {display:grid;grid-template-columns:1fr 2fr 1fr;align-items:center;justify-items:center;gap:3px;width:min(100%,210px);height:150px;padding:12px;border:1px solid rgba(116,211,249,.4);border-radius:9px;background:repeating-linear-gradient(90deg,rgba(37,222,167,.12) 0px,rgba(37,222,167,.12) 1px,transparent 2px,transparent 7px);color:#bdeeff;transition:transform .28s ease}
+.jh2-curtain-page .jh2-curtain-matrix span{font-size:10px}
+.jh2-curtain-page .jh2-curtain-matrix b{font-size:17px}
+.jh2-curtain-page .jh2-curtain-matrix strong{font-size:13px}
+.jh2-curtain-page .jh2-curtain-matrix[data-orientation="4"]{transform:rotate(180deg)}
+.jh2-curtain-page .jh2-curtain-matrix[data-orientation="5"]{transform:scaleY(-1)}
+.jh2-curtain-page .jh2-curtain-matrix[data-orientation="6"]{transform:scaleX(-1)}
+@media(prefers-reduced-motion:reduce){.jh2-curtain-page .jh2-preview-light{animation:none}}

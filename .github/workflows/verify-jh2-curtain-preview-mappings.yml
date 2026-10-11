@@ -1,0 +1,54 @@
+name: Verify SmartDawn curtain effect previews and captured mappings
+on:
+  push:
+    branches: [fix/jh2-curtain-preview-catalog-layout-20261010]
+  pull_request:
+    branches: [jason-home-2-web]
+    paths:
+      - 'JasonHome2Server/curtain.js'
+      - 'JasonHome2Server/curtain.css'
+      - 'JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate presentation and exact observed mapping without asserting unverified E-88
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check JasonHome2Server/curtain.js
+          node - <<'JS'
+          const fs=require('fs'),assert=require('assert');
+          const js=fs.readFileSync('JasonHome2Server/curtain.js','utf8');
+          const native=fs.readFileSync('JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java','utf8');
+          const css=fs.readFileSync('JasonHome2Server/curtain.css','utf8');
+          assert(js.includes('length:88'));
+          assert(js.includes('id:88'));
+          assert(js.includes('verified:false'));
+          assert(js.includes('83494'));
+          assert(js.includes('15224,15225,83494'));
+          assert(js.includes('function previewIcon'));
+          assert(js.includes('local orientation'));
+          assert(native.includes('CAPTURED_PATTERN_GROUPS'));
+          assert(native.includes('15224,15225,83494'));
+          assert(css.includes('jh2-effect-preview'));
+          assert(css.includes('data-orientation="4"'));
+          assert(css.includes('data-orientation="5"'));
+          assert(css.includes('data-orientation="6"'));
+          console.log('SmartDawn UI and captured mapping assertions: PASS');
+          JS
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check native Android bridge compiles
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          test -s "$SDK/platforms/android-35/android.jar"
+          mkdir -p /tmp/jh2-classes
+          javac --release 17 -cp "$SDK/platforms/android-35/android.jar" -d /tmp/jh2-classes JasonHome2Android/src/com/jasonhome2/app/*.java
