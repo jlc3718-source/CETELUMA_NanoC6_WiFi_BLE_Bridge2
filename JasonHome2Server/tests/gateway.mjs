@@ -56,6 +56,9 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const curtainText=await curtainScript.text();
     assert.match(curtainText,/length:88/);
     assert.match(curtainText,/AndroidCurtain/);
+    assert.match(curtainText,/jh2CurtainScan/);
+    assert.match(curtainText,/renderDevices/);
+    assert.match(curtainText,/perform\('connect',\{address\}/);
     // The prior Curtain navigation implementation set [hidden] on *every*
     // existing page. That suppressed the Home house and event mini previews
     // when navigating back, despite their registered animation callbacks.
