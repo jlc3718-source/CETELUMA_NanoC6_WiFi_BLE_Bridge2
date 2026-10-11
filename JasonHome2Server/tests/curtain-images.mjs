@@ -24,8 +24,7 @@ test('all 88 previews reproduce the supplied SmartDawn screenshots, never proced
     assert.equal(bytes.toString('ascii',0,4),'RIFF','Invalid WebP file E-'+i);
     assert.equal(bytes.toString('ascii',8,12),'WEBP','Invalid WebP file E-'+i);
     assert.equal(createHash('sha256').update(bytes).digest('hex'),m.sha256,'Wrong screenshot image E-'+i);
-    if(i>=57&&i<=62)assert.ok(m.source_coverage<1,'Uncaptured pixels must not be invented');
-    else assert.equal(m.source_coverage,1);
+    assert.equal(m.source_coverage,1,'Every original screenshot tile must be complete: E-'+i);
   }
   const ui=readFileSync(resolve(base,'curtain.js'),'utf8');
   assert.match(ui,/loadOriginalSmartDawnPreviews/);
