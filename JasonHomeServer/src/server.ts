@@ -214,7 +214,9 @@ function safeScene(input:any,base:Scene=DEFAULT_SCENE):Scene{
     power:input?.power==null?base.power:!!input.power,
     brightness:clamp(Number(input?.brightness??base.brightness)||base.brightness,1,100),
     effect:canonicalEffect(input?.effect||base.effect),
-    colors:colors.length?colors:[...base.colors],
+    colors:canonicalEffect(input?.effect||base.effect)==="Streamlight"&&(colors.length?colors:base.colors).length===1
+      ?[(colors.length?colors:base.colors)[0],0x000000]
+      :(colors.length?colors:[...base.colors]),
     speed:clamp(Number(input?.speed??base.speed)||base.speed,1,10)
   };
   if(factoryEffectName)scene.factoryEffectName=factoryEffectName;

@@ -51,17 +51,25 @@ export function color(model:string,rgb:number,lampCount:number):Uint8Array{
   return nativeE120Fields(LOCAL_COLOR_ID,5,[rgb],lamps);
 }
 function speedValueE22(speed:number){return [2,3,4,6,8,14,19,25,38,50][Math.round(clamp(speed,1,10))-1];}
+/** Streamlight is a two-color effect: preserve color one, default second to black. 
+ * Keep single-color Static untouched. Called for both E120 and E22 payloads. */
+export function streamlightPalette(effect:string,colors:number[]):number[]{
+  const palette=(Array.isArray(colors)?colors:[]).slice(0,8).map(c=>c&0xffffff);
+  const name=E120_STYLE_ALIASES[effect]||effect;
+  if(name==="Streamlight"&&palette.length===1)return [palette[0],0x000000];
+  return palette.length?palette:[0xffffff];
+}
 export function styleDefinition(effect:string,colors:number[],speed:number,reverse:boolean){
   const alias:Record<string,string>={Flow1:"Chase",Flow2:"Chase",Cycle:"Jump",Streamlight:"Wipe / Fill",Twinkle:"Twinkle / Sparkle",Breathe:"Breath"};
   const source=STYLE_TEMPLATES[alias[effect]||effect];
   if(effect==="Flow2")reverse=!reverse;
   if(!source)throw new Error("Unsupported effect style: "+effect);
-  const rawSpeed=speedValueE22(speed),palette=colors.slice(0,8).map(c=>(c&0xffffff).toString(16).padStart(6,"0")).join("|");
+  const normalized=streamlightPalette(effect,colors),rawSpeed=speedValueE22(speed),palette=normalized.slice(0,8).map(c=>(c&0xffffff).toString(16).padStart(6,"0")).join("|");
   let preset={...source,speed:rawSpeed,layers:source.layers.map(layer=>({
     ...layer,colors:palette,layer_speed:rawSpeed,
     // Single-region twinkle/meteor templates should cover the complete installed string.
     ...(source.layers.length===1?{layer_range:[0,100]}:{}),
-    ...(Number(layer.current_layer_type)===1?{color_quantity_range:colors.length}:{})
+    ...(Number(layer.current_layer_type)===1?{color_quantity_range:normalized.length}:{})
   }))};
   if(reverse)preset=reverseFactoryPresetDirection(preset);
   return preset;
@@ -128,7 +136,7 @@ export function effectE22(effect:string,colors:number[],speed:number,reverse:boo
   return nativeE22Fields(mode,e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level,reverse,pattern);
 }
 export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean,level=100,lampCount=defaultLampCount(model),pattern?:SegmentPattern):{opcode:number;fields:Uint8Array}{
-  const raw=colors?.length?colors:[0xffffff];
+  const raw=streamlightPalette(effect,colors);
   if(isE22(model))return {opcode:OP_COLOR,fields:effectE22(effect,raw,speed,reverse,lampCount,level,pattern)};
   return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,lampCount,level,pattern)};
 }

@@ -10,7 +10,10 @@ for(const f of fixtures){
  const solid=f.solid!==undefined;
  if(solid)continue;
  const preset=styleDefinition(f.effect,f.colors,[1,3,5,8,10][(f.speed??3)-1],f.reverse??false);
- assert.equal(Buffer.from(buildFactoryFields("T8L02",preset)).toString("hex"),f.hex,f.effect);
+ // Original one-color SDK snapshots remain useful evidence but intentionally
+ // differ for Streamlight: the new requirement sends black as color slot two.
+ if(!(["Streamlight","Wipe / Fill","Meteor / Comet"].includes(f.effect)&&f.colors.length===1))
+   assert.equal(Buffer.from(buildFactoryFields("T8L02",preset)).toString("hex"),f.hex,f.effect);
 }
 assert.equal(effectReportMatches({effectId:10996},10996),true);
 assert.equal(effectReportMatches({effectId:10775},10996),false);
@@ -63,8 +66,15 @@ for(const [effect,mode] of Object.entries({Static:20006,Flow1:20000,Flow2:20001,
   assert.equal(Buffer.from(fields.a3,"hex").readUInt16LE(),mode,effect);
   assert.equal(fields.a4,e22A4[effect],effect+" A4");
   assert.equal(fields.a5,speed===1?"01":"0a",effect+" direct speed");
-  assert.equal(fields.a6,"010000ff0000",effect+" five-byte RGBCW blue");
-  assert.equal(fields.a7,"1c"+Array.from({length:28},(_,i)=>i.toString(16).padStart(2,"0")).join(""),effect+" Shed positions");
+  if(effect==="Streamlight"){
+    assert.equal(fields.a6,"020000ff00000000000000","Streamlight two RGBCW palette entries: blue and black");
+    const assignment=Buffer.from(fields.a7,"hex"),positions=[];
+    for(let p=0;p<assignment.length;){const count=assignment[p++];positions.push(...assignment.subarray(p,p+count));p+=count;}
+    assert.deepEqual(positions.sort((x,y)=>x-y),Array.from({length:28},(_,i)=>i));
+  }else{
+    assert.equal(fields.a6,"010000ff0000",effect+" five-byte RGBCW blue");
+    assert.equal(fields.a7,"1c"+Array.from({length:28},(_,i)=>i.toString(16).padStart(2,"0")).join(""),effect+" Shed positions");
+  }
   assert.equal(fields.a8,"64");assert.equal(fields.a9,"0000000000");
  }
 }
