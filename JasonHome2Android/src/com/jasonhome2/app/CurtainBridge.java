@@ -270,6 +270,10 @@ public final class CurtainBridge {
         if(adapter==null||!adapter.isEnabled()) {failConnection("Turn on Bluetooth, then try Connect.");return;}
         if(missingPermissions().length>0){failConnection("Nearby devices permission required");return;}
         stopScan();closeGatt();ready=false;writer=null;heartbeat=null;candidate=null;
+        // Android Settings may show a bonded/cached name when the current BLE
+        // advertisement has no local name. Check that trusted Android cache first.
+        BluetoothDevice bonded=matchingBonded(adapter,requestedAddress);
+        if(!manualDiscovery&&bonded!=null){candidate=bonded;connectDevice(gen,bonded);return;}
         scanner=adapter.getBluetoothLeScanner();
         if(scanner==null){failConnection("Android Bluetooth scanner unavailable");return;}
         scanning=true;
@@ -279,8 +283,12 @@ public final class CurtainBridge {
                     if(gen!=generation||!scanning||result==null)return;
                     BluetoothDevice dev=result.getDevice();
                     String name=result.getScanRecord()==null?null:result.getScanRecord().getDeviceName();
-                    if(name==null && dev!=null) {try{name=dev.getName();}catch(SecurityException ignored){}}
-                    if(dev!=null && name!=null && name.toUpperCase(java.util.Locale.ROOT).contains(DEVICE_NAME)) {
+                    if((name==null||name.isEmpty())&&dev!=null){try{name=dev.getName();}catch(SecurityException ignored){}}
+                    remember(dev,name,result.getRssi());
+                    String address=dev==null?"":dev.getAddress();
+                    boolean known=!knownAddress().isEmpty()&&knownAddress().equalsIgnoreCase(address);
+                    boolean chosen=!requestedAddress.isEmpty()&&requestedAddress.equalsIgnoreCase(address);
+                    if(!manualDiscovery && dev!=null && (chosen||known||isSmartDawn(name))) {
                         candidate=dev;stopScan();connectDevice(gen,dev);
                     }
                 });
@@ -292,7 +300,18 @@ public final class CurtainBridge {
         try {
             scanner.startScan(null,new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),scanCallback);
         } catch(Throwable e) {failConnection("Scan could not start: "+e.getMessage());return;}
-        scheduleConnectTimeout(14500,()->{if(gen==generation&&scanning)failConnection("DN5E58 not found. Make sure the SmartDawn app is closed and the curtain is powered.");});
+        scheduleConnectTimeout(18000,()->{
+            if(gen!=generation||!scanning)return;
+            stopScan();
+            if(manualDiscovery){
+                String id=connectId;connectId=null;
+                finish(id,true,discovered.isEmpty()?
+                    "No BLE devices advertised. Check Nearby devices permission and close SmartDawn.":
+                    discovered.size()+" BLE devices found. Select DN5E58 from the list.",false);
+            }else{
+                failConnection("DN5E58 not in the BLE scan ("+discovered.size()+" devices detected). Tap Scan devices to choose the curtain or a paired device.");
+            }
+        });
     }
     private void connectDevice(int gen,BluetoothDevice device) {
         attempts++;
@@ -320,6 +339,7 @@ public final class CurtainBridge {
                         heartbeat=svc==null?null:svc.getCharacteristic(HEARTBEAT);
                         if(writer==null){retryOrFail("SmartDawn write characteristic unavailable");return;}
                         cancelConnectTimeout();ready=true;
+                        try{activity.getPreferences(Context.MODE_PRIVATE).edit().putString("smartdawn_validated_address",which.getDevice().getAddress()).apply();}catch(Throwable ignored){}
                         String id=connectId;connectId=null;
                         finish(id,true,"Connected to DN5E58",true);
                         // Read-only discovery first; do not send surprise power/effect commands on connect.
