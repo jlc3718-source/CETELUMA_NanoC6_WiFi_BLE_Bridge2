@@ -66,4 +66,16 @@ jobs:
           else
             echo 'Previously generated encrypted private-runtime snapshot: NOT FOUND'
           fi
+          echo 'Backup helper privilege probes:'
+          for item in python3 cp tar chown rm docker; do
+            case "$item" in
+              python3) if sudo -n python3 -c 'pass' >/dev/null 2>&1; then result=YES; else result=NO; fi ;;
+              cp) if sudo -n cp --version >/dev/null 2>&1; then result=YES; else result=NO; fi ;;
+              tar) if sudo -n tar --version >/dev/null 2>&1; then result=YES; else result=NO; fi ;;
+              chown) if sudo -n chown --version >/dev/null 2>&1; then result=YES; else result=NO; fi ;;
+              rm) if sudo -n rm --version >/dev/null 2>&1; then result=YES; else result=NO; fi ;;
+              docker) if sudo -n docker ps --format '{{.Names}}' >/dev/null 2>&1; then result=YES; else result=NO; fi ;;
+            esac
+            printf 'Backup helper privilege: %s %s\\n' "$item" "$result"
+          done
           echo 'Read-only audit finished. No tokens, backups, database contents, or environment values were printed.'
