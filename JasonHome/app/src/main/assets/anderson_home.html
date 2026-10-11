@@ -404,11 +404,26 @@ if(!document.getElementById("eventMiniPreviewStyle")){const st=document.createEl
 setInterval(()=>{if(document.hidden)return;const now=performance.now();for(const [host,item] of eventMiniRegistry){if(!host.isConnected){eventMiniRegistry.delete(host);continue}const box=host.getBoundingClientRect();if(box.bottom<0||box.top>innerHeight)continue;const scene=item.scenes?item.scenes[Math.floor(now/4000)%item.scenes.length]:item.scene;item.dots.forEach((dot,i)=>{const p=eventMiniPaint(scene,i,item.dots.length,now);dot.style.background=p.c;dot.style.opacity=Math.max(.08,p.a);dot.style.transform=`scale(${p.scale})`;dot.style.boxShadow=`0 0 ${Math.round(2+5*p.a)}px ${p.c}`})}},120);
 function setRunning(e,t,n,p=null){running={name:e,colors:[...t],effect:n,pattern:p||null},preview={name:e,colors:[...t],effect:n,pattern:p||null};$("nowTheme").textContent=e;const h=$("homeEffect");h&&(h.value=n,h._syncEffectButtons?.());kickAnimation()}
 function setPreview(e,t,n,p=null){preview={name:e,colors:[...t],effect:n,pattern:p||null};kickAnimation()}
-async function manual(e){void 0!==e.power&&(power=e.power),void 0!==e.brightness&&(brightness=e.brightness),void 0!==e.speed&&(speed=e.speed),(e.colors||e.effect||e.name||e.pattern)&&setRunning(e.name||running.name||"Manual",e.colors||running.colors,e.effect||running.effect||"Jump",e.pattern||null);const on=$("homePowerOn"),off=$("homePowerOff"),hb=$("homeBrightness"),hbv=$("homeBrightVal");on&&(on.classList.toggle("primary",power),on.setAttribute("aria-pressed",String(!!power)));off&&(off.classList.toggle("primary",!power),off.setAttribute("aria-pressed",String(!power)));hb&&(hb.value=brightness);hbv&&(hbv.textContent=brightness+"%");$("aiLiveBright")&&($("aiLiveBright").value=brightness);$("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");syncSpeedControls(speed),kickAnimation(),status(API_MODE?"Sending to Oracle…":"Preview mode — control simulated.");if(!API_MODE)return;try{const accepted=await post("/api/control",e);if(Object.keys(e).length===1&&e.brightness!==undefined){status("Brightness "+brightness+"% — sent to Oracle");}else{applyState(accepted);status("Manual override active.");}}catch(t){status("Control failed: "+t.message)}}
+async function manual(e){void 0!==e.power&&(power=e.power),void 0!==e.brightness&&(brightness=e.brightness),void 0!==e.speed&&(speed=e.speed),(e.colors||e.effect||e.name||e.pattern)&&setRunning(e.name||running.name||"Manual",e.colors||running.colors,e.effect||running.effect||"Jump",e.pattern||null);const on=$("homePowerOn"),off=$("homePowerOff"),hb=$("homeBrightness"),hbv=$("homeBrightVal");on&&(on.classList.toggle("primary",power),on.setAttribute("aria-pressed",String(!!power)));off&&(off.classList.toggle("primary",!power),off.setAttribute("aria-pressed",String(!power)));hb&&(hb.value=brightness);hbv&&(hbv.textContent=brightness+"%");$("aiLiveBright")&&($("aiLiveBright").value=brightness);$("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");syncSpeedControls(speed),kickAnimation(),status(API_MODE?"Sending to Oracle…":"Preview mode — control simulated.");if(!API_MODE)return;try{const accepted=await post("/api/control",e);if(Object.keys(e).length===1&&e.brightness!==undefined){status("Brightness "+brightness+"% — "+(accepted.queued?"queued on Oracle":"accepted by Oracle")+" · colors and effect unchanged");$("aiBrightnessNote")&&($("aiBrightnessNote").textContent=brightness+"% "+(accepted.queued?"queued for Eufy":"accepted by Oracle")+" · AI animation continues");}else{applyState(accepted);status("Manual override active.");}}catch(t){status("Control failed: "+t.message)}}
 $("homePowerOn")?.addEventListener("click",()=>manual({power:!0}));
 $("homePowerOff")?.addEventListener("click",()=>manual({power:!1}));
-$("homeBrightness")?.addEventListener("input",e=>{brightness=+e.target.value;$("homeBrightVal").textContent=e.target.value+"%";kickAnimation()});
-$("homeBrightness")?.addEventListener("change",e=>manual({brightness:+e.target.value}));
+let homeBrightTimer=null,homeBrightSentLevel=null,homeBrightSentAt=0;
+function flushHomeBrightness(){
+  clearTimeout(homeBrightTimer);
+  const value=Number($("homeBrightness")?.value||brightness);
+  if(homeBrightSentLevel===value&&Date.now()-homeBrightSentAt<800)return;
+  homeBrightSentLevel=value;homeBrightSentAt=Date.now();
+  void manual({brightness:value});
+}
+$("homeBrightness")?.addEventListener("input",e=>{
+  brightness=+e.target.value;$("homeBrightVal").textContent=e.target.value+"%";
+  $("aiLiveBright")&&($("aiLiveBright").value=brightness);
+  $("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");
+  kickAnimation();
+  clearTimeout(homeBrightTimer);
+  homeBrightTimer=setTimeout(flushHomeBrightness,210);
+});
+$("homeBrightness")?.addEventListener("change",flushHomeBrightness);
 let aiBrightnessTimer=null,aiBrightnessRequest=0;
 function previewBrightnessChanged(value,send=true){
   brightness=Math.max(1,Math.min(100,Math.round(Number(value)||1)));
@@ -416,7 +431,7 @@ function previewBrightnessChanged(value,send=true){
   $("homeBrightVal")&&($("homeBrightVal").textContent=brightness+"%");
   $("aiLiveBright")&&($("aiLiveBright").value=brightness);
   $("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");
-  $("aiBrightnessNote")&&($("aiBrightnessNote").textContent="Selected "+brightness+"% · light effect and palette preserved");
+  $("aiBrightnessNote")&&($("aiBrightnessNote").textContent="Brightness "+brightness+"% · sending without changing the AI effect or palette…");
   kickAnimation();
   if(send){
     clearTimeout(aiBrightnessTimer);

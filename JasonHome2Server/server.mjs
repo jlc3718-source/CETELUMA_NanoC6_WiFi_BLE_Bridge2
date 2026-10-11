@@ -959,8 +959,10 @@ async function route(req,res){
     if(!brightnessOnly&&aiPreviewActiveGeneration===aiPreviewGeneration){
       aiPreviewGeneration++;stopAiPreviewBrightness();
     }
-    const accepted=await upstream("/api/control","POST",{...body,target});
+    // Update the active AI layer brightness BEFORE awaiting the upstream
+    // request. Otherwise the next queued 100% AI layer can overtake the change.
     if(brightnessOnly)overrideAiPreviewBrightness(target,body.brightness);
+    const accepted=await upstream("/api/control","POST",{...body,target});
     // The browser already applies manual changes optimistically. Do not block
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
@@ -1012,10 +1014,11 @@ async function route(req,res){
         if(token!==aiPreviewGeneration)return;
         const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
         const layer={name:"AI Preview • "+draft.name+" • Layer "+(i+1),power:true,brightness:selectedBrightness,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern};
-        await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control","POST",command)));
+        await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control?wait=1","POST",command)));
+        if(token!==aiPreviewGeneration)return;
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
-    })().catch(()=>{});
+    })().catch(e=>console.error("[AI preview backpressure]",e?.message||e));
     return send(res,202,{ok:true,queued:true,layers:layers.length});
   }
   // Edited AI one-time previews accept the unsaved editor payload.
@@ -1036,7 +1039,8 @@ async function route(req,res){
         if(token!==aiPreviewGeneration)return;
         const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
         const layer={name:"AI Edit Preview • "+name+" • Layer "+(i+1),power:true,brightness,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern};
-        await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control","POST",command)));
+        await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control?wait=1","POST",command)));
+        if(token!==aiPreviewGeneration)return;
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
     })().catch(e=>console.error("[AI edit preview]",e?.message||e));
