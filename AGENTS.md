@@ -102,3 +102,24 @@ GitHub runner queue vary.
   current-plus-one build/release retention policy.
 
 - Current event/palette behavior is defined by the 1/9/16 schedule profiles above, with Yellow calibrated to `#E08700`. Preserve the 16 named slots and the current color-correction table.
+
+## Project identities and two-generation housekeeping (October 2026)
+
+Canonical, separate products:
+
+- **Anderson Home:** NanoC6 firmware and its Android shell. Production source on `main`, signed OTA channel on `ota`.
+- **Jason Home 2:** Android package `com.jasonhome2.app`, its independent WebView/web application, plus its Oracle-hosted Eufy controller. Do not substitute any old Jason Home 5.x application/build.
+
+For each project, retain exactly **newest verified complete release + the immediately previous verified complete release** in the user-facing release area. A complete release includes applicable source revision, tested installable artifact, checksum/manifest, deployment record, and a working rollback path. Never count an untested build or a documentation file as a validated version.
+
+**Mandatory sequence on every new release:** build → automated tests → validate compiled binary/APK, app/signature and source SHA → publish the new release → verify its public artifact/installer and actual target behavior → back up live state and prove rollback → rotate: new current, former current as prior, delete the older third generation from active deliverables. If publication, health checking, rollback or backup fails, do not prune the existing verified generations.
+
+The existing Anderson retention workflow limits its public firmware releases to the newest two and attempts to prune old successful workflow runs. Jason Home 2's equivalent publication and two-generation artifact rotation is **not yet fully implemented**; it must be completed rather than described as automatic until it is tested.
+
+Project naming: new Jason Home 2-facing documents, Android UI, Oracle services, deployments, branches and release artifacts must identify **Jason Home 2**. Do not create new deployments under the old original Jason Home identity, or use Cloudflare as the name of Oracle hosting/controller components. Cloudflare may still be an actual external AI service, if configured, and must not be blindly deleted when required. Some legacy GitHub branch names, Docker/SQLite paths, nginx site names, service identifiers and environment keys remain active; migrate those with dual-read/compatibility and end-to-end tests before retiring their old names. **Do not globally search-and-replace**, which could break service access, credentials, OTA updates or database retention.
+
+Oracle-hosted Jason Home 2 depends on private runtime state, including live SQLite DB, environment, credentials, nginx/TLS configuration and Android signing identity. An independently validated encrypted runtime snapshot and restored production service have not been established. Do not destroy, rename, wipe or redeploy the active Oracle instance until these safeguards are verified. The Oracle scheduler remains the sole authority; preserve its Eufy command mappings and current event schedules.
+
+Git history and protected tags are historical source records; GitHub branches and workflow artifacts must be reviewed separately. Only delete a stale branch after verifying no active deployments, workflows, PRs, protected refs or unreleased changes depend on it. Keep unrelated Silverado/automations code and other projects out of this cleanup.
+
+Treat this as an acceptance criterion for **all future** Anderson Home and Jason Home 2 builds; report separately what was published, what was physically verified and what remains uncleaned.
