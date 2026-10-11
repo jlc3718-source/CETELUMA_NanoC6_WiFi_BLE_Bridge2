@@ -15,8 +15,9 @@ function init(){
  settings.append(panel);
  const checkbox=document.getElementById('jh2NanoSyncEnabled'),status=document.getElementById('jh2NanoSyncStatus');
  const refresh=document.getElementById('jh2NanoSyncRefresh');
- let working=false;
+ let working=false,configured=false;
  const show=(data)=>{
+   configured=data.configured===true;
    checkbox.checked=data.enabled===true;
    checkbox.disabled=!data.configured||working;
    status.textContent=data.configured
@@ -38,7 +39,7 @@ function init(){
  async function fetchStatus(){
    if(working)return;working=true;checkbox.disabled=true;
    try{show(await callApi('GET'));}catch(e){status.textContent=e.message}
-   finally{working=false;if(status.textContent.indexOf('not configured')<0)checkbox.disabled=false}
+   finally{working=false;checkbox.disabled=!configured}
  }
  checkbox.addEventListener('change',async()=>{
    if(working)return;
