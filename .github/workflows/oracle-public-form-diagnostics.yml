@@ -1,4 +1,5 @@
 name: Oracle Public Form Diagnostics
+# Requested daily sweep: October 11, 2026 afternoon.
 on:
   push:
     branches: [main]
