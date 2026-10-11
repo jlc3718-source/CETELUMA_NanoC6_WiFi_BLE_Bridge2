@@ -1,4 +1,4 @@
-name: Verify Curtain sequences and safe speed floor
+name: Verify Curtain sequence and brightness minimum with original speed
 on:
   push:
     branches: [feature/jh2-curtain-multiselect-sequence-20261011]
@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --check JasonHome2Server/curtain.js
-      - name: Assert sequence is opt-in and native speed cannot go below 4
+      - name: Assert sequence is opt-in; brightness floored at 4; speed remains original
         run: |
           node - <<'JS'
           const fs=require('fs'),assert=require('assert');
@@ -27,8 +27,10 @@ jobs:
           assert(ui.includes("perform('sequenceStop'"));
           assert(ui.includes("playlist.length<2"));
           assert(ui.includes('min="5" max="3600"'));
-          assert(ui.includes('current raw')||ui.includes('device raw 4'));
-          assert(bridge.includes('nativeSpeedFromUi(level)'));
+          assert(ui.includes('Brightness 1 = actual curtain level 4'));
+          assert(bridge.includes('nativeBrightnessFromUi(level)'));
+          assert(bridge.includes('addCommand(0x09db,field(level),id)'));
+          assert(!bridge.includes('nativeSpeedFromUi('));
           assert(bridge.includes('Math.max(4,Math.min(100,4+Math.round((ui-1)*96f/99f)))'));
           assert(bridge.includes('stopSequence(); // A manually chosen effect cancels automatic sequence.'));
           assert(bridge.includes('private void disconnectInternal(){\n        stopSequence();'));
@@ -37,7 +39,7 @@ jobs:
             const raw=Math.max(4,Math.min(100,4+Math.round((x-1)*96/99)));
             assert(raw>=4&&raw<=100);
           }
-          console.log('Sequencer enabled gate, order, interval, E-88 guard and speed 4 floor: PASS');
+          console.log('Sequencer enabled gate, order, interval, E-0..87 guard and brightness 4 floor: PASS');
           JS
       - uses: actions/setup-java@v5
         with:
