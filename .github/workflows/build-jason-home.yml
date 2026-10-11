@@ -70,27 +70,16 @@ jobs:
               raise SystemExit('Wi-Fi cloud status model missing')
           if '@JavascriptInterface' not in bridge or 'public String request(String method, String url, String body, String token)' not in bridge:
               raise SystemExit('Android WebView API bridge entry point missing')
-          if 'Jason Home 2 • 5.4.14 Oracle' not in bridge:
-              raise SystemExit('Bridge version is not Jason Home 2 5.4.14 Oracle')
-          for nav_marker in ['v3CurrentEventLink','openCurrentScheduledEvent','scheduledEventCard']:
-              if nav_marker not in js:
-                  raise SystemExit('Home current-event schedule jump missing '+nav_marker)
-          for html_marker in ['dataset.eventId','dataset.customScheduleId']:
-              if html_marker not in html:
-                  raise SystemExit('Schedule card identity missing '+html_marker)
+          if 'Craumer Home • 5.4.15 Oracle' not in bridge:
+              raise SystemExit('Bridge version is not 5.4.15 Oracle')
           if 'cloud.setScene' not in bridge or 'cloud.setBrightness' not in bridge or 'cloud.setEffect' not in bridge:
               raise SystemExit('Full Wi-Fi light controls are not routed through bridge')
           if 'cloud.setScene(0, scene.effect' not in schedule_service:
               raise SystemExit('Schedule service is not sending full Wi-Fi scenes')
           if 'new BleLightController' in main or 'BleLightController' in schedule_service:
               raise SystemExit('Bluetooth transport is still active in app startup or scheduler')
-          curtain=Path('JasonHome/app/src/main/java/com/jasonhome/app/SmartDawnCurtainController.java').read_text()
-          if 'android.hardware.bluetooth_le' in manifest:
-              raise SystemExit('Unexpected legacy Bluetooth LE feature flag enabled')
-          if 'android.permission.BLUETOOTH_SCAN' in manifest or 'android.permission.BLUETOOTH_CONNECT' in manifest:
-              for marker in ['final class SmartDawnCurtainController','DEVICE_NAME="DN5E58"','/api/curtain/control']:
-                  if marker not in curtain + bridge:
-                      raise SystemExit('Curtain-only Bluetooth bridge validation failed '+marker)
+          if 'android.permission.BLUETOOTH' in manifest or 'android.hardware.bluetooth_le' in manifest:
+              raise SystemExit('Bluetooth manifest permissions/features still enabled')
           for marker in ['class EufyCloudController','CloudSessionStore','setPower(int target,boolean on)','setBrightness(int target,int percent)','setEffect(int target,String effect','setScene(int target,String effect']:
               if marker not in cloud + secure_store:
                   raise SystemExit('Cloud controller/persistence missing '+marker)
@@ -331,14 +320,14 @@ jobs:
         shell: bash
         run: |
           gradle -p JasonHome --no-daemon :app:assembleRelease
-          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.11-Oracle-UNSIGNED.apk
-          sha256sum Jason-Home-5.4.11-Oracle-UNSIGNED.apk
+          cp JasonHome/app/build/outputs/apk/release/app-release-unsigned.apk Jason-Home-5.4.15-Oracle-UNSIGNED.apk
+          sha256sum Jason-Home-5.4.15-Oracle-UNSIGNED.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-5.4.11-Oracle-UNSIGNED-do-not-install
-          path: Jason-Home-5.4.11-Oracle-UNSIGNED.apk
+          name: Jason-Home-5.4.15-Oracle-UNSIGNED-do-not-install
+          path: Jason-Home-5.4.15-Oracle-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 14
 

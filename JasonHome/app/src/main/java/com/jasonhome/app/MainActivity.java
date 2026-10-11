@@ -1,11 +1,9 @@
 package com.jasonhome.app;
 
 import android.app.Activity;
-import android.Manifest;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -21,8 +19,6 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-
-import java.util.ArrayList;
 
 public class MainActivity extends Activity implements AndersonApiBridge.Host, EufyCloudController.Listener {
     private WebView webView;
@@ -45,7 +41,6 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         cloud = new EufyCloudController(this, this);
         cloudflare = new CloudflareApiClient(this);
         bridge = new AndersonApiBridge(this, this, deviceStore, cloud, cloudflare, schedule);
-        requestCurtainBluetoothPermissions();
 
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.rgb(4,13,29));
@@ -115,17 +110,6 @@ public class MainActivity extends Activity implements AndersonApiBridge.Host, Eu
         if (!cloudflare.isCloudMode()) cloud.start();
         else bridge.syncCalendarToOracleAsync();
         AndersonScheduleService.update(this);
-    }
-
-    private void requestCurtainBluetoothPermissions() {
-        if (Build.VERSION.SDK_INT >= 31) {
-            ArrayList<String> needed = new ArrayList<>();
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.BLUETOOTH_SCAN);
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.BLUETOOTH_CONNECT);
-            if (!needed.isEmpty()) requestPermissions(needed.toArray(new String[0]), 58);
-        } else if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 58);
-        }
     }
 
     @Override
