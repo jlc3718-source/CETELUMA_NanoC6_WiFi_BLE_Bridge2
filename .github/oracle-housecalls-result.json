@@ -1,22 +1,26 @@
 {
-  "id": "housecalls-october-2026-2026-10-10T05-26-22",
+  "id": "housecalls-october-2026-2026-10-10T22-05-56",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:26:22.773Z",
-  "finished": "2026-10-10T09:26:31.383Z",
+  "started": "2026-10-11T02:05:57.045Z",
+  "finished": "2026-10-11T02:05:57.057Z",
   "result": {
     "task": "generic_form_entry",
-    "status": "prepared",
-    "prepared": true,
-    "challenge": false,
-    "url": "https://housecallsdiy.com/sweepstakes",
-    "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
-    "filled": [
-      "first_name",
-      "last_name",
-      "email"
+    "status": "manual_entry_pending",
+    "active": true,
+    "profile": "daily",
+    "login_url": "https://dollars-forming-apparently-builders.trycloudflare.com/control",
+    "targets": [
+      "https://www.focusgroupplacement.com/study/98633/feedback-opportunity-for-skilled-trades-professionals",
+      "https://www.toolnut.com/pages/tool-nut-monthly-giveaway-win-free-tools",
+      "https://concretetoolsdirect.com/pages/sweepstakes",
+      "https://housecallsdiy.com/sweepstakes"
     ],
-    "missing": [],
+    "viewport": {
+      "width": 1280,
+      "height": 850
+    },
+    "version": "2026.10.10.1",
     "submitted": false,
     "confirmed": false
   }
