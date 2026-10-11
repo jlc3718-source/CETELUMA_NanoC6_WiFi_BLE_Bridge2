@@ -21,8 +21,11 @@ import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Arrays;
 import java.util.UUID;
 
@@ -51,6 +54,12 @@ public final class CurtainBridge {
     private int seq = 1, tx = 1;
     private String connectId;
     private String permissionId;
+    private boolean pendingManualScan;
+    private boolean manualDiscovery;
+    private String requestedAddress = "";
+    private final LinkedHashMap<String,BluetoothDevice> discovered = new LinkedHashMap<>();
+    private final LinkedHashMap<String,String> discoveredNames = new LinkedHashMap<>();
+    private final LinkedHashMap<String,Integer> discoveredRssi = new LinkedHashMap<>();
     private final ArrayDeque<Frame> frames = new ArrayDeque<>();
     private Frame writing;
     private Runnable writeTimeout;
@@ -95,12 +104,59 @@ public final class CurtainBridge {
     private void finish(String id,boolean ok,String message,boolean connected) {
         if (id==null) return;
         JSONObject reply = new JSONObject();
-        try { reply.put("ok",ok); reply.put("message",message); reply.put("error",ok?JSONObject.NULL:message); reply.put("connected",connected); }
+        try { reply.put("ok",ok); reply.put("message",message); reply.put("error",ok?JSONObject.NULL:message); reply.put("connected",connected); reply.put("devices",discoveredJson()); }
         catch(Exception ignored) { }
         main.post(() -> {
             if (web != null) web.evaluateJavascript("window.__curtainNativeResult&&window.__curtainNativeResult(" +
                 JSONObject.quote(id) + "," + reply.toString() + ");",null);
         });
+    }
+
+    private JSONArray discoveredJson() {
+        JSONArray output = new JSONArray();
+        int n = 0;
+        for (Map.Entry<String,BluetoothDevice> entry: discovered.entrySet()) {
+            if (n++ >= 40) break;
+            JSONObject item = new JSONObject();
+            try {
+                String address=entry.getKey();
+                item.put("address",address);
+                item.put("name",discoveredNames.containsKey(address)?discoveredNames.get(address):"Unnamed BLE device");
+                item.put("rssi",discoveredRssi.containsKey(address)?discoveredRssi.get(address):JSONObject.NULL);
+            } catch(Exception ignored){}
+            output.put(item);
+        }
+        return output;
+    }
+    private static boolean isSmartDawn(String name) {
+        if(name==null)return false;
+        String n=name.trim().toUpperCase(java.util.Locale.ROOT).replace(" ","");
+        return n.contains(DEVICE_NAME) || n.contains("SMARTDAWN") || n.startsWith("DNX:");
+    }
+    private void remember(BluetoothDevice dev,String name,int rssi) {
+        if(dev==null)return;
+        try {
+            String address=dev.getAddress();
+            if(address==null||address.length()!=17)return;
+            if(!discovered.containsKey(address)&&discovered.size()>=40)return;
+            discovered.put(address,dev);
+            if(name!=null&&!name.isEmpty())discoveredNames.put(address,name);
+            discoveredRssi.put(address,rssi);
+        } catch(SecurityException ignored){}
+    }
+    private BluetoothDevice matchingBonded(BluetoothAdapter adapter,String requested) {
+        try {
+            for(BluetoothDevice d:adapter.getBondedDevices()) {
+                String name=d.getName();
+                remember(d,name,-127);
+                if(!requested.isEmpty()&&requested.equalsIgnoreCase(d.getAddress()))return d;
+                if(requested.isEmpty()&&isSmartDawn(name))return d;
+            }
+        } catch(Throwable ignored){}
+        return null;
+    }
+    private String knownAddress() {
+        return activity.getPreferences(Context.MODE_PRIVATE).getString("smartdawn_validated_address","");
     }
 
     private String[] missingPermissions() {
@@ -116,12 +172,22 @@ public final class CurtainBridge {
 
     private void execute(String id,String action,JSONObject json) {
         if ("status".equals(action)) {finish(id,true,ready?"Connected to DN5E58":"Not connected",ready);return;}
+        if ("scan".equals(action)) {
+            if(ready){finish(id,true,"Already connected to the curtain",true);return;}
+            String[] missing=missingPermissions();
+            if(missing.length>0){permissionId=id;pendingManualScan=true;activity.requestPermissions(missing,PERMISSIONS_REQUEST);return;}
+            beginConnect(id,"",true);return;
+        }
         if ("disconnect".equals(action)) { disconnectInternal();finish(id,true,"Disconnected",false);return; }
         if ("connect".equals(action)) {
             if (ready) { finish(id,true,"Connected to DN5E58",true);return; }
+            String address=json.optString("address","").trim().toUpperCase(java.util.Locale.ROOT);
+            if(!address.isEmpty()&&!address.matches("(?i)[0-9A-F]{2}(:[0-9A-F]{2}){5}")) {
+                finish(id,false,"Invalid Bluetooth address",false);return;
+            }
             String[] missing = missingPermissions();
-            if (missing.length>0) { permissionId=id;activity.requestPermissions(missing,PERMISSIONS_REQUEST);return; }
-            beginConnect(id);return;
+            if (missing.length>0) { permissionId=id;pendingManualScan=false;requestedAddress=address;activity.requestPermissions(missing,PERMISSIONS_REQUEST);return; }
+            beginConnect(id,address,false);return;
         }
         if (!ready || writer==null || gatt==null) {finish(id,false,"Not connected: tap Connect first",false);return;}
         switch(action) {
@@ -174,12 +240,28 @@ public final class CurtainBridge {
             if (id==null) return;
             for(int grant:results)if(grant!=PackageManager.PERMISSION_GRANTED) {finish(id,false,"Bluetooth permissions denied. Allow Nearby devices in Android Settings.",false);return;}
             if(missingPermissions().length>0){finish(id,false,"Bluetooth permissions still missing",false);return;}
-            beginConnect(id);
+            beginConnect(id,requestedAddress,pendingManualScan);
+            pendingManualScan=false;requestedAddress="";
         });
     }
 
-    private void beginConnect(String id) {
-        disconnectInternal(); connectId=id;attempts=0;seq=1;tx=1;scanFresh();
+    private void beginConnect(String id,String address,boolean scanOnly) {
+        // Explicit selection is allowed only from a prior discovery, or a bonded device.
+        BluetoothDevice selected=null;
+        if(!address.isEmpty()){
+            selected=discovered.get(address);
+            if(selected==null){
+                BluetoothManager manager=(BluetoothManager)activity.getSystemService(Context.BLUETOOTH_SERVICE);
+                BluetoothAdapter adapter=manager==null?null:manager.getAdapter();
+                if(adapter!=null)selected=matchingBonded(adapter,address);
+            }
+            if(selected==null){finish(id,false,"Device not found in recent scan. Tap Scan devices and select it.",false);return;}
+        }
+        disconnectInternal();
+        if(scanOnly||address.isEmpty())discovered.clear();
+        connectId=id;attempts=0;seq=1;tx=1;manualDiscovery=scanOnly;requestedAddress=address;
+        if(selected!=null){final int gen=++generation;candidate=selected;connectDevice(gen,selected);}
+        else scanFresh();
     }
     private void scanFresh() {
         final int gen=++generation;
