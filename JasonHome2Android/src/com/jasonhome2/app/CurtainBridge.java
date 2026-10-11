@@ -268,7 +268,7 @@ public final class CurtainBridge {
                 int percent = validatePct(json.optInt("value",-1));
                 addCommand(0x09cd,field(Math.round(percent*255f/100f)),id);break;
             }
-            case "speed": {int percent=validatePct(json.optInt("value",-1));addCommand(0x09db,field(percent),id);break;}
+            case "speed": {int level=validatePct(json.optInt("value",-1));addCommand(0x09db,field(nativeSpeedFromUi(level)),id);break;}
             case "layout": {
                 int v=json.optInt("value",-1);
                 if (v!=0 && v!=4 && v!=5 && v!=6) throw new IllegalArgumentException("Unknown layout value");
@@ -283,6 +283,11 @@ public final class CurtainBridge {
         }
     }
 
+    /** Curtain controller values 1–3 extinguish LEDs; UI 1 maps to safe raw 4. */
+    static int nativeSpeedFromUi(int ui) {
+        if(ui<1||ui>100)throw new IllegalArgumentException("Curtain speed must be 1–100");
+        return Math.max(4,Math.min(100,4+Math.round((ui-1)*96f/99f)));
+    }
     private static int validatePct(int v) { if(v<1||v>100)throw new IllegalArgumentException("Setting must be 1–100%");return v; }
     private static byte[] varint(int v) {
         byte[] out = new byte[5];int i=0;
