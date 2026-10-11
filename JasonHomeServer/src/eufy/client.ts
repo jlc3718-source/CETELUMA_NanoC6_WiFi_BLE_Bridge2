@@ -1,7 +1,7 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
 import { effectReportMatches, startCommandCapture, mqttConnectionMode, sendMqtt, sendMqttStream, warmPersistentMqtt } from "./mqtt.js";
-import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, catalogPresetE120, brightness as brightnessFields } from "./light-commands.js";
+import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, catalogPresetE120, e120NeedsPurpleCompensation, E120_LOW_PURPLE_SOURCE, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
 
@@ -21,6 +21,7 @@ function nowSec(){return Math.floor(Date.now()/1000);}
 export class EufyClient {
   region="us-pr";bootstrap="";share="";ident="";token="";uid="";accountUid="";
   authed=false;lights=new Map<string,any>();creds:MqttCredentials|null=null;
+  private e120LowPurpleActive=new Map<string,boolean>();
   constructor(private installId:string,session?:EufySession){if(session)this.importSession(session);}
   importSession(s:EufySession){this.region=s.region||"us-pr";this.bootstrap=s.bootstrap||"";this.token=s.token||"";this.uid=s.uid||"";this.accountUid=s.accountUid||"";this.authed=!!(this.token&&this.uid&&this.accountUid);this.share="";this.ident="";this.lights.clear();this.creds=null;}
   exportSession():EufySession{return {region:this.region,bootstrap:this.bootstrap,token:this.token,uid:this.uid,accountUid:this.accountUid};}
@@ -104,7 +105,26 @@ export class EufyClient {
   async startCommandCapture(name:string){if(!this.creds)await this.certificate();return startCommandCapture(this.creds!,this.target(name));}
   async status(name:string){return this.command(name,[{opcode:0x0200,fields:statusFields(),label:"STATUS"}],3000);}
   async power(name:string,on:boolean){return this.command(name,[{opcode:OP_SETUP,fields:powerFields(on),label:on?"ON":"OFF"}]);}
-  async brightness(name:string,value:number){return this.command(name,[{opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`}]);}
+  async brightness(name:string,value:number,scene?:{effect:string;colors:number[];speed:number;pattern?:import("../types.js").SegmentPattern;factoryEffectName?:string}){
+    const spec=this.spec(name),base={opcode:OP_SETUP,fields:brightnessFields(value),label:`BRIGHTNESS ${value}%`};
+    // Only retint the known #5B00E6 purple on E120, at the 25% boundary.
+    // Do NOT replay the full scene on every slider movement below 25%.
+    if(spec.model==="T8L00"&&scene&&!scene.factoryEffectName&&
+       Array.isArray(scene.colors)&&scene.colors.some(c=>(c&0xffffff)===E120_LOW_PURPLE_SOURCE)){
+      const desired=e120NeedsPurpleCompensation(scene.colors,value);
+      if(this.e120LowPurpleActive.get(name)!==desired){
+        const fx=buildEffect(spec.model,scene.effect,scene.colors,scene.speed,
+          REVERSED_INSTALLATIONS.has(name),value,spec.lampCount,scene.pattern);
+        const result=await this.command(name,[
+          {opcode:fx.opcode,fields:fx.fields,label:desired?"E120 LOW PURPLE RED CORRECTION":"E120 PURPLE NORMAL"},
+          base
+        ],3000);
+        this.e120LowPurpleActive.set(name,desired);
+        return result;
+      }
+    }
+    return this.command(name,[base]);
+  }
   async scene(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
     const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
     const frames:CommandFrame[]=[
@@ -128,6 +148,7 @@ export class EufyClient {
     const brightnessVerified=typeof state.report?.brightness==="number"?Number(state.report.brightness)===level:null;
     if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
     if(brightnessVerified===false)throw new Error(`${name} brightness mismatch: expected ${level}%, device reports ${state.report?.brightness}%`);
+    if(s.model==="T8L00")this.e120LowPurpleActive.set(name,e120NeedsPurpleCompensation(colors,level));
     return {...result,report:state.report,deviceReported:state.deviceReported,effectVerified:verified,brightnessVerified};
   }
   async sceneFast(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
@@ -140,7 +161,9 @@ export class EufyClient {
     // Some E22 strings accept the MQTT command but do not emit the status
     // report that scene() verifies. Test Halloween only needs broker acceptance
     // here; its live overlay loop immediately owns subsequent frames.
-    return this.command(name,frames,1500);
+    const result=await this.command(name,frames,1500);
+    if(s.model==="T8L00")this.e120LowPurpleActive.set(name,e120NeedsPurpleCompensation(colors,level));
+    return result;
   }
   async sceneTransient(name:string,effect:string,colors:number[],speed:number,brightness:number,pattern?:import("../types.js").SegmentPattern){
     const s=this.spec(name),reverse=REVERSED_INSTALLATIONS.has(name),level=Math.max(1,Math.min(100,Math.round(brightness))),fx=buildEffect(s.model,effect,colors,speed,reverse,level,s.lampCount,pattern);
