@@ -1,0 +1,45 @@
+name: Verify Jason Home 2 AI live brightness
+on:
+  push:
+    branches: [fix/jh2-ai-brightness-responsive-ui-20261011]
+  pull_request:
+    branches: [jason-home-2-web]
+    paths:
+      - 'JasonHome2Server/**'
+      - 'JasonHome/app/src/main/assets/**'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check JasonHome2Server/server.mjs
+      - run: node --test JasonHome2Server/tests/nanoc6-sync.mjs JasonHome2Server/tests/curtain-images.mjs
+      - name: Compile inline HTML script and assert no forced 100 percent brightness
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('JasonHome/app/src/main/assets/anderson_home.html').read_text()
+          scripts=[m for m in re.findall(r'<script[^>]*>(.*?)</script>',s,re.I|re.S) if m.strip()]
+          assert scripts
+          for i,content in enumerate(scripts):Path(f'/tmp/jh2-ai-inline-{i}.js').write_text(content)
+          assert 'id="aiLiveBright"' in s
+          assert 'id="aiLiveBrightVal"' in s
+          assert 'brightness=100,speed=e.speed' not in s
+          assert 'hb&&(hb.value=100)' not in s
+          assert 'brightness:brightness' in s
+          assert 'previewBrightnessChanged' in s
+          gateway=Path('JasonHome2Server/server.mjs').read_text()
+          assert 'previewFast:true' in gateway
+          assert 'selectedBrightness' in gateway
+          assert 'overrideAiPreviewBrightness' in gateway
+          print('User adjustable AI brightness, preview retention, preview fast hints PASS')
+          PY
+          for file in /tmp/jh2-ai-inline-*.js; do node --check "$file"; done
