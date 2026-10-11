@@ -803,8 +803,12 @@ async function statusPayload(refresh=false){
 async function manualControl(input:any,sequence?:number,preserveTestHalloweenPreview=false){
   const brightnessOnly=isBrightnessOnlyControl(input);
   stopCalendarRandomFlash();
-  if(!preserveTestHalloweenPreview)stopTestHalloweenPreview();
+  // Changing brightness must not tear down an active AI Test Halloween flash.
+  if(!brightnessOnly&&!preserveTestHalloweenPreview)stopTestHalloweenPreview();
   const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
+  if(brightnessOnly&&testHalloweenPreviewLevels.size){
+    for(const name of names)testHalloweenPreviewLevels.set(name,scenes[name].brightness);
+  }
   const firstScene=scenes[names[0]]||DEFAULT_SCENE;
   const overrideSequence=sequence??++manualSequence;
   // Do not let calendar bookkeeping delay the physical command. The scheduler
@@ -986,11 +990,11 @@ async function applyTestHalloweenBaseFast(name:string,level:number,reason="Test 
     return false;
   }
 }
-async function runTestHalloweenTarget(name:string,level:number,shouldContinue:()=>boolean){
+async function runTestHalloweenTarget(name:string,level:number|(()=>number),shouldContinue:()=>boolean){
   const previous=new Map<string,number[]>();
   let failures=0;
   while(shouldContinue()){
-    const sent=await sendTestHalloweenFrame(name,level,previous);
+    const sent=await sendTestHalloweenFrame(name,typeof level==="function"?level():level,previous);
     if(!sent){
       failures++;
       if(failures>=TEST_HALLOWEEN_MAX_FAILURES){
@@ -1024,22 +1028,26 @@ function ensureCalendarRandomFlash(names:string[],brightness:number){
   }))).catch(e=>console.error("[Test Halloween calendar]",e?.message||e));
 }
 let testHalloweenPreviewGeneration=0;
-function stopTestHalloweenPreview(){testHalloweenPreviewGeneration++;}
+const testHalloweenPreviewLevels=new Map<string,number>();
+function stopTestHalloweenPreview(){testHalloweenPreviewGeneration++;testHalloweenPreviewLevels.clear();}
 function queueTestHalloweenPreview(brightness=100,durationMs=45000){
   const level=clamp(Math.round(brightness)||100,1,100),token=++testHalloweenPreviewGeneration;
+  testHalloweenPreviewLevels.clear();
+  for(const name of DEVICE_NAMES)testHalloweenPreviewLevels.set(name,level);
   void (async()=>{
     stopCalendarRandomFlash();
     setMeta("override",JSON.stringify({
       active:true,target:"All",scene:{power:true,brightness:level,effect:"Static",colors:[TEST_HALLOWEEN_PURPLE],speed:1},
       sequence:++manualSequence,createdAt:Date.now(),expiresAt:nextOverrideExpiry(new Date())
     }));
-    await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,level,"Test Halloween preview base")));
+    await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,testHalloweenPreviewLevels.get(name)??level,"Test Halloween preview base")));
     if(token!==testHalloweenPreviewGeneration||!TEST_HALLOWEEN_ANIMATION_ENABLED)return;
     const until=Date.now()+Math.max(5000,Math.min(120000,durationMs));
-    await Promise.all([...DEVICE_NAMES].map(name=>runTestHalloweenTarget(name,level,()=>token===testHalloweenPreviewGeneration&&Date.now()<until)));
+    await Promise.all([...DEVICE_NAMES].map(name=>runTestHalloweenTarget(name,()=>testHalloweenPreviewLevels.get(name)??level,()=>token===testHalloweenPreviewGeneration&&Date.now()<until)));
     // A completed preview should not freeze on a random orange frame.
     if(token===testHalloweenPreviewGeneration){
-      await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,level,"Test Halloween preview finish")));
+      await Promise.all([...DEVICE_NAMES].map(name=>applyTestHalloweenBaseFast(name,testHalloweenPreviewLevels.get(name)??level,"Test Halloween preview finish")));
+      testHalloweenPreviewLevels.clear();
     }
   })().catch(e=>console.error("[Test Halloween preview]",e?.message||e));
   return {
