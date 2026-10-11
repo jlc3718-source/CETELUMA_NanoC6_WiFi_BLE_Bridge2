@@ -13,10 +13,16 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     ],customSchedules:[
       {id:'schedule-leap',name:'Leap Night',enabled:true,annual:false,year:2028,month:2,day:29,effect:'Breath',colors:[0x123456]}
     ],special:[]};
-  const reads={status:0,calendar:0};
+  const reads={status:0,calendar:0},controlWrites=[];
   const backend=http.createServer(async(req,res)=>{
     assert.equal(req.headers.authorization,'Bearer test-key');
     if(req.url==='/api/status')reads.status++;
+    if(req.url==='/api/control'&&req.method==='POST'){
+      let raw='';for await(const chunk of req)raw+=chunk;
+      controlWrites.push(JSON.parse(raw));
+      res.setHeader('content-type','application/json');
+      res.end(JSON.stringify({ok:true,queued:true}));return;
+    }
     if(req.url==='/api/calendar')reads.calendar++;
     if(req.url==='/api/calendar/sync'&&req.method==='POST'){
       let raw='';for await(const chunk of req)raw+=chunk;
@@ -155,6 +161,46 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     assert.equal(reads.status,statusBefore,'concurrent screens reuse the warm status cache');
     assert.equal(reads.calendar,calendarBefore,'concurrent screens reuse the warm calendar cache');
     assert.equal((await fetch(base+'/api/event',{method:'POST',headers:{cookie,origin:'https://evil.example','content-type':'application/json'},body:'{}'})).status,403);
+    // AI-created layered patterns must retain manually selected brightness
+    // across subsequent layers, without restarting or altering color/effect.
+    const post=async (path,data)=>{
+      const response=await fetch(base+path,{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(data)});
+      assert.ok(response.ok,path+' HTTP '+response.status);
+      return response.json();
+    };
+    const waitFor=async predicate=>{
+      for(let tries=0;tries<95;tries++){
+        if(predicate())return;
+        await new Promise(resolve=>setTimeout(resolve,120));
+      }
+      assert.fail('AI preview did not advance to the expected layer');
+    };
+    await post('/api/ai/preview-edit',{
+      name:'AI Layer Dimming Regression',brightness:100,colors:['#FF0000','#0000FF'],
+      layers:[{effect:'Flow1',speed:2,minutes:2,shift:0},
+              {effect:'Flow2',speed:2,minutes:2,shift:0},
+              {effect:'Twinkle',speed:2,minutes:2,shift:0}]
+    });
+    await waitFor(()=>controlWrites.some(w=>w.name?.includes('Layer 1')));
+    assert.equal(controlWrites.find(w=>w.name?.includes('Layer 1')).brightness,100);
+    await post('/api/control',{brightness:36});
+    await waitFor(()=>controlWrites.some(w=>w.name?.includes('Layer 2')));
+    const second=controlWrites.filter(w=>w.name?.includes('Layer 2'));
+    assert.equal(second.length,1);
+    assert.equal(second[0].brightness,36,'AI must never restore 100% after manual dimming');
+    assert.equal(second[0].target,'All');
+    assert.equal(second[0].effect,'Flow2');
+    assert.deepEqual(second[0].colors,[0xff0000,0x0000ff]);
+    await post('/api/ble/target',{target:1});
+    await post('/api/control',{brightness:18});
+    await waitFor(()=>controlWrites.filter(w=>w.name?.includes('Layer 3')).length===1);
+    const third=controlWrites.filter(w=>w.name?.includes('Layer 3'));
+    assert.equal(third[0].target,'All','One Oracle override, not four competing overrides');
+    assert.deepEqual(third[0].scenes,
+      {Pool:{brightness:18},House:{brightness:36},Garage:{brightness:36},Shed:{brightness:36}});
+    assert.equal(third[0].effect,'Twinkle','Keep AI layer effects intact');
+    await post('/api/resume',{});
+
   }finally{
     child.kill();backend.close();rmSync(dir,{recursive:true,force:true});
   }

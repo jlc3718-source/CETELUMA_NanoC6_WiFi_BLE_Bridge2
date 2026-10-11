@@ -452,6 +452,33 @@ const minutes=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(s||""));return m?Mat
 const clock=n=>`${String(Math.floor(Number(n||0)/60)).padStart(2,"0")}:${String(Number(n||0)%60).padStart(2,"0")}`;
 const targetNames=["All","Pool","House","Garage","Shed"];
 let aiPreviewGeneration=0;
+// Layer changes must not silently reset a manually selected brightness to 100%.
+const AI_EUFY_TARGETS=["Pool","House","Garage","Shed"];
+let aiPreviewActiveGeneration=0;
+let aiPreviewLevels=new Map();
+function beginAiPreviewBrightness(token,level){
+  aiPreviewActiveGeneration=token;
+  const value=Math.max(1,Math.min(100,Math.round(Number(level)||100)));
+  aiPreviewLevels=new Map(AI_EUFY_TARGETS.map(name=>[name,value]));
+}
+function overrideAiPreviewBrightness(target,level){
+  if(aiPreviewActiveGeneration!==aiPreviewGeneration)return;
+  const value=Math.max(1,Math.min(100,Math.round(Number(level))));
+  for(const name of target==="All"?AI_EUFY_TARGETS:[target]){
+    if(AI_EUFY_TARGETS.includes(name))aiPreviewLevels.set(name,value);
+  }
+}
+function aiPreviewLayerCommands(data){
+  const values=AI_EUFY_TARGETS.map(name=>aiPreviewLevels.get(name)??data.brightness);
+  if(values.every(value=>value===values[0]))return [{...data,target:"All",brightness:values[0]}];
+  // Keep ONE shared Oracle override while retaining different brightness
+  // levels for all four strings. Four independent /api/control writes would
+  // overwrite each other's global manual override and disrupt the AI pattern.
+  return [{...data,target:"All",scenes:Object.fromEntries(AI_EUFY_TARGETS.map((name,i)=>[name,{brightness:values[i]}]))}];
+}
+function stopAiPreviewBrightness(){
+  aiPreviewActiveGeneration=0;aiPreviewLevels.clear();
+}
 const TEST_HALLOWEEN_NAME="Test Halloween";
 const TEST_HALLOWEEN_PURPLE=0x5B00E6;
 const TEST_HALLOWEEN_ORANGE=0xFF0D00;
@@ -925,7 +952,15 @@ async function route(req,res){
     if(body.colors)body.colors=colorInts(body.colors);
     put("running_event_id","");
     if(body.name)put("running_name",String(body.name).slice(0,100));
+    const brightnessOnly=Object.keys(body).length===1&&Object.hasOwn(body,"brightness")
+      &&Number.isFinite(Number(body.brightness))&&Number(body.brightness)>=1&&Number(body.brightness)<=100;
+    // A power/effect selection supersedes an AI preview. A brightness-only
+    // change must NOT stop the layers, or the next layer will force 100% again.
+    if(!brightnessOnly&&aiPreviewActiveGeneration===aiPreviewGeneration){
+      aiPreviewGeneration++;stopAiPreviewBrightness();
+    }
     const accepted=await upstream("/api/control","POST",{...body,target});
+    if(brightnessOnly)overrideAiPreviewBrightness(target,body.brightness);
     // The browser already applies manual changes optimistically. Do not block
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
@@ -959,13 +994,14 @@ async function route(req,res){
     return send(res,200,{ok:true,transcript,reply:result.reply,draft,state:await aiState(),audioBase64:speech,audioMime:"audio/mpeg"});
   }
   if(method==="POST"&&path==="/api/ai/reset"){
-    aiPreviewGeneration++;put("ai_thread",[]);put("ai_draft",null);
+    aiPreviewGeneration++;stopAiPreviewBrightness();put("ai_thread",[]);put("ai_draft",null);
     try{await upstream("/api/resume","POST",{});}catch(e){console.error("[AI reset resume]",e?.message||e);}
     return send(res,200,await aiState());
   }
   if(method==="POST"&&path==="/api/ai/preview"){
     const draft=meta("ai_draft",null);if(!draft)throw fail(409,"There is no AI draft to preview");
     const token=++aiPreviewGeneration,colors=rgb(draft.colors),layers=draft.layers||[];
+    beginAiPreviewBrightness(token,draft.brightness??100);
     if(String(draft.name||"").trim().toLowerCase()===TEST_HALLOWEEN_NAME.toLowerCase()){
       void runTestHalloweenPreview(token,draft.brightness||100).catch(e=>console.error("[Test Halloween preview]",e?.message||e));
       return send(res,202,{ok:true,queued:true,randomFlash:true,density:"1/3",flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS});
@@ -974,7 +1010,8 @@ async function route(req,res){
       for(let i=0;i<layers.length;i++){
         if(token!==aiPreviewGeneration)return;
         const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
-        await upstream("/api/control","POST",{name:"AI Preview • "+draft.name+" • Layer "+(i+1),target:"All",power:true,brightness:draft.brightness||100,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern});
+        const layer={name:"AI Preview • "+draft.name+" • Layer "+(i+1),power:true,brightness:draft.brightness??100,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern};
+        await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control","POST",command)));
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
     })().catch(()=>{});
@@ -983,6 +1020,7 @@ async function route(req,res){
   // Edited AI one-time previews accept the unsaved editor payload.
   if(method==="POST"&&path==="/api/ai/preview-edit"){
     const body=await input(req),name=String(body?.name||"Edited AI Event").slice(0,80),brightness=Math.round(clamp(body?.brightness??100,1,100)),token=++aiPreviewGeneration;
+    beginAiPreviewBrightness(token,brightness);
     if(name.trim().toLowerCase()===TEST_HALLOWEEN_NAME.toLowerCase()){
       void runTestHalloweenPreview(token,brightness).catch(e=>console.error("[Test Halloween edit preview]",e?.message||e));
       return send(res,202,{ok:true,queued:true,randomFlash:true,density:"1/3",flashMs:TEST_HALLOWEEN_FLASH_MS,gapMinMs:TEST_HALLOWEEN_GAP_MIN_MS,gapMaxMs:TEST_HALLOWEEN_GAP_MAX_MS});
@@ -996,7 +1034,8 @@ async function route(req,res){
       for(let i=0;i<layers.length;i++){
         if(token!==aiPreviewGeneration)return;
         const p=layers[i],shift=Math.max(0,Math.min(Math.max(0,colors.length-1),Math.trunc(Number(p.shift)||0))),palette=[...colors.slice(shift),...colors.slice(0,shift)];
-        await upstream("/api/control","POST",{name:"AI Edit Preview • "+name+" • Layer "+(i+1),target:"All",power:true,brightness,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern});
+        const layer={name:"AI Edit Preview • "+name+" • Layer "+(i+1),power:true,brightness,effect:p.effect,colors:colorInts(palette),speed:p.speed,pattern:p.pattern};
+        await Promise.all(aiPreviewLayerCommands(layer).map(command=>upstream("/api/control","POST",command)));
         await new Promise(resolve=>setTimeout(resolve,4000));
       }
     })().catch(e=>console.error("[AI edit preview]",e?.message||e));
@@ -1020,7 +1059,7 @@ async function route(req,res){
     await mutateCalendar(cfg=>{cfg.events=(cfg.events||[]).filter(e=>e.id!==id);cfg.special=(cfg.special||[]).filter(x=>x.id!==id);});
     return send(res,200,{ok:true,state:await aiState()});
   }
-  if(method==="POST"&&path==="/api/resume"){aiPreviewGeneration++;put("running_event_id","");await upstream("/api/resume","POST",{});return send(res,200,await state());}
+  if(method==="POST"&&path==="/api/resume"){aiPreviewGeneration++;stopAiPreviewBrightness();put("running_event_id","");await upstream("/api/resume","POST",{});return send(res,200,await state());}
   if(method==="POST"&&path==="/api/settings"){
     const body=await input(req);
     await mutateCalendar(cfg=>{
