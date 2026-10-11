@@ -221,7 +221,7 @@ public final class CurtainBridge {
                 @Override public void onConnectionStateChange(BluetoothGatt which,int status,int newState) {
                     main.post(()->{
                         if(gen!=generation||which!=gatt)return;
-                        if(status==GATT_SUCCESS&&newState==BluetoothGatt.STATE_CONNECTED) {
+                        if(status==GATT_SUCCESS&&newState==android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
                             try {if(!which.discoverServices())retryOrFail("Service discovery could not start");}
                             catch(Throwable t){retryOrFail("Service discovery: "+t.getMessage());}
                         } else if(status!=GATT_SUCCESS || newState==BluetoothGatt.STATE_DISCONNECTED) {
