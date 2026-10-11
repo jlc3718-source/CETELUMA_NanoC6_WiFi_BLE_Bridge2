@@ -15,6 +15,21 @@ function contains(value:string,token:string){return (value||"").toLowerCase().in
 export function defaultLampCount(_model:string){return 60;}
 export function isSolidEffect(effect:string){return effect==="Solid"||effect==="Solid / Static"||effect==="Static";}
 export function brightness(percent:number){return tlv(0xa4,new Uint8Array([clamp(percent,0,100)]));}
+/** E120 Pool/House on-wire low-brightness purple red compensation.
+ * Does NOT change saved RGB colors or E22 packets. Start at +20/255 red.
+ */
+export const E120_LOW_PURPLE_SOURCE=0x5B00E6;
+export const E120_LOW_PURPLE_BOOST=20;
+export function e120NeedsPurpleCompensation(colors:number[],brightness:number):boolean {
+  return Number(brightness)<25&&Number(brightness)>=1&&
+    Array.isArray(colors)&&colors.some(x=>(x&0xffffff)===E120_LOW_PURPLE_SOURCE);
+}
+export function e120CompensatedPurplePalette(colors:number[],brightness:number):number[] {
+  if(!e120NeedsPurpleCompensation(colors,brightness))return [...colors];
+  return colors.map(rgb=>(rgb&0xffffff)===E120_LOW_PURPLE_SOURCE
+    ?Math.min(255,((rgb>>>16)&255)+E120_LOW_PURPLE_BOOST)*65536+(rgb&0xffff)
+    :rgb);
+}
 function nativeColor(model:string,rgb:number){const r=(rgb>>>16)&255,g=(rgb>>>8)&255,b=rgb&255;return isE22(model)?new Uint8Array([r,g,b,0,0]):new Uint8Array([r,g,b,0]);}
 function positions(lamps:number){const out=new Uint8Array(lamps+1);out[0]=lamps;for(let i=0;i<lamps;i++)out[i+1]=i;return out;}
 function segmentAssignment(lamps:number,paletteCount:number,pattern?:SegmentPattern,reverse=false){
@@ -94,7 +109,7 @@ export function e120ModeId(effect:string,reverse:boolean){
 // Eufy app captures: A5 is 1..10; A9 is four bytes; no AB/AD/AF fields.
 export function e120SpeedValue(speed:number){return Math.round(clamp(speed,1,10));}
 export function nativeE120Fields(mode:number,rawSpeed:number,colors:number[],lampCount:number,level=100,pattern?:SegmentPattern,reversePattern=false){
-  const lamps=clamp(lampCount,1,120),palette=colors.slice(0,8),pal:number[]=[palette.length];
+  const lamps=clamp(lampCount,1,120),palette=e120CompensatedPurplePalette(colors.slice(0,8),level),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...nativeColor("T8L00",c));
   let assignment=positions(lamps);
   if(palette.length>1)assignment=(pattern?.blocks?.length||pattern?.positions?.length)?segmentAssignment(lamps,palette.length,pattern,reversePattern):segmentAssignment(lamps,palette.length,{blocks:Array(palette.length).fill(1)},false);
@@ -107,7 +122,7 @@ export function effectE120(effect:string,colors:number[],speed:number,reverse:bo
   return nativeE120Fields(e120ModeId(effect,reverse),e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level,pattern,reverse);
 }
 export function catalogPresetE120(dynamicId:number,catalogId:number,rawSpeed:number,colors:number[],lampCount:number,level=100){
-  const lamps=clamp(lampCount,1,120),palette=(colors?.length?colors:[0xffffff]).slice(0,8),pal:number[]=[palette.length];
+  const lamps=clamp(lampCount,1,120),palette=e120CompensatedPurplePalette((colors?.length?colors:[0xffffff]).slice(0,8),level),pal:number[]=[palette.length];
   for(const c of palette)pal.push(...nativeColor("T8L00",c));
   // Legacy E120 gallery effects use the captured 0x0206 dynamic id in A3 and
   // retain the Eufy catalog id in AC. Keep the production E120 field shape.
