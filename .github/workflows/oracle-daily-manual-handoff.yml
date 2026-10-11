@@ -1,4 +1,5 @@
 name: Oracle Daily Manual Handoff
+# Reconcile restricted stale tabs before preparing current permitted campaigns.
 on:
   push:
     branches: [main]
