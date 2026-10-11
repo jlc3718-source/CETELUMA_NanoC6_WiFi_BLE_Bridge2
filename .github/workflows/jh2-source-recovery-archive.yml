@@ -19,24 +19,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP_SHA="$(git rev-parse origin/release/jason-home-2-v2.0.5-20261010^{commit})"
+          APP_SHA="$(git rev-parse origin/release/jh2-v2.0.5-original-smartdawn-preview-20261011^{commit})"
           SERVER_SHA="$(git rev-parse origin/release/jason-home-2-oracle-controller-20261010^{commit})"
           mkdir -p /tmp/jh2-recovery/app /tmp/jh2-recovery/controller jh2-source-recovery
           git archive "$APP_SHA" | tar -xf - -C /tmp/jh2-recovery/app
           git archive "$SERVER_SHA" | tar -xf - -C /tmp/jh2-recovery/controller
           test -s /tmp/jh2-recovery/app/JasonHome2Server/server.mjs
           test -s /tmp/jh2-recovery/app/JasonHome2Android/AndroidManifest.xml
+          test -s /tmp/jh2-recovery/app/JasonHome2Server/curtain_real_00.js
+          test -s /tmp/jh2-recovery/app/JasonHome2Server/curtain_real_10.js
+          test -s /tmp/jh2-recovery/app/JasonHome2Server/curtain_real_manifest.json
+          node --test /tmp/jh2-recovery/app/JasonHome2Server/tests/curtain-images.mjs
           test -s /tmp/jh2-recovery/controller/JasonHomeServer/src/server.ts
           test -s /tmp/jh2-recovery/controller/JasonHomeServer/src/eufy/client.ts
           printf 'canonical Jason Home 2 release: %s\ncurrent Oracle production controller: %s\n' "$APP_SHA" "$SERVER_SHA" > /tmp/jh2-recovery/IMMUTABLE_SOURCE_REVISIONS.txt
-          tar -czf jh2-source-recovery/Jason-Home-2-v2.0.5-SOURCE-RECOVERY.tar.gz -C /tmp/jh2-recovery .
-          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.5-SOURCE-RECOVERY.tar.gz > /tmp/jh2-recovery-file-list.txt
+          tar -czf jh2-source-recovery/Jason-Home-2-v2.0.5-ORIGINAL-PREVIEWS-SOURCE-RECOVERY.tar.gz -C /tmp/jh2-recovery .
+          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.5-ORIGINAL-PREVIEWS-SOURCE-RECOVERY.tar.gz > /tmp/jh2-recovery-file-list.txt
           grep -q '^./app/JasonHome2Server/server.mjs$' /tmp/jh2-recovery-file-list.txt
-          grep -q '^./controller/JasonHomeServer/src/server.ts$' /tmp/jh2-recovery-file-list.txt
+          grep -q '^./controller/JasonHomeServer/src/server.ts
           (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-v2.0.5-SOURCE-RECOVERY
+          name: Jason-Home-2-v2.0.5-ORIGINAL-PREVIEWS-SOURCE-RECOVERY
+          path: jh2-source-recovery/
+          if-no-files-found: error
+          retention-days: 90
+ /tmp/jh2-recovery-file-list.txt
+          grep -q '^./app/JasonHome2Server/curtain_real_10.js
+          (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-v2.0.5-ORIGINAL-PREVIEWS-SOURCE-RECOVERY
+          path: jh2-source-recovery/
+          if-no-files-found: error
+          retention-days: 90
+ /tmp/jh2-recovery-file-list.txt
+          (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-v2.0.5-ORIGINAL-PREVIEWS-SOURCE-RECOVERY
           path: jh2-source-recovery/
           if-no-files-found: error
           retention-days: 90
