@@ -1,0 +1,41 @@
+name: Jason Home 2 v2.0.4 source recovery archive
+on:
+  push:
+    branches: [jason-home-2-web]
+    paths:
+      - '.github/workflows/jh2-source-recovery-archive.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Archive immutable canonical app and active Oracle controller revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_SHA="$(git rev-parse origin/release/jason-home-2-v2.0.4-baseline-20261010^{commit})"
+          SERVER_SHA="$(git rev-parse origin/release/jason-home-2-oracle-controller-20261010^{commit})"
+          mkdir -p /tmp/jh2-recovery/app /tmp/jh2-recovery/controller jh2-source-recovery
+          git archive "$APP_SHA" | tar -xf - -C /tmp/jh2-recovery/app
+          git archive "$SERVER_SHA" | tar -xf - -C /tmp/jh2-recovery/controller
+          test -s /tmp/jh2-recovery/app/JasonHome2Server/server.mjs
+          test -s /tmp/jh2-recovery/app/JasonHome2Android/AndroidManifest.xml
+          test -s /tmp/jh2-recovery/controller/JasonHomeServer/src/server.ts
+          test -s /tmp/jh2-recovery/controller/JasonHomeServer/src/eufy/client.ts
+          printf 'canonical Jason Home 2 release: %s\ncurrent Oracle production controller: %s\n' "$APP_SHA" "$SERVER_SHA" > /tmp/jh2-recovery/IMMUTABLE_SOURCE_REVISIONS.txt
+          tar -czf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz -C /tmp/jh2-recovery .
+          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz | grep -q '^./app/JasonHome2Server/server.mjs$'
+          tar -tzf jh2-source-recovery/Jason-Home-2-v2.0.4-SOURCE-RECOVERY.tar.gz | grep -q '^./controller/JasonHomeServer/src/server.ts$'
+          (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-v2.0.4-SOURCE-RECOVERY
+          path: jh2-source-recovery/
+          if-no-files-found: error
+          retention-days: 90
