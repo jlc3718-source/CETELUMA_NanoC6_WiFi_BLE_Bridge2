@@ -1,0 +1,62 @@
+name: Jason Home 2 Oracle Encrypted Private Runtime Snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/jason-home-2-oracle-encrypted-snapshot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jason-home-2-oracle-encrypted-snapshot
+  cancel-in-progress: false
+
+jobs:
+  encrypted-snapshot:
+    name: Capture and validate encrypted private runtime (no service changes)
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate key and backup prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY=.github/keys/jason-home-2-oracle-runtime-backup-public.pem
+          openssl pkey -pubin -in "$KEY" -noout >/dev/null
+          bash -n .github/scripts/jason-home-2-oracle-private-snapshot.sh
+          test -s /home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite
+          test -s /home/ubuntu/repo/JasonHomeServer/.env
+          sudo -n test -s /opt/jason-home-2/private.env
+          sudo -n docker inspect jason-home-2-web >/dev/null
+          test ! -e /home/ubuntu/jh2-private-snapshot/oracle-recovery.tar.gz.aes || { echo 'An existing encrypted backup must not be overwritten; aborting.'; exit 1; }
+      - name: Snapshot live SQLite consistently, encrypt all private runtime data and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/jason-home-2-oracle-private-snapshot.sh .github/keys/jason-home-2-oracle-runtime-backup-public.pem
+      - name: Verify encrypted archive and checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/home/ubuntu/jh2-private-snapshot
+          test -s "$ROOT/password.rsa-oaep-sha256.enc"
+          test -s "$ROOT/oracle-recovery.tar.gz.aes"
+          test -s "$ROOT/SHA256SUMS.txt"
+          (cd "$ROOT" && sha256sum -c SHA256SUMS.txt >/dev/null)
+          stat -c 'Encrypted artifact present, bytes=%s' "$ROOT/oracle-recovery.tar.gz.aes"
+          echo 'Encrypted archive integrity checks passed; private data not printed.'
+      - name: Upload encrypted files only for transfer to private Drive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Oracle-Private-Runtime-Encrypted
+          path: |
+            /home/ubuntu/jh2-private-snapshot/password.rsa-oaep-sha256.enc
+            /home/ubuntu/jh2-private-snapshot/oracle-recovery.tar.gz.aes
+            /home/ubuntu/jh2-private-snapshot/SHA256SUMS.txt
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
