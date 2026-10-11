@@ -1,14 +1,14 @@
 {
-  "id": "daily-2026-10-11T00-33-47",
+  "id": "daily-2026-10-11T13-29-28",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-11T04:33:47.416Z",
-  "finished": "2026-10-11T04:34:33.142Z",
+  "started": "2026-10-11T17:29:28.852Z",
+  "finished": "2026-10-11T17:30:14.426Z",
   "result": {
     "task": "run_daily_fast",
     "parallel": true,
     "lane_timeout_ms": 45000,
-    "elapsed_ms": 45724,
+    "elapsed_ms": 45571,
     "results": [
       {
         "task": "jml_scan",
@@ -177,7 +177,7 @@
         }
       }
     ],
-    "last_run_at": "2026-10-11T04:34:33.132Z",
+    "last_run_at": "2026-10-11T17:30:14.421Z",
     "manual_session_preserved": true
   }
 }

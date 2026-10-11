@@ -1,13 +1,13 @@
 {
-  "id": "state-2026-10-11T00-33-47",
+  "id": "state-2026-10-11T13-29-28",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-11T04:34:34.217Z",
-  "finished": "2026-10-11T04:34:34.220Z",
+  "started": "2026-10-11T17:30:15.205Z",
+  "finished": "2026-10-11T17:30:15.209Z",
   "result": {
     "task": "promo_state_get",
     "status": "ready",
-    "last_run_at": "2026-10-11T04:34:33.132Z",
+    "last_run_at": "2026-10-11T17:30:14.421Z",
     "campaigns": [
       {
         "id": "dreame-aero-2026",
@@ -162,37 +162,37 @@
     ],
     "lanes": {
       "jml_scan": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "checked"
       },
       "instagram_brand_scan": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "checked"
       },
       "navimow_round2_check": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": "count_unresolved"
       },
       "roborock_wheel_diag": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "login_required"
       },
       "eufy_alt_free_spin": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "timeout_cancelled"
       },
       "bluetti_safe_spin": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "spin_control_not_found"
       },
       "mova_widget_api_diag": {
-        "last_seen_at": "2026-10-11T04:34:33.132Z",
+        "last_seen_at": "2026-10-11T17:30:14.421Z",
         "last_changed_at": "2026-10-07T05:39:12.842Z",
         "status": 200
       }
