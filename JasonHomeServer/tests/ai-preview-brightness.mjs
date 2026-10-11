@@ -19,3 +19,13 @@ test('AI layer All-target preserves each device brightness in one override',()=>
   assert.match(source,/out\[name\]=safeScene\(scoped,activeOverrideScene\(name\)\|\|storedScene\(name\)\|\|DEFAULT_SCENE\)/);
   assert.match(source,/scenes,sequence:overrideSequence/);
 });
+
+test('AI brightness-only command does not stop any active Halloween flash or queue a full scene',()=>{
+  assert.match(source,/if\(!brightnessOnly\)stopCalendarRandomFlash\(\)/);
+  assert.match(source,/if\(brightnessOnly\)\{\s*result=await c\.brightness\(name,scene\.brightness\)/);
+  assert.match(source,/sequence==null\?await sendScene\(name,scene,brightnessOnly,previewFast\)/);
+});
+test('wait-mode AI layer uses fast E120 command without bypassing E22 status checks',()=>{
+  assert.match(source,/previewFast&&DEVICE_MODELS\[name\]==="E120"\s*\?await c\.sceneFast/);
+  assert.match(source,/:await c\.scene\(name,scene\.effect,scene\.colors,scene\.speed,scene\.brightness,scene\.pattern\)/);
+});

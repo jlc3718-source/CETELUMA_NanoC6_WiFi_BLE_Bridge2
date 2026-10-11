@@ -369,7 +369,7 @@ function cachedFactoryPresetsByName(name:string){
   try{return (JSON.parse(raw)?.presets||[]).filter((p:any)=>String(p?.name||"").trim().toLowerCase()===wanted).map((p:any)=>applyFactoryEdit(p));}
   catch{return [];}
 }
-async function sendScene(name:string,scene:Scene,brightnessOnly=false){
+async function sendScene(name:string,scene:Scene,brightnessOnly=false,previewFast=false){
   return serializedForDevice(name,async()=>{
     try{
       const c=await ensureEufy(false);
@@ -389,7 +389,9 @@ async function sendScene(name:string,scene:Scene,brightnessOnly=false){
       }
       // Normal E22 commands must be device-verified. Broker PUBACK alone is not
       // proof that the controller executed the frame (observed after rapid-stream lockup).
-      return await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
+      return previewFast&&DEVICE_MODELS[name]==="E120"
+        ?await c.sceneFast(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern)
+        :await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
     }catch(e){markEufyDegraded(e);throw e;}
   });
 }
@@ -814,7 +816,7 @@ async function statusPayload(refresh=false){
 async function manualControl(input:any,sequence?:number,preserveTestHalloweenPreview=false){
   const brightnessOnly=isBrightnessOnlyControl(input);
   const previewFast=input?.previewFast===true&&!brightnessOnly;
-  stopCalendarRandomFlash();
+  if(!brightnessOnly)stopCalendarRandomFlash();
   // Changing brightness must not tear down an active AI Test Halloween flash.
   if(!brightnessOnly&&!preserveTestHalloweenPreview)stopTestHalloweenPreview();
   const target=String(input?.target||"All"),names=targetNames(target),scenes=manualScenes(input,names);
@@ -832,7 +834,7 @@ async function manualControl(input:any,sequence?:number,preserveTestHalloweenPre
   const detail=await Promise.all(names.map(async name=>{
     const scene=scenes[name];
     try{
-      const r:any=sequence==null?await sendScene(name,scene,brightnessOnly):await sendSceneLatest(name,scene,sequence,brightnessOnly,previewFast);
+      const r:any=sequence==null?await sendScene(name,scene,brightnessOnly,previewFast):await sendSceneLatest(name,scene,sequence,brightnessOnly,previewFast);
       if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
