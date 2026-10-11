@@ -19,4 +19,9 @@ assert.equal(calls[0].frames.length,1,'Brightness-only command should publish on
 assert.equal(calls[0].frames[0].opcode,0x0201);
 assert.deepEqual([...calls[0].frames[0].fields],[0xa4,1,45]);
 assert.equal(calls[0].name,'Garage');
+await client.brightness('Garage',25);
+assert.equal(calls.length,2);
+assert.equal(calls[1].frames.length,1,'25% dimming must not resend AI effect or power');
+assert.deepEqual([...calls[1].frames[0].fields],[0xa4,1,25]);
+
 console.log('Oracle Eufy brightness-only routing: PASS');
