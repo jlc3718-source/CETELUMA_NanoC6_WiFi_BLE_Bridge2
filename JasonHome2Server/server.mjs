@@ -471,8 +471,10 @@ function overrideAiPreviewBrightness(target,level){
 function aiPreviewLayerCommands(data){
   const values=AI_EUFY_TARGETS.map(name=>aiPreviewLevels.get(name)??data.brightness);
   if(values.every(value=>value===values[0]))return [{...data,target:"All",brightness:values[0]}];
-  // Only split by target when the user has chosen different per-string levels.
-  return AI_EUFY_TARGETS.map((target,i)=>({...data,target,brightness:values[i]}));
+  // Keep ONE shared Oracle override while retaining different brightness
+  // levels for all four strings. Four independent /api/control writes would
+  // overwrite each other's global manual override and disrupt the AI pattern.
+  return [{...data,target:"All",scenes:Object.fromEntries(AI_EUFY_TARGETS.map((name,i)=>[name,{brightness:values[i]}]))}];
 }
 function stopAiPreviewBrightness(){
   aiPreviewActiveGeneration=0;aiPreviewLevels.clear();
