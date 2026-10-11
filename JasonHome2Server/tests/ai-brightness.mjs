@@ -21,8 +21,10 @@ test('AI brightness persists across layers and can differ per Eufy string',()=>{
   assert.equal(commands[0].effect,'Flow2');assert.deepEqual(Array.from(commands[0].colors),base.colors);
   p.overrideAiPreviewBrightness('Pool',18);
   commands=p.aiPreviewLayerCommands(base);
-  assert.deepEqual(JSON.parse(JSON.stringify(commands.map(c=>[c.target,c.brightness]))),[
-    ['Pool',18],['House',36],['Garage',36],['Shed',36]]);
+  assert.equal(commands.length,1,'One atomic Oracle override for all four light strings');
+  assert.equal(commands[0].target,'All');
+  assert.deepEqual(JSON.parse(JSON.stringify(commands[0].scenes)),{
+    Pool:{brightness:18},House:{brightness:36},Garage:{brightness:36},Shed:{brightness:36}});
   p.stopAiPreviewBrightness();
   p.beginAiPreviewBrightness(1,50);
   assert.equal(p.aiPreviewLayerCommands(base)[0].brightness,50,'New AI preview starts from its own brightness');
