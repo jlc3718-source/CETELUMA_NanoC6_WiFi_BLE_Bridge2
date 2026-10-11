@@ -397,7 +397,7 @@ async function sendScene(name:string,scene:Scene,brightnessOnly=false){
 let manualSequence=0;
 const latestManualSequence=new Map<string,number>();
 
-async function sendSceneLatest(name:string,scene:Scene,sequence:number,brightnessOnly=false){
+async function sendSceneLatest(name:string,scene:Scene,sequence:number,brightnessOnly=false,previewFast=false){
   return serializedForDevice(name,async()=>{
     if(latestManualSequence.get(name)!==sequence)return {skipped:true,published:0};
     try{
@@ -420,9 +420,12 @@ async function sendSceneLatest(name:string,scene:Scene,sequence:number,brightnes
           const compatible={...factoryCompatibleScene(preset),brightness:scene.brightness};
           result=await c.scene(name,compatible.effect,compatible.colors,compatible.speed,compatible.brightness,scene.pattern);
         }else{
-          // Require the controller's status report for E22 just like E120. This
-          // prevents a broker-only ACK from being recorded as a successful light change.
-          result=await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
+          // AI layers are short-lived and can be superseded. The E120 accepts a
+          // broker-confirmed fast command; keep the E22's full controller report
+          // requirement to protect against its observed backpressure lockups.
+          result=previewFast&&DEVICE_MODELS[name]==="E120"
+            ?await c.sceneFast(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern)
+            :await c.scene(name,scene.effect,scene.colors,scene.speed,scene.brightness,scene.pattern);
         }
       }
       return {...result,skipped:false};
@@ -810,6 +813,7 @@ async function statusPayload(refresh=false){
 
 async function manualControl(input:any,sequence?:number,preserveTestHalloweenPreview=false){
   const brightnessOnly=isBrightnessOnlyControl(input);
+  const previewFast=input?.previewFast===true&&!brightnessOnly;
   stopCalendarRandomFlash();
   // Changing brightness must not tear down an active AI Test Halloween flash.
   if(!brightnessOnly&&!preserveTestHalloweenPreview)stopTestHalloweenPreview();
@@ -828,7 +832,7 @@ async function manualControl(input:any,sequence?:number,preserveTestHalloweenPre
   const detail=await Promise.all(names.map(async name=>{
     const scene=scenes[name];
     try{
-      const r:any=sequence==null?await sendScene(name,scene,brightnessOnly):await sendSceneLatest(name,scene,sequence,brightnessOnly);
+      const r:any=sequence==null?await sendScene(name,scene,brightnessOnly):await sendSceneLatest(name,scene,sequence,brightnessOnly,previewFast);
       if(r?.skipped)return {name,ok:true,skipped:true};
       db.prepare("UPDATE devices SET last_ok=?,last_error=NULL WHERE name=?").run(Date.now(),name);
       db.prepare("INSERT INTO desired_state(name,scene,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET scene=excluded.scene,updated_at=excluded.updated_at").run(name,sceneKey(scene),Date.now());
