@@ -224,7 +224,7 @@ public final class CurtainBridge {
                         if(status==GATT_SUCCESS&&newState==android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
                             try {if(!which.discoverServices())retryOrFail("Service discovery could not start");}
                             catch(Throwable t){retryOrFail("Service discovery: "+t.getMessage());}
-                        } else if(status!=GATT_SUCCESS || newState==BluetoothGatt.STATE_DISCONNECTED) {
+                        } else if(status!=GATT_SUCCESS || newState==android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
                             retryOrFail("Android Bluetooth GATT "+status+(status==200?" (connection lost)":""));
                         }
                     });
