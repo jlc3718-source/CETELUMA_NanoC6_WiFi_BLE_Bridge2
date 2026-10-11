@@ -115,8 +115,15 @@ export class EufyClient {
       {opcode:OP_SETUP,fields:brightnessFields(level),label:`BRIGHTNESS ${level}%`}
     ];
     const result=await this.command(name,frames,3400);
-    const state=await this.status(name);
     const effectId=Buffer.from(fx.fields).readUIntLE(2,fx.fields[1]);
+    // Some devices include a fresh, complete effect + brightness report with
+    // the command itself. Reuse it rather than performing an extra STATUS
+    // round-trip; query only when the broker has not verified both fields.
+    const immediateEffect=effectReportMatches(result.report,effectId);
+    const immediateBrightness=typeof result.report?.brightness==="number"
+      ?Number(result.report.brightness)===level:null;
+    const completeReport=!!result.deviceReported&&immediateEffect===true&&immediateBrightness===true;
+    const state=completeReport?result:await this.status(name);
     const verified=effectReportMatches(state.report,effectId);
     const brightnessVerified=typeof state.report?.brightness==="number"?Number(state.report.brightness)===level:null;
     if(verified===false)throw new Error(`${name} did not select ${effect}: expected effect ${effectId}, device reports ${state.report?.effectId}/${state.report?.cloudEffectId}`);
