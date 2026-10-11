@@ -1,4 +1,4 @@
-name: Jason Home 2 current Oracle recovery source archive
+name: Jason Home 2 latest validated Oracle recovery archive
 on:
   push:
     branches: [jason-home-2-web]
@@ -22,8 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP_SHA="$(git rev-parse origin/release/jason-home-2-current-ai-20261011^{commit})"
-          SERVER_SHA="$(git rev-parse origin/release/oracle-eufy-current-ai-20261011^{commit})"
+          APP_SHA="$(git rev-parse origin/release/jason-home-2-fixes-20261011^{commit})"
+          SERVER_SHA="$(git rev-parse origin/release/oracle-eufy-fixes-20261011^{commit})"
           mkdir -p /tmp/jh2-current/app /tmp/jh2-current/controller jh2-source-recovery
           git archive "$APP_SHA" | tar -xf - -C /tmp/jh2-current/app
           git archive "$SERVER_SHA" | tar -xf - -C /tmp/jh2-current/controller
@@ -37,14 +37,14 @@ jobs:
           node --test /tmp/jh2-current/app/JasonHome2Server/tests/curtain-images.mjs
           printf 'Jason Home 2 Android/web SHA: %s\nOracle Eufy controller SHA: %s\n' "$APP_SHA" "$SERVER_SHA" > /tmp/jh2-current/IMMUTABLE_SOURCE_REVISIONS.txt
           printf 'Jason Home 2 current source, NOT private runtime database or .env. Preserve the separate signed APK, signing backup, Oracle DB, nginx configuration and private credentials.\n' > /tmp/jh2-current/READ-BEFORE-RESTORE.txt
-          tar -czf jh2-source-recovery/Jason-Home-2-CURRENT-AI-SOURCE-RECOVERY.tar.gz -C /tmp/jh2-current .
-          tar -tzf jh2-source-recovery/Jason-Home-2-CURRENT-AI-SOURCE-RECOVERY.tar.gz > /tmp/jh2-current-file-list.txt
+          tar -czf jh2-source-recovery/Jason-Home-2-LATEST-VALIDATED-SOURCE-RECOVERY.tar.gz -C /tmp/jh2-current .
+          tar -tzf jh2-source-recovery/Jason-Home-2-LATEST-VALIDATED-SOURCE-RECOVERY.tar.gz > /tmp/jh2-current-file-list.txt
           grep -q '^./app/JasonHome2Server/server.mjs$' /tmp/jh2-current-file-list.txt
           grep -q '^./controller/JasonHomeServer/src/server.ts$' /tmp/jh2-current-file-list.txt
           (cd jh2-source-recovery && sha256sum *.tar.gz > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-CURRENT-AI-SOURCE-RECOVERY
+          name: Jason-Home-2-LATEST-VALIDATED-SOURCE-RECOVERY
           path: jh2-source-recovery/
           if-no-files-found: error
           retention-days: 90
