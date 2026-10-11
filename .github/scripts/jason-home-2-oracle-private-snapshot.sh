@@ -6,7 +6,7 @@ PUBLIC_KEY="${1:?Usage: ./ORACLE-PRIVATE-SNAPSHOT.sh /path/to/Oracle-Backup-Publ
 test -s "$PUBLIC_KEY"
 ROOT=/home/ubuntu/repo/JasonHomeServer
 GATE=/opt/jason-home-2
-sudo -n -v
+# Commands requiring privilege use individually authorized noninteractive sudo.
 test -s "$ROOT/.env" && test -s "$ROOT/data/jason-home.sqlite" && sudo test -s "$GATE/private.env"
 WORK="$(mktemp -d)"
 trap 'sudo rm -rf "$WORK"' EXIT
