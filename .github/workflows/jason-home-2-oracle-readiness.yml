@@ -53,4 +53,17 @@ jobs:
               echo 'Docker container management: NOT AVAILABLE to runner without intervention'
             fi
           fi
+          echo 'Encrypted snapshot prerequisites:'
+          if command -v openssl >/dev/null && command -v tar >/dev/null && command -v python3 >/dev/null; then
+            echo 'OpenSSL, tar, Python: AVAILABLE'
+          else
+            echo 'Snapshot prerequisite: MISSING'
+          fi
+          df -Pm /home/ubuntu | awk 'NR==2 {printf "Oracle root volume available MB: %s\\n",$4}'
+          if test -s /home/ubuntu/jh2-private-snapshot/oracle-recovery.tar.gz.aes && test -s /home/ubuntu/jh2-private-snapshot/password.rsa-oaep-sha256.enc && test -s /home/ubuntu/jh2-private-snapshot/SHA256SUMS.txt; then
+            echo 'Previously generated encrypted private-runtime snapshot: PRESENT'
+            (cd /home/ubuntu/jh2-private-snapshot && sha256sum -c SHA256SUMS.txt >/dev/null) && echo 'Snapshot encrypted-file checksums: PASS' || echo 'Snapshot encrypted-file checksums: FAIL'
+          else
+            echo 'Previously generated encrypted private-runtime snapshot: NOT FOUND'
+          fi
           echo 'Read-only audit finished. No tokens, backups, database contents, or environment values were printed.'
