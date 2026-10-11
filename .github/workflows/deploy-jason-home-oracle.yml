@@ -1,4 +1,4 @@
-name: Deploy Jason Home to Oracle
+name: Deploy Jason Home 2 Eufy Controller to Oracle
 
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
           sed -i 's/^HOME_LON=-79\.0576$/HOME_LON=-78.9452/' .env
           chmod 600 .env
 
-      - name: Build and restart Jason Home
+      - name: Build and restart Jason Home 2 Eufy controller
         shell: bash
         run: |
           set -euo pipefail
