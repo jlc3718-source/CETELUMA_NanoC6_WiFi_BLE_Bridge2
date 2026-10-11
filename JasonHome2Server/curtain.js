@@ -67,8 +67,9 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   page.querySelectorAll('[data-jh2-layout]').forEach(b=>b.addEventListener('click',async()=>{
     const value=Number(b.dataset.jh2Layout),matrix=$('jh2CurtainMatrixPreview');
     if(matrix)matrix.dataset.orientation=String(value);
-    await perform('layout',{value},b.textContent.trim());
-    status('Layout write attempted; physical rotation/flip is not confirmed by captured Bluetooth data. Verify on curtain before saving.','error');
+    const sent=await perform('layout',{value},b.textContent.trim());
+    if(sent)status('Bluetooth write acknowledged; physical rotation/flip remains unverified. The graphic above is only a local orientation preview.','error');
+    else status('No curtain Bluetooth connection. Only the local orientation illustration changed; connect before testing physical flip/rotation.','error');
   }));
   function previewIcon(effect){
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
