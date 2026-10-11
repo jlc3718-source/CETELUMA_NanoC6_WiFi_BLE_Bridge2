@@ -1,9 +1,9 @@
 {
-  "id": "manual-2026-10-10T05-35-04",
+  "id": "manual-2026-10-11T13-38-41",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-10T09:35:04.847Z",
-  "finished": "2026-10-10T09:35:12.077Z",
+  "started": "2026-10-11T17:38:41.099Z",
+  "finished": "2026-10-11T17:38:48.173Z",
   "result": {
     "task": "prepare_restricted",
     "status": "ready_for_manual_action",
@@ -42,19 +42,6 @@
           "email",
           "emailConfirm",
           "phone"
-        ],
-        "missing": []
-      },
-      {
-        "status": "prepared",
-        "prepared": true,
-        "challenge": false,
-        "url": "https://housecallsdiy.com/sweepstakes",
-        "title": "Enter to Win \u2014 HouseCalls Ryobi Monthly Sweepstakes \u2022 HouseCalls",
-        "filled": [
-          "first_name",
-          "last_name",
-          "email"
         ],
         "missing": []
       },
