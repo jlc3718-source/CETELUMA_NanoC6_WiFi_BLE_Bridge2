@@ -50,6 +50,7 @@ final class LightPresetCatalog {
         new NamedColor("Amber Gold",        0xFF7A00, true),
         new NamedColor("Gold",              0xF08000, true),
         new NamedColor("Bronze",            0xA85000, true),
+    new NamedColor("Brown",             0x8B4513, true),
         new NamedColor("Green",             0x28FF00, true),
         new NamedColor("Lime",              0x80FF00, true),
         new NamedColor("Emerald",           0x00C875, true),
