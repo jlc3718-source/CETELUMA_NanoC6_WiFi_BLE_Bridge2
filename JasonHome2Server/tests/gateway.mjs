@@ -48,6 +48,18 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
     const ui=await fetch(base+'/',{headers:{cookie}});
     const html=await ui.text();assert.match(html,/Jason Home 2/);
     assert.match(html,/night_calendar\.js/);
+    // Curtain is a separate page; AI and existing event functions remain intact.
+    assert.match(html,/curtain\.js/);
+    assert.match(html,/curtain\.css/);
+    const curtainScript=await fetch(base+'/curtain.js',{headers:{cookie}});
+    assert.equal(curtainScript.status,200);
+    const curtainText=await curtainScript.text();
+    assert.match(curtainText,/length:88/);
+    assert.match(curtainText,/AndroidCurtain/);
+    assert.match(curtainText,/data-tab='curtain'/);
+    const curtainCss=await fetch(base+'/curtain.css',{headers:{cookie}});
+    assert.equal(curtainCss.status,200);
+
     const calendarUi=await fetch(base+'/night_calendar.js',{headers:{cookie}});
     const calendarJs=await calendarUi.text();
     assert.match(calendarJs,/\.v3ScheduleCard\{grid-template-columns:minmax\(0,1fr\)!important/);
