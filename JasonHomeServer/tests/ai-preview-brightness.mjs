@@ -12,3 +12,10 @@ test('AI Test Halloween manual brightness does not terminate the running flash s
   assert.match(source,/function stopTestHalloweenPreview\(\)\{testHalloweenPreviewGeneration\+\+;testHalloweenPreviewLevels\.clear\(\);\}/);
   assert.doesNotMatch(source,/await Promise\.all\(\[\.\.\.DEVICE_NAMES\]\.map\(name=>runTestHalloweenTarget\(name,level,\(\)=>token===testHalloweenPreviewGeneration/);
 });
+
+test('AI layer All-target preserves each device brightness in one override',()=>{
+  assert.match(source,/const perName=input\?\.scenes&&typeof input\.scenes==="object"/);
+  assert.match(source,/const scoped=own&&typeof own==="object"&&!Array\.isArray\(own\)\?\{\.\.\.input,\.\.\.own\}:input/);
+  assert.match(source,/out\[name\]=safeScene\(scoped,activeOverrideScene\(name\)\|\|storedScene\(name\)\|\|DEFAULT_SCENE\)/);
+  assert.match(source,/scenes,sequence:overrideSequence/);
+});
