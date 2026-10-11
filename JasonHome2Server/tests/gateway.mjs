@@ -17,9 +17,10 @@ test('separate web gateway authenticates, serves the UI, and reads the shared ca
   const backend=http.createServer(async(req,res)=>{
     assert.equal(req.headers.authorization,'Bearer test-key');
     if(req.url==='/api/status')reads.status++;
-    if(req.url==='/api/control'&&req.method==='POST'){
+    if((req.url==='/api/control'||req.url==='/api/control?wait=1')&&req.method==='POST'){
       let raw='';for await(const chunk of req)raw+=chunk;
       controlWrites.push(JSON.parse(raw));
+      if(req.url.includes('wait=1'))await new Promise(resolve=>setTimeout(resolve,180));
       res.setHeader('content-type','application/json');
       res.end(JSON.stringify({ok:true,queued:true}));return;
     }
