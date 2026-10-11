@@ -12,6 +12,9 @@
 .jh2-curtain-page .jh2-curtain-status {margin-top:12px;min-height:23px;word-break:break-word}
 .jh2-curtain-page .jh2-curtain-status.error {color:#ffadab}
 .jh2-curtain-page .jh2-curtain-status.success {color:#7af1b9}
+.jh2-curtain-page .jh2-curtain-devices {display:grid;gap:7px;margin-top:9px}
+.jh2-curtain-page .jh2-curtain-device {text-align:left;min-height:38px;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+.jh2-curtain-page .jh2-curtain-device-hint {font-size:12px;color:#a9c6e2;line-height:1.4}
 .jh2-curtain-page .jh2-curtain-layout {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .jh2-curtain-page .jh2-curtain-label {display:flex;justify-content:space-between;font-size:13px;margin:12px 0 6px}
 @media(max-width:420px){.jh2-curtain-page .jh2-curtain-effect-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.v3BottomNav .tab[data-tab="curtain"] span{font-size:9px}}
