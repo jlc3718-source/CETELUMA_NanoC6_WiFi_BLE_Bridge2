@@ -1,2 +1,1 @@
-Oracle follow-up entries requested 2026-10-10 around 10 PM EDT.
-Attempt eligible form submissions in current campaigns, respect official rules and existing entry history, preserve manual handoffs.
+Run Daily entry follow-up — 2026-10-11 at 00:35 America/New_York. Fresh daily entry attempts, preserve existing browser session/duplicates, submit eligible forms only where permitted, publish confirmed evidence.
