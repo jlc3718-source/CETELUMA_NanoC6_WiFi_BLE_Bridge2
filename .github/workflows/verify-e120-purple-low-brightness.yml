@@ -1,0 +1,27 @@
+name: Verify E120 purple tint below 25 percent
+on:
+  push:
+    branches: [fix/e120-purple-red-boost-below25-20261011]
+  pull_request:
+    branches: [jason-home-cloudflare-rebuild]
+    paths: ['JasonHomeServer/**']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    defaults:
+      run:
+        working-directory: JasonHomeServer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: JasonHomeServer/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: node tests/e120-purple-low-brightness.mjs
+      - run: npm test
