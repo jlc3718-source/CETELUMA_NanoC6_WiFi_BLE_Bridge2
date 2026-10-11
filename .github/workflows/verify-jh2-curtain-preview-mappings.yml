@@ -7,6 +7,9 @@ on:
     paths:
       - 'JasonHome2Server/curtain.js'
       - 'JasonHome2Server/curtain.css'
+      - 'JasonHome2Server/curtain_real_*.js'
+      - 'JasonHome2Server/curtain_real_manifest.json'
+      - 'JasonHome2Server/tests/curtain-images.mjs'
       - 'JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java'
 permissions:
   contents: read
@@ -16,6 +19,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify every screenshot thumbnail SHA-256
+        run: |
+          node --test JasonHome2Server/tests/curtain-images.mjs
       - name: Validate presentation and exact observed mapping without asserting unverified E-88
         shell: bash
         run: |
