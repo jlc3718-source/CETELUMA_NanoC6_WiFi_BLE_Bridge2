@@ -1,0 +1,17 @@
+/* Jason Home 2 SmartDawn curtain, deliberately scoped away from the AI/Factory tabs. */
+.v3BottomNav .tab[data-tab="curtain"] {min-width:0}
+.v3BottomNav .tab[data-tab="curtain"] span {font-size:10px}
+.jh2-curtain-page .panel {margin:12px 0}
+.jh2-curtain-page .jh2-curtain-row {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.jh2-curtain-page .jh2-curtain-row .btn {flex:1 1 100px}
+.jh2-curtain-page .jh2-curtain-effect-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.jh2-curtain-page .jh2-curtain-effect {display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:65px;background:#12263e;color:#edf7ff;border:1px solid #325277;border-radius:12px;cursor:pointer}
+.jh2-curtain-page .jh2-curtain-effect.active {background:#15527a;border:2px solid #54c9ff}
+.jh2-curtain-page .jh2-curtain-effect small {color:#a9c6e2;font-size:10px}
+.jh2-curtain-page .jh2-curtain-effect strong {font-size:14px}
+.jh2-curtain-page .jh2-curtain-status {margin-top:12px;min-height:23px;word-break:break-word}
+.jh2-curtain-page .jh2-curtain-status.error {color:#ffadab}
+.jh2-curtain-page .jh2-curtain-status.success {color:#7af1b9}
+.jh2-curtain-page .jh2-curtain-layout {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.jh2-curtain-page .jh2-curtain-label {display:flex;justify-content:space-between;font-size:13px;margin:12px 0 6px}
+@media(max-width:420px){.jh2-curtain-page .jh2-curtain-effect-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.v3BottomNav .tab[data-tab="curtain"] span{font-size:9px}}
