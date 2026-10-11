@@ -1,0 +1,27 @@
+name: Verify disabled-by-default NanoC6 brightness synchronization
+on:
+  push:
+    branches: [feature/jh2-nanoc6-brightness-optin-20261011]
+  pull_request:
+    branches: [jason-home-2-web]
+    paths:
+      - 'JasonHome2Server/nano_sync*'
+      - 'JasonHome2Server/server.mjs'
+      - 'JasonHome2Server/generate_web.py'
+      - 'JasonHome2Server/tests/nanoc6-sync.mjs'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check JasonHome2Server/nano_sync.js
+      - run: node --check JasonHome2Server/nanoc6_sync.mjs
+      - run: node --check JasonHome2Server/server.mjs
+      - run: node --test JasonHome2Server/tests/nanoc6-sync.mjs
+      - run: python3 -m py_compile JasonHome2Server/generate_web.py
