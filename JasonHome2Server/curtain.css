@@ -33,3 +33,14 @@
 .jh2-curtain-page .jh2-curtain-matrix[data-orientation="5"]{transform:scaleY(-1)}
 .jh2-curtain-page .jh2-curtain-matrix[data-orientation="6"]{transform:scaleX(-1)}
 @media(prefers-reduced-motion:reduce){.jh2-curtain-page .jh2-preview-light{animation:none}}
+
+/* Exact still preview tiles cropped from user's SmartDawn screenshots. */
+.jh2-curtain-page .jh2-curtain-effect{min-height:165px}
+.jh2-curtain-page .jh2-effect-preview.real-preview{
+ width:100%;max-width:none;aspect-ratio:1 / 1;height:auto;object-fit:cover;
+ border:0;border-radius:6px;animation:none
+}
+.jh2-curtain-page .jh2-effect-preview.missing-preview{
+ display:grid;place-items:center;min-height:100px;font-size:13px;
+ background:#060d1a;color:#c7d6ea;border:1px dashed #8ca4bc;
+}
