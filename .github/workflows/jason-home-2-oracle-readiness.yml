@@ -1,0 +1,56 @@
+name: Jason Home 2 Oracle Read-Only Readiness
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/jason-home-2-oracle-readiness.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jason-home-2-oracle-readiness
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Read-only Oracle host and backup prerequisites
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect availability without printing secrets or changing state
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Oracle GitHub runner: AVAILABLE'
+          printf 'UTC: '; date -u +'%Y-%m-%d %H:%M:%S'
+          for pair in 'controller http://127.0.0.1:8080/api/health' 'gateway http://127.0.0.1:8081/api/health'; do
+            service="${pair%% *}"; url="${pair#* }"
+            if curl --max-time 8 -fsS "${url}" >/dev/null; then
+              printf 'Jason Home 2 %s health: PASS\n' "${service}"
+            else
+              printf 'Jason Home 2 %s health: NOT AVAILABLE\n' "${service}"
+            fi
+          done
+          for path in \
+            /home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite \
+            /home/ubuntu/repo/JasonHomeServer/.env \
+            /opt/jason-home-2/private.env \
+            /opt/jason-home-2/data \
+            /etc/nginx/sites-available/jason-home
+          do
+            if test -e "${path}"; then
+              printf 'Required runtime object exists: %s\n' "${path##*/}"
+            else
+              printf 'Required runtime object missing/unreadable: %s\n' "${path##*/}"
+            fi
+          done
+          if command -v docker >/dev/null 2>&1; then
+            if sudo -n docker ps --format '{{.Names}}' >/dev/null 2>&1; then
+              echo 'Docker container management: AVAILABLE'
+            else
+              echo 'Docker container management: NOT AVAILABLE to runner without intervention'
+            fi
+          fi
+          echo 'Read-only audit finished. No tokens, backups, database contents, or environment values were printed.'
