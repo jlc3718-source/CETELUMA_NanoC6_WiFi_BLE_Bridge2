@@ -1,0 +1,102 @@
+name: Oracle EcoFlow Reddit October 12 Entry
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/oracle-ecoflow-reddit-oct12.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: oracle-daily-runtime-maintenance
+  cancel-in-progress: false
+jobs:
+  enter:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Submit one authorized Reddit entry with the saved Oracle daily profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT=".github/oracle-ecoflow-reddit-result.json"
+          if ! curl -fsS --max-time 5 http://127.0.0.1:8932/health >/dev/null; then
+            echo '{"status":"agent_unavailable","submitted":false,"confirmed":false}' > "$RESULT"
+            exit 0
+          fi
+          if curl -fsS --max-time 5 http://127.0.0.1:8932/login/status | grep -Eq '"active"[[:space:]]*:[[:space:]]*true'; then
+            echo '{"status":"manual_session_active","submitted":false,"confirmed":false,"reason":"Existing manual browser session preserved"}' > "$RESULT"
+            exit 0
+          fi
+          CID="$(sudo docker ps --filter name=oracle-browser-agent --format '{{.ID}}' | head -1)"
+          if [ -z "$CID" ]; then
+            echo '{"status":"browser_container_unavailable","submitted":false,"confirmed":false}' > "$RESULT"
+            exit 0
+          fi
+          sudo docker exec -i "$CID" node - <<'NODE' > "$RESULT"
+          const {chromium}=require("/app/node_modules/playwright-core");
+          const fs=require("fs");
+          const target="https://old.reddit.com/r/Ecoflow_community/comments/1x1nmxi/guess_the_price_be_among_the_first_to_try_it_free/";
+          const body="My prediction is $3,599 USD for one unit. I'm comparing it with existing expandable home battery systems and the inverter, storage, and solar-integration hardware a complete setup needs. I expect EcoFlow to aim for an expandable LFP whole-home backup product with split-phase 120/240V capability, reasonable solar input, and an efficient inverter. At $3,599, an integrated starter system could represent excellent value while leaving room to expand storage. I would be interested in evaluating installation practicality, outage transfer, sustained loads, and real-world solar performance. This is a price and feature prediction, not a claim about the unreleased specifications.";
+          const result={status:"not_started",submitted:false,confirmed:false,checked_at:new Date().toISOString()};
+          let ctx;
+          async function goto(page,url) {
+            await page.goto(url,{waitUntil:"domcontentloaded",timeout:18000});
+            await page.waitForTimeout(1800);
+          }
+          async function run() {
+            if(Date.now()>=Date.parse("2026-10-13T03:00:00Z")){result.status="contest_closed";return;}
+            ctx=await chromium.launchPersistentContext("/data/profiles/daily",{
+              executablePath:"/usr/bin/chromium",headless:false,timeout:16000,
+              viewport:{width:1280,height:850},screen:{width:1280,height:850},
+              env:{...process.env,DISPLAY:process.env.LOGIN_DISPLAY||":100"},
+              args:["--no-sandbox","--disable-dev-shm-usage","--no-first-run","--no-default-browser-check"]
+            });
+            const page=ctx.pages()[0]||await ctx.newPage();
+            await goto(page,target);
+            const profile=page.locator("#header-bottom-right span.user a[href*='/user/']").first();
+            const href=await profile.getAttribute("href").catch(()=>null);
+            const match=(href||"").match(/\/user\/([^/?#]+)/i);
+            if(!match){result.status="reddit_login_required_on_oracle";return;}
+            const username=decodeURIComponent(match[1]);
+            const userPage=await ctx.newPage();
+            await goto(userPage,"https://old.reddit.com/user/"+encodeURIComponent(username)+"/comments/?sort=new");
+            const userText=await userPage.locator("body").innerText().catch(()=>"");
+            if(/you are doing that too much|verify you are human|captcha/i.test(userText.slice(0,1400))){result.status="verification_required";return;}
+            if(!userText.trim()||/page not found|you broke reddit/i.test(userText.slice(0,900))){result.status="duplicate_check_unavailable";return;}
+            const entries=await userPage.locator('a[href*="/comments/1x1nmxi/"]').count();
+            if(entries){result.status="already_entered";result.confirmed=true;return;}
+            await goto(page,target);
+            if(!page.url().includes("reddit.com")){result.status="unexpected_redirect";return;}
+            if(/captcha|verify you are human/i.test((await page.locator("body").innerText().catch(()=>"")).slice(0,1200))){result.status="verification_required";return;}
+            const textarea=page.locator(".commentarea form.usertext textarea[name='text']:visible").first();
+            if(!(await textarea.count())){result.status="comment_form_unavailable";return;}
+            await textarea.fill(body);
+            const form=textarea.locator("xpath=ancestor::form[1]");
+            const save=form.locator("button[type='submit']:visible,button:has-text('save'):visible").first();
+            if(!(await save.count())){result.status="comment_submit_control_missing";return;}
+            await save.click({timeout:7000});
+            result.submitted=true;
+            await page.waitForTimeout(2200);
+            await goto(userPage,"https://old.reddit.com/user/"+encodeURIComponent(username)+"/comments/?sort=new");
+            const matches=await userPage.locator('a[href*="/comments/1x1nmxi/"]').count();
+            const text=await userPage.locator("body").innerText().catch(()=>"");
+            if(matches&&text.includes("$3,599")) {
+              result.status="confirmed_submitted";result.confirmed=true;
+              const links=await userPage.locator('a[href*="/comments/1x1nmxi/"]').evaluateAll(els=>els.map(x=>x.href));
+              result.comment_url=links.find(x=>/\/comments\/1x1nmxi\/[^/]+\/[a-z0-9]+\//i.test(x))||links[0]||null;
+            } else result.status="submitted_unconfirmed_do_not_retry";
+          }
+          (async()=>{
+            try{await Promise.race([run(),new Promise((_,reject)=>setTimeout(()=>reject(new Error("TIMEOUT")),115000))]);}
+            catch(e){result.status=result.submitted?"submitted_unconfirmed_do_not_retry":"browser_failed";result.reason=String(e.message||"error").slice(0,170);}
+            finally{if(ctx)await ctx.close().catch(()=>{});process.stdout.write(JSON.stringify(result)+"\n");}
+          })();
+          NODE
+      - name: Publish sanitized result
+        if: always()
+        shell: bash
+        run: python3 oracle-daily/publish-results.py .github/oracle-ecoflow-reddit-result.json
