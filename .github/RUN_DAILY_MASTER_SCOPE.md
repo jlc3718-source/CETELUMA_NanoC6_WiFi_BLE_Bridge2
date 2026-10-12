@@ -71,7 +71,6 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Genuine GM/Bosch MDI 2; CRAFTSMAN/Kobalt; water filtration/plumbing; outdoor/shop equipment; SOOCAS heads; existing IGK price watches; and pet free/near-free offers.
 - The established privacy/exposure and removal-reply follow-up lane, retaining all identity-matching limits, source exclusions and ignored-record suppressions. Never publish personal profile/address details in this repository. An unrecovered matching/suppression rule means incomplete coverage, not an all-clear.
 - The previously selected official New York unclaimed-funds follow-up, retained as unresolved until current search evidence exists. Do not submit claims or upload identity documents.
-- The pool-closing watch for ZIP 14772: current/local forecast, near-term trend, available monthly outlook, the user's (high + low)/2 temperature proxy clearly labeled as an estimate, sustained cool conditions and freeze risk.
 - Separately paused legacy reminders retain their paused state; do not reactivate them or treat a completed one-time reminder as a new task.
 
 ## Permanent execution rules
@@ -88,6 +87,7 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Tineco Fall Spin is DONE; suppress unless there is a new round.
 - Steam mops and steam floor washers are purchased/suppressed: stop all shopping, coupons, deals, new-model, release and alert watches, including all Roborock F25 steam models and Gen 2. Do not search for or surface new steam floor cleaners unless the user expressly restarts that request. Preserve robot-vacuum watches and all other standing categories.
 - Preserve existing purchased/DONE exclusions and other standing suppression rules.
+- POOL REMOVED (October 12, 2026): Do not check pool-closing weather, estimated pool temperature, extended pool forecast, freezing risk, pool chemistry or pool-covering recommendations in Run Daily. Do not include a pool status row or pool commentary. The separate Pool Closing Watch reminder stays disabled. This explicitly supersedes all older Run Daily pool requirements.
 
 ## Browser execution and evidence
 - Use the built-in Chrome/Cloud Browser for live interactions and manual control; prefer connected service tools for supported operations. Never use the Oracle Browser Agent, Oracle remote browser or Oracle manual-entry handoff.
@@ -123,7 +123,6 @@ Every Run Daily report must visibly cover:
 17. Exact Silverado tonneau / MZ54 cast-iron kit / GM MDI 2 / SOOCAS / IGK standing watches
 18. Privacy/exposure and removal-reply follow-ups
 19. Retained official NY unclaimed-funds follow-up
-20. Pool-closing weather assessment
-21. Tasks not run, incomplete checks and preserved schedule state
+20. Tasks not run, incomplete checks and preserved schedule state
 
 A report that omits any required category is incomplete.
