@@ -27,8 +27,16 @@ jobs:
             echo '{"status":"agent_unavailable","submitted":false,"confirmed":false}' > "$RESULT"
             exit 0
           fi
+          # User explicitly authorized closing the outstanding manual browser session.
           if curl -fsS --max-time 5 http://127.0.0.1:8932/login/status | grep -Eq '"active"[[:space:]]*:[[:space:]]*true'; then
-            echo '{"status":"manual_session_active","submitted":false,"confirmed":false,"reason":"Existing manual browser session preserved"}' > "$RESULT"
+            STOP_RESPONSE="$(curl -fsS --max-time 25 -X POST http://127.0.0.1:8932/run -H 'Content-Type: application/json' --data '{"id":"reddit-ecoflow-close-manual-20261012","task":"login_stop"}' || true)"
+            if ! printf '%s' "$STOP_RESPONSE" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x.get("ok") and (x.get("result") or {}).get("status")=="stopped"' 2>/dev/null; then
+              echo '{"status":"could_not_close_manual_session","submitted":false,"confirmed":false}' > "$RESULT"
+              exit 0
+            fi
+          fi
+          if curl -fsS --max-time 5 http://127.0.0.1:8932/login/status | grep -Eq '"active"[[:space:]]*:[[:space:]]*true'; then
+            echo '{"status":"manual_session_still_active","submitted":false,"confirmed":false}' > "$RESULT"
             exit 0
           fi
           CID="$(sudo docker ps --filter name=oracle-browser-agent --format '{{.ID}}' | head -1)"
