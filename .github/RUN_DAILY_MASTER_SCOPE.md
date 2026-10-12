@@ -68,7 +68,7 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Fluke and IDEAL student, educator, apprentice, training-program, donation and trade-program opportunities.
 - Silverado EV hard tonneau covers for the 2025 Extended Range LT, with both Multi-Flex Midgate and Multi-Flex Tailgate compatibility verified.
 - The exact Husqvarna MZ54 model 967696001 deck rebuild kit with cast-iron spindles only.
-- Genuine GM/Bosch MDI 2; CRAFTSMAN/Kobalt; water filtration/plumbing; outdoor/shop equipment; SOOCAS heads; existing IGK price watches; and pet free/near-free offers.
+- Genuine GM/Bosch MDI 2; CRAFTSMAN/Kobalt; water filtration/plumbing; outdoor/shop equipment; SOOCAS heads; and pet free/near-free offers.
 - The established privacy/exposure and removal-reply follow-up lane, retaining all identity-matching limits, source exclusions and ignored-record suppressions. Never publish personal profile/address details in this repository. An unrecovered matching/suppression rule means incomplete coverage, not an all-clear.
 - The previously selected official New York unclaimed-funds follow-up, retained as unresolved until current search evidence exists. Do not submit claims or upload identity documents.
 - Separately paused legacy reminders retain their paused state; do not reactivate them or treat a completed one-time reminder as a new task.
@@ -87,6 +87,9 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Tineco Fall Spin is DONE; suppress unless there is a new round.
 - Steam mops and steam floor washers are purchased/suppressed: stop all shopping, coupons, deals, new-model, release and alert watches, including all Roborock F25 steam models and Gen 2. Do not search for or surface new steam floor cleaners unless the user expressly restarts that request. Preserve robot-vacuum watches and all other standing categories.
 - Preserve existing purchased/DONE exclusions and other standing suppression rules.
+- USER EXCLUSIONS (October 12, 2026): IGK ENTIRE BRAND removed from all Run Daily search, recommendations, promotions, coupons, product-price watches, status rows and notifications. This includes IGK Paid In Full and IGK Silky. Never surface IGK again unless explicitly requested.
+- WHOLESOMES DECLINED (October 12, 2026): User does NOT want the Wholesomes Pet Food Game Day Giveaway 2026 (ViralSweep campaign 235735). Stop trying to enter; clear it from pending/manual handoffs and future sweeps. Treat as declined/suppressed, not completed. Do not mark an entry submitted. Continue other legitimate pet freebies.
+- KOBALT 302 PIECE DECLINED (October 12, 2026): Suppress Lowe's Kobalt 302-piece Mechanics Tool Set, model 53559 / listing 5016244793, from future deal reports and recommendations unless the user expressly requests it. Keep other tools/Kobalt opportunities in scope.
 - POOL REMOVED (October 12, 2026): Do not check pool-closing weather, estimated pool temperature, extended pool forecast, freezing risk, pool chemistry or pool-covering recommendations in Run Daily. Do not include a pool status row or pool commentary. The separate Pool Closing Watch reminder stays disabled. This explicitly supersedes all older Run Daily pool requirements.
 
 ## Browser execution and evidence
@@ -120,7 +123,7 @@ Every Run Daily report must visibly cover:
 14. Timeouts/blocked lanes
 15. "Nothing new verified" for any required category actually checked with no hit
 16. Fluke / IDEAL / apprenticeship and training opportunities
-17. Exact Silverado tonneau / MZ54 cast-iron kit / GM MDI 2 / SOOCAS / IGK standing watches
+17. Exact Silverado tonneau / MZ54 cast-iron kit / GM MDI 2 / SOOCAS standing watches
 18. Privacy/exposure and removal-reply follow-ups
 19. Retained official NY unclaimed-funds follow-up
 20. Tasks not run, incomplete checks and preserved schedule state
