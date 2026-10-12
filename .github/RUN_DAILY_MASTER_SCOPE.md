@@ -24,14 +24,14 @@ This file is authoritative for the Run Daily project. A Run Daily execution is i
 - GM MDI 2 bargains
 - Smart-home / tech bargains
 - Electrician / tool bargains
-- Robot-vacuum and floor-care bargains
+- Robot-vacuum bargains
 - Light-curtain / smart-lighting bargains
 
 ## REQUIRED 3 — Standing brands / targets
 - Anker / SOLIX / eufy / soundcore
 - Govee, especially Curtain Light / Curtain Light Pro / high-density animated curtains
 - Reolink / Wyze / security-camera gear
-- Roborock / Dreame / MOVA / robotic vacuums / cordless steam floor cleaners
+- Roborock / Dreame / MOVA / robotic vacuums
 - BLUETTI / Jackery / portable power / solar
 - RIDGID / Greenlee / Klein / CRAFTSMAN / RYOBI / electrician and tool brands
 - Lenovo
@@ -43,8 +43,7 @@ This file is authoritative for the Run Daily project. A Run Daily execution is i
 - Pet-product freebies/deals
 
 ## REQUIRED 4 — Product / release watches
-- Roborock F25 Ultra Steam Gen 2: report only a newly verified meaningful U.S. discount, coupon, misprice, clearance, used, refurb or open-box bargain. Availability by itself is no longer an alert trigger.
-- Relevant new robotic / steam floor-cleaning launches
+- Relevant new robotic floor-cleaning launches
 - Relevant Govee/light-curtain releases
 - Relevant Anker/SOLIX/eufy launches/promos
 - Silverado EV notices relevant to the standing watch
@@ -53,7 +52,7 @@ This file is authoritative for the Run Daily project. A Run Daily execution is i
 Every run must search outside named brands too for:
 - electrician/tools
 - portable power/solar
-- robot vacuums/floor care
+- robot vacuums
 - smart-home
 - lighting
 - unusually good deals, misprices, beta/tester opportunities and launches
@@ -61,7 +60,7 @@ Reddit findings must be verified against an official/current source where possib
 
 ## REQUIRED 6 — Entry follow-up / unresolved
 Retain IDs/statuses for all selected programs and unresolved opportunities.
-Attempt to complete and submit every eligible free entry automatically using Oracle Browser Agent and persistent profile 'daily'. Prefill first when an unavoidable manual step remains. Preparation alone does not complete the task.
+Attempt to complete and submit every eligible free entry automatically using the built-in Chrome/Cloud Browser and supported connected service tools. Use TinyFish only when 100% necessary because the built-in browser cannot complete a necessary authorized step. Prefill first when an unavoidable manual step remains. Preparation alone does not complete the task.
 Never claim success without positive confirmation.
 If no automated entry path exists, reduce it to the minimum manual action required.
 
@@ -81,17 +80,18 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - Treat each Run Daily as a fresh consolidated sweep.
 - New York is the default residence. Use Pennsylvania only when official rules or the live form explicitly exclude NY and accept PA; use only the user's provided PA details.
 - Do not publish private address/profile data into the public GitHub repo.
-- No TinyFish.
+- Use TinyFish only when 100% necessary because the built-in Chrome/Cloud Browser cannot complete a necessary authorized step; otherwise use the built-in browser or connected service tools.
+- No Oracle browser or Oracle manual-entry handoff.
 - No YepCode.
 - No Gleam.
 - Suppress completed/expired/ineligible/already-entered items unless a genuinely new round appears.
 - Tineco Fall Spin is DONE; suppress unless there is a new round.
-- F25 Ultra Steam Gen 2: only surface newly verified meaningful discounts or bargains; suppress availability-only updates.
+- Steam mops and steam floor washers are purchased/suppressed: stop all shopping, coupons, deals, new-model, release and alert watches, including all Roborock F25 steam models and Gen 2. Do not search for or surface new steam floor cleaners unless the user expressly restarts that request. Preserve robot-vacuum watches and all other standing categories.
 - Preserve existing purchased/DONE exclusions and other standing suppression rules.
 
-## Durable Oracle execution and evidence
-- Use the versioned runtime in oracle-daily/ and the bounded client oracle-daily/run-agent.py. Deploy through Oracle Daily Reliability; tests must pass before deployment. The agent runtime is mounted from persistent Oracle storage, and failed upgrades roll back.
-- Submit asynchronous jobs with unique IDs and retrieve GET /jobs/:id. If a response times out, retrieve the existing job before retrying any action. GET /login/status exposes the current protected handoff URL without waiting behind browser work.
+## Browser execution and evidence
+- Use the built-in Chrome/Cloud Browser for live interactions and manual control; prefer connected service tools for supported operations. Never use the Oracle Browser Agent, Oracle remote browser or Oracle manual-entry handoff.
+- TinyFish is a fallback only when 100% necessary because the built-in browser cannot complete a necessary authorized step. Reconcile a timed-out action before retrying it; preserve the user's prepared manual tabs.
 - Use scoped entry forms, fill primary and confirmation email fields, and ignore unrelated search/newsletter controls. Leave unknown screener answers for the user. Visible human verification and rules prohibiting automation require manual action.
 - Never report entry confirmation from HTTP 200, page loading, form preparation or a generic pre-existing thank-you. Retain confirmation evidence and New York local-day/month duplicate limits.
 - Wheel actions require a verified positive free balance; unresolved counters and paid points remain blocked. Timeouts cancel owned browser pages and requests without closing the user's manual tabs.
@@ -110,7 +110,7 @@ Every Run Daily report must visibly cover:
 4. Misprices / unusually cheap tools & equipment
 5. Used/refurb/open-box/warehouse deals
 6. Portable power / solar bargains
-7. Robot-vac / steam-floor-care bargains & release watch
+7. Robot-vac bargains & release watch
 8. Govee / lighting bargains & releases
 9. Tool/electrician bargains and promos
 10. Smart-home/security bargains
