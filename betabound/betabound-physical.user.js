@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Betabound Physical Test Assistant
 // @namespace    https://github.com/jlc3718-source
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/main/betabound/betabound-physical.user.js
 // @downloadURL  https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/main/betabound/betabound-physical.user.js
 // @description  Fill verified details and queue eligible physical-product tests in your own signed-in browser.
@@ -212,14 +212,43 @@
     fileHelp.style.cssText = 'font-size:12px;margin-top:8px;font-weight:600';
     fileHelp.textContent = profile ? 'Profile saved ✓ (choose another file to replace it)' : 'Tap Choose File below to import your saved profile:';
     panel.append(fileHelp);
-    file.onchange = async () => {
+    // Android Firefox can report a picked document via input or change.
+    // Keep this chooser on screen while reading; show meaningful feedback.
+    let reading = false;
+    const onPick = async () => {
+      if (reading) return;
+      const selected = file.files && file.files[0];
+      if (!selected) {
+        status = 'No file selected. Pick the .json file from Downloads.';
+        draw(); return;
+      }
+      reading = true;
+      status = 'Reading: ' + selected.name.slice(0, 55);
+      info.textContent = status;
       try {
-        if (!file.files || !file.files[0]) { status = 'No file selected'; draw(); return; }
-        const value = JSON.parse(await file.files[0].text());
-        if (!value.name || !value.email) throw Error('name and email are required');
-        profile = value; store('profile', value); status = 'Profile imported privately into this browser'; draw();
-      } catch { status = 'Invalid profile JSON'; draw(); }
+        let content;
+        if (typeof selected.text === 'function') content = await selected.text();
+        else content = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('Android file reader could not open the selected file'));
+          reader.readAsText(selected, 'UTF-8');
+        });
+        const value = JSON.parse(String(content).replace(/^\\uFEFF/, '').trim());
+        if (!value || typeof value !== 'object' || !value.name || !value.email)
+          throw new Error('Selected JSON needs name and email fields');
+        profile = value;
+        store('profile', value);
+        status = 'SUCCESS: Profile imported and saved. Tap Start All.';
+      } catch (e) {
+        status = 'IMPORT FAILED: ' + String(e?.message || e).slice(0, 130);
+      } finally {
+        reading = false;
+        draw();
+      }
     };
+    file.addEventListener('change', onPick);
+    file.addEventListener('input', onPick);
     panel.append(file);
   }
   function init() {
