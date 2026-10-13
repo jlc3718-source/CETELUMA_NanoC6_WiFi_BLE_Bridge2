@@ -1,0 +1,4 @@
+*-secret.txt
+session.json
+storage-state.json
+.env
