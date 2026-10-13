@@ -1,0 +1,41 @@
+name: Betabound Physical Product Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scan is read-only; apply requires private authentication'
+        type: choice
+        options: [scan, apply]
+        default: scan
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/betabound-physical-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: betabound-physical-tests
+  cancel-in-progress: false
+
+jobs:
+  betabound:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright
+        run: |
+          npm install --prefix betabound --no-package-lock --ignore-scripts
+          npm exec --prefix betabound -- playwright install --with-deps chromium
+      - name: Check opportunities
+        env:
+          BETABOUND_MODE: ${{ github.event.inputs.mode || 'scan' }}
+          BETABOUND_SESSION_B64: ${{ secrets.BETABOUND_SESSION_B64 }}
+          BETABOUND_PROFILE_B64: ${{ secrets.BETABOUND_PROFILE_B64 }}
+        run: node betabound/runner.mjs
