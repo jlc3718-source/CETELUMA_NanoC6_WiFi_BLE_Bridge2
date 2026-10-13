@@ -131,3 +131,6 @@ Every Run Daily report must visibly cover:
 20. Tasks not run, incomplete checks and preserved schedule state
 
 A report that omits any required category is incomplete.
+
+## REQUIRED — Betabound physical-product tests
+On every Run Daily request, check Betabound for all newly available physical-product tests, not just three previously supplied links. Search the official website, public test listings, existing tester invitations in connected Gmail, and newly announced opportunities. Exclude software-only testing. Deduplicate against tests already applied to and verify that opportunities remain open and accept U.S. testers. Where account access and permitted form automation are available, complete truthful applications and verify submission. Otherwise distinguish found from submitted and clearly report blocked entries. Include counts and links in the daily summary. The Android helper is local to the user's browser and cannot currently be controlled by GitHub Actions; do not pretend three public link checks constitute full coverage.
