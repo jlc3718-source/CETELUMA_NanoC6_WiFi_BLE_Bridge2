@@ -4,7 +4,8 @@
 // @version      0.1.0
 // @description  Fill verified details and queue eligible physical-product tests in your own signed-in browser.
 // @match        https://my.betabound.com/*
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-idle
 // ==/UserScript==
 (() => {
@@ -19,8 +20,8 @@
   const CONFIRM = /(application (?:has been )?(?:submitted|received)|thank you for applying|thanks for applying|successfully applied|we received your application)/i;
   const ALREADY = /(already applied|you have already applied|application previously submitted|your application was received)/i;
   const LEGAL = /(non.disclosure agreement|confidentiality agreement|waiver of liability|electronic signature|accept the nda|arbitration agreement)/i;
-  const parse = (key, fallback) => { try { return JSON.parse(localStorage.getItem(PFX + key)) ?? fallback; } catch { return fallback; } };
-  const store = (key, value) => localStorage.setItem(PFX + key, JSON.stringify(value));
+  const parse = (key, fallback) => { try { return GM_getValue(PFX + key, fallback); } catch { return fallback; } };
+  const store = (key, value) => GM_setValue(PFX + key, value);
   const current = () => location.href.split('#')[0];
   const bodyText = () => (document.body?.innerText || '').slice(0, 24000);
   const visible = el => el && !el.disabled && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
