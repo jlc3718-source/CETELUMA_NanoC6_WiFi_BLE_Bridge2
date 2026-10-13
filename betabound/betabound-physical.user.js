@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Betabound Physical Test Assistant
 // @namespace    https://github.com/jlc3718-source
-// @version      0.1.0
+// @version      0.1.1
+// @updateURL    https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/main/betabound/betabound-physical.user.js
+// @downloadURL  https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/main/betabound/betabound-physical.user.js
 // @description  Fill verified details and queue eligible physical-product tests in your own signed-in browser.
 // @match        https://my.betabound.com/*
 // @grant        GM_getValue
@@ -192,7 +194,6 @@
       ' • Confirmed: ' + Object.values(state.history).filter(x => x.reason === 'confirmed').length;
     panel.append(info);
     const controls = document.createElement('div'); controls.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px';
-    controls.append(button('Import Profile', () => document.getElementById('bb-profile-file').click()));
     controls.append(button('Fill Page', () => { const r = fill(); status = r.updated + ' details filled; ' + r.missing.length + ' required unanswered'; draw(); }));
     controls.append(button('Start All', () => {
       state.queue = discover().filter(x => !['confirmed','already_applied_or_confirmed'].includes(state.history[x.url]?.reason));
@@ -204,9 +205,16 @@
     controls.append(button('Stop', () => { state.active = false; save(); status = 'Stopped'; draw(); }));
     panel.append(controls);
     const file = document.createElement('input'); file.type = 'file'; file.accept = 'application/json,.json';
-    file.id = 'bb-profile-file'; file.hidden = true;
+    file.id = 'bb-profile-file';
+    file.setAttribute('aria-label', 'Choose Betabound Profile JSON file');
+    file.style.cssText = 'display:block;max-width:100%;margin-top:8px;padding:7px;background:#fff;color:#111;border:1px solid #555;border-radius:6px';
+    const fileHelp = document.createElement('div');
+    fileHelp.style.cssText = 'font-size:12px;margin-top:8px;font-weight:600';
+    fileHelp.textContent = profile ? 'Profile saved ✓ (choose another file to replace it)' : 'Tap Choose File below to import your saved profile:';
+    panel.append(fileHelp);
     file.onchange = async () => {
       try {
+        if (!file.files || !file.files[0]) { status = 'No file selected'; draw(); return; }
         const value = JSON.parse(await file.files[0].text());
         if (!value.name || !value.email) throw Error('name and email are required');
         profile = value; store('profile', value); status = 'Profile imported privately into this browser'; draw();
