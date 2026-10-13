@@ -130,7 +130,7 @@ try {
           if (/full.?name|your.?name|^name$/.test(desc)) answer = fullname;
           else for (const [key,value] of Object.entries(fields)) if (desc.includes(key) && value) { answer = value; break; }
           if (answer) {
-            const selector = f.id ? '#' + CSS.escape(f.id) : '[name="' + String(f.name).replace(/"/g,'') + '"]';
+            const selector = f.id ? '[id="' + String(f.id).replace(/"/g,'') + '"]' : '[name="' + String(f.name).replace(/"/g,'') + '"]';
             // Only fill uniquely matched fields; no default or invented screener answers.
             const loc = page.locator(selector);
             if (await loc.count() === 1) {
