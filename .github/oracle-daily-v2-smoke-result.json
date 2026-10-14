@@ -1,15 +1,26 @@
 {
-  "id": "smoke-2026-10-13T21-09-02",
+  "id": "smoke-2026-10-13T21-12-16",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-14T01:09:02.377Z",
-  "finished": "2026-10-14T01:09:36.123Z",
+  "started": "2026-10-14T01:12:16.500Z",
+  "finished": "2026-10-14T01:12:50.870Z",
   "result": {
     "task": "batch",
     "parallel": true,
     "lane_timeout_ms": 45000,
-    "elapsed_ms": 33289,
+    "elapsed_ms": 33929,
     "results": [
+      {
+        "task": "jml_scan",
+        "ok": true,
+        "result": {
+          "task": "jml_scan",
+          "authenticated": true,
+          "login_required": false,
+          "url": "https://www.anker-jml.com/",
+          "opportunities": []
+        }
+      },
       {
         "task": "instagram_brand_scan",
         "ok": true,
@@ -112,9 +123,7 @@
           "task": "eufy_alt_draw_diag",
           "url": "https://www.eufy.com/landingpage_app_test",
           "title": "landingpage_app_test - eufy US",
-          "snippets": [
-            "Anker Innovations \ud83c\udfe1 Own Your Yard: New eufy Security Lineup Preorder Now>> \ud83c\udfe1 Own Your Yard: New eufy Security Lineup Preorder Now>> \ud83c\udfe1 Own Your Yard: New eufy Security Lineup Preorder Now>> Anker Categories Anker Charging Anker SOLIX Anker eufy Anker eufyMake Anker soundcore Security Clean Mom & Baby New Home eufyMake Security Solution On Sale Hot Business Support Explore Order Tracker Refer Friends to get up to $80 per referral! Sign up Existi"
-          ],
+          "snippets": [],
           "controls": [
             {
               "i": 0,
@@ -514,7 +523,7 @@
         }
       }
     ],
-    "last_run_at": "2026-10-14T01:09:35.665Z",
+    "last_run_at": "2026-10-14T01:12:50.419Z",
     "manual_session_preserved": false
   }
 }
