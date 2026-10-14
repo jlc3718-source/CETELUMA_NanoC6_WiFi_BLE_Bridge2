@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "status": "ready_for_manual_action",
+  "pages": [
+    {
+      "url": "https://www.instagram.com/",
+      "title": "Instagram"
+    },
+    {
+      "url": "https://discord.com/login",
+      "title": "Discord"
+    }
+  ],
+  "encrypted_control_url": "d/MKqfaNv4zr3OUvQXhmVz/Ds6GJ1AYvMU/EQ7UtwOGwgmeVlkBS5tbiNsQqMdN6qq9xGVaWtRkogn2WbEzGQZ7qXjXkI/ivbluXTczWxVRE+rlMolZ0gFJgdjWErIaNvo+d4Pj7syO8dtz3gxfQBpPXsabJOHqUwPdQRqokO47ynXX8DdpZ5KOtnl/rB7FUDGbvM3Y9pz5wCbZkKieAZkKCDEHlrgvK+F0xytTSdTdYG83NMjcM5abMIyBYio8N6wm5rglogDh7yEN46PMOKg9JC2501y/v3W4MRmrEvBCRYS/kfGceXNAAqNh0JCjFaLtsGRqyojTogoxJ9Dan2g=="
+}
