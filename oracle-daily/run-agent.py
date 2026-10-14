@@ -78,7 +78,7 @@ def main():
             else:
                 write("oracle-walmart-cart-result",{"id":"walmart-cart-"+stamp,"task":"shopping_add_to_cart","url":args.url,"latest_arrival":args.latest_arrival})
     elif args.mode=="smoke":
-        write("oracle-daily-v2-smoke-result",{"id":"smoke-"+stamp,"task":"batch","read_only":True,"lane_timeout_ms":45000,"tasks":["instagram_brand_scan","eufy_alt_free_spin","bluetti_safe_spin"]})
+        write("oracle-daily-v2-smoke-result",{"id":"smoke-"+stamp,"task":"batch","read_only":True,"lane_timeout_ms":45000,"tasks":["jml_scan","instagram_brand_scan","eufy_alt_free_spin","bluetti_safe_spin"]})
         write("oracle-promo-state-result",{"id":"smoke-state-"+stamp,"task":"promo_state_get"})
         write("oracle-current-session-result",{"id":"smoke-session-"+stamp,"task":"login_status"})
     elif args.mode=="daily":
