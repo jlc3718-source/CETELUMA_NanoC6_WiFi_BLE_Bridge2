@@ -1,13 +1,13 @@
 {
-  "id": "state-2026-10-11T13-29-28",
+  "id": "smoke-state-2026-10-13T21-09-02",
   "ok": true,
   "agent_version": "2026.10.10.1",
-  "started": "2026-10-11T17:30:15.205Z",
-  "finished": "2026-10-11T17:30:15.209Z",
+  "started": "2026-10-14T01:09:36.417Z",
+  "finished": "2026-10-14T01:09:36.422Z",
   "result": {
     "task": "promo_state_get",
     "status": "ready",
-    "last_run_at": "2026-10-11T17:30:14.421Z",
+    "last_run_at": "2026-10-14T01:09:35.665Z",
     "campaigns": [
       {
         "id": "dreame-aero-2026",
@@ -167,7 +167,7 @@
         "status": "checked"
       },
       "instagram_brand_scan": {
-        "last_seen_at": "2026-10-11T17:30:14.421Z",
+        "last_seen_at": "2026-10-14T01:09:35.665Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
         "status": "checked"
       },
@@ -182,14 +182,14 @@
         "status": "login_required"
       },
       "eufy_alt_free_spin": {
-        "last_seen_at": "2026-10-11T17:30:14.421Z",
+        "last_seen_at": "2026-10-14T01:09:35.665Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
-        "status": "timeout_cancelled"
+        "status": "checked"
       },
       "bluetti_safe_spin": {
-        "last_seen_at": "2026-10-11T17:30:14.421Z",
+        "last_seen_at": "2026-10-14T01:09:35.665Z",
         "last_changed_at": "2026-10-08T04:43:37.494Z",
-        "status": "spin_control_not_found"
+        "status": "checked"
       },
       "mova_widget_api_diag": {
         "last_seen_at": "2026-10-11T17:30:14.421Z",
