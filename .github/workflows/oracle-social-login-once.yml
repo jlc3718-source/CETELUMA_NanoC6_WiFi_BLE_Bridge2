@@ -1,0 +1,98 @@
+name: Oracle Social Login Screen (One Time)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/oracle-social-login-once.trigger"
+permissions:
+  contents: write
+jobs:
+  open:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Open Instagram and Discord in saved Oracle profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, pathlib, subprocess, time, urllib.parse, urllib.request
+          result = {"ok": False, "status": "unavailable", "pages": []}
+          try:
+              job = {
+                  "id": "social-login-screen-" + str(int(time.time())),
+                  "task": "prepare_restricted",
+                  "kind": "queue",
+                  "profile": "daily",
+                  "urls": ["https://www.instagram.com/", "https://discord.com/app"]
+              }
+              req = urllib.request.Request(
+                  "http://127.0.0.1:8932/run",
+                  data=json.dumps(job).encode(),
+                  headers={"Content-Type": "application/json"}
+              )
+              with urllib.request.urlopen(req, timeout=58) as response:
+                  data = json.load(response)
+              payload = data.get("result") or {}
+              result = {
+                  "ok": bool(data.get("ok")),
+                  "status": payload.get("status"),
+                  "pages": [
+                      {
+                          "url": urllib.parse.urlunsplit((
+                              urllib.parse.urlsplit(str(page.get("url", ""))).scheme,
+                              urllib.parse.urlsplit(str(page.get("url", ""))).netloc,
+                              urllib.parse.urlsplit(str(page.get("url", ""))).path,
+                              "",
+                              ""
+                          )),
+                          "title": str(page.get("title", ""))[:90]
+                      }
+                      for page in (payload.get("pages") or [])
+                  ]
+              }
+              private_url = str(payload.get("login_url") or "")
+              if private_url.startswith("https://"):
+                  key_path = "/tmp/oracle-social-login-once-public.pem"
+                  pathlib.Path(key_path).write_text("""-----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt+VuMnDlGZvXCRdrjqVD
+          lxgAgVwLp+NW6AZLpNC83Ka+UOqs8kLBCfiq8y/YOzngp+MJ+oAhdDMgZr8xtZsJ
+          AFeQQky1O+SBg657fyzlYjsmakBDfxtSIAqLEU8yZJKVyPz4JgRcIOnBlFfLUzXS
+          ZrvNUul/f+vTi6amt1Vczz6qT3rBQ0oSYHkHNSXHKcPdoTlA1ONCzrpb3MJztVKo
+          FLOY3YTvcbUf5AsmCpMJtCtDMHCwMhVrH91ZrIbFLBNIxW80QDFpgGhncSbQtyqE
+          xYTGx6n6Uv4NOCA1Xzyaf6szWa4IuZ21IvhkYRB/LFATkQ+PeQzPUjHSEqb2j2z5
+          QwIDAQAB
+          -----END PUBLIC KEY-----
+          """)
+                  encrypted = subprocess.run(
+                      ["openssl", "pkeyutl", "-encrypt", "-pubin", "-inkey", key_path,
+                       "-pkeyopt", "rsa_padding_mode:oaep"],
+                      input=private_url.encode(), capture_output=True, check=True
+                  ).stdout
+                  result["encrypted_control_url"] = base64.b64encode(encrypted).decode()
+                  pathlib.Path(key_path).unlink(missing_ok=True)
+          except Exception as exc:
+              result = {"ok": False, "status": "error", "detail": str(exc)[:150], "pages": []}
+          pathlib.Path(".github/oracle-social-login-once-result.json").write_text(
+              json.dumps(result, indent=2) + "\n"
+          )
+          print(json.dumps({
+              "ok": result.get("ok"),
+              "status": result.get("status"),
+              "pages": result.get("pages"),
+              "handoff_encrypted": bool(result.get("encrypted_control_url"))
+          }))
+          PY
+      - name: Publish encrypted handoff result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name oracle-runner
+          git config user.email oracle-runner@users.noreply.github.com
+          git add .github/oracle-social-login-once-result.json
+          git commit -m "Publish encrypted one-time Oracle social login handoff"
+          git pull --rebase origin main
+          git push origin HEAD:main
