@@ -110,6 +110,11 @@ jobs:
           set -euo pipefail
           KEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks
           PASSFILE=/home/ubuntu/.jason-home-signing/password
+          echo "Keystore file present: $(test -s "$KEYSTORE" && echo yes || echo no)"
+          echo "Password file present: $(test -s "$PASSFILE" && echo yes || echo no)"
+          for candidate in /home/ubuntu/repo/JasonHome/Signing/jason-home-release.jks /home/ubuntu/repo/JasonHome/Signing/password /home/ubuntu/.jason-home-signing/jason-home-release.jks /home/ubuntu/.jason-home-signing/password /opt/jason-home-2/jason-home-release.jks; do
+            if test -s "$candidate"; then echo "Signer candidate available: $candidate"; fi
+          done
           test -s "$KEYSTORE"
           test -s "$PASSFILE"
           PASS="$(cat "$PASSFILE")"
