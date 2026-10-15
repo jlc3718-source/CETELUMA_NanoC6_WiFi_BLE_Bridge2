@@ -53,7 +53,7 @@ export class EufyClient {
       if(r._http===200&&code===0){let d=r.data;if(typeof d==="string"&&d)d=JSON.parse(aesDecryptText(d,this.share));return d??{};}
       if(attempt===0&&(code===4416||code===10000||r._http===400))continue;
       if(code===401||r._http===401){this.authed=false;this.lights.clear();this.creds=null;}
-      throw new Error(`Eufy ${path} failed: HTTP ${r._http}, code ${code}`);
+      throw new Error(`Eufy ${path} failed: HTTP ${r._http}, code ${code}${r.msg?": "+String(r.msg).slice(0,160):""}`);
     }
     throw new Error(`Eufy ${path} failed`);
   }

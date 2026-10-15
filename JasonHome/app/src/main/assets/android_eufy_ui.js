@@ -26,7 +26,7 @@ function installAndroidEufyUi(){
       eufy.innerHTML=
         '<div class="row between"><div><strong>Eufy / Oracle Controller</strong>'+
         '<div class="sub">Choose whether Jason Home controls the lights through Oracle or directly from this phone.</div></div>'+
-        '<span class="badge" id="eufyBleBadge">READY</span></div>'+
+        '<span class="badge" id="eufyBleBadge">CHECKING</span></div>'+
         '<div class="eufyStatusGrid">'+
         '<div class="eufyStatusCard"><span>Pool</span><strong id="eufyPoolState">Saved</strong><small>E120</small></div>'+
         '<div class="eufyStatusCard"><span>House</span><strong id="eufyHouseState">Saved</strong><small>E120</small></div>'+
@@ -429,6 +429,7 @@ function installAndroidEufyUi(){
       const st=await api("/api/cloud/test?ts="+Date.now(),{},30000);
       const eu=st.eufy||{},names=Array.isArray(eu.readyNames)?eu.readyNames:[];
       if(result)result.textContent="Oracle test: "+(eu.status||"Online")+" • "+names.length+"/4 strings ready.";
+      await refreshEufyStatus();
     }catch(e){if(result)result.textContent="Oracle test failed: "+e.message;}
   }
 
@@ -452,6 +453,23 @@ function installAndroidEufyUi(){
     }catch(e){if(result)result.textContent="Reconcile failed: "+e.message;}
   }
 
+  async function refreshEufyVerification(){
+    const root=$("cloudControllerResult")?.parentElement;if(!root)return;
+    let panel=$("eufyVerifyPanel");if(!panel){panel=document.createElement("div");panel.id="eufyVerifyPanel";panel.className="panel";panel.innerHTML='<strong>Eufy sign-in verification</strong><p id="eufyVerifyMessage" class="sub"></p><img id="eufyVerifyImage" alt="Eufy verification challenge" style="max-width:100%;background:white;border-radius:8px"><input id="eufyVerifyAnswer" class="field" autocomplete="off" placeholder="Characters shown above"><button id="eufyVerifyStart" class="btn" type="button">Get verification image</button><button id="eufyVerifySubmit" class="btn primary" type="button">Verify and reconnect</button>';root.appendChild(panel);
+      $("eufyVerifyStart").onclick=()=>submitVerification("start");$("eufyVerifySubmit").onclick=()=>submitVerification("answer");
+    }
+    const data=await api("/api/eufy/verification");panel.hidden=!data.required; if(!data.required)return;
+    $("eufyVerifyImage").hidden=!data.image;if(data.image)$("eufyVerifyImage").src=data.image;
+    $("eufyVerifyAnswer").hidden=!data.type;$("eufyVerifySubmit").hidden=!data.type;
+    $("eufyVerifyMessage").textContent=data.type==="email"?"Eufy sent a code to your account email. Enter that code below.":data.image?"Enter the characters in Eufy's image, then verify.":"Eufy requires a visual check before reconnecting. Your saved password is unchanged.";
+    $("eufyVerifyAnswer").placeholder=data.type==="email"?"Email verification code":"Characters shown above";
+  }
+  async function submitVerification(action){
+    const button=$(action==="start"?"eufyVerifyStart":"eufyVerifySubmit");button.disabled=true;
+    try{const r=await post("/api/eufy/verification",{action,answer:$("eufyVerifyAnswer").value});$("eufyVerifyAnswer").value="";await refreshEufyVerification();await refreshEufyStatus();if(!r.required&&$("cloudControllerResult"))$("cloudControllerResult").textContent="Eufy connected. All four strings confirmed.";}
+    catch(e){$("eufyVerifyMessage").textContent=e.message;}
+    finally{button.disabled=false;}
+  }
   async function refreshEufyStatus(){
     try{
       const data=typeof api==="function"?await api("/api/state?eufy="+Date.now()):null;
@@ -460,15 +478,19 @@ function installAndroidEufyUi(){
       (data.ble?.controllers||[]).forEach(x=>{byName[String(x.name||"").toLowerCase()]=x;});
       [["Pool","eufyPoolState"],["House","eufyHouseState"],["Garage","eufyGarageState"],["Shed","eufyShedState"]].forEach(([name,id])=>{
         const x=byName[name.toLowerCase()],el=$(id);
-        if(el)el.textContent=x?.connected?"Connected":"Ready";
+        if(el)el.textContent=x?.connected?"Connected":"Offline";
       });
       const connected=Number(data.ble?.connectedCount||0);
       const badge=$("eufyBleBadge");
-      if(badge)badge.textContent=connected?connected+"/4 READY":"READY";
+      if(badge){badge.textContent=connected===4?"4/4 READY":connected?connected+"/4 READY":"OFFLINE";badge.style.background=connected===4?"#103828":"#482523";badge.style.color=connected===4?"#72efb1":"#ffc2b8";}
       const summary=$("cloudControllerSummary");
       if(summary)summary.textContent=(data.ble?.connectionMode||"Internet")+" • "+(data.ble?.status||data.ble?.transportStatus||"");
       cleanDeviceActions();
-    }catch(_){}
+      await refreshEufyVerification();
+    }catch(_){
+      for(const id of ["eufyPoolState","eufyHouseState","eufyGarageState","eufyShedState"]){const el=$(id);if(el)el.textContent="Unavailable";}
+      const badge=$("eufyBleBadge");if(badge){badge.textContent="OFFLINE";badge.style.background="#482523";badge.style.color="#ffc2b8";}
+    }
   }
 
   // Make Eufy hardware immediately obvious the first time Settings is opened.

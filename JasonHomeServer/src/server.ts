@@ -1,3 +1,4 @@
+import { createEufyVerification } from "./eufy/verification.js";
 import http from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -229,7 +230,12 @@ function markEufyDegraded(error:any){
   eufyReady=false;readyNames=[];eufyStatus="Degraded: "+msg;
   if(/auth|login|certificate|session|token|401/i.test(msg))eufy=null;
 }
+const eufyVerification=createEufyVerification({
+ createClient:()=>new EufyClient(meta("install_id")||DEFAULT_INSTALL),meta,setMeta,
+ commit:async(client:EufyClient)=>{setMeta("eufy_session",JSON.stringify(client.exportSession()));delMeta("eufy_verification_required");const ready=await ensureEufy(true);return {readyNames:ready.readyNames(),reconcile:await reconcile(false,true)};}
+});
 async function ensureEufy(force=false){
+  if(meta("eufy_verification_required"))throw new Error("Eufy verification required. Open Settings → Eufy Devices.");
   if(force){eufy=null;eufyReady=false;readyNames=[];preparing=null;}
   if(eufy&&eufyReady&&readyNames.length===4)return eufy;
   if(preparing)return preparing;
@@ -256,7 +262,9 @@ async function ensureEufy(force=false){
     setMeta("eufy_session",JSON.stringify(client.exportSession()));
     return client;
   })().catch((e:any)=>{
-    eufyReady=false;readyNames=[];eufyStatus=e?.message||String(e);throw e;
+    eufyReady=false;readyNames=[];eufyStatus=e?.message||String(e);
+    if(/100032|captcha/i.test(eufyStatus)){setMeta("eufy_verification_required","1");eufyStatus="Eufy verification required. Open Settings → Eufy Devices.";}
+    throw e;
   }).finally(()=>{preparing=null;});
   return preparing;
 }
@@ -925,6 +933,7 @@ const server=http.createServer(async(req,res)=>{
     }
     if(!authorized(req))return json(res,401,{ok:false,error:"Unauthorized"});
 
+    if(path==="/api/eufy/verification"&&(method==="GET"||method==="POST"))return json(res,200,method==="POST"?await eufyVerification.handle(await readJson(req)):{ok:true,...eufyVerification.view()});
     if(method==="GET"&&path==="/api/status")return json(res,200,await statusPayload(url.searchParams.get("refresh")==="1"));
     if(method==="GET"&&path==="/api/devices")return json(res,200,{ok:true,devices:(await statusPayload(false)).devices});
     if(method==="POST"&&path==="/api/automation/ownership"){

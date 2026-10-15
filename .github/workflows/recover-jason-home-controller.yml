@@ -1,152 +1,25 @@
-name: Restore Jason Home 2 Oracle scheduler
+name: Fix Eufy verification and connection status
 on:
   push:
-    branches: [jason-home-2-web]
-    paths: ['.github/workflows/recover-jason-home-controller.yml']
+    branches: [fix/jh2-eufy-verification-20261015]
+    paths: ['.github/workflows/recover-jason-home-controller.yml', 'JasonHomeServer/**', 'JasonHome/app/src/main/assets/android_eufy_ui.js']
 permissions:
   contents: read
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
 jobs:
-  recover:
+  fix:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Back up live state restore Oracle and verify
-        shell: bash
+      - name: Compile and test Eufy verification flow
         run: |
           set -euo pipefail
-          umask 077
-          BACKUP="/home/ubuntu/jh2-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
-          mkdir -p "$BACKUP"
-          sudo docker inspect jason-home > "$BACKUP/container-inspect.json"
-          cp /home/ubuntu/repo/JasonHomeServer/.env "$BACKUP/runtime.env"
-          sudo docker inspect --format '{{.Image}}' jason-home > "$BACKUP/image-id"
-          export BACKUP
-          python3 - <<'PY'
-          import os,json,sqlite3,pathlib,urllib.request
-          root=pathlib.Path(os.environ['BACKUP'])
-          info=json.loads((root/'container-inspect.json').read_text())[0]
-          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
-          dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite')
-          mount=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination'].rstrip('/')+'/'))
-          source=pathlib.Path(mount['Source'])/dbpath[len(mount['Destination']):].lstrip('/')
-          src=sqlite3.connect('file:'+str(source)+'?mode=ro',uri=True)
-          dst=sqlite3.connect(root/'jason-home.sqlite');src.backup(dst);dst.close();src.close()
-          token=env.get('JASON_HOME_API_TOKEN','')
-          assert token,'Missing live service token'
-          def call(path,body=None):
-           data=None if body is None else json.dumps(body).encode()
-           req=urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-           with urllib.request.urlopen(req,timeout=120) as r:return json.load(r)
-          before=call('/api/status');(root/'status-before.json').write_text(json.dumps(before))
-          print('Backup complete. Before:',json.dumps({k:before.get(k) for k in ['calendar','automationOwner']}))
-          try:result=call('/api/automation/ownership',{'owner':'oracle'})
-          except urllib.error.HTTPError as e:
-           result={'ok':False,'http':e.code,'error':e.read().decode()[:1000]}
-           health=call('/api/health')
-           print('Ownership after reconcile error:',health.get('automationOwner'))
-           assert health.get('automationOwner')=='oracle'
-           result['owner']='oracle'
-          (root/'ownership-result.json').write_text(json.dumps(result))
-          print('Restore ownership:',json.dumps(result))
-          assert result.get('owner')=='oracle'
-          PY
-          cd /home/ubuntu/repo/JasonHomeServer
-          sudo docker compose config --format json > "$BACKUP/compose-resolved.json"
-          python3 - <<'PY'
-          import os,json,pathlib,subprocess
-          root=pathlib.Path(os.environ['BACKUP'])
-          old=json.loads((root/'container-inspect.json').read_text())[0]
-          live=dict(x.split('=',1) for x in old['Config']['Env'] if '=' in x)
-          desired=json.loads((root/'compose-resolved.json').read_text())['services']['jason-home'].get('environment',{})
-          changed=any(str(desired.get(k,''))!=live.get(k,'') for k in ['EUFY_EMAIL','EUFY_PASSWORD'])
-          print('Saved Eufy credentials differ from running container:',changed)
-          if changed:subprocess.run(['sudo','docker','compose','up','-d','--no-build','--force-recreate','jason-home'],check=True)
-          updated=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home']))[0]
-          (root/'container-inspect.json').write_text(json.dumps([updated]))
-          PY
-          sudo docker restart jason-home
-          python3 - <<'PY'
-          import os,json,time,urllib.request,pathlib
-          root=pathlib.Path(os.environ['BACKUP'])
-          info=json.loads((root/'container-inspect.json').read_text())[0]
-          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
-          def call(path,body=None):
-           data=None if body is None else json.dumps(body).encode()
-           req=urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+env['JASON_HOME_API_TOKEN'],'Content-Type':'application/json'})
-           with urllib.request.urlopen(req,timeout=120) as r:return json.load(r)
-          for attempt in range(30):
-           try:
-            health=call('/api/health')
-            if health.get('ok'):break
-           except Exception:time.sleep(2)
-          else:raise SystemExit('Service did not recover')
-          print('Health:',json.dumps(health));assert health.get('automationOwner')=='oracle'
-          try: print('Eufy reconnect:',json.dumps(call('/api/reconnect',{})))
-          except Exception as e:print('Eufy reconnect failed:',str(e))
-          after=call('/api/status');(root/'status-after.json').write_text(json.dumps(after))
-          before=json.loads((root/'status-before.json').read_text())
-          for key in ['eventCount','customCount','revision']:
-           assert after.get('calendar',{}).get(key)==before.get('calendar',{}).get(key),'Calendar changed: '+key
-          print('Verified:',json.dumps({k:after.get(k) for k in ['eufy','calendar','automationOwner','scheduler']}))
-          print('Schedules preserved; recovery timestamp:',time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
-          PY
-          
-          python3 - <<'PY'
-          import pathlib,sqlite3,json,subprocess,os
-          root=pathlib.Path(os.environ['BACKUP'])
-          info=json.loads((root/'container-inspect.json').read_text())[0]
-          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
-          candidates=[];seen=set()
-          for file in sorted(pathlib.Path('/home/ubuntu').glob('jh2-recovery-*/jason-home.sqlite')):
-           try:
-            db=sqlite3.connect('file:'+str(file)+'?mode=ro',uri=True)
-            row=db.execute("SELECT value FROM meta WHERE key='eufy_session'").fetchone()
-            install=db.execute("SELECT value FROM meta WHERE key='install_id'").fetchone();db.close()
-            if row:
-             session=json.loads(row[0])
-             if session.get('token') and session['token'] not in seen:
-              seen.add(session['token']);candidates.append({'session':session,'install':install[0] if install else ''})
-           except Exception:pass
-          print('Distinct preserved Eufy sessions available:',len(candidates))
-          for candidate in candidates[:3]:
-           script="import {EufyClient} from './dist/eufy/client.js';import {createHash} from 'node:crypto';const input="+json.dumps(candidate)+";try{const install=input.install||createHash('sha256').update('jason-home-server:'+process.env.EUFY_EMAIL).digest('hex').slice(0,32);const c=new EufyClient(install,input.session);await c.prepare();console.log(JSON.stringify({ok:true,names:c.readyNames(),session:c.exportSession(),install}));}catch(e){console.log(JSON.stringify({ok:false,error:String(e.message)}));}"
-           result=subprocess.run(['sudo','docker','exec','-i','jason-home','node','--input-type=module'],input=script,text=True,capture_output=True,timeout=90)
-           try:d=json.loads(result.stdout.strip().splitlines()[-1])
-           except Exception:print('Preserved session validation failed');continue
-           print('Preserved session validation:',d.get('ok'),d.get('names',[]),d.get('error',''))
-           if not d.get('ok') or set(d.get('names',[]))!={'Pool','House','Garage','Shed'}:continue
-           dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite')
-           mount=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination'].rstrip('/')+'/'))
-           source=pathlib.Path(mount['Source'])/dbpath[len(mount['Destination']):].lstrip('/')
-           subprocess.run(['sudo','docker','stop','jason-home'],check=True)
-           try:
-            db=sqlite3.connect(source);db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('eufy_session',?)",(json.dumps(d['session']),));db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('install_id',?)",(d['install'],));db.commit();db.close()
-           finally:subprocess.run(['sudo','docker','start','jason-home'],check=True)
-           print('Restored independently validated session; credentials unchanged.');break
-          PY
-
-          RECOVERY="$BACKUP/original-eufy.json"
-          base64 --decode "$GITHUB_WORKSPACE/.github/private-transfer/eufy-recovery-20261015.cms.b64" > "$BACKUP/original-eufy.cms"
-          openssl cms -decrypt -binary -inform DER -in "$BACKUP/original-eufy.cms" -inkey /home/ubuntu/.jason-home-signing/restore-transport.pem -out "$RECOVERY"
-          export RECOVERY
-          python3 - <<'PY'
-          import os,json,pathlib,subprocess,sqlite3
-          root=pathlib.Path(os.environ['BACKUP']);saved=json.loads(pathlib.Path(os.environ['RECOVERY']).read_text())
-          script="""import {EufyClient} from './dist/eufy/client.js';import fs from 'node:fs';const s=JSON.parse(fs.readFileSync(0,'utf8'));let c=new EufyClient(s.eufyInstall,s.eufySession);try{await c.prepare();}catch(first){try{c=new EufyClient(s.eufyInstall);await c.login(s.eufyEmail,s.eufyPassword);await c.prepare();}catch(e){console.log(JSON.stringify({ok:false,error:String(e.message),originalSessionError:String(first.message)}));process.exit(0);}}console.log(JSON.stringify({ok:true,names:c.readyNames(),session:c.exportSession()}));"""
-          result=subprocess.run(['sudo','docker','exec','-i','jason-home','node','--input-type=module','-e',script],input=json.dumps(saved),text=True,capture_output=True,timeout=120)
-          try:d=json.loads(result.stdout.strip().splitlines()[-1])
-          except Exception:raise SystemExit('Original Eufy session validation failed without usable response')
-          print('Original Eufy recovery:',d.get('ok'),d.get('names',[]),d.get('error',''),d.get('originalSessionError',''))
-          if not d.get('ok') or set(d.get('names',[]))!={'Pool','House','Garage','Shed'}:raise SystemExit(0)
-          info=json.loads((root/'container-inspect.json').read_text())[0];env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
-          dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite');mount=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination'].rstrip('/')+'/'))
-          source=pathlib.Path(mount['Source'])/dbpath[len(mount['Destination']):].lstrip('/')
-          subprocess.run(['sudo','docker','stop','jason-home'],check=True)
-          try:
-           db=sqlite3.connect(source);db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('eufy_session',?)",(json.dumps(d['session']),));db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('install_id',?)",(saved['eufyInstall'],));db.commit();db.close()
-          finally:subprocess.run(['sudo','docker','start','jason-home'],check=True)
-          print('Validated original session restored. Account password unchanged.')
-          PY
-          rm -f "$RECOVERY" "$BACKUP/original-eufy.cms"
-          
+          sudo docker run --rm -v "$PWD:/src" -w /src/JasonHomeServer node:22-slim sh -c 'npm ci && npm run build && node tests/eufy-verification.mjs'
+          python3 JasonHome2Server/generate_catalog.py
+          python3 JasonHome2Server/generate_web.py
+          sudo docker run --rm -v "$PWD:/src" -w /src node:22-slim node --check JasonHome2Server/web/android_eufy_ui.js
+      - name: Back up live state apply focused fix and verify real challenge
+        run: python3 .github/scripts/deploy-eufy-verification.py

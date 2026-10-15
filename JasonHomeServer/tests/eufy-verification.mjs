@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {createEufyVerification} from '../dist/eufy/verification.js';
+const names=['Pool','House','Garage','Shed'];let committed=0,loginCount=0;const meta=new Map([['eufy_verification_required','1']]);
+const candidate={async signed(service,path,body){if(path==='/passport/generate/captcha')return {captcha_id:'challenge-1',item:'data:image/png;base64,AAAA'};if(path==='/passport/login'){assert.equal(body.captcha_id,'challenge-1');assert.equal(body.answer,'human-input');return {}; }},async login(){loginCount++;await this.signed('passport','/passport/login',{});},async prepare(){},readyNames(){return names}};
+const flow=createEufyVerification({createClient:()=>candidate,meta:k=>meta.get(k),setMeta:(k,v)=>meta.set(k,v),commit:async()=>{committed++;meta.delete('eufy_verification_required');return {readyNames:names};}});
+assert.equal(flow.view().required,true);await assert.rejects(flow.handle({action:'answer',answer:'none'}),/expired/);
+const challenge=await flow.handle({action:'start'});assert.equal(challenge.type,'captcha');assert.equal(loginCount,0);
+await assert.rejects(flow.handle({action:'answer',answer:''}),/Enter/);assert.equal(loginCount,0);
+const complete=await flow.handle({action:'answer',answer:'human-input'});assert.equal(complete.required,false);assert.equal(committed,1);assert.equal(loginCount,1);assert.equal(flow.view().image,null);
+console.log('PASS: verification requires human input, preserves challenge, commits only after four-device preparation and clears challenge afterward');

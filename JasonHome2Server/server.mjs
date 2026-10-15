@@ -1323,7 +1323,7 @@ async function route(req,res){
     put("backup",backup);put("backup_time",Math.floor(Date.now()/1000));
     return send(res,200,{ok:true,restoredAt:Math.floor(Date.now()/1000),oracleRestored:true});
   }
-  const proxyPaths=new Set(["/api/status","/api/devices","/api/schedules","/api/reconcile","/api/reconnect"]);
+  const proxyPaths=new Set(["/api/status","/api/devices","/api/schedules","/api/reconcile","/api/reconnect","/api/eufy/verification"]);
   if(proxyPaths.has(path)||path.startsWith("/api/eufy/factory-")){
     const value=method==="GET"?undefined:await input(req);
     return send(res,200,await upstream(path+url.search,method,value));
