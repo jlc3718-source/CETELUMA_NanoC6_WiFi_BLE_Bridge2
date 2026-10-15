@@ -435,6 +435,160 @@ $('play').onclick=()=>operation(async()=>{const list=await inventory('play'),e=l
 $('restore').onclick=()=>operation(async()=>{if(new DataView(BACKUP.buffer).getUint32(4,true)!==CID)throw Error('Backup CID mismatch');await delete928();await sendFile(BACKUP);say('Original BLE TEST restored.');});
 $('download').onclick=()=>{if(prepared)saveFile(prepared,'SmartDawn_83928_native_scroll.eff','application/octet-stream');};
 $('downloadLog').onclick=()=>saveFile(logs.join('\n'),'SmartDawn_v25_log.txt','text/plain');
+
+// Offline workspace. Never talks to Bluetooth until Send, Install, Play or Refresh is tapped.
+const DRAFT_DB='JasonHome2CurtainStudio',DRAFT_STORE='offline-project',DRAFT_KEY='latest';
+function invalidatePreparation(){prepared=null;preparedLive=null;}
+function offlineInfo(message){$('offlineStatus').textContent=message;}
+function openDraftDB(){
+ return new Promise((resolve,reject)=>{
+  if(!window.indexedDB){reject(Error('This WebView has no IndexedDB storage'));return;}
+  const req=indexedDB.open(DRAFT_DB,1);
+  req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(DRAFT_STORE))req.result.createObjectStore(DRAFT_STORE);};
+  req.onsuccess=()=>resolve(req.result);
+  req.onerror=()=>reject(req.error||Error('Offline project storage unavailable'));
+ });
+}
+async function transactDraft(action,value){
+ const db=await openDraftDB();
+ try{
+  return await new Promise((resolve,reject)=>{
+   const tx=db.transaction(DRAFT_STORE,action==='read'?'readonly':'readwrite');
+   const object=tx.objectStore(DRAFT_STORE);
+   const req=action==='read'?object.get(DRAFT_KEY):action==='delete'?object.delete(DRAFT_KEY):object.put(value,DRAFT_KEY);
+   let result;
+   req.onsuccess=()=>{result=req.result;};
+   req.onerror=()=>reject(req.error||Error('Offline project request failed'));
+   tx.oncomplete=()=>resolve(result);
+   tx.onerror=()=>reject(tx.error||Error('Offline project transaction failed'));
+   tx.onabort=()=>reject(tx.error||Error('Offline project transaction aborted'));
+  });
+ }finally{db.close();}
+}
+function canvasBlob(canvas){
+ return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('Could not save scaled photo')),'image/png'));
+}
+function draftSettings(){
+ const settings={};
+ for(const id of ['motion','quality','framing','enhance','cleanup','zoom','panX','panY'])settings[id]=$(id).value;
+ return settings;
+}
+async function draftSnapshot(){
+ const master=photoMaster?await canvasBlob(photoMaster):null;
+ return {version:1,savedAt:Date.now(),name:importedName,meta:{...sourceMeta},
+  master,frames:frames.map(frame=>new Uint8ClampedArray(frame)),delays:frameDelays.slice(),
+  settings:draftSettings(),nativeEffect:prepared?new Uint8Array(prepared):null};
+}
+function saveDraftNow(){
+ if(!sourceImage)return Promise.reject(Error('Import a photo or GIF first'));
+ clearTimeout(autosaveTimer);autosaveTimer=null;
+ const task=saveChain.catch(()=>{}).then(async()=>{
+  const entry=await draftSnapshot();
+  await transactDraft('write',entry);
+  offlineInfo('Saved on this phone: '+entry.name+' · '+entry.frames.length+' frame'+(entry.frames.length===1?'':'s')+
+   (entry.nativeEffect?' · native effect ready':'')+'. Connect only when ready to send.');
+  log('OFFLINE_SAVED '+JSON.stringify({name:entry.name,frames:entry.frames.length,native:!!entry.nativeEffect}));
+ });
+ saveChain=task.catch(err=>{offlineInfo('Could not save offline: '+err.message+'. Your current editing session still works.');log('OFFLINE_SAVE_ERROR '+err.message);});
+ return task;
+}
+function scheduleDraftSave(){
+ if(draftRestore||!sourceImage)return;
+ clearTimeout(autosaveTimer);
+ offlineInfo('Changes pending — saving to this phone…');
+ autosaveTimer=setTimeout(()=>{autosaveTimer=null;saveDraftNow().catch(()=>{});},550);
+}
+async function restoreOfflineDraft(){
+ const started=projectGeneration;
+ try{
+  const draft=await transactDraft('read');
+  if(!draft){offlineInfo('No saved project yet. Import any picture/GIF and the draft will save automatically.');return;}
+  if(draft.version!==1||!Array.isArray(draft.frames)||draft.frames.length<1||draft.frames.length>180)
+   throw Error('Saved offline project format is invalid');
+  const recovered=draft.frames.map(frame=>{
+   if(!frame||frame.length!==6400)throw Error('Saved 40×40 frame is invalid');
+   return new Uint8ClampedArray(frame);
+  });
+  let master=null;
+  if(draft.master){
+   const bitmap=await createImageBitmap(draft.master);
+   try{master=makeMaster(bitmap);}finally{bitmap.close?.();}
+  }
+  if(projectGeneration!==started)return; // Do not overwrite a new import.
+  draftRestore=true;
+  try{
+   stopPreview();photoMaster=master;
+   for(const [id,value] of Object.entries(draft.settings||{})){
+    const field=$(id);if(!field||typeof value!=='string')continue;
+    if(field.tagName==='SELECT'&&[...field.options].some(opt=>opt.value===value))field.value=value;
+    else if(field.tagName==='INPUT'&&Number.isFinite(Number(value))&&Number(value)>=Number(field.min)&&Number(value)<=Number(field.max))field.value=value;
+   }
+   importedName=String(draft.name||'Saved project').slice(0,120);
+   sourceMeta={width:Number(draft.meta?.width)||40,height:Number(draft.meta?.height)||40,size:Number(draft.meta?.size)||0};
+   frames=recovered;
+   frameDelays=Array.isArray(draft.delays)&&draft.delays.length===frames.length?draft.delays.slice():frames.map(()=>90);
+   frameControls(!!photoMaster);
+   if(photoMaster)applyPhotoSettings();
+   else{sourceImage=frames[0];renderImage(sourceImage);}
+   invalidatePreparation();
+   if(draft.nativeEffect&&draft.nativeEffect.length===4096){
+    const candidate=new Uint8Array(draft.nativeEffect);
+    try{plan(candidate,CID);prepared=candidate;}catch(err){log('STORED_EFFECT_INVALID '+err.message);}
+   }
+   $('imageInfo').textContent=importedName+' · '+sourceMeta.width+'×'+sourceMeta.height+' source · '+formatBytes(sourceMeta.size)+
+    ' · '+frames.length+' saved 40×40 frame'+(frames.length===1?'':'s');
+   $('zoomVal').textContent=Number($('zoom').value).toFixed(2)+'×';
+   offlineInfo('Restored: '+importedName+' · '+frames.length+' frame'+(frames.length===1?'':'s')+
+    (prepared?' · native effect prepared':'')+'. Continue editing, or connect to send.');
+   say('Saved offline project restored. Bluetooth not required for editing.');
+   log('OFFLINE_RESTORED '+JSON.stringify({name:importedName,frames:frames.length,native:!!prepared}));
+  }finally{draftRestore=false;ui();}
+ }catch(err){
+  offlineInfo('Offline project storage unavailable: '+err.message+'. Import and preview still work in this session.');
+  log('OFFLINE_RESTORE_ERROR '+err.message);
+ }
+}
+async function prepareForCurtainOffline(){
+ if(!sourceImage)throw Error('Import a photo or GIF first');
+ const motion=$('motion').value;
+ if(motion==='scroll'){
+  prepared=nativeFromImage(sourceImage);
+  const checked=plan(prepared,CID);
+  preparedLive=null;
+  await saveDraftNow();
+  say('Native scrolling effect built offline: 4,096 bytes, '+checked.parts.length+
+   ' upload packets. Saved on this phone. Connect later and tap Install to 83928.');
+  return;
+ }
+ const images=motion==='gif'?frames:[frames[0]];
+ if(motion==='gif'&&images.length<2)throw Error('Import an animated GIF or select Static');
+ const encoding=getEncoding(),packetGroups=[];let total=0;
+ for(let i=0;i<images.length;i++){
+  const packets=encoding.kind==='palette'?livePackets(images[i],encoding.colors,encoding.colors<=8?40:80):
+   makeRGBPackets(images[i],encoding.colors);
+  packetGroups.push(packets);total+=packets.length;
+  if(i%5===4){offlineInfo('Preparing '+(i+1)+' of '+images.length+' frames locally…');await delay(0);}
+ }
+ preparedLive={motion,quality:$('quality').value,packetGroups};
+ await saveDraftNow();
+ say((motion==='static'?'Static photo':'Animated GIF')+' prepared offline: '+images.length+
+  ' frame'+(images.length===1?'':'s')+', '+total+' image packets. The decoded project is saved on this phone.'+
+  ' Connect later and tap Send. Packets can be rebuilt from the saved frames.');
+}
+$('prepareOffline').onclick=()=>operation(prepareForCurtainOffline);
+$('saveDraft').onclick=()=>operation(async()=>{await saveDraftNow();say('Project saved on this phone. No Bluetooth needed.');});
+$('clearDraft').onclick=()=>operation(async()=>{
+ clearTimeout(autosaveTimer);autosaveTimer=null;
+ await saveChain.catch(()=>{});
+ await transactDraft('delete');
+ offlineInfo('Saved draft cleared. Current preview is unchanged and remains available until you leave.');
+ say('Saved offline copy cleared; current unsaved picture still visible.');
+});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&autosaveTimer){
+ clearTimeout(autosaveTimer);autosaveTimer=null;saveDraftNow().catch(()=>{});
+}});
+restoreOfflineDraft();
+
 if(!window.isSecureContext||!navigator.bluetooth)say('Bluetooth unavailable. Import, preview, prepare and save offline without connecting.');
 log('v25 image-quality converter started. Static live, indexed RLE, direct RGB888 doodle, native scroll.');ui();
 </script></body></html>
