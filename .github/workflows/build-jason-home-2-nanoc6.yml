@@ -1,0 +1,223 @@
+name: Build Jason Home 2 NanoC6
+on:
+  push:
+    branches: [jason-home-2-nanoc6]
+    paths: ['JasonHome2NanoC6/**', '.github/workflows/build-jason-home-2-nanoc6.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jason-home-2-nanoc6
+  cancel-in-progress: false
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-nanoc6-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+      - run: python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+      - name: Prepare exact source and check protocols/migration
+        run: |
+          python JasonHome2NanoC6/tools/prepare.py
+          node JasonHome2NanoC6/tests/generate-vectors.mjs /tmp/jh2-vectors.tsv
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/include JasonHome2NanoC6/tests/protocol-parity.cpp JasonHome2NanoC6/src/EufyProtocol.cpp -o /tmp/jh2-parity
+          /tmp/jh2-parity /tmp/jh2-vectors.tsv
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/src JasonHome2NanoC6/tests/smartdawn.cpp JasonHome2NanoC6/src/SmartDawnProtocol.cpp -o /tmp/jh2-curtain
+          /tmp/jh2-curtain
+          python -m unittest discover -s JasonHome2NanoC6/tests -p 'test_*.py'
+      - name: Mobile interface smoke test
+        run: |
+          npm install --prefix /tmp/jh2-ui playwright@1.61.1 --no-audit --no-fund
+          /tmp/jh2-ui/node_modules/.bin/playwright install --with-deps chromium
+          NODE_PATH=/tmp/jh2-ui/node_modules CODEX_PRIMARY_RUNTIME_NODE_MODULES=/tmp/jh2-ui/node_modules node JasonHome2NanoC6/tests/ui-smoke.cjs
+      - name: Build two apps and settings volume
+        run: |
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2NanoC6/tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-firmware
+          path: JasonHome2NanoC6/release/
+          if-no-files-found: error
+          retention-days: 30
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile phone app
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          JAR="$ANDROID_HOME/platforms/android-35/android.jar"
+          OUT="$PWD/android-build"
+          mkdir -p "$OUT/classes" "$OUT/dex"
+          "$BT/aapt2" link -o "$OUT/base.apk" -I "$JAR" --manifest JasonHome2NanoC6/android/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 35
+          javac --release 17 -cp "$JAR" -d "$OUT/classes" JasonHome2NanoC6/android/src/com/jasonhome2/app/*.java
+          "$BT/d8" --min-api 26 --lib "$JAR" --output "$OUT/dex" "$OUT/classes/com/jasonhome2/app/"*.class
+          (cd "$OUT/dex" && zip -q -u "$OUT/base.apk" classes.dex)
+          "$BT/zipalign" -f 4 "$OUT/base.apk" "$OUT/Jason-Home-2-2.1.0-NanoC6-UNSIGNED.apk"
+          "$BT/aapt2" dump badging "$OUT/Jason-Home-2-2.1.0-NanoC6-UNSIGNED.apk" | grep "package: name='com.jasonhome2.app' versionCode='12' versionName='2.1.0'"
+          cp "$BT/lib/apksigner.jar" "$OUT/apksigner.jar"
+          printf '%s\n' "$GITHUB_SHA" > "$OUT/source-commit.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-unsigned
+          path: |
+            android-build/*UNSIGNED.apk
+            android-build/apksigner.jar
+            android-build/source-commit.txt
+          retention-days: 14
+  publish:
+    needs: firmware
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-firmware
+          path: release-work
+      - name: Verify and sign dedicated channel
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          python release-work/flash.py --verify-only
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=json.loads(Path('release-work/release.json').read_text())
+          assert m['commit']==os.environ['GITHUB_SHA']
+          PY
+          test -n "$OTA_SIGNING_KEY_B64"
+          key="$RUNNER_TEMP/jh2-ota-key.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          python JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release release-work/release.json --output release-work/latest.json
+      - name: Publish installation candidate and verify public bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(cat JasonHome2NanoC6/VERSION)"
+          TAG="jason-home-2-nanoc6-v$VERSION"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --latest=false --title "Jason Home 2 NanoC6 $VERSION — installation candidate" --notes-file JasonHome2NanoC6/TESTING.md
+          else
+            remote_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+            test "$remote_sha" = "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" release-work/*.bin release-work/*.zip release-work/release.json release-work/SHA256SUMS release-work/INSTALL.md release-work/TESTING.md release-work/latest.json --clobber
+          mkdir -p downloaded
+          curl --fail --location --retry 3 "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/jh2-runtime-$VERSION.bin" -o "downloaded/jh2-runtime-$VERSION.bin"
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          m=json.loads(Path('release-work/release.json').read_text());name=f"jh2-runtime-{m['version']}.bin";data=Path('downloaded',name).read_bytes()
+          assert len(data)==m['files'][name]['bytes'] and hashlib.sha256(data).hexdigest()==m['files'][name]['sha256']
+          PY
+      - name: Advance Jason Home 2 channel only
+        run: |
+          set -euo pipefail
+          cp release-work/latest.json "$RUNNER_TEMP/jh2-latest.json"
+          git config user.name "Jason Home 2 build"
+          git config user.email "325178451+jlc3718-source@users.noreply.github.com"
+          if git ls-remote --exit-code origin refs/heads/jh2-nanoc6-ota >/dev/null 2>&1; then
+            git fetch origin jh2-nanoc6-ota
+            git checkout -B jh2-nanoc6-ota FETCH_HEAD
+          else
+            git checkout --orphan jh2-nanoc6-ota
+            git rm -rf . >/dev/null
+          fi
+          cp "$RUNNER_TEMP/jh2-latest.json" latest.json
+          git add latest.json
+          if ! git diff --cached --quiet; then git commit -m "Publish signed Jason Home 2 NanoC6 runtime"; git push origin HEAD:jh2-nanoc6-ota; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-signed-channel
+          path: ${{ runner.temp }}/jh2-latest.json
+          retention-days: 30
+  sign-android:
+    needs: [android, publish]
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-unsigned
+          path: sign-work
+      - name: Sign with permanent Jason Home 2 identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks
+          PASSFILE=/home/ubuntu/.jason-home-signing/password
+          test -s "$KEYSTORE" && test -s "$PASSFILE"
+          OUT=Jason-Home-2-2.1.0-NanoC6-SIGNED.apk
+          java -jar sign-work/apksigner.jar sign --ks "$KEYSTORE" --ks-key-alias jason-home --ks-pass "file:$PASSFILE" --key-pass "file:$PASSFILE" --out "$OUT" sign-work/Jason-Home-2-2.1.0-NanoC6-UNSIGNED.apk
+          java -jar sign-work/apksigner.jar verify --verbose --print-certs "$OUT" > signing-verification.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: 76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' signing-verification.txt
+          sha256sum "$OUT" > APK-SHA256SUMS
+          VERSION="$(cat JasonHome2NanoC6/VERSION)"
+          gh release upload "jason-home-2-nanoc6-v$VERSION" "$OUT" APK-SHA256SUMS signing-verification.txt --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-signed
+          path: |
+            *NanoC6-SIGNED.apk
+            APK-SHA256SUMS
+            signing-verification.txt
+            sign-work/source-commit.txt
+          retention-days: 30
+  prepare-migration:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare private migration snapshot without changing automation
+        run: sudo python3 JasonHome2NanoC6/tools/prepare_snapshot.py --output migration-private
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-PRIVATE-migration
+          path: migration-private/
+          retention-days: 7
+          if-no-files-found: error
