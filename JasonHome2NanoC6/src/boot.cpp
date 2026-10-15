@@ -9,7 +9,13 @@ void loop(){
   if(localFirmwareActive()){localFirmwareLoop();delay(2);return;}
   if(!attempted){
     Preferences n;n.begin("jh2-release",true);String encoded=n.getString("pending","");n.end();
-    if(!encoded.length()){attempted=true;if(selectRuntime()){delay(100);ESP.restart();}else Serial.println("No valid runtime. Use browser recovery.");return;}
+    if(!encoded.length()){
+      attempted=true;
+      if(selectRuntime()){delay(100);ESP.restart();return;}
+      Serial.println("No valid runtime or boot selection failed. Starting local recovery.");
+      Preferences recovery;recovery.begin("jh2-release",false);recovery.putBool("local",true);recovery.end();
+      ESP.restart();return;
+    }
     if(WiFi.status()!=WL_CONNECTED||!timeValid()){
       if(millis()-bootStarted<90000){delay(5);return;}
       attempted=true;Serial.println("OTA timed out waiting for network/time. Returning to previous runtime.");
