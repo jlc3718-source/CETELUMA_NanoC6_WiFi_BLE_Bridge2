@@ -40,7 +40,7 @@ function smoothStage(p,options={}){
   const down=lum[Math.min(y+1,N-1)*N+x];
   const edge=clamp((Math.abs(right-l)+Math.abs(down-l))/75,0,1);
   // Background texture is smoothed; strong subject contours receive less smoothing.
-  const smooth=(.60-.44*focus-.37*edge)*strength;
+  const smooth=clamp((.60-.44*focus-.37*edge)*strength,0,1);
   let weights=0,rr=0,gg=0,bb=0;
   for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
    const yy2=clamp(y+oy,0,N-1),xx2=clamp(x+ox,0,N-1),index=yy2*N+xx2,q=index*4;
