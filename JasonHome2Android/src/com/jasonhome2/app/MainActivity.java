@@ -81,12 +81,9 @@ public final class MainActivity extends Activity {
                 if(pendingCurtainImage!=null)pendingCurtainImage.onReceiveValue(null);
                 pendingCurtainImage=callback;
                 try {
+                    // Restore the original Android chooser from v2.0.8.
+                    // v2.0.9 modified this Intent and prevented the picker opening.
                     Intent picker=params.createIntent();
-                    // Accept photos, GIFs and local image documents through the same picker.
-                    // Some Android WebView builds produce invalid mixed extension accept types.
-                    picker.setType("image/*");
-                    picker.addCategory(Intent.CATEGORY_OPENABLE);
-                    picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     startActivityForResult(picker,REQUEST_CURTAIN_IMAGE);
                     return true;
                 }catch(Throwable error){

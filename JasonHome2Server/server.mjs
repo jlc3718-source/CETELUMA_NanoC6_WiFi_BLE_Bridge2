@@ -241,6 +241,39 @@ async function cloudflareAiRun(model,input,{timeout=45000}={}){
     throw e;
   }finally{clearTimeout(timer);}
 }
+
+async function analyzeCurtainSubject(body){
+ if(!cloudflareAiConfigured())throw fail(409,"Cloudflare AI unavailable. Use local Enhanced Detail.");
+ const raw=String(body?.image||"");
+ if(!raw.startsWith("data:image/jpeg;base64,")||raw.length>420000)
+  throw fail(400,"Curtain AI accepts a JPEG preview under 300 KB");
+ const bytes=Buffer.from(raw.slice("data:image/jpeg;base64,".length),"base64");
+ if(bytes.length<80||bytes.length>300000||bytes[0]!==255||bytes[1]!==216||bytes.at(-2)!==255||bytes.at(-1)!==217)
+  throw fail(400,"Curtain AI picture is not a valid JPEG");
+ const width=Math.round(Number(body?.width)),height=Math.round(Number(body?.height));
+ if(!Number.isInteger(width)||width<16||width>320||!Number.isInteger(height)||height<16||height>320)
+  throw fail(400,"Invalid curtain AI image dimensions");
+ // Images are user-opt-in, ephemeral, and not retained by Jason Home 2.
+ const result=await cloudflareAiRun("@cf/facebook/detr-resnet-50",{image:[...bytes]},{timeout:30000});
+ const hits=Array.isArray(result?.result)?result.result:Array.isArray(result)?result:[];
+ const detected=hits.filter(it=>{
+  const box=it?.box||{};
+  return Number(it?.score)>=.35&&["xmin","ymin","xmax","ymax"].every(k=>Number.isFinite(Number(box[k])));
+ }).map(it=>{
+  const b=it.box,unit=Math.max(Number(b.xmax),Number(b.ymax))<=1.5;
+  const w=unit?1:width,h=unit?1:height;
+  return {label:String(it.label||"object").slice(0,50),confidence:Math.round(Number(it.score)*1000)/1000,
+   x0:Math.max(0,Math.min(1,Number(b.xmin)/w)),y0:Math.max(0,Math.min(1,Number(b.ymin)/h)),
+   x1:Math.max(0,Math.min(1,Number(b.xmax)/w)),y1:Math.max(0,Math.min(1,Number(b.ymax)/h))};
+ }).filter(o=>o.x1>o.x0&&o.y1>o.y0).slice(0,15);
+ const ranked=detected.map(item=>{
+  const area=(item.x1-item.x0)*(item.y1-item.y0),cx=(item.x0+item.x1)/2-.5,cy=(item.y0+item.y1)/2-.5;
+  return {item,score:item.confidence*(.4+Math.min(.43,Math.sqrt(area)*.65))-.15*(cx*cx+cy*cy)-.18*Math.max(0,area-.8)};
+ }).sort((a,b)=>b.score-a.score);
+ return {ok:true,model:"@cf/facebook/detr-resnet-50",subject:ranked[0]?.item||null,detected:detected.slice(0,12),
+  note:ranked.length?"Suggested subject; confirm the preview before using.":"No identifiable object; local Enhanced Detail remains available."};
+}
+
 async function cloudflareAiChat(body,{timeout=60000}={}){
   const account=cloudflareAiAccount(),token=cloudflareAiToken();
   if(!account||!token)throw fail(409,"Free AI is not connected yet. Add your Cloudflare Account ID and Workers AI API token.");
@@ -878,7 +911,7 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","nano_sync.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_quality.js","nano_sync.js"]);
   if(!allowed.has(name)&&!/^curtain_real_(?:0[0-9]|10)\.js$/.test(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
@@ -967,6 +1000,7 @@ async function route(req,res){
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
+  if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
   if(method==="POST"&&path==="/api/ai/key"){
     const body=await input(req);

@@ -54,18 +54,18 @@ jobs:
           cp "$OUT/unsigned.apk" "$OUT/with-dex.apk"
           (cd "$OUT/dex" && zip -q -u "$OUT/with-dex.apk" classes.dex)
           "$BT/zipalign" -f 4 "$OUT/with-dex.apk" "$OUT/aligned.apk"
-          cp "$OUT/aligned.apk" Jason-Home-2-2.0.9-CURTAIN-UNSIGNED.apk
+          cp "$OUT/aligned.apk" Jason-Home-2-2.0.10-CURTAIN-UNSIGNED.apk
 
-          "$BT/aapt2" dump badging Jason-Home-2-2.0.9-CURTAIN-UNSIGNED.apk | grep -E "package:|uses-permission.*RECORD_AUDIO"
-          sha256sum Jason-Home-2-2.0.9-CURTAIN-UNSIGNED.apk
+          "$BT/aapt2" dump badging Jason-Home-2-2.0.10-CURTAIN-UNSIGNED.apk | grep -E "package:|uses-permission.*RECORD_AUDIO"
+          sha256sum Jason-Home-2-2.0.10-CURTAIN-UNSIGNED.apk
 
           tar -czf android-build-tools-35.tar.gz -C "$SDK/build-tools" 35.0.0
 
       - name: Upload unsigned APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-2.0.9-CURTAIN-UNSIGNED
-          path: Jason-Home-2-2.0.9-CURTAIN-UNSIGNED.apk
+          name: Jason-Home-2-2.0.10-CURTAIN-UNSIGNED
+          path: Jason-Home-2-2.0.10-CURTAIN-UNSIGNED.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -95,7 +95,7 @@ jobs:
       - name: Download unsigned APK
         uses: actions/download-artifact@v4
         with:
-          name: Jason-Home-2-2.0.9-CURTAIN-UNSIGNED
+          name: Jason-Home-2-2.0.10-CURTAIN-UNSIGNED
           path: sign-work
 
       - name: Download Android signing tools
@@ -134,8 +134,8 @@ jobs:
 
           KEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks
           PASS="$(cat /home/ubuntu/.jason-home-signing/password)"
-          IN="sign-work/Jason-Home-2-2.0.9-CURTAIN-UNSIGNED.apk"
-          OUT="Jason-Home-2-2.0.9-CURTAIN-SIGNED.apk"
+          IN="sign-work/Jason-Home-2-2.0.10-CURTAIN-UNSIGNED.apk"
+          OUT="Jason-Home-2-2.0.10-CURTAIN-SIGNED.apk"
 
           test -s "$IN"
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias jason-home --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out "$OUT" "$IN"
@@ -148,7 +148,7 @@ jobs:
       - name: Upload signed installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-2.0.9-CURTAIN-SIGNED
-          path: Jason-Home-2-2.0.9-CURTAIN-SIGNED.apk
+          name: Jason-Home-2-2.0.10-CURTAIN-SIGNED
+          path: Jason-Home-2-2.0.10-CURTAIN-SIGNED.apk
           if-no-files-found: error
           retention-days: 14

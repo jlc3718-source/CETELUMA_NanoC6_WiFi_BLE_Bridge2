@@ -24,8 +24,8 @@ test('Curtain has two sub-tabs and preserves original control IDs',()=>{
 });
 test('v25 converter is complete and JavaScript parses',()=>{
   const scripts=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(scripts.length,2);
-  for(const [i,script] of scripts.entries())new Script(script[1],{filename:'curtain_converter_'+i+'.js'});
+  assert.equal(scripts.length,3);
+  for(const [i,script] of scripts.entries())if(script[1].trim())new Script(script[1],{filename:'curtain_converter_'+i+'.js'});
   for(const term of ['sourcePreview','imageInfo','framing','cleanup','zoom','sendLive','Build','83928','gif'])
     assert.ok(converter.includes(term),term);
 });
@@ -75,9 +75,23 @@ test('Android picker returns readable photo URIs to trusted WebView',()=>{
   assert.match(activity,/setAllowContentAccess\(true\)/);
   assert.match(activity,/setAllowFileAccess\(false\)/);
   assert.match(activity,/onShowFileChooser/);
-  assert.match(activity,/picker\.setType\("image\/\*"\)/);
+  assert.match(activity,/Intent picker=params\.createIntent\(\)/);
+   assert.doesNotMatch(activity,/picker\.setType/);
+   assert.doesNotMatch(activity,/picker\.addCategory/);
   assert.match(activity,/FLAG_GRANT_READ_URI_PERMISSION/);
   assert.match(activity,/FileChooserParams\.parseResult/);
   assert.match(converter,/id="filePickerStatus"/);
-  assert.match(converter,/input id="fileInput".*accept="image\/\*"/);
+  assert.match(converter,/input id="fileInput".*accept="image\/\*,\.gif"/);
+});
+
+test('AI subject revamp is explicitly opt-in and Cloudflare credentials stay on server',()=>{
+  assert.match(converter,/id="aiRevamp"/);
+  assert.match(converter,/id="applyAiRevamp"/);
+  assert.match(converter,/id="undoAiRevamp"/);
+  assert.match(converter,/api\/curtain\/ai-revamp/);
+  assert.match(server,/@cf\/facebook\/detr-resnet-50/);
+  assert.match(server,/if\(method==="POST"&&path==="\/api\/curtain\/ai-revamp"\)/);
+  assert.match(generator,/curtain_quality\.js/);
+  assert.match(server,/curtain_quality\.js/);
+  assert.match(converter,/src="curtain_quality\.js"/);
 });

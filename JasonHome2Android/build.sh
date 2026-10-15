@@ -3,7 +3,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 sdk_jar="${JH2_ANDROID_JAR:?Set JH2_ANDROID_JAR to Android 35 android.jar}"
 tools_dir="${JH2_BUILD_TOOLS:?Set JH2_BUILD_TOOLS to Android build-tools 35}"
-out="${JH2_APK_OUTPUT:-$here/Jason-Home-2-2.0.9-CURTAIN-SIGNED.apk}"
+out="${JH2_APK_OUTPUT:-$here/Jason-Home-2-2.0.10-CURTAIN-SIGNED.apk}"
 store="${JH2_KEYSTORE:?Set JH2_KEYSTORE to the private release keystore}"
 store_password="${JH2_KEYSTORE_PASSWORD:?Set JH2_KEYSTORE_PASSWORD}"
 mkdir -p "$here/build/classes" "$here/build/dex"

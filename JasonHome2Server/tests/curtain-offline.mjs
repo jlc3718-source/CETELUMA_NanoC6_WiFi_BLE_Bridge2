@@ -9,7 +9,7 @@ const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const converter=readFileSync(join(root,'curtain_converter.html'),'utf8');
 const scripts=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
 test('HTML converter scripts parse and show offline controls',()=>{
- assert.equal(scripts.length,2);
+ assert.equal(scripts.length,3);
  for(const [i,match] of scripts.entries())new Script(match[1],{filename:'curtain-studio-'+i+'.js'});
  for(const term of ['id="prepareOffline"','id="offlineStatus"','id="saveDraft"','id="clearDraft"','restoreOfflineDraft();','scheduleDraftSave();']){
   assert.ok(converter.includes(term),'Missing offline control '+term);
@@ -53,7 +53,8 @@ function makeHarness(){
   clearTimeout,setTimeout,structuredClone,queueMicrotask,Date,Error,Number,String,Object,Array,JSON,
   sourceImage:new Uint8ClampedArray(6400),frames:[new Uint8ClampedArray(6400),new Uint8ClampedArray(6400)],
   frameDelays:[90,120],importedName:'offline-animation.gif',photoMaster:null,
-  sourceMeta:{width:2048,height:2048,size:35000000},prepared:null,preparedLive:null,
+  sourceMeta:{width:2048,height:2048,size:35000000},prepared:null,preparedLive:null,sharedGifPalette:null,
+  gifStages:[],gifBaselines:[],aiGifCrop:null,
   autosaveTimer:null,draftRestore:false,saveChain:Promise.resolve(),projectGeneration:0,
   busy:false,getEncoding:()=>({kind:'palette',colors:8}),$:(id)=>field(id),
   formatBytes:(n)=>String(n),log(){},say(){},ui(){},stopPreview(){},
