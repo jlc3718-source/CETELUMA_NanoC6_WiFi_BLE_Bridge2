@@ -1,0 +1,208 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {spawn} from 'node:child_process';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+
+test('separate web gateway authenticates, serves the UI, and reads the shared calendar',async()=>{
+  let calendar={revision:1,settings:{mode:2,enabled:true,categoryMask:32767,on:1020,off:1380,startAtDusk:false,
+    schedule2Enabled:true,schedule2EndAtDawn:false,schedule2End:360,overlap:0},events:[
+      {id:'evt179',name:'Halloween',kind:'Holiday',rule:'Fixed',month:10,day:31,weekday:0,nth:0,offsetDays:0,durationDays:1,effect:'Flow1',speed:2,colors:[0xff6600,0x8000ff],enabled:true,favorite:false,categoryIndex:0,major:true}
+    ],customSchedules:[
+      {id:'schedule-leap',name:'Leap Night',enabled:true,annual:false,year:2028,month:2,day:29,effect:'Breath',colors:[0x123456]}
+    ],special:[]};
+  const reads={status:0,calendar:0},controlWrites=[];
+  const backend=http.createServer(async(req,res)=>{
+    assert.equal(req.headers.authorization,'Bearer test-key');
+    if(req.url==='/api/status')reads.status++;
+    if((req.url==='/api/control'||req.url==='/api/control?wait=1')&&req.method==='POST'){
+      let raw='';for await(const chunk of req)raw+=chunk;
+      controlWrites.push(JSON.parse(raw));
+      if(req.url.includes('wait=1'))await new Promise(resolve=>setTimeout(resolve,180));
+      res.setHeader('content-type','application/json');
+      res.end(JSON.stringify({ok:true,queued:true}));return;
+    }
+    if(req.url==='/api/calendar')reads.calendar++;
+    if(req.url==='/api/calendar/sync'&&req.method==='POST'){
+      let raw='';for await(const chunk of req)raw+=chunk;
+      calendar=JSON.parse(raw);res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,revision:calendar.revision}));return;
+    }
+    res.setHeader('content-type','application/json');
+    res.end(JSON.stringify(req.url==='/api/calendar'?{ok:true,calendar}:req.url==='/api/status'?{
+      eufy:{ready:true,readyNames:['Pool','House','Garage','Shed']},calendar:{current:null},desired:[]
+    }:{ok:true}));
+  });
+  await new Promise(resolve=>backend.listen(0,'127.0.0.1',resolve));
+  const port=backend.address().port,frontendPort=port+1,dir=mkdtempSync(join(tmpdir(),'jason-home-2-'));
+  const child=spawn(process.execPath,['--no-warnings=ExperimentalWarning',new URL('../server.mjs',import.meta.url).pathname],{
+    env:{...process.env,JH2_PORT:String(frontendPort),JH2_DATA_DIR:dir,JH2_UPSTREAM_URL:`http://127.0.0.1:${port}`,JH2_UPSTREAM_TOKEN:'test-key'},stdio:'pipe'});
+  try{
+    const base=`http://127.0.0.1:${frontendPort}`;
+    let ready=false;
+    for(let i=0;i<50;i++){
+      try{const r=await fetch(base+'/api/health');ready=r.ok;break;}catch{await new Promise(resolve=>setTimeout(resolve,50));}
+    }
+    assert.ok(ready,'gateway started');
+    assert.equal((await fetch(base+'/api/state')).status,401);
+    const login=await fetch(base+'/api/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'wrong'})});
+    assert.equal(login.status,401);
+    const valid=await fetch(base+'/api/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'test-key'})});
+    assert.equal(valid.status,200);
+    const cookie=valid.headers.get('set-cookie').split(';')[0];
+    assert.match(valid.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Strict/);
+    const ui=await fetch(base+'/',{headers:{cookie}});
+    const html=await ui.text();assert.match(html,/Jason Home 2/);
+    assert.match(html,/night_calendar\.js/);
+    // Curtain is a separate page; AI and existing event functions remain intact.
+    assert.match(html,/curtain\.js/);
+    assert.match(html,/curtain\.css/);
+    const curtainScript=await fetch(base+'/curtain.js',{headers:{cookie}});
+    assert.equal(curtainScript.status,200);
+    const curtainText=await curtainScript.text();
+    assert.match(curtainText,/length:88/);
+    assert.match(curtainText,/AndroidCurtain/);
+    assert.match(curtainText,/jh2CurtainScan/);
+    assert.match(curtainText,/jh2CurtainSequenceEnable/);
+    assert.match(curtainText,/jh2CurtainSequenceSeconds/);
+    assert.match(curtainText,/jh2CurtainSequenceStart/);
+    assert.match(curtainText,/jh2CurtainSequenceStop/);
+    assert.match(curtainText,/Brightness 1 = actual curtain level 4/);
+    assert.match(curtainText,/Speed uses the original controller range of 1/);
+    assert.doesNotMatch(curtainText,/E-88|id:88|catalog\.push\(\{id:88/);
+    assert.match(curtainText,/renderDevices/);
+    // Every original SmartDawn screenshot tile must be present. Never silently
+    // substitute procedural preview artwork if a shard is missing.
+    assert.match(curtainText,/loadOriginalSmartDawnPreviews/);
+    assert.match(curtainText,/JH2_CURTAIN_IMAGE_SRC/);
+    assert.doesNotMatch(curtainText,/seed\*41\+185/);
+    let observedImageCount=0;
+    for(let shard=0;shard<11;shard++){
+      const name='curtain_real_'+String(shard).padStart(2,'0')+'.js';
+      const resp=await fetch(base+'/'+name,{headers:{cookie}});
+      assert.equal(resp.status,200,'Missing original SmartDawn images '+name);
+      const body=await resp.text();
+      assert.match(body,/data:image\/webp;base64,/);
+      const ids=[...body.matchAll(/"(\d+)":"data:image\/webp;base64,/g)].map(m=>+m[1]);
+      assert.deepEqual(ids,Array.from({length:8},(_,i)=>shard*8+i));
+      observedImageCount+=ids.length;
+    }
+    assert.equal(observedImageCount,88);
+
+    assert.match(curtainText,/perform\('connect',\{address\}/);
+    // The prior Curtain navigation implementation set [hidden] on *every*
+    // existing page. That suppressed the Home house and event mini previews
+    // when navigating back, despite their registered animation callbacks.
+    assert.doesNotMatch(curtainText,/p\.hidden=!isCurtain/);
+    assert.match(curtainText,/page\.hidden=false/);
+    assert.match(html,/window\.createEventMiniPreview/);
+    assert.match(html,/window\.createLayeredMiniPreview/);
+    assert.match(html,/id="aiDraftPreview"/);
+    assert.match(html,/class="housePreview"/);
+    const factoryJs=await (await fetch(base+'/android_eufy_ui.js',{headers:{cookie}})).text();
+    assert.match(factoryJs,/factoryPreviewScene/);
+    assert.match(factoryJs,/createEventMiniPreview/);
+
+    assert.match(curtainText,/dataset\.tab='curtain'/);
+    const curtainCss=await fetch(base+'/curtain.css',{headers:{cookie}});
+    assert.equal(curtainCss.status,200);
+
+    const calendarUi=await fetch(base+'/night_calendar.js',{headers:{cookie}});
+    const calendarJs=await calendarUi.text();
+    assert.match(calendarJs,/\.v3ScheduleCard\{grid-template-columns:minmax\(0,1fr\)!important/);
+    assert.match(calendarJs,/cell\.addEventListener\("click",\(\)=>showNight/);
+    assert.match(calendarJs,/Show all schedules/);
+    assert.match(html,/Restore Built-in Schedule/);
+    assert.match(html,/Entire month/);
+    assert.match(html,/Use custom time for this event/);
+    const events=await fetch(base+'/api/events?year=2026&month=10',{headers:{cookie}});
+    let eventRows=(await events.json()).events;
+    const halloween=eventRows.find(e=>e.id==='evt179');assert.ok(halloween,JSON.stringify(eventRows));
+    assert.equal(halloween.schedule.mode,'default');
+    assert.equal(halloween.schedule.customized,false);
+    const scheduleSave=await fetch(base+'/api/event',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({
+      id:'evt179',schedule:{mode:'month',annual:true,year:2026,startMonth:10,startDay:1,endMonth:10,endDay:31,customTime:true,start:'18:30',end:'23:00'}
+    })});
+    assert.equal(scheduleSave.status,200);
+    eventRows=(await (await fetch(base+'/api/events?year=2026&month=10',{headers:{cookie}})).json()).events;
+    const edited=eventRows.find(e=>e.id==='evt179');assert.equal(edited.schedule.mode,'month');assert.equal(edited.schedule.customized,true);
+    assert.equal(edited.schedule.start,'18:30');assert.equal(edited.schedule.end,'23:00');assert.match(edited.when,/all month/);assert.match(edited.when,/6:30 PM/);
+    assert.equal(calendar.events.find(e=>e.id==='evt179').scheduleOverride.mode,'month');
+    const resetSchedule=await fetch(base+'/api/event',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({id:'evt179',resetSchedule:true})});
+    assert.equal(resetSchedule.status,200);
+    assert.equal(calendar.events.find(e=>e.id==='evt179').scheduleOverride,undefined);
+    const ai=await fetch(base+'/api/ai',{headers:{cookie}});
+    const aiValue=await ai.json();
+    assert.equal(aiValue.configured,false);
+    assert.equal(aiValue.draft,null);
+    const specialHalloween=aiValue.applied.find(e=>e.id==='ai-once-special-halloween-2026');
+    assert.ok(specialHalloween,JSON.stringify(aiValue.applied));
+    assert.equal(specialHalloween.name,'Special Halloween');
+    assert.equal(specialHalloween.date,'2026-10-31');
+    assert.equal(specialHalloween.replaceEventId,'evt179');
+    assert.deepEqual(specialHalloween.colors,['#FF0D00','#5B00E6','#000000']);
+    assert.equal(specialHalloween.layerCount,8);
+    assert.deepEqual(specialHalloween.layers.map(x=>x.effect),['Flow1','Flow2','Flow1','Flow2','Flow1','Flow2','Flow1','Flow2']);
+    assert.deepEqual(specialHalloween.layers.map(x=>x.pattern.blocks),[[4,3,1],[2,5,1],[5,2,1],[3,3,2],[4,2,2],[3,4,1],[2,4,2],[5,1,2]]);
+    const aiChat=await fetch(base+'/api/ai/chat',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({message:'make a Christmas idea'})});
+    assert.equal(aiChat.status,409);
+    const state=await fetch(base+'/api/state',{headers:{cookie}});
+    const stateValue=await state.json();assert.ok(stateValue.ble,JSON.stringify(stateValue));assert.equal(stateValue.ble.connectedCount,4);
+    assert.equal(stateValue.scheduledEvent.name,'Nothing scheduled for tonight');
+    const month=await fetch(base+'/api/night-calendar?year=2028&month=2',{headers:{cookie}});
+    const summary=await month.json();assert.equal(summary.days.length,29);
+    assert.equal(summary.days[0].events.length,0);
+    assert.deepEqual(summary.days[28].events[0],{id:'schedule-leap',name:'Leap Night',colors:['#123456'],effect:'Breath',speed:1,type:'Custom event'});
+    // Warm both shared GET caches first, then verify concurrent screens do not
+    // create additional Oracle reads while those caches are still valid.
+    await fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json());
+    const statusBefore=reads.status,calendarBefore=reads.calendar;
+    await Promise.all(Array.from({length:6},()=>fetch(base+'/api/state',{headers:{cookie}}).then(r=>r.json())));
+    assert.equal(reads.status,statusBefore,'concurrent screens reuse the warm status cache');
+    assert.equal(reads.calendar,calendarBefore,'concurrent screens reuse the warm calendar cache');
+    assert.equal((await fetch(base+'/api/event',{method:'POST',headers:{cookie,origin:'https://evil.example','content-type':'application/json'},body:'{}'})).status,403);
+    // AI-created layered patterns must retain manually selected brightness
+    // across subsequent layers, without restarting or altering color/effect.
+    const post=async (path,data)=>{
+      const response=await fetch(base+path,{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(data)});
+      assert.ok(response.ok,path+' HTTP '+response.status);
+      return response.json();
+    };
+    const waitFor=async predicate=>{
+      for(let tries=0;tries<95;tries++){
+        if(predicate())return;
+        await new Promise(resolve=>setTimeout(resolve,120));
+      }
+      assert.fail('AI preview did not advance to the expected layer');
+    };
+    await post('/api/ai/preview-edit',{
+      name:'AI Layer Dimming Regression',brightness:100,colors:['#FF0000','#0000FF'],
+      layers:[{effect:'Flow1',speed:2,minutes:2,shift:0},
+              {effect:'Flow2',speed:2,minutes:2,shift:0},
+              {effect:'Twinkle',speed:2,minutes:2,shift:0}]
+    });
+    await waitFor(()=>controlWrites.some(w=>w.name?.includes('Layer 1')));
+    assert.equal(controlWrites.find(w=>w.name?.includes('Layer 1')).brightness,100);
+    await post('/api/control',{brightness:36});
+    await waitFor(()=>controlWrites.some(w=>w.name?.includes('Layer 2')));
+    const second=controlWrites.filter(w=>w.name?.includes('Layer 2'));
+    assert.equal(second.length,1);
+    assert.equal(second[0].brightness,36,'AI must never restore 100% after manual dimming');
+    assert.equal(second[0].target,'All');
+    assert.equal(second[0].effect,'Flow2');
+    assert.deepEqual(second[0].colors,[0xff0000,0x0000ff]);
+    await post('/api/ble/target',{target:1});
+    await post('/api/control',{brightness:18});
+    await waitFor(()=>controlWrites.filter(w=>w.name?.includes('Layer 3')).length===1);
+    const third=controlWrites.filter(w=>w.name?.includes('Layer 3'));
+    assert.equal(third[0].target,'All','One Oracle override, not four competing overrides');
+    assert.deepEqual(third[0].scenes,
+      {Pool:{brightness:18},House:{brightness:36},Garage:{brightness:36},Shed:{brightness:36}});
+    assert.equal(third[0].effect,'Twinkle','Keep AI layer effects intact');
+    await post('/api/resume',{});
+
+  }finally{
+    child.kill();backend.close();rmSync(dir,{recursive:true,force:true});
+  }
+});

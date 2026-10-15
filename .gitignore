@@ -3,4 +3,5 @@ firmware/include/WebUIGzip.h
 tools/node_modules/
 .pio-build-cache/
 release/
+JasonHome2Server/shared/
 __pycache__/
