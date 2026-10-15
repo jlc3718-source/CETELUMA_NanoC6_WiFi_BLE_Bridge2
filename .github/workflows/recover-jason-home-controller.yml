@@ -10,6 +10,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
       - name: Back up live state restore Oracle and verify
         shell: bash
         run: |
@@ -124,3 +125,28 @@ jobs:
            finally:subprocess.run(['sudo','docker','start','jason-home'],check=True)
            print('Restored independently validated session; credentials unchanged.');break
           PY
+
+          RECOVERY="$BACKUP/original-eufy.json"
+          base64 --decode .github/private-transfer/eufy-recovery-20261015.cms.b64 > "$BACKUP/original-eufy.cms"
+          openssl cms -decrypt -binary -inform DER -in "$BACKUP/original-eufy.cms" -inkey /home/ubuntu/.jason-home-signing/restore-transport.pem -out "$RECOVERY"
+          export RECOVERY
+          python3 - <<'PY'
+          import os,json,pathlib,subprocess,sqlite3
+          root=pathlib.Path(os.environ['BACKUP']);saved=json.loads(pathlib.Path(os.environ['RECOVERY']).read_text())
+          script="""import {EufyClient} from './dist/eufy/client.js';import fs from 'node:fs';const s=JSON.parse(fs.readFileSync(0,'utf8'));let c=new EufyClient(s.eufyInstall,s.eufySession);try{await c.prepare();}catch(first){try{c=new EufyClient(s.eufyInstall);await c.login(s.eufyEmail,s.eufyPassword);await c.prepare();}catch(e){console.log(JSON.stringify({ok:false,error:String(e.message),originalSessionError:String(first.message)}));process.exit(0);}}console.log(JSON.stringify({ok:true,names:c.readyNames(),session:c.exportSession()}));"""
+          result=subprocess.run(['sudo','docker','exec','-i','jason-home','node','--input-type=module','-e',script],input=json.dumps(saved),text=True,capture_output=True,timeout=120)
+          try:d=json.loads(result.stdout.strip().splitlines()[-1])
+          except Exception:raise SystemExit('Original Eufy session validation failed without usable response')
+          print('Original Eufy recovery:',d.get('ok'),d.get('names',[]),d.get('error',''),d.get('originalSessionError',''))
+          if not d.get('ok') or set(d.get('names',[]))!={'Pool','House','Garage','Shed'}:raise SystemExit(0)
+          info=json.loads((root/'container-inspect.json').read_text())[0];env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite');mount=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination'].rstrip('/')+'/'))
+          source=pathlib.Path(mount['Source'])/dbpath[len(mount['Destination']):].lstrip('/')
+          subprocess.run(['sudo','docker','stop','jason-home'],check=True)
+          try:
+           db=sqlite3.connect(source);db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('eufy_session',?)",(json.dumps(d['session']),));db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('install_id',?)",(saved['eufyInstall'],));db.commit();db.close()
+          finally:subprocess.run(['sudo','docker','start','jason-home'],check=True)
+          print('Validated original session restored. Account password unchanged.')
+          PY
+          rm -f "$RECOVERY" "$BACKUP/original-eufy.cms"
+          
