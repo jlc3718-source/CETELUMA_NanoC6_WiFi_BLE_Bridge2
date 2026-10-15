@@ -325,7 +325,7 @@ async function reprocessGIFQuality(){
  if(qualityRequest!==token)return;
  frames=outputs;sourceImage=frames[0];
  refreshGifPalette();invalidatePreparation();renderImage(sourceImage);
- lastStage=gifStages[0];lastBaseline=gifBaselines[0]||CurtainQuality.areaDownsample(gifStages[0]);
+ lastStage=aiGifCrop?cropGifStage(gifStages[0],aiGifCrop):gifStages[0];lastBaseline=aiGifCrop?CurtainQuality.areaDownsample(lastStage):(gifBaselines[0]||CurtainQuality.areaDownsample(gifStages[0]));
  redrawThreeCandidates();scheduleDraftSave();ui();
  $('qualitySuggested').textContent+=''; // automatic suggestion shown by redrawThreeCandidates
 }
@@ -674,7 +674,7 @@ function aiPaint(canvasId,pixels){
  $(canvasId).getContext('2d').putImageData(new ImageData(encoded,W,H),0,0);
 }
 function aiRecommend(focus,boxSize,kind,label){
- const gamma={gamma:1.08,lift:8,rolloff:9,saturation:1.12,minimum:3};
+ const gamma={gamma:1.08,lift:8,rolloff:9,saturation:112,minimum:3};
  const strength=.83,dimension=Math.max(.18,Math.min(1,boxSize||.44));
  const zoom=Math.min(2.5,Math.max(1,Math.round(.73/dimension*20)/20));
  const crop={cx:focus.x,cy:focus.y,zoom};
