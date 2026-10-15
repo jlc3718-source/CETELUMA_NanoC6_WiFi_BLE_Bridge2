@@ -96,6 +96,7 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
   }}
  };
  Object.defineProperty(navigator,'bluetooth',{configurable:true,value:{requestDevice:async()=>fakeDevice}});
+ window.__jh2CurtainSave=(data,name,mime)=>rpc('saveRawFile',{data:to64(typeof data==='string'?new TextEncoder().encode(data):data),name,mime});
  window.addEventListener('message',event=>{
   if(event.source!==window.parent||event.origin!==origin)return;
   const d=event.data||{};
@@ -323,7 +324,7 @@ async function drawLive(){if(!connected||!binWriter)throw Error('Connect curtain
 
 function stopPreview(){if(previewTimer!==null){clearTimeout(previewTimer);previewTimer=null;}previewIndex=0;}
 function previewFrames(){stopPreview();if(frames.length===0)return;function step(){if(previewTimer===null)return;renderImage(frames[previewIndex]);const ms=frameDelays[previewIndex]||100;previewIndex=(previewIndex+1)%frames.length;previewTimer=setTimeout(step,ms);}previewTimer=setTimeout(step,0);}
-function saveFile(data,name,mime){const b=new Blob([data],{type:mime}),a=document.createElement('a'),url=URL.createObjectURL(b);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+function saveFile(data,name,mime){if(window.__jh2CurtainSave){window.__jh2CurtainSave(data,name,mime).then(result=>say(result.message||'Saved to Downloads')).catch(e=>say('Export failed: '+e.message));return;}const b=new Blob([data],{type:mime}),a=document.createElement('a'),url=URL.createObjectURL(b);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function initSource(){frames=[imageFromGhost()];frameDelays=[120];importedName='Ghost';sourceImage=frames[0];renderImage(sourceImage);$('imageInfo').textContent='White ghost example · 40×40 image · choose Static or Native Scroll.';}
 initSource();
 frameControls(false);
