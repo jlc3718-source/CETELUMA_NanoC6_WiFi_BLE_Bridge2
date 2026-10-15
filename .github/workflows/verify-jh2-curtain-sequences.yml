@@ -19,6 +19,7 @@ jobs:
       - name: Validate Curtain import, local quality and offline prep
         run: |
           node --test JasonHome2Server/tests/curtain-studio.mjs
+          node --test JasonHome2Server/tests/curtain-replace-play.mjs
           node --test JasonHome2Server/tests/curtain-offline.mjs
           node --test JasonHome2Server/tests/curtain-quality.mjs
           node --test JasonHome2Server/tests/curtain-photo-import.mjs
