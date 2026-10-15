@@ -1,0 +1,30 @@
+name: Inspect Jason Home 2 curtain integration
+on:
+  push:
+    branches: [feat/jh2-oracle-curtain-1.1.0]
+    paths: [.github/workflows/jh2-curtain-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Verify live controller without modifying it
+        run: |
+          python3 - <<'PY'
+          import subprocess,json,urllib.request,ssl,hashlib
+          infos={name:json.loads(subprocess.check_output(['sudo','docker','inspect',name]))[0] for name in ['jason-home','jason-home-2-web']}
+          env=dict(v.split('=',1) for v in infos['jason-home']['Config']['Env'] if '=' in v)
+          r=urllib.request.Request('http://127.0.0.1:8080/api/status',headers={'Authorization':'Bearer '+env['JASON_HOME_API_TOKEN']})
+          s=json.load(urllib.request.urlopen(r,timeout=30))
+          print(json.dumps({k:s.get(k) for k in ['build','automationOwner','calendar','lastSchedulerEvaluation']}))
+          print('Eufy ready:',s['eufy']['readyNames'])
+          for name,i in infos.items():
+            print(name,'image',i['Image'],'mounts',json.dumps([{k:m[k] for k in ['Source','Destination']} for m in i['Mounts']]))
+          pem=ssl.get_server_certificate(('127.0.0.1',443))
+          print('PUBLIC_TLS_CERT_BEGIN')
+          print(pem)
+          print('PUBLIC_TLS_CERT_END')
+          print('SIGNER_PRESENT',subprocess.call(['test','-s','/home/ubuntu/.jason-home-signing/jason-home-release.jks'])==0)
+          PY
