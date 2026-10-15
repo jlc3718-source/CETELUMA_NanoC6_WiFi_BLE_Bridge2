@@ -22,7 +22,23 @@ bool saveJson(const char*path,JsonVariantConst v){String tmp=String(path)+".tmp"
 bool loadJson(const char*path,JsonDocument&d){File f=LittleFS.open(path,"r");if(!f)return false;bool ok=!deserializeJson(d,f);f.close();return ok;}
 void reply(int c,JsonVariantConst v){String s;serializeJson(v,s);web.sendHeader("Cache-Control","no-store");web.send(c,"application/json",s);}
 void replyError(int c,const String&s){JsonDocument d;d["ok"]=false;d["error"]=s;reply(c,d.as<JsonVariantConst>());}
-bool authorized(){if(web.header("Authorization")=="Bearer "+apiToken||web.header("X-JH2-Token")==apiToken)return true;String cookie=web.header("Cookie");return cookie.indexOf("jh2_session="+apiToken)>=0;}
+static bool localBrowser(){
+  IPAddress remote=web.client().remoteIP(),local=web.client().localIP();
+  if(local==WiFi.softAPIP()&&(WiFi.getMode()&WIFI_AP))return true;
+  if(WiFi.status()!=WL_CONNECTED)return false;
+  IPAddress lan=WiFi.localIP(),mask=WiFi.subnetMask();
+  uint32_t m=(uint32_t)mask;
+  return m && (((uint32_t)remote & m)==((uint32_t)lan & m));
+}
+bool authorized(){
+  // PIN-free operation only on the controller's local network/setup AP.
+  // Never offer passwordless administration over its forwarded WAN port.
+  if(localBrowser())return true;
+  if(apiToken.length()<32)return false;
+  if(web.header("Authorization")=="Bearer "+apiToken||web.header("X-JH2-Token")==apiToken)return true;
+  String cookie=web.header("Cookie");
+  return cookie.indexOf("jh2_session="+apiToken)>=0;
+}
 void trust(WiFiClientSecure&c){c.setCACert(JH2_ROOTS);c.setHandshakeTimeout(10);c.setTimeout(12);}
 bool readHttpText(HTTPClient&h,String&data,size_t limit){
   String te=h.header("Transfer-Encoding");bool chunked=te.equalsIgnoreCase("chunked");const char*error=nullptr;data="";
@@ -76,25 +92,24 @@ void networkLoop(){
   if(!online&&offlineSince&&now-offlineSince>60000&&!(WiFi.getMode()&WIFI_AP)){WiFi.mode(WIFI_AP_STA);String name="Jason-Home-2-Setup-"+String((uint32_t)ESP.getEfuseMac(),HEX);WiFi.softAP(name.c_str(),"JasonHome2");}
   wasOnline=online;
 }
-static const char SETUP[]=R"HTML(<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2 setup</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;margin:24px auto;max-width:560px;padding:15px}label,input,button{display:block;box-sizing:border-box;width:100%;margin:10px 0;padding:12px;border-radius:10px}button{background:#70e0c4;color:#061321;border:0;font-weight:bold}.sub{color:#b0c8dc}a{color:#7ce5cd}</style><h1>Jason Home 2</h1><p>Connect your NanoC6 to 2.4 GHz Wi-Fi.</p><form method="post" action="/setup"><input name="ssid" placeholder="Wi-Fi name" required maxlength="32"><input name="password" type="password" placeholder="Wi-Fi password" maxlength="63"><input name="pin" type="password" pattern="[0-9]{4,12}" placeholder="Choose an admin PIN (4–12 digits)" required><button>Save and restart</button></form><p class="sub">Connect to your normal Wi-Fi after saving, then open <b>http://jason-home-2.local/</b>.</p>)HTML";
+static const char SETUP[]=R"HTML(<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2 setup</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;margin:24px auto;max-width:560px;padding:15px}label,input,button{display:block;box-sizing:border-box;width:100%;margin:10px 0;padding:12px;border-radius:10px}button{background:#70e0c4;color:#061321;border:0;font-weight:bold}.sub{color:#b0c8dc}a{color:#7ce5cd}</style><h1>Jason Home 2</h1><p>Connect your NanoC6 to 2.4 GHz Wi-Fi.</p><form method="post" action="/setup"><input name="ssid" placeholder="Wi-Fi name" required maxlength="32"><input name="password" type="password" placeholder="Wi-Fi password" maxlength="63"><button>Save and restart</button></form><p class="sub">Connect to your normal Wi-Fi after saving, then open <b>http://jason-home-2.local/</b>.</p>)HTML";
 void registerSetup(){
-  web.on("/setup",HTTP_GET,[]{if(String(secrets["ssid"]|"").length()&&String(secrets["pin"]|"").length()&&!authorized())return replyError(401,"Sign in first");String page=SETUP;
+  web.on("/setup",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");String page=SETUP;
     if(String(secrets["ssid"]|"").length()){
       page.replace("placeholder=\"Wi-Fi name\" required", "placeholder=\"Leave blank to keep saved Wi-Fi\"");
       page.replace("placeholder=\"Wi-Fi password\"", "placeholder=\"Leave blank to keep saved password\"");
     }
     web.send(200,"text/html",page);});
   web.on("/setup",HTTP_POST,[]{
-    if(String(secrets["ssid"]|"").length()&&String(secrets["pin"]|"").length()&&!authorized())return replyError(401,"Sign in first");
-    String pin=web.arg("pin"),ssid=web.arg("ssid");bool valid=pin.length()>=4&&pin.length()<=12;
+    if(!authorized())return replyError(401,"Sign in first");
+    String ssid=web.arg("ssid");
     String savedSSID=secrets["ssid"]|String(""),savedPW=secrets["wifiPassword"]|String("");
     if(!ssid.length())ssid=savedSSID;
     String pw=web.arg("password");
     if(!pw.length()&&ssid==savedSSID)pw=savedPW;
-    for(char c:pin)if(c<'0'||c>'9')valid=false;
-    if(!valid||ssid.length()<1||ssid.length()>32)return replyError(400,"Check Wi-Fi and PIN");
+    if(ssid.length()<1||ssid.length()>32)return replyError(400,"Check Wi-Fi name");
     JsonDocument next;next.set(secrets);
-    next["ssid"]=ssid;next["wifiPassword"]=web.arg("password");next["pin"]=pin;
+    next["ssid"]=ssid;next["wifiPassword"]=pw;next.remove("pin");
     if(!saveJson("/secrets.json",next.as<JsonVariantConst>()))return replyError(500,"Settings could not be saved");
     secrets.set(next);
     // Keep the factory updater's copy in sync at the moment setup succeeds,
@@ -104,10 +119,12 @@ void registerSetup(){
     }
     web.send(200,"text/html","<h2>Saved. Rejoin your Wi-Fi and open http://jason-home-2.local/</h2>");delay(500);ESP.restart();
   });
-  web.on("/login",HTTP_GET,[]{web.send(200,"text/html","<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><h1>Jason Home 2</h1><form method=post action=/login><input name=pin type=password placeholder='Admin PIN' required><button>Sign in</button></form>");});
+  web.on("/login",HTTP_GET,[]{
+    if(!authorized())return replyError(403,"Local network only. Connect to home Wi-Fi to manage Jason Home 2 without a PIN.");
+    web.sendHeader("Location","/");web.send(303);
+  });
   web.on("/login",HTTP_POST,[]{
-    static uint32_t next=0;if((int32_t)(millis()-next)<0)return replyError(429,"Wait before trying again");
-    if(!String(secrets["pin"]|"").length()||web.arg("pin")!=String(secrets["pin"]|"")){next=millis()+3000;return replyError(401,"Incorrect PIN");}
-    web.sendHeader("Set-Cookie","jh2_session="+apiToken+"; HttpOnly; SameSite=Strict; Path=/");web.sendHeader("Location","/");web.send(303);
+    if(!authorized())return replyError(403,"Local network only");
+    web.sendHeader("Location","/");web.send(303);
   });
 }
