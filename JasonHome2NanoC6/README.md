@@ -1,6 +1,6 @@
 # Jason Home 2 — NanoC6 installation
 
-This is the **1.0.0 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
+This is the **1.0.1 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
 
 Your remote address is **http://craumejl.tplinkdns.com**, **TCP port 80**. The local address is **http://jason-home-2.local/**. Use the local address during initial setup and migration. Your router maintains the TP-Link DDNS hostname.
 

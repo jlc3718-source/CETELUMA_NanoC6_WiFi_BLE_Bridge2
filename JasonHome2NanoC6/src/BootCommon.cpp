@@ -11,7 +11,7 @@ bool timeValid(){return time(nullptr)>1735689600;}
 void startNetwork(){
   Serial.begin(115200);delay(100);Preferences n;n.begin("jh2-network",true);String ssid=n.getString("ssid",""),password=n.getString("password","");n.end();
   WiFi.persistent(false);WiFi.setSleep(false);WiFi.mode(WIFI_STA);WiFi.begin(ssid.c_str(),password.c_str());
-  configTzTime("EST5EDT,M3.2.0/2,M11.1.0/2","time.cloudflare.com","pool.ntp.org");Serial.println("Jason Home 2 minimal updater");
+  configTzTime("EST5EDT,M3.2.0/2,M11.1.0/2","time.cloudflare.com","pool.ntp.org");Serial.println(String("Jason Home 2 minimal updater ")+VERSION+" "+BUILD_SHA);
 }
 void networkLoop(){if(WiFi.status()!=WL_CONNECTED&&(int32_t)(millis()-retryAt)>=0){retryAt=millis()+30000;WiFi.reconnect();}}
 void trust(WiFiClientSecure&c){c.setCACert(JH2_ROOTS);c.setHandshakeTimeout(10);c.setTimeout(12);}

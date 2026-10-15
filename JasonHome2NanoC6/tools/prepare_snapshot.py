@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Read current Oracle settings for migration without changing automation."""
-import argparse,base64,hashlib,json,sqlite3,time,urllib.request
+import argparse,base64,hashlib,json,sqlite3,subprocess,time,urllib.request
 from pathlib import Path
 from convert_backup import convert
 p=argparse.ArgumentParser();p.add_argument('--output',default='migration-private');a=p.parse_args()
@@ -18,7 +18,9 @@ def meta(key,fallback):
 backup={'schema':2,'createdAt':int(time.time()),'oracle':oracle,'web2':{'presets':meta('presets',[]),'customSchedules':meta('custom_schedules',[]),'palette':meta('palette',{}),'eventOverrides':meta('event_overrides',{}),'target':meta('target',0)}}
 cf_account=meta('cf_ai_account_id','');cf_box=meta('cf_ai_token_cipher',None);session_secret=meta('session_secret','')
 db.close();out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-catalog=json.loads((Path(__file__).resolve().parents[2]/'JasonHome2Server/catalog.json').read_text())
+catalog_path=Path(__file__).resolve().parents[2]/'JasonHome2Server/catalog.json'
+if not catalog_path.exists():subprocess.run(['python3',str(catalog_path.with_name('generate_catalog.py'))],check=True)
+catalog=json.loads(catalog_path.read_text())
 migration=convert(backup,catalog);encoded=json.dumps(migration,separators=(',',':')).encode()
 (out/'Jason-Home-2-Oracle-before-NanoC6.json').write_text(json.dumps(backup,indent=2))
 if len(encoded)>60000:raise SystemExit('Complete converted settings exceed 60 KB; source snapshot preserved. No Oracle state changed.')
@@ -42,6 +44,6 @@ if cf_account and cf_box and session_secret:
         key=hashlib.sha256(('jason-home-ai:'+session_secret).encode()).digest()
         cf_token=AESGCM(key).decrypt(base64.b64decode(cf_box['iv']),base64.b64decode(cf_box['data'])+base64.b64decode(cf_box['tag']),None).decode()
         private.update(cfAccount=cf_account,cfToken=cf_token)
-    except ImportError:print('Cloudflare token requires re-entry on the NanoC6; local decrypt library unavailable.')
+    except Exception:print('Cloudflare token requires re-entry on the NanoC6; credential decrypt unavailable.')
 (out/'Jason-Home-2-NanoC6-private-account.json').write_text(json.dumps(private))
 print('Read-only snapshot prepared:',len(encoded),'bytes;',len(migration['state'].get('overrides',{})),'event overrides. Oracle automation unchanged.')

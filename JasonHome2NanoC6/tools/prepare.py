@@ -31,6 +31,7 @@ text=text.replace('Refreshing Eufy factory catalog on Oracle…','Refreshing Euf
 text=text.replace('Oracle Linux → Eufy MQTT','Local NanoC6 → Eufy MQTT').replace('Oracle server controller','NanoC6 controller').replace('Oracle API token saved securely on this phone.','NanoC6 controller session is active.').replace('Normal Oracle schedule resumed.','Normal NanoC6 schedule resumed.')
 assets['android_eufy_ui.js']=text
 text=assets['curtain_converter.html']
+text=text.replace("canvas.toDataURL('image/jpeg',.78)","canvas.toDataURL('image/jpeg',.45)")
 text=text.replace("if(navigator.bluetooth || window.parent===window) return;","if((navigator.bluetooth && !window.parent.JH2_NANO) || window.parent===window) return;",1)
 # Keep the built-in example while avoiding a high-resolution embedded example
 # that consumes more flash than the updater's remaining space.

@@ -57,7 +57,11 @@ bool handleAiApi(const String&path,JsonVariantConst in,bool post){
   if(path=="/api/ai/remove"){String id=in["id"]|String("");auto a=state["extraEvents"].as<JsonArray>();for(size_t i=0;i<a.size();i++)if(String(a[i]["id"]|"")==id){a.remove(i);break;}saveJson("/state.json",state.as<JsonVariantConst>());JsonDocument st;aiState(st);out["ok"]=true;out["state"]=st.as<JsonVariantConst>();reply(200,out.as<JsonVariantConst>());return true;}
   if(path=="/api/curtain/ai-revamp"){
     String image=in["image"]|String("");int pos=image.indexOf(',');auto bytes=from64(image.substring(pos+1));if(bytes.size()<80||bytes.size()>22000){replyError(400,"Use a small JPEG preview for subject detection");return true;}
-    JsonDocument request,response;auto a=request["image"].to<JsonArray>();for(auto b:bytes)a.add(b);if(!call("run/@cf/facebook/detr-resnet-50",request.as<JsonVariantConst>(),response)){replyError(502,lastError);return true;}
+    if(!configured()){replyError(409,"Connect Cloudflare AI or use local Enhanced Detail");return true;}
+    // Avoid one ArduinoJson heap node per image byte on the small C6.
+    String body="{\"image\":[";body.reserve(bytes.size()*4+20);bool first=true;for(auto b:bytes){if(!first)body+=',';first=false;body+=String(b);}body+="]}";
+    JsonDocument response;String url="https://api.cloudflare.com/client/v4/accounts/"+String(secrets["cfAccount"]|"")+"/ai/run/@cf/facebook/detr-resnet-50";
+    if(!httpsJson(url,&body,response,{{"Authorization","Bearer "+String(secrets["cfToken"]|"")}})){replyError(502,lastError);return true;}
     double best=-1;auto detections=out["detected"].to<JsonArray>();for(JsonVariantConst hit:response["result"].as<JsonArrayConst>()){
       double score=hit["score"]|0.;if(score<.35)continue;auto box=hit["box"];double xmax=box["xmax"]|0.,ymax=box["ymax"]|0.,scale=std::max(xmax,ymax)>1.5?256.:1.;double x0=double(box["xmin"]|0.)/scale,y0=double(box["ymin"]|0.)/scale,x1=xmax/scale,y1=ymax/scale,area=std::max(0.,(x1-x0)*(y1-y0));
       auto item=detections.add<JsonObject>();item["label"]=hit["label"];item["confidence"]=score;item["x0"]=x0;item["y0"]=y0;item["x1"]=x1;item["y1"]=y1;double rank=score*(.4+std::min(.43,sqrt(area)*.65))-.15*(pow((x0+x1)/2-.5,2)+pow((y0+y1)/2-.5,2));if(rank>best){best=rank;out["subject"]=item;}

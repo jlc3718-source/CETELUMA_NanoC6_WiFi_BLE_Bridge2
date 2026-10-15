@@ -171,6 +171,6 @@ bool EufyCloud::control(JsonVariantConst r,JsonDocument&result){
     if(ok&&r["brightness"].is<int>()&&report["brightness"].is<int>()&&report["brightness"].as<int>()!=level){item["ok"]=false;ok=false;item["message"]="Controller brightness differs from request";}
     all&=ok;
   }
-  result["ok"]=any&&all;return any&&all;
+  if(!all)ready=false;result["ok"]=any&&all;return any&&all;
 }
 void EufyCloud::describe(JsonArray a){for(int i=0;i<4;i++){auto d=a.add<JsonObject>();d["slot"]=i;d["name"]=NAMES[i];d["model"]=MODELS[i];d["connected"]=ready&&deviceReady(i);d["saved"]=deviceReady(i);d["protocol"]="NanoC6 / Eufy MQTT";}}

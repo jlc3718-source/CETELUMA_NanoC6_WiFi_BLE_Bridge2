@@ -30,7 +30,7 @@ bool readHttpText(HTTPClient&h,String&data,size_t limit){
   if(!ok)lastError=error?error:"Unsupported HTTP encoding";return ok;
 }
 bool httpsJson(const String&url,const String*body,JsonDocument&out,const std::vector<std::pair<String,String>>&headers){
-  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(12000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(url.startsWith("https://api.cloudflare.com/")?60000:12000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   const char*hs[]={"Transfer-Encoding"};h.collectHeaders(hs,1);if(!h.begin(c,url)){lastError="HTTPS open failed";return false;}
   h.addHeader("User-Agent","JasonHome2-NanoC6");for(auto&p:headers)h.addHeader(p.first,p.second);
   if(body)h.addHeader("Content-Type","application/json");int rc=body?h.POST(*body):h.GET();
