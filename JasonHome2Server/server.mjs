@@ -878,13 +878,13 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","nano_sync.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","nano_sync.js"]);
   if(!allowed.has(name)&&!/^curtain_real_(?:0[0-9]|10)\.js$/.test(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
   const type=extname(file)===".js"?"text/javascript":extname(file)===".css"?"text/css":"text/html";
   const data=readFileSync(file);res.writeHead(200,{"content-type":type+"; charset=utf-8","content-length":data.length,
-    "cache-control":"no-store","content-security-policy":"default-src 'self' 'unsafe-inline' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    "cache-control":"no-store","content-security-policy":"default-src 'self' 'unsafe-inline' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors 'self'",
     "x-content-type-options":"nosniff"});res.end(data);
 }
 const loginPage=`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2</title>
