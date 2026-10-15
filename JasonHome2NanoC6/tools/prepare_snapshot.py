@@ -23,7 +23,7 @@ if not catalog_path.exists():subprocess.run(['python3',str(catalog_path.with_nam
 catalog=json.loads(catalog_path.read_text())
 migration=convert(backup,catalog);encoded=json.dumps(migration,separators=(',',':')).encode()
 (out/'Jason-Home-2-Oracle-before-NanoC6.json').write_text(json.dumps(backup,indent=2))
-if len(encoded)>60000:raise SystemExit('Complete converted settings exceed 60 KB; source snapshot preserved. No Oracle state changed.')
+if len(encoded)>60000:print('Settings require compaction:',len(encoded),'bytes. No data discarded; no Oracle state changed.')
 (out/'Jason-Home-2-NanoC6-migration.json').write_bytes(encoded)
 # Keep account credentials separate from portable backups and public releases.
 private={'product':'jason-home-2-nanoc6-private','eufyEmail':env.get('EUFY_EMAIL',''),'eufyPassword':env.get('EUFY_PASSWORD','')}
@@ -46,4 +46,5 @@ if cf_account and cf_box and session_secret:
         private.update(cfAccount=cf_account,cfToken=cf_token)
     except Exception:print('Cloudflare token requires re-entry on the NanoC6; credential decrypt unavailable.')
 (out/'Jason-Home-2-NanoC6-private-account.json').write_text(json.dumps(private))
+print('Section sizes:',json.dumps({k:len(json.dumps(v,separators=(',',':'))) for k,v in migration['state'].items()}))
 print('Read-only snapshot prepared:',len(encoded),'bytes;',len(migration['state'].get('overrides',{})),'event overrides. Oracle automation unchanged.')

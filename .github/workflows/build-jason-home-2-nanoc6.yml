@@ -2,7 +2,7 @@ name: Build Jason Home 2 NanoC6
 on:
   push:
     branches: [jason-home-2-nanoc6]
-    paths: ['JasonHome2NanoC6/**']
+    paths: ['JasonHome2NanoC6/**', '!JasonHome2NanoC6/tools/prepare_snapshot.py', '!JasonHome2NanoC6/tools/convert_backup.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -234,9 +234,15 @@ jobs:
           mkdir -p -m 700 "$target"
           trap 'sudo chown -R "$(id -u):$(id -g)" "$target"' EXIT
           sudo python3 -B JasonHome2NanoC6/tools/prepare_snapshot.py --output "$target"
+      - name: Encrypt migration files for their owner
+        run: |
+          target="$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID"
+          (cd "$target" && zip -q -r "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip" .)
+          openssl cms -encrypt -binary -aes-256-cbc -in "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip" -out "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.p7m" -outform DER .github/certs/jh2-migration-recipient.pem
+          rm "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-NanoC6-PRIVATE-migration
-          path: ${{ runner.temp }}/jh2-migration-${{ github.run_id }}/
+          name: Jason-Home-2-NanoC6-ENCRYPTED-migration
+          path: ${{ runner.temp }}/jh2-migration-${{ github.run_id }}.p7m
           retention-days: 7
           if-no-files-found: error
