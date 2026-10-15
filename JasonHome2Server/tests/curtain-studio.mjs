@@ -29,6 +29,13 @@ test('v25 converter is complete and JavaScript parses',()=>{
   for(const term of ['sourcePreview','imageInfo','framing','cleanup','zoom','sendLive','Build','83928','gif'])
     assert.ok(converter.includes(term),term);
 });
+test('Curtain Studio uses the condensed three-step mobile flow',()=>{
+  for(const term of ['Choose your picture','Make it look its best','Prepare and send','class="steps"','class="controlGroup"','id="aiResults"'])
+    assert.ok(converter.includes(term),term);
+  assert.match(converter,/id="photoControls"[^>]*><summary>Adjust crop and position/);
+  assert.match(converter,/id="aiResults"/);
+  assert.match(converter,/\$\('aiResults'\)\.open=true/);
+});
 test('host serves isolated studio asset with same-origin framing',()=>{
   assert.match(generator,/curtain_converter\.html/);
   assert.match(server,/curtain_converter\.html/);
