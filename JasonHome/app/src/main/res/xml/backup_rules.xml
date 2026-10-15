@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="sharedpref" path="anderson_android.xml" />
+    <include domain="sharedpref" path="jason_schedule.xml" />
+    <include domain="sharedpref" path="craumer_backup.xml" />
+</full-backup-content>

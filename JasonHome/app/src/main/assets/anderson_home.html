@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06111d">
+<title>Craumer Home Lights</title>
+<style>html{-webkit-text-size-adjust:100%;text-size-adjust:100%}:root{--panel:#151a22;--card:#10151c;--line:#2a3340;--text:#f4f7fb;--muted:#9aa6b5;--accent:#27aaff;--accentbg:#18334a;--good:#38d486}*{box-sizing:border-box}body{margin:0;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}.wrap{max-width:720px;margin:0 auto;padding:14px max(12px,env(safe-area-inset-right)) max(30px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}.header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}.headerActions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}h1{font-size:22px;margin:0}.sub,.muted{color:var(--muted)}.sub{font-size:12px}.badge{font-size:12px;color:var(--good);background:#0b2a1a;border:1px solid #1f6742;padding:6px 9px;border-radius:999px;white-space:nowrap}.badge.offline{color:#ffcb6b;background:#2c210b;border-color:#654d1d}.nav{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:12px}button,select,input{font:inherit;max-width:100%}button{-webkit-tap-highlight-color:transparent}.tab,.btn,.field{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:12px;min-height:44px;padding:9px 10px}.tab{font-size:12px}.tab.active{border-color:var(--accent);background:var(--accentbg)}.btn{cursor:pointer}.btn.primary{background:linear-gradient(180deg,#27aaff,#148de1);border-color:#3bb2ff;font-weight:700}.btn.danger{border-color:#794040;color:#ffcaca}.field{width:100%;font-size:16px}.page{display:none}.page.active{display:block}.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;margin:11px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:12px}.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}.wraprow{flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}.grid3{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}.grid5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.grid5 .btn{padding:8px 4px;font-size:11px}.label{font-size:13px;margin:11px 0 6px}input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}input[type=range]{width:100%;accent-color:var(--accent)}input[type=color]{width:100%;height:46px;border:0;background:transparent}.quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.colorBuilder{display:grid;gap:8px;margin-top:8px}.colorSlot{display:grid;grid-template-columns:48px 1fr auto auto;gap:8px;align-items:center}.colorSlot input[type=color]{width:48px;height:44px;padding:0}.colorSlot .slotName{font-size:13px;color:var(--muted)}.colorSlot .moveBtn,.colorSlot .removeBtn{min-width:44px;padding:8px}.colorActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.swatch{aspect-ratio:1;border-radius:11px;border:2px solid rgba(255,255,255,.12);min-height:0;padding:0}.ledrows{display:block;overflow:hidden}.ledgrid{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:5px}.led{aspect-ratio:1;border-radius:50%;background:#2a313b}.event{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start}.eventchecks{display:grid;gap:9px}.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}.chip{width:17px;height:17px;border-radius:50%;border:1px solid rgba(255,255,255,.25)}.small{font-size:12px}.status{font-size:13px;color:var(--muted);margin-top:10px;min-height:18px}.presetList{display:grid;gap:8px;margin-top:10px}.favoriteGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}.emptyFav{font-size:12px;color:var(--muted);padding:10px;border:1px dashed var(--line);border-radius:12px}.housePreview{margin-top:10px;border:1px solid var(--line);background:radial-gradient(circle at 50% 42%,rgba(70,110,150,.12),transparent 52%),linear-gradient(180deg,#0b1017,#0a0e13);border-radius:14px;padding:8px;overflow:hidden}.housePreview svg{width:100%;height:auto;display:block}.houseOutline{fill:none;stroke:#66717e;stroke-width:3;opacity:.72}.houseDoor{fill:none;stroke:#66717e;stroke-width:2.5;opacity:.55}.houseLed{stroke:rgba(255,255,255,.4);stroke-width:.6}.monthHead{display:grid;grid-template-columns:1fr .7fr;gap:8px;margin-top:10px}.monthActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}.note{font-size:12px;line-height:1.45;color:#aeb8c5;background:#10151c;border:1px solid #293441;border-radius:12px;padding:10px;margin-top:10px}.tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.tag{font-size:10px;border:1px solid #3a4654;border-radius:999px;padding:3px 6px;color:#b8c3cf}.tag.holiday{border-color:#385979;color:#9fd2ff}.tag.awareness{border-color:#5b4b83;color:#c9b9f6}.tag.seasonal{border-color:#7a5f36;color:#f4c879}.bleList{display:grid;gap:8px;margin-top:10px}.bleDevice{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.sysToolbar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.sysMetric{min-width:0;padding:10px 8px;text-align:center;border:1px solid rgba(80,190,255,.28);border-radius:13px;background:rgba(4,20,34,.72)}.sysMetric .sysLabel{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.sysMetric strong{display:block;margin-top:3px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sysMetric .sysSub{display:block;margin-top:2px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sysDetails{margin-top:8px;font-size:11px;line-height:1.55;color:var(--muted)}@media(max-width:520px){.sysToolbar{grid-template-columns:repeat(2,1fr)}}@media(max-width:360px){.nav{gap:5px}.tab{padding:8px 4px;font-size:11px}.grid2,.monthHead{grid-template-columns:1fr}.event{grid-template-columns:auto 1fr}.event .previewEvent{grid-column:2}.favoriteGrid{grid-template-columns:1fr 1fr}}.rgbPickerOverlay{position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px}.rgbPickerOverlay.open{display:flex}.rgbPickerCard{width:min(94vw,430px);max-height:92vh;overflow:auto;background:#141b24;border:1px solid #334155;border-radius:18px;padding:16px;box-shadow:0 24px 80px rgba(0,0,0,.55)}.rgbWheel{width:min(72vw,280px);height:min(72vw,280px);max-width:280px;max-height:280px;aspect-ratio:1;border-radius:50%;margin:10px auto 14px;position:relative;touch-action:none;background:radial-gradient(circle at center,#fff 0%,rgba(255,255,255,.92) 4%,rgba(255,255,255,0) 72%),conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);box-shadow:inset 0 0 0 2px rgba(255,255,255,.14),0 8px 25px rgba(0,0,0,.35)}.rgbWheelMarker{position:absolute;width:22px;height:22px;border:3px solid white;border-radius:50%;box-shadow:0 0 0 2px #111,0 2px 8px #000;transform:translate(-50%,-50%);pointer-events:none}.rgbReadout{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.rgbReadout label{font-size:11px;color:#94a3b8}.rgbReadout input,.rgbHex{width:100%;box-sizing:border-box;background:#0b1118;color:#fff;border:1px solid #334155;border-radius:9px;padding:9px}.savedColorGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}.savedSwatch{min-width:0;min-height:48px;border-radius:10px;border:2px solid rgba(255,255,255,.35);padding:8px 6px;display:grid;place-items:center;font-weight:800;font-size:13px;line-height:1.1;text-align:center;letter-spacing:.01em;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer}.savedSwatch:active{transform:translateY(1px)}.savedSwatch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.colorChip{width:54px;height:44px;border-radius:10px;border:2px solid rgba(255,255,255,.35);box-shadow:0 2px 8px rgba(0,0,0,.25)}.pickerPreview{height:38px;border-radius:10px;border:1px solid #334155;margin:8px 0}@media(max-width:360px){.savedColorGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}.scheduleOverlay{position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:16px}.scheduleOverlay.open{display:flex}.scheduleCard{width:min(92vw,390px);background:#141b24;border:1px solid #334155;border-radius:18px;padding:18px}.eventFullEditor{position:fixed;inset:0;z-index:9000;background:#020812;overflow:auto;overscroll-behavior:contain;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}.eventFullEditorShell{width:min(760px,100%);margin:0 auto}.eventFullEditorTop{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:10px;padding:8px 0 11px;background:linear-gradient(180deg,#020812 75%,rgba(2,8,18,0))}.eventFullEditorTitle{min-width:0;flex:1}.eventFullEditorTitle strong{display:block;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.eventFullEditor .eventEditor{margin:0!important}.eventFullEditor .eventMiniPreview{margin:10px 0 14px}.customPresetActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}@media(max-width:520px){.header{flex-direction:column}.headerActions{justify-content:flex-start}}</style>
+
+
+<style>:root{--panel:rgba(8,23,37,.82);--card:rgba(6,18,30,.78);--line:rgba(76,177,224,.35);--text:#f7fbff;--muted:#a8b8c9;--accent:#29d8ff;--accentbg:rgba(14,67,94,.72);--good:#44ff96}html,body{min-height:100%;background:#020812!important;background-image:radial-gradient(circle at 14% 8%,rgba(0,213,255,.16),transparent 27%),radial-gradient(circle at 86% 14%,rgba(255,0,214,.13),transparent 25%),radial-gradient(circle at 50% 100%,rgba(0,255,128,.09),transparent 36%),linear-gradient(160deg,#020812 0%,#06111d 47%,#02060d 100%)!important;background-attachment:fixed!important}body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background:linear-gradient(90deg,rgba(0,224,255,.05),transparent 24%,transparent 75%,rgba(255,0,214,.045));box-shadow:inset 0 0 120px rgba(0,0,0,.9)}.wrap{max-width:760px;padding-top:16px}.header{padding:12px 13px;border:1px solid rgba(79,199,238,.34);border-radius:19px;background:linear-gradient(145deg,rgba(9,26,42,.93),rgba(4,13,23,.84));box-shadow:0 12px 34px rgba(0,0,0,.34),0 0 22px rgba(0,201,255,.07)}.nav{position:sticky;top:calc(6px + env(safe-area-inset-top));z-index:50;padding:7px;border:1px solid rgba(79,199,238,.22);border-radius:16px;background:rgba(3,12,22,.88);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:0 10px 28px rgba(0,0,0,.28)}.tab,.btn,.field{background:linear-gradient(180deg,rgba(15,35,52,.94),rgba(6,18,30,.94));border-color:rgba(91,178,216,.32);box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}.tab.active{border-color:#31d8ff;background:linear-gradient(135deg,rgba(0,184,255,.21),rgba(164,0,255,.18));box-shadow:0 0 14px rgba(0,215,255,.18),inset 0 0 18px rgba(255,0,214,.05)}.panel{background:linear-gradient(150deg,rgba(8,26,41,.91),rgba(4,15,26,.86));border-color:rgba(77,193,232,.34);box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 24px rgba(0,213,255,.045);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}.card{background:linear-gradient(145deg,rgba(8,24,38,.92),rgba(5,15,25,.88));border-color:rgba(79,169,207,.28)}.btn.primary{background:linear-gradient(135deg,#00c66b,#19e882 46%,#18b9ff);border-color:#52ff9c;color:#02130b;text-shadow:0 1px 0 rgba(255,255,255,.18);box-shadow:0 0 18px rgba(29,255,137,.23),inset 0 1px 0 rgba(255,255,255,.3)}.badge{box-shadow:0 0 14px rgba(68,255,150,.16)}input[type=checkbox],input[type=range]{accent-color:#2cff8a}.housePreview{background:radial-gradient(circle at 50% 32%,rgba(32,225,255,.14),transparent 34%),linear-gradient(180deg,rgba(5,18,31,.95),rgba(2,8,15,.96));border-color:rgba(76,197,236,.35);box-shadow:inset 0 0 34px rgba(0,0,0,.36)}.rgbPickerCard,.scheduleCard{background:linear-gradient(145deg,#0a1a29,#06101c);border-color:rgba(74,194,233,.42)}@media(max-width:520px){.header{padding:10px}}</style>
+
+<style id="anderson-v310-controls">.quickColorTile{width:100%;aspect-ratio:1;min-height:0;font-size:12px;line-height:1.12;padding:7px 5px;text-wrap:balance;text-shadow:0 1px 2px rgba(0,0,0,.20)}@media(max-width:360px){#quickColors.quick{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.quickColorTile{font-size:10px;padding:5px 3px}}.swatch,.savedSwatch,.colorChip{border-radius:10px!important;border:1px solid rgba(151,224,255,.58)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.40),inset 0 -8px 14px rgba(0,0,0,.18),0 7px 16px rgba(0,0,0,.34),0 0 0 1px rgba(41,216,255,.10)!important;transition:transform .12s ease,box-shadow .16s ease,border-color .16s ease;position:relative;overflow:hidden}.swatch{aspect-ratio:1!important}.savedSwatch{aspect-ratio:1!important;min-height:0!important;padding:7px!important}.colorChip{width:48px!important;height:48px!important;aspect-ratio:1!important}.swatch:hover,.savedSwatch:hover,.colorChip:hover,.swatch:focus-visible,.savedSwatch:focus-visible,.colorChip:focus-visible{border-color:#8cecff!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.52),inset 0 -8px 14px rgba(0,0,0,.17),0 8px 20px rgba(0,0,0,.38),0 0 16px rgba(41,216,255,.34)!important;outline:none}.swatch:active,.savedSwatch:active,.colorChip:active{transform:translateY(2px) scale(.97);box-shadow:inset 0 3px 8px rgba(0,0,0,.25),0 2px 7px rgba(0,0,0,.35)!important}</style>
+<style>.eventColorThemeBox{margin-top:10px;padding:11px;border:1px solid rgba(70,190,255,.28);border-radius:14px;background:linear-gradient(155deg,rgba(11,35,57,.84),rgba(4,16,29,.92))}.eventColorThemeGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px}.eventColorThemeTile{position:relative;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:9px;min-height:72px;padding:10px 11px;border-radius:12px;border:1px solid rgba(85,173,220,.36);background:linear-gradient(150deg,rgba(20,51,78,.78),rgba(5,18,31,.95));color:var(--text);text-align:left}.eventColorThemeTile small{display:block;margin-top:3px;color:var(--muted);font-size:10px}.eventColorThemeLetter{display:grid;place-items:center;width:31px;height:31px;border-radius:8px;border:1px solid rgba(104,217,255,.38);font-weight:900}.eventColorThemeCheck{display:none;position:absolute;right:8px;top:7px}.eventColorThemeTile[aria-pressed="true"]{border-color:#70e8ff;box-shadow:0 0 20px rgba(41,216,255,.22)}.eventColorThemeTile[aria-pressed="true"] .eventColorThemeCheck{display:block}@media(max-width:360px){.eventColorThemeGrid{grid-template-columns:1fr}}</style>
+
+<style id="anderson-semantic-color-ui">.effectSelectHidden{display:none!important}.effectButtonGroup{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:7px 0 2px}.effectChoice{min-height:42px;padding:8px 5px;border:1px solid rgba(76,177,224,.42);background:rgba(6,18,30,.78);color:var(--text);border-radius:11px;font-size:12px;font-weight:750;cursor:pointer}.effectChoice.active{border-color:#55dfff;background:linear-gradient(180deg,rgba(39,170,255,.34),rgba(20,90,145,.42));box-shadow:0 0 0 1px rgba(41,216,255,.2),0 0 14px rgba(41,216,255,.16)}.colorNamePill{display:inline-flex;align-items:center;justify-content:center;min-height:25px;padding:4px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.32);font-size:10px;font-weight:800;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.22)}.colorChip.namedColorChip{width:auto!important;min-width:74px!important;height:48px!important;padding:5px 7px!important;font-size:10px!important;font-weight:800!important;line-height:1.05!important;text-align:center!important}@media(max-width:360px){.effectButtonGroup{gap:5px}.effectChoice{font-size:10px;padding:7px 3px}.colorChip.namedColorChip{min-width:66px!important}}</style>
+<style id="anderson-settings-backup-ui">.settingsSubnav{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 12px}.settingsSubnav .btn.active{border-color:#55dfff;background:linear-gradient(180deg,rgba(39,170,255,.34),rgba(20,90,145,.42));box-shadow:0 0 14px rgba(41,216,255,.16)}.backupChoiceGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.backupChoice{display:flex;gap:9px;align-items:center;min-height:52px;padding:9px;border:1px solid var(--line);border-radius:12px;background:var(--card)}@media(max-width:360px){.backupChoiceGrid{grid-template-columns:1fr}}</style>
+
+
+<link rel="stylesheet" href="v3_mockup.css">
+<link rel="stylesheet" href="event_categories.css">
+<link rel="stylesheet" href="android_eufy_ui.css">
+</head>
+<body>
+<script>
+window.__andersonBridgePending=window.__andersonBridgePending||new Map();
+window.__andersonBridgeResolve=function(id,raw){
+  const p=window.__andersonBridgePending.get(String(id));
+  if(!p)return;
+  window.__andersonBridgePending.delete(String(id));
+  clearTimeout(p.timer);
+  try{
+    const n=JSON.parse(String(raw||"{}")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};
+    p.resolve({response:r,text:null==n.body?"":String(n.body)});
+  }catch(e){p.reject(new Error(e&&e.message?e.message:"Android controller bridge failed."));}
+};
+async function controllerRequest(e,t={},o=12e3){
+  if(window.AndroidAnderson){
+    if(typeof window.AndroidAnderson.requestAsync==="function"){
+      return new Promise((resolve,reject)=>{
+        const id="jh-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+        const timer=setTimeout(()=>{
+          window.__andersonBridgePending.delete(id);
+          reject(new Error("Controller response timed out."));
+        },o);
+        window.__andersonBridgePending.set(id,{resolve,reject,timer});
+        try{window.AndroidAnderson.requestAsync(id,t.method||"GET",e,t.body||"",window.andersonAuthToken||"");}
+        catch(err){
+          clearTimeout(timer);window.__andersonBridgePending.delete(id);
+          reject(new Error(err&&err.message?err.message:"Android controller bridge failed."));
+        }
+      });
+    }
+    try{
+      const n=JSON.parse(window.AndroidAnderson.request(t.method||"GET",e,t.body||"",window.andersonAuthToken||"")),i=Number(n.status||200),r={ok:i>=200&&i<300,status:i,statusText:n.statusText||""};
+      return{response:r,text:null==n.body?"":String(n.body)};
+    }catch(e){throw new Error(e&&e.message?e.message:"Android controller bridge failed.")}
+  }
+  const n=new AbortController,i=setTimeout(()=>n.abort(),o);
+  try{const o=await fetch(e,{...t,signal:n.signal}),i=await o.text();return{response:o,text:i}}
+  catch(e){if("AbortError"===e.name)throw new Error("Controller response timed out.");throw e}
+  finally{clearTimeout(i)}
+}
+window.andersonAuthToken="";</script>
+<div class="wrap">
+  <div class="header">
+    <div class="ahBrand"><svg class="ahMark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M7 22 24 8l17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 21v19h24V21M21 40V29h6v11" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="12" cy="22" r="2" fill="currentColor"/><circle cx="24" cy="12" r="2" fill="currentColor"/><circle cx="36" cy="22" r="2" fill="currentColor"/></svg><div><span class="ahBrandName">Craumer <b>Home</b></span><span class="ahBrandSub">LIGHTING, BEAUTIFULLY SIMPLE</span></div></div>
+    <div class="headerActions"><div id="connectionBadge" class="badge offline">● Preview</div></div>
+  </div>
+
+  <div class="nav" role="tablist">
+    <button class="tab active" data-tab="home">Home</button>
+    <button class="tab" data-tab="ai">AI</button>
+    <button class="tab" data-tab="events">Schedules</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+
+  <section class="page active" data-page="home">
+    <div class="panel">
+      <div class="row between">
+        <div><strong>Lights</strong><div class="sub">Master control</div></div>
+        <div class="row"><button id="homePowerOn" class="btn primary" type="button">On</button><button id="homePowerOff" class="btn" type="button">Off</button></div>
+      </div>
+      <div class="label row between"><span>Brightness</span><span id="homeBrightVal" class="muted">75%</span></div>
+      <input id="homeBrightness" type="range" min="1" max="100" value="75">
+      <div class="label">Current Effect</div>
+      <select id="homeEffect" class="field"><option value="Jump">Jump</option><option value="Breath">Breath</option><option value="Strobe">Strobe</option><option value="Solid">Solid / Static</option><option value="Chase">Chase</option><option value="Gradient Sweep">Gradient Sweep</option><option value="Candy Cane">Candy Cane</option><option value="Twinkle / Sparkle">Twinkle / Sparkle</option><option value="Wipe / Fill">Wipe / Fill</option><option value="Meteor / Comet">Meteor / Comet</option><option value="Rainbow Flow">Rainbow Flow</option><option value="Pulse Wave">Pulse Wave</option></select>
+      <div id="homeEffectHelp" class="sub" style="margin-top:5px">Changes the currently running theme without changing its saved palette. Solid / Static holds Color 1 steady.</div>
+    </div>
+
+    <div class="panel">
+      <div class="row between wraprow">
+        <div><strong>Running Tonight</strong><div id="nowTheme" class="small" style="margin-top:4px">Loading…</div><div id="scheduleWindow" class="sub">Scheduled 5:00 PM – 11:00 PM</div></div>
+        <button id="resumeSchedule" class="btn">Resume Schedule</button>
+      </div>
+      <div class="housePreview">
+        <svg viewBox="0 0 360 188" role="img" aria-label="Mini house showing the currently running light effect">
+          <defs>
+            <linearGradient id="liveHouseWall" x2="0" y2="1"><stop stop-color="#284963"/><stop offset="1" stop-color="#0b192a"/></linearGradient>
+            <linearGradient id="liveHouseRoof" x2="0" y2="1"><stop stop-color="#3b627d"/><stop offset="1" stop-color="#10263e"/></linearGradient>
+            <linearGradient id="liveHouseGlass" x2="1" y2="1"><stop stop-color="#b5eaff" stop-opacity=".7"/><stop offset=".5" stop-color="#3c809e" stop-opacity=".45"/><stop offset="1" stop-color="#162c42"/></linearGradient>
+            <linearGradient id="liveHousePath" x2="0" y2="1"><stop stop-color="#46617c" stop-opacity=".5"/><stop offset="1" stop-color="#14263e" stop-opacity="0"/></linearGradient>
+          </defs>
+<g aria-hidden="true">
+          <path d="M24 151 164 119 338 150 200 184Z" fill="#081426" stroke="#8eb2ed" stroke-opacity=".22"/>
+          <path d="m24 151 176 33v-6L24 146Z" fill="#152946"/>
+          <path d="m200 184 138-34v-5l-138 33Z" fill="#1b3357"/>
+          <ellipse cx="180" cy="154" rx="128" ry="12" fill="#020916" opacity=".65"/>
+          <path d="m156 145-32 23 61 10 27-33Z" fill="#a9c1e8" opacity=".12"/>
+          <path d="m75 83 29-13 215 3-34 17Z" fill="#192f51"/>
+          <path d="m285 79 31-13v63l-31 16Z" fill="#101f36" stroke="#839fc9" stroke-opacity=".3"/>
+          <path d="m47 85 133-69 30-10 131 69-28 10-133-69Z" fill="#506686" stroke="#b6c5df" stroke-opacity=".3"/>
+          <path d="m300 92 13-7 28-10-14 13Z" fill="#223656"/>
+          <path d="M75 80 180 28 285 80v65H75Z" fill="url(#liveHouseWall)" stroke="#8aa9d5" stroke-opacity=".7"/>
+          <path d="M82 98h65v45H82Z" fill="#1c3650"/>
+          <path d="M217 98h61v45h-61Z" fill="#203b57"/>
+          <path d="M89 99v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44M223 99v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44m6-44v44" stroke="#b1c3df" stroke-opacity=".08"/>
+          <path d="m47 85 133-69 133 69-13 7-120-59L60 92Z" fill="url(#liveHouseRoof)" stroke="#b4c7e5" stroke-opacity=".75"/>
+          <path d="m64 84 116-60 116 60" fill="none" stroke="#c0d2f2" stroke-opacity=".15"/>
+          <path d="M225 41V19l7-3 19 7v24l-7 3" fill="#172943"/>
+          <path d="M225 19h19v31l-19-9Z" fill="#36516d" stroke="#8ea5c7" stroke-opacity=".35"/>
+          <path d="M87 96h186M87 117h186M87 135h186" stroke="#aec8e8" stroke-opacity=".08"/>
+          <rect x="155" y="94" width="49" height="51" rx="1" fill="#041024" stroke="#c2d8f9" stroke-opacity=".35"/>
+          <rect x="159" y="98" width="41" height="45" rx="1" fill="url(#liveHouseGlass)" stroke="#adc9f0" stroke-opacity=".6"/>
+          <rect x="96" y="101" width="38" height="26" rx="1" fill="#030b18"/>
+          <rect x="98" y="103" width="34" height="22" rx="1" fill="url(#liveHouseGlass)"/>
+          <rect x="226" y="101" width="38" height="26" rx="1" fill="#030b18"/>
+          <rect x="228" y="103" width="34" height="22" rx="1" fill="url(#liveHouseGlass)"/>
+          <path d="m100 105 29 18m102-18 29 18M163 101l33 36" stroke="#d6e8ff" stroke-opacity=".18"/>
+          <path d="M115 102v24m130-24v24M98 114h34m96 0h34M179 99v43" stroke="#0e2038" stroke-width="2"/>
+          <path d="M176 123v9m6-9v9" stroke="#c8d5ed" stroke-width=".8"/>
+          <rect x="166" y="58" width="28" height="23" rx="1" fill="#081529" stroke="#93afd6" stroke-opacity=".45"/>
+          <rect x="169" y="61" width="22" height="17" fill="url(#liveHouseGlass)"/>
+          <path d="M180 61v17m-11-8h22" stroke="#1b324e" stroke-width="1.4"/>
+          <path d="M149 146h63l6 4h-75Z" fill="#435e7e"/>
+          <path d="M143 150h75v3h-75Z" fill="#1f3655"/>
+          <path d="m289 94 22-9m-22 23 22-9m-22 23 22-9m-22 23 22-9" stroke="#829dbf" stroke-opacity=".1"/>
+          <path d="M51 127v21m-2-24-5 12h12Z" fill="#1e3c55" stroke="#7798b8" stroke-opacity=".25"/>
+          <path d="m50 113-10 19h20Z" fill="#24465e"/><path d="m50 105-7 17h14Z" fill="#315771"/>
+          <path d="M315 118v22m0-27-7 17h14Z" fill="#203d54"/><path d="m315 105-9 20h18Z" fill="#2b4c65"/>
+          <path d="M67 147h38l8 6H70Z" fill="#172f46"/><path d="M236 148h44l-6 6h-47Z" fill="#172f46"/>
+          <path d="m69 147 4-4 4 4 5-6 4 6 5-4 5 4m143 1 5-6 5 6 6-4 5 4 7-6 5 6" fill="#35546b"/>
+        </g>
+                  <g id="houseLeds"></g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="card"><strong class="small">Next scheduled event</strong><div id="nextEvent" class="sub" style="margin-top:4px">Loading…</div><div id="homeSolarTimes" class="sub" style="margin-top:6px">Dusk — • Dawn —</div></div>
+  </section>
+
+  <section class="page" data-page="favorites">
+    <div class="panel"><strong>Scene Favorites</strong><div class="sub">Your approved built-in favorite scenes. Tap one to run it immediately.</div><div id="favoriteGrid" class="favoriteGrid"></div></div>
+    <div class="panel"><strong>Custom Shows</strong><div class="sub">Saved custom lighting shows. Preview one immediately, mark it as a favorite, or enable/disable its automatic runs.</div><div id="homeCustomLightList" class="presetList"><div class="sub">Loading custom shows…</div></div></div>
+  </section>
+
+  <section class="page" data-page="ai">
+    <style>
+      .aiVoiceStage{display:grid;justify-items:center;text-align:center;padding:18px 8px 8px}
+      .aiVoiceOrb{width:138px;height:138px;border-radius:50%;border:1px solid #79a8ff55;background:radial-gradient(circle at 35% 30%,#285895,#102c55 52%,#071526);box-shadow:0 0 0 8px #4b8cff10,0 18px 45px #0008;display:grid;place-items:center;color:#fff;cursor:pointer;transition:transform .18s ease,box-shadow .2s ease,background .2s ease}
+      .aiVoiceOrb svg{width:58px;height:58px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+      .aiVoiceOrb:not(:disabled):active{transform:scale(.96)}
+      .aiVoiceOrb.listening{background:radial-gradient(circle at 35% 30%,#2f8a62,#0e513b 55%,#071f18);box-shadow:0 0 0 11px #3be18b18,0 0 38px #42e39455}
+      .aiVoiceOrb.thinking{background:radial-gradient(circle at 35% 30%,#77613d,#4a3516 55%,#1e1407);box-shadow:0 0 0 11px #ffc45a16,0 0 38px #ffc45a42}
+      .aiVoiceOrb.speaking{background:radial-gradient(circle at 35% 30%,#6540a5,#31205b 55%,#130a29);box-shadow:0 0 0 11px #a675ff18,0 0 38px #a675ff50}
+      .aiVoiceOrb:disabled{opacity:.38;cursor:not-allowed}
+      .aiVoiceState{font-size:1.12rem;margin-top:13px}
+      .aiVoiceHint{max-width:430px;margin-top:5px}
+      .aiVoiceWave{display:flex;align-items:center;justify-content:center;gap:4px;height:28px;margin-top:7px}
+      .aiVoiceWave i{display:block;width:4px;height:7px;border-radius:5px;background:#8db6ff;opacity:.45}
+      .aiVoiceStage[data-state="listening"] .aiVoiceWave i,.aiVoiceStage[data-state="speaking"] .aiVoiceWave i{animation:aiWave .7s ease-in-out infinite alternate}
+      .aiVoiceWave i:nth-child(2){animation-delay:.1s}.aiVoiceWave i:nth-child(3){animation-delay:.2s}.aiVoiceWave i:nth-child(4){animation-delay:.3s}.aiVoiceWave i:nth-child(5){animation-delay:.4s}
+      @keyframes aiWave{from{height:5px;opacity:.4}to{height:24px;opacity:1}}
+      .aiVoiceTranscript{white-space:pre-wrap;line-height:1.45;margin-top:12px;min-height:48px}
+      .aiTextFallback summary{cursor:pointer;color:#a9c8ff;font-weight:600}
+      .aiUsageBox{min-width:220px;margin-top:5px}
+      .aiUsageLine{font-size:12px;color:#b9c7d8}
+      .aiUsageTrack{height:7px;margin-top:5px;border-radius:999px;background:#07111d;border:1px solid #26384d;overflow:hidden}
+      .aiUsageFill{height:100%;width:0;background:linear-gradient(90deg,#39d98a,#64a9ff);transition:width .25s ease}
+      .aiUsageNote{font-size:10px;color:#8191a5;margin-top:4px}
+    </style>
+    <div class="panel">
+      <div class="row between wraprow">
+        <div><strong>AI Lighting Designer</strong><div class="sub">Have a spoken conversation about the lights. The draft updates underneath while you talk.</div></div>
+        <span id="aiConnectionBadge" class="tag">Not connected</span>
+      </div>
+      <div id="aiKeySetup" style="margin-top:10px">
+        <div class="label">Cloudflare Workers AI — free tier</div>
+        <div style="display:grid;gap:8px">
+          <input id="aiCfAccountId" class="field" type="text" autocomplete="off" placeholder="Cloudflare Account ID">
+          <div class="row"><input id="aiApiKey" class="field" type="password" autocomplete="off" placeholder="Workers AI API token"><button id="aiConnectButton" class="btn primary" type="button">Connect Free AI</button></div>
+        </div>
+        <div class="sub" style="margin-top:5px">Uses Cloudflare Workers AI's free daily allocation. The token is stored encrypted on Oracle and is never returned to the browser.</div>
+      </div>
+      <div id="aiConnectedActions" class="row between wraprow" style="margin-top:9px;display:none">
+        <div><span id="aiProviderText" class="sub">Free Workers AI is connected to Jason Home.</span>
+          <div id="aiUsageBox" class="aiUsageBox"><div id="aiUsageText" class="aiUsageLine">AI today: calculating usage…</div><div class="aiUsageTrack"><div id="aiUsageFill" class="aiUsageFill"></div></div><div id="aiUsageNote" class="aiUsageNote"></div></div>
+        </div>
+        <button id="aiDisconnectButton" class="btn" type="button">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div id="aiVoiceStage" class="aiVoiceStage" data-state="idle">
+        <button id="aiVoiceButton" class="aiVoiceOrb" type="button" aria-label="Start voice conversation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7"/></svg>
+        </button>
+        <strong id="aiVoiceState" class="aiVoiceState">Tap the microphone to start talking</strong>
+        <div id="aiVoiceHint" class="sub aiVoiceHint">Speak naturally. When you stop talking, I’ll answer out loud and then listen again automatically.</div>
+        <div class="aiVoiceWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="row wraprow" style="justify-content:center;margin-top:7px">
+          <button id="aiVoiceEnd" class="btn" type="button" hidden>End voice conversation</button>
+          <button id="aiVoiceReplay" class="btn" type="button" disabled>Replay reply</button>
+          <button id="aiStartOver" class="btn danger" type="button">Start Over</button>
+        </div>
+      </div>
+      <div id="aiVoiceTranscript" class="note aiVoiceTranscript">Your last spoken turn and the AI’s reply will appear here.</div>
+      <div id="aiStatus" class="status"></div>
+
+      <details class="aiTextFallback" style="margin-top:12px">
+        <summary>Transcript &amp; typing fallback</summary>
+        <div id="aiChatLog" style="display:grid;gap:9px;max-height:300px;overflow:auto;padding:8px 2px"></div>
+        <div style="margin-top:8px">
+          <textarea id="aiMessage" class="field" rows="2" placeholder="Type here if you would rather not speak…"></textarea>
+          <div class="row between wraprow" style="margin-top:8px"><button id="aiNewConversation" class="btn" type="button">New conversation</button><button id="aiSendButton" class="btn primary" type="button">Send text</button></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel aiLiveBrightnessPanel">
+      <div class="row between"><div><strong><span aria-hidden="true">☀</span> AI Pattern Brightness</strong><div class="sub">Live brightness for all four Eufy strings • effects stay unchanged</div></div><output id="aiLiveBrightVal" for="aiLiveBright">75%</output></div>
+      <input id="aiLiveBright" type="range" min="1" max="100" value="75" aria-label="Live AI pattern brightness">
+      <div class="aiLiveBrightnessScale"><span>1% · Dim</span><span>100% · Full</span></div>
+      <div class="sub" id="aiBrightnessNote" role="status">Adjust brightness without restarting an AI pattern.</div>
+    </div>
+    <div class="panel" id="aiDraftPanel" hidden>
+      <div class="row between wraprow"><div><strong id="aiDraftName">AI Draft</strong><div id="aiDraftTarget" class="sub"></div></div><span id="aiDraftLayers" class="tag eventLayerCount"></span></div>
+      <div id="aiDraftColors" class="chips" style="margin-top:8px"></div>
+      <div id="aiDraftPreview" style="margin-top:8px"></div>
+      <div id="aiDraftLayerList" style="display:grid;gap:7px;margin-top:10px"></div>
+      <div class="row wraprow" style="margin-top:10px">
+        <button id="aiPreviewButton" class="btn" type="button">Preview on lights</button>
+        <button id="aiApplyOnceButton" class="btn primary" type="button">Apply one time</button>
+        <button id="aiResumeButton" class="btn" type="button">Resume Schedule</button>
+      </div>
+      <div class="sub" style="margin-top:7px">Apply one time replaces the matching scheduled event for that date only. The original schedule returns automatically afterward.</div>
+    </div>
+    <div class="panel">
+      <div><strong>One-Time AI Events</strong><div class="sub">These disappear automatically after their lighting night. Remove cancels one immediately.</div></div>
+      <div id="aiAppliedList" style="display:grid;gap:8px;margin-top:10px"><div class="sub">No one-time AI events applied.</div></div>
+    </div>
+  </section>
+
+  <section class="page" data-page="events">
+    <div class="panel">
+      <div class="row between wraprow"><div><strong>Events This Month</strong><div class="sub">Enable events and customize colors, effects and the full five-speed range.</div></div></div>
+            <div class="eventColorThemeBox">
+        <div><strong>Built-in Holiday Schedule</strong><div class="sub">Choose which built-in holiday calendar runs and which saved color palette it uses.</div></div>
+        <div class="eventColorThemeGrid" role="group" aria-label="Built-in holiday schedule">
+          <button id="eventColors1" class="eventColorThemeTile" type="button" data-theme="1" aria-pressed="false"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">1</span><span><strong>Major U.S. Government Holidays</strong><small>Basic Colors · original 9-color palette</small></span></button>
+          <button id="eventColors3028" class="eventColorThemeTile" type="button" data-theme="3.0.28" aria-pressed="false"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">9</span><span><strong>Expanded Holidays — Basic Colors</strong><small>9-color expanded holiday calendar</small></span></button>
+          <button id="eventColors3029" class="eventColorThemeTile" type="button" data-theme="3.0.29" aria-pressed="true"><span class="eventColorThemeCheck">✓</span><span class="eventColorThemeLetter">16</span><span><strong>Expanded Holidays — Expanded Colors</strong><small>16-color expanded holiday calendar</small></span></button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px"><input id="eventSearch" class="field" type="search" autocomplete="off" placeholder="Search all holidays & events" aria-label="Search all holidays and events"><button id="clearEventSearch" class="btn" type="button">Clear</button></div>
+      <div class="sub" style="margin-top:6px">Searches the selected built-in holiday calendar for the selected year.</div>
+      <div class="monthHead"><select id="monthSelect" class="field"></select><select id="yearSelect" class="field"></select></div>
+      <div id="overlapInfo" class="note"></div><div id="eventList" style="display:grid;gap:8px;margin-top:10px"></div>
+    </div>
+    <div class="panel"><strong>Custom Scheduled Lights</strong><div class="sub">Named custom lights assigned to this month. When another scheduled item lands on the same night, the universal Overlap Behavior setting decides how they share it.</div><div id="customScheduleList" style="display:grid;gap:8px;margin-top:10px"></div></div>
+  </section>
+
+  <section class="page" data-page="settings">
+    <div class="panel">
+      <strong>Overlap Behavior</strong><div class="sub">When any two or more scheduled items overlap on the same night</div>
+      <div class="label">Mode</div><select id="overlapMode" class="field"><option value="rotate">Rotate nightly</option><option value="split">Split the night</option><option value="combine">Combine colors</option></select>
+      <div id="overlapHelp" class="card small" style="margin-top:8px"></div>
+    </div>
+    <div class="panel">
+      <strong>Scheduling Rules</strong>
+      <div class="note"><strong>Schedule 1</strong> can start at a fixed time or automatically at civil dusk for ZIP 14772. <strong>Schedule 2</strong> starts at Schedule 1's END time, keeps the same scheduled scene at its own brightness, and can end at a fixed time or automatically at civil dawn for ZIP 14772.</div>
+      <div class="grid2" style="margin-top:10px"><label class="card row between" style="cursor:pointer"><span><strong>Schedule 1</strong><br><span class="sub">Normal evening schedule</span></span><input id="eventsMaster" type="checkbox" checked aria-label="Enable Schedule 1"></label><label class="card row between" style="cursor:pointer"><span><strong>Schedule 2</strong><br><span class="sub">Overnight continuation</span></span><input id="schedule2Master" type="checkbox" checked aria-label="Enable Schedule 2"></label></div>
+      <div class="grid2" style="margin-top:10px">
+        <label class="card row between" style="cursor:pointer"><span><strong>White Override 1</strong><br><span class="sub">Sunday–Thursday • 9:00–10:00 PM • All lights • Solid white • 100%</span></span><input id="whiteOverride1Master" type="checkbox" checked aria-label="Enable White Override 1"></label>
+        <label class="card row between" style="cursor:pointer"><span><strong>White Override 2</strong><br><span class="sub">Sunday–Thursday • 6:00 AM–civil dawn or 7:30 AM, whichever comes first • All lights • 100%</span></span><input id="whiteOverride2Master" type="checkbox" checked aria-label="Enable White Override 2"></label>
+      </div>
+      <div class="card" style="margin-top:10px">
+        <div class="label" style="margin-top:0">Schedule 1 START mode</div>
+        <select id="schedule1StartMode" class="field"><option value="fixed">Fixed time</option><option value="dusk">Dusk — automatic for 14772</option></select>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #c3d5ff20">
+          <div class="label" style="margin-top:0">Fixed START time</div>
+          <input id="onTime" type="time" value="17:00" class="field">
+        </div>
+      </div>
+      <div><div class="label">Schedule 1 END / Schedule 2 START</div><input id="offTime" type="time" value="23:00" class="field"></div>
+      <div class="card" style="margin-top:10px">
+        <div class="label" style="margin-top:0">Schedule 2 END mode</div>
+        <select id="schedule2EndMode" class="field"><option value="dawn">Dawn — automatic for 14772</option><option value="fixed">Fixed time</option></select>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #c3d5ff20">
+          <div class="label" style="margin-top:0">Fixed END time</div>
+          <input id="schedule2EndTime" type="time" value="06:00" class="field">
+        </div>
+      </div>
+      <div class="label">Schedule 2 brightness <span id="schedule2BrightnessVal" class="muted">10%</span></div><input id="schedule2Brightness" type="range" min="1" max="100" step="1" value="10">
+      <div class="card small" style="margin-top:9px"><strong>Schedule 2:</strong> <span id="schedule2Summary">Starts at Schedule 1 end • 10% • ends at dawn</span><br><span class="sub">Automatic dawn/dusk location: ZIP 14772 • Randolph, NY.</span></div>
+      <div class="grid2"><div><div class="label">Holiday starts before</div><select id="leadDays" class="field"><option value="0">0 days</option><option value="1">1 day</option><option value="2" selected>2 days</option><option value="3">3 days</option><option value="4">4 days</option><option value="5">5 days</option><option value="6">6 days</option><option value="7">7 days</option><option value="8">8 days</option><option value="9">9 days</option><option value="10">10 days</option><option value="11">11 days</option><option value="12">12 days</option><option value="13">13 days</option><option value="14">14 days</option></select></div><div><div class="label">Continues after</div><select id="trailDays" class="field"><option value="0" selected>0 days</option><option value="1">1 day</option><option value="2">2 days</option><option value="3">3 days</option><option value="4">4 days</option><option value="5">5 days</option><option value="6">6 days</option><option value="7">7 days</option></select></div></div>
+      <div class="label">Time zone</div><select id="tz" class="field"><option value="EST5EDT,M3.2.0,M11.1.0" selected>Eastern Time — automatic DST</option><option value="CST6CDT,M3.2.0,M11.1.0">Central Time — automatic DST</option><option value="MST7MDT,M3.2.0,M11.1.0">Mountain Time — automatic DST</option><option value="PST8PDT,M3.2.0,M11.1.0">Pacific Time — automatic DST</option></select>
+      <button id="saveSettings" class="btn primary" style="width:100%;margin-top:12px">Save Schedule Settings</button>
+    </div>
+
+    <div class="panel">
+      <strong>Eufy Devices</strong><div class="sub">Pool, House, Garage and Shed are the only authorized lights. Cloud refresh validates only these four known Eufy strings; Android Bluetooth is disabled in this build.</div>
+      <div class="card" style="margin-top:10px"><div id="bleStatus" class="small">Not connected</div><div id="bleMeta" class="sub">Protocol: Auto</div><div id="selectedControllers" class="bleList" style="margin-top:8px"></div><div class="grid5" style="margin-top:8px"><button id="targetAll" class="btn primary">All</button><button id="targetPool" class="btn">Pool</button><button id="targetHouse" class="btn">House</button><button id="targetGarage" class="btn">Garage</button><button id="targetShed" class="btn">Shed</button></div></div>
+      <button id="scanBle" class="btn" style="width:100%;margin-top:10px">Refresh Eufy Cloud Lights</button><div id="bleList" class="bleList"></div>
+
+    </div>
+
+    
+
+    <div class="panel"><strong>Priority</strong><div class="sub" style="display:grid;gap:4px;margin-top:8px"><div>1. Manual override</div><div>2. White Override 1 / White Override 2 when enabled and active (Sunday–Thursday only)</div><div>3. Normal scheduled items — built-in events, monthly events, custom schedules and promoted Factory events</div><div style="margin-top:5px">If two or more normal scheduled items land on the same night, the Overlap Behavior setting controls them: Rotate nightly, Split the night, or Combine colors.</div></div></div>
+  </section>
+
+  <div id="statusMsg" class="status" aria-live="polite"></div>
+</div>
+
+<div id="rgbPickerOverlay" class="rgbPickerOverlay">
+  <div class="rgbPickerCard">
+    <div class="row" style="justify-content:space-between;align-items:center"><strong>RGB Color Wheel</strong><button id="rgbClose" class="btn">Done</button></div>
+    <div class="sub">Choose hue and saturation on the wheel. Use brightness or exact RGB/HEX values below.</div>
+    <div id="rgbWheel" class="rgbWheel"><div id="rgbWheelMarker" class="rgbWheelMarker"></div></div>
+    <div class="label">Color brightness</div><input id="rgbValue" type="range" min="0" max="100" value="100">
+    <div id="rgbPreview" class="pickerPreview"></div>
+    <div class="rgbReadout"><label>R<input id="rgbR" type="number" min="0" max="255"></label><label>G<input id="rgbG" type="number" min="0" max="255"></label><label>B<input id="rgbB" type="number" min="0" max="255"></label></div>
+    <div class="label">HEX</div><input id="rgbHex" class="rgbHex" maxlength="7" value="#FFFFFF">
+    <div class="note">Favorite Colors are the firmware-locked master palette. Changing the palette requires a firmware update.</div>
+    <div class="label">Favorite Colors</div><div id="savedColorGrid" class="savedColorGrid"></div>
+  </div>
+</div>
+
+<script>const API_MODE=!!window.AndroidAnderson||"http:"===location.protocol||"https:"===location.protocol,$=e=>document.getElementById(e),status=e=>$("statusMsg").textContent=e;async function api(e,t={},n=12e3){if(!API_MODE)throw new Error("preview");const o=new Headers(t.headers||{});const{response:a,text:s}=await controllerRequest(e,{...t,headers:o},n);let r={};try{r=s?JSON.parse(s):{}}catch(e){}if(!a.ok)throw new Error(r.error||s||a.statusText);return r}async function post(e,t,n=12e3){return api(e,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(t)},n)}document.querySelectorAll(".tab").forEach(e=>e.addEventListener("click",()=>{e.hidden||(document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t===e)),document.querySelectorAll(".page").forEach(t=>t.classList.toggle("active",t.dataset.page===e.dataset.tab)),"home"===e.dataset.tab&&loadHomeCustomLights(),"ai"===e.dataset.tab&&loadAi(),"events"===e.dataset.tab&&(loadEventColorTheme(),loadEvents(),loadCustomSchedules()),"settings"===e.dataset.tab&&loadState())}));const houseLeds=[],houseGroup=$("houseLeds"),houseScene=houseGroup.closest(".housePreview"),pts=[[58,82],[72,76],[86,69],[100,62],[114,55],[128,49],[142,42],[156,35],[170,28],[184,28],[198,35],[212,42],[226,49],[240,55],[254,62],[268,69],[282,76],[300,82]];pts.forEach(([e,t])=>{const n=document.createElementNS("http://www.w3.org/2000/svg","circle");n.setAttribute("cx",e),n.setAttribute("cy",t),n.setAttribute("r","5"),n.setAttribute("class","houseLed"),houseGroup.appendChild(n),houseLeds.push(n)});const NAMED_COLOR_PALETTE=[
+{name:"Red",reference:"#FF0000",output:"#FF0000"},{name:"Crimson",reference:"#DC143C",output:"#DC143C"},{name:"Burgundy",reference:"#87002D",output:"#87002D"},
+{name:"Orange",reference:"#FF0D00",output:"#FF0D00"},{name:"True Orange",reference:"#FF7A00",output:"#FF7A00"},{name:"Coral",reference:"#FF6F61",output:"#FF6F61"},
+{name:"Pink",reference:"#FF0024",output:"#FF0024"},{name:"Hot Pink",reference:"#FF4FA3",output:"#FF4FA3"},{name:"Rose",reference:"#FF507A",output:"#FF507A"},{name:"Magenta",reference:"#FF00FF",output:"#FF00FF"},
+{name:"Yellow",reference:"#E08700",output:"#E08700"},{name:"Amber Gold",reference:"#FFA000",output:"#FFA000"},{name:"Gold",reference:"#FFD700",output:"#FFD700"},{name:"Bronze",reference:"#CD7F32",output:"#CD7F32"},{name:"Brown",reference:"#8B4513",output:"#8B4513"},
+{name:"Green",reference:"#28FF00",output:"#28FF00"},{name:"Lime",reference:"#7CFF00",output:"#7CFF00"},{name:"Emerald",reference:"#00C875",output:"#00C875"},{name:"Forest Green",reference:"#0B6623",output:"#0B6623"},
+{name:"Cyan",reference:"#00BD4C",output:"#00BD4C"},{name:"Teal",reference:"#00B4B4",output:"#00B4B4"},{name:"Turquoise",reference:"#40E0D0",output:"#40E0D0"},{name:"Aqua",reference:"#00FFFF",output:"#00FFFF"},
+{name:"Sky Blue",reference:"#0096FF",output:"#0096FF"},{name:"Blue",reference:"#0D00FF",output:"#0D00FF"},{name:"Royal Blue",reference:"#245BFF",output:"#245BFF"},{name:"Navy Blue",reference:"#001478",output:"#001478"},
+{name:"Indigo",reference:"#4B0082",output:"#4B0082"},{name:"Purple",reference:"#5B00E6",output:"#5B00E6"},{name:"Deep Purple",reference:"#6A0DAD",output:"#6A0DAD"},{name:"Lavender",reference:"#B464FF",output:"#B464FF"},
+{name:"White",reference:"#FFFFFA",output:"#FFFFFA"},{name:"Warm White RGB",reference:"#FFD6A1",output:"#FFD6A1"},{name:"Neutral White RGB",reference:"#FFF4E5",output:"#FFF4E5"},{name:"Silver Gray",reference:"#A0A5AF",output:"#A0A5AF"},{name:"Black / Off",reference:"#000000",output:"#000000"}
+];let savedColors=[],savedColorLabels=[];const SEMANTIC_COLOR_VISUAL={Red:"#FF0000",Crimson:"#DC143C",Burgundy:"#800020",Orange:"#FF7A00","True Orange":"#FF7A00",Coral:"#FF6F61",Pink:"#FF3B9D","Hot Pink":"#FF4FA3",Rose:"#FF507A",Magenta:"#FF00FF",Yellow:"#FFD400","Amber Gold":"#FFB000",Gold:"#FFD700",Bronze:"#CD7F32",Brown:"#8B4513",Green:"#00C853",Lime:"#7CFF00",Emerald:"#00C875","Forest Green":"#0B6623",Cyan:"#00D9FF",Teal:"#00B8A9",Turquoise:"#40E0D0",Aqua:"#00FFFF","Sky Blue":"#4DB8FF",Blue:"#0066FF","Royal Blue":"#245BFF","Navy Blue":"#001F5B",Indigo:"#4B0082",Purple:"#8A2BE2","Deep Purple":"#6A0DAD",Lavender:"#B57EDC",White:"#FFFFFF","Warm White RGB":"#FFD6A1","Neutral White RGB":"#FFF4E5","Silver Gray":"#A7ADB5","Black / Off":"#000000"};function semanticColorName(e){const t=normHex(e);if(void 0!==savedColors&&void 0!==savedColorLabels&&savedColors.length)for(let e=0;e<savedColors.length;e++)if(normHex(savedColors[e])===t&&savedColorLabels[e])return savedColorLabels[e];const n=NAMED_COLOR_PALETTE.find(e=>normHex(e.output)===t||normHex(e.reference)===t);if(n)return n.name;const o=hexRgb(t);let a=NAMED_COLOR_PALETTE[0],s=1/0;return(void 0!==savedColors&&savedColors.length?savedColors:NAMED_COLOR_PALETTE.map(e=>e.output)).forEach((e,t)=>{const n=hexRgb(normHex(e)),r=(o[0]-n[0])**2+(o[1]-n[1])**2+(o[2]-n[2])**2;r<s&&(s=r,a=NAMED_COLOR_PALETTE[t]||a)}),a?.name||"Custom Color"}function semanticColorVisual(e,t=""){const n=t||semanticColorName(e);return SEMANTIC_COLOR_VISUAL[n]||SEMANTIC_COLOR_VISUAL[semanticColorName(e)]||normHex(e)}function semanticColorInk(e,t=""){const n=hexRgb(semanticColorVisual(e,t));return 299*n[0]+587*n[1]+114*n[2]>155e3?"#071019":"#FFFFFF"}function namedHouseColor(e){const t=normHex(e);if(savedColors.length)for(let e=0;e<savedColors.length;e++)if(normHex(savedColors[e])===t&&savedColorLabels[e]&&SEMANTIC_COLOR_VISUAL[savedColorLabels[e]])return SEMANTIC_COLOR_VISUAL[savedColorLabels[e]];const n=NAMED_COLOR_PALETTE.find(e=>normHex(e.output)===t||normHex(e.reference)===t);return n&&SEMANTIC_COLOR_VISUAL[n.name]||displayColor(e)}const LED_REFERENCE=Object.fromEntries(NAMED_COLOR_PALETTE.map(e=>[e.output,e.reference])),LED_COLOR_NAME=Object.fromEntries(NAMED_COLOR_PALETTE.map(e=>[e.output,e.name])),REFERENCE_LED=Object.fromEntries(NAMED_COLOR_PALETTE.flatMap(e=>[[e.reference,e.output],[e.output,e.output]])),EXPLICIT_LED={"#E08700":"#E08700","#FF3B30":"#FF0000","#EF4444":"#FF0000","#DC2626":"#FF0000","#EF233C":"#FF0000","#FF1744":"#FF0000","#E11D48":"#FF0000","#BF0005":"#FF0000","#FF020C":"#FF0000","#FF2900":"#FF0D00","#FF3000":"#FF0D00","#FF7A00":"#FF0D00","#F97316":"#FF0D00","#FF6B35":"#FF0D00","#FF6E00":"#E08700","#F18900":"#FF0D00","#E44300":"#FF0D00","#92400E":"#FF0D00","#360500":"#FF0D00","#220200":"#FF0D00","#FFDA7F":"#E08700","#FFF1C7":"#E08700","#FACC15":"#E08700","#F59E0B":"#E08700","#FFFFFF":"#FFFFFA","#4DFF00":"#28FF00","#00FF00":"#28FF00","#2AD555":"#28FF00","#34C759":"#28FF00","#16A34A":"#28FF00","#00BD4C":"#28FF00","#00FFFF":"#28FF00","#00664D":"#28FF00","#14B8A6":"#28FF00","#2DD4BF":"#28FF00","#32D7D5":"#28FF00","#05008A":"#0D00FF","#0000FF":"#0D00FF","#004BC6":"#0D00FF","#377CF9":"#0D00FF","#A7C8FC":"#0D00FF","#0A84FF":"#0D00FF","#3B82F6":"#0D00FF","#23018C":"#5B00E6","#7A62F9":"#5B00E6","#C4B5FD":"#5B00E6","#FF1560":"#FF0024","#EF4F98":"#FF0024","#FF00FF":"#FF0024","#FF2D55":"#FF0024","#F9A8D4":"#FF0024"},LEGACY_DISPLAY={"#FF0000":"#FF0000","#FF2900":"#FF0D00","#FF6E00":"#E08700","#4DFF00":"#28FF00","#00BD4C":"#28FF00","#05008A":"#0D00FF","#23018C":"#5B00E6","#BF0005":"#FF0000","#FFFFFF":"#FFFFFA","#360500":"#FF0D00","#220200":"#FF0D00"};function normalizeLedColor(e){const t=normHex(e);return REFERENCE_LED[t]||EXPLICIT_LED[t]||t}function displayColor(e){const t=String(e||"").toUpperCase();return LED_REFERENCE[t]||LEGACY_DISPLAY[t]||e}function displayLabel(e){return semanticColorName(e)}const MASTER_FAVORITE_COLORS=NAMED_COLOR_PALETTE.map(e=>e.output);function favoriteName(e){return semanticColorName(e)}function favoriteInk(e){return semanticColorInk(e)}function masterFavoriteTile(e,t,n,o=""){const a=document.createElement("button");a.type="button",a.className="savedSwatch";const s=o||favoriteName(e);return a.style.background=semanticColorVisual(e,s),a.style.color=semanticColorInk(e,s),a.textContent=s,a.setAttribute("aria-label",t+" "+s),a.title=t+" "+s,a.onclick=n,a}let power=!0,brightness=100,speed=1,tick=0,running={name:"Yellow",colors:["#E08700"],effect:"Jump"},preview={...running,colors:[...running.colors]};function speedInterval(e){return[0,1400,750,380,190,90][+e]||380}
+function blendHex(e,t,n){const rgb=e=>{const m=String(e).match(/\d+/g);return m&&String(e).startsWith("rgb")?m.slice(0,3).map(Number):[parseInt(e.slice(1,3),16),parseInt(e.slice(3,5),16),parseInt(e.slice(5,7),16)]},o=rgb(e),a=rgb(t);return`rgb(${Math.round(o[0]+(a[0]-o[0])*n)},${Math.round(o[1]+(a[1]-o[1])*n)},${Math.round(o[2]+(a[2]-o[2])*n)})`}
+function previewEffectName(e){const s=String(e||"Static");return({Solid:"Static","Solid / Static":"Static",Jump:"Cycle",Breath:"Breathe",Strobe:"Twinkle",Chase:"Flow1","Gradient Sweep":"Flow1","Candy Cane":"Flow1","Twinkle / Sparkle":"Twinkle","Wipe / Fill":"Streamlight","Meteor / Comet":"Streamlight","Rainbow Flow":"Flow1","Pulse Wave":"Breathe"}[s]||s)}
+function previewHash(e){const x=Math.sin(e*12.9898+78.233)*43758.5453;return x-Math.floor(x)}
+function segmentedPaletteIndex(scene,index,count,colorCount,motion=0){
+  const raw=scene?.pattern?.blocks;
+  if(colorCount<2||!Array.isArray(raw)||!raw.length)return ((Math.trunc(index+motion)%colorCount)+colorCount)%colorCount;
+  const blocks=Array.from({length:colorCount},(_,i)=>Math.max(1,Math.min(12,Math.round(Number(raw[i%raw.length])||1)))),period=blocks.reduce((a,b)=>a+b,0);
+  let logical=scene?.pattern?.mirror?Math.min(index,Math.max(0,count-1-index)):index;
+  let p=((Math.trunc(logical+Number(scene?.pattern?.offset||0)+motion)%period)+period)%period;
+  for(let i=0;i<blocks.length;i++){if(p<blocks[i])return i;p-=blocks[i]}
+  return 0;
+}
+function paint(e,t,n,o,v=!1,f=!1){const p=e.colors&&e.colors.length?e.colors:["#0D00FF"],g=p.length&&p.every(e=>"#000000"===normHex(e)),a=p.map(e=>v?namedHouseColor(e):displayColor(e)),s=previewEffectName(e.effect),r=a.length,x=o>1?t/(o-1):0;let motion=0,c=a[segmentedPaletteIndex(e,t,o,r)],d=n,u=1;if(g)return{c:"#000000",a:0,s:1};if(!power&&!f)return{c:"#2a313b",a:.35,s:1};
+if("Static"===s)c=a[segmentedPaletteIndex(e,t,o,r)];
+else if("Cycle"===s){const q=Math.floor(tick);c=a[(segmentedPaletteIndex(e,t,o,r)+q)%r]}
+else if("Flow1"===s||"Flow2"===s){const dir="Flow1"===s?-1:1;motion=dir*Math.floor(tick*.9);c=a[segmentedPaletteIndex(e,t,o,r,motion)]}
+else if("Streamlight"===s){const head=((tick*.16)%1+1)%1,dist=Math.min(Math.abs(x-head),1-Math.abs(x-head)),trail=Math.max(0,1-dist/.28);motion=Math.floor(tick*.7);c=a[segmentedPaletteIndex(e,t,o,r,motion)],d=n*(.08+.92*trail*trail),u=.92+.14*trail}
+else if("Twinkle"===s){const step=Math.floor(tick/2.8),spark=previewHash(t*37+step*101)>.76;c=a[segmentedPaletteIndex(e,t,o,r)],d=n*(spark?(.72+.28*previewHash(t+step*7)):.16),u=spark?1.08:.96}
+else if("Breathe"===s){const q=.12+.88*(.5-.5*Math.cos((tick%4)/4*2*Math.PI));c=a[segmentedPaletteIndex(e,t,o,r)],d=n*q}
+else c=a[segmentedPaletteIndex(e,t,o,r)];return{c,a:d,s:u}}
+const previewPages={home:document.querySelector('[data-page="home"]')};let previousStripPaint="",previousHousePaint="",animationTimer=null;
+function animationDelayFor(e){const t=speedInterval(speed),s=previewEffectName(e);return"Static"===s?1000:"Cycle"===s?Math.max(100,t):"Twinkle"===s?Math.max(260,Math.floor(t*.55)):"Breathe"===s?70:"Streamlight"===s?70:75}
+function nextAnimationDelay(){if(document.hidden)return 1000;let e=1000,t=!1;if(previewPages.home?.classList.contains("active")){t=!0;e=Math.min(e,animationDelayFor(running.effect))}return t?e:1000}
+function scheduleAnimation(e=nextAnimationDelay()){null===animationTimer&&(animationTimer=setTimeout(()=>{animationTimer=null;animate(performance.now())},Math.max(16,e)))}
+function kickAnimation(){null!==animationTimer&&(clearTimeout(animationTimer),animationTimer=null);animate(performance.now())}
+function renderPreviewLeds(list,scene,level,house){const states=list.map((_,i)=>paint(scene,i,level,list.length,house)),key=JSON.stringify([states,power]);if(house?key===previousHousePaint:key===previousStripPaint)return;if(house)previousHousePaint=key;else previousStripPaint=key;states.forEach((e,i)=>{const node=list[i],glow=power?`0 0 ${Math.round(3+(house?8:12)*e.a)}px ${e.c}`:"none";if(house){node.setAttribute("fill",e.c);node.setAttribute("opacity",Math.max(.08,e.a));node.style.filter=power?`drop-shadow(${glow})`:"none"}else{node.style.background=e.c;node.style.opacity=Math.max(.06,e.a);node.style.boxShadow=glow;node.style.transform=`scale(${e.s})`}});if(house&&states.length){const mid=states[Math.floor(states.length/2)],avg=states.reduce((n,e)=>n+e.a,0)/states.length;houseScene.style.setProperty("--v3-live-color",mid.c);houseScene.style.setProperty("--v3-live-glow",power?.48*Math.max(.02,avg):0)}}
+function animate(e){if(document.hidden){scheduleAnimation(1000);return}tick=e/speedInterval(speed);const h=1;if(previewPages.home?.classList.contains("active"))renderPreviewLeds(houseLeds,running,h,!0);scheduleAnimation()}
+
+const eventMiniRegistry=new Map();
+function miniColor(v){if(typeof v==="number")return"#"+(v&0xffffff).toString(16).padStart(6,"0").toUpperCase();return normHex(String(v||"#FFFFFF"))}
+function eventMiniInterval(v){return[0,2000,1500,1000,750,500,417,333,250,175,100][Math.max(1,Math.min(10,Math.round(+v||1)))]||1000}
+function eventMiniPaint(scene,index,count,now){
+  const colors=(scene.colors?.length?scene.colors:["#FFFFFF"]).map(miniColor),effect=previewEffectName(scene.effect),r=colors.length,x=count>1?index/(count-1):0,localTick=now/eventMiniInterval(scene.speed||1);
+  let motion=0,c=colors[segmentedPaletteIndex(scene,index,count,r)],a=1,scale=1;
+  if(effect==="Cycle")c=colors[(segmentedPaletteIndex(scene,index,count,r)+Math.floor(localTick))%r];
+  else if(effect==="Flow1"||effect==="Flow2"){const dir=effect==="Flow1"?-1:1;motion=dir*Math.floor(localTick*.9);c=colors[segmentedPaletteIndex(scene,index,count,r,motion)]}
+  else if(effect==="Streamlight"){const head=((localTick*.16)%1+1)%1,dist=Math.min(Math.abs(x-head),1-Math.abs(x-head)),trail=Math.max(0,1-dist/.28);motion=Math.floor(localTick*.7);c=colors[segmentedPaletteIndex(scene,index,count,r,motion)];a=.08+.92*trail*trail;scale=.92+.14*trail}
+  else if(effect==="Twinkle"){const step=Math.floor(localTick/2.8),spark=previewHash(index*37+step*101)>.76;c=colors[segmentedPaletteIndex(scene,index,count,r)];a=spark ? .72+.28*previewHash(index+step*7) : .16;scale=spark?1.08:.96}
+  else if(effect==="Breathe"){const q=.12+.88*(.5-.5*Math.cos((localTick%4)/4*2*Math.PI));c=colors[segmentedPaletteIndex(scene,index,count,r)];a=q}
+  return{c,a,scale};
+}
+window.createEventMiniPreview=function(scene){
+  const host=document.createElement("div");host.className="eventMiniPreview";host.setAttribute("aria-label",(scene.name||"Event")+" animated preview");
+  const dots=[];for(let i=0;i<18;i++){const dot=document.createElement("span");host.appendChild(dot);dots.push(dot)}
+  eventMiniRegistry.set(host,{scene:{...scene,colors:[...(scene.colors||[])]},dots});return host;
+};
+window.createLayeredMiniPreview=function(name,scenes){
+  const clean=(Array.isArray(scenes)?scenes:[]).filter(Boolean).map(x=>({...x,colors:[...(x.colors||[])]}));
+  const host=document.createElement("div");host.className="eventMiniPreview";host.setAttribute("aria-label",(name||"Layered event")+" animated eight-layer preview");
+  const dots=[];for(let i=0;i<18;i++){const dot=document.createElement("span");host.appendChild(dot);dots.push(dot)}
+  eventMiniRegistry.set(host,{scenes:clean.length?clean:[{colors:["#FFFFFF"],effect:"Static",speed:1}],dots});return host;
+};
+if(!document.getElementById("eventMiniPreviewStyle")){const st=document.createElement("style");st.id="eventMiniPreviewStyle";st.textContent=".eventMiniPreview{display:grid;grid-template-columns:repeat(18,1fr);gap:2px;align-items:center;margin:7px 0 3px;padding:5px 6px;border-radius:8px;background:#050c17;border:1px solid #7890b626;min-height:18px;overflow:hidden}.eventMiniPreview span{display:block;aspect-ratio:1;border-radius:50%;background:#263649;box-shadow:none;transition:background .12s linear,opacity .12s linear,transform .12s linear,box-shadow .12s linear}.eventLayerCount{color:#ff4a4a!important;border-color:#ff4a4a88!important;background:#ff4a4a10!important;font:inherit!important;font-weight:700!important}";document.head.appendChild(st)}
+setInterval(()=>{if(document.hidden)return;const now=performance.now();for(const [host,item] of eventMiniRegistry){if(!host.isConnected){eventMiniRegistry.delete(host);continue}const box=host.getBoundingClientRect();if(box.bottom<0||box.top>innerHeight)continue;const scene=item.scenes?item.scenes[Math.floor(now/4000)%item.scenes.length]:item.scene;item.dots.forEach((dot,i)=>{const p=eventMiniPaint(scene,i,item.dots.length,now);dot.style.background=p.c;dot.style.opacity=Math.max(.08,p.a);dot.style.transform=`scale(${p.scale})`;dot.style.boxShadow=`0 0 ${Math.round(2+5*p.a)}px ${p.c}`})}},120);
+function setRunning(e,t,n,p=null){running={name:e,colors:[...t],effect:n,pattern:p||null},preview={name:e,colors:[...t],effect:n,pattern:p||null};$("nowTheme").textContent=e;const h=$("homeEffect");h&&(h.value=n,h._syncEffectButtons?.());kickAnimation()}
+function setPreview(e,t,n,p=null){preview={name:e,colors:[...t],effect:n,pattern:p||null};kickAnimation()}
+async function manual(e){void 0!==e.power&&(power=e.power),void 0!==e.brightness&&(brightness=e.brightness),void 0!==e.speed&&(speed=e.speed),(e.colors||e.effect||e.name||e.pattern)&&setRunning(e.name||running.name||"Manual",e.colors||running.colors,e.effect||running.effect||"Jump",e.pattern||null);const on=$("homePowerOn"),off=$("homePowerOff"),hb=$("homeBrightness"),hbv=$("homeBrightVal");on&&(on.classList.toggle("primary",power),on.setAttribute("aria-pressed",String(!!power)));off&&(off.classList.toggle("primary",!power),off.setAttribute("aria-pressed",String(!power)));hb&&(hb.value=brightness);hbv&&(hbv.textContent=brightness+"%");$("aiLiveBright")&&($("aiLiveBright").value=brightness);$("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");syncSpeedControls(speed),kickAnimation(),status(API_MODE?"Sending to Oracle…":"Preview mode — control simulated.");if(!API_MODE)return;try{const accepted=await post("/api/control",e);if(Object.keys(e).length===1&&e.brightness!==undefined){status("Brightness "+brightness+"% — "+(accepted.queued?"queued on Oracle":"accepted by Oracle")+" · colors and effect unchanged");$("aiBrightnessNote")&&($("aiBrightnessNote").textContent=brightness+"% "+(accepted.queued?"queued for Eufy":"accepted by Oracle")+" · AI animation continues");}else{applyState(accepted);status("Manual override active.");}}catch(t){status("Control failed: "+t.message)}}
+$("homePowerOn")?.addEventListener("click",()=>manual({power:!0}));
+$("homePowerOff")?.addEventListener("click",()=>manual({power:!1}));
+let homeBrightTimer=null,homeBrightSentLevel=null,homeBrightSentAt=0;
+function flushHomeBrightness(){
+  clearTimeout(homeBrightTimer);
+  const value=Number($("homeBrightness")?.value||brightness);
+  if(homeBrightSentLevel===value&&Date.now()-homeBrightSentAt<800)return;
+  homeBrightSentLevel=value;homeBrightSentAt=Date.now();
+  void manual({brightness:value});
+}
+$("homeBrightness")?.addEventListener("input",e=>{
+  brightness=+e.target.value;$("homeBrightVal").textContent=e.target.value+"%";
+  $("aiLiveBright")&&($("aiLiveBright").value=brightness);
+  $("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");
+  kickAnimation();
+  clearTimeout(homeBrightTimer);
+  homeBrightTimer=setTimeout(flushHomeBrightness,210);
+});
+$("homeBrightness")?.addEventListener("change",flushHomeBrightness);
+let aiBrightnessTimer=null,aiBrightnessRequest=0;
+function previewBrightnessChanged(value,send=true){
+  brightness=Math.max(1,Math.min(100,Math.round(Number(value)||1)));
+  $("homeBrightness")&&($("homeBrightness").value=brightness);
+  $("homeBrightVal")&&($("homeBrightVal").textContent=brightness+"%");
+  $("aiLiveBright")&&($("aiLiveBright").value=brightness);
+  $("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%");
+  $("aiBrightnessNote")&&($("aiBrightnessNote").textContent="Brightness "+brightness+"% · sending without changing the AI effect or palette…");
+  kickAnimation();
+  if(send){
+    clearTimeout(aiBrightnessTimer);
+    const revision=++aiBrightnessRequest;
+    aiBrightnessTimer=setTimeout(()=>{
+      if(revision!==aiBrightnessRequest)return;
+      manual({brightness});
+    },180);
+  }
+}
+$("aiLiveBright")?.addEventListener("input",e=>previewBrightnessChanged(e.target.value));
+$("aiLiveBright")?.addEventListener("change",e=>previewBrightnessChanged(e.target.value));
+$("homeEffect")?.addEventListener("change",e=>manual({effect:e.target.value}));
+let speedSyncTimer=null,pendingSpeed=null;const speedNames=["Very Slow","Slow","Normal","Fast","Very Fast"];function syncSpeedControls(e){speed=+e,["speed","homeSpeed","eventsSpeed"].forEach(e=>{$(e)&&($(e).value=speed);const t=$("speed"===e?"speedVal":e+"Val");t&&(t.textContent=speedNames[speed-1]||"Normal")}),kickAnimation()}function sendPendingSpeed(){if(clearTimeout(speedSyncTimer),null===pendingSpeed)return;const e=pendingSpeed;pendingSpeed=null,manual({speed:e})}function bindSpeedControl(e){const t=$(e);t.addEventListener("input",()=>{syncSpeedControls(t.value),pendingSpeed=speed,clearTimeout(speedSyncTimer),speedSyncTimer=setTimeout(sendPendingSpeed,160)}),t.addEventListener("change",sendPendingSpeed)}const monthNames=["January","February","March","April","May","June","July","August","September","October","November","December"],now=new Date;monthNames.forEach((e,t)=>{const n=new Option(e,t+1);t===now.getMonth()&&(n.selected=!0),$("monthSelect").add(n)});const lastSupportedYear=2037;for(let e=now.getFullYear();e<=Math.min(now.getFullYear()+10,2037);e++)$("yearSelect").add(new Option(e,e));let eventSearchTimer=null,eventRequestGeneration=0;function invalidateEventRequest(){return++eventRequestGeneration}function refreshEventView(){loadEvents(invalidateEventRequest()),loadCustomSchedules()}async function loadEvents(e=eventRequestGeneration){const t=($("eventSearch")?.value||"").trim().toLowerCase();if(t)return searchAllEvents(t,e);const n=$("yearSelect").value,o=$("monthSelect").value;let a;try{a=await api(`/api/events?year=${n}&month=${o}`)}catch(t){if(e!==eventRequestGeneration)return;return void($("overlapInfo").textContent="Unable to load events. Reconnect and try again.")}e!==eventRequestGeneration||n!==$("yearSelect").value||o!==$("monthSelect").value||($("eventSearch").value||"").trim()||(renderEvents(a.events||[]),$("overlapInfo").textContent=a.overlap||"No overlapping month-long events.")}async function searchAllEvents(e,t){const n=$("yearSelect").value;$("overlapInfo").textContent="Searching the full calendar…";try{const o=await api(`/api/events/search?year=${encodeURIComponent(n)}&q=${encodeURIComponent(e)}`);if(t!==eventRequestGeneration||e!==($("eventSearch").value||"").trim().toLowerCase()||n!==$("yearSelect").value)return;const a=o.events||[];renderEvents(a);const s=o.truncated?" Showing the first 96 matches; refine your search.":"";$("overlapInfo").textContent=a.length?`${a.length}${o.truncated?"+":""} result${1===a.length?"":"s"} for “${$("eventSearch").value.trim()}” across ${n}.${s}`:`No holiday or event matches “${$("eventSearch").value.trim()}” in ${n}.`}catch(e){if(t!==eventRequestGeneration)return;$("overlapInfo").textContent="Unable to search the calendar. Reconnect and try again."}}$("monthSelect").addEventListener("change",refreshEventView),$("yearSelect").addEventListener("change",refreshEventView),$("eventSearch").addEventListener("input",()=>{const e=invalidateEventRequest();clearTimeout(eventSearchTimer),eventSearchTimer=setTimeout(()=>loadEvents(e),180)}),$("clearEventSearch").addEventListener("click",()=>{$("eventSearch").value="";const e=invalidateEventRequest();clearTimeout(eventSearchTimer),loadEvents(e),$("eventSearch").focus()});let activeColorChip=null,pickerH=0,pickerS=0,pickerV=1;function clamp255(e){return Math.max(0,Math.min(255,Math.round(+e||0)))}function normHex(e){return(e=(e||"#FFFFFF").trim().toUpperCase()).startsWith("#")||(e="#"+e),/^#[0-9A-F]{6}$/.test(e)?e:"#FFFFFF"}function hexRgb(e){return e=normHex(e),[parseInt(e.slice(1,3),16),parseInt(e.slice(3,5),16),parseInt(e.slice(5,7),16)]}function rgbHex(e,t,n){return"#"+[e,t,n].map(e=>clamp255(e).toString(16).padStart(2,"0")).join("").toUpperCase()}function rgbHsv(e,t,n){e/=255,t/=255,n/=255;let o=Math.max(e,t,n),a=o-Math.min(e,t,n),s=0;return a&&(s=o===e?(t-n)/a%6:o===t?(n-e)/a+2:(e-t)/a+4,s*=60,s<0&&(s+=360)),[s,o?a/o:0,o]}function hsvRgb(e,t,n){let o=n*t,a=o*(1-Math.abs(e/60%2-1)),s=n-o,r=0,i=0,l=0;return e<60?(r=o,i=a):e<120?(r=a,i=o):e<180?(i=o,l=a):e<240?(i=a,l=o):e<300?(r=a,l=o):(r=o,l=a),[255*(r+s),255*(i+s),255*(l+s)]}function pickerHex(){const e=hsvRgb(pickerH,pickerS,pickerV);return rgbHex(e[0],e[1],e[2])}let builderWheelTimer=null;function setChipColor(e,t){if(e){t=normalizeLedColor(t);e.dataset.color=t;e.style.background=semanticColorVisual(t);e.style.color=semanticColorInk(t);e.textContent=semanticColorName(t);e.classList.add("namedColorChip");e.title=semanticColorName(t)+" — tap to edit"}}function renderPicker(){const e=pickerHex(),t=hexRgb(e),n=$("rgbWheel").clientWidth/2,o=(pickerH-90)*Math.PI/180,a=pickerS*n*.92;$("rgbWheelMarker").style.left=n+Math.cos(o)*a+"px",$("rgbWheelMarker").style.top=n+Math.sin(o)*a+"px",$("rgbValue").value=Math.round(100*pickerV),$("rgbR").value=t[0],$("rgbG").value=t[1],$("rgbB").value=t[2],$("rgbHex").value=e,$("rgbPreview").style.background=e,setChipColor(activeColorChip,e)}function setPickerHex(e){const t=hexRgb(e),n=rgbHsv(t[0],t[1],t[2]);pickerH=n[0],pickerS=n[1],pickerV=n[2],renderPicker()}function openRgbWheel(e){activeColorChip=e,setPickerHex(displayColor(e?.dataset.color||"#FFFFFF")),$("rgbPickerOverlay").classList.add("open"),renderSavedColors()}function wheelPoint(e){const t=$("rgbWheel").getBoundingClientRect(),n=t.left+t.width/2,o=t.top+t.height/2,a=e.clientX-n,s=e.clientY-o,r=Math.sqrt(a*a+s*s),i=t.width/2;pickerS=Math.min(1,r/(.92*i)),pickerH=(180*Math.atan2(s,a)/Math.PI+90+360)%360,renderPicker()}function renderEventFavoriteGrid(e,t){e&&(e.innerHTML="",savedColors.length?savedColors.forEach((n,o)=>e.appendChild(masterFavoriteTile(n,"Add",()=>t(n),savedColorLabels[o]||""))):e.innerHTML='<span class="sub">No favorite colors saved yet.</span>')}function renderHomeFavoriteGrid(){const e=$("homeFavoriteColorGrid");e&&(e.innerHTML="",savedColors.length?savedColors.forEach((t,n)=>{const o=savedColorLabels[n]||favoriteName(t);e.appendChild(masterFavoriteTile(t,"Use",()=>manual({name:"Favorite "+o,colors:[t],effect:"Jump",brightness,speed}),o))}):e.innerHTML='<span class="sub">No favorite colors saved yet.</span>')}function fillSavedColors(e){if(e){if(e.innerHTML="",!savedColors.length){const t=document.createElement("span");return t.className="sub",t.textContent="No favorite colors saved yet.",void e.appendChild(t)}savedColors.forEach((n,o)=>e.appendChild(masterFavoriteTile(n,"Use",()=>setPickerHex(n),savedColorLabels[o]||"")))}}
+function renderSavedColors(){fillSavedColors($("savedColorGrid")),renderHomeFavoriteGrid(),document.querySelectorAll(".eventFavoriteGrid").forEach(e=>{const t=e.closest(".eventEditor");t&&"function"==typeof t._addEventColor&&renderEventFavoriteGrid(e,e=>t._addEventColor(e))})}
+async function loadSavedColors(){try{if(API_MODE){const e=await api("/api/colors",{cache:"no-store"}),t=Array.isArray(e.presets)?e.presets:[];savedColors=(t.length?t.map(e=>e.color):e.colors||MASTER_FAVORITE_COLORS).map(normHex),savedColorLabels=t.length?t.map((e,t)=>e.name||NAMED_COLOR_PALETTE[t]?.name||""):NAMED_COLOR_PALETTE.slice(0,savedColors.length).map(e=>e.name)}else savedColors=[...MASTER_FAVORITE_COLORS],savedColorLabels=NAMED_COLOR_PALETTE.map(e=>e.name)}catch(e){savedColors=[...MASTER_FAVORITE_COLORS],savedColorLabels=NAMED_COLOR_PALETTE.map(e=>e.name)}renderSavedColors()}function bindRgbPicker(){const e=$("rgbWheel");let t=!1;e.addEventListener("pointerdown",n=>{t=!0,e.setPointerCapture(n.pointerId),wheelPoint(n)}),e.addEventListener("pointermove",e=>{t&&wheelPoint(e)}),e.addEventListener("pointerup",()=>t=!1),$("rgbValue").addEventListener("input",e=>{pickerV=+e.target.value/100,renderPicker()}),["rgbR","rgbG","rgbB"].forEach(e=>$(e).addEventListener("change",()=>setPickerHex(rgbHex($("rgbR").value,$("rgbG").value,$("rgbB").value)))),$("rgbHex").addEventListener("change",e=>setPickerHex(e.target.value)),$("rgbClose").addEventListener("click",()=>$("rgbPickerOverlay").classList.remove("open")),$("rgbPickerOverlay").addEventListener("click",e=>{e.target===$("rgbPickerOverlay")&&$("rgbPickerOverlay").classList.remove("open")});window.addEventListener("popstate",()=>{if(document.getElementById("eventFullEditor"))closeEventFullEditor()})}let currentEventColorTheme="3.0.29";function renderEventColorTheme(e){currentEventColorTheme="1"===e?"1":"3.0.28"===e?"3.0.28":"3.0.29",[["1","eventColors1"],["3.0.28","eventColors3028"],["3.0.29","eventColors3029"]].forEach(([e,t])=>{const n=$(t);n&&n.setAttribute("aria-pressed",String(e===currentEventColorTheme))})}async function loadEventColorTheme(){try{const e=await api("/api/event-color-theme",{cache:"no-store"});return renderEventColorTheme(e.theme),e}catch(e){return renderEventColorTheme("3.0.29"),{theme:"3.0.29"}}}async function chooseEventColorTheme(e){if(e===currentEventColorTheme)return;const t=$("1"===e?"eventColors1":"3.0.28"===e?"eventColors3028":"eventColors3029");t&&(t.disabled=!0);try{const t=await post("/api/event-color-theme",{theme:e});renderEventColorTheme(t.theme);const n=invalidateEventRequest();await Promise.all([loadSavedColors(),loadEvents(n),loadFavorites()]),status((t.name||"Event color scheme")+" applied.")}catch(e){status("Event color scheme change failed: "+e.message)}finally{t&&(t.disabled=!1)}}let eventEditorReturnY=0;
+function closeEventFullEditor(){
+  const overlay=document.getElementById("eventFullEditor");if(!overlay)return;
+  overlay.remove();document.body.style.overflow="";window.scrollTo(0,eventEditorReturnY);
+}
+function editEventInline(e,t,n){
+  closeEventFullEditor();eventEditorReturnY=window.scrollY;const aiOneTime=!!e.aiOneTime;
+  if(n){n.classList.add("active");n.setAttribute("aria-pressed","true")}
+  const overlay=document.createElement("div");overlay.id="eventFullEditor";overlay.className="eventFullEditor";overlay.setAttribute("role","dialog");overlay.setAttribute("aria-modal","true");overlay.setAttribute("aria-label","Edit "+e.name);
+  const shell=document.createElement("div");shell.className="eventFullEditorShell";
+  const top=document.createElement("div");top.className="eventFullEditorTop";
+  const back=document.createElement("button");back.type="button";back.className="btn";back.textContent=aiOneTime?"← Back to AI":"← Back to Events";back.onclick=closeEventFullEditor;
+  const titleWrap=document.createElement("div");titleWrap.className="eventFullEditorTitle";titleWrap.innerHTML=`<strong>${e.name}</strong><span class="sub">${e.when||""}</span>`;
+  top.append(back,titleWrap);shell.appendChild(top);overlay.appendChild(shell);document.body.appendChild(overlay);document.body.style.overflow="hidden";
+  const editor=document.createElement("div");editor.className="card eventEditor";
+  const heading=document.createElement("div");heading.className="small";heading.innerHTML=`<strong>Edit ${e.name}</strong>${e.customized?' <span class="tag">Customized</span>':""}`;
+
+  const effectLabel=document.createElement("div");effectLabel.className="label";effectLabel.textContent="Base Effect";
+  const effect=document.createElement("select");effect.className="field";
+  ["Jump","Breath","Strobe","Solid","Chase","Gradient Sweep","Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet","Rainbow Flow","Pulse Wave"].forEach(value=>{
+    const option=document.createElement("option");option.textContent=value==="Solid"?"Solid / Static":value;option.value=value;option.selected=value===e.effect;effect.appendChild(option)
+  });
+
+  const speedLabel=document.createElement("div");speedLabel.className="label";speedLabel.textContent="Base Speed";
+  const speedInput=document.createElement("input");speedInput.type="range";speedInput.min="1";speedInput.max="5";speedInput.value=e.speed||1;
+  const speedValue=document.createElement("div");speedValue.className="sub";
+  const showSpeed=()=>speedValue.textContent=["Very Slow","Slow","Normal","Fast","Very Fast"][+speedInput.value-1]||("Speed "+speedInput.value);
+  speedInput.addEventListener("input",showSpeed);showSpeed();
+
+  const scheduleBox=document.createElement("div");scheduleBox.className="card";scheduleBox.style.marginTop="12px";scheduleBox.style.padding="12px";
+  const scheduleTitle=document.createElement("div");scheduleTitle.className="label";scheduleTitle.style.marginTop="0";scheduleTitle.textContent="Event Schedule";
+  const scheduleInfo=document.createElement("div");scheduleInfo.className="sub";const sc=e.schedule||{};scheduleInfo.textContent="Built-in: "+(sc.builtIn||e.when||"Scheduled date");
+  const ruleLabel=document.createElement("div");ruleLabel.className="label";ruleLabel.textContent="Date rule";
+  const rule=document.createElement("select");rule.className="field";
+  [["default","Built-in date"],["date","Specific date"],["range","Date range"],["month","Entire month"]].forEach(([value,label])=>rule.add(new Option(label,value)));rule.value=sc.mode||"default";
+  const monthNames=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const makeMonth=value=>{const select=document.createElement("select");select.className="field";monthNames.forEach((name,index)=>select.add(new Option(name,index+1)));select.value=String(value||1);return select};
+  const dateGrid=document.createElement("div");dateGrid.className="grid2";dateGrid.style.marginTop="10px";
+  const startWrap=document.createElement("div"),endWrap=document.createElement("div");
+  const startDateLabel=document.createElement("div");startDateLabel.className="label";startDateLabel.textContent="Start date";
+  const startDateRow=document.createElement("div");startDateRow.className="grid2";const startMonth=makeMonth(sc.startMonth||1),startDay=document.createElement("input");startDay.className="field";startDay.type="number";startDay.min="1";startDay.max="31";startDay.value=sc.startDay||1;startDateRow.append(startMonth,startDay);startWrap.append(startDateLabel,startDateRow);
+  const endDateLabel=document.createElement("div");endDateLabel.className="label";endDateLabel.textContent="End date";
+  const endDateRow=document.createElement("div");endDateRow.className="grid2";const endMonth=makeMonth(sc.endMonth||sc.startMonth||1),endDay=document.createElement("input");endDay.className="field";endDay.type="number";endDay.min="1";endDay.max="31";endDay.value=sc.endDay||sc.startDay||1;endDateRow.append(endMonth,endDay);endWrap.append(endDateLabel,endDateRow);dateGrid.append(startWrap,endWrap);
+  const annualLabel=document.createElement("label");annualLabel.className="row small";annualLabel.style.marginTop="10px";const annual=document.createElement("input");annual.type="checkbox";annual.checked=sc.annual!==false;annualLabel.append(annual,document.createTextNode("Repeat every year"));
+  const yearLabel=document.createElement("div");yearLabel.className="label";yearLabel.textContent="Year (when Repeat every year is off)";
+  const yearInput=document.createElement("input");yearInput.className="field";yearInput.type="number";yearInput.min="2020";yearInput.max="2100";yearInput.value=sc.year||Number($("yearSelect")?.value)||new Date().getFullYear();
+  const customTimeLabel=document.createElement("label");customTimeLabel.className="row small";customTimeLabel.style.marginTop="12px";const customTime=document.createElement("input");customTime.type="checkbox";customTime.checked=!!sc.customTime;customTimeLabel.append(customTime,document.createTextNode("Use custom time for this event"));
+  const timeGrid=document.createElement("div");timeGrid.className="grid2";timeGrid.style.marginTop="8px";
+  const startTimeWrap=document.createElement("div"),endTimeWrap=document.createElement("div"),startTimeLabel=document.createElement("div"),endTimeLabel=document.createElement("div");
+  startTimeLabel.className=endTimeLabel.className="label";startTimeLabel.textContent="Start time";endTimeLabel.textContent="End time";
+  const startTime=document.createElement("input"),endTime=document.createElement("input");startTime.className=endTime.className="field";startTime.type=endTime.type="time";
+  startTime.value=sc.customTime&&sc.start?sc.start:($("onTime")?.value||"20:00");endTime.value=sc.customTime&&sc.end?sc.end:($("offTime")?.value||"23:30");
+  startTimeWrap.append(startTimeLabel,startTime);endTimeWrap.append(endTimeLabel,endTime);timeGrid.append(startTimeWrap,endTimeWrap);
+  const syncScheduleUi=()=>{
+    const value=rule.value,isDefault=value==="default",isDate=value==="date",isMonth=value==="month";
+    startMonth.disabled=isDefault;startDay.disabled=isDefault||isMonth;endMonth.disabled=isDefault||isDate||isMonth;endDay.disabled=isDefault||isDate||isMonth;
+    startDateLabel.textContent=isMonth?"Month":"Start date";endWrap.style.display=value==="range"?"":"none";startDay.style.display=isMonth?"none":"";
+    annual.disabled=isDefault;yearInput.disabled=isDefault||annual.checked;startTime.disabled=endTime.disabled=!customTime.checked;
+  };
+  rule.addEventListener("change",syncScheduleUi);annual.addEventListener("change",syncScheduleUi);customTime.addEventListener("change",syncScheduleUi);syncScheduleUi();
+  scheduleBox.append(scheduleTitle,scheduleInfo,ruleLabel,rule,dateGrid,annualLabel,yearLabel,yearInput,customTimeLabel,timeGrid);if(aiOneTime)scheduleBox.hidden=true;
+
+  const colorLabel=document.createElement("div");colorLabel.className="label";colorLabel.textContent="Colors — tap a color to open the RGB wheel; saved colors are available inside the wheel";
+  const colors=document.createElement("div");colors.className="row wraprow";
+  const masterLabel=document.createElement("div");masterLabel.className="label";masterLabel.textContent="Master Colors";
+  const favorites=document.createElement("div");favorites.className="savedColorGrid eventFavoriteGrid";
+  function addColor(value="#E08700"){
+    if(colors.children.length>=8)return;
+    const wrap=document.createElement("div");wrap.className="row";wrap.style.gap="4px";
+    const chip=document.createElement("button");chip.type="button";chip.className="colorChip";setChipColor(chip,value);chip.onclick=()=>openRgbWheel(chip);
+    const remove=document.createElement("button");remove.type="button";remove.className="btn danger";remove.textContent="×";remove.title="Remove this event color";remove.setAttribute("aria-label","Remove this event color");
+    remove.onclick=()=>{colors.children.length<=1?status("An event must keep at least one color."):wrap.remove()};
+    wrap.append(chip,remove);colors.appendChild(wrap)
+  }
+  editor._addEventColor=addColor;(e.colors||["#E08700"]).forEach(addColor);
+
+  const layersLabel=document.createElement("div");layersLabel.className="label";layersLabel.style.marginTop="12px";layersLabel.textContent="Layers";
+  const layersHelp=document.createElement("div");layersHelp.className="sub";layersHelp.textContent="The scheduled show cycles through these layers in order. Each layer has its own effect, speed, duration and palette shift.";
+  const layers=document.createElement("div");layers.className="eventLayersEditor";layers.style.display="grid";layers.style.gap="8px";layers.style.marginTop="8px";
+  const layerEffects=["Static","Flow1","Flow2","Cycle","Streamlight","Twinkle","Breathe"];
+
+  function renumberLayers(){
+    [...layers.querySelectorAll(".eventLayerRow")].forEach((row,index)=>{
+      const title=row.querySelector(".eventLayerName");if(title)title.textContent="Layer "+(index+1);
+      const remove=row.querySelector(".eventLayerRemove");if(remove)remove.disabled=layers.children.length<=1
+    });
+  }
+  function addLayer(layer={effect:"Breathe",speed:1,minutes:8,shift:0}){
+    if(layers.children.length>=8){status("An event can have up to 8 layers.");return}
+    const row=document.createElement("div");row.className="card eventLayerRow";row.style.margin="0";row.style.padding="10px";row.style.display="grid";row.style.gap="8px";
+    const head=document.createElement("div");head.className="row between wraprow";
+    const title=document.createElement("strong");title.className="small eventLayerName";
+    const actions=document.createElement("div");actions.className="row";actions.style.gap="5px";
+    const up=document.createElement("button");up.type="button";up.className="btn";up.textContent="↑";up.title="Move layer up";up.setAttribute("aria-label","Move layer up");
+    const down=document.createElement("button");down.type="button";down.className="btn";down.textContent="↓";down.title="Move layer down";down.setAttribute("aria-label","Move layer down");
+    const remove=document.createElement("button");remove.type="button";remove.className="btn danger eventLayerRemove";remove.textContent="Remove";
+    up.onclick=()=>{const prev=row.previousElementSibling;if(prev){layers.insertBefore(row,prev);renumberLayers()}};
+    down.onclick=()=>{const next=row.nextElementSibling;if(next){layers.insertBefore(next,row);renumberLayers()}};
+    remove.onclick=()=>{const minimum=aiOneTime?1:2;if(layers.children.length<=minimum)return status(aiOneTime?"An AI event must keep at least one layer.":"Events keep at least two layers so the show always has multiple effects.");row.remove();renumberLayers()};
+    actions.append(up,down,remove);head.append(title,actions);
+
+    const fields=document.createElement("div");fields.style.display="grid";fields.style.gridTemplateColumns="repeat(auto-fit,minmax(125px,1fr))";fields.style.gap="8px";
+    const effectWrap=document.createElement("label");effectWrap.className="small";effectWrap.textContent="Effect";
+    const layerEffect=document.createElement("select");layerEffect.className="field eventLayerEffect";
+    layerEffects.forEach(value=>{const option=document.createElement("option");option.value=value;option.textContent=value;option.selected=value===String(layer.effect||"");layerEffect.appendChild(option)});effectWrap.appendChild(layerEffect);
+
+    const layerSpeedWrap=document.createElement("label");layerSpeedWrap.className="small";layerSpeedWrap.textContent="Speed (1–5)";
+    const layerSpeed=document.createElement("input");layerSpeed.type="number";layerSpeed.className="field eventLayerSpeed";layerSpeed.min=String(1);layerSpeed.max=String(5);layerSpeed.step=String(1);layerSpeed.value=Math.max(1,Math.min(5,Number(layer.speed)||1));layerSpeedWrap.appendChild(layerSpeed);
+
+    const minutesWrap=document.createElement("label");minutesWrap.className="small";minutesWrap.textContent="Duration (minutes)";
+    const minutes=document.createElement("input");minutes.type="number";minutes.className="field eventLayerMinutes";minutes.min="2";minutes.max="30";minutes.step="1";minutes.value=Math.max(2,Math.min(30,Number(layer.minutes)||8));minutesWrap.appendChild(minutes);
+
+    const shiftWrap=document.createElement("label");shiftWrap.className="small";shiftWrap.textContent="Palette shift (−7 to 7)";
+    const shift=document.createElement("input");shift.type="number";shift.className="field eventLayerShift";shift.min="-7";shift.max="7";shift.step="1";shift.value=Math.max(-7,Math.min(7,Math.trunc(Number(layer.shift)||0)));shiftWrap.appendChild(shift);
+
+    const blocksWrap=document.createElement("label");blocksWrap.className="small";blocksWrap.textContent="Lamp blocks (per color)";
+    const blocks=document.createElement("input");blocks.type="text";blocks.className="field eventLayerBlocks";blocks.placeholder="5,3";blocks.value=(layer.pattern?.blocks||[]).join(",");blocksWrap.appendChild(blocks);
+    const offsetWrap=document.createElement("label");offsetWrap.className="small";offsetWrap.textContent="Pattern offset";
+    const offset=document.createElement("input");offset.type="number";offset.className="field eventLayerOffset";offset.min="-120";offset.max="120";offset.step="1";offset.value=Math.trunc(Number(layer.pattern?.offset)||0);offsetWrap.appendChild(offset);
+    const mirrorWrap=document.createElement("label");mirrorWrap.className="small";mirrorWrap.style.display="flex";mirrorWrap.style.alignItems="center";mirrorWrap.style.gap="6px";
+    const mirror=document.createElement("input");mirror.type="checkbox";mirror.className="eventLayerMirror";mirror.checked=!!layer.pattern?.mirror;mirrorWrap.append(mirror,document.createTextNode("Mirror pattern"));
+
+    fields.append(effectWrap,layerSpeedWrap,minutesWrap,shiftWrap,blocksWrap,offsetWrap,mirrorWrap);row.append(head,fields);layers.appendChild(row);renumberLayers()
+  }
+  const initialLayers=Array.isArray(e.layers)&&e.layers.length?e.layers:[{effect:e.effect||"Static",speed:Math.min(5,e.speed||1),minutes:30,shift:0}];
+  initialLayers.slice(0,8).forEach(addLayer);
+
+  const layerButtons=document.createElement("div");layerButtons.className="row wraprow";layerButtons.style.marginTop="8px";
+  const addLayerButton=document.createElement("button");addLayerButton.type="button";addLayerButton.className="btn";addLayerButton.textContent="+ Add Layer";
+  addLayerButton.onclick=()=>{const last=layers.lastElementChild;addLayer(last?{
+    effect:last.querySelector(".eventLayerEffect")?.value||"Breathe",
+    speed:+(last.querySelector(".eventLayerSpeed")?.value||1),
+    minutes:+(last.querySelector(".eventLayerMinutes")?.value||8),
+    shift:+(last.querySelector(".eventLayerShift")?.value||0),
+    pattern:{
+      blocks:String(last.querySelector(".eventLayerBlocks")?.value||"").split(",").map(v=>Math.max(1,Math.min(12,parseInt(v)||1))).slice(0,8),
+      offset:+(last.querySelector(".eventLayerOffset")?.value||0),
+      mirror:!!last.querySelector(".eventLayerMirror")?.checked
+    }
+  }:undefined)};
+  layerButtons.appendChild(addLayerButton);
+
+  const buttons=document.createElement("div");buttons.className="row wraprow";buttons.style.marginTop="10px";
+  const addColorButton=document.createElement("button");addColorButton.className="btn";addColorButton.textContent="Add Color";addColorButton.onclick=()=>addColor();
+  const save=document.createElement("button");save.className="btn primary";save.textContent="Save Event";
+  save.onclick=async()=>{
+    const colorValues=[...colors.querySelectorAll(".colorChip")].map(node=>normalizeLedColor(node.dataset.color));
+    const layerValues=[...layers.querySelectorAll(".eventLayerRow")].map(row=>({
+      effect:row.querySelector(".eventLayerEffect").value,
+      speed:+row.querySelector(".eventLayerSpeed").value,
+      minutes:+row.querySelector(".eventLayerMinutes").value,
+      shift:+row.querySelector(".eventLayerShift").value,
+      pattern:{
+        blocks:String(row.querySelector(".eventLayerBlocks").value||"").split(",").map(v=>Math.max(1,Math.min(12,parseInt(v)||1))).slice(0,8),
+        offset:+row.querySelector(".eventLayerOffset").value,
+        mirror:!!row.querySelector(".eventLayerMirror").checked
+      }
+    }));
+    if(layerValues.length<(aiOneTime?1:2))return status(aiOneTime?"An AI event must keep at least one layer.":"An event must keep at least two layers.");
+    const schedule={mode:rule.value,annual:annual.checked,year:+yearInput.value,startMonth:+startMonth.value,startDay:+startDay.value,endMonth:+endMonth.value,endDay:+endDay.value,customTime:customTime.checked,start:startTime.value,end:endTime.value};
+    const payload={effect:effect.value,speed:+speedInput.value,colors:colorValues,layers:layerValues};if(!aiOneTime)payload.schedule=schedule;
+    if(await eventChange(e.id,payload)){if(aiOneTime){await loadAi();status(e.name+" changes applied to its one-time event.")}else status(e.name+" appearance and schedule updated.")}
+  };
+  const restoreSchedule=document.createElement("button");restoreSchedule.className="btn";restoreSchedule.textContent="Restore Built-in Schedule";
+  restoreSchedule.onclick=async()=>{await eventChange(e.id,{resetSchedule:true})&&status(e.name+" restored to its built-in date and normal schedule times.")};
+  const restore=document.createElement("button");restore.className="btn";restore.textContent="Restore All Defaults";
+  restore.onclick=async()=>{await eventChange(e.id,{resetAll:true})&&status(e.name+" restored to all built-in defaults.")};
+  const previewAiEdits=document.createElement("button");previewAiEdits.className="btn";previewAiEdits.textContent="Preview Edited Event";
+  if(aiOneTime){save.textContent="Apply Changes One Time";buttons.append(addColorButton,previewAiEdits,save)}else buttons.append(addColorButton,save,restoreSchedule,restore);
+
+  const editorPreviewLabel=document.createElement("div");editorPreviewLabel.className="label";editorPreviewLabel.textContent="Live multi-bulb preview";
+  const editorPreview=document.createElement("div");
+  function readEditorRawLayers(){
+    return [...layers.querySelectorAll(".eventLayerRow")].map(row=>({
+      effect:row.querySelector(".eventLayerEffect")?.value||"Static",
+      speed:+(row.querySelector(".eventLayerSpeed")?.value||1),
+      minutes:+(row.querySelector(".eventLayerMinutes")?.value||8),
+      shift:+(row.querySelector(".eventLayerShift")?.value||0),
+      pattern:{blocks:String(row.querySelector(".eventLayerBlocks")?.value||"").split(",").map(v=>Math.max(1,Math.min(12,parseInt(v)||1))).slice(0,8),offset:+(row.querySelector(".eventLayerOffset")?.value||0),mirror:!!row.querySelector(".eventLayerMirror")?.checked}
+    }));
+  }
+  function readEditorLayers(){
+    const palette=[...colors.querySelectorAll(".colorChip")].map(node=>normalizeLedColor(node.dataset.color));
+    return readEditorRawLayers().map((row,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(palette,row.shift),effect:row.effect,speed:row.speed,pattern:row.pattern}));
+  }
+  previewAiEdits.onclick=async()=>{
+    if(!aiOneTime)return;
+    const palette=[...colors.querySelectorAll(".colorChip")].map(node=>normalizeLedColor(node.dataset.color)),raw=readEditorRawLayers();
+    if(!palette.length||!raw.length)return status("The AI event needs at least one color and one layer.");
+    const old=previewAiEdits.textContent;previewAiEdits.disabled=true;previewAiEdits.textContent="Previewing…";
+    try{await post("/api/ai/preview-edit",{name:e.name,brightness:brightness,colors:palette,layers:raw});status(e.name+" edited version is previewing on all four strings. Use Resume Schedule when finished.")}
+    catch(err){status("Edited preview failed: "+err.message)}
+    finally{previewAiEdits.disabled=false;previewAiEdits.textContent=old}
+  };
+  function refreshEditorPreview(){editorPreview.replaceChildren();const scenes=readEditorLayers();if(window.createLayeredMiniPreview)editorPreview.appendChild(window.createLayeredMiniPreview(e.name,scenes))}
+  editor.addEventListener("input",refreshEditorPreview);editor.addEventListener("change",refreshEditorPreview);
+  editor.append(heading,editorPreviewLabel,editorPreview,effectLabel,effect,speedLabel,speedInput,speedValue,scheduleBox,colorLabel,colors,masterLabel,favorites,layersLabel,layersHelp,layers,layerButtons,buttons);
+  renderEventFavoriteGrid(favorites,addColor);shell.appendChild(editor);refreshEditorPreview();overlay.scrollTop=0
+}function renderEvents(e){const t=$("eventList");t.innerHTML="",e.forEach(e=>{const n=document.createElement("div");n.className="card event",n.dataset.eventId=String(e.id||"");const o=document.createElement("div");o.className="eventchecks",o.style.display="flex",o.style.flexDirection="column",o.style.gap="7px",o.style.minWidth="92px";const a=document.createElement("input");a.type="checkbox",a.checked=e.enabled,a.title="Enabled";const s=document.createElement("input");s.type="checkbox",s.checked=e.favorite,s.title="Favorites";const r=document.createElement("label");r.style.display="flex",r.style.alignItems="center",r.style.gap="6px",r.className="small",r.append(a,document.createTextNode("Enabled"));const i=document.createElement("label");i.style.display="flex",i.style.alignItems="center",i.style.gap="6px",i.className="small",i.hidden=!0,i.append(s,document.createTextNode("Favorites")),o.append(r,i);const l=document.createElement("div");l.innerHTML=`<div class="small"><strong>${e.name}</strong>${e.customized?' <span class="tag">Edited</span>':""}</div><div class="sub">${e.when} • ${e.effect} • ${["Very Slow","Slow","Normal","Fast","Very Fast"][(e.speed||1)-1]}</div><div class="tags"><span class="tag ${e.kind}">${e.kind}</span><span class="tag eventLayerCount" title="${e.layerCount||1} lighting layer${(e.layerCount||1)===1?'':'s'}">${e.layerCount||1}</span></div><div class="chips">${e.colors.map(e=>`<span class="colorNamePill" style="background:${semanticColorVisual(e)};color:${semanticColorInk(e)}">${semanticColorName(e)}</span>`).join("")}</div>`;const previewLayers=(Array.isArray(e.layers)&&e.layers.length?e.layers:[{effect:e.effect,speed:e.speed||1,shift:0,pattern:null}]).map((p,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(e.colors,p.shift||0),effect:p.effect||e.effect,speed:p.speed||e.speed||1,pattern:p.pattern||null}));const mini=window.createLayeredMiniPreview?.(e.name,previewLayers);mini&&l.appendChild(mini);const c=document.createElement("div");c.className="row wraprow";const d=document.createElement("button");d.className="btn previewEvent",d.textContent="Preview",d.addEventListener("click",async()=>{speed=e.speed||1;const hb=$("homeBrightness"),hbv=$("homeBrightVal");hb&&(hb.value=brightness);hbv&&(hbv.textContent=brightness+"%");const first=e.layers?.[0]||{effect:e.effect,speed:speed,shift:0,pattern:null},previewColors=aiPhaseColors(e.colors,first.shift||0);syncSpeedControls(first.speed||speed);setPreview(e.name,previewColors,first.effect||e.effect,first.pattern);const isTestHalloween=String(e.id||"")==="ai-once-test-halloween-2026"||String(e.name||"").trim().toLowerCase()==="test halloween";if(isTestHalloween){const old=d.textContent;d.disabled=true;d.textContent="Previewing…";try{await post("/api/ai/preview-edit",{name:"Test Halloween",brightness:brightness,colors:e.colors||[],layers:e.layers||[]});status("Test Halloween previewing: solid purple base with random orange flashes on all four strings. Use Resume Schedule when finished.")}catch(err){status("Test Halloween preview failed: "+err.message)}finally{d.disabled=false;d.textContent=old}return}if(API_MODE)try{await post("/api/ble/target",{target:0})}catch(e){}await manual({name:e.name,colors:previewColors,effect:first.effect||e.effect,brightness:brightness,speed:first.speed||speed,pattern:first.pattern});status(e.name+" previewing with its first segmented layer on all light strings. Use Resume Schedule when finished.")});const u=document.createElement("button");u.className="btn",u.textContent="Edit",u.setAttribute("aria-pressed","false"),u.onclick=()=>String(e.id||"").startsWith("ai-once-")?document.querySelector('.tab[data-tab="ai"]')?.click():editEventInline(e,n,u),c.append(d,u),a.addEventListener("change",async()=>{const t=a.checked;await eventChange(e.id,{enabled:t})||(a.checked=!t)}),s.addEventListener("change",async()=>{const t=s.checked;await eventChange(e.id,{favorite:t})||(s.checked=!t)}),n.append(o,l,c),t.appendChild(n)})}async function eventChange(e,t){try{await post("/api/event",{id:e,...t})}catch(e){return status(API_MODE?"Save failed: "+e.message:"Preview mode — preference simulated."),!1}try{await Promise.all([loadEvents(eventRequestGeneration),loadFavorites()]),status("Event preference saved and confirmed.")}catch(e){status("Event preference saved, but the refreshed view could not be confirmed.")}return!0}async function loadFavorites(){let e=[];try{e=(await api("/api/favorites")).events||[]}catch(e){return}const t=$("favoriteGrid");t.innerHTML="",e.length?e.forEach(e=>{const n=document.createElement("div");n.className="card";const o=document.createElement("div");o.className="row between";const a=document.createElement("button");a.className="btn",a.style.flex="1",a.textContent=e.name,a.addEventListener("click",()=>manual({name:e.name,colors:e.colors,effect:e.effect,brightness:e.brightness||100,speed:e.speed||1}));const s=document.createElement("label");s.className="row small",s.style.whiteSpace="nowrap";const r=document.createElement("input");r.type="checkbox",r.checked=!0,r.setAttribute("aria-label","Favorite "+e.name),s.append(r,document.createTextNode("Favorite")),r.addEventListener("change",async()=>{if(!r.checked){r.disabled=!0;try{e.custom?await post("/api/preset",{id:e.id,favorite:!1}):await post("/api/event",{id:e.id,favorite:!1}),await Promise.all([loadFavorites(),loadEvents(),loadHomeCustomLights()]),status((e.name||"Favorite")+" removed from Favorites.")}catch(e){r.checked=!0,r.disabled=!1,status("Favorite change failed: "+e.message)}}}),o.append(a,s),n.appendChild(o),t.appendChild(n)}):t.innerHTML='<div class="emptyFav" style="grid-column:1/-1">No favorite scenes selected. Use a Favorites checkbox on the Schedules tab.</div>'}function customLightSummary(e){const t=document.createElement("div"),n=document.createElement("div"),o=document.createElement("strong"),a=document.createElement("div"),s=document.createElement("div");if(n.className="small",o.textContent=e.name||"Custom Light",n.appendChild(o),!0===e.favorite){const e=document.createElement("span");e.className="tag",e.textContent="Favorite",e.style.marginLeft="5px",n.appendChild(e)}if(!1===e.enabled){const e=document.createElement("span");e.className="tag",e.textContent="Disabled",e.style.marginLeft="5px",n.appendChild(e)}return a.className="sub",a.textContent=`${e.effect||"Jump"} • ${e.brightness||100}% • ${["","Very Slow","Slow","Normal","Fast","Very Fast"][e.speed||1]||"Very Slow"}`,s.className="chips",(Array.isArray(e.colors)?e.colors:[]).forEach(e=>{const t=document.createElement("span");t.className="colorNamePill",t.style.background=semanticColorVisual(e),t.style.color=semanticColorInk(e),t.textContent=semanticColorName(e),t.title=semanticColorName(e),s.appendChild(t)}),t.append(n,a,s),window.createEventMiniPreview&&t.appendChild(window.createEventMiniPreview({name:e.name,colors:e.colors||[],effect:e.effect||"Static",speed:e.speed||1})),t}async function customLightPreference(e,t){try{await post("/api/preset",{id:e,...t});await Promise.all([loadHomeCustomLights(),loadFavorites()]),status("Custom event preference saved.")}catch(e){status("Custom event preference failed: "+e.message),await loadHomeCustomLights()}}async function loadHomeCustomLights(){const e=$("homeCustomLightList");if(e)try{const t=await api("/api/presets?home="+Date.now()),n=Array.isArray(t.presets)?t.presets:[];if(e.innerHTML="",!n.length)return void(e.innerHTML='<div class="sub">No custom events saved.</div>');n.forEach(t=>{const n=document.createElement("div");n.className="card event",n.dataset.presetId=t.id||"";const o=document.createElement("div");o.className="eventchecks";const a=document.createElement("input"),s=document.createElement("input");a.type="checkbox",a.checked=!1!==t.enabled,s.type="checkbox",s.checked=!0===t.favorite;const r=document.createElement("label"),i=document.createElement("label");r.className="row small",i.className="row small",r.append(a,document.createTextNode("Enabled")),i.append(s,document.createTextNode("Favorites")),o.append(r,i);const l=document.createElement("div"),c=document.createElement("button");l.className="customPresetActions",c.className="btn previewEvent",c.textContent="Preview",c.onclick=()=>manual({name:t.name,colors:t.colors,effect:t.effect,brightness:t.brightness||100,speed:t.speed||1}),l.appendChild(c),a.onchange=()=>customLightPreference(t.id,{enabled:a.checked}),s.onchange=()=>customLightPreference(t.id,{favorite:s.checked}),n.append(o,customLightSummary(t),l),e.appendChild(n)})}catch(t){e.innerHTML='<div class="sub">Unable to load custom events: '+t.message+"</div>"}}$("eventColors1").addEventListener("click",()=>chooseEventColorTheme("1")),$("eventColors3028").addEventListener("click",()=>chooseEventColorTheme("3.0.28")),$("eventColors3029").addEventListener("click",()=>chooseEventColorTheme("3.0.29"));const settingsDirty=new Set,trackedSettings=["schedule1StartMode","onTime","offTime","schedule2EndMode","schedule2EndTime","schedule2Brightness","leadDays","trailDays","overlapMode","tz"];function setSettingIfClean(e,t){const n=$(e);n&&!settingsDirty.has(e)&&null!=t&&(n.value=String(t))}function formatClockTime(e){if(!/^\d{1,2}:\d{2}$/.test(String(e||"")))return e||"";const t=String(e).split(":"),n=Number(t[0]),o=t[1],i=n>=12?"PM":"AM",r=n%12||12;return`${r}:${o} ${i}`}function updateScheduleModeUi(){const e=$("schedule1StartMode"),t=$("schedule2EndMode"),n=$("schedule2Brightness");$("onTime")&&e&&($("onTime").disabled="dusk"===e.value),$("schedule2EndTime")&&t&&($("schedule2EndTime").disabled="dawn"===t.value),$("schedule2BrightnessVal")&&n&&($("schedule2BrightnessVal").textContent=n.value+"%")}function applyState(e){if(!e)return;e.settings&&("boolean"==typeof e.settings.scheduler&&($("eventsMaster").checked=e.settings.scheduler),"boolean"==typeof e.settings.scheduler2&&($("schedule2Master").checked=e.settings.scheduler2),"boolean"==typeof e.settings.whiteOverride1&&($("whiteOverride1Master").checked=e.settings.whiteOverride1),"boolean"==typeof e.settings.whiteOverride2&&($("whiteOverride2Master").checked=e.settings.whiteOverride2),setSettingIfClean("schedule1StartMode",e.settings.schedule1StartAtDusk?"dusk":"fixed"),setSettingIfClean("onTime",e.settings.on),setSettingIfClean("offTime",e.settings.off),setSettingIfClean("schedule2EndMode",e.settings.schedule2EndAtDawn?"dawn":"fixed"),setSettingIfClean("schedule2EndTime",e.settings.schedule2End),setSettingIfClean("schedule2Brightness",e.settings.schedule2Brightness??10),setSettingIfClean("leadDays",e.settings.lead),setSettingIfClean("trailDays",e.settings.trail),setSettingIfClean("overlapMode",["rotate","split","combine"][Number(e.settings.overlap)]||"rotate"),setSettingIfClean("tz",e.settings.tz),updateScheduleModeUi(),$("schedule2Summary")&&($("schedule2Summary").textContent=`Starts ${formatClockTime(e.settings.off)||"at Schedule 1 end"} • ${e.settings.schedule2Brightness??10}% • ends ${e.settings.schedule2EndAtDawn?`dawn${e.settings.dawn?" ("+e.settings.dawn+")":""}`:formatClockTime(e.settings.schedule2End)||"fixed time"}`),overlapHelp()),power=e.power??power,brightness=e.brightness??brightness,speed=e.speed??speed,$("homePowerOn").classList.toggle("primary",power),$("homePowerOff").classList.toggle("primary",!power),$("homePowerOn").setAttribute("aria-pressed",String(!!power)),$("homePowerOff").setAttribute("aria-pressed",String(!power)),$("homeBrightness").value=brightness,$("homeBrightVal").textContent=brightness+"%",$("aiLiveBright")&&($("aiLiveBright").value=brightness),$("aiLiveBrightVal")&&($("aiLiveBrightVal").textContent=brightness+"%"),syncSpeedControls(speed),e.running&&setRunning(e.running.name,e.running.colors,e.running.effect),window.andersonScheduledEvent=e.scheduledEvent||null,window.dispatchEvent(new CustomEvent("anderson-scheduled-event",{detail:window.andersonScheduledEvent})),$("scheduleWindow").textContent=e.scheduleWindow||$("scheduleWindow").textContent,$("nextEvent").textContent=e.nextEvent||"—",$("homeSolarTimes").textContent=`Dusk ${e.settings?.dusk||"—"} • Dawn ${e.settings?.dawn||"—"}`;const ble=e.ble||{},seen=Number(ble.seenCount||0),known=Number(ble.knownCount||4);
+$("bleStatus").textContent=ble.busy?"Wi-Fi cloud command in progress":ble.ready?`Ready — ${known} Eufy cloud lights`:"Wi-Fi cloud setup incomplete";
+$("bleMeta").textContent=`${ble.connectionMode||"Wi-Fi / Internet"} • Available in Eufy cloud: ${seen}/${known} • Manual target: ${["All","Pool","House","Garage","Shed"][ble.target||0]||"All"}`;
+const n=$("selectedControllers");n.replaceChildren(),(ble.controllers||[]).forEach(e=>{const t=document.createElement("div");t.className="card bleDevice";const o=document.createElement("div"),a=document.createElement("div"),s=document.createElement("strong"),r=document.createElement("div");a.className="small",s.textContent=`${e.name||["Pool","House","Garage","Shed"][e.slot]||"Controller"}`,a.appendChild(s),r.className="sub",r.textContent=`${e.seen?"Seen in last manual scan":"Saved"} • ${e.model||e.protocol||"Eufy"} • ${e.address||"—"}`,o.append(a,r),t.appendChild(o),n.appendChild(t)}),["targetAll","targetPool","targetHouse","targetGarage","targetShed"].forEach((t,n)=>{const o=(ble.target||0)===n;$(t).classList.toggle("primary",o),$(t).setAttribute("aria-pressed",String(o))})}trackedSettings.forEach(e=>{const t=$(e);t&&(t.addEventListener("input",()=>settingsDirty.add(e)),t.addEventListener("change",()=>settingsDirty.add(e)))});let stateRequest=null;function loadState(){return stateRequest||(stateRequest=(async()=>{try{const e=await api("/api/state");$("connectionBadge").textContent="● Connected",$("connectionBadge").classList.remove("offline"),applyState(e),loadFavorites()}catch(e){$("connectionBadge").textContent=API_MODE?"● Offline":"● Preview",$("connectionBadge").classList.add("offline"),API_MODE||(setRunning("Suicide Prevention Awareness Month",["#28FF00","#5B00E6"],"Jump"),$("nextEvent").textContent="988 Day • September 8",loadFavorites())}})().finally(()=>{stateRequest=null}),stateRequest)}function overlapHelp(){const e=$("overlapMode").value;$("overlapHelp").textContent="rotate"===e?"When two or more scheduled items share a night, one item gets the full night and the selection rotates by date.":"split"===e?"When two or more scheduled items share a night, the active schedule window is divided evenly among them.":"When two or more scheduled items share a night, their colors are combined into one Jump theme."}$("resumeSchedule").addEventListener("click",()=>post("/api/resume",{}).then(e=>{applyState(e),status("Automatic schedule resumed.")}).catch(()=>status("Preview mode — schedule resumed."))),$("overlapMode").addEventListener("change",async()=>{overlapHelp();const e=$("overlapMode").value;status("Saving overlap behavior…");try{const t=await post("/api/settings",{overlap:e});settingsDirty.delete("overlapMode"),applyState(t),status("Overlap behavior saved — schedule refreshed.")}catch(t){status("Overlap change failed: "+t.message),await loadState()}}),["schedule1StartMode","schedule2EndMode"].forEach(e=>$(e).addEventListener("change",updateScheduleModeUi)),$("schedule2Brightness").addEventListener("input",updateScheduleModeUi),overlapHelp(),updateScheduleModeUi(),$("saveSettings").addEventListener("click",async()=>{const e={overlap:$("overlapMode").value,schedule1StartMode:$("schedule1StartMode").value,on:$("onTime").value,off:$("offTime").value,schedule2EndMode:$("schedule2EndMode").value,schedule2End:$("schedule2EndTime").value,schedule2Brightness:$("schedule2Brightness").value,lead:$("leadDays").value,trail:$("trailDays").value,tz:$("tz").value},t={overlap:e.overlap,on:e.on,off:e.off,lead:+e.lead,trail:+e.trail,tz:e.tz,scheduler:$("eventsMaster").checked,scheduler2:$("schedule2Master").checked,whiteOverride1:$("whiteOverride1Master").checked,whiteOverride2:$("whiteOverride2Master").checked,schedule1Dusk:"dusk"===e.schedule1StartMode,schedule2End:e.schedule2End,schedule2Dawn:"dawn"===e.schedule2EndMode,schedule2Brightness:+e.schedule2Brightness};try{const n=await post("/api/settings",t),o={overlapMode:"overlap",schedule1StartMode:"schedule1StartMode",onTime:"on",offTime:"off",schedule2EndMode:"schedule2EndMode",schedule2EndTime:"schedule2End",schedule2Brightness:"schedule2Brightness",leadDays:"lead",trailDays:"trail",tz:"tz"};Object.entries(o).forEach(([t,n])=>{String($(t).value)===String(e[n])&&settingsDirty.delete(t)}),applyState(n),status("Schedule and white override settings saved and confirmed by Jason Home 2.")}catch(e){status(API_MODE?"Settings failed: "+e.message:"Preview mode — settings simulated.")}}),$("eventsMaster").addEventListener("change",()=>post("/api/settings",{scheduler:$("eventsMaster").checked}).then(applyState).catch(e=>status("Schedule 1 change failed: "+e.message))),$("schedule2Master").addEventListener("change",()=>post("/api/settings",{scheduler2:$("schedule2Master").checked}).then(applyState).catch(e=>status("Schedule 2 change failed: "+e.message))),$("whiteOverride1Master").addEventListener("change",()=>post("/api/settings",{whiteOverride1:$("whiteOverride1Master").checked}).then(applyState).catch(e=>status("White Override 1 change failed: "+e.message))),$("whiteOverride2Master").addEventListener("change",()=>post("/api/settings",{whiteOverride2:$("whiteOverride2Master").checked}).then(applyState).catch(e=>status("White Override 2 change failed: "+e.message))),$("scanBle").addEventListener("click",async()=>{const button=$("scanBle"),originalText=button.textContent;button.disabled=!0,button.textContent="Scanning…",status("Checking the four saved Eufy lights…");try{const deadline=Date.now()+12e3;let result=await api("/api/ble/scan?ts="+Date.now());for(;result.scanning;){if(Date.now()>deadline)throw new Error("scan timed out");await new Promise(resolve=>setTimeout(resolve,300)),result=await api("/api/ble/scan?ts="+Date.now())}const list=$("bleList");list.replaceChildren(),(result.devices||[]).forEach(device=>{const card=document.createElement("div");card.className="card bleDevice";const info=document.createElement("div"),titleRow=document.createElement("div"),name=document.createElement("strong"),meta=document.createElement("div");titleRow.className="small",name.textContent=device.name||"Known Eufy light",titleRow.appendChild(name),meta.className="sub",meta.textContent=`${device.address||"—"} • ${Number(device.rssi)||0} dBm`,info.append(titleRow,meta);const known=document.createElement("button");known.className="btn",known.textContent="Known",known.disabled=!0,card.append(info,known),list.appendChild(card)}),status(`${(result.devices||[]).length} of 4 saved lights found.`),loadState()}catch(error){status(API_MODE?"Known-light scan failed: "+error.message:"Preview mode — BLE scan unavailable.")}finally{button.disabled=!1,button.textContent=originalText}}),$("targetAll").addEventListener("click",()=>post("/api/ble/target",{target:0}).then(loadState)),$("targetPool").addEventListener("click",()=>post("/api/ble/target",{target:1}).then(loadState)),$("targetHouse").addEventListener("click",()=>post("/api/ble/target",{target:2}).then(loadState)),$("targetGarage").addEventListener("click",()=>post("/api/ble/target",{target:3}).then(loadState)),$("targetShed").addEventListener("click",()=>post("/api/ble/target",{target:4}).then(loadState));async function loadCustomSchedules(){const e=$("customScheduleList");if(e)try{const t=`?year=${$("yearSelect").value}&month=${$("monthSelect").value}`,n=await api("/api/custom-schedules"+t);e.innerHTML="";const o=n.items||[];if(!o.length)return void(e.innerHTML='<div class="sub">No custom lights scheduled this month.</div>');o.forEach(t=>{const n=document.createElement("div");n.className="card",n.dataset.customScheduleId=String(t.id||"");const o=document.createElement("div"),a=document.createElement("strong"),s=document.createElement("div"),r=document.createElement("div");o.className="small",a.textContent=t.name||"Custom Light",o.appendChild(a),s.className="sub",s.textContent=`${monthNames[(t.month||1)-1]} ${t.day}${t.annual?" • repeats yearly":" • "+t.year} • ${t.effect||""}`,r.className="chips",(t.colors||[]).forEach(e=>{const t=document.createElement("span");t.className="colorNamePill",t.style.background=semanticColorVisual(e),t.style.color=semanticColorInk(e),t.textContent=semanticColorName(e),t.title=semanticColorName(e),r.appendChild(t)}),n.append(o,s,r);const i=document.createElement("div");i.className="customPresetActions";const l=document.createElement("button");if(l.className="btn",l.textContent="Preview",l.onclick=()=>manual({name:t.name,colors:t.colors,effect:t.effect,brightness:t.brightness||100,speed:t.speed||1}),i.appendChild(l)){const e=document.createElement("label");e.className="row small";const n=document.createElement("input");n.type="checkbox",n.checked=!1!==t.enabled,n.onchange=()=>post("/api/custom-schedules",{id:t.id,enabled:n.checked}).then(loadCustomSchedules),e.append(n,document.createTextNode("Enabled"));const o=document.createElement("button");o.className="btn",o.textContent="Delete",o.onclick=()=>post("/api/custom-schedules",{id:t.id,remove:!0}).then(loadCustomSchedules),i.append(e,o)}n.appendChild(i),e.appendChild(n)})}catch(t){e.innerHTML='<div class="sub">Custom schedule unavailable.</div>'}}let aiStateCache=null;
+function aiPhaseColors(colors,shift){
+  const a=(colors?.length?colors:["#FFFFFF"]).slice(0,8),n=a.length?Math.max(0,Math.min(a.length-1,Math.trunc(Number(shift)||0))):0;
+  return [...a.slice(n),...a.slice(0,n)];
+}
+function renderAiChat(thread){
+  const host=$("aiChatLog");host.replaceChildren();const rows=Array.isArray(thread)?thread:[];
+  if(!rows.length){
+    const x=document.createElement("div");x.className="note";
+    x.textContent="Tell me what you want the lights to look like. I can suggest ideas, revise them with you, and build a draft without changing the real schedule until you approve it.";
+    host.appendChild(x);return;
+  }
+  rows.forEach(m=>{
+    const bubble=document.createElement("div");bubble.style.padding="9px 11px";bubble.style.borderRadius="12px";bubble.style.maxWidth="92%";
+    bubble.style.whiteSpace="pre-wrap";bubble.style.lineHeight="1.45";bubble.style.background=m.role==="user"?"#173057":"#0d1d36";
+    bubble.style.marginLeft=m.role==="user"?"auto":"0";bubble.textContent=m.text||"";host.appendChild(bubble);
+  });
+  host.scrollTop=host.scrollHeight;
+}
+function renderAiDraft(draft){
+  const panel=$("aiDraftPanel");if(!draft){panel.hidden=true;return}panel.hidden=false;
+  $("aiDraftName").textContent=draft.name||"AI Draft";
+  $("aiDraftLayers").textContent=(draft.layers?.length||0)+" layers";
+  $("aiDraftTarget").textContent=(draft.resolvedDate?((draft.defaultedToTonight?"Tonight • ":"One time • ")+draft.resolvedDate):"Tonight")+(draft.replaceEventName?" • replaces "+draft.replaceEventName:"");
+  const colors=$("aiDraftColors");colors.replaceChildren();
+  (draft.colors||[]).forEach(c=>{const x=document.createElement("span");x.className="colorNamePill";x.style.background=semanticColorVisual(c);x.style.color=semanticColorInk(c);x.textContent=semanticColorName(c);colors.appendChild(x)});
+  const preview=$("aiDraftPreview");preview.replaceChildren();
+  if(window.createLayeredMiniPreview)preview.appendChild(window.createLayeredMiniPreview(draft.name,(draft.layers||[]).map((p,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(draft.colors,p.shift),effect:p.effect,speed:p.speed,pattern:p.pattern||null}))));
+  const list=$("aiDraftLayerList");list.replaceChildren();
+  (draft.layers||[]).forEach((p,i)=>{
+    const row=document.createElement("div");row.className="card";row.style.padding="8px 10px";
+    row.innerHTML='<div class="row between"><strong>Layer '+(i+1)+'</strong><span class="tag eventLayerCount">'+(i+1)+'</span></div><div class="sub">'+p.effect+' • speed '+p.speed+' • '+p.minutes+' min • color shift '+p.shift+'</div>';
+    const mini=window.createEventMiniPreview?.({name:"Layer "+(i+1),colors:aiPhaseColors(draft.colors,p.shift),effect:p.effect,speed:p.speed,pattern:p.pattern||null});if(mini)row.appendChild(mini);list.appendChild(row);
+  });
+  // An AI build is always applicable once; an undated build is resolved to tonight by the server.
+  $("aiApplyOnceButton").disabled=false;
+}
+function renderAiApplied(items){
+  const host=$("aiAppliedList");host.replaceChildren();
+  if(!items?.length){host.innerHTML='<div class="sub">No one-time AI events applied.</div>';return}
+  items.forEach(x=>{
+    const card=document.createElement("div");card.className="card";
+    const info=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+    title.textContent=x.name||"AI One-Time";meta.className="sub";meta.textContent=(x.date||"Date unavailable")+" • "+(x.layerCount||1)+" layer"+((x.layerCount||1)===1?"":"s")+" • "+(x.brightness||100)+"%";
+    info.append(title,meta);
+    const colors=document.createElement("div");colors.className="chips";
+    (x.colors||[]).forEach(c=>{const p=document.createElement("span");p.className="colorNamePill";p.style.background=semanticColorVisual(c);p.style.color=semanticColorInk(c);p.textContent=semanticColorName(c);colors.appendChild(p)});
+    const preview=document.createElement("div"),scenes=(x.layers||[]).map((p,i)=>({name:"Layer "+(i+1),colors:aiPhaseColors(x.colors,p.shift||0),effect:p.effect||x.effect,speed:p.speed||x.speed||1,pattern:p.pattern||null}));
+    if(window.createLayeredMiniPreview)preview.appendChild(window.createLayeredMiniPreview(x.name,scenes));
+    const actions=document.createElement("div");actions.className="row wraprow";actions.style.marginTop="8px";
+    const previewSaved=document.createElement("button");previewSaved.className="btn";previewSaved.textContent="Preview";
+    previewSaved.onclick=async()=>{const old=previewSaved.textContent;previewSaved.disabled=true;previewSaved.textContent="Previewing…";try{await post("/api/ai/preview-edit",{name:x.name,brightness:brightness,colors:x.colors||[],layers:x.layers||[]});$("aiStatus").textContent=x.name+" is previewing on all four strings. Use Resume Schedule when finished."}catch(err){$("aiStatus").textContent="Preview failed: "+err.message}finally{previewSaved.disabled=false;previewSaved.textContent=old}};
+    const edit=document.createElement("button");edit.className="btn primary";edit.textContent="Edit Colors & Patterns";
+    edit.onclick=()=>editEventInline({id:x.id,name:x.name,when:x.date,colors:x.colors,effect:x.effect||x.layers?.[0]?.effect||"Static",speed:x.speed||x.layers?.[0]?.speed||1,brightness:x.brightness||100,layers:x.layers||[],customized:true,aiOneTime:true},card,edit);
+    const remove=document.createElement("button");remove.className="btn";remove.textContent="Remove";remove.onclick=()=>removeAiEvent(x.id);
+    actions.append(previewSaved,edit,remove);card.append(info,colors,preview,actions);host.appendChild(card);
+  });
+}
+function renderAi(data){
+  aiStateCache=data;const connected=!!data?.configured;
+  $("aiConnectionBadge").textContent=connected?"Free AI connected":"Not connected";$("aiConnectionBadge").style.color=connected?"#66e39a":"";
+  $("aiKeySetup").style.display=connected?"none":"block";$("aiConnectedActions").style.display=connected?"flex":"none";$("aiSendButton").disabled=!connected;
+  if($("aiProviderText"))$("aiProviderText").textContent=connected?"Cloudflare Workers AI free tier is connected • "+(data.model||""):"";
+  const usage=data?.usage;if($("aiUsageText")&&usage){
+    $("aiUsageText").textContent="AI today: "+Number(usage.used||0).toLocaleString()+" / "+Number(usage.limit||10000).toLocaleString()+" neurons • "+Number(usage.remaining||0).toLocaleString()+" left";
+    $("aiUsageFill").style.width=Math.max(0,Math.min(100,Number(usage.percent)||0))+"%";
+    $("aiUsageNote").textContent=usage.source==="cloudflare-baseline"
+      ?"Cloudflare actual baseline "+Number(usage.baseline?.total||0).toLocaleString()+" • live estimate after baseline • resets "+(usage.resetAt||"00:00 UTC")
+      :"Estimated in Jason Home • resets "+(usage.resetAt||"00:00 UTC");
+  }
+  if($("aiVoiceButton"))$("aiVoiceButton").disabled=!connected;
+  if($("aiStartOver"))$("aiStartOver").disabled=!connected;
+  if(!connected&&aiVoiceSessionActive)endAiVoiceSession(false);
+  renderAiChat(data?.thread||[]);renderAiDraft(data?.draft||null);renderAiApplied(data?.applied||[]);
+}
+async function loadAi(){
+  try{const data=await api("/api/ai?ts="+Date.now(),{cache:"no-store"});renderAi(data);return data}
+  catch(e){$("aiStatus").textContent="AI unavailable: "+e.message;return null}
+}
+async function connectAi(){
+  const accountId=$("aiCfAccountId").value.trim(),token=$("aiApiKey").value.trim(),b=$("aiConnectButton"),old=b.textContent;
+  if(!accountId||!token){$("aiStatus").textContent="Enter the Cloudflare Account ID and Workers AI API token.";return}
+  b.disabled=true;b.textContent="Connecting free AI…";
+  try{
+    await api("/api/ai/key",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accountId,token})},60000);
+    $("aiApiKey").value="";$("aiStatus").textContent="Free Cloudflare Workers AI connected.";await loadAi()
+  }catch(e){$("aiStatus").textContent="Connection failed: "+e.message}
+  finally{b.disabled=false;b.textContent=old}
+}
+async function sendAiMessage(text){
+  text=String(text||$("aiMessage").value||"").trim();if(!text)return;
+  const b=$("aiSendButton"),old=b.textContent;b.disabled=true;b.textContent="Thinking…";$("aiStatus").textContent="Designing with you…";
+  try{
+    const data=await api("/api/ai/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text})},90000);
+    $("aiMessage").value="";renderAi(data.state||data);$("aiStatus").textContent=data.draft?"Draft updated — keep talking or preview/apply it.":"Keep going — the AI is waiting for your next thought.";
+  }catch(e){$("aiStatus").textContent="AI request failed: "+e.message}
+  finally{b.disabled=!aiStateCache?.configured;b.textContent=old}
+}
+let aiVoiceSessionActive=false,aiVoiceRecorder=null,aiVoiceStream=null,aiVoiceContext=null,aiVoiceAnalyser=null,aiVoiceMonitor=0,aiVoiceChunks=[];
+let aiVoiceHeard=false,aiVoiceLastSound=0,aiVoiceStartedAt=0,aiVoicePlayback=null,aiVoiceLastAudio="",aiVoiceTurnBusy=false;
+function setAiVoiceState(state,label,hint){
+  const stage=$("aiVoiceStage"),button=$("aiVoiceButton");if(!stage||!button)return;
+  stage.dataset.state=state;button.classList.remove("listening","thinking","speaking");if(["listening","thinking","speaking"].includes(state))button.classList.add(state);
+  $("aiVoiceState").textContent=label||({idle:"Tap the microphone to start talking",listening:"I’m listening…",thinking:"Thinking…",speaking:"Speaking…"}[state]||"Ready");
+  $("aiVoiceHint").textContent=hint||({idle:"Speak naturally. When you stop talking, I’ll answer out loud and then listen again automatically.",
+    listening:"Just talk normally — I’ll detect when you finish.",thinking:"I heard you. I’m working on the lighting idea.",speaking:"You can interrupt me by tapping the microphone."}[state]||"");
+}
+async function ensureAiVoiceStream(){
+  if(aiVoiceStream&&aiVoiceStream.active)return aiVoiceStream;
+  if(!navigator.mediaDevices?.getUserMedia)throw new Error("Microphone capture is not supported on this device.");
+  aiVoiceStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+  return aiVoiceStream;
+}
+function chooseAiRecorderType(){
+  const types=["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus","audio/mp4"];
+  return types.find(t=>window.MediaRecorder?.isTypeSupported?.(t))||"";
+}
+function stopAiVoiceRecorder(){
+  cancelAnimationFrame(aiVoiceMonitor);aiVoiceMonitor=0;
+  if(aiVoiceRecorder&&aiVoiceRecorder.state!=="inactive"){try{aiVoiceRecorder.stop()}catch{}}
+}
+function aiVoiceLevel(){
+  if(!aiVoiceAnalyser)return 0;const data=new Uint8Array(aiVoiceAnalyser.fftSize);aiVoiceAnalyser.getByteTimeDomainData(data);
+  let sum=0;for(const x of data){const d=(x-128)/128;sum+=d*d}return Math.sqrt(sum/data.length);
+}
+function monitorAiVoice(){
+  if(!aiVoiceRecorder||aiVoiceRecorder.state!=="recording")return;
+  const now=performance.now(),level=aiVoiceLevel();
+  if(level>.032){aiVoiceHeard=true;aiVoiceLastSound=now}
+  const elapsed=now-aiVoiceStartedAt;
+  if((aiVoiceHeard&&now-aiVoiceLastSound>1150&&elapsed>1300)||elapsed>30000){stopAiVoiceRecorder();return}
+  if(!aiVoiceHeard&&elapsed>12000){stopAiVoiceRecorder();return}
+  aiVoiceMonitor=requestAnimationFrame(monitorAiVoice);
+}
+function blobToBase64(blob){
+  return blob.arrayBuffer().then(buffer=>{const bytes=new Uint8Array(buffer),parts=[];for(let i=0;i<bytes.length;i+=32768)parts.push(String.fromCharCode(...bytes.subarray(i,i+32768)));return btoa(parts.join(""))});
+}
+async function beginAiVoiceListening(){
+  if(!aiVoiceSessionActive||aiVoiceTurnBusy)return;
+  try{
+    if(window.AndroidVoice&&typeof AndroidVoice.start==="function"){
+      aiVoiceStartedAt=performance.now();setAiVoiceState("listening");
+      AndroidVoice.start();
+      return;
+    }
+    const stream=await ensureAiVoiceStream();
+    if(!aiVoiceContext)aiVoiceContext=new (window.AudioContext||window.webkitAudioContext)();
+    if(aiVoiceContext.state==="suspended")await aiVoiceContext.resume();
+    const source=aiVoiceContext.createMediaStreamSource(stream);aiVoiceAnalyser=aiVoiceContext.createAnalyser();aiVoiceAnalyser.fftSize=512;source.connect(aiVoiceAnalyser);
+    const type=chooseAiRecorderType();aiVoiceChunks=[];aiVoiceHeard=false;aiVoiceStartedAt=performance.now();aiVoiceLastSound=aiVoiceStartedAt;
+    aiVoiceRecorder=type?new MediaRecorder(stream,{mimeType:type}):new MediaRecorder(stream);
+    aiVoiceRecorder.ondataavailable=e=>{if(e.data?.size)aiVoiceChunks.push(e.data)};
+    aiVoiceRecorder.onstop=async()=>{
+      cancelAnimationFrame(aiVoiceMonitor);aiVoiceMonitor=0;
+      const heard=aiVoiceHeard,blob=new Blob(aiVoiceChunks,{type:aiVoiceRecorder?.mimeType||type||"audio/webm"});aiVoiceRecorder=null;
+      if(!aiVoiceSessionActive)return;
+      if(!heard||blob.size<800){setAiVoiceState("listening","I’m listening…","I didn’t catch anything yet — go ahead when you’re ready.");setTimeout(beginAiVoiceListening,450);return}
+      await processAiVoiceTurn(blob);
+    };
+    aiVoiceRecorder.start(250);setAiVoiceState("listening");aiVoiceMonitor=requestAnimationFrame(monitorAiVoice);
+  }catch(e){
+    $("aiStatus").textContent="Microphone failed: "+e.message;endAiVoiceSession(false);
+  }
+}
+async function processAiVoicePayload(audio,mime,durationSeconds){
+  aiVoiceTurnBusy=true;setAiVoiceState("thinking");
+  try{
+    const measured=Number(durationSeconds)>0?Number(durationSeconds):Math.max(0,(performance.now()-aiVoiceStartedAt)/1000);
+    const data=await api("/api/ai/voice-turn",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio,mime:mime||"audio/webm",durationSeconds:measured})},120000);
+    renderAi(data.state||data);
+    $("aiVoiceTranscript").textContent="You: "+(data.transcript||"") +"\n\nAI: "+(data.reply||"");
+    $("aiStatus").textContent=data.draft?"Draft updated from the conversation.":"Voice conversation active.";
+    aiVoiceLastAudio=data.audioBase64||"";$("aiVoiceReplay").disabled=!aiVoiceLastAudio;
+    if(aiVoiceLastAudio&&aiVoiceSessionActive){
+      setAiVoiceState("speaking");await playAiVoiceReply(aiVoiceLastAudio,data.audioMime||"audio/mpeg");
+    }
+  }catch(e){
+    $("aiStatus").textContent="Voice turn failed: "+e.message;
+  }finally{
+    aiVoiceTurnBusy=false;
+    if(aiVoiceSessionActive){setAiVoiceState("listening");setTimeout(beginAiVoiceListening,350)}
+  }
+}
+async function processAiVoiceTurn(blob){return processAiVoicePayload(await blobToBase64(blob),blob.type||"audio/webm",Math.max(0,(performance.now()-aiVoiceStartedAt)/1000))}
+window.__androidVoiceListening=()=>{if(aiVoiceSessionActive){aiVoiceStartedAt=performance.now();setAiVoiceState("listening")}};
+window.__androidVoiceCaptured=(audio,mime)=>{if(aiVoiceSessionActive&&!aiVoiceTurnBusy)processAiVoicePayload(audio,mime||"audio/mp4")};
+window.__androidVoiceNoSpeech=()=>{if(!aiVoiceSessionActive)return;setAiVoiceState("listening","I’m listening…","I didn’t catch anything yet — go ahead when you’re ready.");setTimeout(beginAiVoiceListening,450)};
+window.__androidVoiceError=message=>{if(!aiVoiceSessionActive)return;$("aiStatus").textContent="Microphone failed: "+message;endAiVoiceSession(false)};
+function playAiVoiceReply(base64,mime){
+  return new Promise(resolve=>{
+    try{
+      aiVoicePlayback?.pause();aiVoicePlayback=new Audio("data:"+(mime||"audio/mpeg")+";base64,"+base64);
+      aiVoicePlayback.onended=()=>{aiVoicePlayback=null;resolve()};aiVoicePlayback.onerror=()=>{aiVoicePlayback=null;resolve()};aiVoicePlayback.play().catch(()=>resolve());
+    }catch{resolve()}
+  });
+}
+async function startAiVoiceSession(){
+  if(aiVoiceSessionActive)return;
+  if(!aiStateCache?.configured){$("aiStatus").textContent="Connect the AI first.";return}
+  aiVoiceSessionActive=true;$("aiVoiceEnd").hidden=false;$("aiVoiceButton").setAttribute("aria-label","Interrupt and listen");
+  $("aiStatus").textContent="Voice conversation started.";await beginAiVoiceListening();
+}
+function endAiVoiceSession(showStatus=true){
+  aiVoiceSessionActive=false;aiVoiceTurnBusy=false;
+  if(window.AndroidVoice&&typeof AndroidVoice.stop==="function"){try{AndroidVoice.stop()}catch{}}
+  stopAiVoiceRecorder();
+  if(aiVoicePlayback){try{aiVoicePlayback.pause();aiVoicePlayback.currentTime=0}catch{}aiVoicePlayback=null}
+  if(aiVoiceStream){aiVoiceStream.getTracks().forEach(t=>t.stop());aiVoiceStream=null}
+  if(aiVoiceContext){try{aiVoiceContext.close()}catch{}aiVoiceContext=null}aiVoiceAnalyser=null;
+  $("aiVoiceEnd").hidden=true;$("aiVoiceButton")?.setAttribute("aria-label","Start voice conversation");setAiVoiceState("idle");
+  if(showStatus)$("aiStatus").textContent="Voice conversation ended.";
+}
+async function resetAiConversation(){
+  endAiVoiceSession(false);aiVoiceLastAudio="";$("aiVoiceReplay").disabled=true;
+  $("aiVoiceTranscript").textContent="Your last spoken turn and the AI’s reply will appear here.";
+  try{
+    const r=await post("/api/ai/reset",{});renderAi(r);$("aiStatus").textContent="Started over. Draft and conversation cleared; normal schedule resumed. Applied one-time events were not changed.";
+  }catch(e){$("aiStatus").textContent="Start over failed: "+e.message}
+}
+async function aiVoiceButtonAction(){
+  if(!aiVoiceSessionActive){await startAiVoiceSession();return}
+  if(aiVoicePlayback){aiVoicePlayback.pause();aiVoicePlayback=null;aiVoiceTurnBusy=false;setAiVoiceState("listening","I’m listening…","Go ahead — I stopped speaking.");setTimeout(beginAiVoiceListening,120);return}
+  if(window.AndroidVoice&&typeof AndroidVoice.stop==="function"){try{AndroidVoice.stop()}catch{}setTimeout(beginAiVoiceListening,120);return}
+  if(aiVoiceRecorder?.state==="recording"){stopAiVoiceRecorder();return}
+  beginAiVoiceListening();
+}
+
+async function previewAiDraft(){
+  const b=$("aiPreviewButton"),old=b.textContent;b.disabled=true;b.textContent="Starting…";
+  try{await post("/api/ai/preview",{brightness});$("aiStatus").textContent="AI draft is cycling through its layers on all four strings."}
+  catch(e){$("aiStatus").textContent="Preview failed: "+e.message}
+  finally{b.disabled=false;b.textContent=old}
+}
+async function applyAiOnce(){
+  const b=$("aiApplyOnceButton"),old=b.textContent;b.disabled=true;b.textContent="Applying…";
+  try{const r=await api("/api/ai/apply-once",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"},30000);renderAi(r.state);$("aiStatus").textContent="Applied one time for "+r.appliedDate+". It will remove itself afterward.";await loadEvents(invalidateEventRequest())}
+  catch(e){$("aiStatus").textContent="Apply failed: "+e.message}
+  finally{b.disabled=false;b.textContent=old}
+}
+async function removeAiEvent(id){
+  try{const r=await api("/api/ai/remove",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})},30000);renderAi(r.state);$("aiStatus").textContent="One-time event removed immediately.";await loadEvents(invalidateEventRequest())}
+  catch(e){$("aiStatus").textContent="Remove failed: "+e.message}
+}
+$("aiConnectButton")?.addEventListener("click",connectAi);
+$("aiDisconnectButton")?.addEventListener("click",async()=>{try{await post("/api/ai/key",{remove:true});await loadAi();$("aiStatus").textContent="Free AI disconnected."}catch(e){$("aiStatus").textContent=e.message}});
+$("aiVoiceButton")?.addEventListener("click",aiVoiceButtonAction);
+$("aiVoiceEnd")?.addEventListener("click",()=>endAiVoiceSession(true));
+$("aiVoiceReplay")?.addEventListener("click",()=>{if(aiVoiceLastAudio){setAiVoiceState("speaking");playAiVoiceReply(aiVoiceLastAudio,"audio/mpeg").then(()=>{if(aiVoiceSessionActive){setAiVoiceState("listening");setTimeout(beginAiVoiceListening,300)}else setAiVoiceState("idle")})}});
+$("aiStartOver")?.addEventListener("click",resetAiConversation);
+$("aiSendButton")?.addEventListener("click",()=>sendAiMessage());
+$("aiMessage")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendAiMessage()}});
+document.querySelectorAll(".aiIdea").forEach(b=>b.addEventListener("click",()=>sendAiMessage(b.dataset.prompt)));
+$("aiNewConversation")?.addEventListener("click",resetAiConversation);
+$("aiPreviewButton")?.addEventListener("click",previewAiDraft);
+$("aiApplyOnceButton")?.addEventListener("click",applyAiOnce);
+$("aiResumeButton")?.addEventListener("click",async()=>{try{await post("/api/resume",{});$("aiStatus").textContent="AI preview stopped. Normal schedule resumed."}catch(e){$("aiStatus").textContent="Resume failed: "+e.message}});
+function refreshVisibleState(){!API_MODE||document.hidden||loadState()}function ensureExtraControls(){const e=$("eventList");if(e&&!$("eventsSpeed")){const t=document.createElement("div");t.id="eventsSpeedBlock",t.className="card",t.style.marginTop="10px",t.innerHTML='<div class="label" style="margin-top:0">Event Preview Speed <span id="eventsSpeedVal" class="muted">Very Slow</span></div><input id="eventsSpeed" type="range" min="1" max="5" value="1"><div class="sub">This changes preview speed immediately. Each event can also save its own speed with Edit.</div>',e.parentNode.insertBefore(t,e),syncSpeedControls(speed),bindSpeedControl("eventsSpeed")}}setInterval(refreshVisibleState,30e3),document.addEventListener("visibilitychange",refreshVisibleState),window.addEventListener("pageshow",refreshVisibleState),setTimeout(()=>{bindRgbPicker()},0),setTimeout(ensureExtraControls,0),setTimeout(()=>{loadState(),loadEventColorTheme(),loadEvents(),loadCustomSchedules(),loadHomeCustomLights(),loadSavedColors(),loadAi()},0);</script>
+
+
+
+
+<script src="v3_mockup.js"></script>
+<script src="event_categories.js"></script>
+<script src="android_eufy_ui.js"></script>
+</body></html>
