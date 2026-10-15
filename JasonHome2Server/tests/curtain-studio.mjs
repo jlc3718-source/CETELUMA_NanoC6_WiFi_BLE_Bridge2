@@ -24,8 +24,8 @@ test('Curtain has two sub-tabs and preserves original control IDs',()=>{
 });
 test('v25 converter is complete and JavaScript parses',()=>{
   const scripts=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(scripts.length,2);
-  for(const [i,script] of scripts.entries())new Script(script[1],{filename:'curtain_converter_'+i+'.js'});
+  assert.equal(scripts.length,3);
+  for(const [i,script] of scripts.entries())if(script[1].trim())new Script(script[1],{filename:'curtain_converter_'+i+'.js'});
   for(const term of ['sourcePreview','imageInfo','framing','cleanup','zoom','sendLive','Build','83928','gif'])
     assert.ok(converter.includes(term),term);
 });
