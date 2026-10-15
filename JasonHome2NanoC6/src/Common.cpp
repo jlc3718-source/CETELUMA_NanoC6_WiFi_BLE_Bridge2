@@ -31,6 +31,8 @@ static bool localBrowser(){
   return m && (((uint32_t)remote & m)==((uint32_t)lan & m));
 }
 bool authorized(){
+  String origin=web.header("Origin");
+  if(origin.length()&&origin!="http://"+web.hostHeader()&&origin!="https://"+web.hostHeader())return false;
   // PIN-free operation only on the controller's local network/setup AP.
   // Never offer passwordless administration over its forwarded WAN port.
   if(localBrowser())return true;

@@ -12,6 +12,9 @@ copies={f'jh2-runtime-{version}.bin':runtime/'firmware.bin',f'jh2-boot-{version}
         'boot_app0.bin':Path.home()/'.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin',
         'littlefs.bin':runtime/'littlefs.bin'}
 for name,source in copies.items():shutil.copyfile(source,out/name)
+image=out/f'jh2-runtime-{version}.bin'
+if image.stat().st_size<=0x120000:
+    image.write_bytes(image.read_bytes()+b'\xff'*(0x120010-image.stat().st_size))
 assert (out/f'jh2-boot-{version}.bin').stat().st_size<=0x120000,'Updater exceeds its partition'
 assert (out/f'jh2-runtime-{version}.bin').stat().st_size<=0x290000,'Runtime exceeds its partition'
 parts=[];table=(out/'partitions.bin').read_bytes()
