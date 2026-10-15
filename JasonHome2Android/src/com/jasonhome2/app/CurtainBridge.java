@@ -7,6 +7,8 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.util.Base64;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
@@ -37,6 +39,9 @@ public final class CurtainBridge {
     private static final UUID SERVICE = UUID.fromString("00000074-1972-1925-3022-077119514e44");
     private static final UUID WRITE = UUID.fromString("01020074-1972-1925-3022-077119514e44");
     private static final UUID HEARTBEAT = UUID.fromString("02020074-1972-1925-3022-077119514e44");
+    private static final UUID RAW_NOTIFY = UUID.fromString("01010074-1972-1925-3022-077119514e44");
+    private static final UUID RAW_UPLOAD = UUID.fromString("27923001-2072-1925-3022-077119514e44");
+    private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     // Catalog ids 55–87 are *not* a continuous SmartDawn group sequence;
     // these exact identifiers were captured on 2026-10-11.
     private static final int[] CAPTURED_PATTERN_GROUPS = {
@@ -57,6 +62,9 @@ public final class CurtainBridge {
     private BluetoothGatt gatt;
     private BluetoothGattCharacteristic writer;
     private BluetoothGattCharacteristic heartbeat;
+    private int negotiatedMtu = 23;
+    private String pendingRawSubscribeId;
+    private boolean rawSessionActive;
     private BluetoothDevice candidate;
     private boolean ready;
     private boolean scanning;
@@ -113,7 +121,7 @@ public final class CurtainBridge {
     }
     private final Runnable heartTask = new Runnable() {
         @Override public void run() {
-            if (ready && heartbeat != null && frames.isEmpty() && writing == null) {
+            if (ready && !rawSessionActive && heartbeat != null && frames.isEmpty() && writing == null) {
                 frames.add(new Frame(new byte[4], true, null));
                 writeNext();
             }
@@ -124,8 +132,10 @@ public final class CurtainBridge {
     private static final class Frame {
         final byte[] bytes;
         final boolean useHeartbeat;
+        final UUID rawCharacteristic;
         final String completionId;
-        Frame(byte[] bytes, boolean hb, String id) { this.bytes=bytes; useHeartbeat=hb; completionId=id; }
+        Frame(byte[] bytes, boolean hb, String id) { this.bytes=bytes; useHeartbeat=hb; rawCharacteristic=null; completionId=id; }
+        Frame(byte[] bytes, UUID uuid, String id) { this.bytes=bytes; useHeartbeat=false; rawCharacteristic=uuid; completionId=id; }
     }
 
     public CurtainBridge(Activity activity, WebView web) {
@@ -237,6 +247,44 @@ public final class CurtainBridge {
             beginConnect(id,address,false);return;
         }
         if (!ready || writer==null || gatt==null) {finish(id,false,"Not connected: tap Connect first",false);return;}
+
+        // Native WebView support for the exact v25 SmartDawn BLE transport.
+        // UUID allowlisting prevents converter uploads reaching any other device service.
+        if("rawWrite".equals(action)){
+            UUID target=UUID.fromString(json.optString("uuid",""));
+            if(!target.equals(WRITE)&&!target.equals(HEARTBEAT)&&!target.equals(RAW_UPLOAD))
+                throw new IllegalArgumentException("Unsupported Curtain GATT write UUID");
+            byte[] bytes=Base64.decode(json.optString("data",""),Base64.DEFAULT);
+            if(bytes.length==0||bytes.length>508)
+                throw new IllegalArgumentException("Curtain packet size must be 1-508 bytes");
+            if(bytes.length>negotiatedMtu-3){
+                finish(id,false,"Bluetooth MTU "+negotiatedMtu+" is too small for "+bytes.length+" bytes. Reconnect the curtain.",ready);
+                return;
+            }
+            frames.add(new Frame(bytes,target,id));
+            writeNext();
+            return;
+        }
+        if("subscribeRaw".equals(action)){
+            UUID uuid=UUID.fromString(json.optString("uuid",""));
+            if(!uuid.equals(RAW_NOTIFY)) throw new IllegalArgumentException("Unsupported Curtain notification UUID");
+            BluetoothGattService service=gatt.getService(SERVICE);
+            BluetoothGattCharacteristic ch=service==null?null:service.getCharacteristic(RAW_NOTIFY);
+            if(ch==null)throw new IllegalArgumentException("SmartDawn notification characteristic missing");
+            if(pendingRawSubscribeId!=null)throw new IllegalStateException("Notification subscription already in progress");
+            if(!gatt.setCharacteristicNotification(ch,true))
+                throw new IllegalStateException("Could not enable SmartDawn notifications");
+            BluetoothGattDescriptor descriptor=ch.getDescriptor(CCCD);
+            if(descriptor==null)throw new IllegalStateException("Notification descriptor missing");
+            pendingRawSubscribeId=id;
+            rawSessionActive=true;
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            if(!gatt.writeDescriptor(descriptor)){
+                pendingRawSubscribeId=null;
+                throw new IllegalStateException("Could not write notification descriptor");
+            }
+            return;
+        }
         if("sequenceStop".equals(action)){
             stopSequence();
             finish(id,true,"Effect sequence stopped",ready);
@@ -416,12 +464,30 @@ public final class CurtainBridge {
                         writer=svc==null?null:svc.getCharacteristic(WRITE);
                         heartbeat=svc==null?null:svc.getCharacteristic(HEARTBEAT);
                         if(writer==null){retryOrFail("SmartDawn write characteristic unavailable");return;}
-                        cancelConnectTimeout();ready=true;
+                        cancelConnectTimeout();ready=true;negotiatedMtu=23;
+                        try{which.requestMtu(517);}catch(Throwable ignored){}
                         try{activity.getPreferences(Context.MODE_PRIVATE).edit().putString("smartdawn_validated_address",which.getDevice().getAddress()).apply();}catch(Throwable ignored){}
                         String id=connectId;connectId=null;
                         finish(id,true,"Connected to DN5E58",true);
                         // Read-only discovery first; do not send surprise power/effect commands on connect.
                     });
+                }
+                @Override public void onMtuChanged(BluetoothGatt which,int mtu,int status) {
+                    main.post(()->{if(gen==generation&&which==gatt&&status==GATT_SUCCESS)negotiatedMtu=Math.max(23,mtu);});
+                }
+                @Override public void onDescriptorWrite(BluetoothGatt which,BluetoothGattDescriptor desc,int status){
+                    main.post(()->{
+                        if(gen!=generation||which!=gatt)return;
+                        String id=pendingRawSubscribeId;pendingRawSubscribeId=null;
+                        if(id!=null)finish(id,status==GATT_SUCCESS,
+                            status==GATT_SUCCESS?"SmartDawn notifications enabled":"Notification subscription failed GATT "+status,ready);
+                    });
+                }
+                @Override public void onCharacteristicChanged(BluetoothGatt which,BluetoothGattCharacteristic ch) {
+                    forwardRawNotify(gen,which,ch.getUuid(),ch.getValue());
+                }
+                @Override public void onCharacteristicChanged(BluetoothGatt which,BluetoothGattCharacteristic ch,byte[] value) {
+                    forwardRawNotify(gen,which,ch.getUuid(),value);
                 }
                 @Override public void onCharacteristicWrite(BluetoothGatt which,BluetoothGattCharacteristic ch,int status) {
                     main.post(()->{
@@ -436,6 +502,15 @@ public final class CurtainBridge {
             }, BluetoothDevice.TRANSPORT_LE);
             if(gatt==null)retryOrFail("connectGatt returned no connection");
         } catch(Throwable t) {retryOrFail("Bluetooth connect failed: "+t.getMessage());}
+    }
+    private void forwardRawNotify(int gen,BluetoothGatt which,UUID uuid,byte[] value){
+        if(value==null)return;
+        final String encoded=Base64.encodeToString(value,Base64.NO_WRAP);
+        main.post(()->{
+            if(gen!=generation||which!=gatt||!rawSessionActive)return;
+            web.evaluateJavascript("window.__jh2CurtainRawNotify&&window.__jh2CurtainRawNotify("+
+                JSONObject.quote(uuid.toString())+","+JSONObject.quote(encoded)+");",null);
+        });
     }
     private void scheduleConnectTimeout(long ms,Runnable action) {
         cancelConnectTimeout();connectTimeout=action;main.postDelayed(action,ms);
@@ -454,7 +529,12 @@ public final class CurtainBridge {
     }
     private void writeNext() {
         if(writing!=null||frames.isEmpty()||gatt==null||!ready)return;
-        Frame f=frames.poll();BluetoothGattCharacteristic target=f.useHeartbeat?heartbeat:writer;
+        Frame f=frames.poll();
+        BluetoothGattCharacteristic target=f.useHeartbeat?heartbeat:writer;
+        if(f.rawCharacteristic!=null){
+            BluetoothGattService service=gatt.getService(SERVICE);
+            target=service==null?null:service.getCharacteristic(f.rawCharacteristic);
+        }
         if(target==null){finish(f.completionId,false,"Bluetooth write characteristic missing",ready);return;}
         writing=f;
         try {
@@ -485,6 +565,9 @@ public final class CurtainBridge {
         stopSequence();
         generation++;cancelConnectTimeout();clearWriteTimeout();stopScan();closeGatt();
         ready=false;writer=null;heartbeat=null;candidate=null;connectId=null;
+        negotiatedMtu=23;rawSessionActive=false;
+        if(pendingRawSubscribeId!=null)finish(pendingRawSubscribeId,false,"Curtain disconnected",false);
+        pendingRawSubscribeId=null;
         if(writing!=null)finish(writing.completionId,false,"Bluetooth disconnected",false);
         for(Frame f:frames)finish(f.completionId,false,"Bluetooth disconnected",false);
         writing=null;frames.clear();
