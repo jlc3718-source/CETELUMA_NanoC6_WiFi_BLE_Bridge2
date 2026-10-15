@@ -49,7 +49,21 @@ void startNetwork(){
   activationEnabled=state["activated"]|false;
   WiFi.persistent(false);WiFi.setSleep(false);WiFi.setHostname("jason-home-2");
   String ssid=secrets["ssid"]|String("");String pw=secrets["wifiPassword"]|String("");
-  Preferences net;net.begin("jh2-network",false);net.putString("ssid",ssid);net.putString("password",pw);net.end();
+  // NVS is a recovery copy for the factory updater. Never destroy that copy
+  // just because LittleFS is unmounted or secrets.json is empty after flashing.
+  Preferences net;
+  if(net.begin("jh2-network",false)){
+    String savedSSID=net.getString("ssid",""),savedPW=net.getString("password","");
+    if(!ssid.length()&&savedSSID.length()){
+      ssid=savedSSID;pw=savedPW;
+      secrets["ssid"]=ssid;secrets["wifiPassword"]=pw;
+      // A valid saved network remains usable even if the settings filesystem
+      // must be reinitialized. Do not overwrite a missing/broken filesystem.
+    }else if(ssid.length()&&(ssid!=savedSSID||pw!=savedPW)){
+      net.putString("ssid",ssid);net.putString("password",pw);
+    }
+    net.end();
+  }
   if(ssid.length()){WiFi.mode(WIFI_STA);WiFi.begin(ssid.c_str(),pw.c_str());}
   else{WiFi.mode(WIFI_AP);String ap="Jason-Home-2-Setup-"+String((uint32_t)ESP.getEfuseMac(),HEX);WiFi.softAP(ap.c_str(),"JasonHome2");}
   setenv("TZ","EST5EDT,M3.2.0/2,M11.1.0/2",1);tzset();
@@ -64,16 +78,30 @@ void networkLoop(){
 }
 static const char SETUP[]=R"HTML(<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2 setup</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;margin:24px auto;max-width:560px;padding:15px}label,input,button{display:block;box-sizing:border-box;width:100%;margin:10px 0;padding:12px;border-radius:10px}button{background:#70e0c4;color:#061321;border:0;font-weight:bold}.sub{color:#b0c8dc}a{color:#7ce5cd}</style><h1>Jason Home 2</h1><p>Connect your NanoC6 to 2.4 GHz Wi-Fi.</p><form method="post" action="/setup"><input name="ssid" placeholder="Wi-Fi name" required maxlength="32"><input name="password" type="password" placeholder="Wi-Fi password" maxlength="63"><input name="pin" type="password" pattern="[0-9]{4,12}" placeholder="Choose an admin PIN (4–12 digits)" required><button>Save and restart</button></form><p class="sub">Connect to your normal Wi-Fi after saving, then open <b>http://jason-home-2.local/</b>.</p>)HTML";
 void registerSetup(){
-  web.on("/setup",HTTP_GET,[]{if(String(secrets["ssid"]|"").length()&&!authorized())return replyError(401,"Sign in first");web.send(200,"text/html",SETUP);});
+  web.on("/setup",HTTP_GET,[]{if(String(secrets["ssid"]|"").length()&&String(secrets["pin"]|"").length()&&!authorized())return replyError(401,"Sign in first");String page=SETUP;
+    if(String(secrets["ssid"]|"").length()){
+      page.replace("placeholder=\"Wi-Fi name\" required", "placeholder=\"Leave blank to keep saved Wi-Fi\"");
+      page.replace("placeholder=\"Wi-Fi password\"", "placeholder=\"Leave blank to keep saved password\"");
+    }
+    web.send(200,"text/html",page);});
   web.on("/setup",HTTP_POST,[]{
-    if(String(secrets["ssid"]|"").length()&&!authorized())return replyError(401,"Sign in first");
+    if(String(secrets["ssid"]|"").length()&&String(secrets["pin"]|"").length()&&!authorized())return replyError(401,"Sign in first");
     String pin=web.arg("pin"),ssid=web.arg("ssid");bool valid=pin.length()>=4&&pin.length()<=12;
+    String savedSSID=secrets["ssid"]|String(""),savedPW=secrets["wifiPassword"]|String("");
+    if(!ssid.length())ssid=savedSSID;
+    String pw=web.arg("password");
+    if(!pw.length()&&ssid==savedSSID)pw=savedPW;
     for(char c:pin)if(c<'0'||c>'9')valid=false;
     if(!valid||ssid.length()<1||ssid.length()>32)return replyError(400,"Check Wi-Fi and PIN");
     JsonDocument next;next.set(secrets);
     next["ssid"]=ssid;next["wifiPassword"]=web.arg("password");next["pin"]=pin;
     if(!saveJson("/secrets.json",next.as<JsonVariantConst>()))return replyError(500,"Settings could not be saved");
     secrets.set(next);
+    // Keep the factory updater's copy in sync at the moment setup succeeds,
+    // rather than waiting for the next startup.
+    Preferences network; if(network.begin("jh2-network",false)){
+      network.putString("ssid",ssid);network.putString("password",pw);network.end();
+    }
     web.send(200,"text/html","<h2>Saved. Rejoin your Wi-Fi and open http://jason-home-2.local/</h2>");delay(500);ESP.restart();
   });
   web.on("/login",HTTP_GET,[]{web.send(200,"text/html","<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><h1>Jason Home 2</h1><form method=post action=/login><input name=pin type=password placeholder='Admin PIN' required><button>Sign in</button></form>");});
