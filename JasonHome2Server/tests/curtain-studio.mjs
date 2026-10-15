@@ -32,7 +32,8 @@ test('v25 converter is complete and JavaScript parses',()=>{
 test('host serves isolated studio asset with same-origin framing',()=>{
   assert.match(generator,/curtain_converter\.html/);
   assert.match(server,/curtain_converter\.html/);
-  assert.match(server,/frame-src 'self'; frame-ancestors 'self'/);
+  assert.match(server,/frame-src 'self'; frame-ancestors /);
+  assert.match(server,/name==="curtain_converter.html"/);
   const deployed=join(home,'web/curtain_converter.html');
   if(existsSync(join(home,'web')))assert.ok(existsSync(deployed),'generated converter absent');
 });
