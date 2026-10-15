@@ -17,8 +17,9 @@ def verify(root):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port',help='Example: COM5, /dev/ttyACM0, /dev/cu.usbmodem...')
-    parser.add_argument('--mode',choices=['install','runtime'],default='install')
+    parser.add_argument('--mode',choices=['install','runtime'],default='runtime')
     parser.add_argument('--verify-only',action='store_true')
+    parser.add_argument('--erase-settings',action='store_true',help='Required for a full installation that overwrites saved Wi-Fi and settings')
     parser.add_argument('--yes',action='store_true')
     args=parser.parse_args();root=Path(__file__).resolve().parent
     manifest=verify(root);version=manifest['version']
@@ -33,6 +34,7 @@ def main():
         elif ports:port=ports[int(input('NanoC6 port number: '))-1].device
         else:raise ValueError('No serial port. Hold the front button while connecting USB, then retry.')
     if args.mode=='install':
+        if not args.erase_settings:raise ValueError('Full install erases Wi-Fi and settings. Use --mode install --erase-settings only if you intend to erase them.')
         print('Full installation replaces all software and NanoC6 settings on',port)
         files=['0x0',str(root/f'jh2-full-install-{version}.bin')]
     else:
