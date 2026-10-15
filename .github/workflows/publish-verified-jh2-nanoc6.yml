@@ -1,0 +1,152 @@
+name: Publish verified Jason Home 2 NanoC6
+'on':
+  push:
+    branches:
+    - jason-home-2-nanoc6
+    paths:
+    - .github/workflows/publish-verified-jh2-nanoc6.yml
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_SOURCE: 1344dddab3452d201de9b617cf446135dbb1c191
+      RELEASE_SOURCE: e60583b5f3be313da3d97825944e03a805f8eda2
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: 1344dddab3452d201de9b617cf446135dbb1c191
+    - uses: actions/download-artifact@v4
+      with:
+        name: Jason-Home-2-NanoC6-firmware
+        path: release-work
+        run-id: 38729174875
+        github-token: ${{ github.token }}
+    - name: Verify and sign dedicated channel
+      env:
+        OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+      run: 'set -euo pipefail
+
+        python release-work/flash.py --verify-only
+
+        python - <<''PY''
+
+        import json,os
+
+        from pathlib import Path
+
+        m=json.loads(Path(''release-work/release.json'').read_text())
+
+        assert m[''commit'']==os.environ[''EXPECTED_SOURCE'']
+
+        PY
+
+        test -n "$OTA_SIGNING_KEY_B64"
+
+        key="$RUNNER_TEMP/jh2-ota-key.pem"
+
+        trap ''rm -f "$key"'' EXIT
+
+        printf ''%s'' "$OTA_SIGNING_KEY_B64" | base64 --decode > "$key"
+
+        chmod 600 "$key"
+
+        python JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release release-work/release.json --output release-work/latest.json
+
+        '
+    - name: Publish installation candidate and verify public bytes
+      shell: bash
+      run: "set -euo pipefail\nVERSION=\"$(cat JasonHome2NanoC6/VERSION)\"\nTAG=\"jason-home-2-nanoc6-v$VERSION\"\nif ! gh release view \"$TAG\" >/dev/null 2>&1; then\n  gh release create \"$TAG\" --target \"$RELEASE_SOURCE\" --prerelease --latest=false --title \"Jason Home 2 NanoC6 $VERSION \u2014 installation candidate\" --notes-file JasonHome2NanoC6/TESTING.md\nelse\n  remote_sha=\"$(gh api \"repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG\" --jq .object.sha)\"\n  test \"$remote_sha\" = \"$RELEASE_SOURCE\"\nfi\ngh release upload \"$TAG\" release-work/*.bin release-work/*.zip release-work/release.json release-work/SHA256SUMS release-work/INSTALL.md release-work/TESTING.md release-work/latest.json --clobber\nmkdir -p downloaded\ncurl --fail --location --retry 3 \"https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/jh2-runtime-$VERSION.bin\" -o \"downloaded/jh2-runtime-$VERSION.bin\"\npython - <<'PY'\nimport json,hashlib\nfrom pathlib import Path\nm=json.loads(Path('release-work/release.json').read_text());name=f\"\
+        jh2-runtime-{m['version']}.bin\";data=Path('downloaded',name).read_bytes()\nassert len(data)==m['files'][name]['bytes'] and hashlib.sha256(data).hexdigest()==m['files'][name]['sha256']\nPY\n"
+    - name: Advance Jason Home 2 channel only
+      run: "set -euo pipefail\ncp release-work/latest.json \"$RUNNER_TEMP/jh2-latest.json\"\ngit config user.name \"Jason Home 2 build\"\ngit config user.email \"325178451+jlc3718-source@users.noreply.github.com\"\nif git ls-remote --exit-code origin refs/heads/jh2-nanoc6-ota >/dev/null 2>&1; then\n  git fetch origin jh2-nanoc6-ota\n  git checkout -B jh2-nanoc6-ota FETCH_HEAD\nelse\n  git checkout --orphan jh2-nanoc6-ota\n  git rm -rf . >/dev/null\nfi\ncp \"$RUNNER_TEMP/jh2-latest.json\" latest.json\ngit add latest.json\nif ! git diff --cached --quiet; then git commit -m \"Publish signed Jason Home 2 NanoC6 runtime\"; git push origin HEAD:jh2-nanoc6-ota; fi\n"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Jason-Home-2-NanoC6-signed-channel
+        path: ${{ runner.temp }}/jh2-latest.json
+        retention-days: 30
+  sign-android:
+    runs-on:
+    - self-hosted
+    - Linux
+    - ARM64
+    - oracle
+    - jason-home
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - name: Repair ownership of this project's generated cache
+      run: 'if test -d "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; then sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; fi
+
+        '
+    - uses: actions/checkout@v4
+      with:
+        ref: 1344dddab3452d201de9b617cf446135dbb1c191
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '17'
+    - uses: actions/download-artifact@v4
+      with:
+        name: Jason-Home-2-NanoC6-Android-unsigned
+        path: sign-work
+        run-id: 38729174875
+        github-token: ${{ github.token }}
+    - name: Sign with permanent Jason Home 2 identity
+      shell: bash
+      run: "set -euo pipefail\nKEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks\nPASSFILE=/home/ubuntu/.jason-home-signing/password\nif ! test -s \"$KEYSTORE\" || ! test -s \"$PASSFILE\"; then\n  for base in /home/ubuntu/repo/JasonHome/Signing /opt/jason-home-2; do\n    candidate=\"$base/jason-home-release.jks\"\n    candidate_pass=\"$base/password\"\n    if test -s \"$candidate\" && test -s \"$candidate_pass\"; then\n      if keytool -list -v -keystore \"$candidate\" -storepass:file \"$candidate_pass\" -alias jason-home 2>/dev/null | grep -qi '76:B2:8E:FD:4F:5D:13:2A:D3:04:8F:19:BA:E6:C3:5A:A5:F8:4C:4A:39:0E:98:C8:0D:EE:EB:C0:C3:E7:3A:E1'; then KEYSTORE=\"$candidate\"; PASSFILE=\"$candidate_pass\"; break; fi\n    fi\n  done\nfi\ntest -s \"$KEYSTORE\" && test -s \"$PASSFILE\"\nOUT=Jason-Home-2-2.1.0-NanoC6-SIGNED.apk\njava -jar sign-work/apksigner.jar sign --ks \"$KEYSTORE\" --ks-key-alias jason-home --ks-pass \"file:$PASSFILE\" --key-pass \"file:$PASSFILE\" --out \"$OUT\"\
+        \ sign-work/Jason-Home-2-2.1.0-NanoC6-UNSIGNED.apk\njava -jar sign-work/apksigner.jar verify --verbose --print-certs \"$OUT\" > signing-verification.txt\ngrep -qi 'Signer #1 certificate SHA-256 digest: 76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' signing-verification.txt\nsha256sum \"$OUT\" > APK-SHA256SUMS\n"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Jason-Home-2-NanoC6-Android-signed
+        path: '*NanoC6-SIGNED.apk
+
+          APK-SHA256SUMS
+
+          signing-verification.txt
+
+          sign-work/source-commit.txt
+
+          '
+        retention-days: 30
+  publish-android:
+    needs:
+    - sign-android
+    - publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: 1344dddab3452d201de9b617cf446135dbb1c191
+    - uses: actions/download-artifact@v4
+      with:
+        name: Jason-Home-2-NanoC6-Android-signed
+        path: signed
+    - name: Publish verified APK
+      run: 'set -euo pipefail
+
+        VERSION="$(cat JasonHome2NanoC6/VERSION)"
+
+        (cd signed && sha256sum -c APK-SHA256SUMS)
+
+        gh release upload "jason-home-2-nanoc6-v$VERSION" signed/*SIGNED.apk signed/APK-SHA256SUMS signed/signing-verification.txt --clobber
+
+        '
