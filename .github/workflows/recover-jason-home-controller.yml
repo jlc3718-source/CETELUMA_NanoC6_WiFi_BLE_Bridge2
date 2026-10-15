@@ -127,7 +127,7 @@ jobs:
           PY
 
           RECOVERY="$BACKUP/original-eufy.json"
-          base64 --decode .github/private-transfer/eufy-recovery-20261015.cms.b64 > "$BACKUP/original-eufy.cms"
+          base64 --decode "$GITHUB_WORKSPACE/.github/private-transfer/eufy-recovery-20261015.cms.b64" > "$BACKUP/original-eufy.cms"
           openssl cms -decrypt -binary -inform DER -in "$BACKUP/original-eufy.cms" -inkey /home/ubuntu/.jason-home-signing/restore-transport.pem -out "$RECOVERY"
           export RECOVERY
           python3 - <<'PY'
