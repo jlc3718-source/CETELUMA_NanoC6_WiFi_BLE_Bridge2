@@ -165,6 +165,7 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
 })();
 </script>
 <script src="curtain_quality.js"></script>
+<script src="curtain_image_headers.js"></script>
 <script>'use strict';
 const BIN_WRITE='02020074-1972-1925-3022-077119514e44';
 const SERVICE='00000074-1972-1925-3022-077119514e44',WRITE='01020074-1972-1925-3022-077119514e44',NOTIFY='01010074-1972-1925-3022-077119514e44',UPLOAD='27923001-2072-1925-3022-077119514e44';
@@ -568,24 +569,37 @@ async function gifDimensions(file){
  if(head.length<10)return {width:0,height:0};
  return {width:head[6]|head[7]<<8,height:head[8]|head[9]<<8};
 }
-function imageDimensions(file){
+async function imageDimensions(file){
+ // Read JPEG/PNG/WebP dimensions directly from header bytes. Older app versions
+ // used a blob: URL here; the hosted CSP blocked that URL before decoding began.
+ const decoded=await CurtainImageHeaders.dimensions(file);
+ if(decoded)return decoded;
+ // Last resort for other image formats. The hosted img-src policy explicitly
+ // permits temporary user-selected blob: URLs.
  return new Promise((resolve,reject)=>{
   const url=URL.createObjectURL(file),im=new Image();let done=false;
-  const finish=(err)=>{if(done)return;done=true;const dimensions={width:im.naturalWidth,height:im.naturalHeight};im.onload=null;im.onerror=null;im.src='';URL.revokeObjectURL(url);err?reject(err):resolve(dimensions);};
+  const finish=(err)=>{if(done)return;done=true;
+   const dimensions={width:im.naturalWidth,height:im.naturalHeight,mime:file.type};
+   im.onload=null;im.onerror=null;im.src='';URL.revokeObjectURL(url);
+   err?reject(err):resolve(dimensions);};
   im.onload=()=>finish(null);
-  im.onerror=()=>finish(Error('Browser could not read this picture. Try JPG or PNG.'));
+  im.onerror=()=>finish(Error('Could not decode this image. Try a standard JPG or PNG.'));
   im.src=url;
  });
 }
 async function decodeLargeStill(file){
  // Image dimensions are read first so the browser can preserve aspect ratio
  // during a memory-saving downscaled decode.
- const {width,height}=await imageDimensions(file);
+ const {width,height,mime}=await imageDimensions(file);
  if(!width||!height)throw Error('Invalid picture dimensions');
+ if(width*height>240000000)throw Error('Image exceeds phone memory limit; reduce its dimensions before importing');
+ // Fix mislabeled pictures, e.g. JPEG data saved with a .png extension.
+ const source=mime&&file.type!==mime?new Blob([file],{type:mime}):file;
+ if(source!==file)log('IMAGE_MIME_CORRECTED '+JSON.stringify({fileType:file.type,actual:mime}));
  const MAX_SIDE=640, scale=Math.min(1,MAX_SIDE/Math.max(width,height));
  let bitmap;
  try{
-  bitmap=await createImageBitmap(file,{
+  bitmap=await createImageBitmap(source,{
    resizeWidth:Math.max(1,Math.round(width*scale)),
    resizeHeight:Math.max(1,Math.round(height*scale)),
    resizeQuality:'high',imageOrientation:'from-image'
@@ -593,7 +607,7 @@ async function decodeLargeStill(file){
  }catch(err){
   // Support older Chromium versions that do not implement resize options.
   log('DOWNSCALE_DECODE_FALLBACK '+String(err));
-  const url=URL.createObjectURL(file);
+  const url=URL.createObjectURL(source);
   try{
    const im=new Image();
    await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=()=>reject(Error('Browser cannot decode this image'));im.src=url;});
@@ -634,8 +648,8 @@ async function importFile(file){if(!file){$('filePickerStatus').textContent='No 
  say('Imported '+importedName+' ('+formatBytes(file.size)+') → 40×40. Ready for Static, GIF or Native Scroll.');
  log('IMPORT '+JSON.stringify({name:importedName,frames:frames.length,size:file.size,originalWidth,originalHeight,outputPixels:1600}));scheduleDraftSave();
  }catch(e){const detail=String(e?.message||e);
- const hint=/Browser could not read|cannot decode|Invalid picture dimensions|NotReadableError|NotAllowedError|fetch|permission|access|content/i.test(detail)
-   ?' Android could not read the selected photo. Install the updated Jason Home 2 app, then choose the photo again.':''; 
+ const hint=/decode|read|dimension|NotReadableError|NotAllowedError|permission|access|content/i.test(detail)
+   ?' The selected photo was not decoded. You can still import and prepare offline without connecting to Bluetooth.':''; 
  $('filePickerStatus').textContent='Import failed: '+detail+hint;
  say('Import failed: '+detail+hint);log('IMPORT_ERROR '+(e.stack||e));
  }finally{busy=false;ui();}}

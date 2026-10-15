@@ -21,6 +21,7 @@ jobs:
           node --test JasonHome2Server/tests/curtain-studio.mjs
           node --test JasonHome2Server/tests/curtain-offline.mjs
           node --test JasonHome2Server/tests/curtain-quality.mjs
+          node --test JasonHome2Server/tests/curtain-photo-import.mjs
       - name: Check offline Curtain Studio save, restore and prebuild
         run: node --test JasonHome2Server/tests/curtain-offline.mjs
       - name: Assert sequence is opt-in; brightness floored at 4; speed remains original
