@@ -54,6 +54,7 @@ function makeHarness(){
   sourceImage:new Uint8ClampedArray(6400),frames:[new Uint8ClampedArray(6400),new Uint8ClampedArray(6400)],
   frameDelays:[90,120],importedName:'offline-animation.gif',photoMaster:null,
   sourceMeta:{width:2048,height:2048,size:35000000},prepared:null,preparedLive:null,
+  gifStages:[],gifBaselines:[],aiGifCrop:null,
   autosaveTimer:null,draftRestore:false,saveChain:Promise.resolve(),projectGeneration:0,
   busy:false,getEncoding:()=>({kind:'palette',colors:8}),$:(id)=>field(id),
   formatBytes:(n)=>String(n),log(){},say(){},ui(){},stopPreview(){},
