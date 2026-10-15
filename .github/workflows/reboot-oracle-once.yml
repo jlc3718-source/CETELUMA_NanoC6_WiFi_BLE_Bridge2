@@ -1,23 +1,49 @@
-name: Reboot Oracle VM once
+name: Full Oracle reboot and Jason Home 2 verification
 on:
   push:
     branches: [jason-home-2-web]
     paths: ['.github/workflows/reboot-oracle-once.yml']
-
 permissions:
   contents: read
-
 jobs:
   reboot:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 3
     steps:
-      - name: Schedule full Oracle VM reboot
-        shell: bash
+      - name: Record boot identity and schedule full VM reboot
         run: |
           set -euo pipefail
-          echo "Scheduling full VM reboot in 15 seconds..."
+          cat /proc/sys/kernel/random/boot_id > /home/ubuntu/.jh2-before-full-reboot
+          sudo systemd-run --on-active=15s --unit=jh2-full-reboot-${{ github.run_id }} /usr/bin/systemctl reboot
+          echo 'Full Oracle VM reboot scheduled.'
+  allow-restart:
+    needs: reboot
+    runs-on: ubuntu-24.04
+    steps:
+      - run: sleep 45
+  verify:
+    needs: allow-restart
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Verify new kernel boot and preserved Oracle scheduler
+        run: |
+          set -euo pipefail
+          test "$(cat /proc/sys/kernel/random/boot_id)" != "$(cat /home/ubuntu/.jh2-before-full-reboot)"
           uptime
-          sudo systemd-run --on-active=15s --unit=chatgpt-oracle-reboot /usr/bin/systemctl reboot
-          sudo systemctl status chatgpt-oracle-reboot.timer --no-pager || true
-          echo "Reboot scheduled."
+          sudo docker ps --format '{{.Names}} {{.Status}}'
+          python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          info=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          def call(path):
+           req=urllib.request.Request('http://127.0.0.1:8080'+path,headers={'Authorization':'Bearer '+env['JASON_HOME_API_TOKEN']})
+           with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)
+          health=call('/api/health');print('After full VM reboot:',json.dumps(health))
+          assert health.get('ok') and health.get('automationOwner')=='oracle'
+          state=call('/api/status')
+          print('Eufy:',json.dumps(state.get('eufy')))
+          print('Calendar:',json.dumps(state.get('calendar')))
+          assert state.get('calendar',{}).get('synced') and state.get('calendar',{}).get('eventCount')==212
+          print('Full reboot verified:',time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
+          PY
