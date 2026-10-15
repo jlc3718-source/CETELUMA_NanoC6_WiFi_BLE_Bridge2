@@ -1,0 +1,63 @@
+name: Pause Jason Home 2 Oracle scheduler
+on:
+  push:
+    branches: [maintenance/jason-home-2-pause-oracle-20261015]
+    paths: ['.github/workflows/pause-jason-home-2-oracle.yml']
+permissions:
+  contents: read
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  pause:
+    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2'
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Pause existing scheduler and verify a paused evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time, urllib.request
+          from pathlib import Path
+
+          env_path = Path('/home/ubuntu/repo/JasonHomeServer/.env')
+          token = next(line.split('=', 1)[1].strip() for line in env_path.read_text().splitlines() if line.startswith('JASON_HOME_API_TOKEN='))
+          assert token, 'Existing Oracle API token is missing'
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          base = 'http://127.0.0.1:8080'
+          def request(path, payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              req = urllib.request.Request(base + path, data=data, headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+              with opener.open(req, timeout=30) as response:
+                  return json.load(response)
+          before = request('/api/status')
+          before_calendar = {key: before.get('calendar', {}).get(key) for key in ('revision', 'eventCount', 'customCount', 'enabled')}
+          result = request('/api/automation/ownership', {'owner': 'direct'})
+          assert result.get('ok') is True and result.get('owner') == 'direct' and result.get('paused') is True, 'Pause was not acknowledged'
+          print('Pause acknowledged: automation owner=direct, paused=true', flush=True)
+          health = request('/api/health')
+          assert health.get('ok') is True and health.get('automationOwner') == 'direct', 'Health does not confirm paused ownership'
+          deadline = time.monotonic() + 55
+          while True:
+              state = request('/api/status')
+              assert state.get('automationOwner') == 'direct', 'Oracle automation ownership changed'
+              evaluation = state.get('lastSchedulerEvaluation') or {}
+              if isinstance(evaluation, str):
+                  evaluation = json.loads(evaluation)
+              if evaluation.get('paused') is True and evaluation.get('owner') == 'direct' and evaluation.get('sent') == 0:
+                  break
+              if time.monotonic() >= deadline:
+                  raise AssertionError('No paused scheduler evaluation observed within 55 seconds')
+              time.sleep(2)
+          after_calendar = {key: state.get('calendar', {}).get(key) for key in ('revision', 'eventCount', 'customCount', 'enabled')}
+          assert before_calendar == after_calendar, 'Saved calendar changed unexpectedly'
+          with opener.open('http://127.0.0.1:8081/api/health', timeout=20) as response:
+              web_health = json.load(response)
+          assert web_health.get('ok') is True, 'Jason Home 2 web service health check failed'
+          print('VERIFIED: Oracle scheduler paused, owner=direct, scheduled commands sent=0')
+          print('Scheduler evaluation at:', evaluation.get('at'))
+          print('Saved calendar preserved:', json.dumps(after_calendar, sort_keys=True))
+          print('Jason Home 2 web service remains healthy')
+          PY
