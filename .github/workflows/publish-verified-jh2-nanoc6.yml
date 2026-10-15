@@ -79,7 +79,17 @@ jobs:
         from pathlib import Path\nm=json.loads(Path('release-work/release.json').read_text());name=f\"\
         jh2-runtime-{m['version']}.bin\";data=Path('downloaded',name).read_bytes()\n\
         assert len(data)==m['files'][name]['bytes'] and hashlib.sha256(data).hexdigest()==m['files'][name]['sha256']\n\
-        PY\n"
+        PY\npython - <<'PYTHON'\nfrom pathlib import Path\nnotes=Path('JasonHome2NanoC6/TESTING.md').read_text()\n\
+        notice=\"\"\"## Known feature gaps in candidate 1.0.2\n\n- Test Halloween's\
+        \ saved event and phase recipes migrate, but the Oracle-specific continuous\
+        \ random orange flash renderer is not ported. NanoC6 currently uses the saved\
+        \ static/pattern recipe for that event.\n- The weekly resolver selects one\
+        \ highest-priority active row. Simultaneous different weekly scenes on multiple\
+        \ strings need more resolver work. The captured migration has no weekly rows.\n\
+        \nKeep Oracle available while evaluating this candidate. This is not a complete,\
+        \ physically verified replacement yet.\n\n\"\"\"\nPath('KNOWN-LIMITS.md').write_text(notice+notes)\n\
+        PYTHON\ngh release edit \"$TAG\" --notes-file KNOWN-LIMITS.md\ngh release\
+        \ upload \"$TAG\" KNOWN-LIMITS.md --clobber\n"
     - name: Advance Jason Home 2 channel only
       run: "set -euo pipefail\ncp release-work/latest.json \"$RUNNER_TEMP/jh2-latest.json\"\
         \ngit config user.name \"Jason Home 2 build\"\ngit config user.email \"325178451+jlc3718-source@users.noreply.github.com\"\
