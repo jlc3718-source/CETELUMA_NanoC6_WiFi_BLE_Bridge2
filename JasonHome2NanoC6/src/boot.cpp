@@ -1,9 +1,11 @@
 #include "Common.h"
 #include "FirmwareUpdate.h"
+#include "LocalFirmware.h"
 static bool attempted=false;
-void setup(){startNetwork();}
+void setup(){startNetwork();localFirmwareBegin();}
 void loop(){
   networkLoop();
+  if(localFirmwareActive()){localFirmwareLoop();delay(2);return;}
   if(!attempted&&WiFi.status()==WL_CONNECTED&&timeValid()){
     attempted=true;Preferences n;n.begin("jh2-release",true);String encoded=n.getString("pending","");n.end();
     if(encoded.length()){

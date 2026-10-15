@@ -77,3 +77,4 @@ void firmwareLoop(){
   busy=false;
 #endif
 }
+#include "LocalFirmware.inc"

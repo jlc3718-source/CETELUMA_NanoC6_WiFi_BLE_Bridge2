@@ -1,6 +1,10 @@
 # Jason Home 2 — NanoC6 installation
 
-This is the **1.0.2 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
+This is the **1.0.3 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
+
+Version 1.0.3 repairs Wi-Fi setup and adds browser firmware upload. The runtime mounts the existing `storage` partition explicitly, and a failed save leaves the previous network and PIN intact. For an already flashed 1.0.2 board, first update **both** the boot updater (`0x10000`) and runtime (`0x130000`) by USB; keep the existing partition table and settings filesystem. These changes have not been physically verified on the board.
+
+After this initial USB repair, open **Settings → Upload firmware file**, or `/firmware`. The controller reboots into its small protected updater, accepts a local `jh2-runtime-*.bin` through the browser, validates the ESP32-C6 image and Jason Home 2 product marker, and restarts. Wi-Fi and saved settings are preserved. A failed or interrupted upload stays in the uploader so it can be retried. The uploader is available on the setup access point when home Wi-Fi is unavailable. The existing signed remote-update path remains available.
 
 Your remote address is **http://craumejl.tplinkdns.com**, **TCP port 80**. The local address is **http://jason-home-2.local/**. Use the local address during initial setup and migration. Your router maintains the TP-Link DDNS hostname.
 

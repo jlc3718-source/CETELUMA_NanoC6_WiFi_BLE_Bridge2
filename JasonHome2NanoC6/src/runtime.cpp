@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "FirmwareUpdate.h"
+#include "LocalFirmware.h"
 #include "EufyCloud.h"
 #include "LocalScheduler.h"
 #include "Curtain.h"
@@ -205,7 +206,7 @@ static bool handleApi(const String&path){
   return false;
 }
 void setup(){
-  startNetwork();schedulerBegin();registerSetup();registerFirmware();eufy.begin();curtainBegin();
+  startNetwork();schedulerBegin();registerSetup();registerFirmware();registerLocalFirmware();eufy.begin();curtainBegin();
   manualUntil=state["manualUntil"]|0LL;if(manualUntil>time(nullptr))manual.set(state["manual"]);
   resultLock=xSemaphoreCreateMutex();commandQueue=xQueueCreate(3,sizeof(Job));xTaskCreate(commandWorker,"jh2-eufy",12288,nullptr,1,nullptr);
   web.onNotFound([]{

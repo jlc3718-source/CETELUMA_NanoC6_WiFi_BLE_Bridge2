@@ -39,7 +39,7 @@ function init(){
  <p><label><input id="nanoOraclePaused" type="checkbox"> I have paused the Oracle scheduler</label></p>
  <div class="row wraprow"><button class="btn primary" id="nanoActivate">Activate NanoC6</button><button class="btn" id="nanoPause">Pause NanoC6</button></div>
  <p><label><input id="nanoAutoUpdate" type="checkbox"> Install signed remote updates automatically</label></p>
- <div class="row wraprow"><button class="btn" id="nanoCheck">Check for firmware update</button><button class="btn" id="nanoInstall">Install verified update</button></div>
+ <div class="row wraprow"><button class="btn" id="nanoCheck">Check for firmware update</button><button class="btn" id="nanoInstall">Install verified update</button><a class="btn" href="/firmware">Upload firmware file</a></div>
  <p><b>Remote address:</b> <a href="http://craumejl.tplinkdns.com">http://craumejl.tplinkdns.com</a> · TCP port 80</p>
  <p><label><input id="nanoUpnp" type="checkbox"> Automatically map TCP port 80 using UPnP when active</label></p>
  <p class="sub" id="nanoNetworkState">Checking router mapping…</p><button class="btn" id="nanoRetryUpnp">Retry port mapping</button>

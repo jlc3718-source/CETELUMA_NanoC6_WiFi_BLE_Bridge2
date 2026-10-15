@@ -43,7 +43,7 @@ bool timeValid(){return time(nullptr)>1735689600;}
 void startNetwork(){
   Serial.begin(115200);delay(100);
   // Do not erase a filesystem merely because mounting failed.
-  if(!LittleFS.begin(false)){lastError="Storage not initialized; flash the supplied filesystem image";}
+  if(!LittleFS.begin(false,"/littlefs",10,"storage")){lastError="Storage not initialized; flash the supplied filesystem image";}
   loadJson("/state.json",state);loadJson("/secrets.json",secrets);
   apiToken=secrets["adminToken"]|String("");if(apiToken.length()<32){apiToken=randomHex(24);secrets["adminToken"]=apiToken;saveJson("/secrets.json",secrets.as<JsonVariantConst>());}
   activationEnabled=state["activated"]|false;
@@ -70,8 +70,10 @@ void registerSetup(){
     String pin=web.arg("pin"),ssid=web.arg("ssid");bool valid=pin.length()>=4&&pin.length()<=12;
     for(char c:pin)if(c<'0'||c>'9')valid=false;
     if(!valid||ssid.length()<1||ssid.length()>32)return replyError(400,"Check Wi-Fi and PIN");
-    secrets["ssid"]=ssid;secrets["wifiPassword"]=web.arg("password");secrets["pin"]=pin;
-    if(!saveJson("/secrets.json",secrets.as<JsonVariantConst>()))return replyError(500,"Settings could not be saved");
+    JsonDocument next;next.set(secrets);
+    next["ssid"]=ssid;next["wifiPassword"]=web.arg("password");next["pin"]=pin;
+    if(!saveJson("/secrets.json",next.as<JsonVariantConst>()))return replyError(500,"Settings could not be saved");
+    secrets.set(next);
     web.send(200,"text/html","<h2>Saved. Rejoin your Wi-Fi and open http://jason-home-2.local/</h2>");delay(500);ESP.restart();
   });
   web.on("/login",HTTP_GET,[]{web.send(200,"text/html","<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><h1>Jason Home 2</h1><form method=post action=/login><input name=pin type=password placeholder='Admin PIN' required><button>Sign in</button></form>");});
