@@ -9,7 +9,7 @@ const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const converter=readFileSync(join(root,'curtain_converter.html'),'utf8');
 const scripts=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
 test('HTML converter scripts parse and show offline controls',()=>{
- assert.equal(scripts.length,3);
+ assert.equal(scripts.length,4);
  for(const [i,match] of scripts.entries())new Script(match[1],{filename:'curtain-studio-'+i+'.js'});
  for(const term of ['id="prepareOffline"','id="offlineStatus"','id="saveDraft"','id="clearDraft"','restoreOfflineDraft();','scheduleDraftSave();']){
   assert.ok(converter.includes(term),'Missing offline control '+term);
