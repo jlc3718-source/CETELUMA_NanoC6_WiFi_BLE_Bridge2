@@ -70,3 +70,14 @@ test('iframe Web Bluetooth adapter proxies writes and notifications',async()=>{
   handlers.message({origin:'https://example.test',source:parent,data:{kind:'jh2-curtain-notify',uuid:notify.uuid,data:'AAECAw=='}});
   assert.deepEqual([...received],[0,1,2,3]);
 });
+
+test('Android picker returns readable photo URIs to trusted WebView',()=>{
+  assert.match(activity,/setAllowContentAccess\(true\)/);
+  assert.match(activity,/setAllowFileAccess\(false\)/);
+  assert.match(activity,/onShowFileChooser/);
+  assert.match(activity,/picker\.setType\("image\/\*"\)/);
+  assert.match(activity,/FLAG_GRANT_READ_URI_PERMISSION/);
+  assert.match(activity,/FileChooserParams\.parseResult/);
+  assert.match(converter,/id="filePickerStatus"/);
+  assert.match(converter,/input id="fileInput".*accept="image\/\*"/);
+});

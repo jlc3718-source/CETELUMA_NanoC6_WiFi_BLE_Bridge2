@@ -60,7 +60,10 @@ public final class MainActivity extends Activity {
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);
-        web.getSettings().setAllowContentAccess(false);
+        // The verified Android photo picker returns content:// URIs. Without this,
+        // WebView receives a URI but cannot decode the selected JPG/PNG/GIF.
+        // Keep unrestricted filesystem and file-URL access disabled below.
+        web.getSettings().setAllowContentAccess(true);
         web.getSettings().setAllowFileAccessFromFileURLs(false);
         web.getSettings().setAllowUniversalAccessFromFileURLs(false);
         web.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -78,7 +81,13 @@ public final class MainActivity extends Activity {
                 if(pendingCurtainImage!=null)pendingCurtainImage.onReceiveValue(null);
                 pendingCurtainImage=callback;
                 try {
-                    startActivityForResult(params.createIntent(),REQUEST_CURTAIN_IMAGE);
+                    Intent picker=params.createIntent();
+                    // Accept photos, GIFs and local image documents through the same picker.
+                    // Some Android WebView builds produce invalid mixed extension accept types.
+                    picker.setType("image/*");
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivityForResult(picker,REQUEST_CURTAIN_IMAGE);
                     return true;
                 }catch(Throwable error){
                     pendingCurtainImage=null;
@@ -169,7 +178,14 @@ public final class MainActivity extends Activity {
         if(requestCode==REQUEST_CURTAIN_IMAGE&&pendingCurtainImage!=null){
             ValueCallback<Uri[]> callback=pendingCurtainImage;
             pendingCurtainImage=null;
-            callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode,data));
+            Uri[] selected=WebChromeClient.FileChooserParams.parseResult(resultCode,data);
+            // The browser only sees files that the user explicitly selected.
+            if(selected!=null && data!=null){
+                for(Uri uri:selected)if(uri!=null)
+                    try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);}
+                    catch(SecurityException ignored){} // GET_CONTENT may grant transient access only.
+            }
+            callback.onReceiveValue(selected);
         }
     }
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults) {
