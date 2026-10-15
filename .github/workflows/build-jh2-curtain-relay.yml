@@ -1,0 +1,107 @@
+name: Jason Home 2 Oracle Curtain Relay
+on:
+  push:
+    branches: [feat/jh2-oracle-curtain-1.1.0]
+    paths: ['JasonHome2NanoC6/**','JasonHome2Server/**','JasonHome2Android/**','.github/workflows/build-jh2-curtain-relay.yml','.github/scripts/deploy-curtain-relay.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jh2-curtain-relay-build
+  cancel-in-progress: true
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-nanoc6-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+          restore-keys: jh2-nanoc6-pio-
+      - run: python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+      - name: Test relay semantics and retained Studio features
+        run: |
+          node --check JasonHome2Server/server.mjs
+          node --test JasonHome2Server/tests/curtain-relay.mjs JasonHome2Server/tests/curtain-quality.mjs JasonHome2Server/tests/curtain-images.mjs JasonHome2Server/tests/curtain-photo-import.mjs JasonHome2Server/tests/curtain-offline.mjs JasonHome2Server/tests/curtain-replace-play.mjs JasonHome2Server/tests/curtain-test-override.mjs
+          python JasonHome2NanoC6/tests/test_bridge.py
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/src JasonHome2NanoC6/tests/smartdawn.cpp JasonHome2NanoC6/src/SmartDawnProtocol.cpp -o /tmp/jh2-curtain
+          /tmp/jh2-curtain
+          python JasonHome2NanoC6/tools/prepare.py
+      - name: Build and validate both firmware apps
+        run: |
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2Server/generate_catalog.py
+          python JasonHome2NanoC6/tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-1.1.0
+          path: JasonHome2NanoC6/release/
+          if-no-files-found: error
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Build existing APK with Oracle transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK=/usr/local/lib/android/sdk
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' >/dev/null
+          BT="$SDK/build-tools/35.0.0"
+          JAR="$SDK/platforms/android-35/android.jar"
+          OUT="$PWD/JasonHome2Android/build"
+          mkdir -p "$OUT/classes" "$OUT/dex"
+          "$BT/aapt2" link -o "$OUT/unsigned.apk" -I "$JAR" --manifest JasonHome2Android/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 35
+          javac --release 17 -cp "$JAR" -d "$OUT/classes" JasonHome2Android/src/com/jasonhome2/app/*.java
+          "$BT/d8" --min-api 26 --lib "$JAR" --output "$OUT/dex" "$OUT/classes/com/jasonhome2/app/"*.class
+          cp "$OUT/unsigned.apk" "$OUT/with-dex.apk"
+          (cd "$OUT/dex" && zip -q -u "$OUT/with-dex.apk" classes.dex)
+          "$BT/zipalign" -f 4 "$OUT/with-dex.apk" Jason-Home-2-2.0.11-ORACLE-RELAY-UNSIGNED.apk
+          "$BT/aapt2" dump badging Jason-Home-2-2.0.11-ORACLE-RELAY-UNSIGNED.apk > "$OUT/badging.txt"
+          grep "package: name='com.jasonhome2.app' versionCode='12' versionName='2.0.11'" "$OUT/badging.txt"
+          if grep -q 'permission.BLUETOOTH' "$OUT/badging.txt"; then exit 1; fi
+          if grep -q 'android.bluetooth' JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java; then exit 1; fi
+          tar -czf android-tools.tar.gz -C "$SDK/build-tools/35.0.0" lib/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Relay-Unsigned
+          path: |
+            Jason-Home-2-2.0.11-ORACLE-RELAY-UNSIGNED.apk
+            android-tools.tar.gz
+  sign:
+    needs: [firmware, apk]
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-Relay-Unsigned, path: relay-sign}
+      - name: Sign with the established key and verify identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd relay-sign
+          tar -xzf android-tools.tar.gz
+          export JH2_SIGN_PASS="$(cat /home/ubuntu/.jason-home-signing/password)"
+          java -jar lib/apksigner.jar sign --ks /home/ubuntu/.jason-home-signing/jason-home-release.jks --ks-key-alias jason-home --ks-pass env:JH2_SIGN_PASS --key-pass env:JH2_SIGN_PASS --out Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk Jason-Home-2-2.0.11-ORACLE-RELAY-UNSIGNED.apk
+          java -jar lib/apksigner.jar verify --verbose --print-certs Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk | tee verify.txt
+          grep -qi '76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' verify.txt
+          sha256sum Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Relay-Signed
+          path: relay-sign/Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk

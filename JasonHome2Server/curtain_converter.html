@@ -116,14 +116,14 @@ details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space
 </main><script>
 /* Jason Home 2 native Bluetooth adapter. Chrome Web Bluetooth remains unchanged. */
 (function(){
- if(navigator.bluetooth || window.parent===window) return;
+ if((navigator.bluetooth && !window.parent.JH2_ORACLE_CURTAIN) || window.parent===window) return;
  const pending=new Map(),handlers=new Map();
  let serial=0;
  const origin=location.origin;
  function rpc(action,payload={}){
   const id='cv'+(++serial);
   return new Promise((resolve,reject)=>{
-   const timer=setTimeout(()=>{pending.delete(id);reject(new Error('Android Bluetooth '+action+' timeout'));},action==='connect'?70000:30000);
+   const timer=setTimeout(()=>{pending.delete(id);reject(new Error('NanoC6 relay '+action+' timeout'));},action==='connect'?70000:30000);
    pending.set(id,{resolve,reject,timer});
    window.parent.postMessage({kind:'jh2-curtain-request',id,action,payload},origin);
   });
@@ -553,6 +553,18 @@ async function sendLiveFrame(frame,index=-1){const encoding=getEncoding();
  await sendBinary(encoding.kind==='palette'?4:1,packets);return packets.length;
 }
 async function drawLive(){
+ if(typeof window!=='undefined'&&window.parent.JH2_ORACLE_CURTAIN){
+  const motion=$('motion').value;if(motion==='scroll')throw Error('Use the native slot installer for scrolling');
+  const images=motion==='gif'?frames:[frames[0]];
+  if(!images.length)throw Error('Choose a picture first');
+  const encoded=images.map(frame=>{let s='';for(const b of frame)s+=String.fromCharCode(b);return btoa(s);});
+  say('Sending prepared frames to Oracle…');
+  const asset=await window.parent.JH2CurtainApi('/api/curtain/assets',{name:importedName,frames:encoded,delays:frameDelays,quality:$('quality').value,loop:motion==='gif'});
+  say('Oracle stored '+asset.bytes+' bytes; waiting for NanoC6 BLE delivery…');
+  const result=await window.parent.JH2OracleCurtainCall('asset',{sha256:asset.sha256});
+  say(result.message+' Files remain on Oracle; you may close this app.');$('progress').value=100;return;
+ }
+
  if(!connected||!binWriter)throw Error('Connect curtain first');
  stopLive=false;
  const motion=$('motion').value;
@@ -847,7 +859,7 @@ $('fileInput').onchange=()=>{$('cleanup').value='none';const chosen=$('fileInput
 $('butterfly').onclick=()=>{const data=Uint8Array.from(atob(BUTTERFLY_GIF_B64),s=>s.charCodeAt(0));importFile(new File([data],'Butterfly_demo.gif',{type:'image/gif'}));};
 $('previewMotion').onclick=()=>{if(previewTimer!==null){stopPreview();renderImage(sourceImage);say('Preview stopped.');}else if(frames.length===1){renderImage(sourceImage);say('Static image preview.');}else{previewFrames();say('Previewing '+frames.length+' actual GIF frames.');}ui();};
 $('stop').onclick=()=>{stopLive=true;stopPreview();renderImage(sourceImage);say('Stop requested.');ui();};
-$('stopSend').onclick=()=>{stopLive=true;say('Stopping curtain playback at the next packet…');};
+$('stopSend').onclick=()=>{if(window.parent.JH2_ORACLE_CURTAIN){window.parent.JH2OracleCurtainCall('assetStop',{}).then(()=>say('NanoC6 relay stopped')).catch(e=>say(e.message));return;}stopLive=true;say('Stopping curtain playback at the next packet…');};
 $('motion').onchange=()=>{projectGeneration++;invalidatePreparation();refreshGifPalette();scheduleDraftSave();ui();if(sourceImage){renderImage(sourceImage);redrawThreeCandidates();}const mode=$('motion').value;if(mode==='static')say('Static selected: draws one frame and holds it, without scrolling.');else if(mode==='gif')say('GIF selected: sends each imported GIF frame over Bluetooth.');else say('Native E-89 scroll selected: stores first frame as a scrolling effect at 83928.');};
 $('quality').onchange=()=>{if(sourceImage){refreshGifPalette();renderImage(sourceImage);redrawThreeCandidates();projectGeneration++;invalidatePreparation();scheduleDraftSave();ui();}const mode=getEncoding();say(mode.kind==='palette'?mode.colors+'-color indexed palette selected.':'Direct RGB888 selected: '+(mode.colors>=1600?'all distinct colors':mode.colors+' colors')+'. More packets can make transfers slower.');};
 $('build').onclick=()=>operation(async()=>{if(!sourceImage)throw Error('Import an image first');prepared=nativeFromImage(sourceImage);plan(prepared,CID);await saveDraftNow();say('Built verified 4 KB native E-89 scrolling effect from '+importedName+' using '+(getEncoding().kind==='rgb'?16:getEncoding().colors)+' palette colors. Ready to install at 83928 after connecting; file saved offline.');});

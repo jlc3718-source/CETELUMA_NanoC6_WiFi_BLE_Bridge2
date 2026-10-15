@@ -109,3 +109,6 @@ if html.count("</head>") != 1 or html.count("</body>") != 1:
 html = html.replace("</head>", '<link rel="stylesheet" href="curtain.css">\n</head>', 1)
 html = html.replace("</body>", '<script src="curtain.js"></script>\n<script src="nano_sync.js"></script>\n</body>', 1)
 page.write_text(html)
+
+shutil.copyfile(target.parent / "curtain_remote.js", target / "curtain_remote.js")
+page.write_text(page.read_text().replace('<script src="curtain.js"></script>','<script src="curtain_remote.js"></script>\n<script src="curtain.js"></script>'))

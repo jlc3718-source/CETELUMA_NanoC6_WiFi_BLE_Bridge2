@@ -1,3 +1,4 @@
+import {createCurtainBridge} from "./curtain_bridge.mjs";
 import http from "node:http";
 import { createHmac, randomBytes, timingSafeEqual, randomUUID, createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
@@ -141,6 +142,7 @@ db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NUL
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
 const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});
+const curtainRelay=createCurtainBridge({db});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 if(!meta("speed_scale_10")){
   db.exec("BEGIN");
@@ -911,7 +913,7 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_quality.js","curtain_image_headers.js","nano_sync.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_quality.js","curtain_image_headers.js","nano_sync.js","curtain_remote.js"]);
   if(!allowed.has(name)&&!/^curtain_real_(?:0[0-9]|10)\.js$/.test(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
@@ -933,6 +935,22 @@ async function route(req,res){
     await upstream("/api/status");
     return send(res,200,{ok:true},{"set-cookie":cookie()});
   }
+  if(path.startsWith("/api/curtain-bridge/")){
+    if(!curtainRelay.authorized(req))throw fail(401,"Bridge authentication failed");
+    if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req)));
+    if(path==="/api/curtain-bridge/wait"&&method==="GET"){
+      const abort=new AbortController();res.on("close",()=>abort.abort());
+      await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true});
+    }
+    if(path.startsWith("/api/curtain-bridge/assets/")&&method==="GET"){
+      const sha=path.split("/").pop();if(!/^[a-f0-9]{64}$/.test(sha))throw fail(400,"Invalid asset digest");
+      const asset=curtainRelay.asset(sha);if(!asset)throw fail(404,"Asset missing");
+      const offset=Number(url.searchParams.get("offset")||0),length=Number(url.searchParams.get("length")||4096);
+      if(!Number.isInteger(offset)||offset<0||offset>=asset.length||!Number.isInteger(length)||length<1||length>4096)throw fail(400,"Invalid relay range");
+      const bytes=Buffer.from(asset).subarray(offset,offset+length);res.writeHead(200,{"content-type":"application/octet-stream","content-length":bytes.length,"etag":sha,"x-chunk-sha256":createHash("sha256").update(bytes).digest("hex"),"cache-control":"no-store"});return res.end(bytes);
+    }
+    throw fail(404,"Bridge endpoint missing");
+  }
   if(!isSession(req)){
     if(method==="GET"&&!path.startsWith("/api/")){const body=Buffer.from(loginPage);res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store","content-length":body.length});return res.end(body);}
     throw fail(401,"Connect Jason Home 2 to Oracle");
@@ -943,6 +961,21 @@ async function route(req,res){
     if(req.headers["sec-fetch-site"]==="cross-site")throw fail(403,"Cross-site request blocked");
   }
   if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);
+  if(path==="/api/curtain/status"&&method==="GET")return send(res,200,curtainRelay.status());
+  if(path==="/api/curtain/pair"&&method==="POST")return send(res,200,curtainRelay.pairing());
+  if(path==="/api/curtain/call"&&method==="POST"){
+    const body=await input(req);
+    if(body.action==="status"){const s=curtainRelay.status();return send(res,200,{...s,...s.curtain,connected:s.online&&s.curtain?.connected,transport:"oracle-relay"});}
+    const command=curtainRelay.enqueue(body.action,body.payload||{},body.idempotencyKey||null);return send(res,202,{ok:true,queued:true,commandId:command.id,state:command.state,physicalPlaybackConfirmed:false});
+  }
+  if(path==="/api/curtain/command"&&method==="GET")return send(res,200,{ok:true,command:curtainRelay.command(Number(url.searchParams.get("id")))});
+  if(path==="/api/curtain/notifications"&&method==="GET")return send(res,200,{ok:true,notifications:curtainRelay.notifications().filter(n=>n.id>Number(url.searchParams.get("since")||0))});
+  if(path==="/api/curtain/assets"&&method==="POST")return send(res,200,curtainRelay.upload(await input(req)));
+  if(path==="/api/curtain/resume"&&method==="POST")return send(res,200,curtainRelay.resume());
+  if(path==="/api/curtain/schedules"){
+    if(method==="GET")return send(res,200,{ok:true,schedules:curtainRelay.schedules()});
+    if(method==="POST")return send(res,200,{ok:true,schedule:curtainRelay.saveSchedule(await input(req))});
+  }
   if(method==="GET"&&path==="/api/nanoc6/sync")return send(res,200,nanoC6BrightnessSync.status());
   if(method==="POST"&&path==="/api/nanoc6/sync"){
     const body=await input(req);
