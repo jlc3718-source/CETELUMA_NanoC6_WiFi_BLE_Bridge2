@@ -16,6 +16,15 @@ canvas{width:200px;height:200px}select{display:block;width:100%;margin:6px 0 15p
 small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
 
 .comparisons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}.comparisons>div{min-width:0}.compareTitle{font-size:13px;font-weight:650;color:#d2e9f5;text-align:center;margin-bottom:6px}.comparisons canvas{width:100%!important;height:auto!important;aspect-ratio:1;object-fit:contain;margin:0!important;background:#050a11;border-radius:8px}.comparisons #sourcePreview{image-rendering:auto}.comparisons #preview{image-rendering:pixelated}.twoFields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.twoFields select{width:100%;min-width:0}.twoFields label{min-width:0}.twoFields input{width:100%}input[type=range]{display:block;width:100%;height:32px;accent-color:#1fc4b0;margin:2px 0 13px}#zoomVal{float:right;color:#77f1e1}.ledPanel{margin:15px 0}.ledPanel canvas{width:240px;height:240px;max-width:100%;image-rendering:auto;background:#05070a;border-radius:8px}#sample{font-size:14px}.comparisons canvas{border:1px solid #41546e}
+.qualityTuning{margin:14px 0;border:1px solid #33536d;border-radius:12px;padding:12px;background:#142335}
+.qualityTuning summary{font-weight:650;color:#bde5f5;cursor:pointer}
+.qualityTuning input[type=range]{margin-bottom:6px}
+.qualityChoices{margin:13px 0;padding:12px;background:#122437;border:1px solid #35516f;border-radius:12px}
+.qualityChoices strong{display:block;font-size:14px;margin-bottom:8px}
+.qualityChoiceGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.qualityChoiceGrid canvas{display:block;width:100%!important;height:auto!important;aspect-ratio:1;margin:0 auto 5px;border:1px solid #40668b;background:#05070a}
+.qualityChoiceGrid button{font-size:11px;padding:10px 2px;min-height:45px;margin:0}
+.qualityChoiceGrid button.active{background:#21b9aa;color:#062723}
 .offline-workspace{background:#132b35;border:1px solid #396a79;border-radius:13px;padding:13px;margin:13px 0 16px}
 .offline-workspace strong{display:block;color:#d2fff4}
 .offline-workspace button{margin-top:8px}
@@ -40,11 +49,36 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
 </div>
 <div class="sub" id="imageInfo">Import a photo or GIF, or load the example picture.</div>
 <div id="photoControls">
-<div class="twoFields"><label class="sub">Framing<select id="framing"><option value="fill" selected>Fill / crop edges</option><option value="fit">Fit entire picture</option></select></label><label class="sub">Detail<select id="enhance"><option value="natural">Natural</option><option value="crisp" selected>Sharper detail</option><option value="bold">Bold contrast</option></select></label></div>
+<div class="twoFields"><label class="sub">Framing<select id="framing"><option value="fill" selected>Fill / crop edges</option><option value="fit">Fit entire picture</option></select></label><label class="sub">Detail<select id="enhance"><option value="natural">Natural</option><option value="crisp" selected>Sharper detail</option><option value="bold">Bold contrast</option><option value="enhanced">Enhanced Detail — subject aware</option></select></label></div>
 <label class="sub">Remove drawn LED-dot texture<select id="cleanup"><option value="none" selected>Off — standard pictures</option><option value="medium">Medium — LED artwork</option><option value="strong">Strong — heavily dotted art</option></select></label>
 <label class="sub" for="zoom">Zoom subject <output id="zoomVal">1.25×</output></label><input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1.25">
 <div class="twoFields"><label class="sub" for="panX">Move left / right<input id="panX" type="range" min="-100" max="100" step="5" value="0"></label><label class="sub" for="panY">Move up / down<input id="panY" type="range" min="-100" max="100" step="5" value="0"></label></div>
 <button id="resetCrop" type="button">Reset framing</button>
+</div>
+<details class="qualityTuning" open><summary>Enhanced image quality and LED calibration</summary>
+<label class="sub">Subject focus — tap the original picture to select the most important area.</label>
+<div class="twoFields">
+<label class="sub">Subject left / right<input id="subjectX" type="range" min="0" max="100" value="50" step="1"></label>
+<label class="sub">Subject up / down<input id="subjectY" type="range" min="0" max="100" value="50" step="1"></label>
+</div>
+<div class="twoFields">
+<label class="sub">Subject area size<input id="subjectSize" type="range" min="15" max="65" value="32" step="1"></label>
+<label class="sub">Detail emphasis<input id="subjectStrength" type="range" min="0" max="100" value="70" step="5"></label>
+</div>
+<button type="button" id="autoSubject">Find subject focus automatically</button>
+<label class="sub">LED color profile<select id="ledPreset"><option value="neutral" selected>Neutral — no color changes</option><option value="dark">Reveal dark details</option><option value="vivid">Vivid color / softer highlights</option><option value="custom">Custom calibration</option></select></label>
+<div class="twoFields"><label class="sub">Gamma / brightness curve<input id="ledGamma" type="range" min="70" max="145" value="100" step="5"></label><label class="sub">Lift shadows<input id="ledLift" type="range" min="0" max="35" value="0" step="1"></label></div>
+<div class="twoFields"><label class="sub">Highlight rolloff<input id="ledRolloff" type="range" min="0" max="30" value="0" step="1"></label><label class="sub">Color saturation<input id="ledSat" type="range" min="70" max="145" value="100" step="5"></label></div>
+<label class="sub">Minimum visible LED brightness (preserves black)<input id="ledMin" type="range" min="0" max="35" value="0" step="1"></label>
+<small>These adjustments change the actual transmitted 40×40 pixels, not only the preview. Real LED calibration requires checking the physical curtain.</small>
+</details>
+<div class="qualityChoices"><strong>Compare three 40×40 conversions</strong>
+<div class="qualityChoiceGrid">
+<div><canvas id="compareNatural" width="40" height="40" aria-label="Natural reduction"></canvas><button type="button" id="chooseNatural">Natural</button></div>
+<div><canvas id="compareEnhanced" width="40" height="40" aria-label="Enhanced Detail reduction"></canvas><button type="button" id="chooseEnhanced">Enhanced Detail</button></div>
+<div><canvas id="compareBold" width="40" height="40" aria-label="High contrast reduction"></canvas><button type="button" id="chooseBold">High Contrast</button></div>
+</div>
+<div class="sub" id="qualitySuggested">Suggestions use image heuristics; choose whichever looks better to you.</div>
 </div>
 <details class="ledPanel"><summary>View realistic LED-dot preview</summary><canvas id="ledPreview" width="240" height="240" aria-label="40 by 40 LED dot grid simulation"></canvas></details>
 <small><strong>Physical limit:</strong> this curtain has only 40 LEDs across and down. The supplied illustration depicts a much denser LED display. Zooming helps preserve faces and important features, but cannot create extra LEDs.</small>
@@ -124,6 +158,7 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
  window.addEventListener('load',()=>{sendSize();if(window.ResizeObserver)new ResizeObserver(sendSize).observe(document.body);else setInterval(sendSize,1200);});
 })();
 </script>
+<script src="curtain_quality.js"></script>
 <script>'use strict';
 const BIN_WRITE='02020074-1972-1925-3022-077119514e44';
 const SERVICE='00000074-1972-1925-3022-077119514e44',WRITE='01020074-1972-1925-3022-077119514e44',NOTIFY='01010074-1972-1925-3022-077119514e44',UPLOAD='27923001-2072-1925-3022-077119514e44';
