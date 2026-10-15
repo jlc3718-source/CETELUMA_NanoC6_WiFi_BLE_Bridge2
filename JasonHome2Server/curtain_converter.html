@@ -686,8 +686,8 @@ function aiRecommend(focus,boxSize,kind,label){
   const shiftX=(.5-focus.x)*nw,shiftY=(.5-focus.y)*nh;
   const availableX=Math.max(0,(nw-160)/2),availableY=Math.max(0,(nh-160)/2);
   fields.framing='fill';fields.zoom=zoom;
-  fields.panX=Math.round(availableX?Math.max(-100,Math.min(100,100*shiftX/availableX))/5)*5:0;
-  fields.panY=Math.round(availableY?Math.max(-100,Math.min(100,100*shiftY/availableY))/5)*5:0;
+  fields.panX=availableX?Math.round(Math.max(-100,Math.min(100,100*shiftX/availableX))/5)*5:0;
+  fields.panY=availableY?Math.round(Math.max(-100,Math.min(100,100*shiftY/availableY))/5)*5:0;
   const work=photoWorkAt(fields);
   return {fields,crop:null,kind,label,
    frame:CurtainQuality.tone(CurtainQuality.processEnhanced(work.stage,{cx:.5,cy:.5,radius:.34,strength}),gamma)};
