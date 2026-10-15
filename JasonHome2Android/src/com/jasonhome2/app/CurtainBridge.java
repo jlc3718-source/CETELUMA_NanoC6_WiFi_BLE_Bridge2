@@ -234,7 +234,7 @@ public final class CurtainBridge {
         return missing.toArray(new String[0]);
     }
 
-    private void execute(String id,String action,JSONObject json) {
+    private void execute(String id,String action,JSONObject json) throws java.io.IOException {
         if ("status".equals(action)) {finish(id,true,ready?"Connected to DN5E58":"Not connected",ready);return;}
         if("saveRawFile".equals(action)){
             String name=json.optString("name","curtain-effect.eff").replaceAll("[^a-zA-Z0-9._-]","_");
