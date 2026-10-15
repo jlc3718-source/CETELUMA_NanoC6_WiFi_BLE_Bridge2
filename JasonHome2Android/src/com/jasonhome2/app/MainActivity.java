@@ -19,6 +19,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.ValueCallback;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -32,11 +33,13 @@ public final class MainActivity extends Activity {
     private static final String URL = "https://150.136.245.51/jason-home-2/";
     private static final String HOST = "150.136.245.51";
     private static final int REQUEST_RECORD_AUDIO = 41;
+    private static final int REQUEST_CURTAIN_IMAGE = 85;
     private WebView web;
     private CurtainBridge curtain;
     private LinearLayout error;
     private boolean loadFailed=false;
     private PermissionRequest pendingAudioRequest;
+    private ValueCallback<Uri[]> pendingCurtainImage;
     private MediaRecorder nativeRecorder;
     private File nativeVoiceFile;
     private final Handler voiceHandler=new Handler(Looper.getMainLooper());
@@ -69,6 +72,20 @@ public final class MainActivity extends Activity {
         curtain=new CurtainBridge(this,web);
         web.addJavascriptInterface(curtain,"AndroidCurtain");
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,
+                                                        FileChooserParams params){
+                // Enables JPG/PNG/GIF imports from Android's document picker in Curtain Studio.
+                if(pendingCurtainImage!=null)pendingCurtainImage.onReceiveValue(null);
+                pendingCurtainImage=callback;
+                try {
+                    startActivityForResult(params.createIntent(),REQUEST_CURTAIN_IMAGE);
+                    return true;
+                }catch(Throwable error){
+                    pendingCurtainImage=null;
+                    callback.onReceiveValue(null);
+                    return true;
+                }
+            }
             @Override public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> {
                     Uri origin=request.getOrigin();
@@ -146,6 +163,14 @@ public final class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
         web.loadUrl(URL);
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==REQUEST_CURTAIN_IMAGE&&pendingCurtainImage!=null){
+            ValueCallback<Uri[]> callback=pendingCurtainImage;
+            pendingCurtainImage=null;
+            callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode,data));
+        }
     }
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults);
