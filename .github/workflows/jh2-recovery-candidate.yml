@@ -1,0 +1,39 @@
+name: Jason Home 2 Recovery Candidate
+on:
+  push:
+    branches:
+      - fix/jh2-nanoc6-1.0.4-boot-recovery
+  pull_request:
+    branches:
+      - jason-home-2-nanoc6
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+      - name: Prepare generated firmware sources
+        run: python JasonHome2NanoC6/tools/prepare.py
+      - name: Run unit tests
+        run: python -m unittest discover -s JasonHome2NanoC6/tests -p 'test_*.py'
+      - name: Compile NanoC6 updater and runtime
+        run: python -m platformio run -d JasonHome2NanoC6 -e boot -e runtime -j 4
+      - name: Build settings filesystem and verify package
+        run: |
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2NanoC6/tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-1.0.5-recovery-CANDIDATE
+          path: JasonHome2NanoC6/release/
+          if-no-files-found: error
+          retention-days: 14
