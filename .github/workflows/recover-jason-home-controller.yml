@@ -22,4 +22,4 @@ jobs:
           python3 JasonHome2Server/generate_web.py
           sudo docker run --rm -v "$PWD:/src" -w /src node:22-slim node --check JasonHome2Server/web/android_eufy_ui.js
       - name: Back up live state apply focused fix and verify real challenge
-        run: python3 .github/scripts/deploy-eufy-verification.py
+        run: sudo --preserve-env=GITHUB_RUN_ID python3 .github/scripts/deploy-eufy-verification.py
