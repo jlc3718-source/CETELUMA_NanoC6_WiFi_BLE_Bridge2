@@ -13,7 +13,7 @@ permissions:
   contents: read
 concurrency:
   group: jason-home-2-nanoc6
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   firmware:
     runs-on: ubuntu-24.04
