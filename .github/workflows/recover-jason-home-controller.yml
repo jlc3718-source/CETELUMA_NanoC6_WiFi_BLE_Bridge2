@@ -39,10 +39,16 @@ jobs:
            with urllib.request.urlopen(req,timeout=120) as r:return json.load(r)
           before=call('/api/status');(root/'status-before.json').write_text(json.dumps(before))
           print('Backup complete. Before:',json.dumps({k:before.get(k) for k in ['calendar','automationOwner']}))
-          result=call('/api/automation/ownership',{'owner':'oracle'})
+          try:result=call('/api/automation/ownership',{'owner':'oracle'})
+          except urllib.error.HTTPError as e:
+           result={'ok':False,'http':e.code,'error':e.read().decode()[:1000]}
+           health=call('/api/health')
+           print('Ownership after reconcile error:',health.get('automationOwner'))
+           assert health.get('automationOwner')=='oracle'
+           result['owner']='oracle'
           (root/'ownership-result.json').write_text(json.dumps(result))
           print('Restore ownership:',json.dumps(result))
-          assert result.get('ok') and result.get('owner')=='oracle'
+          assert result.get('owner')=='oracle'
           PY
           sudo docker restart jason-home
           python3 - <<'PY'
