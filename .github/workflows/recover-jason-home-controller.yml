@@ -23,11 +23,11 @@ jobs:
           import subprocess,json
           script="""import {EufyClient} from './dist/eufy/client.js';import {createHash} from 'node:crypto';
           const c=new EufyClient(process.env.EUFY_INSTALL_ID||createHash('sha256').update('jason-home-server:'+process.env.EUFY_EMAIL).digest('hex').slice(0,32));
-          const raw=c.raw.bind(c);c.raw=async(...args)=>{const r=await raw(...args);if(args[1].includes('/passport/login')){let d=r.data;try{if(typeof d==='string'){const {aesDecryptText}=await import('./dist/eufy/crypto.js');d=JSON.parse(aesDecryptText(d,c.share));}}catch{};console.log(JSON.stringify({http:r._http,code:r.code,message:r.msg||r.message,dataType:typeof d,keys:d&&typeof d==='object'?Object.keys(d):[],hasCaptcha:!!(d?.captcha_id||d?.captchaId),hasImage:!!(d?.item||d?.captcha_image),fa:!!d?.fa_info}));}return r;};
-          try{await c.login(process.env.EUFY_EMAIL,process.env.EUFY_PASSWORD);console.log('Login succeeded')}catch(e){console.log('Login result:',e.message)}"""
+          const signed=c.signed.bind(c);c.signed=async(service,path,body,...rest)=>{if(path==='/passport/login')for(const k of ['verify_code','login_id','answer','captcha_id'])if(body[k]==='')delete body[k];return signed(service,path,body,...rest);};const raw=c.raw.bind(c);c.raw=async(...args)=>{const r=await raw(...args);if(args[1].includes('/passport/login')){let d=r.data;try{if(typeof d==='string'){const {aesDecryptText}=await import('./dist/eufy/crypto.js');d=JSON.parse(aesDecryptText(d,c.share));}}catch{};console.log(JSON.stringify({http:r._http,code:r.code,message:r.msg||r.message,dataType:typeof d,keys:d&&typeof d==='object'?Object.keys(d):[],hasCaptcha:!!(d?.captcha_id||d?.captchaId),hasImage:!!(d?.item||d?.captcha_image),fa:!!d?.fa_info}));}return r;};
+          try{await c.login(process.env.EUFY_EMAIL,process.env.EUFY_PASSWORD);await c.prepare();console.log('Login and discovery succeeded:',c.readyNames().join(','));}catch(e){console.log('Login result:',e.message)}"""
           p=subprocess.run(['sudo','docker','exec','-i','jason-home','node','--input-type=module','-e',script],capture_output=True,text=True,timeout=90)
           print(p.stdout);print('Diagnostic exit:',p.returncode)
           PY
           echo 'Live login continuation points:'
-          rg -n 'async login|captcha|fa_info|Eufy .*failed|ensureEufy|statusPayload|api/reconnect|eufy:\{' "$TARGET/client.js" "$TARGET/server.js" | head -45
+          grep -nE 'async login|captcha|fa_info|Eufy .*failed|ensureEufy|statusPayload|api/reconnect|eufy:\{' "$TARGET/client.js" "$TARGET/server.js" | head -45
           
