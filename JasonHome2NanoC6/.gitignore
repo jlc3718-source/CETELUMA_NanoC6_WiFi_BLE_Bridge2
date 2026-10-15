@@ -1,0 +1,9 @@
+.pio/
+include/Build.h
+include/Catalog.h
+include/Programs.h
+include/WebAssets.h
+asset-manifest.json
+release/
+__pycache__/
+data/

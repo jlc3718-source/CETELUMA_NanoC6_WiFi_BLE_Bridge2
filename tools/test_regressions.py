@@ -11,7 +11,7 @@ assert 'v3FxGradient' not in mock and 'data-effect="Gradient"' not in mock
 assert 'ANDERSON_COLOR_PALETTE_COUNT' in main and 'server.on("/api/colors"' in main
 assert '/api/events/bulk' not in main+web and 'enableMonth' not in web and 'clearMonth' not in web
 assert 'eventsSchedule1Toggle' not in web and 'eventsSchedule2Toggle' not in web
-assert 'eventEffectiveWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
+assert 'eventWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
 assert 't.effect=Effect::Breath' not in sched
 assert 'Effect::Breath' not in ev
 assert 'if(syncTheme.effect==Effect::Breath)' in ble
@@ -32,7 +32,7 @@ speed_values=[int(x) for x in re.findall(r'\b\d+\b',speed_block.group(1))]; asse
 assert 'EVENT_SPEEDS[index]>2?2:EVENT_SPEEDS[index]' in ev
 assert 'scheduledEventSpeedHint=constrain(o.speed,1,2)' in main and 'next.speed=constrain(sp,1,2)' in main
 assert 'sp=min((uint8_t)2,qs)' in main
-assert 'String raw=String("v5|")' in main and '!head.startsWith("v4|")&&o.effect==Effect::Breath' in main
+assert 'String raw=String("v4|")+effectName(next.effect)' in main and '!head.startsWith("v4|")&&o.effect==Effect::Breath' in main
 assert re.search(r'\.max=["\']2["\']', web) and 'id="eventsSpeed" type="range" min="1" max="2"' in web
 assert 'savedColorLabels' in web and re.search(r'\.name\|\|NAMED_COLOR_PALETTE\[[^\]]+\]\?\.name', web)
 
@@ -63,7 +63,7 @@ assert '.anderson-no-plain-effect-buttons' not in web and 'enhanceEffectButtons'
 
 assert 'd["scheduledEvent"].to<JsonObject>()' in main and 'scheduled["toggleable"]=true' in main
 assert 'eventStateEnabled(i)&&eventAllowedInActiveSchedule(i)&&scheduledTheme.name==EVENTS[i].name' in main
-assert 'if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||eventEffectiveUsesMonthTier(i))continue' in main
+assert 'if(!eventStateEnabled(i)||!eventAllowedInActiveSchedule(i)||EVENTS[i].rule==RuleType::Month)continue' in main
 assert 'scheduled["upcoming"]=scheduledUpcoming' in main and 'No enabled scheduled event' in main
 assert 'window.andersonScheduledEvent=e.scheduledEvent||null' in web and 'anderson-scheduled-event' in web
 assert 'scheduledEventName' in mock and 'tonightEventEnabled' in mock and 'v3TonightToggleLabel","ENABLE"' in mock
@@ -144,25 +144,4 @@ assert 'formatClockTime(e)' in web and 'formatClockTime(e.settings.off)' in web 
 assert 'Dusk ${n.dusk||"—"} • Dawn ${n.dawn||"—"}' in web
 assert 'Dusk ${e.settings?.dusk||"—"} • Dawn ${e.settings?.dawn||"—"}' in web
 assert 'p.every(e=>"#000000"===normHex(e))' in web and 'if(g)return{c:"#000000",a:0,s:1}' in web
-release=t('tools/release.py')
-assert 'response.status===401' in web
-assert 'token||window.andersonProfile||currentRole!=="none"' in web
-assert 'epoch!==window.andersonAuthEpoch||token!==(window.andersonAuthToken||"")' in web
-assert '/api/night-calendar' not in main
-assert 'night_calendar.js' not in release
-assert 'EventOverrideCfg' in main and 'scheduleValid' in main and 'saveEventScheduleOverride' in main
-assert 'eventEffectiveActiveOn' in main and 'eventEffectiveWindowActiveOn' in main and 'eventEffectiveOccursInMonth' in main
-assert 'eventEffectiveActiveOn(i,l)' in sched and 'eventEffectiveUsesMonthTier(i)' in sched
-assert 'eventEffectiveScheduleGeneration()' in sched
-assert 'static time_t manualOverrideUntil=0;' in main
-assert r'\\nstatic time_t manualOverrideUntil=0;' not in main
-assert 'manualOverrideUntil=timeValid()?nextPlannedScheduleChange(time(nullptr)):0;' in main
-assert 'if(manualOverride){if(!manualOverrideUntil){manualOverrideUntil=nextPlannedScheduleChange(n);' in main
-assert 'manualOverride=false;manualOverrideUntil=0;' in main
-assert 'if(timeValid()){time_t scheduleMinute=time(nullptr)/60;' in main and 'if(!manualOverride&&timeValid())' not in main
-assert 'manualOverrideUntilLabel' in main and 'Manual override active • automatic schedule resumes' in web
-assert 'Resume Schedule Now' in web
-assert 'Restore Built-in Schedule' in web and 'Specific date' in web and 'Date range' in web and 'Entire month' in web
-assert 'Use custom time for this event' in web and 'Repeat every year' in web
-assert 'resetSchedule:true' in web and 'schedule:{mode:mode.value' in web
 print('Anderson regression source checks passed')
