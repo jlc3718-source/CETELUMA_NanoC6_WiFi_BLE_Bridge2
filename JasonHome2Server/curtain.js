@@ -20,6 +20,66 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     '<div class="panel"><strong>Layout correction</strong><div class="sub">Layout writes are experimental: the original capture did not verify these opcodes. The matrix below shows the requested orientation locally. Check the physical curtain after connecting.</div><div class="jh2-curtain-matrix-wrap"><div id="jh2CurtainMatrixPreview" class="jh2-curtain-matrix" aria-label="40 by 40 curtain orientation illustration"><span>TOP</span><b>↖</b><b>↗</b><span>LEFT</span><strong>CURTAIN</strong><span>RIGHT</span><b>↙</b><b>↘</b><span>BOTTOM</span></div></div><div class="jh2-curtain-layout" style="margin-top:10px"><button class="btn" data-jh2-layout="0">Reset</button><button class="btn" data-jh2-layout="4">Rotate 180°</button><button class="btn" data-jh2-layout="5">Flip Top/Bottom</button><button class="btn" data-jh2-layout="6">Flip Left/Right</button></div></div>'+
     '<div class="panel"><strong>Effect sequence</strong><div class="sub">Enable selection mode to choose multiple original SmartDawn effects. Arrange their playback order, then choose the number of seconds each should play. Playback is handled by Android while connected; it stops on disconnect or when the app process is closed.</div><label class="jh2-sequence-enable"><input type="checkbox" id="jh2CurtainSequenceEnable"> Enable effect sequence selection</label><label class="jh2-curtain-label" for="jh2CurtainSequenceSeconds">Time per effect (seconds, 5–3600)</label><input class="field" id="jh2CurtainSequenceSeconds" type="number" min="5" max="3600" step="1" value="60"><div id="jh2CurtainSequenceList" class="jh2-curtain-sequence-list"></div><div class="jh2-curtain-row"><button class="btn primary" type="button" id="jh2CurtainSequenceStart">Play sequence</button><button class="btn" type="button" id="jh2CurtainSequenceStop">Stop sequence</button></div><div class="sub" id="jh2CurtainSequenceStatus" role="status">Disabled • select two or more effects</div></div>'+
     '<div class="panel"><strong>88 SmartDawn effects</strong><div class="sub">Captured catalog: E-0 through E-87 (88 effects). All 88 still preview images are recovered directly from your original SmartDawn screenshots.</div><input id="jh2CurtainSearch" class="field" placeholder="Find effect (e.g. E-55)" style="margin-top:10px" aria-label="Search curtain effects"><div id="jh2CurtainEffects" class="jh2-curtain-effect-grid"></div></div>';
+  // Keep every existing Curtain control intact in the first sub-tab.
+  const heading=page.querySelector('.v3PageTitle');
+  const controls=create('div','jh2-curtain-subpanel');
+  controls.id='jh2CurtainOriginalControls';
+  while(heading.nextSibling)controls.appendChild(heading.nextSibling);
+  const subnav=create('div','jh2-curtain-subnav');
+  subnav.setAttribute('role','tablist');
+  subnav.setAttribute('aria-label','Curtain tools');
+  const oldButton=create('button','btn jh2-curtain-subtab active','Curtain controls');
+  oldButton.type='button';oldButton.id='jh2CurtainControlsTab';oldButton.setAttribute('role','tab');
+  const studioButton=create('button','btn jh2-curtain-subtab','Image / GIF Studio');
+  studioButton.type='button';studioButton.id='jh2CurtainStudioTab';studioButton.setAttribute('role','tab');
+  const studio=create('div','jh2-curtain-subpanel jh2-curtain-converter-panel');
+  studio.id='jh2CurtainStudioPanel';studio.hidden=true;
+  const studioFrame=document.createElement('iframe');
+  studioFrame.id='jh2CurtainStudioFrame';
+  studioFrame.title='SmartDawn image and GIF quality converter';
+  studioFrame.loading='lazy';
+  studioFrame.setAttribute('referrerpolicy','same-origin');
+  studio.appendChild(studioFrame);
+  subnav.append(oldButton,studioButton);
+  page.append(subnav,controls,studio);
+  function selectCurtainSubtab(which){
+    const useStudio=which==='studio';
+    controls.hidden=useStudio;studio.hidden=!useStudio;
+    controls.style.display=useStudio?'none':'';
+    studio.style.display=useStudio?'':'none';
+    oldButton.classList.toggle('active',!useStudio);
+    studioButton.classList.toggle('active',useStudio);
+    oldButton.setAttribute('aria-selected',String(!useStudio));
+    studioButton.setAttribute('aria-selected',String(useStudio));
+    if(useStudio&&!studioFrame.getAttribute('src'))studioFrame.src='curtain_converter.html';
+  }
+  oldButton.addEventListener('click',()=>selectCurtainSubtab('controls'));
+  studioButton.addEventListener('click',()=>selectCurtainSubtab('studio'));
+  // Allow only the same-origin studio iframe to call this app's native BLE bridge.
+  window.addEventListener('message',async event=>{
+    if(event.origin!==location.origin||event.source!==studioFrame.contentWindow)return;
+    const data=event.data||{};
+    if(data.kind==='jh2-curtain-height'){
+      const height=Number(data.height);
+      if(Number.isFinite(height)&&height>=500&&height<=50000)
+        studioFrame.style.height=Math.ceil(height+16)+'px';
+      return;
+    }
+    if(data.kind!=='jh2-curtain-request')return;
+    const id=String(data.id||'');
+    if(!/^cv[0-9]{1,8}$/.test(id))return;
+    try{
+      const result=await call(data.action,data.payload||{});
+      studioFrame.contentWindow.postMessage({kind:'jh2-curtain-response',id,ok:true,result},location.origin);
+    }catch(err){
+      studioFrame.contentWindow.postMessage({kind:'jh2-curtain-response',id,ok:false,error:err.message},location.origin);
+    }
+  });
+  window.__jh2CurtainRawNotify=(uuid,data)=>{
+    if(studioFrame.contentWindow&&studioFrame.getAttribute('src'))
+      studioFrame.contentWindow.postMessage({kind:'jh2-curtain-notify',uuid,data},location.origin);
+  };
+  selectCurtainSubtab('controls');
   container.appendChild(page);
   const status=(message,level='')=>{const n=$('jh2CurtainStatus');n.textContent=message;n.className='jh2-curtain-status '+level};
   const setBusy=b=>{busy=b;page.querySelectorAll('button').forEach(x=>x.disabled=b)};

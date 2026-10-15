@@ -52,3 +52,12 @@
 .jh2-curtain-page .jh2-curtain-sequence-item .btn{min-width:35px;min-height:38px;padding:5px}
 .jh2-curtain-page .jh2-curtain-effect.in-sequence{border-color:#29d9b2;box-shadow:0 0 0 1px #29d9b255}
 .jh2-curtain-page .jh2-sequence-position{font-weight:800;color:#7af1b9}
+
+/* Jason Home 2 Curtain sub-tabs; independent from all other sections. */
+.jh2-curtain-page .jh2-curtain-subnav {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 14px}
+.jh2-curtain-page .jh2-curtain-subtab {padding:12px 8px;min-width:0;min-height:45px;font-size:14px;font-weight:700;background:#182e48;border:1px solid #456589;color:#cfdeef;border-radius:10px}
+.jh2-curtain-page .jh2-curtain-subtab.active {color:#042a2b;background:#25c7b5;border-color:#25c7b5}
+.jh2-curtain-page .jh2-curtain-subpanel[hidden] {display:none!important}
+.jh2-curtain-page #jh2CurtainStudioPanel {margin:0 -4px}
+.jh2-curtain-page #jh2CurtainStudioFrame {display:block;width:100%;height:900px;min-height:700px;border:0;background:#0a111e;border-radius:14px}
+@media(max-width:420px){.jh2-curtain-page .jh2-curtain-subtab {font-size:12px;padding:12px 4px}}
