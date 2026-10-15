@@ -66,6 +66,12 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
 <label class="sub">Detail emphasis<input id="subjectStrength" type="range" min="0" max="100" value="70" step="5"></label>
 </div>
 <button type="button" id="autoSubject">Find subject focus automatically</button>
+<div class="offline-workspace">
+<button type="button" class="main" id="aiRevamp">AI Image Revamp — optimize main subject</button>
+<div class="sub" id="aiRevampState" aria-live="polite">Tap for subject detection and a suggested curtain-ready crop. No Bluetooth required.</div>
+<small>Optional: when Cloudflare AI is connected, tapping sends a small resized picture to Cloudflare for object detection. Otherwise a local subject detector is used. Your original is not uploaded or stored on Jason Home 2.</small>
+<div class="row"><button id="applyAiRevamp" type="button" disabled>Use AI-recommended version</button><button type="button" id="undoAiRevamp" disabled>Undo AI changes</button></div>
+</div>
 <label class="sub">LED color profile<select id="ledPreset"><option value="neutral" selected>Neutral — no color changes</option><option value="dark">Reveal dark details</option><option value="vivid">Vivid color / softer highlights</option><option value="custom">Custom calibration</option></select></label>
 <div class="twoFields"><label class="sub">Gamma / brightness curve<input id="ledGamma" type="range" min="70" max="145" value="100" step="5"></label><label class="sub">Lift shadows<input id="ledLift" type="range" min="0" max="35" value="0" step="1"></label></div>
 <div class="twoFields"><label class="sub">Highlight rolloff<input id="ledRolloff" type="range" min="0" max="30" value="0" step="1"></label><label class="sub">Color saturation<input id="ledSat" type="range" min="70" max="145" value="100" step="5"></label></div>
