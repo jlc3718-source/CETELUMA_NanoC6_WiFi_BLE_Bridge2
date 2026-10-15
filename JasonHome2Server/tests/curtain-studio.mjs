@@ -75,9 +75,23 @@ test('Android picker returns readable photo URIs to trusted WebView',()=>{
   assert.match(activity,/setAllowContentAccess\(true\)/);
   assert.match(activity,/setAllowFileAccess\(false\)/);
   assert.match(activity,/onShowFileChooser/);
-  assert.match(activity,/picker\.setType\("image\/\*"\)/);
+  assert.match(activity,/Intent picker=params\.createIntent\(\)/);
+   assert.doesNotMatch(activity,/picker\.setType/);
+   assert.doesNotMatch(activity,/picker\.addCategory/);
   assert.match(activity,/FLAG_GRANT_READ_URI_PERMISSION/);
   assert.match(activity,/FileChooserParams\.parseResult/);
   assert.match(converter,/id="filePickerStatus"/);
-  assert.match(converter,/input id="fileInput".*accept="image\/\*"/);
+  assert.match(converter,/input id="fileInput".*accept="image\/\*,\.gif"/);
+});
+
+test('AI subject revamp is explicitly opt-in and Cloudflare credentials stay on server',()=>{
+  assert.match(converter,/id="aiRevamp"/);
+  assert.match(converter,/id="applyAiRevamp"/);
+  assert.match(converter,/id="undoAiRevamp"/);
+  assert.match(converter,/api\/curtain\/ai-revamp/);
+  assert.match(server,/@cf\/facebook\/detr-resnet-50/);
+  assert.match(server,/if\(method==="POST"&&path==="\/api\/curtain\/ai-revamp"\)/);
+  assert.match(generator,/curtain_quality\.js/);
+  assert.match(server,/curtain_quality\.js/);
+  assert.match(converter,/src="curtain_quality\.js"/);
 });
