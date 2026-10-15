@@ -1,4 +1,4 @@
-name: Recover unresponsive Oracle controller
+name: Restore Jason Home 2 Oracle scheduler
 on:
   push:
     branches: [jason-home-2-web]
@@ -8,29 +8,66 @@ permissions:
 jobs:
   recover:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
-      - name: Preserve runtime diagnostics and restart stalled controller
+      - name: Back up live state restore Oracle and verify
         shell: bash
         run: |
           set -euo pipefail
-          echo 'Before restart:'
-          sudo docker stats --no-stream --format '{{.Name}} CPU={{.CPUPerc}} MEM={{.MemUsage}}' jason-home jason-home-2-web || true
-          sudo docker logs --tail=50 jason-home 2>&1 | tail -50 || true
-          sudo docker restart jason-home
-          for attempt in $(seq 1 40); do
-            if curl --noproxy '*' -fsS -m 3 http://127.0.0.1:8080/api/health >/tmp/jason-home-recovered-health.json; then break; fi
-            sleep 2
-          done
-          cat /tmp/jason-home-recovered-health.json
-          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' /home/ubuntu/repo/JasonHomeServer/.env)"
-          test -n "$TOKEN"
-          curl --noproxy '*' -fsS -m 45 -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/status >/tmp/jason-home-recovered-status.json
+          umask 077
+          BACKUP="/home/ubuntu/jh2-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p "$BACKUP"
+          sudo docker inspect jason-home > "$BACKUP/container-inspect.json"
+          cp /home/ubuntu/repo/JasonHomeServer/.env "$BACKUP/runtime.env"
+          sudo docker inspect --format '{{.Image}}' jason-home > "$BACKUP/image-id"
+          export BACKUP
           python3 - <<'PY'
-          import json
-          d=json.load(open('/tmp/jason-home-recovered-status.json'))
-          print('Oracle status:',d.get('eufy',{}).get('status'),'ready names:',d.get('eufy',{}).get('readyNames'))
-          assert d.get('calendar',{}).get('synced'), 'Calendar not synced'
+          import os,json,sqlite3,pathlib,urllib.request
+          root=pathlib.Path(os.environ['BACKUP'])
+          info=json.loads((root/'container-inspect.json').read_text())[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite')
+          mount=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination'].rstrip('/')+'/'))
+          source=pathlib.Path(mount['Source'])/dbpath[len(mount['Destination']):].lstrip('/')
+          src=sqlite3.connect('file:'+str(source)+'?mode=ro',uri=True)
+          dst=sqlite3.connect(root/'jason-home.sqlite');src.backup(dst);dst.close();src.close()
+          token=env.get('JASON_HOME_API_TOKEN','')
+          assert token,'Missing live service token'
+          def call(path,body=None):
+           data=None if body is None else json.dumps(body).encode()
+           req=urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+           with urllib.request.urlopen(req,timeout=120) as r:return json.load(r)
+          before=call('/api/status');(root/'status-before.json').write_text(json.dumps(before))
+          print('Backup complete. Before:',json.dumps({k:before.get(k) for k in ['calendar','automationOwner']}))
+          result=call('/api/automation/ownership',{'owner':'oracle'})
+          (root/'ownership-result.json').write_text(json.dumps(result))
+          print('Restore ownership:',json.dumps(result))
+          assert result.get('ok') and result.get('owner')=='oracle'
           PY
-          curl --noproxy '*' -fsS -m 10 http://127.0.0.1:8081/api/health >/dev/null
-          echo 'Both original Oracle and Jason Home 2 gateways healthy.'
+          sudo docker restart jason-home
+          python3 - <<'PY'
+          import os,json,time,urllib.request,pathlib
+          root=pathlib.Path(os.environ['BACKUP'])
+          info=json.loads((root/'container-inspect.json').read_text())[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          def call(path,body=None):
+           data=None if body is None else json.dumps(body).encode()
+           req=urllib.request.Request('http://127.0.0.1:8080'+path,data,{'Authorization':'Bearer '+env['JASON_HOME_API_TOKEN'],'Content-Type':'application/json'})
+           with urllib.request.urlopen(req,timeout=120) as r:return json.load(r)
+          for attempt in range(30):
+           try:
+            health=call('/api/health')
+            if health.get('ok'):break
+           except Exception:time.sleep(2)
+          else:raise SystemExit('Service did not recover')
+          print('Health:',json.dumps(health));assert health.get('automationOwner')=='oracle'
+          try: print('Eufy reconnect:',json.dumps(call('/api/reconnect',{})))
+          except Exception as e:print('Eufy reconnect failed:',str(e))
+          after=call('/api/status');(root/'status-after.json').write_text(json.dumps(after))
+          before=json.loads((root/'status-before.json').read_text())
+          for key in ['eventCount','customCount','revision']:
+           assert after.get('calendar',{}).get(key)==before.get('calendar',{}).get(key),'Calendar changed: '+key
+          print('Verified:',json.dumps({k:after.get(k) for k in ['eufy','calendar','automationOwner','scheduler']}))
+          print('Schedules preserved; recovery timestamp:',time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
+          PY
+          
