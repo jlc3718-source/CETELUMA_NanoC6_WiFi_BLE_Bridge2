@@ -253,6 +253,18 @@ function fitStage(source){
  ctx.drawImage(source,(160-w*ratio)/2,(160-h*ratio)/2,w*ratio,h*ratio);
  return new Uint8ClampedArray(ctx.getImageData(0,0,160,160).data);
 }
+
+function cropGifStage(stage,opts){
+ const src=stageAsCanvas(stage),dst=document.createElement('canvas');
+ dst.width=dst.height=160;const c=dst.getContext('2d',{willReadFrequently:true});
+ c.fillStyle='#000';c.fillRect(0,0,160,160);
+ const zoom=Math.max(1,Math.min(2.5,Number(opts.zoom)||1.5));
+ const cx=Math.max(0,Math.min(1,Number(opts.cx)||.5)),cy=Math.max(0,Math.min(1,Number(opts.cy)||.5));
+ c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';
+ c.drawImage(src,80-cx*160*zoom,80-cy*160*zoom,160*zoom,160*zoom);
+ return new Uint8ClampedArray(c.getImageData(0,0,160,160).data);
+}
+
 function qualityFrame(stage,baseline,mode=$('enhance').value,focus=null,toneOptions=null){
  if(!photoMaster&&aiGifCrop&&mode==='enhanced'){
   stage=cropGifStage(stage,aiGifCrop);
