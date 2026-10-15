@@ -99,3 +99,12 @@ test('AI subject revamp is explicitly opt-in and Cloudflare credentials stay on 
   assert.match(server,/curtain_quality\.js/);
   assert.match(converter,/src="curtain_quality\.js"/);
 });
+
+test('AI revamp honors the user-selected subject and manual framing',()=>{
+  assert.match(converter,/let userSubjectLocked=false,userFrameLocked=false/);
+  assert.match(converter,/if\(userSubjectLocked\)/);
+  assert.match(converter,/label='your selected subject'/);
+  assert.match(converter,/keepFrame:userFrameLocked&&!userSubjectLocked/);
+  assert.match(converter,/Object\.assign\(fields,\{framing:\$\('framing'\)\.value/);
+  assert.match(converter,/userSubjectLocked=true/);
+});
