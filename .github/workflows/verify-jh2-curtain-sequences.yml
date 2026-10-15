@@ -16,6 +16,11 @@ jobs:
         with:
           node-version: '22'
       - run: node --check JasonHome2Server/curtain.js
+      - name: Validate Curtain import, local quality and offline prep
+        run: |
+          node --test JasonHome2Server/tests/curtain-studio.mjs
+          node --test JasonHome2Server/tests/curtain-offline.mjs
+          node --test JasonHome2Server/tests/curtain-quality.mjs
       - name: Check offline Curtain Studio save, restore and prebuild
         run: node --test JasonHome2Server/tests/curtain-offline.mjs
       - name: Assert sequence is opt-in; brightness floored at 4; speed remains original
