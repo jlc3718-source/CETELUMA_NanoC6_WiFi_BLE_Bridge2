@@ -91,3 +91,36 @@ jobs:
           print('Schedules preserved; recovery timestamp:',time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
           PY
           
+          python3 - <<'PY'
+          import pathlib,sqlite3,json,subprocess,os
+          root=pathlib.Path(os.environ['BACKUP'])
+          info=json.loads((root/'container-inspect.json').read_text())[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          candidates=[];seen=set()
+          for file in sorted(pathlib.Path('/home/ubuntu').glob('jh2-recovery-*/jason-home.sqlite')):
+           try:
+            db=sqlite3.connect('file:'+str(file)+'?mode=ro',uri=True)
+            row=db.execute("SELECT value FROM meta WHERE key='eufy_session'").fetchone()
+            install=db.execute("SELECT value FROM meta WHERE key='install_id'").fetchone();db.close()
+            if row:
+             session=json.loads(row[0])
+             if session.get('token') and session['token'] not in seen:
+              seen.add(session['token']);candidates.append({'session':session,'install':install[0] if install else ''})
+           except Exception:pass
+          print('Distinct preserved Eufy sessions available:',len(candidates))
+          for candidate in candidates[:3]:
+           script="import {EufyClient} from './dist/eufy/client.js';import {createHash} from 'node:crypto';const input="+json.dumps(candidate)+";try{const install=input.install||createHash('sha256').update('jason-home-server:'+process.env.EUFY_EMAIL).digest('hex').slice(0,32);const c=new EufyClient(install,input.session);await c.prepare();console.log(JSON.stringify({ok:true,names:c.readyNames(),session:c.exportSession(),install}));}catch(e){console.log(JSON.stringify({ok:false,error:String(e.message)}));}"
+           result=subprocess.run(['sudo','docker','exec','-i','jason-home','node','--input-type=module'],input=script,text=True,capture_output=True,timeout=90)
+           try:d=json.loads(result.stdout.strip().splitlines()[-1])
+           except Exception:print('Preserved session validation failed');continue
+           print('Preserved session validation:',d.get('ok'),d.get('names',[]),d.get('error',''))
+           if not d.get('ok') or set(d.get('names',[]))!={'Pool','House','Garage','Shed'}:continue
+           dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite')
+           mount=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination'].rstrip('/')+'/'))
+           source=pathlib.Path(mount['Source'])/dbpath[len(mount['Destination']):].lstrip('/')
+           subprocess.run(['sudo','docker','stop','jason-home'],check=True)
+           try:
+            db=sqlite3.connect(source);db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('eufy_session',?)",(json.dumps(d['session']),));db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('install_id',?)",(d['install'],));db.commit();db.close()
+           finally:subprocess.run(['sudo','docker','start','jason-home'],check=True)
+           print('Restored independently validated session; credentials unchanged.');break
+          PY
