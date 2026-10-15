@@ -664,6 +664,113 @@ $('ledPreset').addEventListener('change',()=>{
  updateQualityFromControls();
 });
 
+
+const aiFieldIds=['framing','enhance','zoom','panX','panY','subjectX','subjectY','subjectSize',
+ 'subjectStrength','ledGamma','ledLift','ledRolloff','ledSat','ledMin','ledPreset'];
+function aiFields(){return Object.fromEntries(aiFieldIds.map(id=>[id,$(id).value]));}
+function aiSetFields(fields){for(const [id,value] of Object.entries(fields||{}))if(aiFieldIds.includes(id))$(id).value=String(value);}
+function aiPaint(canvasId,pixels){
+ const encoded=displayPixels(pixels);
+ $(canvasId).getContext('2d').putImageData(new ImageData(encoded,W,H),0,0);
+}
+function aiRecommend(focus,boxSize,kind,label){
+ const gamma={gamma:1.08,lift:8,rolloff:9,saturation:1.12,minimum:3};
+ const strength=.83,dimension=Math.max(.18,Math.min(1,boxSize||.44));
+ const zoom=Math.min(2.5,Math.max(1,Math.round(.73/dimension*20)/20));
+ const crop={cx:focus.x,cy:focus.y,zoom};
+ const fields={enhance:'enhanced',subjectX:50,subjectY:50,subjectSize:34,subjectStrength:83,
+  ledGamma:108,ledLift:8,ledRolloff:9,ledSat:112,ledMin:3,ledPreset:'custom'};
+ if(photoMaster){
+  const sw=photoMaster.width,sh=photoMaster.height;
+  const base=Math.max(160/sw,160/sh),nw=sw*base*zoom,nh=sh*base*zoom;
+  const shiftX=(.5-focus.x)*nw,shiftY=(.5-focus.y)*nh;
+  const availableX=Math.max(0,(nw-160)/2),availableY=Math.max(0,(nh-160)/2);
+  fields.framing='fill';fields.zoom=zoom;
+  fields.panX=Math.round(availableX?Math.max(-100,Math.min(100,100*shiftX/availableX))/5)*5:0;
+  fields.panY=Math.round(availableY?Math.max(-100,Math.min(100,100*shiftY/availableY))/5)*5:0;
+  const work=photoWorkAt(fields);
+  return {fields,crop:null,kind,label,
+   frame:CurtainQuality.tone(CurtainQuality.processEnhanced(work.stage,{cx:.5,cy:.5,radius:.34,strength}),gamma)};
+ }
+ const stage=cropGifStage(gifStages[0],crop);
+ return {fields,crop,kind,label,frame:CurtainQuality.tone(
+  CurtainQuality.processEnhanced(stage,{cx:.5,cy:.5,radius:.34,strength}),gamma)};
+}
+async function runAiRevamp(){
+ if(!sourceImage||(!photoMaster&&!gifStages.length))throw Error('Import a photo or GIF first.');
+ const image=photoMaster||stageAsCanvas(gifStages[0]);
+ const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+ canvas.width=canvas.height=256;ctx.fillStyle='#000';ctx.fillRect(0,0,256,256);
+ const sw=image.width,sh=image.height,scale=Math.min(256/sw,256/sh);
+ const dw=sw*scale,dh=sh*scale,ox=(256-dw)/2,oy=(256-dh)/2;
+ ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+ ctx.drawImage(image,ox,oy,dw,dh);
+ $('aiRevampState').textContent='Analyzing the image; no Bluetooth connection needed…';
+ let result=null,modelLabel='Local subject analysis';
+ try{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),13000);
+  try{
+   const response=await fetch('api/curtain/ai-revamp',{method:'POST',credentials:'same-origin',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({image:canvas.toDataURL('image/jpeg',.78),width:256,height:256}),
+    signal:controller.signal});
+   const answer=await response.json().catch(()=>({}));
+   if(!response.ok)throw Error(answer.error||'AI service unavailable');
+   result=answer;
+   modelLabel='Cloudflare AI object detection';
+  }finally{clearTimeout(timer);}
+ }catch(err){
+  log('AI_REVAMP_FALLBACK '+String(err.message||err));
+  modelLabel='Local subject focus (AI cloud unavailable)';
+ }
+ const chosen=result?.subject||null;
+ let focus,boxSize=.44,label;
+ if(chosen){
+  const subjectCX=(Number(chosen.x0)+Number(chosen.x1))/2;
+  const subjectCY=(Number(chosen.y0)+Number(chosen.y1))/2;
+  focus={x:Math.max(.03,Math.min(.97,(subjectCX*256-ox)/dw)),
+   y:Math.max(.03,Math.min(.97,(subjectCY*256-oy)/dh))};
+  boxSize=Math.max((Number(chosen.x1)-Number(chosen.x0))*256/dw,
+                   (Number(chosen.y1)-Number(chosen.y0))*256/dh);
+  label=String(chosen.label||'foreground subject');
+ }else{
+  const originalStage=fitStage(image);
+  focus=CurtainQuality.estimateFocus(originalStage);
+  label='main high-detail region';
+  if(result)modelLabel='Local focus (no recognized AI object)';
+ }
+ aiSuggestion=aiRecommend(focus,boxSize,modelLabel,label);
+ aiPaint('aiOriginal',sourceImage);
+ aiPaint('aiCandidate',aiSuggestion.frame);
+ $('applyAiRevamp').disabled=false;
+ $('aiRevampState').textContent=modelLabel+' · '+label+'. Optimized crop, outlines and LED tone are ready. Compare the results and tap Use AI-recommended version.';
+ say('AI Image Revamp prepared. Nothing was sent to the curtain. Choose Use AI-recommended version to apply.');
+}
+function aiRestorePrevious(){
+ if(!aiPrevious)return;
+ aiSetFields(aiPrevious.fields);
+ aiGifCrop=aiPrevious.crop;
+ aiPrevious=null;$('undoAiRevamp').disabled=true;
+ if(photoMaster){applyPhotoSettings();scheduleDraftSave();}
+ else if(gifStages.length)reprocessGIFQuality().catch(err=>say('Undo error: '+err.message));
+ $('aiRevampState').textContent='Previous picture settings restored. You may apply the AI version again.';
+}
+$('aiRevamp').onclick=()=>operation(runAiRevamp);
+$('applyAiRevamp').onclick=()=>operation(async()=>{
+ if(!aiSuggestion)throw Error('First tap AI Image Revamp to analyze the picture.');
+ aiPrevious={fields:aiFields(),crop:aiGifCrop?{...aiGifCrop}:null};
+ aiSetFields(aiSuggestion.fields);
+ aiGifCrop=aiSuggestion.crop?{...aiSuggestion.crop}:null;
+ $('undoAiRevamp').disabled=false;
+ if(photoMaster){applyPhotoSettings();scheduleDraftSave();}
+ else if(gifStages.length)await reprocessGIFQuality();
+ aiPaint('aiOriginal',sourceImage);
+ await saveDraftNow();
+ say('AI-recommended curtain image applied and saved locally. You can adjust it or undo. No Bluetooth connection needed.');
+ $('aiRevampState').textContent='AI revamp applied. Your image is prepared for the 40×40 curtain; Undo AI changes remains available.';
+});
+$('undoAiRevamp').onclick=()=>aiRestorePrevious();
+
 $('resetCrop').onclick=()=>{$('framing').value='fill';$('enhance').value='crisp';$('cleanup').value='none';$('zoom').value='1.25';$('panX').value='0';$('panY').value='0';if(photoMaster){projectGeneration++;applyPhotoSettings();scheduleDraftSave();}};
 $('fileInput').onchange=()=>{$('cleanup').value='none';const chosen=$('fileInput').files?.[0];
  if(!chosen){$('filePickerStatus').textContent='File selection cancelled. No change to your current project.';return;}
