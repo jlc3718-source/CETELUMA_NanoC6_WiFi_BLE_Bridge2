@@ -1,5 +1,5 @@
 {
   "schema": 1,
-  "payload": "product=jason-home-2-nanoc6\nversion=1.0.5\nbytes=2591136\nsha256=7e73549d92c12076bd7abc97f5b41abd38e40364e253bdce947578865446bf9a\ncommit=902021b386563896e933ec6a137fe6b90e6475cc\nurl=https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.0.5/jh2-runtime-1.0.5.bin\n",
-  "signature": "MEQCIAeEB9prfB96jfkwmEEVMNPBxyCdh5lu2Y7+KY0DDKXoAiAv+bqyn8FXPWFP3Slkl4XO/O6agmv8Bw4QbLHh4BZNCA=="
+  "payload": "product=jason-home-2-nanoc6\nversion=1.0.6\nbytes=2310448\nsha256=b33c76de12643161cb5ea1227809282f5b992528c9af86cae3d26b77777160fb\ncommit=075a7343f66174f36ccca494888231593fad7157\nurl=https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.0.6/jh2-runtime-1.0.6.bin\n",
+  "signature": "MEYCIQDj5bui/y2qzZjjIlPw5hEst7HPJwxMWBfHMIRR++l/DQIhAOKLqRCxbTE+hxASBdMPyCWRRSGYZ5ahzC0tP/Kc0lNQ"
 }
