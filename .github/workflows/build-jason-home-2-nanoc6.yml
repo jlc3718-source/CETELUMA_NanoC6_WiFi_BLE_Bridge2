@@ -237,7 +237,7 @@ jobs:
       - name: Encrypt migration files for their owner
         run: |
           target="$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID"
-          (cd "$target" && zip -q -r "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip" .)
+          (cd "$target" && python3 -m zipfile -c "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip" *.json)
           openssl cms -encrypt -binary -aes-256-cbc -in "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip" -out "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.p7m" -outform DER .github/certs/jh2-migration-recipient.pem
           rm "$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID.zip"
       - uses: actions/upload-artifact@v4
