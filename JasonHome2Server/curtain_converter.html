@@ -39,7 +39,7 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
 <div class="row"><button class="main" id="connect">Connect curtain</button><button id="refresh" disabled>Refresh</button></div>
 <div class="sub" id="inventory">Not connected.</div></section>
 <section class="card"><h2>Import and preview</h2>
-<input id="fileInput" type="file" accept="image/*" aria-label="Import picture or animated GIF">
+<input id="fileInput" type="file" accept="image/*,.gif" aria-label="Import picture or animated GIF">
 <div class="sub" id="filePickerStatus" aria-live="polite">Select a JPG, PNG, WebP or GIF. No Bluetooth connection needed.</div>
 <div class="row"><button id="sample" type="button">Load your example picture</button><button id="butterfly" type="button">GIF demo</button></div>
 <small>Large JPG, PNG, WebP and GIF files accepted. Still images are processed from an intermediate high-resolution copy, not from an already-blurry 40×40 thumbnail.</small>
@@ -826,13 +826,16 @@ function canvasBlob(canvas){
 }
 function draftSettings(){
  const settings={};
- for(const id of ['motion','quality','framing','enhance','cleanup','zoom','panX','panY'])settings[id]=$(id).value;
+ for(const id of ['motion','quality','framing','enhance','cleanup','zoom','panX','panY','subjectX','subjectY','subjectSize','subjectStrength','ledGamma','ledLift','ledRolloff','ledSat','ledMin','ledPreset'])settings[id]=$(id).value;
  return settings;
 }
 async function draftSnapshot(){
  const master=photoMaster?await canvasBlob(photoMaster):null;
  return {version:1,savedAt:Date.now(),name:importedName,meta:{...sourceMeta},
   master,frames:frames.map(frame=>new Uint8ClampedArray(frame)),delays:frameDelays.slice(),
+  stages:gifStages.map(frame=>new Uint8ClampedArray(frame)),
+  baselines:gifBaselines.map(frame=>new Uint8ClampedArray(frame)),
+  aiGifCrop:aiGifCrop?{...aiGifCrop}:null,
   settings:draftSettings(),nativeEffect:prepared?new Uint8Array(prepared):null};
 }
 function saveDraftNow(){
@@ -882,10 +885,18 @@ async function restoreOfflineDraft(){
    importedName=String(draft.name||'Saved project').slice(0,120);
    sourceMeta={width:Number(draft.meta?.width)||40,height:Number(draft.meta?.height)||40,size:Number(draft.meta?.size)||0};
    frames=recovered;
+   gifStages=Array.isArray(draft.stages)&&draft.stages.length===recovered.length?
+    draft.stages.filter(frame=>frame?.length===102400).map(frame=>new Uint8ClampedArray(frame)):[];
+   gifBaselines=Array.isArray(draft.baselines)&&draft.baselines.length===recovered.length?
+    draft.baselines.filter(frame=>frame?.length===6400).map(frame=>new Uint8ClampedArray(frame)):[];
+   aiGifCrop=draft.aiGifCrop&&[draft.aiGifCrop.cx,draft.aiGifCrop.cy,draft.aiGifCrop.zoom].every(Number.isFinite)?
+    {...draft.aiGifCrop}:null;
    frameDelays=Array.isArray(draft.delays)&&draft.delays.length===frames.length?draft.delays.slice():frames.map(()=>90);
    frameControls(!!photoMaster);
    if(photoMaster)applyPhotoSettings();
    else{sourceImage=frames[0];renderImage(sourceImage);}
+   if(gifStages.length){lastStage=gifStages[0];lastBaseline=gifBaselines[0]||CurtainQuality.areaDownsample(lastStage);
+    paintOriginal(stageAsCanvas(lastStage));refreshGifPalette();redrawThreeCandidates();}
    invalidatePreparation();
    if(draft.nativeEffect&&draft.nativeEffect.length===4096){
     const candidate=new Uint8Array(draft.nativeEffect);
