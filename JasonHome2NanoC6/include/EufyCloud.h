@@ -4,9 +4,10 @@ class EufyCloud {
   String region="us-pr",bootstrap,share,ident,token,uid,accountUid,install;
   JsonDocument credentials,devices;
   bool exchange();
-  bool raw(const String&host,const String&path,const String&body,JsonDocument&out,bool authenticated,const String&key="",const String&scope="eufy_mega",bool plain=false);
+  bool raw(const String&host,const String&path,const String&body,JsonDocument&out,bool authenticated,const String&key="",const String&scope="eufy_mega",bool plain=false,const String&signatureBody="");
   bool signedCall(const String&service,const String&path,JsonVariantConst body,JsonDocument&out,const String&scope="eufy_mega");
   bool findDevices();
+  bool prepareSession();
   bool mqtt(int index,const std::vector<std::pair<uint16_t,Bytes>>& frames,JsonDocument&report);
 public:
   String error="Not configured";

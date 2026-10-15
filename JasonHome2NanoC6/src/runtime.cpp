@@ -110,7 +110,10 @@ static bool handleApi(const String&path){
     out["ok"]=true;out["version"]=VERSION;out["build"]=BUILD_SHA;out["activated"]=activationEnabled;out["timeValid"]=timeValid();out["wifi"]=WiFi.status()==WL_CONNECTED;out["ip"]=WiFi.localIP().toString();out["freeHeap"]=ESP.getFreeHeap();out["largestHeapBlock"]=ESP.getMaxAllocHeap();out["storageFree"]=LittleFS.totalBytes()-LittleFS.usedBytes();out["eufyReady"]=eufy.ready;out["eufyStatus"]=eufy.error;out["oracleRetired"]=state["oraclePaused"]|false;reply(200,out.as<JsonVariantConst>());return true;
   }
   if(path=="/api/nano/activate"&&post){
-    bool enable=in["enabled"]|false;if(enable&&(!(in["oraclePaused"]|false)||!eufy.ready||!timeValid())){replyError(409,"Confirm Oracle is paused, Eufy is connected and the clock is synchronized");return true;}
+    bool enable=in["enabled"]|false;
+    if(enable&&!(in["oraclePaused"]|false)){replyError(409,"Check the confirmation that the Oracle scheduler is paused");return true;}
+    if(enable&&!timeValid()){replyError(409,"Waiting for clock synchronization");return true;}
+    if(enable&&!eufy.ready){replyError(409,"Eufy is not ready: "+eufy.error);return true;}
     state["activated"]=enable;state["oraclePaused"]=in["oraclePaused"]|false;activationEnabled=enable;persist();nextResolve=0;ok();return true;
   }
   if(path=="/api/eufy/login"&&post){

@@ -29,23 +29,31 @@ static String aesEncrypt(const String&plain,const Bytes&key,bool prefix=true){
 static String aesDecrypt(const String&cipher,const Bytes&key){
   auto in=from64(cipher);if(in.size()<32||in.size()%16||key.size()!=16)return "";Bytes iv(in.begin(),in.begin()+16),out(in.size()-16);mbedtls_aes_context ctx;mbedtls_aes_init(&ctx);mbedtls_aes_setkey_dec(&ctx,key.data(),128);int rc=mbedtls_aes_crypt_cbc(&ctx,MBEDTLS_AES_DECRYPT,out.size(),iv.data(),in.data()+16,out.data());mbedtls_aes_free(&ctx);if(rc)return "";uint8_t pad=out.back();if(pad<1||pad>16||pad>out.size())return "";for(size_t i=out.size()-pad;i<out.size();i++)if(out[i]!=pad)return "";return String((char*)out.data(),out.size()-pad);
 }
-bool EufyCloud::raw(const String&host,const String&path,const String&body,JsonDocument&out,bool authenticated,const String&key,const String&scope,bool plain){
+bool EufyCloud::raw(const String&host,const String&path,const String&body,JsonDocument&out,bool authenticated,const String&key,const String&scope,bool plain,const String&signatureBody){
   if(!host.endsWith(".eufy.com")||!(host.startsWith("mega-")||host.startsWith("app-"))){error="Invalid Eufy hostname";return false;}
   WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(6000);h.setTimeout(10000);if(!h.begin(c,"https://"+host+path)){error="Eufy TLS initialization failed";return false;}
   const std::pair<const char*,const char*> headers[]={{"app-version","6.0.41_26142"},{"app_version","6.0.41_26142"},{"os-type","android"},{"os_type","android"},{"os-version","36"},{"os_version","36"},{"phone-model","JasonHomeNanoC6"},{"model-type","PHONE"},{"country","US"},{"ab_code","US"},{"language","en"},{"test-flag","false"},{"accept","application/json"}};
   for(auto&p:headers)h.addHeader(p.first,p.second);h.addHeader("User-Agent","ktor-client");h.addHeader("openudid",install);h.addHeader("app-name",scope);h.addHeader("Content-Type",plain?"text/plain":"application/json");
   if(authenticated&&token.length()){h.addHeader("x-auth-token",token);h.addHeader("authorization",token);uint8_t hash[16];mbedtls_md5((const uint8_t*)accountUid.c_str(),accountUid.length(),hash);h.addHeader("gtoken",hexBytes(hash,16));}
   if(key.length()){
-    String ts=String((uint32_t)time(nullptr)),once=randomHex(),message=ts+"+"+once+"+"+body;uint8_t digest[32];
+    // Key exchange signs the encrypted public key, while other calls sign
+    // their complete encrypted request body. Match the working Oracle client.
+    const String&signedBody=signatureBody.length()?signatureBody:body;
+    String ts=String((uint32_t)time(nullptr)),once=randomHex(),message=ts+"+"+once+"+"+signedBody;uint8_t digest[32];
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),(const uint8_t*)key.c_str(),32,(const uint8_t*)message.c_str(),message.length(),digest);
     h.addHeader("x-encryption-info","algo_ecdh");h.addHeader("x-replay-info","replay");h.addHeader("x-key-ident",ident);h.addHeader("x-request-ts",ts);h.addHeader("x-request-once",once);h.addHeader("x-signature",hexBytes(digest,32));
   }
-  const char*hs[]={"Transfer-Encoding"};h.collectHeaders(hs,1);int rc=h.POST(body);String text;bool readOk=rc>0&&readHttpText(h,text);h.end();if(rc==401){ready=false;share="";token="";}if(rc!=200||!readOk||deserializeJson(out,text)){error="Eufy "+path+" HTTP "+String(rc);return false;}
+  const char*hs[]={"Transfer-Encoding"};h.collectHeaders(hs,1);int rc=h.POST(body);String text;bool readOk=rc>0&&readHttpText(h,text);h.end();
+  if(rc==401){ready=false;share="";token="";}
+  if(rc<=0||!readOk){error="Eufy "+path+" HTTP "+String(rc);if(rc>0&&lastError.length())error+=" ("+lastError+")";return false;}
+  if(deserializeJson(out,text)){error="Eufy "+path+" HTTP "+String(rc)+" returned invalid JSON";return false;}
+  out["_http"]=rc;
   return true;
 }
 bool EufyCloud::exchange(){
   ECDH ec;ident=randomHex();String encrypted=aesEncrypt(ec.publicKey(),fromHex(LOCAL_KEY));JsonDocument body,out;body["client_public_key"]=encrypted;String encoded;serializeJson(body,encoded);
-  if(!raw(bootstrap.length()?bootstrap:"app-openapi-"+region+".eufy.com","/openapi/oauth/key/exchange",encoded,out,token.length(),LOCAL_KEY)||(out["code"]|-1)!=0){error="Eufy key exchange failed";return false;}
+  if(!raw(bootstrap.length()?bootstrap:"app-openapi-"+region+".eufy.com","/openapi/oauth/key/exchange",encoded,out,token.length(),LOCAL_KEY,"eufy_mega",false,encrypted))return false;
+  if((out["_http"]|0)!=200||(out["code"]|-1)!=0){error="Eufy key exchange HTTP "+String(out["_http"]|0)+" code "+String(out["code"]|-1);return false;}
   String server=aesDecrypt(out["data"]["server_public_key"]|String(""),fromHex(LOCAL_KEY));auto shared=ec.secret(server);if(shared.size()!=32){error="Invalid Eufy ECDH key";return false;}share=hexBytes(shared.data(),16);return true;
 }
 bool EufyCloud::signedCall(const String&service,const String&path,JsonVariantConst body,JsonDocument&out,const String&scope){
@@ -53,8 +61,10 @@ bool EufyCloud::signedCall(const String&service,const String&path,JsonVariantCon
   for(int attempt=0;attempt<2;attempt++){
     JsonDocument r;bool plain=(path.startsWith("/passport/"))^(attempt==1);
     if(!raw("app-"+service+"-"+region+".eufy.com",path,cipher,r,true,share,scope,plain))return false;
-    int code=r["code"]|-1;if(code==0){if(r["data"].is<String>()){String decrypted=aesDecrypt(r["data"].as<String>(),fromHex(share));if(deserializeJson(out,decrypted)){error="Eufy decryption failed";return false;}}else out.set(r["data"]);return true;}
-    if(attempt==0&&(code==4416||code==10000))continue;if(code==401){ready=false;share="";token="";}error="Eufy "+path+" code "+String(code);return false;
+    int http=r["_http"]|0,code=r["code"]|-1;if(http==200&&code==0){if(r["data"].is<String>()){String decrypted=aesDecrypt(r["data"].as<String>(),fromHex(share));if(deserializeJson(out,decrypted)){error="Eufy decryption failed";return false;}}else out.set(r["data"]);return true;}
+    if(attempt==0&&(code==4416||code==10000||http==400))continue;
+    if(http==401||code==401||code==26085){ready=false;share="";token="";}
+    error="Eufy "+path+" HTTP "+String(http)+" code "+String(code);return false;
   }return false;
 }
 void EufyCloud::begin(){
@@ -62,8 +72,10 @@ void EufyCloud::begin(){
   auto s=secrets["eufySession"];region=s["region"]|String("us-pr");bootstrap=s["bootstrap"]|String("");token=s["token"]|String("");uid=s["uid"]|String("");accountUid=s["accountUid"]|String("");
 }
 bool EufyCloud::login(const String&email,const String&password){
+  if(!timeValid()){error="Waiting for network time";return false;}
   JsonDocument body,r;body["ab"]="us";body["mode"]=1;String text;serializeJson(body,text);
-  if(!raw("mega-us-pr.eufy.com","/passport/estimate_domain",text,r,false)||(r["code"]|-1)!=0)return false;
+  if(!raw("mega-us-pr.eufy.com","/passport/estimate_domain",text,r,false))return false;
+  if((r["_http"]|0)!=200||(r["code"]|-1)!=0){error="Eufy region lookup HTTP "+String(r["_http"]|0)+" code "+String(r["code"]|-1);return false;}
   String regionData;serializeJson(r["data"],regionData);region=regionData.indexOf("-eu-")>=0?"eu-pr":"us-pr";
   String host=r["data"]["domain"]|String("");if(host.startsWith("app-")&&host.endsWith(".eufy.com"))bootstrap=host;
   if(!exchange())return false;ECDH ec;auto key=ec.secret(SERVER_PUBLIC);if(key.size()!=32)return false;
@@ -73,13 +85,17 @@ bool EufyCloud::login(const String&email,const String&password){
   uid=(!r["ap_cloud_user_id"].isNull()?r["ap_cloud_user_id"]:r["user_id"]).as<String>();accountUid=(!r["user_id"].isNull()?r["user_id"]:r["userId"]).as<String>();if(accountUid=="null"||!accountUid.length())accountUid=uid;token=r["auth_token"]|r["token"]|String("");
   if(!uid.length()||!token.length()){error="Eufy login returned no session";return false;}
   auto s=secrets["eufySession"].to<JsonObject>();s["region"]=region;s["bootstrap"]=bootstrap;s["token"]=token;s["uid"]=uid;s["accountUid"]=accountUid;
-  secrets["eufyEmail"]=email;secrets["eufyPassword"]=password;saveJson("/secrets.json",secrets.as<JsonVariantConst>());share="";return prepare();
+  secrets["eufyEmail"]=email;secrets["eufyPassword"]=password;saveJson("/secrets.json",secrets.as<JsonVariantConst>());share="";return prepareSession();
 }
 bool EufyCloud::findDevices(){
-  JsonDocument body,houses,found;body.to<JsonObject>();signedCall("house","/app/house/get_house_list",body.as<JsonVariantConst>(),houses);
+  JsonDocument body,houses,found;body.to<JsonObject>();String lookupError;
+  if(!signedCall("house","/app/house/get_house_list",body.as<JsonVariantConst>(),houses))lookupError=error;
   std::vector<String> ids={""};for(JsonObjectConst h:houses["house_infos"].as<JsonArrayConst>()){String id=h["house_id"]|String("");if(id.length())ids.push_back(id);}
+  houses.clear();bool lookupSucceeded=false;size_t deviceCount=0;
   devices.clear();devices.to<JsonArray>();for(int i=0;i<4;i++)devices.add<JsonObject>();
-  for(auto&id:ids){body.clear();body.to<JsonObject>();if(id.length())body["house_id"]=id;if(!signedCall("house","/app/house/get_devs_list",body.as<JsonVariantConst>(),found))continue;
+  for(auto&id:ids){body.clear();found.clear();body.to<JsonObject>();if(id.length())body["house_id"]=id;
+    if(!signedCall("house","/app/house/get_devs_list",body.as<JsonVariantConst>(),found)){lookupError=error;continue;}
+    lookupSucceeded=true;deviceCount+=found["devices"].size();
     for(JsonObjectConst d:found["devices"].as<JsonArrayConst>())for(int i=0;i<4;i++){
       String sn=d["device_sn"]|String("");if(sn!=SERIALS[i]&&!(i==3&&sn=="T8L0291024470193"))continue;
       if(String(d["device_model"]|"")!=MODELS[i]||String(d["category"]|"")!="eufy_life")continue;
@@ -87,12 +103,22 @@ bool EufyCloud::findDevices(){
       if(devices[i]["ambiguous"]|false)continue;devices[i]["serial"]=sn;devices[i]["account"]=d["member"]["admin_user_id"].isNull()?uid:d["member"]["admin_user_id"].as<String>();
     }
   }
-  bool any=false;for(int i=0;i<4;i++)any|=deviceReady(i);return any;
+  bool any=false;for(int i=0;i<4;i++)any|=deviceReady(i);
+  if(!any)error=!lookupSucceeded&&lookupError.length()?lookupError:"Eufy returned "+String((unsigned)deviceCount)+" devices; no unique saved light identities matched";
+  return any;
 }
 bool EufyCloud::prepare(){
   if(!timeValid()){error="Waiting for network time";return false;}
-  if(!token.length()){String email=secrets["eufyEmail"]|String(""),pw=secrets["eufyPassword"]|String("");if(email.length()&&pw.length())return login(email,pw);error="Eufy credentials required";return false;}
-  if(!findDevices()){error="No unique known Eufy devices found";return false;}JsonDocument body;body.to<JsonObject>();
+  String email=secrets["eufyEmail"]|String(""),pw=secrets["eufyPassword"]|String("");
+  if(!token.length()){if(email.length()&&pw.length())return login(email,pw);error="Eufy credentials required";return false;}
+  if(prepareSession())return true;
+  // Imported sessions can expire. Refresh once with the already saved login,
+  // without hiding authentication failures or recursively retrying forever.
+  if(!token.length()&&email.length()&&pw.length())return login(email,pw);
+  return false;
+}
+bool EufyCloud::prepareSession(){
+  if(!findDevices())return false;JsonDocument body;body.to<JsonObject>();
   if(!signedCall("devicemanage","/app/devicemanage/get_user_mqtt_info",body.as<JsonVariantConst>(),credentials,"eufy_life"))return false;
   String host=credentials["endpoint_addr"]|String("");if(!(host.endsWith(".amazonaws.com")||host.endsWith(".eufy.com")||host.endsWith(".anker.com"))||!credentials["certificate_pem"].is<String>()||!credentials["private_key"].is<String>()||!credentials["aws_root_ca1_pem"].is<String>()){error="Invalid Eufy MQTT certificate";return false;}
   ready=true;error="Ready";return true;

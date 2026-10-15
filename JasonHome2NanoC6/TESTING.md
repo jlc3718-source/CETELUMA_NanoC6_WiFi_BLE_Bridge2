@@ -24,3 +24,8 @@ Migration constraints and retained behaviors:
 - The 256 KB settings volume and 60 KB import limit are checked. A very large factory catalog may fail refresh without replacing the previous catalog; it is not silently truncated. Referenced recipes in a valid import remain available.
 
 No live Oracle service, schedule owner, router mapping or Anderson firmware is changed by the build workflow. The separate cutover script is operator-invoked after installation.
+# Version 1.0.4 Eufy connection repair
+
+The key-exchange request signs its encrypted public-key value, matching the working Oracle client. Previously it signed the enclosing JSON. A read-only comparison returned HTTP 403 for the old signing method and HTTP 200 / API code 0 for the corrected method. The imported session separately returned HTTP 401 / API code 26085, so the firmware now renews that session once with the saved login and retains specific API errors.
+
+This repair changes no light serial/model checks, Eufy command frames, flash partitions or saved-state formats. The existing signed runtime updater preserves Wi-Fi and settings. Firmware compilation, package verification and publication do not establish successful physical NanoC6 authentication, MQTT operation or light output; check these after installation while Oracle remains paused.

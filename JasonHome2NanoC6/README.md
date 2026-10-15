@@ -1,6 +1,8 @@
 # Jason Home 2 — NanoC6 installation
 
-This is the **1.0.3 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
+This is the **1.0.4 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
+
+Version 1.0.4 corrects the Eufy key-exchange signature, renews expired imported sessions once using the saved account, and preserves the underlying discovery error. The activation message names the unmet requirement, and the NanoC6 status refreshes automatically. On an existing 1.0.3 controller, use **Check for firmware update → Install verified update** after the signed channel offers 1.0.4. This replaces only the runtime and preserves Wi-Fi, account, settings and schedules. Keep the NanoC6 paused until Eufy reports Ready, the clock is synchronized and Oracle is paused. Live operation on the physical NanoC6 still needs user verification.
 
 Version 1.0.3 repairs Wi-Fi setup and adds browser firmware upload. The runtime mounts the existing `storage` partition explicitly, and a failed save leaves the previous network and PIN intact. For an already flashed 1.0.2 board, first update **both** the boot updater (`0x10000`) and runtime (`0x130000`) by USB; keep the existing partition table and settings filesystem. These changes have not been physically verified on the board.
 

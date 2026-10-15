@@ -48,7 +48,12 @@ function init(){
  const $=id=>document.getElementById(id);
  const api=async(path,body)=>{const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;};
  const run=fn=>async()=>{try{await fn();await refresh();}catch(e){$('nanoState').textContent=e.message;}};
- async function refresh(){const d=await api('/api/nano/status');$('nanoState').textContent=(d.activated?'Active':'Paused')+' · '+d.version+' · '+(d.timeValid?'Clock synchronized':'Waiting for time')+' · '+d.eufyStatus;const f=await api('/api/firmware');$('nanoAutoUpdate').checked=f.autoUpdate;const n=await api('/api/network/upnp');$('nanoUpnp').checked=n.enabled;$('nanoNetworkState').textContent=n.status;}
+ let refreshing=false;
+ async function refresh(){
+  if(refreshing)return;refreshing=true;
+  try{const d=await api('/api/nano/status');$('nanoState').textContent=(d.activated?'Active':'Paused')+' · '+d.version+' · '+(d.timeValid?'Clock synchronized':'Waiting for time')+' · '+d.eufyStatus;const f=await api('/api/firmware');$('nanoAutoUpdate').checked=f.autoUpdate;const n=await api('/api/network/upnp');$('nanoUpnp').checked=n.enabled;$('nanoNetworkState').textContent=n.status;}
+  finally{refreshing=false;}
+ }
  $('nanoConnect').onclick=run(async()=>{const email=prompt('Eufy account email');if(!email)return;const password=await new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.innerHTML='<form method=dialog><label>Eufy password <input type=password autocomplete=current-password required></label><p><button value=cancel>Cancel</button> <button value=connect>Connect</button></p></form>';document.body.append(dialog);dialog.addEventListener('close',()=>{const value=dialog.returnValue==='connect'?dialog.querySelector('input').value:'';dialog.remove();resolve(value);});dialog.showModal();});if(!password)return;await api('/api/eufy/login',{email,password});});
  $('nanoAddress').onclick=()=>{if(window.AndroidControllerAddress)AndroidControllerAddress.configure();else $('nanoState').textContent='This controller is at '+location.origin;};
  $('nanoImport').onclick=()=>{$('nanoFile').click();};
@@ -62,6 +67,7 @@ function init(){
  $('nanoCheck').onclick=run(async()=>{const d=await api('/api/firmware/check',{});$('nanoUpdateState').textContent=d.newer?'Verified update '+d.version+' is available.':'You have the current version.';});
  $('nanoInstall').onclick=run(async()=>{await api('/api/firmware/install',{});$('nanoUpdateState').textContent='Installing. Reopen this page when the controller restarts.';});
  refresh().catch(e=>$('nanoState').textContent=e.message);
+ setInterval(()=>refresh().catch(()=>{}),5000);
 }
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
 })();
