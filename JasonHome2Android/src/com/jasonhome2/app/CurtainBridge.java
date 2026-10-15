@@ -9,6 +9,13 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.util.Base64;
+import android.content.ContentValues;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.net.Uri;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
@@ -229,6 +236,34 @@ public final class CurtainBridge {
 
     private void execute(String id,String action,JSONObject json) {
         if ("status".equals(action)) {finish(id,true,ready?"Connected to DN5E58":"Not connected",ready);return;}
+        if("saveRawFile".equals(action)){
+            String name=json.optString("name","curtain-effect.eff").replaceAll("[^a-zA-Z0-9._-]","_");
+            if(name.length()>90)name=name.substring(name.length()-90);
+            String mime=json.optString("mime","application/octet-stream");
+            if(!mime.equals("text/plain")&&!mime.equals("application/octet-stream")&&!mime.equals("image/png")
+               &&!mime.equals("image/gif"))mime="application/octet-stream";
+            byte[] data=Base64.decode(json.optString("data",""),Base64.DEFAULT);
+            if(data.length==0||data.length>10_000_000)throw new IllegalArgumentException("Export must be 1 byte–10 MB");
+            if(Build.VERSION.SDK_INT>=29){
+                ContentValues values=new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);
+                values.put(MediaStore.MediaColumns.MIME_TYPE,mime);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/JasonHome2");
+                Uri uri=activity.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+                if(uri==null)throw new IllegalStateException("Android Downloads unavailable");
+                try(OutputStream out=activity.getContentResolver().openOutputStream(uri)){
+                    if(out==null)throw new IllegalStateException("Cannot write Downloads file");
+                    out.write(data);
+                }
+            }else{
+                File dir=activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                if(dir==null)throw new IllegalStateException("Android Downloads unavailable");
+                if(!dir.exists()&&!dir.mkdirs())throw new IllegalStateException("Cannot create download directory");
+                try(OutputStream out=new FileOutputStream(new File(dir,name))){out.write(data);}
+            }
+            finish(id,true,"Saved "+name+" to Downloads / JasonHome2",ready);
+            return;
+        }
         if ("scan".equals(action)) {
             if(ready){finish(id,true,"Already connected to the curtain",true);return;}
             String[] missing=missingPermissions();
