@@ -245,7 +245,7 @@ async function cloudflareAiRun(model,input,{timeout=45000}={}){
 async function analyzeCurtainSubject(body){
  if(!cloudflareAiConfigured())throw fail(409,"Cloudflare AI unavailable. Use local Enhanced Detail.");
  const raw=String(body?.image||"");
- if(!/^data:image\\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(raw)||raw.length>420000)
+ if(!raw.startsWith("data:image/jpeg;base64,")||raw.length>420000)
   throw fail(400,"Curtain AI accepts a JPEG preview under 300 KB");
  const bytes=Buffer.from(raw.slice("data:image/jpeg;base64,".length),"base64");
  if(bytes.length<80||bytes.length>300000||bytes[0]!==255||bytes[1]!==216||bytes.at(-2)!==255||bytes.at(-1)!==217)
