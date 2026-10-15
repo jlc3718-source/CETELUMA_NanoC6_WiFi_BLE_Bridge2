@@ -1,0 +1,115 @@
+name: Finish Jason Home 2 NanoC6 packages
+on:
+  push:
+    branches: [jason-home-2-nanoc6]
+    paths: ['.github/workflows/finish-jh2-nanoc6-packages.yml']
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful NanoC6 source build run
+        default: '38727208575'
+        required: true
+      source_sha:
+        description: Exact source revision of that build
+        default: 'c3e282e55e718770937be82302df93b3b7749719'
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  finish:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Repair generated cache ownership
+        run: |
+          if test -d "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; then sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha || 'c3e282e55e718770937be82302df93b3b7749719' }}
+      - name: Read-only private migration export
+        run: |
+          target="$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID"
+          mkdir -p -m 700 "$target"
+          trap 'sudo chown -R "$(id -u):$(id -g)" "$target"' EXIT
+          sudo python3 -B JasonHome2NanoC6/tools/prepare_snapshot.py --output "$target"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-PRIVATE-migration
+          path: ${{ runner.temp }}/jh2-migration-${{ github.run_id }}/
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-unsigned
+          path: sign-work
+          run-id: ${{ inputs.build_run || '38727208575' }}
+          github-token: ${{ github.token }}
+      - name: Sign exact Android source artifact
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha || 'c3e282e55e718770937be82302df93b3b7749719' }}
+        run: |
+          set -euo pipefail
+          test "$(cat sign-work/source-commit.txt)" = "$EXPECTED_SHA"
+          KEYSTORE=/home/ubuntu/.jason-home-signing/jason-home-release.jks
+          PASSFILE=/home/ubuntu/.jason-home-signing/password
+          if ! test -s "$KEYSTORE" || ! test -s "$PASSFILE"; then
+            for base in /home/ubuntu/repo/JasonHome/Signing /opt/jason-home-2; do
+              candidate="$base/jason-home-release.jks"
+              candidate_pass="$base/password"
+              if test -s "$candidate" && test -s "$candidate_pass"; then
+                if keytool -list -v -keystore "$candidate" -storepass:file "$candidate_pass" -alias jason-home 2>/dev/null | grep -qi '76:B2:8E:FD:4F:5D:13:2A:D3:04:8F:19:BA:E6:C3:5A:A5:F8:4C:4A:39:0E:98:C8:0D:EE:EB:C0:C3:E7:3A:E1'; then KEYSTORE="$candidate"; PASSFILE="$candidate_pass"; break; fi
+              fi
+            done
+          fi
+          test -s "$KEYSTORE" && test -s "$PASSFILE"
+          OUT=Jason-Home-2-2.1.0-NanoC6-SIGNED.apk
+          java -jar sign-work/apksigner.jar sign --ks "$KEYSTORE" --ks-key-alias jason-home --ks-pass "file:$PASSFILE" --key-pass "file:$PASSFILE" --out "$OUT" sign-work/Jason-Home-2-2.1.0-NanoC6-UNSIGNED.apk
+          java -jar sign-work/apksigner.jar verify --verbose --print-certs "$OUT" > signing-verification.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: 76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' signing-verification.txt
+          sha256sum "$OUT" > APK-SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-signed
+          path: |
+            *NanoC6-SIGNED.apk
+            APK-SHA256SUMS
+            signing-verification.txt
+            sign-work/source-commit.txt
+          retention-days: 30
+  publish-apk:
+    needs: finish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      EXPECTED_SHA: ${{ inputs.source_sha || 'c3e282e55e718770937be82302df93b3b7749719' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-signed
+          path: signed
+      - name: Verify matching published firmware and attach APK
+        run: |
+          set -euo pipefail
+          mkdir -p firmware-record
+          for attempt in $(seq 1 80); do
+            if gh release download jason-home-2-nanoc6-v1.0.1 --pattern release.json --dir firmware-record --clobber >/dev/null 2>&1; then break; fi
+            sleep 5
+          done
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=json.loads(Path('firmware-record/release.json').read_text())
+          assert m['product']=='jason-home-2-nanoc6' and m['version']=='1.0.1' and m['commit']==os.environ['EXPECTED_SHA']
+          PY
+          (cd signed && sha256sum -c APK-SHA256SUMS)
+          gh release upload jason-home-2-nanoc6-v1.0.1 signed/*SIGNED.apk signed/APK-SHA256SUMS signed/signing-verification.txt --clobber

@@ -2,7 +2,7 @@ name: Build Jason Home 2 NanoC6
 on:
   push:
     branches: [jason-home-2-nanoc6]
-    paths: ['JasonHome2NanoC6/**', '.github/workflows/build-jason-home-2-nanoc6.yml']
+    paths: ['JasonHome2NanoC6/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -176,6 +176,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Repair ownership of this project's generated cache
+        run: |
+          if test -d "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; then sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; fi
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
         with:
@@ -221,12 +224,19 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 5
     steps:
+      - name: Repair ownership of this project's generated cache
+        run: |
+          if test -d "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; then sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; fi
       - uses: actions/checkout@v4
       - name: Prepare private migration snapshot without changing automation
-        run: sudo python3 JasonHome2NanoC6/tools/prepare_snapshot.py --output migration-private
+        run: |
+          target="$RUNNER_TEMP/jh2-migration-$GITHUB_RUN_ID"
+          mkdir -p -m 700 "$target"
+          trap 'sudo chown -R "$(id -u):$(id -g)" "$target"' EXIT
+          sudo python3 -B JasonHome2NanoC6/tools/prepare_snapshot.py --output "$target"
       - uses: actions/upload-artifact@v4
         with:
           name: Jason-Home-2-NanoC6-PRIVATE-migration
-          path: migration-private/
+          path: ${{ runner.temp }}/jh2-migration-${{ github.run_id }}/
           retention-days: 7
           if-no-files-found: error
