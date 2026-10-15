@@ -209,8 +209,7 @@ jobs:
           java -jar sign-work/apksigner.jar verify --verbose --print-certs "$OUT" > signing-verification.txt
           grep -qi 'Signer #1 certificate SHA-256 digest: 76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' signing-verification.txt
           sha256sum "$OUT" > APK-SHA256SUMS
-          VERSION="$(cat JasonHome2NanoC6/VERSION)"
-          gh release upload "jason-home-2-nanoc6-v$VERSION" "$OUT" APK-SHA256SUMS signing-verification.txt --clobber
+
       - uses: actions/upload-artifact@v4
         with:
           name: Jason-Home-2-NanoC6-Android-signed
@@ -246,3 +245,25 @@ jobs:
           path: ${{ runner.temp }}/jh2-migration-${{ github.run_id }}.p7m
           retention-days: 7
           if-no-files-found: error
+
+  publish-android:
+    needs: [sign-android, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-Android-signed
+          path: signed
+      - name: Publish verified APK
+        run: |
+          set -euo pipefail
+          VERSION="$(cat JasonHome2NanoC6/VERSION)"
+          (cd signed && sha256sum -c APK-SHA256SUMS)
+          gh release upload "jason-home-2-nanoc6-v$VERSION" signed/*SIGNED.apk signed/APK-SHA256SUMS signed/signing-verification.txt --clobber

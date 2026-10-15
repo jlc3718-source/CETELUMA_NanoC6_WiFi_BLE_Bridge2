@@ -3,6 +3,13 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('converter',Path(__file__).resolve().parents[1]/'tools/convert_backup.py');mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
 class Migration(unittest.TestCase):
+    def test_factory_raw_cache_is_not_duplicated_in_import(self):
+        catalog=json.loads((ROOT/'JasonHome2Server/catalog.json').read_text())
+        preset={'lightId':10001,'name':'Test','layers':[{'colors':'5B00E6','layer_speed':17}],'raw':{'light_effect':[{'params':'large duplicate data'}]}}
+        source={'oracle':{'calendar':{'settings':{'mode':2},'events':[catalog['events'][0]]},'referencedFactoryPresets':[preset]}}
+        result=mod.convert(source,catalog);clean=result['state']['referencedFactoryPresets'][0]
+        self.assertNotIn('raw',clean);self.assertEqual(clean['layers'],preset['layers']);self.assertIn('raw',preset)
+
     def test_preserves_all_edits_and_schedule_families(self):
         catalog=json.loads((ROOT/'JasonHome2Server/catalog.json').read_text())
         events=[]

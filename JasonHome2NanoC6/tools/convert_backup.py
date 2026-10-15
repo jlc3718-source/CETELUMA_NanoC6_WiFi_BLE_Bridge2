@@ -35,7 +35,7 @@ def convert(data,catalog):
            'customSchedules':cfg.get('customSchedules',[]),'weeklySchedules':oracle.get('schedules',[]),
            'presets':web.get('presets',[]),'palette':web.get('palette',{}),'target':web.get('target',0),
            'factoryEdits':oracle.get('factoryEdits',{}),'factoryPromotions':oracle.get('factoryPromotions',{}),
-           'factoryPromotionMap':oracle.get('factoryPromotionMap',{}),'referencedFactoryPresets':oracle.get('referencedFactoryPresets',[]),
+           'factoryPromotionMap':oracle.get('factoryPromotionMap',{}),'referencedFactoryPresets':[{k:v for k,v in p.items() if k!='raw'} for p in oracle.get('referencedFactoryPresets',[])],
            'activated':False,'autoUpdate':False,'oraclePaused':False,'sourceRevision':cfg.get('revision',0)}
     return {'schema':1,'product':'jason-home-2-nanoc6','state':state}
 def main():

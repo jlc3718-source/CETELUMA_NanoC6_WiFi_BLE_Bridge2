@@ -79,7 +79,13 @@ static void eventView(JsonDocument&e){
 static bool handleApi(const String&path){
   if(!path.startsWith("/api/"))return false;
   if(!authorized()){replyError(401,"Sign in first");return true;}
-  bool post=web.method()==HTTP_POST;JsonDocument in,out;if(post&&web.arg("plain").length()){if(web.arg("plain").length()>65536||deserializeJson(in,web.arg("plain"))){replyError(400,"Invalid JSON or request over 64 KB");return true;}}
+  bool post=web.method()==HTTP_POST;JsonDocument in,out;String importBuffer;
+  if(post&&web.arg("plain").length()){
+    bool importPath=path=="/api/nano/import"||path=="/api/backup/import-portable"||path=="/api/backup/restore";
+    if(web.arg("plain").length()>65536){replyError(400,"Request exceeds 64 KB");return true;}
+    DeserializationError error;if(importPath){importBuffer=web.arg("plain");error=deserializeJson(in,importBuffer.begin());}else error=deserializeJson(in,web.arg("plain"));
+    if(error){replyError(400,"Invalid JSON or insufficient memory");return true;}
+  }
   if(post&&commandBusy&&path!="/api/curtain/call"){replyError(409,"Wait for the current lighting command to finish");return true;}
   if(handleAiApi(path,in.as<JsonVariantConst>(),post))return true;
   if(handleFactoryApi(path,in.as<JsonVariantConst>(),post,commandBusy))return true;
@@ -118,8 +124,12 @@ static bool handleApi(const String&path){
   if(path=="/api/nano/import"&&post){
     if(activationEnabled){replyError(409,"Pause NanoC6 before importing");return true;}
     if(String(in["product"]|"")!="jason-home-2-nanoc6"||(in["schema"]|0)!=1||!in["state"]["settings"].is<JsonObjectConst>()){replyError(400,"Use the supplied migration converter or NanoC6 export");return true;}
-    JsonDocument candidate;candidate.set(in["state"]);candidate["activated"]=false;candidate["autoUpdate"]=false;candidate["oraclePaused"]=false;
-    if(!saveJson("/state.json",candidate.as<JsonVariantConst>())){replyError(500,"Import could not be saved");return true;}state.set(candidate);schedulerBegin();manual.clear();manualUntil=0;nextResolve=0;ok();return true;
+    auto candidate=in["state"].as<JsonObject>();candidate["activated"]=false;candidate["autoUpdate"]=false;candidate["oraclePaused"]=false;
+    if(!saveJson("/state.json",candidate)){replyError(500,"Import could not be saved");return true;}
+    // Release the decoded upload and its linked strings before loading owned
+    // settings from flash. Never keep pointers into the temporary HTTP body.
+    in.clear();importBuffer="";state.clear();if(!loadJson("/state.json",state)){replyError(500,"Saved settings could not be loaded");return true;}
+    schedulerBegin();manual.clear();manualUntil=0;nextResolve=0;ok();return true;
   }
   if(path=="/api/network/upnp"){if(post){if(in["enabled"].is<bool>())state["upnpEnabled"]=in["enabled"];persist();portMappingRetry();}portMappingStatus(out.to<JsonObject>());reply(200,out.as<JsonVariantConst>());return true;}
   if(path=="/api/nano/config"&&post){if(in["autoUpdate"].is<bool>())state["autoUpdate"]=in["autoUpdate"];if(in["lampCounts"].is<JsonObjectConst>()){for(auto name:{"Pool","House","Garage","Shed"}){int n=in["lampCounts"][name]|0;if(n>=1&&n<=120)state["lampCounts"][name]=n;}}persist();ok();return true;}
@@ -190,7 +200,7 @@ static bool handleApi(const String&path){
   if(path=="/api/backup/export-portable"||path=="/api/nano/export"){out["ok"]=true;out["containsCredentials"]=false;auto b=out["backup"].to<JsonObject>();b["schema"]=1;b["product"]="jason-home-2-nanoc6";b["state"]=state.as<JsonVariantConst>();reply(200,out.as<JsonVariantConst>());return true;}
   if((path=="/api/backup/import-portable"||path=="/api/backup/restore")&&post){
     JsonDocument saved;if(path.endsWith("restore")&&in["backup"].isNull())loadJson("/backup.json",saved);JsonVariantConst b=in["backup"].isNull()?saved.as<JsonVariantConst>():in["backup"].as<JsonVariantConst>();
-    if(String(b["product"]|"")!="jason-home-2-nanoc6"||!b["state"]["settings"].is<JsonObjectConst>()){replyError(400,"Convert Oracle backups with the supplied migration tool, then use Import migration file");return true;}if(activationEnabled){replyError(409,"Pause NanoC6 before restoring settings");return true;}JsonDocument next;next.set(b["state"]);next["activated"]=false;next["autoUpdate"]=false;if(!saveJson("/state.json",next.as<JsonVariantConst>())){replyError(500,"Restore could not be saved");return true;}state.set(next);schedulerBegin();endPreview();ok();return true;
+    if(String(b["product"]|"")!="jason-home-2-nanoc6"||!b["state"]["settings"].is<JsonObjectConst>()){replyError(400,"Convert Oracle backups with the supplied migration tool, then use Import migration file");return true;}if(activationEnabled){replyError(409,"Pause NanoC6 before restoring settings");return true;}JsonObject next=in["backup"]["state"].is<JsonObject>()?in["backup"]["state"].as<JsonObject>():saved["state"].as<JsonObject>();next["activated"]=false;next["autoUpdate"]=false;if(!saveJson("/state.json",next)){replyError(500,"Restore could not be saved");return true;}in.clear();saved.clear();importBuffer="";state.clear();if(!loadJson("/state.json",state)){replyError(500,"Saved settings could not be loaded");return true;}schedulerBegin();endPreview();ok();return true;
   }
   return false;
 }
@@ -212,7 +222,7 @@ void setup(){
 void loop(){
   networkLoop();web.handleClient();curtainLoop();uint32_t now=millis();if(commandFailed){commandFailed=false;lastScheduleKey="";}
   if(!commandBusy&&WiFi.status()==WL_CONNECTED&&uxQueueMessagesWaiting(commandQueue)==0&&timeValid()&&!eufy.ready&&(int32_t)(now-nextPrepare)>=0){nextPrepare=now+60000;eufy.prepare();}
-  if(timeValid()&&(int32_t)(now-nextResolve)>=0){
+  if(!commandBusy&&timeValid()&&(int32_t)(now-nextResolve)>=0){
     nextResolve=now+30000;String oldId=running["id"]|String("");resolveSchedule(time(nullptr),running);if(oldId.length()&&oldId!=String(running["id"]|"")){state.remove("brightnessOverrides");persist();}
     if(manualUntil&&manualUntil<=time(nullptr)){manualUntil=0;manual.clear();previewProgram.clear();lastScheduleKey="";state.remove("manual");state.remove("manualUntil");persist();}
     if(activationEnabled&&manualUntil>time(nullptr)&&!previewProgram.isNull()){

@@ -1,6 +1,6 @@
 # Jason Home 2 — NanoC6 installation
 
-This is the **1.0.1 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
+This is the **1.0.2 installation candidate for the M5Stack NanoC6, ESP32-C6 with 4 MB flash**. It moves the web interface, calendar resolver and Eufy command transport onto the NanoC6. SmartDawn curtain Bluetooth runs on the NanoC6. Eufy authentication/MQTT and configured Cloudflare AI still require Internet access.
 
 Your remote address is **http://craumejl.tplinkdns.com**, **TCP port 80**. The local address is **http://jason-home-2.local/**. Use the local address during initial setup and migration. Your router maintains the TP-Link DDNS hostname.
 
@@ -102,6 +102,8 @@ For a full reset use the normal install mode and restore the saved migration fil
 | Minimal permanent updater | `0x10000` | `0x120000` |
 | Single runtime | `0x130000` | `0x290000` |
 | Settings filesystem | `0x3C0000` | `0x40000` |
+
+Duplicate raw factory response data is omitted from the import; complete native recipes are retained, and the original Oracle export remains intact.
 
 Exact binary sizes, checksums and source revision are in `release.json`. Source is maintained independently on the repository's `jason-home-2-nanoc6` branch. Its signed update channel is `jh2-nanoc6-ota`; the Anderson channel is unchanged.
 

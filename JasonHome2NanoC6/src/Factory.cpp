@@ -42,15 +42,15 @@ void factoryPromotionRows(JsonArray rows){
   for(JsonPairConst binding:state["factoryPromotionMap"].as<JsonObjectConst>()){
     String id=binding.key().c_str(),eventId=binding.value()["eventId"]|String("");int i=eventIndex(eventId);if(i<0)continue;JsonDocument event,preset;eventAt(i,event);bool found=false;
     for(JsonVariantConst p:state["referencedFactoryPresets"].as<JsonArrayConst>())if((p["lightId"]|0)==id.toInt()){preset.set(p);found=true;break;}if(!found)continue;
-    for(JsonPairConst edit:state["factoryEdits"][id].as<JsonObjectConst>())preset[edit.key()]=edit.value();auto r=rows.add<JsonObject>();r["lightId"]=id.toInt();r["name"]=preset["name"];r["eventId"]=eventId;r["eventName"]=event["name"];r["enabled"]=state["factoryPromotions"][id]["enabled"]|true;r["event"]=event.as<JsonVariantConst>();r["preset"]=preset.as<JsonVariantConst>();factoryCompatibleScene(preset.as<JsonVariantConst>(),r["scene"].to<JsonObject>());
+    for(JsonPairConst edit:state["factoryEdits"][id].as<JsonObjectConst>())preset[edit.key()]=edit.value();auto r=rows.add<JsonObject>();r["lightId"]=id.toInt();r["name"]=preset["name"];r["eventId"]=eventId;r["eventName"]=event["name"];r["enabled"]=state["factoryPromotions"][id]["enabled"]|true;r["event"]=event.as<JsonVariantConst>();factoryCompatibleScene(preset.as<JsonVariantConst>(),r["scene"].to<JsonObject>());
   }
 }
 static void collect(JsonVariantConst v,std::set<int>&ids){if(v.is<JsonArrayConst>()){for(auto c:v.as<JsonArrayConst>())collect(c,ids);}else if(v.is<JsonObjectConst>())for(JsonPairConst p:v.as<JsonObjectConst>()){String k=p.key().c_str();if((k=="light_id"||k=="scene_id")&&p.value().is<int>())ids.insert(p.value().as<int>());else collect(p.value(),ids);}}
 bool refreshFactoryCatalog(){
   if(!eufy.ready&&!eufy.prepare())return false;JsonDocument body,discovery;body.to<JsonObject>();std::set<int>ids;if(eufy.api("light","/app/light/discover/list",body.as<JsonVariantConst>(),discovery))collect(discovery.as<JsonVariantConst>(),ids);discovery.clear();for(int id=10001;id<=10999;id++)ids.insert(id);
-  File file=LittleFS.open("/factory-index.tmp","w");if(!file)return false;file.print("{\"ok\":true,\"presets\":[");bool first=true;std::vector<int>batch;
+  File file=LittleFS.open("/factory-index.tmp","w");if(!file)return false;file.print("{\"ok\":true,\"presets\":[");bool first=true;std::vector<int>batch;std::set<std::string>names;
   auto flush=[&](){JsonDocument request,response;auto a=request["light_id"].to<JsonArray>();for(int n:batch)a.add(n);batch.clear();if(!eufy.api("light","/app/light/lighteffect/batchget",request.as<JsonVariantConst>(),response))return false;
-    for(JsonVariantConst raw:response["list"].as<JsonArrayConst>()){JsonDocument full,summary;if(!normalize(raw,full))continue;
+    for(JsonVariantConst raw:response["list"].as<JsonArrayConst>()){JsonDocument full,summary;if(!normalize(raw,full))continue;String name=full["name"]|String("");name.trim();name.toLowerCase();if(!names.insert(std::string(name.c_str())).second)continue;
       for(auto k:{"lightId","name","colors","brightness","speed","layerExecutionMode","buildableE22","buildableE120Experimental"})summary[k]=full[k];summary["_summary"]=true;
       auto layers=summary["layers"].to<JsonArray>();for(JsonVariantConst layer:full["layers"].as<JsonArrayConst>()){auto l=layers.add<JsonObject>();for(auto k:{"current_layer_type","colors","layer_speed","flow_direction"})l[k]=layer[k];}
       if(LittleFS.totalBytes()-LittleFS.usedBytes()<12000)return false;if(!first)file.print(',');first=false;serializeJson(summary,file);

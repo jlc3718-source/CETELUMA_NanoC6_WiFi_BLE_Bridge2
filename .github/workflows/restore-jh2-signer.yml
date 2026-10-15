@@ -1,0 +1,51 @@
+name: Restore original Jason Home 2 signer
+on:
+  push:
+    branches: [jason-home-2-nanoc6]
+    paths: ['.github/workflows/restore-jh2-signer.yml', '.github/private-transfer/jh2-signer.cms']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Repair project cache ownership
+        run: |
+          if test -d "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; then sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/JasonHome2NanoC6/tools/__pycache__"; fi
+      - uses: actions/checkout@v4
+      - name: Prepare host-only transfer recipient
+        run: |
+          set -euo pipefail
+          target=/home/ubuntu/.jason-home-signing
+          mkdir -p -m 700 "$target"
+          if ! test -s "$target/restore-transport.pem"; then
+            openssl req -x509 -newkey rsa:3072 -keyout "$target/restore-transport.pem" -out "$target/restore-recipient.pem" -sha256 -days 30 -nodes -subj '/CN=Jason Home 2 signer transfer' >/dev/null 2>&1
+            chmod 600 "$target/restore-transport.pem"
+          fi
+          cp "$target/restore-recipient.pem" "$RUNNER_TEMP/jh2-signer-recipient.pem"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-signer-public-recipient
+          path: ${{ runner.temp }}/jh2-signer-recipient.pem
+          retention-days: 1
+      - name: Restore and verify original signer when transfer is present
+        run: |
+          set -euo pipefail
+          cipher=.github/private-transfer/jh2-signer.cms
+          if ! test -s "$cipher"; then exit 0; fi
+          target=/home/ubuntu/.jason-home-signing
+          temp="$RUNNER_TEMP/jh2-signer-restore-$GITHUB_RUN_ID"
+          mkdir -p -m 700 "$temp"
+          trap 'rm -rf "$temp"' EXIT
+          openssl cms -decrypt -binary -inform DER -in "$cipher" -inkey "$target/restore-transport.pem" -out "$temp/restore.zip"
+          python3 -m zipfile -e "$temp/restore.zip" "$temp"
+          keytool -list -v -keystore "$temp/jason-home-release.jks" -storepass:file "$temp/password" -alias jason-home > "$temp/certificate.txt"
+          grep -qi '76:B2:8E:FD:4F:5D:13:2A:D3:04:8F:19:BA:E6:C3:5A:A5:F8:4C:4A:39:0E:98:C8:0D:EE:EB:C0:C3:E7:3A:E1' "$temp/certificate.txt"
+          if test -s "$target/jason-home-release.jks" && ! cmp -s "$target/jason-home-release.jks" "$temp/jason-home-release.jks"; then cp -p "$target/jason-home-release.jks" "$target/before-restore.jks"; fi
+          install -m 600 "$temp/jason-home-release.jks" "$target/jason-home-release.jks.new"
+          install -m 600 "$temp/password" "$target/password.new"
+          mv "$target/jason-home-release.jks.new" "$target/jason-home-release.jks"
+          mv "$target/password.new" "$target/password"
+          echo 'Original Jason Home 2 release certificate verified and restored.'
