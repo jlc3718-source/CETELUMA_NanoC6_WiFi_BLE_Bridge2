@@ -313,18 +313,34 @@ async function reprocessGIFQuality(){
  $('qualitySuggested').textContent+=''; // automatic suggestion shown by redrawThreeCandidates
 }
 
-function applyPhotoSettings(){if(!photoMaster)return;const target=document.createElement('canvas');target.width=160;target.height=160;const c=target.getContext('2d',{willReadFrequently:true});c.fillStyle='#020304';c.fillRect(0,0,160,160);
- const sw=photoMaster.width,sh=photoMaster.height,mode=$('framing').value,base=(mode==='fit'?Math.min(160/sw,160/sh):Math.max(160/sw,160/sh));const zoom=Number($('zoom').value),scale=base*zoom;
- const nw=sw*scale,nh=sh*scale;
- // Movement is capped by the actual available crop space, so sliders never expose accidental empty edges in Fill mode.
- let availX=Math.max(0,(nw-160)/2),availY=Math.max(0,(nh-160)/2);
- const px=Number($('panX').value)/100,py=Number($('panY').value)/100;
- c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';const cleanup=$('cleanup').value;c.filter=cleanup==='strong'?'blur(2.2px)':cleanup==='medium'?'blur(1.15px)':'none';c.drawImage(photoMaster,(160-nw)/2+px*availX,(160-nh)/2+py*availY,nw,nh);c.filter='none';
- const down=document.createElement('canvas');down.width=40;down.height=40;const d=down.getContext('2d',{willReadFrequently:true});d.imageSmoothingEnabled=true;d.imageSmoothingQuality='high';d.drawImage(target,0,0,40,40);
- lastStage=new Uint8ClampedArray(c.getImageData(0,0,160,160).data);
- lastBaseline=new Uint8ClampedArray(d.getImageData(0,0,40,40).data);
- sourceImage=qualityFrame(lastStage,lastBaseline);frames=[sourceImage];frameDelays=[90];
- invalidatePreparation();$('zoomVal').textContent=zoom.toFixed(2)+'×';
+function photoWorkAt(options={}){
+ if(!photoMaster)return null;
+ const sw=photoMaster.width,sh=photoMaster.height;
+ const framing=options.framing||$('framing').value;
+ const zoom=Number(options.zoom??$('zoom').value);
+ const panX=Number(options.panX??$('panX').value)/100,panY=Number(options.panY??$('panY').value)/100;
+ const cleanup=options.cleanup||$('cleanup').value;
+ const canvas=document.createElement('canvas');canvas.width=canvas.height=160;
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});
+ ctx.fillStyle='#020304';ctx.fillRect(0,0,160,160);
+ const base=framing==='fit'?Math.min(160/sw,160/sh):Math.max(160/sw,160/sh);
+ const w=sw*base*zoom,h=sh*base*zoom;
+ ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+ ctx.filter=cleanup==='strong'?'blur(2.2px)':cleanup==='medium'?'blur(1.15px)':'none';
+ ctx.drawImage(photoMaster,(160-w)/2+panX*Math.max(0,(w-160)/2),(160-h)/2+panY*Math.max(0,(h-160)/2),w,h);
+ ctx.filter='none';
+ const down=document.createElement('canvas');down.width=down.height=40;
+ const d=down.getContext('2d',{willReadFrequently:true});
+ d.imageSmoothingEnabled=true;d.imageSmoothingQuality='high';d.drawImage(canvas,0,0,40,40);
+ return {stage:new Uint8ClampedArray(ctx.getImageData(0,0,160,160).data),
+  baseline:new Uint8ClampedArray(d.getImageData(0,0,40,40).data)};
+}
+function applyPhotoSettings(){
+ if(!photoMaster)return;
+ const {stage,baseline}=photoWorkAt();
+ lastStage=stage;lastBaseline=baseline;
+ sourceImage=qualityFrame(stage,baseline);frames=[sourceImage];frameDelays=[90];
+ invalidatePreparation();$('zoomVal').textContent=Number($('zoom').value).toFixed(2)+'×';
  renderImage(sourceImage);redrawThreeCandidates();paintOriginal(photoMaster);ui();
 }
 function frameControls(enabled){$('photoControls').style.display=enabled?'block':'none';paintOriginal(enabled?photoMaster:null);}
