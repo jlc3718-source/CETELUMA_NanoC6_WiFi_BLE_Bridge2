@@ -49,7 +49,7 @@ function makeHarness(){
  }};
  let bleCalls=0;
  const ctx={
-  window:{indexedDB},indexedDB,document:{addEventListener(){}},Blob,Uint8Array,Uint8ClampedArray,Promise,
+  window:{indexedDB},indexedDB,CID:83928,document:{addEventListener(){}},Blob,Uint8Array,Uint8ClampedArray,Promise,
   clearTimeout,setTimeout,structuredClone,queueMicrotask,Date,Error,Number,String,Object,Array,JSON,
   sourceImage:new Uint8ClampedArray(6400),frames:[new Uint8ClampedArray(6400),new Uint8ClampedArray(6400)],
   frameDelays:[90,120],importedName:'offline-animation.gif',photoMaster:null,
