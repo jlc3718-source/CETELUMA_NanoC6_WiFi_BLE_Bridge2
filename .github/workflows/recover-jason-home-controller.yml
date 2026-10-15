@@ -50,6 +50,20 @@ jobs:
           print('Restore ownership:',json.dumps(result))
           assert result.get('owner')=='oracle'
           PY
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose config --format json > "$BACKUP/compose-resolved.json"
+          python3 - <<'PY'
+          import os,json,pathlib,subprocess
+          root=pathlib.Path(os.environ['BACKUP'])
+          old=json.loads((root/'container-inspect.json').read_text())[0]
+          live=dict(x.split('=',1) for x in old['Config']['Env'] if '=' in x)
+          desired=json.loads((root/'compose-resolved.json').read_text())['services']['jason-home'].get('environment',{})
+          changed=any(str(desired.get(k,''))!=live.get(k,'') for k in ['EUFY_EMAIL','EUFY_PASSWORD'])
+          print('Saved Eufy credentials differ from running container:',changed)
+          if changed:subprocess.run(['sudo','docker','compose','up','-d','--no-build','--force-recreate','jason-home'],check=True)
+          updated=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home']))[0]
+          (root/'container-inspect.json').write_text(json.dumps([updated]))
+          PY
           sudo docker restart jason-home
           python3 - <<'PY'
           import os,json,time,urllib.request,pathlib
