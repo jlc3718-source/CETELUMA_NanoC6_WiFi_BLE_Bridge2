@@ -30,7 +30,8 @@ small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
 <div class="row"><button class="main" id="connect">Connect curtain</button><button id="refresh" disabled>Refresh</button></div>
 <div class="sub" id="inventory">Not connected.</div></section>
 <section class="card"><h2>Import and preview</h2>
-<input id="fileInput" type="file" accept="image/*,.gif" aria-label="Import picture or animated GIF">
+<input id="fileInput" type="file" accept="image/*" aria-label="Import picture or animated GIF">
+<div class="sub" id="filePickerStatus" aria-live="polite">Select a JPG, PNG, WebP or GIF. No Bluetooth connection needed.</div>
 <div class="row"><button id="sample" type="button">Load your example picture</button><button id="butterfly" type="button">GIF demo</button></div>
 <small>Large JPG, PNG, WebP and GIF files accepted. Still images are processed from an intermediate high-resolution copy, not from an already-blurry 40×40 thumbnail.</small>
 <div class="comparisons">
@@ -399,7 +400,8 @@ async function decodeLargeStill(file){
  finally{bitmap.close?.();}
 }
 
-async function importFile(file){if(!file)return;if(busy){say('Wait for current transfer.');return;}projectGeneration++;busy=true;ui();try{
+async function importFile(file){if(!file){$('filePickerStatus').textContent='No file selected. Tap Choose File to select a picture.';return;}if(busy){say('Wait for current transfer.');return;}projectGeneration++;busy=true;ui();try{
+ $('filePickerStatus').textContent='Opening '+file.name+'…';
  stopPreview();invalidatePreparation();photoMaster=null;importedName=file.name;
  say('Opening '+file.name+' ('+formatBytes(file.size)+')…');
  let originalWidth=0,originalHeight=0;
@@ -415,13 +417,24 @@ async function importFile(file){if(!file)return;if(busy){say('Wait for current t
  sourceMeta={width:originalWidth,height:originalHeight,size:file.size};
  $('imageInfo').textContent=importedName+' · '+originalWidth+'×'+originalHeight+' source · '+formatBytes(file.size)+' · converted to 40×40 ('+frames.length+' frame'+(frames.length===1?'':'s')+')';
  if(frames.length>1){if($('motion').value==='static')$('motion').value='gif';$('quality').value='pal8';}
+ $('filePickerStatus').textContent='Loaded '+importedName+' — '+frames.length+' frame'+(frames.length===1?'':'s')+'. Editing and saving work without Bluetooth.';
  say('Imported '+importedName+' ('+formatBytes(file.size)+') → 40×40. Ready for Static, GIF or Native Scroll.');
  log('IMPORT '+JSON.stringify({name:importedName,frames:frames.length,size:file.size,originalWidth,originalHeight,outputPixels:1600}));scheduleDraftSave();
- }catch(e){say('Import failed: '+e.message);log('IMPORT_ERROR '+(e.stack||e));}finally{busy=false;ui();}}
+ }catch(e){const detail=String(e?.message||e);
+ const hint=/Browser could not read|cannot decode|Invalid picture dimensions|NotReadableError|NotAllowedError|fetch|permission|access|content/i.test(detail)
+   ?' Android could not read the selected photo. Install the updated Jason Home 2 app, then choose the photo again.':''; 
+ $('filePickerStatus').textContent='Import failed: '+detail+hint;
+ say('Import failed: '+detail+hint);log('IMPORT_ERROR '+(e.stack||e));
+ }finally{busy=false;ui();}}
 $('sample').onclick=()=>{$('cleanup').value='medium';const data=Uint8Array.from(atob(SAMPLE_PICTURE_B64),c=>c.charCodeAt(0));importFile(new File([data],'Your_example_picture.webp',{type:'image/webp'}));};
 for(const key of ['framing','enhance','cleanup','zoom','panX','panY'])$(key).addEventListener('input',()=>{projectGeneration++;if(photoMaster){applyPhotoSettings();scheduleDraftSave();}});
 $('resetCrop').onclick=()=>{$('framing').value='fill';$('enhance').value='crisp';$('cleanup').value='none';$('zoom').value='1.25';$('panX').value='0';$('panY').value='0';if(photoMaster){projectGeneration++;applyPhotoSettings();scheduleDraftSave();}};
-$('fileInput').onchange=()=>{$('cleanup').value='none';importFile($('fileInput').files?.[0]);};
+$('fileInput').onchange=()=>{$('cleanup').value='none';const chosen=$('fileInput').files?.[0];
+ if(!chosen){$('filePickerStatus').textContent='File selection cancelled. No change to your current project.';return;}
+ importFile(chosen);
+ // Allow importing the same file again after making adjustments.
+ $('fileInput').value='';
+};
 $('butterfly').onclick=()=>{const data=Uint8Array.from(atob(BUTTERFLY_GIF_B64),s=>s.charCodeAt(0));importFile(new File([data],'Butterfly_demo.gif',{type:'image/gif'}));};
 $('previewMotion').onclick=()=>{if(previewTimer!==null){stopPreview();renderImage(sourceImage);say('Preview stopped.');}else if(frames.length===1){renderImage(sourceImage);say('Static image preview.');}else{previewFrames();say('Previewing '+frames.length+' actual GIF frames.');}ui();};
 $('stop').onclick=()=>{stopLive=true;stopPreview();renderImage(sourceImage);say('Stop requested.');ui();};
