@@ -20,6 +20,7 @@ details.controlGroup{margin:10px 0 0;border:1px solid #2b4664;border-radius:13px
 .offline-workspace{background:#102a31;border:1px solid #30636c;border-radius:14px;padding:12px;margin:11px 0}.offline-workspace strong{display:block;color:#d2fff4}.offline-workspace .sub{color:#b5dcd6;margin-top:6px}.sendGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sendGrid button{margin-bottom:8px}.status{white-space:pre-wrap;overflow-wrap:anywhere;background:#0d2027;border:1px solid #2f6068;padding:11px;border-radius:11px;font-size:12px;color:#d5f8ef;min-height:48px}progress{height:9px;width:100%;margin:5px 0 9px;accent-color:var(--mint)}
 details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;max-height:230px;overflow:auto}.warning{font-size:11px;color:#8fa4bd;margin:9px 1px}.warning strong{color:#d7e5f3}
 @media(max-width:380px){main{padding-left:10px;padding-right:10px}.card{padding:14px}.row,.twoFields{gap:6px}.qualityChoiceGrid button{font-size:9px}.steps{gap:4px}.stepChip{font-size:10px}}
+.overrideTest{margin:3px 0 11px;padding:11px;border:1px dashed #64839e;background:rgba(20,34,51,.75);border-radius:14px}.overrideTest button{min-height:45px;margin-bottom:5px;background:#2c4057;border-color:#7293ac;color:#fff}.overrideTest .sub{line-height:1.42}
 </style></head><body><main>
 <header class="studioHead">
  <div class="eyebrow">SmartDawn · DN5E58 · 1,600 LEDs</div>
@@ -98,6 +99,10 @@ details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space
   <div class="row"><button class="main" id="connect">Connect curtain</button><button id="refresh" disabled>Refresh</button></div>
  </div>
  <div class="sendGrid"><button class="main" id="sendLive" disabled>Show on curtain</button><button id="stopSend" disabled>Stop animation</button></div>
+  <div class="overrideTest">
+   <button id="testSlotOverride" type="button" disabled>Test Save Override · Slot 83928</button>
+   <div class="sub" id="testOverrideStatus" role="status" aria-live="polite">Experimental native save: overwrites only custom effect 83928. Static artwork is saved as a native scrolling picture. For a GIF, only its first frame can be written using the verified format; animated frames are not yet stored.</div>
+  </div>
  <details class="controlGroup"><summary>Saved project and native tools</summary><div class="detailBody">
   <div class="row"><button id="saveDraft" type="button">Save project</button><button id="clearDraft" type="button">Clear saved copy</button></div>
   <div class="row"><button id="build">Build saved scroll</button><button id="install" disabled>Install at 83928</button></div>
@@ -183,6 +188,7 @@ function ui(){
  $('play').disabled=busy||!connected||!effects.some(e=>e.cid===CID);
  $('restore').disabled=busy||!connected;
  $('sendLive').disabled=busy||!connected||!sourceImage;
+ $('testSlotOverride').disabled=busy||!connected||!sourceImage;
  $('sendLive').textContent=motion==='scroll'?'Replace saved slot & play':motion==='gif'?'Play GIF on curtain':'Show static picture';
  $('modeNote').textContent=motion==='scroll'
   ?'Stores the first frame as the native scrolling effect in slot 83928 and replaces only that custom effect. It stays saved on the controller.'
@@ -870,6 +876,40 @@ $('sendLive').onclick=async()=>{
   }
  }finally{stopLive=false;liveActive=false;busy=false;ui();}
 };
+// Isolated experimental storage test. Deliberately reuses the validated 4 KB native E-89
+// file layout and CID 83928; never writes unknown GIF bytes or touches unrelated slots.
+$('testSlotOverride').onclick=()=>operation(async()=>{
+ const status=$('testOverrideStatus');
+ try{
+  if(!connected||!firmware)throw Error('Connect DN5E58 before testing controller storage');
+  if(!sourceImage)throw Error('Choose a photo or GIF first');
+  const mode=$('motion').value;
+  const firstFrame=mode==='gif'?frames[0]:sourceImage;
+  if(!firstFrame||firstFrame.length!==6400)throw Error('No valid 40×40 frame to save');
+  const bytes=nativeFromImage(firstFrame);
+  plan(bytes,CID); // Validate native format, fixed size, CID and upload CRC before deletion.
+  log('TEST_OVERRIDE_START '+JSON.stringify({cid:CID,mode,frameCount:frames.length,bytes:bytes.length}));
+  status.textContent='Test running: replacing custom effect 83928 and verifying controller inventory…';
+  stopPreview();
+  await delete928(); // Requires two confirmed inventory reads with CID absent.
+  await sendFile(bytes); // Validated native upload, ACK verification, inventory + play request.
+  const after=await inventory('test-override-verification');
+  const stored=after.find(effect=>effect.cid===CID);
+  if(!stored||!Number.isInteger(stored.slot))throw Error('Controller did not confirm a playable native slot 83928');
+  const warning=mode==='gif'
+   ?'GIF test: only the first frame was stored. Native GIF animation remains unverified.'
+   :mode==='static'
+    ?'Static test: stored as the verified native scrolling format, not guaranteed stationary.'
+    :'Native scrolling test: first image frame stored.';
+  status.textContent='Controller reports slot 83928 saved (slot '+stored.slot+'). '+warning+' Disconnect and inspect the curtain to confirm persistence.';
+  say('Test override accepted by controller inventory. '+warning+' Verify actual LEDs and persistence after reconnect.');
+  log('TEST_OVERRIDE_ACCEPTED '+JSON.stringify({cid:CID,slot:stored.slot,mode,warning}));
+ }catch(error){
+  status.textContent='Test override failed: '+error.message+'. Other effect slots were not targeted.';
+  log('TEST_OVERRIDE_ERROR '+(error.stack||error));
+  throw error;
+ }
+});
 $('play').onclick=()=>operation(async()=>{const list=await inventory('play'),e=list.find(e=>e.cid===CID);if(!e)throw Error('83928 missing');await ddpPlay(e.cid,e.slot);say('Playing saved 83928.');});
 $('restore').onclick=()=>operation(async()=>{if(new DataView(BACKUP.buffer).getUint32(4,true)!==CID)throw Error('Backup CID mismatch');await delete928();await sendFile(BACKUP);say('Original BLE TEST restored.');});
 $('download').onclick=()=>{if(prepared)saveFile(prepared,'SmartDawn_83928_native_scroll.eff','application/octet-stream');};
