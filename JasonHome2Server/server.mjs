@@ -917,7 +917,7 @@ function authenticatedRead(req,res,path){
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
   const type=extname(file)===".js"?"text/javascript":extname(file)===".css"?"text/css":"text/html";
   const data=readFileSync(file);res.writeHead(200,{"content-type":type+"; charset=utf-8","content-length":data.length,
-    "cache-control":"no-store","content-security-policy":"default-src 'self' 'unsafe-inline' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors "+(name==="curtain_converter.html"?"'self'":"'none'")+"",
+    "cache-control":"no-store","content-security-policy":"default-src 'self' 'unsafe-inline' data:; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors "+(name==="curtain_converter.html"?"'self'":"'none'")+"",
     "x-content-type-options":"nosniff"});res.end(data);
 }
 const loginPage=`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2</title>
