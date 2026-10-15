@@ -1,114 +1,115 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101827"><title>Jason Home 2 · Curtain Image / GIF Studio</title>
 <style>
-:root{font:16px/1.45 system-ui,-apple-system,Roboto,sans-serif;color:#eef4fc;background:#0a111e}*{box-sizing:border-box}
-body{margin:0;background:linear-gradient(160deg,#10233a,#080d18 70%);min-height:100vh}main{max-width:540px;margin:auto;padding:23px 17px 50px}
-h1{font-size:24px;letter-spacing:-.03em;margin:3px 0 5px}h2{font-size:16px;margin:0 0 12px}p{margin:7px 0 16px;color:#bcc9da}
-.card{background:#111d2e;border:1px solid #2e435e;border-radius:17px;padding:17px;margin:15px 0}
-button{border:1px solid #526b88;border-radius:12px;padding:15px 16px;background:#263d5a;color:#fff;font-size:16px;font-weight:650;width:100%;margin:0 0 9px;text-align:center}button.main{background:#1fc4b0;color:#052627;border-color:#1fc4b0}button:disabled{opacity:.4}button:focus-visible{outline:3px solid #fff}
-.status{white-space:pre-wrap;overflow-wrap:anywhere;background:#152b36;border:1px solid #336075;padding:13px;border-radius:10px;font-size:14px;color:#d5f8ef;min-height:56px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}.sub{font-size:13px;color:#aab9cf}.sub strong{color:#f3f6fc}canvas{display:block;image-rendering:pixelated;width:160px;height:160px;margin:12px auto;background:black;border:1px solid #41546e;border-radius:5px}
-progress{height:12px;width:100%;margin:5px 0 8px}details{margin-top:18px;color:#b5c4d9}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:230px;overflow:auto}
-
-input[type=file]{width:100%;padding:12px;border:1px dashed #6085a8;border-radius:12px;background:#17293c;color:#e5f3ff;margin:0 0 12px;font-size:15px}
-canvas{width:200px;height:200px}select{display:block;width:100%;margin:6px 0 15px;padding:13px 12px;border:1px solid #526b88;border-radius:10px;color:#eaf5ff;background:#203951;font-size:15px}label.sub{display:block;margin-top:10px}
-.indicator{display:inline-block;background:#193a35;color:#b6fae0;border-radius:7px;padding:3px 7px;margin:3px 0}
-small{font-size:12px;color:#a9bacd;display:block;margin:4px 0 12px}
-
-.comparisons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}.comparisons>div{min-width:0}.compareTitle{font-size:13px;font-weight:650;color:#d2e9f5;text-align:center;margin-bottom:6px}.comparisons canvas{width:100%!important;height:auto!important;aspect-ratio:1;object-fit:contain;margin:0!important;background:#050a11;border-radius:8px}.comparisons #sourcePreview{image-rendering:auto}.comparisons #preview{image-rendering:pixelated}.twoFields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.twoFields select{width:100%;min-width:0}.twoFields label{min-width:0}.twoFields input{width:100%}input[type=range]{display:block;width:100%;height:32px;accent-color:#1fc4b0;margin:2px 0 13px}#zoomVal{float:right;color:#77f1e1}.ledPanel{margin:15px 0}.ledPanel canvas{width:240px;height:240px;max-width:100%;image-rendering:auto;background:#05070a;border-radius:8px}#sample{font-size:14px}.comparisons canvas{border:1px solid #41546e}
-.qualityTuning{margin:14px 0;border:1px solid #33536d;border-radius:12px;padding:12px;background:#142335}
-.qualityTuning summary{font-weight:650;color:#bde5f5;cursor:pointer}
-.qualityTuning input[type=range]{margin-bottom:6px}
-.qualityChoices{margin:13px 0;padding:12px;background:#122437;border:1px solid #35516f;border-radius:12px}
-.qualityChoices strong{display:block;font-size:14px;margin-bottom:8px}
-.qualityChoiceGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.qualityChoiceGrid canvas{display:block;width:100%!important;height:auto!important;aspect-ratio:1;margin:0 auto 5px;border:1px solid #40668b;background:#05070a}
-.qualityChoiceGrid button{font-size:11px;padding:10px 2px;min-height:45px;margin:0}
-.qualityChoiceGrid button.active{background:#21b9aa;color:#062723}
-.offline-workspace{background:#132b35;border:1px solid #396a79;border-radius:13px;padding:13px;margin:13px 0 16px}
-.offline-workspace strong{display:block;color:#d2fff4}
-.offline-workspace button{margin-top:8px}
-.offline-workspace .sub{color:#b8e9dd;margin-top:7px}
+:root{font:15px/1.42 system-ui,-apple-system,Roboto,sans-serif;color:#f4f8ff;background:#07101d;--ink:#f4f8ff;--muted:#9fb0c6;--line:#29415e;--panel:#0e1b2d;--panel2:#13243a;--mint:#2dd4bf;--mint2:#8bf5e6;--blue:#65a9ff;--shadow:0 18px 48px rgba(0,0,0,.28)}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% -5%,#173d59 0,transparent 38%),radial-gradient(circle at 90% 22%,#102f43 0,transparent 35%),linear-gradient(165deg,#0b1829,#050b14 72%);color:var(--ink)}
+main{max-width:600px;margin:auto;padding:18px 14px 64px}.studioHead{padding:8px 5px 4px}.eyebrow{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--mint2)}h1{font-size:27px;line-height:1.08;letter-spacing:-.04em;margin:5px 0 8px}.lead{margin:0;color:#b9c7d9;font-size:14px;max-width:520px}.availability{display:flex;align-items:center;gap:7px;margin-top:13px;color:#bff9ef;font-size:12px;font-weight:700}.availability:before{content:'';width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 4px rgba(45,212,191,.12)}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:14px 0}.stepChip{padding:8px 5px;border-radius:10px;background:rgba(17,35,55,.76);border:1px solid #263e59;text-align:center;color:#91a6c0;font-size:11px;font-weight:750}.stepChip b{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:4px;border-radius:50%;background:#223d5b;color:#ddecff}
+.card{position:relative;background:linear-gradient(155deg,rgba(18,34,54,.97),rgba(10,20,34,.98));border:1px solid var(--line);border-radius:22px;padding:17px;margin:13px 0;box-shadow:var(--shadow);overflow:hidden}.card:before{content:'';position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgba(139,245,230,.55),transparent)}
+.cardHead{display:grid;grid-template-columns:36px 1fr;gap:11px;align-items:center;margin-bottom:14px}.stepNo{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:linear-gradient(145deg,var(--mint),#55aef7);color:#062224;font-size:17px;font-weight:900;box-shadow:0 8px 22px rgba(45,212,191,.2)}h2{font-size:18px;line-height:1.2;margin:0}.cardHead p{color:var(--muted);font-size:12px;margin:3px 0 0}
+button{appearance:none;border:1px solid #3d5877;border-radius:13px;padding:13px 14px;background:#203750;color:#f5f9ff;font-size:14px;font-weight:750;width:100%;margin:0 0 8px;text-align:center;min-height:46px}button.main{background:linear-gradient(135deg,#2dd4bf,#5da8ff);color:#041e25;border:0;box-shadow:0 9px 24px rgba(45,212,191,.18)}button.secondary{background:#172b43}button:disabled{opacity:.36;box-shadow:none}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid rgba(139,245,230,.75);outline-offset:2px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sub{font-size:12px;color:var(--muted)}.sub strong{color:#f3f6fc}small{font-size:11px;color:#8fa4bd;display:block;margin:5px 0 11px}.helper{margin:7px 0 0}.divider{height:1px;background:#243b56;margin:15px 0}
+input[type=file]{width:100%;padding:8px;border:1px dashed #527496;border-radius:14px;background:#101f33;color:#dcecff;margin:0 0 8px;font-size:13px}input[type=file]::file-selector-button{border:0;border-radius:10px;padding:11px 13px;margin-right:10px;background:var(--mint);color:#052425;font-weight:800}
+select{display:block;width:100%;margin:5px 0 11px;padding:12px;border:1px solid #385576;border-radius:11px;color:#eef7ff;background:#172d46;font-size:14px}label.sub{display:block;margin-top:8px}.twoFields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.twoFields select,.twoFields input{width:100%;min-width:0}input[type=range]{display:block;width:100%;height:30px;accent-color:var(--mint);margin:1px 0 9px}#zoomVal{float:right;color:var(--mint2)}
+.comparisons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:11px 0}.comparisons>div{min-width:0}.compareTitle{font-size:11px;font-weight:800;color:#b9cee4;text-align:center;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}.comparisons canvas{display:block;width:100%!important;height:auto!important;aspect-ratio:1;object-fit:contain;margin:0!important;background:#03070d;border:1px solid #385473;border-radius:12px}.comparisons #sourcePreview{image-rendering:auto}.comparisons #preview{image-rendering:pixelated;border-color:#3f8f9a;box-shadow:0 0 0 2px rgba(45,212,191,.08)}canvas{image-rendering:pixelated;background:#03070d}
+.infoLine{padding:9px 10px;border-radius:10px;background:#0c1929;color:#aabbd0;font-size:11px;overflow-wrap:anywhere}.quickActions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.quickActions button{font-size:12px;padding:10px 8px;min-height:42px}
+details.controlGroup{margin:10px 0 0;border:1px solid #2b4664;border-radius:13px;background:#0e1d30;color:#afc0d4}details.controlGroup>summary{cursor:pointer;list-style:none;padding:13px 14px;font-weight:800;color:#dcecff}details.controlGroup>summary::-webkit-details-marker{display:none}details.controlGroup>summary:after{content:'+';float:right;color:var(--mint2);font-size:18px;line-height:16px}details.controlGroup[open]>summary:after{content:'−'}details.controlGroup[open]>summary{border-bottom:1px solid #29415e}.detailBody{padding:12px 13px 5px}
+.aiBox{margin:11px 0;border-radius:16px;padding:12px;background:linear-gradient(145deg,rgba(20,63,70,.62),rgba(15,37,56,.82));border:1px solid #39717a}.aiBox .main{margin-bottom:6px}.aiState{padding:0 2px 7px;color:#b6d9d5}.aiResults{margin:5px 0 0}.aiResults>summary{font-size:12px;color:#c5e9e4}.aiResults .comparisons{margin-top:10px}
+.qualityChoices{margin:11px 0 0;padding:11px;background:#0c1a2b;border:1px solid #29445f;border-radius:14px}.qualityChoices>strong{display:block;font-size:12px;margin-bottom:8px;color:#d8e8f7}.qualityChoiceGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.qualityChoiceGrid canvas{display:block;width:100%!important;height:auto!important;aspect-ratio:1;margin:0 auto 5px;border:1px solid #345a7b;border-radius:8px;background:#03070a}.qualityChoiceGrid button{font-size:10px;padding:8px 2px;min-height:38px;margin:0}.qualityChoiceGrid button.active{background:var(--mint);border-color:var(--mint);color:#062723}.ledPanel{margin:9px 0}.ledPanel canvas{display:block;width:240px;height:240px;max-width:100%;margin:10px auto;image-rendering:auto;border-radius:11px}
+.connection{padding:11px;border-radius:14px;background:#0d2030;border:1px solid #2a5261;margin:10px 0}.connectionTop{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px}.connectionTop strong{font-size:13px}.connectionTop span{font-size:11px;color:#9bb3c8}.connection .row button{margin:0}
+.offline-workspace{background:#102a31;border:1px solid #30636c;border-radius:14px;padding:12px;margin:11px 0}.offline-workspace strong{display:block;color:#d2fff4}.offline-workspace .sub{color:#b5dcd6;margin-top:6px}.sendGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sendGrid button{margin-bottom:8px}.status{white-space:pre-wrap;overflow-wrap:anywhere;background:#0d2027;border:1px solid #2f6068;padding:11px;border-radius:11px;font-size:12px;color:#d5f8ef;min-height:48px}progress{height:9px;width:100%;margin:5px 0 9px;accent-color:var(--mint)}
+details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;max-height:230px;overflow:auto}.warning{font-size:11px;color:#8fa4bd;margin:9px 1px}.warning strong{color:#d7e5f3}
+@media(max-width:380px){main{padding-left:10px;padding-right:10px}.card{padding:14px}.row,.twoFields{gap:6px}.qualityChoiceGrid button{font-size:9px}.steps{gap:4px}.stepChip{font-size:10px}}
 </style></head><body><main>
-<div class="sub">DN5E58 · 40 × 40 · 1,600 LEDs</div>
-<h1>SmartDawn Quality Converter <span class="sub">v26 · AI Revamp</span></h1>
-<p>Import big pictures, choose the best 40×40 framing, and preview the <strong>actual 1,600-LED detail</strong> before sending. Images are resized locally. Static, GIF and native scrolling are preserved.</p>
-<div class="indicator" id="offlineBadge">Offline editing available · Bluetooth connection not required</div>
-<p class="sub">Import, adjust, preview and prepare a picture or GIF now. Your latest project saves locally on this phone; connect only when you are ready to send.</p>
-<section class="card"><h2>Connect <span class="sub">(only when ready to send)</span></h2>
-<div class="row"><button class="main" id="connect">Connect curtain</button><button id="refresh" disabled>Refresh</button></div>
-<div class="sub" id="inventory">Not connected.</div></section>
-<section class="card"><h2>Import and preview</h2>
-<input id="fileInput" type="file" accept="image/*,.gif" aria-label="Import picture or animated GIF">
-<div class="sub" id="filePickerStatus" aria-live="polite">Select a JPG, PNG, WebP or GIF. No Bluetooth connection needed.</div>
-<div class="row"><button id="sample" type="button">Load your example picture</button><button id="butterfly" type="button">GIF demo</button></div>
-<small>Large JPG, PNG, WebP and GIF files accepted. Still images are processed from an intermediate high-resolution copy, not from an already-blurry 40×40 thumbnail.</small>
-<div class="comparisons">
-<div><div class="compareTitle">Original image</div><canvas id="sourcePreview" width="240" height="240" aria-label="Original image before LED conversion"></canvas></div>
-<div><div class="compareTitle">40×40 output</div><canvas id="preview" width="40" height="40" aria-label="Exactly 40 by 40 LED converted preview"></canvas></div>
-</div>
-<div class="sub" id="imageInfo">Import a photo or GIF, or load the example picture.</div>
-<div id="photoControls">
-<div class="twoFields"><label class="sub">Framing<select id="framing"><option value="fill" selected>Fill / crop edges</option><option value="fit">Fit entire picture</option></select></label><label class="sub">Detail<select id="enhance"><option value="natural">Natural</option><option value="crisp" selected>Sharper detail</option><option value="bold">Bold contrast</option><option value="enhanced">Enhanced Detail — subject aware</option></select></label></div>
-<label class="sub">Remove drawn LED-dot texture<select id="cleanup"><option value="none" selected>Off — standard pictures</option><option value="medium">Medium — LED artwork</option><option value="strong">Strong — heavily dotted art</option></select></label>
-<label class="sub" for="zoom">Zoom subject <output id="zoomVal">1.25×</output></label><input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1.25">
-<div class="twoFields"><label class="sub" for="panX">Move left / right<input id="panX" type="range" min="-100" max="100" step="5" value="0"></label><label class="sub" for="panY">Move up / down<input id="panY" type="range" min="-100" max="100" step="5" value="0"></label></div>
-<button id="resetCrop" type="button">Reset framing</button>
-</div>
-<details class="qualityTuning" open><summary>Enhanced image quality and LED calibration</summary>
-<label class="sub">Subject focus — tap the original picture to select the most important area.</label>
-<div class="twoFields">
-<label class="sub">Subject left / right<input id="subjectX" type="range" min="0" max="100" value="50" step="1"></label>
-<label class="sub">Subject up / down<input id="subjectY" type="range" min="0" max="100" value="50" step="1"></label>
-</div>
-<div class="twoFields">
-<label class="sub">Subject area size<input id="subjectSize" type="range" min="15" max="65" value="32" step="1"></label>
-<label class="sub">Detail emphasis<input id="subjectStrength" type="range" min="0" max="100" value="70" step="5"></label>
-</div>
-<button type="button" id="autoSubject">Find subject focus automatically</button>
-<div class="offline-workspace">
-<button type="button" class="main" id="aiRevamp">AI Image Revamp — optimize main subject</button>
-<div class="sub" id="aiRevampState" aria-live="polite">Tap for subject detection and a suggested curtain-ready crop. No Bluetooth required.</div><div class="comparisons"><div><div class="compareTitle">Current output</div><canvas id="aiOriginal" width="40" height="40"></canvas></div><div><div class="compareTitle">Suggested output</div><canvas id="aiCandidate" width="40" height="40"></canvas></div></div>
-<small>Optional: when Cloudflare AI is connected, tapping sends a small resized picture to Cloudflare for object detection. Otherwise a local subject detector is used. Your original is not uploaded or stored on Jason Home 2.</small>
-<div class="row"><button id="applyAiRevamp" type="button" disabled>Use AI-recommended version</button><button type="button" id="undoAiRevamp" disabled>Undo AI changes</button></div>
-</div>
-<label class="sub">LED color profile<select id="ledPreset"><option value="neutral" selected>Neutral — no color changes</option><option value="dark">Reveal dark details</option><option value="vivid">Vivid color / softer highlights</option><option value="custom">Custom calibration</option></select></label>
-<div class="twoFields"><label class="sub">Gamma / brightness curve<input id="ledGamma" type="range" min="70" max="145" value="100" step="5"></label><label class="sub">Lift shadows<input id="ledLift" type="range" min="0" max="35" value="0" step="1"></label></div>
-<div class="twoFields"><label class="sub">Highlight rolloff<input id="ledRolloff" type="range" min="0" max="30" value="0" step="1"></label><label class="sub">Color saturation<input id="ledSat" type="range" min="70" max="145" value="100" step="5"></label></div>
-<label class="sub">Minimum visible LED brightness (preserves black)<input id="ledMin" type="range" min="0" max="35" value="0" step="1"></label>
-<small>These adjustments change the actual transmitted 40×40 pixels, not only the preview. Real LED calibration requires checking the physical curtain.</small>
-</details>
-<div class="qualityChoices"><strong>Compare three 40×40 conversions</strong>
-<div class="qualityChoiceGrid">
-<div><canvas id="compareNatural" width="40" height="40" aria-label="Natural reduction"></canvas><button type="button" id="chooseNatural">Natural</button></div>
-<div><canvas id="compareEnhanced" width="40" height="40" aria-label="Enhanced Detail reduction"></canvas><button type="button" id="chooseEnhanced">Enhanced Detail</button></div>
-<div><canvas id="compareBold" width="40" height="40" aria-label="High contrast reduction"></canvas><button type="button" id="chooseBold">High Contrast</button></div>
-</div>
-<div class="sub" id="qualitySuggested">Suggestions use image heuristics; choose whichever looks better to you.</div>
-</div>
-<details class="ledPanel"><summary>View realistic LED-dot preview</summary><canvas id="ledPreview" width="240" height="240" aria-label="40 by 40 LED dot grid simulation"></canvas></details>
-<small><strong>Physical limit:</strong> this curtain has only 40 LEDs across and down. The supplied illustration depicts a much denser LED display. Zooming helps preserve faces and important features, but cannot create extra LEDs.</small>
-<div class="row"><button id="previewMotion">Preview frames</button><button id="stop" disabled>Stop preview</button></div>
+<header class="studioHead">
+ <div class="eyebrow">SmartDawn · DN5E58 · 1,600 LEDs</div>
+ <h1>Curtain Studio</h1>
+ <p class="lead">Turn a photo or GIF into a curtain-ready design in three simple steps.</p>
+ <div class="availability" id="offlineBadge">Edit offline — connect only when you send</div>
+</header>
+<nav class="steps" aria-label="Curtain Studio steps">
+ <div class="stepChip"><b>1</b>Choose</div><div class="stepChip"><b>2</b>Improve</div><div class="stepChip"><b>3</b>Send</div>
+</nav>
+
+<section class="card" id="chooseStep">
+ <div class="cardHead"><div class="stepNo">1</div><div><h2>Choose your picture</h2><p>JPG, PNG, WebP or animated GIF</p></div></div>
+ <input id="fileInput" type="file" accept="image/*,.gif" aria-label="Import picture or animated GIF">
+ <div class="sub helper" id="filePickerStatus" aria-live="polite">Choose a photo or GIF from this phone.</div>
+ <div class="quickActions"><button id="sample" type="button" class="secondary">Example picture</button><button id="butterfly" type="button" class="secondary">GIF demo</button></div>
+ <div class="comparisons">
+  <div><div class="compareTitle">Original · tap subject</div><canvas id="sourcePreview" width="240" height="240" aria-label="Original image before LED conversion"></canvas></div>
+  <div><div class="compareTitle">Curtain result · 40×40</div><canvas id="preview" width="40" height="40" aria-label="Exactly 40 by 40 LED converted preview"></canvas></div>
+ </div>
+ <div class="infoLine" id="imageInfo">Choose a picture or load a demo to begin.</div>
 </section>
-<section class="card"><h2>Quality and motion</h2>
-<label class="sub" for="motion">Playback behavior</label>
-<select id="motion"><option value="static">Static — draw once, no animation</option><option value="gif">Animate actual GIF frames live</option><option value="scroll">Native E-89 scroll (stored image)</option></select>
-<label class="sub" for="quality">Encoding / image quality</label>
-<select id="quality"><option value="pal4">Indexed palette — 4 colors</option><option value="pal8">Indexed palette — 8 colors</option><option value="pal16">Indexed palette — 16 colors (native maximum)</option><option value="rgb32">Direct RGB888 — 32 colors</option><option value="rgb64">Direct RGB888 — 64 colors</option><option value="rgb128">Direct RGB888 — 128 colors</option><option value="rgb256">Direct RGB888 — 256 colors</option><option value="rgbfull" selected>Direct RGB888 — maximum available colors</option></select>
-<small id="modeNote"><strong>RGB888 static:</strong> maximum color detail, though transfers can be slower. <strong>Native scroll:</strong> only 16 colors and the existing E-89 motion. The preview switches to the native color limit when scroll is selected.</small>
-<div class="offline-workspace"><strong>Offline project</strong><small>Everything here works with Bluetooth disconnected. Saves a reduced working photo or decoded GIF frames; your full-sized originals stay in your files.</small>
-<button id="prepareOffline" class="main" type="button">Prepare for curtain (offline)</button>
-<div class="row"><button id="saveDraft" type="button">Save project on phone</button><button id="clearDraft" type="button">Clear saved project</button></div>
-<div class="sub" id="offlineStatus" role="status" aria-live="polite">Checking for a saved project…</div></div>
-<div class="row"><button class="main" id="sendLive" disabled>Send static / GIF live</button><button id="stopSend" disabled>Stop</button></div>
-<div class="row"><button id="build" class="main">Build native scroll</button><button id="install" disabled>Install to 83928</button></div>
-<small>Native scroll uses the first GIF frame. Static and actual GIF playback use live Bluetooth (do not overwrite saved effects). E-0/E-6 native motion codes are still being investigated.</small>
-<div class="row"><button id="play" disabled>Play saved 83928</button><button id="restore" disabled>Restore BLE TEST</button></div>
-<div class="row"><button id="download" disabled>Save native .eff</button><button id="downloadLog">Save log</button></div>
-<progress id="progress" value="0" max="100"></progress>
-<div class="status" id="status">Ready. The working BLE TEST backup is included.</div></section>
-<details><summary>Diagnostics</summary><pre id="log"></pre></details>
+
+<section class="card" id="improveStep">
+ <div class="cardHead"><div class="stepNo">2</div><div><h2>Make it look its best</h2><p>Use AI once, then fine-tune only if needed</p></div></div>
+ <div class="aiBox">
+  <button type="button" class="main" id="aiRevamp">Optimize the selected subject</button>
+  <div class="sub aiState" id="aiRevampState" aria-live="polite">Tip: tap the subject in the original preview first so AI keeps the framing you want.</div>
+  <details class="aiResults" id="aiResults"><summary>Compare AI suggestion</summary>
+   <div class="comparisons"><div><div class="compareTitle">Before</div><canvas id="aiOriginal" width="40" height="40"></canvas></div><div><div class="compareTitle">Suggested</div><canvas id="aiCandidate" width="40" height="40"></canvas></div></div>
+   <div class="row"><button id="applyAiRevamp" type="button" disabled>Use suggestion</button><button type="button" id="undoAiRevamp" disabled>Undo</button></div>
+  </details>
+ </div>
+ <div class="qualityChoices"><strong>Quick look — tap the clearest version</strong>
+  <div class="qualityChoiceGrid">
+   <div><canvas id="compareNatural" width="40" height="40" aria-label="Natural reduction"></canvas><button type="button" id="chooseNatural">Natural</button></div>
+   <div><canvas id="compareEnhanced" width="40" height="40" aria-label="Enhanced Detail reduction"></canvas><button type="button" id="chooseEnhanced">Enhanced</button></div>
+   <div><canvas id="compareBold" width="40" height="40" aria-label="High contrast reduction"></canvas><button type="button" id="chooseBold">Bold</button></div>
+  </div>
+  <div class="sub helper" id="qualitySuggested">Choose whichever preview is easiest to recognize.</div>
+ </div>
+ <details class="controlGroup" id="photoControls"><summary>Adjust crop and position</summary><div class="detailBody">
+  <div class="twoFields"><label class="sub">Framing<select id="framing"><option value="fill" selected>Fill the curtain</option><option value="fit">Show entire picture</option></select></label><label class="sub">Detail style<select id="enhance"><option value="natural">Natural</option><option value="crisp" selected>Sharper</option><option value="bold">Bold contrast</option><option value="enhanced">Subject detail</option></select></label></div>
+  <label class="sub" for="zoom">Zoom <output id="zoomVal">1.25×</output></label><input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1.25">
+  <div class="twoFields"><label class="sub" for="panX">Left / right<input id="panX" type="range" min="-100" max="100" step="5" value="0"></label><label class="sub" for="panY">Up / down<input id="panY" type="range" min="-100" max="100" step="5" value="0"></label></div>
+  <label class="sub">Clean up LED-dot artwork<select id="cleanup"><option value="none" selected>Off</option><option value="medium">Medium</option><option value="strong">Strong</option></select></label>
+  <button id="resetCrop" type="button">Reset crop</button>
+ </div></details>
+ <details class="controlGroup"><summary>Subject focus</summary><div class="detailBody">
+  <p class="sub">Tap the subject in the original preview, or adjust it here.</p>
+  <div class="twoFields"><label class="sub">Left / right<input id="subjectX" type="range" min="0" max="100" value="50" step="1"></label><label class="sub">Up / down<input id="subjectY" type="range" min="0" max="100" value="50" step="1"></label></div>
+  <div class="twoFields"><label class="sub">Area size<input id="subjectSize" type="range" min="15" max="65" value="32" step="1"></label><label class="sub">Detail strength<input id="subjectStrength" type="range" min="0" max="100" value="70" step="5"></label></div>
+  <button type="button" id="autoSubject">Find subject automatically</button>
+ </div></details>
+ <details class="controlGroup"><summary>Color and LED tuning</summary><div class="detailBody">
+  <label class="sub">Color profile<select id="ledPreset"><option value="neutral" selected>Neutral</option><option value="dark">Reveal dark details</option><option value="vivid">Vivid / softer highlights</option><option value="custom">Custom</option></select></label>
+  <div class="twoFields"><label class="sub">Brightness curve<input id="ledGamma" type="range" min="70" max="145" value="100" step="5"></label><label class="sub">Lift shadows<input id="ledLift" type="range" min="0" max="35" value="0" step="1"></label></div>
+  <div class="twoFields"><label class="sub">Soften highlights<input id="ledRolloff" type="range" min="0" max="30" value="0" step="1"></label><label class="sub">Color saturation<input id="ledSat" type="range" min="70" max="145" value="100" step="5"></label></div>
+  <label class="sub">Minimum visible brightness<input id="ledMin" type="range" min="0" max="35" value="0" step="1"></label>
+ </div></details>
+ <div class="quickActions"><button id="previewMotion">Preview animation</button><button id="stop" disabled>Stop preview</button></div>
+ <details class="controlGroup ledPanel"><summary>Realistic LED-dot preview</summary><div class="detailBody"><canvas id="ledPreview" width="240" height="240" aria-label="40 by 40 LED dot grid simulation"></canvas></div></details>
+ <div class="warning"><strong>40×40 limit:</strong> zooming and subject focus preserve the important details, but the curtain cannot display more than 1,600 pixels.</div>
+</section>
+
+<section class="card" id="sendStep">
+ <div class="cardHead"><div class="stepNo">3</div><div><h2>Prepare and send</h2><p>Save offline now; connect only when the curtain is nearby</p></div></div>
+ <div class="twoFields"><label class="sub" for="motion">Playback<select id="motion"><option value="static">Static picture</option><option value="gif">Animated GIF</option><option value="scroll">Saved scrolling picture</option></select></label><label class="sub" for="quality">Color quality<select id="quality"><option value="pal4">4 colors</option><option value="pal8">8 colors — reliable GIF</option><option value="pal16">16 colors — native maximum</option><option value="rgb32">RGB — 32 colors</option><option value="rgb64">RGB — 64 colors</option><option value="rgb128">RGB — 128 colors</option><option value="rgb256">RGB — 256 colors</option><option value="rgbfull" selected>Maximum RGB color</option></select></label></div>
+ <div class="sub helper" id="modeNote">Static uses maximum color detail. GIF streams the real frames. Saved scroll stores the first frame at 83928.</div>
+ <div class="offline-workspace"><strong>Ready it without Bluetooth</strong>
+  <button id="prepareOffline" class="main" type="button">Prepare for curtain</button>
+  <div class="sub" id="offlineStatus" role="status" aria-live="polite">Checking for your saved project…</div>
+ </div>
+ <div class="connection">
+  <div class="connectionTop"><strong>Curtain connection</strong><span id="inventory">Not connected</span></div>
+  <div class="row"><button class="main" id="connect">Connect curtain</button><button id="refresh" disabled>Refresh</button></div>
+ </div>
+ <div class="sendGrid"><button class="main" id="sendLive" disabled>Send to curtain</button><button id="stopSend" disabled>Stop sending</button></div>
+ <details class="controlGroup"><summary>Saved project and native tools</summary><div class="detailBody">
+  <div class="row"><button id="saveDraft" type="button">Save project</button><button id="clearDraft" type="button">Clear saved copy</button></div>
+  <div class="row"><button id="build">Build saved scroll</button><button id="install" disabled>Install at 83928</button></div>
+  <div class="row"><button id="play" disabled>Play saved 83928</button><button id="restore" disabled>Restore BLE TEST</button></div>
+  <div class="row"><button id="download" disabled>Save .eff file</button><button id="downloadLog">Save log</button></div>
+ </div></details>
+ <progress id="progress" value="0" max="100"></progress>
+ <div class="status" id="status">Ready. Choose a picture to begin.</div>
+</section>
+<details class="diagnostics"><summary>Diagnostics</summary><pre id="log"></pre></details>
 </main><script>
+<script>
 /* Jason Home 2 native Bluetooth adapter. Chrome Web Bluetooth remains unchanged. */
 (function(){
  if(navigator.bluetooth || window.parent===window) return;
@@ -775,6 +776,7 @@ async function runAiRevamp(){
  aiPaint('aiOriginal',sourceImage);
  aiPaint('aiCandidate',aiSuggestion.frame);
  $('applyAiRevamp').disabled=false;
+ $('aiResults').open=true;
  $('aiRevampState').textContent=modelLabel+' · '+label+'. Optimized crop, outlines and LED tone are ready. Compare the results and tap Use AI-recommended version.';
  say('AI Image Revamp prepared. Nothing was sent to the curtain. Choose Use AI-recommended version to apply.');
 }
