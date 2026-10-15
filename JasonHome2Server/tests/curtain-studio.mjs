@@ -35,9 +35,9 @@ test('host serves isolated studio asset with same-origin framing',()=>{
   assert.match(server,/frame-src 'self'; frame-ancestors /);
   assert.match(server,/name==="curtain_converter.html"/);
   assert.match(server,/img-src 'self' blob: data:/,'user-selected blob: images must not be CSP-blocked');
-  assert.match(generator,/curtain_image_headers\\.js/);
-  assert.match(server,/curtain_image_headers\\.js/);
-  assert.match(converter,/src="curtain_image_headers\\.js"/);
+  assert.ok(generator.includes('curtain_image_headers.js'));
+  assert.ok(server.includes('curtain_image_headers.js'));
+  assert.ok(converter.includes('src="curtain_image_headers.js"'));
   const deployed=join(home,'web/curtain_converter.html');
   if(existsSync(join(home,'web')))assert.ok(existsSync(deployed),'generated converter absent');
 });
