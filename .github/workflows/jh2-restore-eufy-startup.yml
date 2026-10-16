@@ -1,0 +1,59 @@
+name: Restore saved Eufy connection automatically on startup
+on:
+  push:
+    branches: [feat/jh2-oracle-curtain-1.1.0]
+    paths: [.github/workflows/jh2-restore-eufy-startup.yml]
+permissions:
+  contents: read
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Back up and add cached-session initialization to the installed backend
+        run: |
+          sudo python3 - <<'PY'
+          import pathlib,subprocess,json,urllib.request,time,os,re,hashlib
+          back=pathlib.Path('/home/ubuntu')/('jh2-eufy-startup-'+os.environ['GITHUB_RUN_ID']);back.mkdir(mode=0o700)
+          original=back/'server-original.js';subprocess.run(['docker','cp','jason-home:/app/dist/server.js',str(original)],check=True)
+          source=original.read_text();marker='Jason Home 2 cached-session startup initialization'
+          assert 'async function ensureEufy' in source
+          if marker not in source:
+           def add(m):return m[0]+'\n    // '+marker+'\n    setTimeout(() => void ensureEufy(false).catch(e => console.error("[startup Eufy connection]", e?.message || e)), 1500);\n'
+           source,n=re.subn(r'(server\.listen\(PORT,\s*"0\.0\.0\.0",\s*\(\)\s*=>\s*\{)',add,source,count=1);assert n==1
+          patched=back/'server-patched.js';patched.write_text(source)
+          subprocess.run(['docker','cp',str(patched),'jason-home:/tmp/jh2-startup-check.js'],check=True)
+          subprocess.run(['docker','exec','jason-home','node','--check','/tmp/jh2-startup-check.js'],check=True)
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0];env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x);token=env['JASON_HOME_API_TOKEN']
+          def call(base,path,body=None,cookie=None):
+           h={'Authorization':'Bearer '+token,'Content-Type':'application/json'}
+           if cookie:h['Cookie']=cookie
+           with urllib.request.urlopen(urllib.request.Request(base+path,None if body is None else json.dumps(body).encode(),h),timeout=45) as r:return json.load(r),r.headers
+          before,_=call('http://127.0.0.1:8080','/api/status');assert before['automationOwner']=='oracle' and len(before['eufy']['readyNames'])==4
+          # No credential or session database edits. Only the tested startup call is added.
+          try:
+           subprocess.run(['docker','cp',str(patched),'jason-home:/app/dist/server.js'],check=True)
+           subprocess.run(['docker','restart','jason-home'],check=True,stdout=subprocess.DEVNULL)
+           for attempt in range(45):
+            try:
+             s,_=call('http://127.0.0.1:8080','/api/status')
+             if len(s['eufy']['readyNames'])==4:break
+            except Exception:pass
+            time.sleep(2)
+           else:raise RuntimeError('Automatic cached-session startup failed')
+           assert s['automationOwner']=='oracle' and s['calendar']['revision']==88 and s['calendar']['eventCount']==212
+           _,headers=call('http://127.0.0.1:8081','/api/session',{'token':token})
+           relay,_=call('http://127.0.0.1:8081','/api/curtain/status',cookie=headers['Set-Cookie'].split(';')[0])
+           assert relay['assetStorage']=='oracle' and relay['pollSeconds']==60
+           subprocess.run(['docker','commit','jason-home','jason-home:ready-at-startup-'+os.environ['GITHUB_RUN_ID']],check=True,stdout=subprocess.DEVNULL)
+           old=pathlib.Path('/home/ubuntu/jh2-relay-boot-before-38829147728').read_text().strip();boot=pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip();assert old!=boot
+           result={'fullRebootVerified':True,'automaticEufyInitializationAfterRestart':True,'owner':s['automationOwner'],'eufyReady':s['eufy']['readyNames'],'events':s['calendar']['eventCount'],'revision':s['calendar']['revision'],'relayAvailable':True,'bridgePaired':relay['configured'],'bridgeOnline':relay['online'],'physicalCurtainVerified':False,'timeSynchronized':subprocess.check_output(['timedatectl','show','-p','NTPSynchronized','--value'],text=True).strip(),'startupPatchSha256':hashlib.sha256(source.encode()).hexdigest(),'backup':str(back)}
+           (back/'verification.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
+          except Exception:
+           subprocess.run(['docker','cp',str(original),'jason-home:/app/dist/server.js'],check=True)
+           subprocess.run(['docker','restart','jason-home'],check=True,stdout=subprocess.DEVNULL)
+           raise
+          PY
