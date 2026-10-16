@@ -232,14 +232,12 @@ export function createCurtainBridge({db,now=Date.now}){
   return transaction(()=>{
    const r=slot(),sameActive=r.active_sha===a.sha256,samePending=r.pending_sha===a.sha256;
    if(!sameActive&&!samePending&&r.pending_sha){
-    const c=r.pending_command&&db.prepare('SELECT state FROM curtain_commands WHERE id=?').get(r.pending_command);
-    if(c&&['queued','downloaded'].includes(c.state))
-     throw fail(409,'Replacement is still transferring; wait for BLE delivery before selecting a different file');
-    if(c?.state==='applied'){
-     // A deliberate new selection supersedes an unconfirmed preview. Keep
-     // the last confirmed file as rollback, not every viewed image.
-     restoreDesiredAfterFailedTransfer(r.pending_command);
-    }
+    // New user selections always take precedence. A downloaded previous
+    // stream is interrupted by the Nano when the new visual command arrives.
+    // Keep its bytes temporarily while still queued/downloaded so an active
+    // authenticated GET cannot fail mid-response, then GC on ACK/replacement.
+    // The staged slot pointer changes atomically; late ACKs cannot confirm it.
+    if(r.pending_command)restoreDesiredAfterFailedTransfer(r.pending_command);
    }
    db.prepare('INSERT OR IGNORE INTO curtain_assets VALUES(?,?,?,?)').run(a.sha256,a.bytes,JSON.stringify(metadata),now());
    if(!sameActive&&!samePending)
