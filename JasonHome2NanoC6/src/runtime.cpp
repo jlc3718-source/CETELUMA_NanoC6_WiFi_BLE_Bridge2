@@ -19,7 +19,7 @@ static bool api(const String& path){
  bool publicRead=!post&&(path=="/api/health"||path=="/api/nano/status"||path=="/api/bridge/status");
  String action=in["action"]|String("");
  bool publicControl=post&&path=="/api/curtain/call"&&
-  (action=="connect"||action=="power"||action=="solid"||action=="effect"||
+  (action=="connect"||action=="disconnect"||action=="power"||action=="solid"||action=="effect"||
    action=="brightness"||action=="speed"||action=="layout");
  if(!isAdmin&&!(publicAllowed&&(publicRead||publicControl))){
   replyError(403,"Public Nano access permits curtain controls only. Use Jason Home 2 Oracle for protected settings.");return true;
