@@ -4,11 +4,9 @@ on:
   push:
     branches: [codex/jh2-fast-command-chunk-curtain-1.1.8]
     paths:
-      - 'JasonHome2NanoC6/**'
       - 'JasonHome2Server/**'
       - 'JasonHome2Android/**'
       - '.github/scripts/deploy-curtain-relay.py'
-      - '.github/workflows/build-jh2-full-recovery-1.1.2.yml'
   workflow_dispatch:
 
 permissions:
@@ -233,7 +231,7 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           python3 - <<'PY'
           import json,os,pathlib,subprocess,time,urllib.request
-          run_id=os.environ['GITHUB_RUN_ID'];sha=os.environ['GITHUB_SHA']
+          run_id=os.environ['GITHUB_RUN_ID']+'-'+os.environ.get('GITHUB_RUN_ATTEMPT','1');sha=os.environ['GITHUB_SHA']
           current=pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
           assert current and current!=os.environ['OLD_BOOT_ID'],'Oracle host did not complete a full reboot'
           for name in ['jason-home','jason-home-2-web']:
