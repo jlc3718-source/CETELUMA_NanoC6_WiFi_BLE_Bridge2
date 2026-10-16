@@ -2,7 +2,7 @@ name: Jason Home 2 NanoC6 Fast Signed OTA
 
 on:
   push:
-    branches: [codex/jh2-fast-command-chunk-curtain-1.1.8]
+    branches: [codex/jh2-single-active-curtain-retention-20261016]
     paths:
       - 'JasonHome2NanoC6/**'
       - '.github/workflows/jh2-fast-nanoc6-ota.yml'
