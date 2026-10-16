@@ -1,7 +1,7 @@
 name: Jason Home 2 Signed Curtain APK 2.0.17
 on:
   push:
-    branches: [codex/jh2-single-active-curtain-retention-20261016]
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
     paths:
       - 'JasonHome2Android/**'
       - '.github/workflows/jh2-curtain-apk-2.0.17.yml'
