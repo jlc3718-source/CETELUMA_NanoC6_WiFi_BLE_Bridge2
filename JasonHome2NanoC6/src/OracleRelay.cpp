@@ -1,5 +1,6 @@
 #include "OracleRelay.h"
 #include "Curtain.h"
+#include "FirmwareUpdate.h"
 #include <mbedtls/sha256.h>
 #include <freertos/task.h>
 #include <deque>
@@ -12,6 +13,7 @@ static volatile uint32_t localUntil=0;
 static volatile bool syncNow=false,streaming=false,online=false,streamFailed=false;
 static uint64_t lastCommand=0,seen=0;
 static uint8_t streamFailures=0;
+static uint64_t restartAfterAck=0;
 static String getEndpoint(){xSemaphoreTake(lock,portMAX_DELAY);String s=endpoint;xSemaphoreGive(lock);return s;}
 static String digest(const uint8_t*data,size_t size){uint8_t d[32];mbedtls_sha256(data,size,d,0);return hexBytes(d,32);}
 static void issue(const String& error){xSemaphoreTake(lock,portMAX_DELAY);relayError=error;xSemaphoreGive(lock);}
@@ -81,7 +83,7 @@ static void poller(void*){
  for(;;){
   if(WiFi.status()!=WL_CONNECTED||!timeValid()||!getEndpoint().length()){online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
   JsonDocument body,response;body["recoverDesired"]=streamFailed;body["bridgeId"]=bridgeId;body["bootId"]=boot;
-  auto status=body["status"].to<JsonObject>();status["firmware"]=VERSION;status["build"]=BUILD_SHA;status["uptimeSeconds"]=millis()/1000;status["wifiRSSI"]=WiFi.RSSI();status["relayStreaming"]=streaming;status["assetStorage"]="oracle";status["freeHeap"]=ESP.getFreeHeap();status["flashBytes"]=ESP.getFlashChipSize();
+  auto status=body["status"].to<JsonObject>();status["firmware"]=VERSION;status["build"]=BUILD_SHA;status["uptimeSeconds"]=millis()/1000;status["wifiRSSI"]=WiFi.RSSI();status["wifiIP"]=WiFi.localIP().toString();status["wifiGateway"]=WiFi.gatewayIP().toString();status["autoUpdate"]=state["autoUpdate"]|true;status["relayStreaming"]=streaming;status["assetStorage"]="oracle";status["freeHeap"]=ESP.getFreeHeap();status["flashBytes"]=ESP.getFlashChipSize();
   JsonDocument curtain;curtainCall("status",JsonVariantConst(),curtain);status["curtain"]=curtain.as<JsonVariantConst>();
   xSemaphoreTake(lock,portMAX_DELAY);status["error"]=relayError;size_t ackCount=std::min(acknowledgments.size(),size_t(32));auto aa=body["acks"].to<JsonArray>();for(size_t i=0;i<ackCount;i++){JsonDocument d;deserializeJson(d,acknowledgments[i]);aa.add(d.as<JsonVariantConst>());}xSemaphoreGive(lock);
   // Forward recent notifications for the unchanged native-slot installer.
@@ -92,7 +94,7 @@ static void poller(void*){
   if(response["credential"].is<JsonObjectConst>()){
    String credentialError;if(!relayConfigure(response["credential"].as<JsonVariantConst>(),credentialError)){issue("Credential rotation failed: "+credentialError);online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
   }
-  xSemaphoreTake(lock,portMAX_DELAY);for(size_t i=0;i<ackCount&&!acknowledgments.empty();i++)acknowledgments.pop_front();xSemaphoreGive(lock);online=true;backoff=1000;lastSync=millis();nextSync=millis()+10000;revision=response["revision"]|0U;
+  xSemaphoreTake(lock,portMAX_DELAY);for(size_t i=0;i<ackCount&&!acknowledgments.empty();i++)acknowledgments.pop_front();xSemaphoreGive(lock);if(restartAfterAck&&ackCount){restartAfterAck=0;vTaskDelay(pdMS_TO_TICKS(400));ESP.restart();}online=true;backoff=1000;lastSync=millis();nextSync=millis()+10000;revision=response["revision"]|0U;
   // Node replies with Unix time; NTP remains the primary clock. Never step an already-valid clock.
   for(auto n:body["notifications"].as<JsonArrayConst>())lastNotice=std::max(lastNotice,n["id"].as<uint32_t>());
   for(auto cmd:response["commands"].as<JsonArrayConst>()){
@@ -105,8 +107,37 @@ static void poller(void*){
    String action=cmd["action"]|String("");JsonDocument result;bool ok=true;
    if(cmd["source"].as<String>()=="manual")streamFailures=0;
    if(action=="asset"||action=="nativePlay"||action=="effect"||action=="sequenceStart"||action=="sequenceStop"||action=="assetStop"||action=="rawWrite"||action=="disconnect"||(action=="power"&&!(cmd["payload"]["on"]|false))){generation++;streaming=false;}
-   if(action!="disconnect"&&action!="scan"&&action!="status")ok=curtainCall("connect",JsonVariantConst(),result);
-   if(ok&&action=="asset"){
+   // Management requests never trigger BLE scans or reveal local authorization secrets.
+   const bool adminAction=action.startsWith("nano");
+   if(!adminAction&&action!="disconnect"&&action!="scan"&&action!="status")ok=curtainCall("connect",JsonVariantConst(),result);
+   if(ok&&action=="nanoInfo"){
+    result["firmware"]=VERSION;result["uptimeSeconds"]=millis()/1000;
+    result["wifiIP"]=WiFi.localIP().toString();result["wifiGateway"]=WiFi.gatewayIP().toString();
+    result["wifiRSSI"]=WiFi.RSSI();result["freeHeap"]=ESP.getFreeHeap();
+    result["autoUpdate"]=state["autoUpdate"]|true;result["streaming"]=streaming;
+    result["lastSuccessfulSyncAgeSeconds"]=lastSync?(millis()-lastSync)/1000:-1;
+    JsonDocument local;curtainCall("status",JsonVariantConst(),local);result["curtain"]=local.as<JsonVariantConst>();
+   }else if(ok&&action=="nanoFirmwareCheck"){
+    JsonDocument manifest;FirmwareManifest m;String error;
+    ok=fetchManifest(manifest)&&parseManifest(manifest.as<JsonVariantConst>(),m,error);
+    if(ok){result["current"]=VERSION;result["available"]=m.version;result["newer"]=isNewer(m.version,VERSION);result["signed"]=true;}
+    else result["error"]=error.length()?error:lastError;
+   }else if(ok&&action=="nanoAutoUpdate"){
+    JsonDocument next;next.set(state);next["autoUpdate"]=cmd["payload"]["enabled"].as<bool>();
+    ok=saveJson("/state.json",next.as<JsonVariantConst>());if(ok)state.set(next);
+    result["autoUpdate"]=state["autoUpdate"]|true;
+    if(!ok)result["error"]="NanoC6 could not persist automatic update setting";
+   }else if(ok&&action=="nanoResumeOracle"){
+    relayLocalOverride(true);result["message"]="Oracle schedule ownership resumed";
+   }else if(ok&&action=="nanoReboot"){
+    restartAfterAck=id;result["message"]="NanoC6 will reboot after Oracle confirms this ACK";
+   }else if(ok&&action=="nanoInstallUpdate"){
+    JsonDocument manifest;FirmwareManifest m;String error;
+    ok=fetchManifest(manifest)&&parseManifest(manifest.as<JsonVariantConst>(),m,error);
+    if(ok&&isNewer(m.version,VERSION)){ok=queueFirmware(manifest.as<JsonVariantConst>(),error);if(ok){restartAfterAck=id;result["version"]=m.version;result["message"]="Verified update queued; rebooting to permanent updater after ACK";}}
+    else if(ok){ok=false;error="No newer signed firmware is available";}
+    if(!ok)result["error"]=error.length()?error:lastError;
+   }else if(ok&&action=="asset"){
     curtainCall("sequenceStop",JsonVariantConst(),result);String sha=cmd["payload"]["sha256"]|String("");uint32_t size=0;for(auto a:response["assets"].as<JsonArrayConst>())if(a["sha256"].as<String>()==sha)size=a["bytes"]|0U;
     if(!size||size>4*1024*1024){ok=false;result["error"]="Oracle asset is missing or exceeds relay limit";}
     else{streamFailed=false;auto*p=new Play{sha,size,generation,id};activeSha=sha;streaming=true;TaskHandle_t task=nullptr;if(xTaskCreate(playback,"jh2-stream",12288,p,1,&task)!=pdPASS){delete p;ok=false;streaming=false;result["error"]="Insufficient RAM to start relay";}else{result["ok"]=true;result["message"]="Oracle program received; waiting for BLE transmission";setResult(id,"downloaded",result.as<JsonVariantConst>());seen=id;break;}}
