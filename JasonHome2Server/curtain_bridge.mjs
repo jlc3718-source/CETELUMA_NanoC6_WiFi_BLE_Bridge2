@@ -68,11 +68,12 @@ export function createCurtainBridge({db,now=Date.now}){
  function resume(){put('manualUntil',0);put('scheduleActive',null);tick();for(const d of Object.values(get('desired',{})))enqueue(d.action,d.payload,null,'recovery');signal();return status();}
  function sync(body){
   tick();const at=now();put('lastSeen',at);put('lastSync',at);
+  const bleReconnected=get('status',{}).curtain?.connected===false&&body.status?.curtain?.connected===true;
   const endedOverride=get('localOverride',0)>0&&Number(body.localOverrideUntil||0)<=at;
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
   put('localOverride',Number(body.localOverrideUntil||0));
   if(reboot){put('bootId',body.bootId);put('notifications',[]);}
-  if((reboot||endedOverride||body.recoverDesired===true)&&get('localOverride',0)<=at){
+  if((reboot||endedOverride||bleReconnected||body.recoverDesired===true)&&get('localOverride',0)<=at){
    const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
   }
 

@@ -40,6 +40,8 @@ static bool connect(){
 void curtainBegin(){bleLock=xSemaphoreCreateRecursiveMutex();noticesLock=xSemaphoreCreateMutex();NimBLEDevice::init("JasonHome2-NanoC6");NimBLEDevice::setMTU(517);NimBLEDevice::setPower(3);}
 static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&out){
   bool ok=true;String message;
+  if((action=="effect"||action=="nativePlay"||action=="solid"||action=="rawWrite"||action=="power")&&state["curtainSequence"].is<JsonObject>()){state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
+
   if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
   else if(action=="connect")ok=connect();
   else if(action=="disconnect"){state["curtainAutoConnect"]=false;saveJson("/state.json",state.as<JsonVariantConst>());disconnect();}
@@ -74,9 +76,9 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
   }else if(action=="sequenceStart"){
     std::vector<int>ids;for(auto id:in["effects"].as<JsonArrayConst>()){int n=id.as<int>();if(n<0||n>87){ok=false;break;}ids.push_back(n);}int seconds=in["intervalSeconds"]|60;
     if(!ok||ids.size()<2||ids.size()>88||seconds<5||seconds>3600)ok=false;
-    else{sequence=ids;position=0;interval=seconds*1000UL;nextEffect=millis();state["curtainSequence"]=in;saveJson("/state.json",state.as<JsonVariantConst>());}
+    else{ok=effect(ids[0]);if(ok){sequence=ids;position=1;interval=seconds*1000UL;nextEffect=millis()+interval;state["curtainSequence"]=in;saveJson("/state.json",state.as<JsonVariantConst>());}else sequence.clear();}
   }else{ok=false;message="Unknown curtain action";}
-  out["ok"]=ok;out["connected"]=connected();out["ready"]=connected();out["mtu"]=client?client->getMTU():23;out["bleTransmitted"]=ok&&action!="status"&&action!="scan";out["physicalPlaybackConfirmed"]=false;out["message"]=ok?"NanoC6 BLE request completed; physical playback is not confirmed":message.length()?message:lastError;out["error"]=ok?String(""):out["message"].as<String>();return ok;
+  out["sequenceRunning"]=!sequence.empty();out["sequenceCount"]=sequence.size();out["sequenceIntervalSeconds"]=interval/1000;out["ok"]=ok;out["connected"]=connected();out["ready"]=connected();out["mtu"]=client?client->getMTU():23;out["bleTransmitted"]=ok&&action!="status"&&action!="scan";out["physicalPlaybackConfirmed"]=false;out["message"]=ok?"NanoC6 BLE request completed; physical playback is not confirmed":message.length()?message:lastError;out["error"]=ok?String(""):out["message"].as<String>();return ok;
 }
 static void loopUnlocked(){
   uint32_t now=millis();if(!connected()){
