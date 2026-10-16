@@ -68,5 +68,5 @@ test('Oracle deployment uses the current brightness follower via curtain bridge'
  assert.match(script,/nanoc6_sync\.mjs/);
  assert.match(script,/bridge:curtainRelay/);
  assert.match(script,/live\.index\(bridge_init\)<live\.index\(new_sync\)/);
- assert.match(script,/relay\['pollSeconds'\]===5/);
+ assert.match(script,/relay\['pollSeconds'\]==5/);
 });
