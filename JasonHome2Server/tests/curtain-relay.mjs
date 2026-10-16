@@ -171,3 +171,43 @@ test('scheduled media survives migration and does not get deleted by later unrel
   assert.ok(b.asset(a.sha256),'scheduled image must remain recoverable until its schedule is removed');
  }finally{b.close();}
 });
+
+
+test('detailed multicolor GIF is packetized into bounded doodle writes without Nano storage',()=>{
+ const frames=[];
+ for(let k=0;k<3;k++){
+  const frame=Buffer.alloc(6400);
+  for(let y=0;y<40;y++)for(let x=0;x<40;x++){
+   const i=(y*40+x)*4;
+   frame[i]=((x*37+y*19+k*11)&255);
+   frame[i+1]=((x*17+y*43+k*23)&255);
+   frame[i+2]=((x*53+y*11+k*17)&255);
+   frame[i+3]=255;
+  }
+  frames.push(frame.toString('base64'));
+ }
+ const compiled=compileAsset({frames,quality:'pal16',delays:[80,100,120],loop:true});
+ assert.equal(compiled.bytes.subarray(0,4).toString(),'JHC1');
+ assert.equal(compiled.frames,3);
+ let off=8,doodleWrites=0,largest=0,totalDoodleBytes=0;
+ for(let frame=0;frame<3;frame++){
+  const delay=compiled.bytes.readUInt32LE(off),records=compiled.bytes.readUInt16LE(off+4);off+=6;
+  assert.equal(delay,[80,100,120][frame]);
+  for(let i=0;i<records;i++){
+   const channel=compiled.bytes[off],size=compiled.bytes.readUInt16LE(off+1);off+=3;
+   assert.ok(off+size<=compiled.bytes.length,'record must be complete');
+   if(channel===1){
+    assert.ok(size<=126,'one BLE doodle write must not exceed verified 126-byte transfer');
+    assert.ok(size>=5,'must contain transport framing');
+    assert.equal(compiled.bytes[off+1],1,'native doodle payload should fit in one BLE write');
+    assert.equal(compiled.bytes[off+2],0,'no missing doodle fragments');
+    largest=Math.max(largest,size);totalDoodleBytes+=size;doodleWrites++;
+   }
+   off+=size;
+  }
+ }
+ assert.equal(off,compiled.bytes.length);
+ assert.ok(largest>44,'the new encoder must use bigger-than-40-byte packed writes');
+ assert.ok(totalDoodleBytes<3*6400,'indexed GIF framing must compress raw 40x40 RGBA frames');
+ assert.ok(doodleWrites>3,'detailed pictures can require multiple compressed writes');
+});
