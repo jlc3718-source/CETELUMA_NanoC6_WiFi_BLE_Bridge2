@@ -21,6 +21,7 @@ import org.json.JSONObject;
 /** Oracle transport and local file export only. This class never opens Android Bluetooth. */
 public final class CurtainBridge {
  public static final int PERMISSIONS_REQUEST=74;
+ private static final String NANO_EXTERNAL="http://craumer.tplinkdns.com";
  private static final String[] NANO_BASES={"http://jason-home-2.local","http://192.168.68.116"};
  private final Activity activity;private final WebView web;
  public CurtainBridge(Activity activity,WebView web){this.activity=activity;this.web=web;}
@@ -42,7 +43,7 @@ public final class CurtainBridge {
  }
  private void localController(String id,String action,JSONObject json){
    new Thread(()->{try{
-     String base=findNano();
+     String base="pairNano".equals(action)?findNano():NANO_EXTERNAL;
      if("pairNano".equals(action)){
        JSONObject result=request(base,"/api/bridge/pair","POST",json.toString().getBytes(StandardCharsets.UTF_8));
        if(!result.optBoolean("ok",false))throw new IllegalStateException(result.optString("error","NanoC6 rejected pairing"));
