@@ -2,6 +2,7 @@
 import json,subprocess,os,pathlib,sqlite3,urllib.request,time,hashlib,shutil,tarfile,base64
 ROOT=pathlib.Path.cwd();RUN=os.environ['GITHUB_RUN_ID']+'-'+os.environ.get('GITHUB_RUN_ATTEMPT','1');SHA=os.environ['GITHUB_SHA'];BACK=pathlib.Path('/home/ubuntu')/('jh2-curtain-backup-'+RUN)
 BACK.mkdir(mode=0o700,exist_ok=False)
+NONINVASIVE=os.environ.get('JH2_NONINVASIVE_DEPLOY')=='1'
 def run(*a,**kw):
  kw.setdefault("check",True);return subprocess.run(a,**kw)
 def capture(*a):return subprocess.check_output(a)
@@ -125,6 +126,15 @@ try:
  request=urllib.request.Request(base+'/api/curtain-bridge/assets/'+asset['sha256']+'?offset=0&length=4096',headers={'X-JH2-Bridge-Token':rotated})
  with urllib.request.urlopen(request,timeout=10) as response:
   chunk=response.read();assert response.headers['x-chunk-sha256']==hashlib.sha256(chunk).hexdigest();assert chunk[:4]==b'JHC1'
+ retained,_=api(base,'/api/curtain/retention',cookie=cookie)
+ assert retained['maxFilesPerTarget']==2 and retained['maxFileBytes']==4194304
+ staged_command,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'asset','payload':{'sha256':asset['sha256']},'idempotencyKey':'staged-asset-check'})
+ stage_id=staged_command['commandId']
+ api(base,'/api/curtain-bridge/sync',rotated,body={'acks':[{'id':stage_id,'state':'applied','result':{'bleTransmitted':True,'physicalPlaybackConfirmed':False}}]},bridge_header=True)
+ waiting,_=api(base,'/api/curtain/retention',cookie=cookie)
+ assert waiting['pending'] is not None and waiting['confirmationRequired']
+ confirmed,_=api(base,'/api/curtain/confirm-display',cookie=cookie,body={'commandId':stage_id,'observed':True})
+ assert confirmed['active']['sha256']==asset['sha256'] and confirmed['retainedFiles']>=1
  assert not checked['command']['physicalPlaybackConfirmed']
  print('Staged actual HTTP API: both bridge auth headers, credential rotation, command/ACK, Oracle conversion and 4 KB digest-checked relay PASS. ACK used a simulator; physical BLE is not claimed.')
 finally:run('docker','rm','-f',stagename,stdout=subprocess.DEVNULL)
@@ -160,27 +170,31 @@ try:
    bridge_online=True;break
   time.sleep(5)
  assert bridge_online,'Existing NanoC6 did not authenticate after proxy header repair'
- # BLE can be temporarily unavailable while DN5E58 advertises or reconnects.
- # Retry genuine physical bridge connect requests; never synthesize an ACK.
  live_ble=False
- for attempt in range(1,5):
-  probe,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'connect','payload':{},'idempotencyKey':'deploy-connect-'+RUN+'-'+str(attempt)})
-  delivered=None
-  for i in range(25):
-   delivered,_=api(base,'/api/curtain/command?id='+str(probe['commandId']),cookie=cookie)
-   if delivered['command']['state'] in ['applied','failed','expired']:break
-   time.sleep(2)
-  cmd=delivered['command'] if delivered else {}
-  outcome=cmd.get('result') or {}
-  live_ble=cmd.get('state')=='applied' and outcome.get('connected') is True
-  print('Live BLE connect probe',attempt,'state:',cmd.get('state'),'result:',json.dumps(outcome),flush=True)
-  if live_ble:break
-  if attempt<4:time.sleep(8)
- assert live_ble,'NanoC6 did not ACK a connected DN5E58 after four live attempts; see probe results above'
- api(base,'/api/curtain/rotate',cookie=cookie,body={})
+ if NONINVASIVE:
+  print('Oracle-only deployment verified bridge authentication; skipped BLE connect and credential rotation while user is logging SmartDawn.',flush=True)
+ else:
+  # BLE can be temporarily unavailable while DN5E58 advertises or reconnects.
+  # Retry genuine physical bridge connect requests; never synthesize an ACK.
+  live_ble=False
+  for attempt in range(1,5):
+   probe,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'connect','payload':{},'idempotencyKey':'deploy-connect-'+RUN+'-'+str(attempt)})
+   delivered=None
+   for i in range(25):
+    delivered,_=api(base,'/api/curtain/command?id='+str(probe['commandId']),cookie=cookie)
+    if delivered['command']['state'] in ['applied','failed','expired']:break
+    time.sleep(2)
+   cmd=delivered['command'] if delivered else {}
+   outcome=cmd.get('result') or {}
+   live_ble=cmd.get('state')=='applied' and outcome.get('connected') is True
+   print('Live BLE connect probe',attempt,'state:',cmd.get('state'),'result:',json.dumps(outcome),flush=True)
+   if live_ble:break
+   if attempt<4:time.sleep(8)
+  assert live_ble,'NanoC6 did not ACK a connected DN5E58 after four live attempts; see probe results above'
+  api(base,'/api/curtain/rotate',cookie=cookie,body={})
  # Pin future gateway starts to the verified image without altering existing secrets.
  (pathlib.Path('/opt/jason-home-2')/'curtain-relay-image').write_text(image+'\n')
- manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'liveCommandAckVerified':True,'liveBleConnected':True,'credentialRotationQueued':True,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
+ manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
  (BACK/'deployment.json').write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest))
  public={k:v for k,v in manifest.items() if k not in ['backup','rollbackContainer']}
  (ROOT/'deployment-verification.json').write_text(json.dumps(public,indent=2)+'\n')
