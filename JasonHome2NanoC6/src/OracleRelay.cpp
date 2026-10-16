@@ -10,7 +10,7 @@ static JsonDocument lastResult;
 static std::deque<String> acknowledgments;
 static volatile uint32_t generation=0,revision=0,lastSync=0,nextSync=0;
 static volatile uint32_t localUntil=0;
-static volatile bool syncNow=false,streaming=false,online=false,streamFailed=false;
+static volatile bool syncNow=false,streaming=false,online=false,streamFailed=false,pushOnline=false;
 static uint64_t lastCommand=0,seen=0;
 static uint8_t streamFailures=0;
 static uint64_t restartAfterAck=0;
@@ -26,6 +26,45 @@ static bool request(const String&path,JsonDocument&out,const String*body=nullptr
  bool ok=rc==200&&readHttpText(h,data,65536);h.end();
  if(!ok){issue(rc==401?"Oracle rejected bridge credentials":"Oracle HTTPS "+String(rc));return false;}
  if(deserializeJson(out,data)){issue("Malformed Oracle reply");return false;}issue("");return true;
+}
+// Oracle PUSH channel: one Nano-initiated, authenticated HTTPS event stream.
+// No router ports, inbound Nano sockets, or periodic command-discovery GETs.
+// Header/framing data can be HTTP chunked; only "data: <revision>" lines matter.
+static void pushEvents(void*){
+ for(;;){
+  if(WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
+   pushOnline=false;vTaskDelay(pdMS_TO_TICKS(2000));continue;
+  }
+  String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
+  if(!base.length()||key.length()!=64){pushOnline=false;vTaskDelay(pdMS_TO_TICKS(2000));continue;}
+  WiFiClientSecure client;trust(client);HTTPClient http;
+  http.setConnectTimeout(4500);http.setTimeout(12000);
+  if(!http.begin(client,base+"/api/curtain-bridge/events")){pushOnline=false;vTaskDelay(pdMS_TO_TICKS(1200));continue;}
+  http.addHeader("Authorization","Bearer "+key);
+  http.addHeader("X-JH2-Bridge-Token",key);
+  http.addHeader("Accept","text/event-stream");
+  int code=http.GET();
+  if(code!=200){pushOnline=false;http.end();vTaskDelay(pdMS_TO_TICKS(2000));continue;}
+  auto*source=http.getStreamPtr();uint32_t lastData=millis();
+  char line[128]{};size_t used=0;
+  pushOnline=true;
+  while(WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
+   if(!source->available()){vTaskDelay(pdMS_TO_TICKS(15));continue;}
+   int chr=source->read();if(chr<0)continue;lastData=millis();
+   if(chr=='\r')continue;
+   if(chr=='\n'){
+    line[used]=0;
+    if(used>6&&strncmp(line,"data: ",6)==0){
+     const unsigned long incoming=strtoul(line+6,nullptr,10);
+     if(incoming>revision)syncNow=true;
+    }
+    used=0;continue;
+   }
+   if(used<sizeof(line)-1)line[used++]=(char)chr;
+   else used=0;
+  }
+  pushOnline=false;http.end();vTaskDelay(pdMS_TO_TICKS(1000));
+ }
 }
 struct RelayStream {
  uint8_t buffer[4096];uint32_t offset=0,loadedAt=0,loaded=0,size=0;String sha;mbedtls_sha256_context hash;bool verified=false;
@@ -149,13 +188,19 @@ static void poller(void*){
   }
   if(syncNow){vTaskDelay(pdMS_TO_TICKS(30));continue;}
   while((int32_t)(millis()-nextSync)<0&&!syncNow){
-   JsonDocument waited;if(!request("/api/curtain-bridge/wait?after="+String(revision)+(streaming?"&seconds=1":"&seconds=5"),waited)){online=false;vTaskDelay(pdMS_TO_TICKS(500));break;}
-   // Check for commands after each long-poll response; full snapshots occur every 5 seconds.
+   // Push active: Oracle wakes us directly; a periodic full sync checks missed
+   // events, acknowledgments and desired state. Avoid a second TLS wait.
+   if(pushOnline){vTaskDelay(pdMS_TO_TICKS(25));continue;}
+   // Emergency fallback when the persistent push connection is unavailable.
+   JsonDocument waited;
+   if(!request("/api/curtain-bridge/wait?after="+String(revision)+"&seconds=1",waited)){
+    online=false;vTaskDelay(pdMS_TO_TICKS(250));break;
+   }
    if(waited["changed"]|false)break;
   }
  }
 }
-void relayBegin(){lock=xSemaphoreCreateMutex();endpoint=secrets["oracleEndpoint"]|String("");token=secrets["oracleBridgeToken"]|String("");bridgeId=secrets["oracleBridgeId"]|String("");xTaskCreate(poller,"jh2-oracle",12288,nullptr,1,nullptr);}
+void relayBegin(){lock=xSemaphoreCreateMutex();endpoint=secrets["oracleEndpoint"]|String("");token=secrets["oracleBridgeToken"]|String("");bridgeId=secrets["oracleBridgeId"]|String("");xTaskCreate(poller,"jh2-oracle",12288,nullptr,1,nullptr);xTaskCreate(pushEvents,"jh2-push",8192,nullptr,1,nullptr);}
 bool relayConfigure(JsonVariantConst in,String&error){
  String base=in["endpoint"]|String(""),key=in["token"]|String(""),id=in["bridgeId"]|String("");
  if(base!="https://150.136.245.51/jason-home-2"||key.length()!=64||id.length()!=16){error="Paste the pairing configuration from Jason Home 2 Settings";return false;}
@@ -166,4 +211,4 @@ bool relayConfigure(JsonVariantConst in,String&error){
 void relaySyncNow(){syncNow=true;}
 void relayPrepareForUpdate(){generation++;streaming=false;syncNow=true;}
 void relayLocalOverride(bool resume){localUntil=resume?0:millis()+15*60000;generation++;streaming=false;syncNow=true;}
-void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=4096;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
+void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=4096;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
