@@ -99,4 +99,32 @@ bool curtainCall(const String&action,JsonVariantConst in,JsonDocument&out){
  bool ok=callUnlocked(action,in,out);xSemaphoreGiveRecursive(bleLock);return ok;
 }
 void curtainLoop(){if(xSemaphoreTakeRecursive(bleLock,0)==pdTRUE){loopUnlocked();xSemaphoreGiveRecursive(bleLock);}}
-bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);auto*ch=channel==0?writer:channel==1?heart:nullptr;bool ok=connected()&&ch&&n<=client->getMTU()-3&&ch->writeValue(bytes,n,ch->canWrite());if(ok)lastRaw=millis();xSemaphoreGiveRecursive(bleLock);return ok;}
+bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){
+ xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);
+ auto*ch=channel==0?writer:channel==1?heart:nullptr;
+ bool ok=connected()&&ch&&client&&bytes&&n>0&&n<=508;
+ if(ok){
+  const size_t mtu=client->getMTU();
+  ok=mtu>=23;
+  if(ok&&n<=mtu-3)ok=ch->writeValue(bytes,n,ch->canWrite());
+  else if(ok){
+   // Reframe a complete DDP doodle packet only when the peer negotiated
+   // a smaller MTU. The 2026-10-16 native trace used a 126-byte ATT write.
+   // Never silently truncate, and preserve packet ID/type/fragment order.
+   ok=n>=5&&bytes[1]==1&&bytes[2]==0&&mtu>7;
+   if(ok){
+    const size_t available=mtu-7,count=(n-4+available-1)/available;
+    ok=count<=255;
+    for(size_t index=0;ok&&index<count;index++){
+     const size_t begin=4+index*available,part=std::min(available,n-begin);
+     uint8_t frame[508];frame[0]=bytes[0];frame[1]=(uint8_t)count;
+     frame[2]=(uint8_t)(count-index-1);frame[3]=bytes[3];
+     memcpy(frame+4,bytes+begin,part);
+     ok=ch->writeValue(frame,part+4,ch->canWrite());
+    }
+   }
+  }
+ }
+ if(ok)lastRaw=millis();
+ xSemaphoreGiveRecursive(bleLock);return ok;
+}
