@@ -1,0 +1,15 @@
+name: Verify Oracle TLS for NanoC6
+on:
+  push:
+    branches: [feat/jh2-oracle-curtain-1.1.0]
+    paths: [.github/workflows/jh2-curtain-tls-check.yml]
+permissions:
+  contents: read
+jobs:
+  tls:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Validate live IP certificate with the firmware ISRG Root X1 anchor
+        run: |
+          openssl s_client -connect 127.0.0.1:443 -verify_ip 150.136.245.51 -verify_return_error -CAfile /etc/ssl/certs/ISRG_Root_X1.pem -no-CApath -no-CAstore </dev/null 2>&1 | tail -12
