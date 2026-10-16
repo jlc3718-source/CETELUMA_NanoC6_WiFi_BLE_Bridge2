@@ -21,11 +21,16 @@ details.controlGroup{margin:10px 0 0;border:1px solid #2b4664;border-radius:13px
 details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;max-height:230px;overflow:auto}.warning{font-size:11px;color:#8fa4bd;margin:9px 1px}.warning strong{color:#d7e5f3}
 @media(max-width:380px){main{padding-left:10px;padding-right:10px}.card{padding:14px}.row,.twoFields{gap:6px}.qualityChoiceGrid button{font-size:9px}.steps{gap:4px}.stepChip{font-size:10px}}
 .overrideTest{margin:3px 0 11px;padding:11px;border:1px dashed #64839e;background:rgba(20,34,51,.75);border-radius:14px}.overrideTest button{min-height:45px;margin-bottom:5px;background:#2c4057;border-color:#7293ac;color:#fff}.overrideTest .sub{line-height:1.42}
+/* Simplified single-step Studio. Hidden legacy controls retain their internal event hooks. */
+.steps,#improveStep,#sendStep,.diagnostics{display:none!important}
+#chooseStep #photoControls,#chooseStep #sendLive,#chooseStep #stopSend,#chooseStep #progress,#chooseStep #status{display:block}
+#chooseStep #photoControls{margin-top:14px}
+#chooseStep #sendLive{margin-top:14px;background:#137a6c;border-color:#2dd4bf}
 </style></head><body><main>
 <header class="studioHead">
  <div class="eyebrow">SmartDawn · DN5E58 · 1,600 LEDs</div>
  <h1>Curtain Studio</h1>
- <p class="lead">Turn a photo or GIF into a curtain-ready design in three simple steps.</p>
+ <p class="lead">Choose a picture or GIF, adjust its crop if needed, then send it to Oracle.</p>
  <div class="availability" id="offlineBadge">Edit offline · send to Oracle without connecting to the curtain</div>
 </header>
 <nav class="steps" aria-label="Curtain Studio steps">
@@ -108,6 +113,17 @@ details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space
  <progress id="progress" value="0" max="100"></progress>
  <div class="status" id="status">Ready. Choose a picture to begin.</div>
 </section>
+<script>
+(function(){
+ const panel=document.getElementById('chooseStep');
+ // Place the existing crop editor and send action in the only visible card.
+ for(const id of ['photoControls','sendLive','stopSend','progress','status']){
+  const item=document.getElementById(id);if(item)panel.appendChild(item);
+ }
+ // Playback and color quality are automatically chosen from imported frames.
+ // Hidden native/diagnostic tools remain available to their existing scripts.
+})();
+</script>
 <details class="diagnostics"><summary>Diagnostics</summary><pre id="log"></pre></details>
 </main><script>
 /* Jason Home 2 native Bluetooth adapter. Chrome Web Bluetooth remains unchanged. */
@@ -711,7 +727,8 @@ async function importFile(file){if(!file){$('filePickerStatus').textContent='No 
   if(photoMaster)applyPhotoSettings();else{redrawThreeCandidates();paintOriginal(stageAsCanvas(lastStage));}}
  sourceMeta={width:originalWidth,height:originalHeight,size:file.size};
  $('imageInfo').textContent=importedName+' · '+originalWidth+'×'+originalHeight+' source · '+formatBytes(file.size)+' · converted to 40×40 ('+frames.length+' frame'+(frames.length===1?'':'s')+')';
- if(frames.length>1){if($('motion').value==='static')$('motion').value='gif';$('quality').value='pal8';}
+ $('motion').value=frames.length>1?'gif':'static';
+  $('quality').value=frames.length>1?'pal8':'pal16';
  refreshGifPalette();renderImage(sourceImage);redrawThreeCandidates();
  $('filePickerStatus').textContent='Loaded '+importedName+' — '+frames.length+' frame'+(frames.length===1?'':'s')+'. Editing and saving work without Bluetooth.';
  say('Imported '+importedName+' ('+formatBytes(file.size)+') → 40×40. Ready for Static, GIF or Native Scroll.');
