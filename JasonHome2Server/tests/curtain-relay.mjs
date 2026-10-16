@@ -34,3 +34,88 @@ test('remote Nano administration is allowlisted and never persists reboots as de
   assert.equal(Object.keys(b.status().desired).some(k=>k.startsWith('nano')),false);
  }finally{b.close();}
 });
+
+
+function preparedColor(r,g,b){
+ const frame=Buffer.alloc(6400);
+ for(let i=0;i<frame.length;i+=4){frame[i]=r;frame[i+1]=g;frame[i+2]=b;frame[i+3]=255;}
+ return {frames:[frame.toString('base64')],quality:'pal4',delays:[100],loop:false};
+}
+test('single-active-file: A -> B -> confirmed activation prunes A and every obsolete BLOB',()=>{
+ const {b,db}=create();try{
+  const a=b.upload(preparedColor(255,0,0)),cmdA=b.enqueue('asset',{sha256:a.sha256});
+  b.sync({acks:[{id:cmdA.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+  assert.equal(b.retained().active.sha256,a.sha256);assert.equal(b.retained().retainedFiles,1);
+  const other=b.upload(preparedColor(0,255,0));
+  assert.equal(b.retained().retainedFiles,2);
+  assert.equal(b.retained().active.sha256,a.sha256);
+  const cmdB=b.enqueue('asset',{sha256:other.sha256});
+  b.sync({acks:[{id:cmdB.id,state:'downloaded',result:{}}]});
+  assert.equal(b.retained().phase,'transferring');
+  b.sync({acks:[{id:cmdB.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:false}}]});
+  assert.equal(b.retained().phase,'transferred_unconfirmed');
+  assert.equal(b.retained().active.sha256,a.sha256,'BLE first-frame ACK cannot delete recoverable image');
+  assert.equal(b.retained().retainedFiles,2);
+  assert.throws(()=>b.upload(preparedColor(0,0,255)),/awaiting visual confirmation/);
+  const confirmed=b.confirmDisplayed(cmdB.id);
+  assert.equal(confirmed.active.sha256,other.sha256);assert.equal(confirmed.pending,null);
+  assert.equal(confirmed.retainedFiles,1);assert.equal(b.asset(a.sha256),undefined);
+  assert.equal(db.prepare('SELECT count(*) n FROM curtain_assets').get().n,1);
+ }finally{b.close();}
+});
+test('failed replacement preserves previous active asset and cleans abandoned staging',()=>{
+ const {b,time}=create();try{
+  const a=b.upload(preparedColor(255,0,0)),commandA=b.enqueue('asset',{sha256:a.sha256});
+  b.sync({acks:[{id:commandA.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+  const next=b.upload(preparedColor(0,0,255)),commandB=b.enqueue('asset',{sha256:next.sha256});
+  b.sync({acks:[{id:commandB.id,state:'failed',result:{error:'BLE disconnected'}}]});
+  assert.equal(b.retained().active.sha256,a.sha256);assert.equal(b.retained().retainedFiles,1);
+  assert.equal(b.asset(next.sha256),undefined);
+  const unused=b.upload(preparedColor(17,25,50));assert.ok(b.asset(unused.sha256));
+  time(1000000+16*60000);b.tick();
+  // Passive cleanup runs on the background timer. Explicit restart also reconciles.
+  b.close();
+ }catch(error){b.close();throw error;}
+});
+test('speed and brightness adjustments never delete the current image; confirmed Off frees it',()=>{
+ const {b}=create();try{
+  const a=b.upload(preparedColor(255,0,0)),cmd=b.enqueue('asset',{sha256:a.sha256});
+  b.sync({acks:[{id:cmd.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+  for(const [action,payload] of [['brightness',{value:50}],['speed',{value:20}]]){
+   const adjust=b.enqueue(action,payload);b.sync({acks:[{id:adjust.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+   assert.equal(b.retained().active.sha256,a.sha256);
+  }
+  const off=b.enqueue('power',{on:false});b.sync({acks:[{id:off.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:false}}]});
+  assert.equal(b.retained().retainedFiles,1,'Unverified display does not permit deletion');
+  const off2=b.enqueue('power',{on:false});b.sync({acks:[{id:off2.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+  assert.equal(b.retained().active,null);assert.equal(b.retained().retainedFiles,0);
+ }finally{b.close();}
+});
+test('20 replacements retain exactly one active asset once verified, no historical accumulation',()=>{
+ const {b}=create();try{
+  for(let i=1;i<=25;i++){
+   const asset=b.upload(preparedColor(i*7%255,i*11%255,i*17%255));
+   const command=b.enqueue('asset',{sha256:asset.sha256});
+   b.sync({acks:[{id:command.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+   assert.equal(b.retained().retainedFiles,1);
+   assert.equal(b.retained().active.sha256,asset.sha256);
+  }
+ }finally{b.close();}
+});
+test('restarting Oracle recovers exactly active and pending; staging expiry never drops active',()=>{
+ const db=new DatabaseSync(':memory:');let now=1000000;let a=createCurtainBridge({db,now:()=>now});
+ try{
+  const saved=a.upload(preparedColor(255,0,0)),cmd=a.enqueue('asset',{sha256:saved.sha256});
+  a.sync({acks:[{id:cmd.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:true}}]});
+  a.upload(preparedColor(0,255,0));a.close();
+  let restarted=createCurtainBridge({db,now:()=>now});
+  assert.equal(restarted.retained().retainedFiles,2);
+  assert.equal(restarted.retained().active.sha256,saved.sha256);
+  restarted.close();
+  now+=16*60000;restarted=createCurtainBridge({db,now:()=>now});
+  assert.equal(restarted.retained().active.sha256,saved.sha256);
+  assert.equal(restarted.retained().pending,null);
+  assert.equal(restarted.retained().retainedFiles,1);
+  restarted.close();
+ }finally{a.close();db.close();}
+});
