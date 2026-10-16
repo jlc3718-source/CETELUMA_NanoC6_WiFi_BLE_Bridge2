@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Wait for exact build, signing and deployment jobs
         env:
