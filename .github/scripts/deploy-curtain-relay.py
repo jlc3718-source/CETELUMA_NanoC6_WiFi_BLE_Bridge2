@@ -32,6 +32,10 @@ for name,i in [('backend',backend),('web',web)]:
  (BACK/(name+'-inspect.json')).write_text(json.dumps(i));(BACK/(name+'-inspect.json')).chmod(0o600)
 backupdb(dbhost(backend,be.get('JASON_HOME_DB','/data/jason-home.sqlite')),BACK/'backend.sqlite')
 webdb=dbhost(web,'/data/jason-home-2.sqlite');backupdb(webdb,BACK/'web.sqlite')
+with sqlite3.connect('file:'+str(webdb)+'?mode=ro',uri=True) as diagnostics:
+ values={k:json.loads(v) for k,v in diagnostics.execute("SELECT key,value FROM curtain_meta WHERE key IN ('bootstrapExpires','lastSeen','lastSync','connectionDiagnostic','lastAutomaticSetupRequest')")}
+ print('CONNECTION_DIAGNOSTIC',json.dumps(values),flush=True)
+
 cpout('jason-home-2-web','/app',BACK/'web-app')
 shutil.copyfile('/home/ubuntu/repo/JasonHomeServer/.env',BACK/'backend.env');(BACK/'backend.env').chmod(0o600)
 nginx=pathlib.Path('/etc/nginx/sites-available/jason-home');shutil.copyfile(nginx,BACK/'nginx.conf')

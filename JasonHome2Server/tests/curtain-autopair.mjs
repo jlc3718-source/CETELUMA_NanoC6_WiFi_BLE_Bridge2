@@ -33,7 +33,7 @@ test('an online Nano is not rotated by app startup',()=>{
   assert.deepEqual(b.autoPairing(),{ok:true,alreadyOnline:true});
  }finally{b.close();db.close();}
 });
-function phone({online=false,available=true,localWorks=true}={}){
+function phone({online=false,available=true,localWorks=true,loadControlsDuringSetup=false}={}){
  const calls=[],scheduled=[];let paired=false;
  const document={hidden:false,readyState:'loading',getElementById:()=>null,querySelector:()=>null,addEventListener(){}};
  const context={document,location:{pathname:'/jason-home-2/'},console,
@@ -41,6 +41,7 @@ function phone({online=false,available=true,localWorks=true}={}){
    calls.push({url,body:options.body&&JSON.parse(options.body)});
    let data;
    if(url.endsWith('/api/curtain/status'))data={ok:true,online:online||paired};
+   else if(url.endsWith('/api/curtain/autopair')&&options.body&&JSON.parse(options.body).diagnostic)data={ok:true};
    else if(url.endsWith('/api/curtain/autopair'))data={ok:true,token:'1'.repeat(64),bridgeId:'2'.repeat(16),endpoint:'https://150.136.245.51/jason-home-2'};
    else throw Error('Unexpected endpoint '+url);
    return {ok:true,json:async()=>data};
@@ -53,6 +54,7 @@ function phone({online=false,available=true,localWorks=true}={}){
   calls.push({action,payload:JSON.parse(payload)});
   assert.equal(action,'pairNano');
   if(localWorks)paired=true;
+  if(loadControlsDuringSetup)vm.runInNewContext(readFileSync(new URL('../curtain.js',import.meta.url),'utf8'),context);
   queueMicrotask(()=>context.__curtainNativeResult(id,localWorks?{ok:true}:{ok:false,error:'Not on home Wi-Fi'}));
  }};
  vm.runInNewContext(readFileSync(new URL('../curtain_remote.js',import.meta.url),'utf8'),context);
@@ -75,7 +77,7 @@ test('startup skips pairing when Oracle already has a live channel',async()=>{
  assert.equal(p.calls.some(c=>c.action==='pairNano'||c.url?.endsWith('/autopair')),false);
 });
 test('a browser without the trusted APK helper cannot start automatic LAN provisioning',async()=>{
- const p=phone({available:false});assert.equal(await p.context.JH2EnsureNanoPairing(),false);assert.equal(p.calls.length,0);
+ const p=phone({available:false});assert.equal(await p.context.JH2EnsureNanoPairing(),false);assert.equal(p.calls.some(c=>c.action==='pairNano'),false);assert.equal(p.calls.some(c=>c.body?.diagnostic?.code==='helper_missing'),true);
 });
 
 test('a missing historical image cannot reject automatic pairing or block remaining desired controls',()=>{
@@ -86,5 +88,20 @@ test('a missing historical image cannot reject automatic pairing or block remain
   assert.equal(restored.ok,true);assert.deepEqual(restored.commands.map(c=>c.action),['brightness','power']);
   assert.equal(b.status().desired.visual,undefined);assert.match(b.retained().lastError,/file is unavailable/);
   assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':grant.token}}),'current');
+ }finally{b.close();db.close();}
+});
+
+test('late Curtain UI initialization preserves the in-flight native setup callback',async()=>{
+ const p=phone({loadControlsDuringSetup:true});
+ assert.equal(await p.context.JH2EnsureNanoPairing(),true);
+ assert.equal(p.calls.some(c=>c.body?.diagnostic?.stage==='ready'),true);
+});
+test('connection diagnostics retain only bounded stage codes and never store credential-bearing errors',()=>{
+ const db=new DatabaseSync(':memory:'),b=createCurtainBridge({db});try{
+  b.autoPairing({diagnostic:{stage:'helper',code:'helper_missing',android:true,error:'secret '.repeat(300)}});
+  const report=JSON.parse(db.prepare("SELECT value FROM curtain_meta WHERE key='connectionDiagnostic'").get().value);
+  assert.deepEqual(Object.keys(report).sort(),['android','at','code','stage']);
+  assert.equal(report.code,'helper_missing');
+  assert.throws(()=>b.autoPairing({diagnostic:{stage:'random',code:'helper_missing'}}),/Invalid connection diagnostic/);
  }finally{b.close();db.close();}
 });

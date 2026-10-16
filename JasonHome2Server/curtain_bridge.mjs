@@ -124,8 +124,15 @@ export function createCurtainBridge({db,now=Date.now}){
  function subscribeWake(fn){subscribers.add(fn);return ()=>subscribers.delete(fn);}
  function revision(){return Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n);}
  function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));put('pendingTokenHash','');put('rotateCredential',false);put('bootstrapTokenHash','');put('bootstrapExpires',0);bootstrapGrant=null;return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
- function autoPairing(){
+ function autoPairing({diagnostic}={}){
+  if(diagnostic){
+   const stages=['helper','oracle','local','channel','ready'],codes=['ok','helper_missing','helper_error','oracle_error','local_error','local_timeout','channel_timeout'];
+   if(!stages.includes(diagnostic.stage)||!codes.includes(diagnostic.code))throw fail(400,'Invalid connection diagnostic');
+   put('connectionDiagnostic',{at:now(),stage:diagnostic.stage,code:diagnostic.code,android:diagnostic.android===true});
+   return {ok:true};
+  }
   if(status().online)return {ok:true,alreadyOnline:true};
+  put('lastAutomaticSetupRequest',now());
   const at=now();
   // A phone away from home must never invalidate the working Nano credential.
   // Keep the active key until the LAN-provisioned Nano authenticates outbound.

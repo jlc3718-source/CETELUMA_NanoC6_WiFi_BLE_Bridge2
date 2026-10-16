@@ -6,29 +6,36 @@
  window.JH2_ORACLE_CURTAIN=true;
  window.JH2CurtainApi=api;
  const localNano=(action,payload={})=>new Promise((resolve,reject)=>{
-  if(!window.AndroidCurtain?.localControllerAvailable?.())return reject(Error('Open Jason Home 2 on home Wi-Fi to connect the Nano automatically.'));
+  if(!window.AndroidCurtain?.localControllerAvailable?.())return reject(Error('This installed APK is missing the local Nano setup helper.'));
   const id='nano'+Date.now()+Math.random().toString(16).slice(2),old=window.__curtainNativeResult;
   let finished=false;
   const finish=(result,error)=>{if(finished)return;finished=true;clearTimeout(timer);if(window.__curtainNativeResult===callback)window.__curtainNativeResult=old;error?reject(error):resolve(result);};
-  const callback=(n,r)=>{if(n!==id)return old?.(n,r);r?.ok?finish(r):finish(null,Error(r?.error||'Local NanoC6 request failed'));};
-  const timer=setTimeout(()=>finish(null,Error('Nano is not reachable on home Wi-Fi')),12000);
+  const callback=(n,r)=>{if(n!==id)return old?.(n,r);try{if(typeof r==='string')r=JSON.parse(r);}catch{return finish(null,Error('Nano setup returned an invalid response'));}r?.ok?finish(r):finish(null,Error(r?.error||'Local NanoC6 request failed'));};
+  const timer=setTimeout(()=>finish(null,Object.assign(Error('The APK timed out waiting for the local Nano setup response.'),{code:'local_timeout'})),25000);
   window.__curtainNativeResult=callback;
   try{AndroidCurtain.call(id,action,JSON.stringify(payload));}catch(e){finish(null,e);}
  });
- let pairingWork=null,nextPairAttempt=0;
+ let pairingWork=null,nextPairAttempt=0,lastPairError='';
+ const connectionReport=(stage,code)=>api('/api/curtain/autopair',{diagnostic:{stage,code,android:/Android/i.test(window.navigator?.userAgent||'')}}).catch(()=>{});
  async function ensureNanoPairing(force=false){
   if(pairingWork)return pairingWork;
-  if(document.hidden||!window.AndroidCurtain?.localControllerAvailable?.()||(!force&&Date.now()<nextPairAttempt))return false;
+  if(document.hidden||(!force&&Date.now()<nextPairAttempt))return false;
   nextPairAttempt=Date.now()+30000;
   pairingWork=(async()=>{
+   let stage='oracle';
    try{
     const state=await api('/api/curtain/status');if(state.online)return true;
+    stage='helper';
+    if(!window.AndroidCurtain?.localControllerAvailable?.())throw Object.assign(Error('This installed APK is missing the local Nano setup helper.'),{code:'helper_missing'});
+    await connectionReport('helper','ok');stage='oracle';
     const grant=await api('/api/curtain/autopair',{});if(grant.alreadyOnline)return true;
     // The existing trusted APK probes mDNS/private LAN and writes /bridge/pair
     // on home Wi-Fi. It never sends this credential to the public Nano address.
-    await localNano('pairNano',grant);
-    for(let i=0;i<16;i++){await delay(500);const current=await api('/api/curtain/status');if(current.online)return true;}
-   }catch{}
+    stage='local';await connectionReport(stage,'ok');await localNano('pairNano',grant);
+    stage='channel';await connectionReport(stage,'ok');
+    for(let i=0;i<16;i++){await delay(500);const current=await api('/api/curtain/status');if(current.online){lastPairError='';await connectionReport('ready','ok');return true;}}
+    throw Object.assign(Error('The Nano accepted setup, but its secure connection to Oracle did not open.'),{code:'channel_timeout'});
+   }catch(error){lastPairError=error.message;await connectionReport(stage,error.code||stage+'_error');}
    return false;
   })();
   try{return await pairingWork;}finally{pairingWork=null;}
@@ -49,7 +56,7 @@
   if(['asset','effect','nativePlay','sequenceStart'].includes(action))window.JH2CurtainLastSelection={action,payload};
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
-  if(queued.bridgeOnline===false&&!await ensureNanoPairing(true))throw Error('Oracle received command '+queued.commandId+'. Open the APK on home Wi-Fi so the Nano can connect automatically.');
+  if(queued.bridgeOnline===false&&!await ensureNanoPairing(true))throw Error('Oracle received command '+queued.commandId+'. '+(lastPairError||'The Nano connection is unavailable.'));
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';
   for(let i=0;i<150;i++){
    await delay(i<20?150:400);const {command:c}=await api('/api/curtain/command?id='+queued.commandId);
