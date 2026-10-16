@@ -2,7 +2,7 @@
 (()=>{'use strict';
 const base=location.pathname.startsWith('/jason-home-2/')?'/jason-home-2':'';
 function init(){
- const settings=document.querySelector('.page[data-page="settings"]');
+ const settings=document.querySelector('.v3SettingsPane[data-settings-pane="schedules"]');
  if(!settings||document.getElementById('jh2NanoSyncPanel'))return;
  const panel=document.createElement('div');
  panel.className='panel';panel.id='jh2NanoSyncPanel';
