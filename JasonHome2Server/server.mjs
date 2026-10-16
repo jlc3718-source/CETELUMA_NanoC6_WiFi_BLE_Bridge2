@@ -1007,6 +1007,8 @@ async function route(req,res){
     const command=curtainRelay.enqueue(body.action,body.payload||{},body.idempotencyKey||null);return send(res,202,{ok:true,queued:true,commandId:command.id,state:command.state,physicalPlaybackConfirmed:false});
   }
   if(path==="/api/curtain/command"&&method==="GET")return send(res,200,{ok:true,command:curtainRelay.command(Number(url.searchParams.get("id")))});
+  if(path==="/api/curtain/retention"&&method==="GET")return send(res,200,{ok:true,...curtainRelay.retained()});
+  if(path==="/api/curtain/confirm-display"&&method==="POST"){const body=await input(req);if(body.observed!==true)throw fail(400,"Only confirm after seeing the picture on the curtain");return send(res,200,curtainRelay.confirmDisplayed(Number(body.commandId)));}
   if(path==="/api/curtain/notifications"&&method==="GET")return send(res,200,{ok:true,notifications:curtainRelay.notifications().filter(n=>n.id>Number(url.searchParams.get("since")||0))});
   if(path==="/api/curtain/assets"&&method==="POST")return send(res,200,curtainRelay.upload(await input(req)));
   if(path==="/api/curtain/resume"&&method==="POST")return send(res,200,curtainRelay.resume());
