@@ -142,7 +142,7 @@ export function createCurtainBridge({db,now=Date.now}){
   const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
-   const old=db.prepare("SELECT id,action FROM curtain_commands WHERE state='queued'").all();for(const c of old)if((['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(c.action)?'visual':c.action)===key)db.prepare("UPDATE curtain_commands SET state='superseded' WHERE id=?").run(c.id);
+   const old=db.prepare("SELECT id,action FROM curtain_commands WHERE state IN ('queued','downloaded')").all();for(const c of old)if((['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(c.action)?'visual':c.action)===key)db.prepare("UPDATE curtain_commands SET state='superseded' WHERE id=?").run(c.id);
   }
   if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
