@@ -70,14 +70,14 @@ bool installFirmware(JsonVariantConst d,String&error){
   Preferences n;n.begin("jh2-release",false);n.putString("version",m.version);n.putString("commit",m.commit);n.remove("pending");n.end();return true;
 }
 void registerFirmware(){
-  web.on("/api/firmware",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|false;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();reply(200,d.as<JsonVariantConst>());});
+  web.on("/api/firmware",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|true;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/check",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;FirmwareManifest m;if(!fetchManifest(available)||!parseManifest(available.as<JsonVariantConst>(),m,error))return replyError(502,error.length()?error:lastError);JsonDocument d;d["ok"]=true;d["version"]=m.version;d["newer"]=isNewer(m.version,VERSION);d["signed"]=true;reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/install",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;if(available.isNull()&&!fetchManifest(available))return replyError(502,lastError);if(!queueFirmware(available.as<JsonVariantConst>(),error))return replyError(400,error);web.send(202,"application/json","{\"ok\":true,\"rebootingToUpdater\":true}");delay(400);ESP.restart();});
 }
 void firmwareLoop(){
 #ifndef JH2_BOOT
   if(!(state["autoUpdate"]|false)||busy||WiFi.status()!=WL_CONNECTED||!timeValid()||(int32_t)(millis()-nextCheck)<0)return;
-  nextCheck=millis()+300000;busy=true;JsonDocument d;FirmwareManifest m;String error;
+  nextCheck=millis()+60000;busy=true;JsonDocument d;FirmwareManifest m;String error;
   if(fetchManifest(d)&&parseManifest(d.as<JsonVariantConst>(),m,error)&&isNewer(m.version,VERSION)&&queueFirmware(d.as<JsonVariantConst>(),error)){delay(100);ESP.restart();}
   busy=false;
 #endif
