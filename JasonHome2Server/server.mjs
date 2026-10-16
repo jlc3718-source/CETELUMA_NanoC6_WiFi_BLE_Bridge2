@@ -939,9 +939,25 @@ async function route(req,res){
     const credential=curtainRelay.authenticate(req);
     if(!credential)throw fail(401,"Bridge authentication failed");
     if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req),credential));
+    if(path==="/api/curtain-bridge/events"&&method==="GET"){
+      // NanoC6 opens outbound TLS once; Oracle pushes a wake frame on enqueue.
+      // A 5s HTTPS sync remains a fallback if any proxy drops event streams.
+      res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
+        "cache-control":"no-cache, no-transform","connection":"keep-alive",
+        "x-accel-buffering":"no","x-content-type-options":"nosniff"});
+      res.flushHeaders?.();
+      let closed=false;
+      const push=()=>{if(!closed&&!res.destroyed)res.write("data: "+curtainRelay.revision()+"\\n\\n");};
+      const unsubscribe=curtainRelay.subscribeWake(push);
+      const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\\n\\n");},10000);
+      heartbeat.unref?.();
+      const cleanup=()=>{if(closed)return;closed=true;clearInterval(heartbeat);unsubscribe();};
+      req.once("close",cleanup);res.once("close",cleanup);
+      push();return;
+    }
     if(path==="/api/curtain-bridge/wait"&&method==="GET"){
       const abort=new AbortController();res.on("close",()=>abort.abort());
-      await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true,changed:(curtainRelay.status().lastCommand?.id||0)>Number(url.searchParams.get("after")||0)});
+      await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true,changed:curtainRelay.revision()>Number(url.searchParams.get("after")||0)});
     }
     if(path.startsWith("/api/curtain-bridge/assets/")&&method==="GET"){
       const sha=path.split("/").pop();if(!/^[a-f0-9]{64}$/.test(sha))throw fail(400,"Invalid asset digest");
