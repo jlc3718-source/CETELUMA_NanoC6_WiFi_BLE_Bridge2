@@ -25,9 +25,68 @@ export function createCurtainBridge({db,now=Date.now}){
  db.exec(`CREATE TABLE IF NOT EXISTS curtain_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS curtain_commands(id INTEGER PRIMARY KEY AUTOINCREMENT,action TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'queued',created INTEGER NOT NULL,expires INTEGER NOT NULL,result TEXT,idempotency TEXT UNIQUE,source TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS curtain_assets(sha TEXT PRIMARY KEY,bytes BLOB NOT NULL,metadata TEXT NOT NULL,created INTEGER NOT NULL);
- CREATE TABLE IF NOT EXISTS curtain_schedules(id TEXT PRIMARY KEY,value TEXT NOT NULL);`);
+ CREATE TABLE IF NOT EXISTS curtain_schedules(id TEXT PRIMARY KEY,value TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS curtain_asset_slots(target TEXT PRIMARY KEY,active_sha TEXT,pending_sha TEXT,pending_command INTEGER,pending_at INTEGER,active_at INTEGER,generation INTEGER NOT NULL DEFAULT 0,phase TEXT NOT NULL DEFAULT 'idle',physical_confirmed INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '');`);
  const get=(k,d=null)=>{const r=db.prepare('SELECT value FROM curtain_meta WHERE key=?').get(k);return r?JSON.parse(r.value):d;};
  const put=(k,v)=>db.prepare('INSERT INTO curtain_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k,JSON.stringify(v));
+
+ const TARGET='curtain0',STAGED_TTL=15*60*1000;
+ // Atomic references; database stores the original prepared packet stream.
+ const slot=()=>db.prepare('SELECT * FROM curtain_asset_slots WHERE target=?').get(TARGET);
+ const hasAsset=sha=>!!(sha&&db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(sha));
+ const transaction=fn=>{db.exec('BEGIN IMMEDIATE');try{const result=fn();db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}};
+
+ function assetManifest(sha){const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);return r?{sha256:sha,bytes:r.size,...JSON.parse(r.metadata)}:null;}
+ function garbageCollect(){
+  db.prepare('DELETE FROM curtain_assets WHERE sha NOT IN (SELECT active_sha FROM curtain_asset_slots WHERE active_sha IS NOT NULL UNION SELECT pending_sha FROM curtain_asset_slots WHERE pending_sha IS NOT NULL)').run();
+ }
+ function retained(){
+  const r=slot(),item=sha=>sha?assetManifest(sha):null;
+  const row=db.prepare('SELECT count(*) n,coalesce(sum(length(bytes)),0) total FROM curtain_assets').get();
+  return {target:TARGET,generation:r.generation,active:item(r.active_sha),pending:item(r.pending_sha),
+   pendingCommandId:r.pending_command,phase:r.phase,physicalPlaybackConfirmed:!!r.physical_confirmed,
+   lastError:r.last_error,retainedFiles:row.n,retainedBytes:row.total,maxFilesPerTarget:2,
+   maxFileBytes:4194304,pendingTimeoutSeconds:STAGED_TTL/1000};
+ }
+ function transition(sha,commandId,phase,confirmed=false){
+  if(confirmed){
+   db.prepare("UPDATE curtain_asset_slots SET active_sha=?,pending_sha=NULL,pending_command=NULL,pending_at=NULL,active_at=?,generation=generation+1,phase=?,physical_confirmed=1,last_error='' WHERE target=?")
+     .run(sha,now(),phase,TARGET);
+  }else{
+   db.prepare("UPDATE curtain_asset_slots SET phase=?,pending_command=?,last_error='' WHERE target=?").run(phase,commandId,TARGET);
+  }
+  garbageCollect();
+ }
+ function expireStaging(){
+  const r=slot();if(!r?.pending_sha||!r.pending_at||now()-r.pending_at<STAGED_TTL)return;
+  const c=r.pending_command&&db.prepare('SELECT state FROM curtain_commands WHERE id=?').get(r.pending_command);
+  // An in-flight stream or a delivered image must retain its data.
+  if(c&&['queued','downloaded','applied'].includes(c.state))return;
+  transaction(()=>{db.prepare("UPDATE curtain_asset_slots SET pending_sha=NULL,pending_command=NULL,pending_at=NULL,phase='expired',last_error='Unused replacement staging expired' WHERE target=?").run(TARGET);garbageCollect();});
+ }
+ function confirmDisplayed(id){
+  if(!int(id,1,Number.MAX_SAFE_INTEGER))throw fail(400,'Valid curtain command ID required');
+  const c=command(id),r=slot();
+  if(c.state!=='applied'||c.result?.bleTransmitted!==true)
+   throw fail(409,'Curtain command was not transmitted');
+  if(c.action!=='asset'||r.pending_command!==id||r.pending_sha!==c.payload.sha256)
+   throw fail(409,'Only the current staged image can be confirmed');
+  transaction(()=>{
+   transition(c.payload.sha256,id,'confirmed_displayed',true);
+   const result={...(c.result||{}),physicalPlaybackConfirmed:true,confirmedBy:'user-observed-curtain',confirmedAt:now()};
+   db.prepare('UPDATE curtain_commands SET result=? WHERE id=?').run(JSON.stringify(result),id);
+  });
+  signal();return {ok:true,...retained()};
+ }
+ if(!slot()){
+  // Preserve one recoverable legacy content reference; don't assert physical
+  // confirmation based merely on existing desired-state metadata.
+  const desired=get('desired',{}),sha=desired.visual?.action==='asset'?desired.visual?.payload?.sha256:null;
+  const active=hasAsset(sha)?sha:null;
+  db.prepare('INSERT INTO curtain_asset_slots(target,active_sha,active_at,phase,physical_confirmed) VALUES(?,?,?,?,0)')
+    .run(TARGET,active,active?now():null,active?'legacy_unconfirmed':'idle');
+ }
+ expireStaging();transaction(garbageCollect);
  let wake=new Set(),subscribers=new Set();
  // Active outbound Nano connections receive a push immediately on enqueue.
  function signal(){for(const f of wake)f();wake.clear();for(const f of subscribers)f();}
