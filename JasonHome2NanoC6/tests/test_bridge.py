@@ -106,4 +106,24 @@ class RelayArchitecture(unittest.TestCase):
   self.assertNotIn('Oracle pairing</h3>',bridge)
   self.assertNotIn("el('savePair').onclick",bridge)
   self.assertIn('http://craumer.tplinkdns.com',android)
+ def test_remote_pin_only_unlocks_signed_firmware_operations(self):
+  fw=(R/'src/FirmwareUpdate.cpp').read_text()
+  ui=(R/'include/BridgePage.h').read_text()
+  for text in ['FW_REMOTE_PIN[]="7788"','fwRemoteAuthorized()','/api/firmware/unlock',
+               '/api/firmware/access','/api/firmware/check','/api/firmware/install',
+               'fwFailedAttempts>=5','fwRemoteExpires=millis()+900000',
+               'web.client().remoteIP()!=fwRemoteAddress','SameSite=Strict',
+               '/api/firmware/auto']:
+    self.assertIn(text,fw)
+  self.assertIn('id="firmwarePin"',ui)
+  self.assertIn('id="firmwareUnlock"',ui)
+  self.assertIn("req('/api/firmware/unlock',{pin})",ui)
+  self.assertIn('watchInstall(target)',ui)
+  self.assertNotIn('Oracle pairing</h3>',ui)
+  self.assertNotIn("el('savePair').onclick",ui)
+  runtime=(R/'src/runtime.cpp').read_text()
+  self.assertIn('bool isAdmin=authorized()',runtime)
+  self.assertNotIn('fwRemoteAuthorized()',runtime)
+  updater=(R/'src/LocalFirmware.inc').read_text()
+  self.assertIn('static bool firmwareAccess(){return authorized();}',updater)
 if __name__=='__main__':unittest.main()
