@@ -1,21 +1,21 @@
-name: Jason Home 2 Full Recovery 1.1.2
+name: Jason Home 2 Full Recovery 1.1.3
 
 on:
   push:
-    branches: [codex/jh2-full-recovery-1.1.2]
+    branches: [codex/jh2-full-recovery-1.1.3]
     paths:
       - 'JasonHome2NanoC6/**'
       - 'JasonHome2Server/**'
       - 'JasonHome2Android/**'
       - '.github/scripts/deploy-curtain-relay.py'
-      - '.github/workflows/build-jh2-full-recovery-1.1.2.yml'
+      - '.github/workflows/build-jh2-full-recovery-1.1.3.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: jh2-full-recovery-1.1.2
+  group: jh2-full-recovery-1.1.3
   cancel-in-progress: false
 
 jobs:
@@ -72,17 +72,17 @@ jobs:
           python JasonHome2NanoC6/tests/setup-save-regression.py --arduino-json JasonHome2NanoC6/.pio/libdeps/runtime/ArduinoJson/src
           python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
           python JasonHome2NanoC6/tools/package.py
-          test -s JasonHome2NanoC6/release/jh2-runtime-1.1.2.bin
-          test "$(stat -c %s JasonHome2NanoC6/release/jh2-full-install-1.1.2.bin)" = 4194304
+          test -s JasonHome2NanoC6/release/jh2-runtime-1.1.3.bin
+          test "$(stat -c %s JasonHome2NanoC6/release/jh2-full-install-1.1.3.bin)" = 4194304
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-NanoC6-1.1.2
+          name: Jason-Home-2-NanoC6-1.1.3
           path: JasonHome2NanoC6/release/
           retention-days: 2
           if-no-files-found: error
 
   apk:
-    name: Build APK 2.0.12
+    name: Build APK 2.0.13
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -104,9 +104,9 @@ jobs:
           "$BT/d8" --min-api 26 --lib "$JAR" --output "$OUT/dex" "$OUT/classes/com/jasonhome2/app/"*.class
           cp "$OUT/unsigned.apk" "$OUT/with-dex.apk"
           (cd "$OUT/dex" && zip -q -u "$OUT/with-dex.apk" classes.dex)
-          "$BT/zipalign" -f 4 "$OUT/with-dex.apk" Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk
-          "$BT/aapt2" dump badging Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk > "$OUT/badging.txt"
-          grep "package: name='com.jasonhome2.app' versionCode='13' versionName='2.0.12'" "$OUT/badging.txt"
+          "$BT/zipalign" -f 4 "$OUT/with-dex.apk" Jason-Home-2-2.0.13-ORACLE-RELAY-UNSIGNED.apk
+          "$BT/aapt2" dump badging Jason-Home-2-2.0.13-ORACLE-RELAY-UNSIGNED.apk > "$OUT/badging.txt"
+          grep "package: name='com.jasonhome2.app' versionCode='14' versionName='2.0.13'" "$OUT/badging.txt"
           ! grep -q 'permission.BLUETOOTH' "$OUT/badging.txt"
           ! grep -q 'android.bluetooth' JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java
           grep -q 'http://jason-home-2.local' JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java
@@ -115,9 +115,9 @@ jobs:
           tar -czf android-tools.tar.gz -C "$BT" lib/apksigner.jar
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-Relay-Unsigned-2.0.12
+          name: Jason-Home-2-Relay-Unsigned-2.0.13
           path: |
-            Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk
+            Jason-Home-2-2.0.13-ORACLE-RELAY-UNSIGNED.apk
             android-tools.tar.gz
           retention-days: 2
           if-no-files-found: error
@@ -131,7 +131,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: actions/download-artifact@v4
-        with: {name: Jason-Home-2-Relay-Unsigned-2.0.12, path: relay-sign}
+        with: {name: Jason-Home-2-Relay-Unsigned-2.0.13, path: relay-sign}
       - name: Sign and verify certificate continuity
         shell: bash
         run: |
@@ -144,14 +144,14 @@ jobs:
             --ks-key-alias jason-home \
             --ks-pass env:JH2_SIGN_PASS \
             --key-pass env:JH2_SIGN_PASS \
-            --out Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk \
-            Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk
-          java -jar lib/apksigner.jar verify --verbose --print-certs Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk | tee verify.txt
+            --out Jason-Home-2-2.0.13-ORACLE-RELAY-SIGNED.apk \
+            Jason-Home-2-2.0.13-ORACLE-RELAY-UNSIGNED.apk
+          java -jar lib/apksigner.jar verify --verbose --print-certs Jason-Home-2-2.0.13-ORACLE-RELAY-SIGNED.apk | tee verify.txt
           grep -qi '76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' verify.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-Relay-Signed-2.0.12
-          path: relay-sign/Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk
+          name: Jason-Home-2-Relay-Signed-2.0.13
+          path: relay-sign/Jason-Home-2-2.0.13-ORACLE-RELAY-SIGNED.apk
           retention-days: 2
           if-no-files-found: error
 
@@ -284,9 +284,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: Jason-Home-2-NanoC6-1.1.2, path: relay-release}
+        with: {name: Jason-Home-2-NanoC6-1.1.3, path: relay-release}
       - uses: actions/download-artifact@v4
-        with: {name: Jason-Home-2-Relay-Signed-2.0.12, path: relay-release}
+        with: {name: Jason-Home-2-Relay-Signed-2.0.13, path: relay-release}
       - uses: actions/download-artifact@v4
         with: {name: Jason-Home-2-Oracle-Deployment-Verification, path: relay-release}
       - uses: actions/download-artifact@v4
@@ -309,20 +309,20 @@ jobs:
           from pathlib import Path
           import hashlib,json,os
           root=Path('relay-release');manifest=json.loads((root/'release.json').read_text())
-          assert manifest['version']=='1.1.2' and manifest['commit']==os.environ['GITHUB_SHA']
+          assert manifest['version']=='1.1.3' and manifest['commit']==os.environ['GITHUB_SHA']
           deployment=json.loads((root/'deployment-verification.json').read_text())
           reboot=json.loads((root/'post-reboot-verification.json').read_text())
           assert deployment['build']==os.environ['GITHUB_SHA'] and deployment['bridgeAuthRecovered'] and deployment['liveCommandAckVerified']
           assert reboot['build']==os.environ['GITHUB_SHA'] and reboot['fullHostRebootVerified'] and reboot['bridgeOnlineAfterReboot']
-          apk=root/'Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk'
-          manifest['apk']={'name':apk.name,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'package':'com.jasonhome2.app','version':'2.0.12','certificateSha256':'76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1'}
+          apk=root/'Jason-Home-2-2.0.13-ORACLE-RELAY-SIGNED.apk'
+          manifest['apk']={'name':apk.name,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'package':'com.jasonhome2.app','version':'2.0.13','certificateSha256':'76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1'}
           manifest['deployment']={**deployment,**reboot,'requiresBridgePairing':False}
           (root/'integration-release.json').write_text(json.dumps(manifest,indent=2)+'\n')
           files=sorted(p for p in root.iterdir() if p.is_file() and p.name!='SHA256SUMS')
           (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
           PY
-          git push origin "$GITHUB_SHA:refs/heads/jh2-curtain-release-1.1.2"
-          TAG=jason-home-2-nanoc6-v1.1.2
+          git push origin "$GITHUB_SHA:refs/heads/jh2-curtain-release-1.1.3"
+          TAG=jason-home-2-nanoc6-v1.1.3
           gh release create "$TAG" \
             relay-release/*.bin \
             relay-release/*.apk \
@@ -334,20 +334,20 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --latest=false \
-            --title 'Jason Home 2 · Full Recovery 1.1.2 / APK 2.0.12' \
+            --title 'Jason Home 2 · Full Recovery 1.1.3 / APK 2.0.13' \
             --notes-file JasonHome2NanoC6/TESTING.md
           mkdir public-check
           gh release download "$TAG" \
-            --pattern 'jh2-runtime-1.1.2.bin' \
-            --pattern 'jh2-full-install-1.1.2.bin' \
-            --pattern 'Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk' \
+            --pattern 'jh2-runtime-1.1.3.bin' \
+            --pattern 'jh2-full-install-1.1.3.bin' \
+            --pattern 'Jason-Home-2-2.0.13-ORACLE-RELAY-SIGNED.apk' \
             --pattern 'integration-release.json' \
             --dir public-check
           python - <<'PY'
           import hashlib,json
           from pathlib import Path
           expected=json.loads(Path('relay-release/integration-release.json').read_text())
-          for name in ['jh2-runtime-1.1.2.bin','jh2-full-install-1.1.2.bin']:
+          for name in ['jh2-runtime-1.1.3.bin','jh2-full-install-1.1.3.bin']:
               data=Path('public-check',name).read_bytes();entry=expected['files'][name]
               assert len(data)==entry['bytes'] and hashlib.sha256(data).hexdigest()==entry['sha256']
           apk=Path('public-check',expected['apk']['name']).read_bytes()
@@ -362,7 +362,7 @@ jobs:
           cp relay-release/latest.json "$RUNNER_TEMP/jh2-ota/latest.json"
           git -C "$RUNNER_TEMP/jh2-ota" add latest.json
           if ! git -C "$RUNNER_TEMP/jh2-ota" diff --cached --quiet; then
-            git -C "$RUNNER_TEMP/jh2-ota" commit -m 'Publish signed Jason Home 2 recovery 1.1.2'
+            git -C "$RUNNER_TEMP/jh2-ota" commit -m 'Publish signed Jason Home 2 recovery 1.1.3'
             git -C "$RUNNER_TEMP/jh2-ota" push origin HEAD:jh2-nanoc6-ota
           fi
           for attempt in $(seq 1 30); do
