@@ -29,12 +29,23 @@ test('v25 converter is complete and JavaScript parses',()=>{
   for(const term of ['sourcePreview','imageInfo','framing','cleanup','zoom','sendLive','Build','83928','gif'])
     assert.ok(converter.includes(term),term);
 });
-test('Curtain Studio uses the condensed three-step mobile flow',()=>{
-  for(const term of ['Choose your picture','Make it look its best','Prepare and send','class="steps"','class="controlGroup"','id="aiResults"'])
-    assert.ok(converter.includes(term),term);
-  assert.match(converter,/id="photoControls"[^>]*><summary>Adjust crop and position/);
-  assert.match(converter,/id="aiResults"/);
-  assert.match(converter,/\$\('aiResults'\)\.open=true/);
+test('Studio shows one step with crop and upload while hiding legacy tuning and BLE tools',()=>{
+ assert.match(converter,/id="chooseStep"/);
+ assert.match(converter,/id="photoControls"[^>]*><summary>Adjust crop and position/);
+ assert.match(converter,/id="sendLive"/);
+ assert.match(converter,/\[hidden\]\{display:none!important\}/);
+ assert.match(converter,/choose\.append\(crop,actions,progress,status\)/);
+ assert.match(converter,/improve\.hidden=true;send\.hidden=true/);
+ assert.match(converter,/demos\.hidden=true/);
+ assert.match(converter,/window\.parent\.JH2CurtainApi\('\/api\/curtain\/assets'/);
+});
+test('APK Curtain controls exclude the unneeded Nano panel and E-87 but retain power and sequences',()=>{
+ assert.doesNotMatch(curtain,/<strong>NanoC6 controller<\/strong>/);
+ assert.doesNotMatch(curtain,/jh2CurtainScan/);
+ assert.doesNotMatch(curtain,/data-jh2-layout/);
+ assert.match(curtain,/const catalog=Array\.from\(\{length:87\}/);
+ assert.match(curtain,/jh2CurtainStatus/);
+ assert.match(curtain,/jh2CurtainSequenceStart/);
 });
 test('host serves isolated studio asset with same-origin framing',()=>{
   assert.match(generator,/curtain_converter\.html/);
