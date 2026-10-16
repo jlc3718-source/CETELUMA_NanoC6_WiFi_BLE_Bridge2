@@ -38,7 +38,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function authorized(req){return authenticate(req)!==null;}
  function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
  function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
- function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:4096,desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
+ function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:10,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:4096,desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
@@ -97,7 +97,8 @@ export function createCurtainBridge({db,now=Date.now}){
   }
   db.prepare("UPDATE curtain_commands SET state='expired' WHERE state IN ('queued','downloaded') AND expires<?").run(at);
   let rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 8").all();
-  if(Number(body.localOverrideUntil)>at)rows=[];
+  // A local direct-BLE test blocks scheduled commands, but never traps an explicit remote manual command for 15 minutes.
+  if(Number(body.localOverrideUntil)>at)rows=rows.filter(row=>row.source==='manual');
   const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
   const assets=[...assetIds].map(sha=>assetManifest(sha)).filter(Boolean);
   let credentialUpdate=null;
