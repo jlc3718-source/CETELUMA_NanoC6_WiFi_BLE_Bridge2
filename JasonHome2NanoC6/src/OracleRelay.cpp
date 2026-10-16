@@ -180,6 +180,15 @@ struct RelayStream {
    uint8_t index=0;
    if(xQueueReceive(self->freeQueue,&index,pdMS_TO_TICKS(100))!=pdTRUE)continue;
    if(self->closing)break;
+   // If TLS/BLE needs the heap, release an unused spare window. Never free
+   // the window being read or transmitted. The 4 KiB minimum is preserved.
+   if(self->windowCount==2&&ESP.getFreeHeap()<36*1024){
+    uint8_t spare=0;
+    if(xQueueReceive(self->freeQueue,&spare,0)==pdTRUE&&spare!=index){
+     ::free(self->windows[spare]);self->windows[spare]=nullptr;
+     self->windowCount=1;
+    }
+   }
    size_t n=0;const uint32_t at=self->produced;
    bool ok=(self->streamMode&&self->fromStream(self->windows[index],at,n));
    if(!ok){
@@ -202,7 +211,10 @@ struct RelayStream {
   readyQueue=xQueueCreate(windowCount,sizeof(uint8_t));
   if(!freeQueue||!readyQueue)return false;
   for(uint8_t i=0;i<windowCount;i++)xQueueSend(freeQueue,&i,0);
-  return xTaskCreate(producer,"jh2-asset-prefetch",4096,this,1,&prefetchTask)==pdPASS;
+  if(xTaskCreate(producer,"jh2-asset-prefetch",4096,this,1,&prefetchTask)==pdPASS)return true;
+  vQueueDelete(freeQueue);vQueueDelete(readyQueue);
+  freeQueue=readyQueue=nullptr;
+  return false;
  }
  bool read(uint8_t*out,size_t n){
   if(!out||!windows[0]||capacity<4096){
