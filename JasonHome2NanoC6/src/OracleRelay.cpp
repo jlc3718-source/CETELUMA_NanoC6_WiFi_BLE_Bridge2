@@ -94,7 +94,7 @@ static void poller(void*){
   if(response["credential"].is<JsonObjectConst>()){
    String credentialError;if(!relayConfigure(response["credential"].as<JsonVariantConst>(),credentialError)){issue("Credential rotation failed: "+credentialError);online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
   }
-  xSemaphoreTake(lock,portMAX_DELAY);for(size_t i=0;i<ackCount&&!acknowledgments.empty();i++)acknowledgments.pop_front();xSemaphoreGive(lock);if(restartAfterAck&&ackCount){restartAfterAck=0;vTaskDelay(pdMS_TO_TICKS(400));ESP.restart();}online=true;backoff=1000;lastSync=millis();nextSync=millis()+10000;revision=response["revision"]|0U;
+  xSemaphoreTake(lock,portMAX_DELAY);for(size_t i=0;i<ackCount&&!acknowledgments.empty();i++)acknowledgments.pop_front();xSemaphoreGive(lock);if(restartAfterAck&&ackCount){restartAfterAck=0;vTaskDelay(pdMS_TO_TICKS(400));ESP.restart();}online=true;backoff=1000;lastSync=millis();nextSync=millis()+5000;revision=response["revision"]|0U;
   // Node replies with Unix time; NTP remains the primary clock. Never step an already-valid clock.
   for(auto n:body["notifications"].as<JsonArrayConst>())lastNotice=std::max(lastNotice,n["id"].as<uint32_t>());
   for(auto cmd:response["commands"].as<JsonArrayConst>()){
@@ -149,7 +149,7 @@ static void poller(void*){
   }
   if(syncNow){vTaskDelay(pdMS_TO_TICKS(30));continue;}
   while((int32_t)(millis()-nextSync)<0&&!syncNow){
-   JsonDocument waited;if(!request("/api/curtain-bridge/wait?after="+String(revision)+(streaming?"&seconds=2":"&seconds=10"),waited)){online=false;vTaskDelay(pdMS_TO_TICKS(500));break;}
+   JsonDocument waited;if(!request("/api/curtain-bridge/wait?after="+String(revision)+(streaming?"&seconds=1":"&seconds=5"),waited)){online=false;vTaskDelay(pdMS_TO_TICKS(500));break;}
    // Check for commands after each long-poll response; full snapshots occur every 5 seconds.
    if(waited["changed"]|false)break;
   }
@@ -166,4 +166,4 @@ bool relayConfigure(JsonVariantConst in,String&error){
 void relaySyncNow(){syncNow=true;}
 void relayPrepareForUpdate(){generation++;streaming=false;syncNow=true;}
 void relayLocalOverride(bool resume){localUntil=resume?0:millis()+15*60000;generation++;streaming=false;syncNow=true;}
-void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=10;out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=4096;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
+void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=4096;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
