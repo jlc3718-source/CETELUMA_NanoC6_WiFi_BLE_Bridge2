@@ -19,6 +19,7 @@ void loop(){
     if(WiFi.status()!=WL_CONNECTED||!timeValid()){
       if(millis()-bootStarted<90000){delay(5);return;}
       attempted=true;Serial.println("OTA timed out waiting for network/time. Returning to previous runtime.");
+      recordFirmwareState("failed","Updater waited 90 seconds for network or time synchronization");
       Preferences clear;clear.begin("jh2-release",false);clear.remove("pending");clear.end();
       if(selectRuntime()){delay(100);ESP.restart();}
       else {clear.begin("jh2-release",false);clear.putBool("local",true);clear.end();ESP.restart();}
@@ -29,7 +30,7 @@ void loop(){
       JsonDocument pending;String error;
       if(deserializeJson(pending,encoded)){error="Invalid pending update";}
       else if(installFirmware(pending.as<JsonVariantConst>(),error)){Serial.println("Verified runtime installed.");delay(200);ESP.restart();}
-      Serial.println("Update stopped: "+error);
+      Serial.println("Update stopped: "+error);recordFirmwareState("failed",error);
       Preferences clear;clear.begin("jh2-release",false);clear.remove("pending");clear.end();
       if(selectRuntime()){delay(100);ESP.restart();}
       else {clear.begin("jh2-release",false);clear.putBool("local",true);clear.end();ESP.restart();}
