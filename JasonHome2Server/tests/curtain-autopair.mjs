@@ -77,3 +77,14 @@ test('startup skips pairing when Oracle already has a live channel',async()=>{
 test('a browser without the trusted APK helper cannot start automatic LAN provisioning',async()=>{
  const p=phone({available:false});assert.equal(await p.context.JH2EnsureNanoPairing(),false);assert.equal(p.calls.length,0);
 });
+
+test('a missing historical image cannot reject automatic pairing or block remaining desired controls',()=>{
+ const db=new DatabaseSync(':memory:'),b=createCurtainBridge({db});try{
+  b.pairing();const grant=b.autoPairing();
+  db.prepare('INSERT INTO curtain_meta(key,value) VALUES(?,?)').run('desired',JSON.stringify({visual:{action:'asset',payload:{sha256:'f'.repeat(64)}},brightness:{action:'brightness',payload:{value:66}},power:{action:'power',payload:{on:false}}}));
+  const restored=b.sync({bootId:'new-nano',status:{firmware:'1.1.13',curtain:{connected:true}}},'bootstrap');
+  assert.equal(restored.ok,true);assert.deepEqual(restored.commands.map(c=>c.action),['brightness','power']);
+  assert.equal(b.status().desired.visual,undefined);assert.match(b.retained().lastError,/file is unavailable/);
+  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':grant.token}}),'current');
+ }finally{b.close();db.close();}
+});

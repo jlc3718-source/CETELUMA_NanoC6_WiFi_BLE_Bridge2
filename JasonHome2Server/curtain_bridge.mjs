@@ -202,7 +202,15 @@ export function createCurtainBridge({db,now=Date.now}){
   put('localOverride',Number(body.localOverrideUntil||0));
   if(reboot){put('bootId',body.bootId);put('notifications',[]);}
   if((reboot||endedOverride||bleReconnected||body.recoverDesired===true)&&get('localOverride',0)<=at){
-   const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
+   const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];
+    if(d.action==='asset'&&!hasAsset(d.payload?.sha256)){
+     // Old retention metadata must never reject the bridge handshake. Recover
+     // the remaining controls even when a prior image has already been removed.
+     delete desired[key];put('desired',desired);
+     db.prepare('UPDATE curtain_asset_slots SET last_error=? WHERE target=?').run('Prior curtain file is unavailable; send the picture again',TARGET);
+     continue;
+    }
+    const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
   }
 
   if(body.status&&typeof body.status==='object'){
