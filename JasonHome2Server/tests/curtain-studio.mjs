@@ -59,11 +59,13 @@ test('host serves isolated studio asset with same-origin framing',()=>{
   const deployed=join(home,'web/curtain_converter.html');
   if(existsSync(join(home,'web')))assert.ok(existsSync(deployed),'generated converter absent');
 });
-test('Android bridges native BLE notifications, MTU and photo chooser',()=>{
-  for(const term of ['"rawWrite"','"subscribeRaw"','requestMtu(517)','onCharacteristicChanged','forwardRawNotify','RAW_UPLOAD'])
-    assert.ok(bridge.includes(term),term);
-  for(const term of ['onShowFileChooser','REQUEST_CURTAIN_IMAGE','onActivityResult'])
-    assert.ok(activity.includes(term),term);
+test('Android uses the existing signed Oracle WebView rather than operating curtain BLE',()=>{
+ assert.match(bridge,/This class never opens Android Bluetooth/);
+ assert.match(bridge,/NANO_EXTERNAL="http:\/\/craumer\.tplinkdns\.com"/);
+ assert.match(bridge,/window\.JH2OracleCurtainCall/);
+ assert.match(activity,/onShowFileChooser/);
+ assert.match(activity,/REQUEST_CURTAIN_IMAGE/);
+ assert.match(activity,/onActivityResult/);
 });
 test('iframe Web Bluetooth adapter proxies writes and notifications',async()=>{
   const shim=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)][0][1];
