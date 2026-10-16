@@ -1,0 +1,31 @@
+name: Check Eufy session after Oracle reboot
+on:
+  push:
+    branches: [feat/jh2-oracle-curtain-1.1.0]
+    paths: [.github/workflows/jh2-relay-postboot-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect redacted controller and session persistence
+        run: |
+          sudo python3 - <<'PY'
+          import subprocess,json,urllib.request,sqlite3,pathlib
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          req=urllib.request.Request('http://127.0.0.1:8080/api/status',headers={'Authorization':'Bearer '+env['JASON_HOME_API_TOKEN']})
+          s=json.load(urllib.request.urlopen(req,timeout=30))
+          print(json.dumps({k:s.get(k) for k in ['automationOwner','eufy','calendar','lastSchedulerEvaluation']}))
+          src=subprocess.check_output(['docker','exec','jason-home','cat','/app/dist/eufy/client.js'],text=True)
+          print('SESSION_CODE',src[src.find('importSession('):src.find('exportSession(')+200])
+          dbpath=env.get('JASON_HOME_DB','/data/jason-home.sqlite');m=next(m for m in info['Mounts'] if dbpath.startswith(m['Destination']+'/'));db=pathlib.Path(m['Source'])/dbpath[len(m['Destination']):].lstrip('/')
+          with sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True) as d:
+           rows=d.execute("SELECT key,value FROM meta WHERE key IN ('eufy_session','eufy_verification_required','install_id')").fetchall()
+           for key,value in rows:
+            if key=='eufy_session':
+             v=json.loads(value);print('SAVED_SESSION',{'fields':list(v),'tokenPresent':bool(v.get('token')),'uidPresent':bool(v.get('uid')),'accountUidPresent':bool(v.get('accountUid'))})
+            else: print(key, bool(value) if key=='install_id' else value)
+          PY
