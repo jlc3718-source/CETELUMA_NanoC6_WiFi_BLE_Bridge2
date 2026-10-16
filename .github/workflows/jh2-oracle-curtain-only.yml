@@ -1,7 +1,7 @@
 name: Jason Home 2 Oracle Curtain-Only Delivery
 on:
   push:
-    branches: [codex/jh2-single-active-curtain-retention-20261016]
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
     paths:
       - 'JasonHome2Server/**'
       - '.github/scripts/deploy-curtain-relay.py'
