@@ -13,12 +13,15 @@ export function attachCurtainChannel(server,bridge){
   wss.handleUpgrade(req,socket,head,ws=>wss.emit('connection',ws,req,credential));
  });
  wss.on('connection',(ws,req,credential)=>{
-  let hello=false,alive=true,scheduled=false,closed=false,receivedId=0;
+  let hello=false,alive=true,scheduled=false,closed=false,receivedId=0,channelClosed=null;
   const send=(data,reportId)=>{
    if(closed||ws.readyState!==WebSocket.OPEN)return;
+   if(!bridge.authenticate(req)){ws.close(1008,'Bridge credential changed');return;}
    if(ws.bufferedAmount>65536){ws.terminate();return;}
+   const commands=data.commands.filter(c=>c.id>receivedId).slice(0,1);
+   const assets=data.assets.filter(a=>commands.some(c=>c.action==='asset'&&c.payload.sha256===a.sha256));
    const payload={type:'delivery',serverTime:data.serverTime??Date.now(),revision:data.revision,
-    commands:data.commands.filter(c=>c.id>receivedId).slice(0,1),assets:data.assets,credential:data.credential??null};
+    commands,assets,credential:data.credential??null};
    if(reportId!==undefined)payload.reportId=reportId;
    ws.send(JSON.stringify(payload));
   };
@@ -39,13 +42,13 @@ export function attachCurtainChannel(server,bridge){
     // Authentication is checked again on every report, including token rotation.
     const current=bridge.authenticate(req);
     if(!current){ws.close(1008,'Bridge credential changed');return;}
-    alive=true;hello=true;
+    alive=true;if(!hello)channelClosed=bridge.channelOpened();hello=true;
     for(const ack of body.acks||[])if(['downloaded','applied','failed'].includes(ack.state)&&Number.isSafeInteger(ack.id))receivedId=Math.max(receivedId,ack.id);
     send(bridge.sync(body,current),body.reportId);
    }catch{ws.close(1008,'Invalid bridge report');}
   });
   ws.on('error',()=>{});
-  ws.once('close',()=>{closed=true;clearInterval(timer);unsubscribe();});
+  ws.once('close',()=>{closed=true;clearInterval(timer);unsubscribe();channelClosed?.();});
  });
  return wss;
 }

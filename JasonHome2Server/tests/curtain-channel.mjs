@@ -79,3 +79,12 @@ test('downloaded animation does not block the next power-off command',async()=>{
   assert.equal((await response).commands[0].id,off.id);
  }finally{await f.close();}
 });
+
+test('a closed persistent socket marks the Nano offline immediately',async()=>{
+ const f=await fixture();try{
+  const received=next(f.ws);f.ws.send(JSON.stringify({...f.report,reportId:2,status:{commandTransport:'wss-duplex',curtain:{connected:true}}}));await received;
+  assert.equal(f.bridge.status().online,true);assert.equal(f.bridge.status().channelConnected,true);
+  const closed=once(f.ws,'close');f.ws.close();await closed;await new Promise(r=>setImmediate(r));
+  assert.equal(f.bridge.status().online,false);
+ }finally{await f.close();}
+});

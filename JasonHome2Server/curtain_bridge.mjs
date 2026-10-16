@@ -117,7 +117,8 @@ export function createCurtainBridge({db,now=Date.now}){
     .run(TARGET,active,active?now():null,active?'legacy_unconfirmed':'idle');
  }
  expireStaging();transaction(garbageCollect);
- let wake=new Set(),subscribers=new Set();
+ let wake=new Set(),subscribers=new Set(),activeChannels=0;
+ function channelOpened(){activeChannels++;let closed=false;return ()=>{if(!closed){closed=true;activeChannels=Math.max(0,activeChannels-1);}};}
  // Active outbound Nano connections receive a push immediately on enqueue.
  function signal(){for(const f of wake)f();wake.clear();for(const f of subscribers)f();}
  function subscribeWake(fn){subscribers.add(fn);return ()=>subscribers.delete(fn);}
@@ -132,7 +133,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function authorized(req){return authenticate(req)!==null;}
  function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
  function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
- function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:10240,assetRetention:retained(),desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
+ function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000&&(s.commandTransport!=='wss-duplex'||activeChannels>0),channelConnected:activeChannels>0,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:10240,assetRetention:retained(),desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
@@ -144,7 +145,7 @@ export function createCurtainBridge({db,now=Date.now}){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
    const old=db.prepare("SELECT id,action FROM curtain_commands WHERE state IN ('queued','downloaded')").all();for(const c of old)if((['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(c.action)?'visual':c.action)===key)db.prepare("UPDATE curtain_commands SET state='superseded' WHERE id=?").run(c.id);
   }
-  if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
+  if(source==='manual'&&!['status','scan','subscribeRaw','connect','nanoInfo','nanoFirmwareCheck'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
   if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
   const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),transient?now()+60000:now()+86400000,idempotency,source);
@@ -261,5 +262,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,delivery,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,delivery,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,channelOpened,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }

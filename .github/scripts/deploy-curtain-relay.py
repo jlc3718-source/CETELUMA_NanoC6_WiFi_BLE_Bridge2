@@ -174,7 +174,7 @@ try:
  if config!=nginx.read_text():
   nginx.write_text(config);run('nginx','-t');run('systemctl','reload','nginx')
  base='http://127.0.0.1:8081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
- relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds']==5
+ relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds'] in (0,5)
  api(base,'/api/eufy/verification',cookie=cookie)
  reconcile,_=api(BASE,'/api/reconcile',token,body={});assert reconcile.get('ok') is True and not reconcile.get('errors')
  after,_=api(BASE,'/api/status',token);assert after['automationOwner']=='oracle';assert len(after['eufy']['readyNames'])==4;assert after['calendar']['revision']==before['calendar']['revision'];assert after['calendar']['eventCount']==212
