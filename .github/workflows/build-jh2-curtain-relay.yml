@@ -44,7 +44,7 @@ jobs:
           python JasonHome2NanoC6/tools/package.py
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-NanoC6-1.1.0
+          name: Jason-Home-2-NanoC6-1.1.1
           path: JasonHome2NanoC6/release/
           if-no-files-found: error
   apk:
@@ -127,7 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: Jason-Home-2-NanoC6-1.1.0, path: relay-release}
+        with: {name: Jason-Home-2-NanoC6-1.1.1, path: relay-release}
       - uses: actions/download-artifact@v4
         with: {name: Jason-Home-2-Relay-Signed, path: relay-release}
       - name: Verify firmware, sign channel and publish exact artifacts
@@ -164,19 +164,19 @@ jobs:
           entries=call('/git/trees/'+main['tree']['sha']+'?recursive=1')['tree'];workflows=next(x['sha'] for x in entries if x['path']=='.github/workflows' and x['type']=='tree')
           tree=call('/git/trees',{'base_tree':src['tree']['sha'],'tree':[{'path':'.github/workflows','mode':'040000','type':'tree','sha':workflows}]})['sha']
           release=call('/git/commits',{'message':'Jason Home 2 curtain relay release source; compiled inputs unchanged','tree':tree,'parents':[default,source]})['sha']
-          call('/git/refs',{'ref':'refs/heads/jh2-curtain-release-1.1.0','sha':release})
+          call('/git/refs',{'ref':'refs/heads/jh2-curtain-release-1.1.1','sha':release})
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('RELEASE_SOURCE='+release+'\n')
           PYTHON
-          TAG=jason-home-2-nanoc6-v1.1.0
-          gh release create "$TAG" --target "$RELEASE_SOURCE" --prerelease --latest=false --title 'Jason Home 2 · Oracle Curtain Relay 1.1.0 / APK 2.0.11' --notes-file JasonHome2NanoC6/TESTING.md
+          TAG=jason-home-2-nanoc6-v1.1.1
+          gh release create "$TAG" --target "$RELEASE_SOURCE" --prerelease --latest=false --title 'Jason Home 2 · Oracle Curtain Relay 1.1.1 / APK 2.0.11' --notes-file JasonHome2NanoC6/TESTING.md
           gh release upload "$TAG" relay-release/*.bin relay-release/*.apk relay-release/*.zip relay-release/release.json relay-release/integration-release.json relay-release/SHA256SUMS relay-release/INSTALL.md relay-release/TESTING.md relay-release/latest.json
           mkdir downloaded
-          gh release download "$TAG" -p 'jh2-runtime-1.1.0.bin' -p 'Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk' -D downloaded
+          gh release download "$TAG" -p 'jh2-runtime-1.1.1.bin' -p 'Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk' -D downloaded
           python - <<'PY'
           import hashlib,json
           from pathlib import Path
           m=json.loads(Path('relay-release/integration-release.json').read_text())
-          for n,s in [('jh2-runtime-1.1.0.bin',m['files']['jh2-runtime-1.1.0.bin']),(m['apk']['name'],m['apk'])]:
+          for n,s in [('jh2-runtime-1.1.1.bin',m['files']['jh2-runtime-1.1.1.bin']),(m['apk']['name'],m['apk'])]:
            b=Path('downloaded',n).read_bytes();assert len(b)==s['bytes'] and hashlib.sha256(b).hexdigest()==s['sha256']
           print('Public firmware and signed APK byte size/SHA-256 verified.')
           PY
@@ -187,5 +187,5 @@ jobs:
           git checkout -B jh2-nanoc6-ota FETCH_HEAD
           cp "$RUNNER_TEMP/jh2-relay-latest.json" latest.json
           git add latest.json
-          git commit -m 'Publish signed Jason Home 2 Oracle curtain relay 1.1.0'
+          git commit -m 'Publish signed Jason Home 2 Oracle curtain relay 1.1.1'
           git push origin HEAD:jh2-nanoc6-ota

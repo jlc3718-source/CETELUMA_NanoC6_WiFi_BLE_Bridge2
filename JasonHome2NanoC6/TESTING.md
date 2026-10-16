@@ -1,4 +1,4 @@
-Jason Home 2 1.1.0 relay release candidate.
+Jason Home 2 1.1.1 relay release candidate.
 
 Automated acceptance: Oracle token isolation, idempotent ordered queue, latest-selection supersession, BLE ACK status, reboot recovery, local override expiry, scheduled takeover, original SmartDawn frame encoders, native brightness/effect vectors, firmware compilation and partition/upload verification, signed APK identity and no Android BLE transport.
 

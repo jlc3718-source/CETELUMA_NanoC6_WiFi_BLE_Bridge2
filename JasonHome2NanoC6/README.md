@@ -1,4 +1,4 @@
-# Jason Home 2 NanoC6 1.1.0 — Oracle curtain relay
+# Jason Home 2 NanoC6 1.1.1 — Oracle curtain relay
 
 Existing APK controls → authenticated Oracle queue → outbound NanoC6 HTTPS → SmartDawn BLE.
 
