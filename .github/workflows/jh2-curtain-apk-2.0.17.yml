@@ -102,6 +102,6 @@ jobs:
           gh release create "$TAG" apk/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false --title "Jason Home 2 APK 2.0.17" --notes "Signed APK with the existing trusted identity. Updated hosted Curtain Studio, settings layout, and Oracle streaming are deployed separately; the APK opens the live Oracle-hosted interface."
           mkdir -p verify
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir verify
-          sha256sum --check apk/SHA256SUMS
+          (cd apk && sha256sum --check SHA256SUMS)
           cmp apk/*.apk verify/*.apk
           echo "Jason Home 2 signed APK 2.0.17 published and byte-verified."
