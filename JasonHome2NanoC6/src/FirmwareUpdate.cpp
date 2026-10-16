@@ -109,16 +109,73 @@ static void automaticFirmwareTask(void*){
   }
 }
 #endif
+// Dedicated, short-lived public WAN session for signed OTA ONLY.
+// This intentionally does not unlock the setup API, pairing, raw firmware
+// uploader or arbitrary device management over forwarded TCP 80.
+#ifndef JH2_BOOT
+static const char FW_REMOTE_PIN[]="7788";
+static String fwRemoteToken;
+static IPAddress fwRemoteAddress;
+static uint32_t fwRemoteExpires=0,fwBlockedUntil=0;
+static uint8_t fwFailedAttempts=0;
+static bool fwRemoteAuthorized(){
+ if(authorized())return true;
+ if(!publicCurtainRequestAllowed())return false;
+ if(!fwRemoteToken.length()||(int32_t)(fwRemoteExpires-millis())<=0)return false;
+ if(web.client().remoteIP()!=fwRemoteAddress)return false;
+ String cookie=web.header("Cookie");
+ int start=0;while(start<(int)cookie.length()){
+  int end=cookie.indexOf(';',start);if(end<0)end=cookie.length();
+  String part=cookie.substring(start,end);part.trim();
+  if(part=="jh2_fw="+fwRemoteToken)return true;
+  start=end+1;
+ }
+ return false;
+}
+static void firmwareUnlock(){
+ if(!publicCurtainRequestAllowed()&&!authorized()){
+  return replyError(403,"Open firmware PIN entry from the NanoC6 direct controller");
+ }
+ if((int32_t)(fwBlockedUntil-millis())>0){
+  return replyError(429,"Too many attempts. Firmware PIN entry is locked for 15 minutes");
+ }
+ String raw=web.arg("plain");JsonDocument request;
+ if(raw.length()>80||deserializeJson(request,raw)||!request["pin"].is<String>()){
+  return replyError(400,"Enter the four-digit firmware PIN");
+ }
+ String attempt=request["pin"].as<String>();
+ uint8_t mismatch=(uint8_t)(attempt.length()^4);
+ for(size_t i=0;i<4;i++)mismatch|=(uint8_t)((i<attempt.length()?attempt[i]:0)^FW_REMOTE_PIN[i]);
+ if(mismatch){
+  if(++fwFailedAttempts>=5){fwBlockedUntil=millis()+900000;fwFailedAttempts=0;}
+  return replyError(403,"Incorrect firmware PIN");
+ }
+ fwFailedAttempts=0;fwBlockedUntil=0;
+ fwRemoteToken=randomHex(16);fwRemoteAddress=web.client().remoteIP();
+ fwRemoteExpires=millis()+900000;
+ web.sendHeader("Cache-Control","no-store");
+ web.sendHeader("Set-Cookie","jh2_fw="+fwRemoteToken+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=900");
+ JsonDocument response;response["ok"]=true;response["unlocked"]=true;
+ response["scope"]="signed-firmware-only";response["expiresSeconds"]=900;
+ reply(200,response.as<JsonVariantConst>());
+}
+#else
+static bool fwRemoteAuthorized(){return authorized();}
+#endif
 void registerFirmware(){
-  web.on("/api/firmware",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|true;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();
+#ifndef JH2_BOOT
+  web.on("/api/firmware/unlock",HTTP_POST,firmwareUnlock);
+  web.on("/api/firmware/access",HTTP_GET,[]{JsonDocument d;d["ok"]=true;d["unlocked"]=fwRemoteAuthorized();d["pinRequired"]=!fwRemoteAuthorized();d["signedOnly"]=true;reply(200,d.as<JsonVariantConst>());});
+#endif
+  web.on("/api/firmware",HTTP_GET,[]{if(!fwRemoteAuthorized())return replyError(401,"Firmware PIN required for remote signed updates");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|true;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();
     Preferences n;if(n.begin("jh2-release",true)){
       d["phase"]=n.getString("phase","idle");d["reason"]=n.getString("reason","");
       d["target"]=n.getString("target","");d["lastInstalled"]=n.getString("version","");
       n.end();
     }
     reply(200,d.as<JsonVariantConst>());});
-  web.on("/api/firmware/check",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;FirmwareManifest m;if(!fetchManifest(available)||!parseManifest(available.as<JsonVariantConst>(),m,error))return replyError(502,error.length()?error:lastError);JsonDocument d;d["ok"]=true;d["version"]=m.version;d["newer"]=isNewer(m.version,VERSION);d["signed"]=true;reply(200,d.as<JsonVariantConst>());});
-  web.on("/api/firmware/install",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;if(available.isNull()&&!fetchManifest(available))return replyError(502,lastError);if(!queueFirmware(available.as<JsonVariantConst>(),error))return replyError(400,error);web.send(202,"application/json","{\"ok\":true,\"rebootingToUpdater\":true}");delay(400);ESP.restart();});
+  web.on("/api/firmware/check",HTTP_POST,[]{if(!fwRemoteAuthorized())return replyError(401,"Firmware PIN required for remote signed updates");String error;FirmwareManifest m;if(!fetchManifest(available)||!parseManifest(available.as<JsonVariantConst>(),m,error))return replyError(502,error.length()?error:lastError);JsonDocument d;d["ok"]=true;d["version"]=m.version;d["newer"]=isNewer(m.version,VERSION);d["signed"]=true;reply(200,d.as<JsonVariantConst>());});
+  web.on("/api/firmware/install",HTTP_POST,[]{if(!fwRemoteAuthorized())return replyError(401,"Firmware PIN required for remote signed updates");String error;if(available.isNull()&&!fetchManifest(available))return replyError(502,lastError);if(!queueFirmware(available.as<JsonVariantConst>(),error))return replyError(400,error);web.send(202,"application/json","{\"ok\":true,\"rebootingToUpdater\":true}");delay(400);ESP.restart();});
 #ifndef JH2_BOOT
   if(!autoTaskStarted){TaskHandle_t handle=nullptr;autoTaskStarted=xTaskCreate(automaticFirmwareTask,"jh2-auto-ota",10240,nullptr,1,&handle)==pdPASS;}
 #endif
