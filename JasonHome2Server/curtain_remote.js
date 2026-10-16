@@ -16,7 +16,7 @@
   try{AndroidCurtain.call(id,action,JSON.stringify(payload));}catch(e){finish(null,e);}
  });
  let pairingWork=null,nextPairAttempt=0,lastPairError='';
- const connectionReport=(stage,code)=>api('/api/curtain/autopair',{diagnostic:{stage,code,android:/Android/i.test(window.navigator?.userAgent||'')}}).catch(()=>{});
+ const connectionReport=(stage,code,detail='')=>api('/api/curtain/autopair',{diagnostic:{stage,code,detail,android:/Android/i.test(window.navigator?.userAgent||'')}}).catch(()=>{});
  async function ensureNanoPairing(force=false){
   if(pairingWork)return pairingWork;
   if(document.hidden||(!force&&Date.now()<nextPairAttempt))return false;
@@ -35,7 +35,7 @@
     stage='channel';await connectionReport(stage,'ok');
     for(let i=0;i<16;i++){await delay(500);const current=await api('/api/curtain/status');if(current.online){lastPairError='';await connectionReport('ready','ok');return true;}}
     throw Object.assign(Error('The Nano accepted setup, but its secure connection to Oracle did not open.'),{code:'channel_timeout'});
-   }catch(error){lastPairError=error.message;await connectionReport(stage,error.code||stage+'_error');}
+   }catch(error){lastPairError=error.message;await connectionReport(stage,error.code||stage+'_error',lastPairError);}
    return false;
   })();
   try{return await pairingWork;}finally{pairingWork=null;}

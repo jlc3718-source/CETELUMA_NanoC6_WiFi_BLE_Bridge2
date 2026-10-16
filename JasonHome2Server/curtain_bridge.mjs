@@ -126,9 +126,10 @@ export function createCurtainBridge({db,now=Date.now}){
  function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));put('pendingTokenHash','');put('rotateCredential',false);put('bootstrapTokenHash','');put('bootstrapExpires',0);bootstrapGrant=null;return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
  function autoPairing({diagnostic}={}){
   if(diagnostic){
-   const stages=['helper','oracle','local','channel','ready'],codes=['ok','helper_missing','helper_error','oracle_error','local_error','local_timeout','channel_timeout'];
+   const stages=['helper','oracle','local','channel','ready'],codes=['ok','helper_missing','helper_error','oracle_error','local_error','local_timeout','channel_timeout','channel_error'];
    if(!stages.includes(diagnostic.stage)||!codes.includes(diagnostic.code))throw fail(400,'Invalid connection diagnostic');
-   put('connectionDiagnostic',{at:now(),stage:diagnostic.stage,code:diagnostic.code,android:diagnostic.android===true});
+   const detail=String(diagnostic.detail||'').replace(/[a-f0-9]{32,}/gi,'[redacted]').replace(/(password|token|secret|authorization)\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,300);
+   put('connectionDiagnostic',{at:now(),stage:diagnostic.stage,code:diagnostic.code,android:diagnostic.android===true,...(detail?{detail}:{})});
    return {ok:true};
   }
   if(status().online)return {ok:true,alreadyOnline:true};

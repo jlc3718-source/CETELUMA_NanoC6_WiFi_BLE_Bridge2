@@ -156,6 +156,9 @@ try:
  assert not checked['command']['physicalPlaybackConfirmed']
  print('Staged actual HTTP API: both bridge auth headers, credential rotation, command/ACK, Oracle conversion and 4 KB digest-checked relay PASS. ACK used a simulator; physical BLE is not claimed.')
 finally:run('docker','rm','-f',stagename,stdout=subprocess.DEVNULL)
+_,initial_headers=api('http://127.0.0.1:8081','/api/session',body={'token':token})
+initial_relay,_=api('http://127.0.0.1:8081','/api/curtain/status',cookie=initial_headers['Set-Cookie'].split(';')[0])
+bridge_offline_before=initial_relay['online'] is False
 previous='jh2-web-before-relay-'+RUN
 # All prerequisite checks passed; replace only the web gateway and preserve the old container for immediate rollback.
 try:
@@ -211,9 +214,11 @@ try:
   relay,_=api(base,'/api/curtain/status',cookie=cookie)
   if relay['online']:
    bridge_online=True;break
-  if NONINVASIVE and bridge_needs_pairing and automatic_pairing_ready:break
+  if NONINVASIVE and automatic_pairing_ready and (bridge_needs_pairing or bridge_offline_before):break
   time.sleep(5)
- assert bridge_online or (NONINVASIVE and bridge_needs_pairing and automatic_pairing_ready),'Existing NanoC6 did not authenticate and was not a verified unpaired Nano awaiting automatic home-Wi-Fi setup'
+ assert bridge_online or (NONINVASIVE and automatic_pairing_ready and (bridge_needs_pairing or bridge_offline_before)),'An initially connected Nano did not reconnect after deployment'
+ # A client recovery repair can be published while a previously offline Nano is
+ # unreachable. That is not physical verification and must not be labelled so.
  live_ble=False
  if NONINVASIVE:
   print('Oracle-only deployment verified; physical bridge authentication: '+str(bridge_online)+'; automatic home-Wi-Fi pairing needed: '+str(bridge_needs_pairing)+'. No live BLE writes or credential replacement performed.',flush=True)
@@ -238,7 +243,7 @@ try:
   api(base,'/api/curtain/rotate',cookie=cookie,body={})
  # Pin future gateway starts to the verified image without altering existing secrets.
  (pathlib.Path('/opt/jason-home-2')/'curtain-relay-image').write_text(image+'\n')
- manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'bridgeNeedsPairing':bridge_needs_pairing,'automaticPairingReady':automatic_pairing_ready,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
+ manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'bridgeNeedsPairing':bridge_needs_pairing,'offlineClientRecovery':bridge_offline_before and not bridge_online,'automaticPairingReady':automatic_pairing_ready,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
  (BACK/'deployment.json').write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest))
  public={k:v for k,v in manifest.items() if k not in ['backup','rollbackContainer']}
  (ROOT/'deployment-verification.json').write_text(json.dumps(public,indent=2)+'\n')
