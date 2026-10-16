@@ -7,7 +7,7 @@ function init(){
  const panel=document.createElement('div');
  panel.className='panel';panel.id='jh2NanoSyncPanel';
  panel.innerHTML='<strong>NanoC6 · Follow Eufy brightness</strong>'+
- '<div class="sub">When NanoC6 is connected and ready, use the Eufy schedule’s current brightness. Disabled by default; no Nano commands are sent unless enabled. A reachable private Oracle-to-NanoC6 connection is required.</div>'+
+ '<div class="sub">When NanoC6 is connected and ready, use the Eufy schedule’s current brightness. Disabled by default; no Nano commands are sent unless enabled. Uses the authenticated Oracle curtain relay; no separate NanoC6 URL or PIN is needed.</div>'+
  '<label style="display:flex;align-items:center;gap:10px;margin-top:12px">'+
  '<input id="jh2NanoSyncEnabled" type="checkbox" aria-label="Enable NanoC6 brightness synchronization">'+
  '<span>Enable NanoC6 brightness sync</span></label>'+
