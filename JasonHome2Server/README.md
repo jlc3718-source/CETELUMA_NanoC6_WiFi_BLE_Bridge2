@@ -55,3 +55,7 @@ verifies `resolverAuthority.inSync` before accepting the gateway as healthy.
 - Oracle Eufy controller source commit: `4d55d618069f35f9ea0df67615aae01183ea404b`; always generate resolver from **live controller /api/health**, not an older pinned resolver. This commit optimizes AI E120 scene acknowledgments and continues strict E22 status verification.
 - Restore source archive: `Jason Home 2/Recovery/v2.0.7/Jason-Home-2-CURRENT-AI-SOURCE-RECOVERY.zip` in owner's Google Drive.
 - Keep the private SQLite database, Oracle .env, nginx/TLS and encrypted Android release signing backup when cleaning up obsolete installers. The source ZIP alone is not a complete Oracle runtime backup.
+
+## 1.1.4 bridge and Studio maintenance
+
+NanoC6 checks signed firmware updates every 60 seconds when automatic updates are enabled, and its Oracle snapshot/long-poll window is five seconds. The Oracle brightness follower uses the authenticated outbound bridge queue, and the experimental Image/GIF Studio Test Save Override control has been removed without changing established Studio controls. Android 2.0.14 continues using Oracle transport.
