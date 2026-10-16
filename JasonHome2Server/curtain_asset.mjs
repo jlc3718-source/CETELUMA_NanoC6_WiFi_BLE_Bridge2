@@ -115,7 +115,7 @@ export function compileAsset(input){
  for(let i=0;i<frames.length;i++){
   const records=[];
   if(i===0){for(const [op,params] of [[2514,[]],[2701,[8,1]],[2713,[]]])records.push(record(0,ddp(op,params,++seq)));}
-  else if(rgb)records.push(record(0,ddp(2713,[],++seq)));
+  else records.push(record(0,ddp(2713,[],++seq))); // Clear previous frame, including black pixels, for every GIF encoding.
   // A 2026-10-16 SmartDawn capture shows a complete 126-byte doodle write:
   // 4-byte DDP fragment header + 122 bytes of indexed palette/mask data.
   // Pack each GIF frame as a new compressed doodle, not individual LEDs.
