@@ -4,7 +4,8 @@ R=Path(__file__).resolve().parents[1]
 class RelayArchitecture(unittest.TestCase):
  def test_relay_never_stores_animation_files(self):
   s=(R/'src/OracleRelay.cpp').read_text()
-  self.assertIn('uint8_t buffer[4096]',s)
+  self.assertIn('malloc(10240)',s)
+  self.assertIn('malloc(4096)',s)
   self.assertNotIn('LittleFS.open',s)
   self.assertIn('x-chunk-sha256',s)
   self.assertIn('curtainRelayWrite',s)
@@ -94,7 +95,8 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn('data: ',relay)
   self.assertIn('if(pushOnline){vTaskDelay(pdMS_TO_TICKS(25))',relay)
   self.assertIn('api/curtain-bridge/stream/',relay)
-  self.assertIn('uint8_t buffer[4096]',relay)
+  self.assertIn('malloc(10240)',relay)
+  self.assertIn('malloc(4096)',relay)
   self.assertIn('x-asset-sha256',relay)
   self.assertIn('x-chunk-sha256',relay)
   self.assertIn('x-accel-buffering',server)
