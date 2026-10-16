@@ -201,9 +201,9 @@ test('detailed multicolor GIF is packetized into bounded doodle writes without N
     assert.equal(compiled.bytes.readUInt16BE(off+10),2713,'clear preceding GIF frame to prevent ghosts');
    }
    if(channel===1){
-    assert.ok(size<=126,'one BLE doodle write must not exceed verified 126-byte transfer');
+    assert.ok(size<=204,'one BLE doodle write must not exceed captured 204-byte doodle transfer');
     assert.ok(size>=5,'must contain transport framing');
-    assert.equal(compiled.bytes[off+1],1,'native doodle payload should fit in one BLE write');
+    assert.equal(compiled.bytes[off+1],1,'each compiled doodle unit should fit in one BLE write');
     assert.equal(compiled.bytes[off+2],0,'no missing doodle fragments');
     largest=Math.max(largest,size);totalDoodleBytes+=size;doodleWrites++;
    }
@@ -211,7 +211,24 @@ test('detailed multicolor GIF is packetized into bounded doodle writes without N
   }
  }
  assert.equal(off,compiled.bytes.length);
- assert.ok(largest>44,'the new encoder must use bigger-than-40-byte packed writes');
+ assert.ok(largest>126,'the new encoder should use captured larger-than-126-byte packed writes');
  assert.ok(totalDoodleBytes<3*6400,'indexed GIF framing must compress raw 40x40 RGBA frames');
  assert.ok(doodleWrites>3,'detailed pictures can require multiple compressed writes');
+});
+
+test('new picture supersedes a previous queued or downloaded transfer while keeping confirmed rollback asset',()=>{
+ const {b}=create();
+ try{
+  const solid=(red)=>{const f=Buffer.alloc(6400);for(let i=0;i<f.length;i+=4){f[i]=red;f[i+3]=255;}return {frames:[f.toString('base64')],quality:'pal4',delays:[100]};};
+  const first=b.upload(solid(100));const c1=b.enqueue('asset',{sha256:first.sha256});
+  b.sync({acks:[{id:c1.id,state:'downloaded',result:{}}]});
+  const second=b.upload(solid(150));
+  assert.notEqual(first.sha256,second.sha256);
+  const c2=b.enqueue('asset',{sha256:second.sha256});
+  assert.equal(b.command(c1.id).state,'downloaded','retained until new Nano command, with image bytes still available');
+  assert.equal(b.sync({}).commands.some(c=>c.id===c2.id),true);
+  assert.equal(b.asset(second.sha256)!=null,true);
+  b.sync({acks:[{id:c2.id,state:'applied',result:{bleTransmitted:true}}]});
+  assert.equal(b.command(c2.id).state,'applied');
+ }finally{b.close();}
 });
