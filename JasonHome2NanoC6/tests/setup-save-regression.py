@@ -64,7 +64,7 @@ struct Device{int restarts=0;void restart(){++restarts;}} ESP;
 JsonDocument secrets;
 String apiToken="test-session",disk;
 const char* SETUP="setup form";
-bool signedIn=false,writeSucceeds=true;
+bool signedIn=true,writeSucceeds=true;
 int writes=0;
 uint32_t millis(){return 10000;}
 void delay(int){}
@@ -74,7 +74,7 @@ bool saveJson(const char*,JsonVariantConst value){
   ++writes;if(!writeSucceeds)return false;
   disk.clear();serializeJson(value,disk);return true;
 }
-void reset(){secrets.clear();secrets["adminToken"]="keep-token";disk.clear();signedIn=false;
+void reset(){secrets.clear();secrets["adminToken"]="keep-token";disk.clear();signedIn=true;
  writeSucceeds=true;writes=0;ESP.restarts=0;web.status=0;web.response.clear();
  web.args={{"ssid","Home 2.4"},{"password","test-password"},{"pin","7788"}};}
 void submit(){web.routes.at({"/setup",HTTP_POST})();}
@@ -87,7 +87,7 @@ int main(){
   secrets.clear();assert(!deserializeJson(secrets,disk));
   assert(String(secrets["ssid"]|"")=="Home 2.4");
   assert(String(secrets["wifiPassword"]|"")=="test-password");
-  assert(String(secrets["pin"]|"")=="7788");
+  assert(secrets["pin"].isNull());
   assert(String(secrets["adminToken"]|"")=="keep-token");
   reset();writeSucceeds=false;submit();assert(web.status==500&&ESP.restarts==0);
   assert(secrets["ssid"].isNull()&&secrets["pin"].isNull());
@@ -96,14 +96,12 @@ int main(){
   writeSucceeds=false;submit();assert(web.status==500&&ESP.restarts==0);
   assert(String(secrets["ssid"]|"")=="Original"&&String(secrets["pin"]|"")=="1234");
   writeSucceeds=true;submit();assert(web.status==200&&ESP.restarts==1);
-  reset();secrets["ssid"]="Original";submit();assert(web.status==401&&writes==0);
-  for(const String& pin:{"123","1234567890123","77a8"}){
-    reset();web.args["pin"]=pin;submit();assert(web.status==400&&writes==0&&ESP.restarts==0);
-  }
+  assert(secrets["pin"].isNull());
+  reset();secrets["ssid"]="Original";signedIn=false;submit();assert(web.status==401&&writes==0);
   for(const String& ssid:{String(""),String(33,'s')}){
     reset();web.args["ssid"]=ssid;submit();assert(web.status==400&&writes==0&&ESP.restarts==0);
   }
-  std::cout<<"PASS: storage mount, reboot persistence, failed-save retry, existing credentials, auth and input validation\n";
+  std::cout<<"PASS: storage mount, reboot persistence, failed-save retry, PIN removal, local auth and input validation\n";
 }
 '''.replace('MOUNT_CALL', mount)
 with tempfile.TemporaryDirectory(prefix='jh2-setup-') as tmp:
