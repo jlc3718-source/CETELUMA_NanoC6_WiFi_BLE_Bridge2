@@ -28,8 +28,11 @@ export function createCurtainBridge({db,now=Date.now}){
  CREATE TABLE IF NOT EXISTS curtain_schedules(id TEXT PRIMARY KEY,value TEXT NOT NULL);`);
  const get=(k,d=null)=>{const r=db.prepare('SELECT value FROM curtain_meta WHERE key=?').get(k);return r?JSON.parse(r.value):d;};
  const put=(k,v)=>db.prepare('INSERT INTO curtain_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k,JSON.stringify(v));
- let wake=new Set();
- function signal(){for(const f of wake)f();wake.clear();}
+ let wake=new Set(),subscribers=new Set();
+ // Active outbound Nano connections receive a push immediately on enqueue.
+ function signal(){for(const f of wake)f();wake.clear();for(const f of subscribers)f();}
+ function subscribeWake(fn){subscribers.add(fn);return ()=>subscribers.delete(fn);}
+ function revision(){return Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n);}
  function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));put('pendingTokenHash','');put('rotateCredential',false);return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
  function requestToken(req){
   const bearer=String(req.headers.authorization||'').replace(/^Bearer /,''),alternate=String(req.headers['x-jh2-bridge-token']||'').trim();
@@ -118,5 +121,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(tick,1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),wait,close:()=>{clearInterval(timer);signal();},tick};
+ return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }
