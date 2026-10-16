@@ -130,7 +130,7 @@ test('Image / GIF Studio sends to Oracle while BLE disconnected, with a durable 
   window:{parent:fakeParent},Uint8ClampedArray,Uint8Array,Promise,Number,Error,btoa,
   crypto:{randomUUID:()=> 'test-uuid'},sourceImage:image,frames:[image,image],
   frameDelays:[90,110],importedName:'test.gif',oracleStreamRequested:false,
-  stopLive:false,connected:false,binWriter:null,
+  stopLive:false,connected:false,binWriter:null,oracleStudio:()=>true,
   $:id=>fields[id]||(fields[id]={value:0}),
   say(){},ui(){},log(){},delay:async()=>{},
   getEncoding(){throw Error('Direct BLE encoding should not be used');}
