@@ -26,7 +26,7 @@
  };
  let since=0,working=false;setInterval(async()=>{if(working||!document.getElementById('jh2CurtainStudioFrame')?.getAttribute('src'))return;working=true;try{const d=await api('/api/curtain/notifications?since='+since);for(const n of d.notifications){since=Math.max(since,n.id);window.__jh2CurtainRawNotify?.(n.uuid,n.data);}}catch{}finally{working=false;}},250);
  function init(){
-  const settings=document.querySelector('.page[data-page="settings"]');if(!settings)return;
+  const settings=document.querySelector('.v3SettingsPane[data-settings-pane="controllers"]');if(!settings)return;
   const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayPair">Pair NanoC6</button> <button class="btn" id="jh2RelayResume">Return to Oracle</button><textarea id="jh2RelayCode" class="field" hidden readonly aria-label="NanoC6 pairing configuration"></textarea><p class="sub">The Android app supports direct pairing over home Wi-Fi. Manual paste remains available if the controller cannot be reached. Local tests last 15 minutes. Files stay on Oracle; NanoC6 relays with a 4 KB RAM buffer.</p>';settings.append(p);
   // Oracle alone retains prepared content. Confirmation is intentionally
   // explicit because the BLE acknowledgement cannot prove physical display.
