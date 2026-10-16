@@ -67,22 +67,67 @@ static void pushEvents(void*){
  }
 }
 struct RelayStream {
- uint8_t buffer[4096];uint32_t offset=0,loadedAt=0,loaded=0,size=0;String sha;mbedtls_sha256_context hash;bool verified=false;
- RelayStream(){mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);}~RelayStream(){mbedtls_sha256_free(&hash);}
+ // Bounded RAM cache. Oracle keeps the full program and TCP applies flow control.
+ uint8_t buffer[4096];
+ uint32_t offset=0,loadedAt=0,loaded=0,size=0;
+ String sha;mbedtls_sha256_context hash;bool verified=false,opened=false,streamMode=false;
+ WiFiClientSecure socket;HTTPClient http;
+ RelayStream(){mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);}
+ ~RelayStream(){http.end();mbedtls_sha256_free(&hash);}
+ void credential(String&base,String&key){
+  xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
+ }
+ bool open(){
+  if(opened)return streamMode;
+  opened=true;String base,key;credential(base,key);trust(socket);
+  http.setConnectTimeout(6500);http.setTimeout(15000);
+  const char*headers[]={"x-asset-sha256"};http.collectHeaders(headers,1);
+  if(!http.begin(socket,base+"/api/curtain-bridge/stream/"+sha))return false;
+  http.addHeader("Authorization","Bearer "+key);
+  http.addHeader("X-JH2-Bridge-Token",key);
+  int code=http.GET();
+  streamMode=code==200&&http.getSize()==(int)size&&http.header("x-asset-sha256")==sha;
+  if(!streamMode)http.end();
+  return streamMode;
+ }
+ bool nextFromStream(){
+  auto*source=http.getStreamPtr();
+  uint32_t started=millis();
+  while(!source->available()){
+   if(!source->connected()||millis()-started>=12000){http.end();streamMode=false;return false;}
+   vTaskDelay(pdMS_TO_TICKS(2));
+  }
+  const size_t want=std::min(size_t(source->available()),std::min(sizeof(buffer),size_t(size-offset)));
+  const int got=source->read(buffer,want);
+  if(got<=0){http.end();streamMode=false;return false;}
+  loadedAt=offset;loaded=got;return true;
+ }
+ bool nextFromRange(){
+  // Compatibility fallback for an interrupted stream or older Oracle deployment.
+  String base,key;credential(base,key);
+  WiFiClientSecure tls;trust(tls);HTTPClient h;h.setConnectTimeout(6500);h.setTimeout(12000);
+  const char*headers[]={"x-chunk-sha256"};h.collectHeaders(headers,1);
+  if(!h.begin(tls,base+"/api/curtain-bridge/assets/"+sha+"?offset="+String(offset)+"&length=4096"))return false;
+  h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);
+  int code=h.GET(),len=h.getSize();size_t got=0;
+  bool valid=code==200&&len>0&&len<=4096&&uint32_t(len)<=size-offset;
+  if(valid)got=h.getStreamPtr()->readBytes(buffer,len);
+  String expected=h.header("x-chunk-sha256");h.end();
+  if(!valid||got!=size_t(len)||digest(buffer,got)!=expected)return false;
+  loadedAt=offset;loaded=got;return true;
+ }
  bool read(uint8_t*out,size_t n){
-  while(n){if(offset>=size)return false;
+  if(!opened)open();
+  while(n){
+   if(offset>=size)return false;
    if(offset<loadedAt||offset>=loadedAt+loaded){
-    String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
-    WiFiClientSecure c;trust(c);HTTPClient h;h.setTimeout(12000);const char*hs[]={"x-chunk-sha256"};h.collectHeaders(hs,1);
-    if(!h.begin(c,base+"/api/curtain-bridge/assets/"+sha+"?offset="+String(offset)+"&length=4096"))return false;
-    h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);int rc=h.GET();int len=h.getSize();
-    bool ok=rc==200&&len>0&&len<=4096&&uint32_t(len)<=size-offset;size_t got=0;
-    if(ok)got=h.getStreamPtr()->readBytes(buffer,len);
-    String expected=h.header("x-chunk-sha256");h.end();
-    if(!ok||got!=size_t(len)||digest(buffer,got)!=expected){issue("Oracle relay chunk failed integrity/length check");return false;}
-    loadedAt=offset;loaded=got;
+    if(!((streamMode&&nextFromStream())||nextFromRange())){
+     issue("Oracle image stream stalled or failed SHA-256 chunk check");return false;
+    }
    }
-   size_t count=std::min(n,size_t(loadedAt+loaded-offset));memcpy(out,buffer+offset-loadedAt,count);mbedtls_sha256_update(&hash,out,count);out+=count;offset+=count;n-=count;
+   size_t take=std::min(n,size_t(loadedAt+loaded-offset));
+   memcpy(out,buffer+offset-loadedAt,take);mbedtls_sha256_update(&hash,out,take);
+   out+=take;offset+=take;n-=take;
   }
   return true;
  }
