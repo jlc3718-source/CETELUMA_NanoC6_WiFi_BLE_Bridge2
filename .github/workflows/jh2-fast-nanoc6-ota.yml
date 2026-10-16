@@ -96,6 +96,7 @@ jobs:
         if: steps.source.outputs.skip != 'true'
         env:
           PREBUILT_SHA: 7590d490f99b9e2bf20d8165f0e0f4edafa47c2e
+          REUSE_IMAGE: ${{ steps.source.outputs.reuse }}
         shell: bash
         run: |
           set -euo pipefail
