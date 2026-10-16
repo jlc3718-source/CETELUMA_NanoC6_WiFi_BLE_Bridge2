@@ -62,22 +62,22 @@ function maskRuns(ids){const out=ids.length&&ids[0]===0?[0]:[];let pos=0;for(let
  out.push(0x80|run);pos+=run;k+=run;}
  return out;
 }
-function makeRGBPackets(image,maxColors){const groups=selectRGBGroups(image,maxColors);const packets=[];
+function makeRGBPackets(image,maxColors,limit=40){const groups=selectRGBGroups(image,maxColors);const packets=[];
  for(const [color,ids] of groups){ids.sort((a,b)=>a-b);if(color===0)continue;
  let segment=[];
  for(const id of ids){const trial=[...segment,id];const mask=maskRuns(trial);
- if(mask.length>35&&segment.length){packets.push(Uint8Array.from([1,(color>>16)&255,(color>>8)&255,color&255,...maskRuns(segment)]));segment=[id];}
+ if(mask.length>limit-4&&segment.length){packets.push(Uint8Array.from([1,(color>>16)&255,(color>>8)&255,color&255,...maskRuns(segment)]));segment=[id];}
  else segment=trial;
  }
  if(segment.length)packets.push(Uint8Array.from([1,(color>>16)&255,(color>>8)&255,color&255,...maskRuns(segment)]));
  }
- for(const p of packets)if(p.length>40)throw Error('Oversized RGB888 packet '+p.length);
+ for(const p of packets)if(p.length>limit)throw Error('Oversized RGB888 packet '+p.length);
  return packets;
 }
 
 // Preserve spatial detail at 40x40 while bounding expensive BLE write counts.
 // Highly detailed photos no longer issue one colored GATT write per pixel.
-function optimizedRGBPackets(image,requestedColors){
+function optimizedRGBPackets(image,requestedColors,limit=40){
  const levels=requestedColors>=1600?[256,128,64,32,16]:
               [requestedColors,128,64,32,16].filter((n,i,a)=>n<=requestedColors&&a.indexOf(n)===i);
  let candidate=null;
@@ -88,11 +88,11 @@ function optimizedRGBPackets(image,requestedColors){
    colors.add((image[i]<<16)|(image[i+1]<<8)|image[i+2]);
    if(colors.size>128)break;
   }
-  if(colors.size<=128)candidate=makeRGBPackets(image,1600);
+  if(colors.size<=128)candidate=makeRGBPackets(image,1600,limit);
  }
  if(candidate&&candidate.length<=260)return candidate;
  for(const level of levels){
-  const packets=makeRGBPackets(image,level);
+  const packets=makeRGBPackets(image,level,limit);
   if(!candidate||packets.length<candidate.length)candidate=packets;
   // The transfer ceiling is not an image-size limit: it is a BLE-latency budget.
   if(packets.length<=260)return packets;
@@ -116,8 +116,17 @@ export function compileAsset(input){
   const records=[];
   if(i===0){for(const [op,params] of [[2514,[]],[2701,[8,1]],[2713,[]]])records.push(record(0,ddp(op,params,++seq)));}
   else if(rgb)records.push(record(0,ddp(2713,[],++seq)));
-  const parts=rgb?optimizedRGBPackets(frames[i],count):livePackets(frames[i],count,count<=8?40:80,stable);
-  for(const part of parts){const n=Math.ceil(part.length/40),id=(++packet)&255;for(let j=0;j<n;j++)records.push(record(1,Buffer.from([id,n,n-j-1,rgb?1:4,...part.slice(j*40,(j+1)*40)])));}
+  // A 2026-10-16 SmartDawn capture shows a complete 126-byte doodle write:
+  // 4-byte DDP fragment header + 122 bytes of indexed palette/mask data.
+  // Pack each GIF frame as a new compressed doodle, not individual LEDs.
+  // The Nano adapts any oversized fragment to the negotiated GATT MTU.
+  const nativePayloadLimit=122;
+  const parts=rgb?optimizedRGBPackets(frames[i],count,nativePayloadLimit):livePackets(frames[i],count,nativePayloadLimit,stable);
+  for(const part of parts){
+   const n=Math.ceil(part.length/nativePayloadLimit),id=(++packet)&255;
+   for(let j=0;j<n;j++)records.push(record(1,Buffer.from(
+    [id,n,n-j-1,rgb?1:4,...part.slice(j*nativePayloadLimit,(j+1)*nativePayloadLimit)])));
+  }
   const h=Buffer.alloc(6);h.writeUInt32LE(Math.max(40,Math.min(60000,Number(input.delays?.[i])||100)),0);h.writeUInt16LE(records.length,4);out.push(h,...records);
   if(out.reduce((n,b)=>n+b.length,0)>MAX_ASSET_BYTES)throw Error('Prepared animation exceeds the 4 MB relay limit. Use fewer frames or lower color quality; the previous selection is preserved.');
  }
