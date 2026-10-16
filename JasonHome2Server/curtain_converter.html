@@ -173,6 +173,31 @@ details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space
 <script src="curtain_quality.js"></script>
 <script src="curtain_image_headers.js"></script>
 <script>'use strict';
+// Single-step Oracle studio: preserve existing decoder, crop, transport,
+// autosave and diagnostics DOM nodes so internal event wiring stays intact.
+(function compactOracleStudio(){
+ const choose=document.getElementById('chooseStep');
+ const improve=document.getElementById('improveStep');
+ const send=document.getElementById('sendStep');
+ const crop=document.getElementById('photoControls');
+ const actions=send?.querySelector('.sendGrid');
+ const progress=document.getElementById('progress');
+ const status=document.getElementById('status');
+ if(!choose||!improve||!send||!crop||!actions)return;
+ choose.append(crop,actions,progress,status);
+ const steps=document.querySelector('nav.steps');
+ if(steps)steps.hidden=true;
+ improve.hidden=true;send.hidden=true;
+ // Everything other than selecting, cropping, previewing the resulting
+ // 40x40 image and Send/Stop remains functional but not shown.
+ const demos=choose.querySelector('.quickActions');
+ if(demos)demos.hidden=true;
+ const title=choose.querySelector('.cardHead h2');
+ if(title)title.textContent='Choose your picture';
+ const hint=choose.querySelector('.cardHead p');
+ if(hint)hint.textContent='Pick a picture or GIF, adjust crop, then send to Oracle';
+})();
+
 {const panel=document.getElementById('chooseStep');for(const id of ['photoControls','sendLive','stopSend','progress','status']){const item=document.getElementById(id);if(item)panel.appendChild(item);}}
 const BIN_WRITE='02020074-1972-1925-3022-077119514e44';
 const SERVICE='00000074-1972-1925-3022-077119514e44',WRITE='01020074-1972-1925-3022-077119514e44',NOTIFY='01010074-1972-1925-3022-077119514e44',UPLOAD='27923001-2072-1925-3022-077119514e44';
