@@ -21,7 +21,18 @@ if(data.length<=0x120000||data.length>0x290000||data[0]!==0xe9||data[12]!==13||d
 const x=new XMLHttpRequest();x.open('POST','/firmware/upload');x.setRequestHeader('Content-Type','application/octet-stream');x.timeout=240000;$('go').disabled=true;
 x.upload.onprogress=e=>{if(e.lengthComputable){$('p').value=Math.round(e.loaded*100/e.total);$('s').textContent=$('p').value<100?'Uploading: '+$('p').value+'%':'Verifying firmware…';}};
 x.onload=()=>{if(x.status===200){$('p').value=100;$('s').textContent='Firmware verified. Restarting; reopen the controller after it returns.';}else{$('go').disabled=false;$('s').textContent=x.responseText||'Upload failed. Retry here.';}};
-x.onerror=x.ontimeout=()=>{$('go').disabled=false;$('s').textContent='Connection interrupted. Reconnect to the controller and retry this page.';};x.send(file);};
+x.onerror=x.ontimeout=async()=>{
+$('s').textContent='Connection interrupted; checking whether the controller restarted after installation…';
+// The updater can close the socket while ESP32-C6 changes boot partitions.
+// Never claim failure (or success) until a new runtime responds.
+let attempts=0;const check=async()=>{
+try{const r=await fetch('/api/health',{cache:'no-store',signal:AbortSignal.timeout(2500)});
+if(r.ok){const d=await r.json();if(d.ok&&d.version){$('p').value=100;$('s').textContent='Controller restarted and is responding (version '+d.version+'). Verify the version before retrying.';return;}}}catch(e){}
+try{const r=await fetch('/firmware/status',{cache:'no-store',signal:AbortSignal.timeout(2500)});
+if(r.ok){const d=await r.json();if(d.mode==='recovery'){$('go').disabled=false;$('s').textContent='Updater is still running. Upload did not complete; retry the runtime BIN.';return;}}}catch(e){}
+if(++attempts<20){setTimeout(check,1500);return;}
+$('go').disabled=false;$('s').textContent='Could not confirm installation. Reconnect to the controller and check its version before retrying.';};
+setTimeout(check,2000);};x.send(file);};
 </script>)HTML";
 static void sendResponse(NetworkClient&c,int code,const char*type,const String&body){
   c.printf("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",code,code==200?"OK":"Error",type,(unsigned)body.length());c.print(body);
