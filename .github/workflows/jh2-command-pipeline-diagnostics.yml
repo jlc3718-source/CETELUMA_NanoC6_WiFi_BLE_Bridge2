@@ -1,4 +1,4 @@
-name: Jason Home 2 Command Pipeline Diagnostics
+name: Jason Home 2 Automatic Pairing and Command Verification
 on:
   push:
     branches: [codex/jh2-command-pipeline-20261016]
@@ -8,7 +8,7 @@ permissions:
 jobs:
   verify:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 8
+    timeout-minutes: 6
     steps:
       - name: Wait for signed Nano update and measure real command acknowledgments
         shell: bash
@@ -27,11 +27,11 @@ jobs:
             with urllib.request.urlopen(req,timeout=10) as r:return json.loads(r.read()),r.headers
           _,head=api('/api/session',{'token':token});cookie=head['Set-Cookie'].split(';')[0]
           ready=False
-          for attempt in range(37):
+          for attempt in range(25):
             d,_=api('/api/curtain/status',cookie=cookie)
             print('CHANNEL_WATCH',json.dumps({'attempt':attempt,'online':d.get('online'),'channelConnected':d.get('channelConnected'),'firmware':d.get('firmware'),'transport':d.get('commandTransport'),'queued':d.get('queued'),'syncAgeSeconds':round((time.time()*1000-(d.get('lastSync') or 0))/1000,1)}),flush=True)
             if d.get('firmware')=='1.1.13' and d.get('online') and d.get('channelConnected') and d.get('commandTransport')=='wss-duplex':ready=True;break
-            if attempt<36:time.sleep(10)
+            if attempt<24:time.sleep(10)
           if not ready:raise RuntimeError('Signed update has not yet reconnected on the physical Nano; no physical success claimed')
           timings=[]
           for i in range(5):
