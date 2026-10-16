@@ -53,7 +53,12 @@ export function createCurtainBridge({db,now=Date.now}){
  function retained(){
   const r=slot(),item=sha=>sha?assetManifest(sha):null;
   const row=db.prepare('SELECT count(*) n,coalesce(sum(length(bytes)),0) total FROM curtain_assets').get();
+  const visualId=get('lastVisualCommandId'),visual=visualId&&db.prepare('SELECT id,action,state,result FROM curtain_commands WHERE id=?').get(visualId);
+  let result={};try{result=JSON.parse(visual?.result||'{}');}catch{}
+  const needsConfirmation=!!(visual&&visual.state==='applied'&&result.bleTransmitted===true&&result.physicalPlaybackConfirmed!==true);
   return {target:TARGET,generation:r.generation,active:item(r.active_sha),pending:item(r.pending_sha),
+   confirmationRequired:needsConfirmation,confirmationCommandId:needsConfirmation?visualId:null,
+   confirmationAction:needsConfirmation?visual.action:null,
    pendingCommandId:r.pending_command,phase:r.phase,physicalPlaybackConfirmed:!!r.physical_confirmed,
    lastError:r.last_error,retainedFiles:row.n,retainedBytes:row.total,maxFilesPerTarget:2,
    maxFileBytes:4194304,pendingTimeoutSeconds:STAGED_TTL/1000};
@@ -72,21 +77,36 @@ export function createCurtainBridge({db,now=Date.now}){
   const c=r.pending_command&&db.prepare('SELECT state FROM curtain_commands WHERE id=?').get(r.pending_command);
   // An in-flight stream or a delivered image must retain its data.
   if(c&&['queued','downloaded','applied'].includes(c.state))return;
-  transaction(()=>{db.prepare("UPDATE curtain_asset_slots SET pending_sha=NULL,pending_command=NULL,pending_at=NULL,phase='expired',last_error='Unused replacement staging expired' WHERE target=?").run(TARGET);garbageCollect();});
+  transaction(()=>{if(r.pending_command)restoreDesiredAfterFailedTransfer(r.pending_command);db.prepare("UPDATE curtain_asset_slots SET pending_sha=NULL,pending_command=NULL,pending_at=NULL,phase='expired',last_error='Unused replacement staging expired' WHERE target=?").run(TARGET);garbageCollect();});
+ }
+ function restoreDesiredAfterFailedTransfer(commandId){
+  if(get('lastVisualCommandId')!==commandId)return;
+  const desired=get('desired',{}),previous=slot().active_sha;
+  if(previous&&hasAsset(previous))desired.visual={action:'asset',payload:{sha256:previous}};
+  else delete desired.visual;
+  put('desired',desired);
  }
  function confirmDisplayed(id){
   if(!int(id,1,Number.MAX_SAFE_INTEGER))throw fail(400,'Valid curtain command ID required');
-  const c=command(id),r=slot();
+  const c=command(id),r=slot(),visualId=get('lastVisualCommandId');
   if(c.state!=='applied'||c.result?.bleTransmitted!==true)
-   throw fail(409,'Curtain command was not transmitted');
-  if(c.action!=='asset'||r.pending_command!==id||r.pending_sha!==c.payload.sha256)
+   throw fail(409,'Curtain command has not completed BLE delivery');
+  if(id!==visualId)throw fail(409,'The displayed scene has been replaced by a newer command');
+  const visual=['effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(c.action)||
+    (c.action==='power'&&c.payload.on===false);
+  if(c.action==='asset'&&(r.pending_command!==id||r.pending_sha!==c.payload.sha256))
    throw fail(409,'Only the current staged image can be confirmed');
-  transaction(()=>{
-   transition(c.payload.sha256,id,'confirmed_displayed',true);
+  if(c.action!=='asset'&&!visual)throw fail(409,'This command does not replace displayed content');
+  return transaction(()=>{
+   transition(c.action==='asset'?c.payload.sha256:null,id,
+    c.action==='asset'?'confirmed_displayed':'confirmed_builtin_or_off',true);
+   if(c.action==='power'&&!c.payload.on){
+    const desired=get('desired',{});delete desired.visual;put('desired',desired);
+   }
    const result={...(c.result||{}),physicalPlaybackConfirmed:true,confirmedBy:'user-observed-curtain',confirmedAt:now()};
    db.prepare('UPDATE curtain_commands SET result=? WHERE id=?').run(JSON.stringify(result),id);
+   signal();return {ok:true,...retained()};
   });
-  signal();return {ok:true,...retained()};
  }
  if(!slot()){
   // Preserve one recoverable legacy content reference; don't assert physical
@@ -129,6 +149,8 @@ export function createCurtainBridge({db,now=Date.now}){
   if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
   const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),transient?now()+60000:now()+86400000,idempotency,source);
   if(action==='asset'&&slot().pending_sha===payload.sha256)db.prepare("UPDATE curtain_asset_slots SET pending_command=?,phase='queued' WHERE target=?").run(Number(r.lastInsertRowid),TARGET);
+  if(['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)||(action==='power'&&payload.on===false))
+   put('lastVisualCommandId',Number(r.lastInsertRowid));
   signal();return view(db.prepare('SELECT * FROM curtain_commands WHERE id=?').get(r.lastInsertRowid));
  }
  function view(r){return {...r,payload:JSON.parse(r.payload),result:r.result?JSON.parse(r.result):null,physicalPlaybackConfirmed:false};}
@@ -179,6 +201,7 @@ export function createCurtainBridge({db,now=Date.now}){
      if(result.physicalPlaybackConfirmed===true)transition(JSON.parse(old.payload).sha256,ack.id,'confirmed_displayed',true);
      else transition(null,ack.id,'transferred_unconfirmed');
     }else if(ack.state==='failed'){
+     restoreDesiredAfterFailedTransfer(ack.id);
      db.prepare("UPDATE curtain_asset_slots SET pending_sha=NULL,pending_command=NULL,pending_at=NULL,phase='failed',last_error=? WHERE target=?")
        .run(String(result.error||'Transfer failed').slice(0,250),TARGET);
      garbageCollect();
