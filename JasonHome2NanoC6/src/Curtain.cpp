@@ -89,6 +89,14 @@ static void loopUnlocked(){
   if(now-lastHeart>=6000&&(!lastRaw||now-lastRaw>15000)){lastHeart=now;if(heart){uint8_t b[4]{};heart->writeValue(b,4,true);}}
 }
 
-bool curtainCall(const String&action,JsonVariantConst in,JsonDocument&out){xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);bool ok=callUnlocked(action,in,out);xSemaphoreGiveRecursive(bleLock);return ok;}
+bool curtainCall(const String&action,JsonVariantConst in,JsonDocument&out){
+ // The UI must not hang for the entire BLE 4.5 s scan / 6 s reconnect.
+ // Status may return immediately with "busy" while control transfers continue.
+ if(xSemaphoreTakeRecursive(bleLock,action=="status"?pdMS_TO_TICKS(15):portMAX_DELAY)!=pdTRUE){
+   out["ok"]=true;out["busy"]=true;out["message"]="BLE is reconnecting or transferring; controller remains responsive";
+   out["connected"]=false;out["ready"]=false;return true;
+ }
+ bool ok=callUnlocked(action,in,out);xSemaphoreGiveRecursive(bleLock);return ok;
+}
 void curtainLoop(){if(xSemaphoreTakeRecursive(bleLock,0)==pdTRUE){loopUnlocked();xSemaphoreGiveRecursive(bleLock);}}
 bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);auto*ch=channel==0?writer:channel==1?heart:nullptr;bool ok=connected()&&ch&&n<=client->getMTU()-3&&ch->writeValue(bytes,n,ch->canWrite());if(ok)lastRaw=millis();xSemaphoreGiveRecursive(bleLock);return ok;}
