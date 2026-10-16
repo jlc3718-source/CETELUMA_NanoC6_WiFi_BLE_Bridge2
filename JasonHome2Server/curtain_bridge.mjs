@@ -108,6 +108,7 @@ export function createCurtainBridge({db,now=Date.now}){
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
   const transient=['rawWrite','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
   if(action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
+  if(action==='asset'&&![slot().active_sha,slot().pending_sha].includes(payload.sha256))throw fail(409,'Asset is no longer staged or active');
   const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
@@ -117,6 +118,7 @@ export function createCurtainBridge({db,now=Date.now}){
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
   if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
   const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),transient?now()+60000:now()+86400000,idempotency,source);
+  if(action==='asset'&&slot().pending_sha===payload.sha256)db.prepare("UPDATE curtain_asset_slots SET pending_command=?,phase='queued' WHERE target=?").run(Number(r.lastInsertRowid),TARGET);
   signal();return view(db.prepare('SELECT * FROM curtain_commands WHERE id=?').get(r.lastInsertRowid));
  }
  function view(r){return {...r,payload:JSON.parse(r.payload),result:r.result?JSON.parse(r.result):null,physicalPlaybackConfirmed:false};}
@@ -156,8 +158,26 @@ export function createCurtainBridge({db,now=Date.now}){
   if(Array.isArray(body.notifications))put('notifications',body.notifications.slice(-48));
   for(const ack of (body.acks||[]).slice(0,32)){
    if(!int(ack.id,1,Number.MAX_SAFE_INTEGER)||!['downloaded','applied','failed'].includes(ack.state))continue;
-   const old=db.prepare('SELECT state FROM curtain_commands WHERE id=?').get(ack.id);if(!old||!['queued','downloaded'].includes(old.state))continue;
-   const result=ack.result&&typeof ack.result==='object'?ack.result:{};db.prepare('UPDATE curtain_commands SET state=?,result=? WHERE id=?').run(ack.state,JSON.stringify(result).slice(0,12000),ack.id);
+   const old=db.prepare('SELECT state,action,payload FROM curtain_commands WHERE id=?').get(ack.id);
+   if(!old||!['queued','downloaded'].includes(old.state))continue;
+   const result=ack.result&&typeof ack.result==='object'?ack.result:{};
+   db.prepare('UPDATE curtain_commands SET state=?,result=? WHERE id=?').run(ack.state,JSON.stringify(result).slice(0,12000),ack.id);
+   const displaySelection=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(old.action)||
+    (old.action==='power'&&JSON.parse(old.payload)?.on===false);
+   if(old.action==='asset'&&slot().pending_command===ack.id){
+    if(ack.state==='applied'&&result.bleTransmitted===true){
+     if(result.physicalPlaybackConfirmed===true)transition(JSON.parse(old.payload).sha256,ack.id,'confirmed_displayed',true);
+     else transition(null,ack.id,'transferred_unconfirmed');
+    }else if(ack.state==='failed'){
+     db.prepare("UPDATE curtain_asset_slots SET pending_sha=NULL,pending_command=NULL,pending_at=NULL,phase='failed',last_error=? WHERE target=?")
+       .run(String(result.error||'Transfer failed').slice(0,250),TARGET);
+     garbageCollect();
+    }else if(ack.state==='downloaded')transition(null,ack.id,'transferring');
+   }else if(displaySelection&&ack.state==='applied'&&result.physicalPlaybackConfirmed===true){
+    // A builtin/off command only frees the active file after a supported
+    // positive activation signal, not merely BLE delivery.
+    transition(null,ack.id,'confirmed_builtin_or_off',true);
+   }
   }
   db.prepare("UPDATE curtain_commands SET state='expired' WHERE state IN ('queued','downloaded') AND expires<?").run(at);
   let rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 8").all();
