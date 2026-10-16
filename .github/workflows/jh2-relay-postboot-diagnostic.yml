@@ -29,3 +29,22 @@ jobs:
              v=json.loads(value);print('SAVED_SESSION',{'fields':list(v),'tokenPresent':bool(v.get('token')),'uidPresent':bool(v.get('uid')),'accountUidPresent':bool(v.get('accountUid'))})
             else: print(key, bool(value) if key=='install_id' else value)
           PY
+
+      - name: Restore cached Eufy connection and verify relay availability
+        run: |
+          sudo python3 - <<'PY'
+          import subprocess,json,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0];env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x);token=env['JASON_HOME_API_TOKEN']
+          def call(base,path,body=None,cookie=None):
+           h={'Authorization':'Bearer '+token,'Content-Type':'application/json'}
+           if cookie:h['Cookie']=cookie
+           with urllib.request.urlopen(urllib.request.Request(base+path,None if body is None else json.dumps(body).encode(),h),timeout=60) as r:return json.load(r),r.headers
+          s,_=call('http://127.0.0.1:8080','/api/status?refresh=1')
+          print('REFRESH_RESULT',json.dumps({'owner':s.get('automationOwner'),'eufy':s.get('eufy'),'events':s['calendar']['eventCount']}))
+          assert len(s['eufy']['readyNames'])==4,'Saved-session restoration failed'
+          _,headers=call('http://127.0.0.1:8081','/api/session',{'token':token})
+          relay,_=call('http://127.0.0.1:8081','/api/curtain/status',cookie=headers['Set-Cookie'].split(';')[0])
+          print('RELAY_RESULT',json.dumps({'available':relay.get('ok'),'paired':relay.get('configured'),'assetStorage':relay.get('assetStorage')}))
+          source=subprocess.check_output(['docker','exec','jason-home','cat','/app/dist/server.js'],text=True)
+          print('STARTUP_CODE',source[source.rfind('server.listen'):])
+          PY
