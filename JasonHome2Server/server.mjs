@@ -962,6 +962,16 @@ async function route(req,res){
     if(req.headers["sec-fetch-site"]==="cross-site")throw fail(403,"Cross-site request blocked");
   }
   if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);
+  if(path==="/nano/"&&method==="GET"){
+    const file=join(root,"nano_remote.html");
+    if(!existsSync(file))throw fail(404,"Nano remote controller is not installed");
+    const data=readFileSync(file);
+    res.writeHead(200,{"content-type":"text/html; charset=utf-8",
+      "content-length":data.length,"cache-control":"no-store",
+      "content-security-policy":"default-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+      "x-content-type-options":"nosniff"});
+    return res.end(data);
+  }
   if(path==="/api/curtain/status"&&method==="GET")return send(res,200,curtainRelay.status());
   if(path==="/api/curtain/pair"&&method==="POST")return send(res,200,curtainRelay.pairing());
   if(path==="/api/curtain/rotate"&&method==="POST")return send(res,200,curtainRelay.requestRotation());
