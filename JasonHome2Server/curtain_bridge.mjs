@@ -11,6 +11,7 @@ export function validateCommand(action,p={}){
  if(action==='power'){const on=p.on??p.value;if(typeof on!=='boolean')throw fail(400,'Power must be boolean');return {on};}
  if(action==='brightness'||action==='speed'){if(!int(p.value,action==='brightness'?0:1,100))throw fail(400,'Value must be 0–100 (speed 1–100)');return {value:p.value};}
  if(action==='layout'){if(![0,4,5,6].includes(p.value))throw fail(400,'Unsupported layout');return {value:p.value};}
+ if(action==='nativePlay'){if(p.cid!==83928||!int(p.slot,0,255))throw fail(400,'Only the verified CID 83928 slot is supported');return {cid:p.cid,slot:p.slot};}
  if(action==='effect'){if(!int(p.id,0,87))throw fail(400,'Only captured E-0 through E-87 are supported');return {id:p.id};}
  if(action==='sequenceStart'){if(!Array.isArray(p.effects)||p.effects.length<2||p.effects.length>88||!p.effects.every(x=>int(x,0,87))||!int(p.intervalSeconds,5,3600))throw fail(400,'Invalid native effect sequence');return {effects:p.effects,intervalSeconds:p.intervalSeconds};}
  if(action==='asset'){if(!/^[a-f0-9]{64}$/.test(p.sha256))throw fail(400,'Invalid asset digest');return {sha256:p.sha256};}
@@ -35,10 +36,10 @@ export function createCurtainBridge({db,now=Date.now}){
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
   const transient=['rawWrite','subscribeRaw','scan','connect','disconnect','status'].includes(action);
   if(action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
-  const key=['asset','effect','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
+  const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
-   const old=db.prepare("SELECT id,action FROM curtain_commands WHERE state='queued'").all();for(const c of old)if((['asset','effect','sequenceStart','sequenceStop','assetStop'].includes(c.action)?'visual':c.action)===key)db.prepare("UPDATE curtain_commands SET state='superseded' WHERE id=?").run(c.id);
+   const old=db.prepare("SELECT id,action FROM curtain_commands WHERE state='queued'").all();for(const c of old)if((['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(c.action)?'visual':c.action)===key)db.prepare("UPDATE curtain_commands SET state='superseded' WHERE id=?").run(c.id);
   }
   if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
@@ -60,7 +61,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function schedules(){return db.prepare('SELECT value FROM curtain_schedules').all().map(x=>JSON.parse(x.value));}
  function saveSchedule(s){
   if(!/^[\w-]{1,80}$/.test(s.id||'')||!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.end<=s.start||s.end-s.start>31*86400000)throw fail(400,'Supply a valid start and end date');
-  const payload=validateCommand(s.action,s.payload);if(!['asset','effect','sequenceStart','power'].includes(s.action))throw fail(400,'Unsupported scheduled action');
+  const payload=validateCommand(s.action,s.payload);if(!['asset','effect','nativePlay','sequenceStart','power'].includes(s.action))throw fail(400,'Unsupported scheduled action');
   if(s.action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Scheduled asset is missing');
   const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));put('scheduleRevision',get('scheduleRevision',0)+1);put('scheduleActive','changed');tick();signal();return value;
  }

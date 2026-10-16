@@ -11,7 +11,7 @@
    if(window.AndroidCurtain?.call)return new Promise((resolve,reject)=>{const id='save'+Date.now();const old=window.__curtainNativeResult;window.__curtainNativeResult=(n,r)=>{if(n!==id)return old?.(n,r);window.__curtainNativeResult=old;r.ok?resolve(r):reject(Error(r.error));};AndroidCurtain.call(id,action,JSON.stringify(payload));});
    const bytes=Uint8Array.from(atob(payload.data),c=>c.charCodeAt(0)),a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes],{type:payload.mime}));a.download=payload.name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);return {ok:true,message:'Downloaded'};
   }
-  if(['asset','effect','sequenceStart'].includes(action))window.JH2CurtainLastSelection={action,payload};
+  if(['asset','effect','nativePlay','sequenceStart'].includes(action))window.JH2CurtainLastSelection={action,payload};
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';

@@ -48,6 +48,11 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
   }
   else if(action=="sequenceStop"){sequence.clear();state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
   else if(!connected()){ok=false;message="Curtain is disconnected";}
+  else if(action=="nativePlay"){
+    sequence.clear();uint32_t cid=in["cid"]|0U,slot=in["slot"]|999U;
+    uint8_t payload[12];size_t n=0;payload[n++]=8;auto varint=[&](uint32_t v){do{uint8_t b=v&127;v>>=7;payload[n++]=b|(v?128:0);}while(v);};varint(cid);payload[n++]=16;varint(slot);
+    SmartDawn::Frame f;ok=cid==83928&&slot<=255&&SmartDawn::commandFrame(session,2606,payload,n,f)&&writeFrame(f);
+  }
   else if(action=="solid"){
     sequence.clear();String color=in["color"]|String("");ok=color.length()==7&&color[0]=='#';
     uint32_t rgb=ok?strtoul(color.substring(1).c_str(),nullptr,16):0;

@@ -97,7 +97,7 @@ static void poller(void*){
    if(localUntil&&(int32_t)(localUntil-millis())>0)break;
    String action=cmd["action"]|String("");JsonDocument result;bool ok=true;
    if(cmd["source"].as<String>()=="manual")streamFailures=0;
-   if(action=="asset"||action=="effect"||action=="sequenceStart"||action=="sequenceStop"||action=="assetStop"||action=="rawWrite"||action=="disconnect"||(action=="power"&&!(cmd["payload"]["on"]|false))){generation++;streaming=false;}
+   if(action=="asset"||action=="nativePlay"||action=="effect"||action=="sequenceStart"||action=="sequenceStop"||action=="assetStop"||action=="rawWrite"||action=="disconnect"||(action=="power"&&!(cmd["payload"]["on"]|false))){generation++;streaming=false;}
    if(action!="disconnect"&&action!="scan"&&action!="status")ok=curtainCall("connect",JsonVariantConst(),result);
    if(ok&&action=="asset"){
     curtainCall("sequenceStop",JsonVariantConst(),result);String sha=cmd["payload"]["sha256"]|String("");uint32_t size=0;for(auto a:response["assets"].as<JsonArrayConst>())if(a["sha256"].as<String>()==sha)size=a["bytes"]|0U;
