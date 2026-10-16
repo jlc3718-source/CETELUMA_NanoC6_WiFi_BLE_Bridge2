@@ -17,6 +17,12 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'src/Common.cpp').read_text()
 mount = re.search(r'LittleFS\.begin\([^;\n]+?\)', source).group()
 routes = source[source.index('void registerSetup(){'):]
+routes = routes.replace(
+    'page.replace("placeholder=\\"Wi-Fi name\\" required", "placeholder=\\"Leave blank to keep saved Wi-Fi\\"");',
+    'replaceAll(page,"placeholder=\\"Wi-Fi name\\" required","placeholder=\\"Leave blank to keep saved Wi-Fi\\"");')
+routes = routes.replace(
+    'page.replace("placeholder=\\"Wi-Fi password\\"", "placeholder=\\"Leave blank to keep saved password\\"");',
+    'replaceAll(page,"placeholder=\\"Wi-Fi password\\"","placeholder=\\"Leave blank to keep saved password\\"");')
 partition = next(line for line in (root / 'partitions.csv').read_text().splitlines()
                  if line.startswith('storage,'))
 assert partition.split(',')[0] == 'storage'
@@ -30,6 +36,9 @@ support = r'''
 #include <string>
 using String=std::string;
 using namespace ArduinoJson;
+void replaceAll(String& value,const String& from,const String& to){
+  size_t at=0;while((at=value.find(from,at))!=String::npos){value.replace(at,from.size(),to);at+=to.size();}
+}
 constexpr int HTTP_GET=0,HTTP_POST=1;
 struct Server {
   std::map<std::pair<String,int>,std::function<void()>> routes;
@@ -38,6 +47,7 @@ struct Server {
   void on(const char*p,int m,std::function<void()> fn){routes[{p,m}]=fn;}
   String arg(const char*key){return args[key];}
   void send(int s,const char* type="",const char* text=""){status=s;response=text;}
+  void send(int s,const char* type,const String& text){status=s;response=text;}
   void sendHeader(const char*,const String&){}
 } web;
 struct Flash {
@@ -45,6 +55,11 @@ struct Flash {
     assert(!format);return String(label)=="storage";
   }
 } LittleFS;
+struct Preferences {
+  bool begin(const char*,bool){return true;}
+  size_t putString(const char*,const String& value){return value.size();}
+  void end(){}
+};
 struct Device{int restarts=0;void restart(){++restarts;}} ESP;
 JsonDocument secrets;
 String apiToken="test-session",disk;
