@@ -141,8 +141,8 @@ const db=new DatabaseSync(join(dataDir,"jason-home-2.sqlite"));
 db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
-const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});
 const curtainRelay=createCurtainBridge({db});
+const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 if(!meta("speed_scale_10")){
   db.exec("BEGIN");
