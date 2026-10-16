@@ -20,9 +20,9 @@ test('every inline Curtain Studio script parses',()=>{
  for(const code of scripts)if(code.trim())new Script(code);
 });
 
-test('single send control automatically installs and plays the native scroll slot',()=>{
+test('single send control preserves native scroll installer for standalone direct BLE mode',()=>{
  const click=section("$('sendLive').onclick=async()=>","$('play').onclick=");
- assert.match(click,/if\(\$\('motion'\)\.value==='scroll'\)/);
+ assert.match(click,/if\(\$\('motion'\)\.value==='scroll'&&!oracleStudio\(\)\)/);
  assert.match(click,/prepared=nativeFromImage\(sourceImage\)/);
  assert.match(click,/plan\(prepared,CID\)/);
  assert.match(click,/await delete928\(\)/);
@@ -34,8 +34,8 @@ test('single send control automatically installs and plays the native scroll slo
 
 test('static/GIF stream is honestly distinguished from saved native effects',()=>{
  const ui=section('function ui(){','function varint(');
- assert.match(ui,/GIF frames repeatedly while this app stays connected/);
- assert.match(ui,/Saved controller slots are not overwritten/);
+ assert.match(ui,/No curtain connection is needed to submit it/);
+ assert.match(ui,/Saved controller slots are unchanged/);
  assert.match(ui,/Replace saved slot & play/);
  const click=section("$('sendLive').onclick=async()=>","$('play').onclick=");
  assert.match(click,/else\{\s*liveActive=true;ui\(\);\s*await drawLive\(\)/);
@@ -46,7 +46,7 @@ test('GIF playback loops over all frames until stopped, while static sends once'
  async function simulate(motion,until){
   const progress={value:0},status=[],writes=[];
   const runtime={
-   connected:true,binWriter:{},stopLive:false,
+   connected:true,binWriter:{},stopLive:false,oracleStudio:()=>false,
    $:id=>id==='motion'?{value:motion}:id==='progress'?progress:{},
    frames:['a','b'],frameDelays:[40,40],
    ddp:async cmd=>{writes.push(cmd);},delay:async()=>{},
