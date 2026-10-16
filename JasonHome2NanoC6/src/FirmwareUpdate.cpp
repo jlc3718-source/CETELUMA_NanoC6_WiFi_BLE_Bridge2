@@ -76,7 +76,7 @@ void registerFirmware(){
 }
 void firmwareLoop(){
 #ifndef JH2_BOOT
-  if(!(state["autoUpdate"]|false)||busy||WiFi.status()!=WL_CONNECTED||!timeValid()||(int32_t)(millis()-nextCheck)<0)return;
+  if(!(state["autoUpdate"]|true)||busy||WiFi.status()!=WL_CONNECTED||!timeValid()||(int32_t)(millis()-nextCheck)<0)return;
   nextCheck=millis()+60000;busy=true;JsonDocument d;FirmwareManifest m;String error;
   if(fetchManifest(d)&&parseManifest(d.as<JsonVariantConst>(),m,error)&&isNewer(m.version,VERSION)&&queueFirmware(d.as<JsonVariantConst>(),error)){delay(100);ESP.restart();}
   busy=false;
