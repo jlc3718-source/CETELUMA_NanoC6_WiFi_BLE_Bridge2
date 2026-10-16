@@ -68,9 +68,16 @@ else:
  # Update the already-isolated route blocks without touching other application code.
  for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
   a=src.index(start);b=src.index(end,a);x=live.index(start);y=live.index(end,x);live=live[:x]+src[a:b]+live[y:]
+old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
+bridge_init='const curtainRelay=createCurtainBridge({db});'
+new_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});'
+if old_sync in live:
+ assert live.count(old_sync)==1 and live.count(bridge_init)==1
+ live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
+assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
 (stage/'server.mjs').write_text(live)
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
-for name in ['curtain_bridge.mjs','curtain_asset.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
+for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
 for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
@@ -126,7 +133,7 @@ try:
  if directives:
   nginx.write_text(config.replace(marker,marker+'\n'+'\n'.join(directives),1));run('nginx','-t');run('systemctl','reload','nginx')
  base='http://127.0.0.1:8081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
- relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds']==60
+ relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds']==5
  api(base,'/api/eufy/verification',cookie=cookie)
  reconcile,_=api(BASE,'/api/reconcile',token,body={});assert reconcile.get('ok') is True and not reconcile.get('errors')
  after,_=api(BASE,'/api/status',token);assert after['automationOwner']=='oracle';assert len(after['eufy']['readyNames'])==4;assert after['calendar']['revision']==before['calendar']['revision'];assert after['calendar']['eventCount']==212
