@@ -1,0 +1,63 @@
+name: Jason Home 2 Command Pipeline Diagnostics
+on:
+  push:
+    branches: [codex/jh2-command-pipeline-20261016]
+    paths: ['.github/workflows/jh2-command-pipeline-diagnostics.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read command, bridge, proxy, and runtime diagnostics without device writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 - <<'PY'
+          import subprocess,json,urllib.request,sqlite3,time,pathlib,collections,re
+          def inspect(name): return json.loads(subprocess.check_output(['docker','inspect',name]))[0]
+          backend=inspect('jason-home');web=inspect('jason-home-2-web')
+          be=dict(v.split('=',1) for v in backend['Config']['Env'] if '=' in v)
+          we=dict(v.split('=',1) for v in web['Config']['Env'] if '=' in v)
+          def api(path,body=None,cookie=None,port=8081):
+            headers={'Content-Type':'application/json'}
+            if cookie:headers['Cookie']=cookie
+            req=urllib.request.Request('http://127.0.0.1:'+str(port)+path,None if body is None else json.dumps(body).encode(),headers)
+            with urllib.request.urlopen(req,timeout=12) as r:return json.loads(r.read()),r.headers
+          _,head=api('/api/session',{'token':be['JASON_HOME_API_TOKEN']})
+          cookie=head['Set-Cookie'].split(';')[0]
+          print('RUNTIME',json.dumps({'image':web['Config']['Image'],'started':web['State']['StartedAt'],'restarts':web['RestartCount'],'build':we.get('JH2_CURTAIN_BUILD_SHA')},sort_keys=True),flush=True)
+          allowed=['configured','online','lastSeen','lastSync','pollSeconds','credentialRotationPending','firmware','build','uptimeSeconds','wifiRSSI','freeHeap','relayStreaming','error','curtain','lastCommand','queued','manualUntil']
+          for i in range(3):
+            d,_=api('/api/curtain/status',cookie=cookie)
+            out={k:d.get(k) for k in allowed}
+            out['serverTime']=int(time.time()*1000);out['syncAgeSeconds']=(time.time()*1000-(d.get('lastSync') or 0))/1000
+            print('BRIDGE_SAMPLE',json.dumps(out,sort_keys=True),flush=True)
+            if i<2:time.sleep(5)
+          mount=next(m for m in web['Mounts'] if m['Destination']=='/data')
+          dbpath=pathlib.Path(mount['Source'])/'jason-home-2.sqlite'
+          db=sqlite3.connect('file:'+str(dbpath)+'?mode=ro',uri=True);db.row_factory=sqlite3.Row
+          print('COMMAND_STATES',json.dumps([dict(r) for r in db.execute('SELECT action,state,count(*) n FROM curtain_commands GROUP BY action,state')]),flush=True)
+          safe=['ok','error','message','connected','bleTransmitted','physicalPlaybackConfirmed','firmware','freeHeap','uptimeSeconds','streaming','lastSuccessfulSyncAgeSeconds']
+          for r in db.execute('SELECT id,action,state,created,expires,result,source,length(payload) payloadBytes FROM curtain_commands ORDER BY id DESC LIMIT 30'):
+            row=dict(r)
+            try:result=json.loads(row.pop('result') or '{}');row['result']={k:result[k] for k in safe if k in result}
+            except:row['result']={'parseError':True}
+            print('COMMAND',json.dumps(row,sort_keys=True),flush=True)
+          for r in db.execute("SELECT key,value FROM curtain_meta WHERE key IN ('lastSeen','lastSync','localOverride','manualUntil','scheduleActive','credentialRotatedAt','storageTickError','lastVisualCommandId')"):
+            print('META',r['key'],r['value'],flush=True)
+          db.close()
+          conf=pathlib.Path('/etc/nginx/sites-available/jason-home').read_text()
+          lines=[line.strip() for line in conf.splitlines() if any(k in line for k in ['location ','proxy_pass ','proxy_buffering ','proxy_read_timeout ','proxy_http_version ','proxy_set_header Connection'])]
+          print('PROXY_ROUTES',json.dumps(lines),flush=True)
+          access=pathlib.Path('/var/log/nginx/access.log')
+          if access.exists():
+            tail=subprocess.check_output(['tail','-n','400',str(access)],text=True)
+            counts=collections.Counter()
+            for line in tail.splitlines():
+              m=re.search(r'"(?:GET|POST) (/jason-home-2/api/curtain[^ ?"]*)(?:[^"]*)" (\d{3})',line)
+              if m:counts[(m.group(1),m.group(2))]+=1
+            print('RECENT_HTTP_COUNTS',json.dumps([{'path':k[0],'status':k[1],'count':v} for k,v in counts.items()]),flush=True)
+          print('Read-only inspection complete. No device commands, pairing, or deployment performed.',flush=True)
+          PY
