@@ -41,6 +41,8 @@ export function createCurtainBridge({db,now=Date.now}){
    const old=db.prepare("SELECT id,action FROM curtain_commands WHERE state='queued'").all();for(const c of old)if((['asset','effect','sequenceStart','sequenceStop','assetStop'].includes(c.action)?'visual':c.action)===key)db.prepare("UPDATE curtain_commands SET state='superseded' WHERE id=?").run(c.id);
   }
   if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
+  db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
+  if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
   const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),transient?now()+60000:now()+86400000,idempotency,source);
   signal();return view(db.prepare('SELECT * FROM curtain_commands WHERE id=?').get(r.lastInsertRowid));
  }
@@ -60,7 +62,7 @@ export function createCurtainBridge({db,now=Date.now}){
   if(!/^[\w-]{1,80}$/.test(s.id||'')||!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.end<=s.start||s.end-s.start>31*86400000)throw fail(400,'Supply a valid start and end date');
   const payload=validateCommand(s.action,s.payload);if(!['asset','effect','sequenceStart','power'].includes(s.action))throw fail(400,'Unsupported scheduled action');
   if(s.action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Scheduled asset is missing');
-  const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));put('scheduleRevision',get('scheduleRevision',0)+1);put('scheduleActive',null);tick();signal();return value;
+  const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));put('scheduleRevision',get('scheduleRevision',0)+1);put('scheduleActive','changed');tick();signal();return value;
  }
  function resume(){put('manualUntil',0);put('scheduleActive',null);tick();for(const d of Object.values(get('desired',{})))enqueue(d.action,d.payload,null,'recovery');signal();return status();}
  function sync(body){
@@ -69,11 +71,11 @@ export function createCurtainBridge({db,now=Date.now}){
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
   put('localOverride',Number(body.localOverrideUntil||0));
   if(reboot){put('bootId',body.bootId);put('notifications',[]);}
-  if((reboot||endedOverride)&&get('localOverride',0)<=at){
-   const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key])enqueue(desired[key].action,desired[key].payload,null,'recovery');
+  if((reboot||endedOverride||body.recoverDesired===true)&&get('localOverride',0)<=at){
+   const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
   }
 
-  if(body.status&&typeof body.status==='object')put('status',JSON.parse(JSON.stringify(body.status).slice(0,12000)));
+  if(body.status&&typeof body.status==='object')put('status',JSON.parse(JSON.stringify(body.status).length<=12000?JSON.stringify(body.status):'{}'));
   if(Array.isArray(body.notifications))put('notifications',body.notifications.slice(-48));
   for(const ack of (body.acks||[]).slice(0,32)){
    if(!int(ack.id,1,Number.MAX_SAFE_INTEGER)||!['downloaded','applied','failed'].includes(ack.state))continue;

@@ -53,12 +53,12 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
     uint32_t rgb=ok?strtoul(color.substring(1).c_str(),nullptr,16):0;
     SmartDawn::Frame f;
     if(ok)ok=SmartDawn::commandFrame(session,2514,nullptr,0,f)&&writeFrame(f)&&SmartDawn::scalarFrame(session,2701,1,f)&&writeFrame(f)&&SmartDawn::commandFrame(session,2713,nullptr,0,f)&&writeFrame(f);
-    if(ok&&heart){uint8_t b[30]{};b[0]=session.seq++;b[1]=1;b[2]=0;b[3]=1;b[4]=1;b[5]=rgb>>16;b[6]=rgb>>8;b[7]=rgb;b[8]=0;int n=9,left=1600;while(left){int run=std::min(left,127);b[n++]=0x80|run;left-=run;}ok=heart->writeValue(b,n,true);}
+    if(ok&&heart){uint8_t b[30]{};b[0]=session.seq++;b[1]=1;b[2]=0;b[3]=1;b[4]=1;b[5]=rgb>>16;b[6]=rgb>>8;b[7]=rgb;b[8]=0;int n=9,left=1600;while(left){int run=std::min(left,127);b[n++]=0x80|run;left-=run;}ok=heart->writeValue(b,n,heart->canWrite());}
     if(ok){int level=in["brightness"]|100;if(level==0)ok=SmartDawn::commandFrame(session,2515,nullptr,0,f)&&writeFrame(f);else ok=SmartDawn::scalarFrame(session,0x09cd,SmartDawn::rawBrightness(level),f)&&writeFrame(f);}
   }
   else if(action=="rawWrite"){
     sequence.clear();String uuid=in["uuid"]|String("");uuid.toLowerCase();auto*ch=uuid==CURT_WRITE?writer:uuid==CURT_HEART?heart:uuid==CURT_UPLOAD?upload:nullptr;auto b=from64(in["data"]|String(""));
-    if(!ch||b.empty()||b.size()>508||b.size()>client->getMTU()-3){ok=false;message="Unsupported curtain UUID or packet exceeds negotiated MTU";}else{lastRaw=millis();ok=ch->writeValue(b.data(),b.size(),true);}
+    if(!ch||b.empty()||b.size()>508||b.size()>client->getMTU()-3){ok=false;message="Unsupported curtain UUID or packet exceeds negotiated MTU";}else{lastRaw=millis();ok=ch->writeValue(b.data(),b.size(),ch->canWrite());}
   }else if(action=="subscribeRaw"){String uuid=in["uuid"]|String("");uuid.toLowerCase();ok=uuid==CURT_NOTIFY&&notify&&notify->canNotify()&&notify->subscribe(true,notification);}
   else if(action=="effect"){sequence.clear();ok=effect(in["id"]|-1);}
   else if(action=="power"){sequence.clear();SmartDawn::Frame f;ok=(in["on"].is<bool>()||in["value"].is<bool>())&&SmartDawn::commandFrame(session,(in["on"]|in["value"].as<bool>())?0x09d2:0x09d3,nullptr,0,f)&&writeFrame(f);}
@@ -84,4 +84,4 @@ static void loopUnlocked(){
 
 bool curtainCall(const String&action,JsonVariantConst in,JsonDocument&out){xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);bool ok=callUnlocked(action,in,out);xSemaphoreGiveRecursive(bleLock);return ok;}
 void curtainLoop(){if(xSemaphoreTakeRecursive(bleLock,0)==pdTRUE){loopUnlocked();xSemaphoreGiveRecursive(bleLock);}}
-bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);auto*ch=channel==0?writer:channel==1?heart:nullptr;bool ok=connected()&&ch&&n<=client->getMTU()-3&&ch->writeValue(bytes,n,true);if(ok)lastRaw=millis();xSemaphoreGiveRecursive(bleLock);return ok;}
+bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);auto*ch=channel==0?writer:channel==1?heart:nullptr;bool ok=connected()&&ch&&n<=client->getMTU()-3&&ch->writeValue(bytes,n,ch->canWrite());if(ok)lastRaw=millis();xSemaphoreGiveRecursive(bleLock);return ok;}

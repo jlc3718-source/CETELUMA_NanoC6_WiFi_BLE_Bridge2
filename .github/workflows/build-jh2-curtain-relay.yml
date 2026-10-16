@@ -105,3 +105,87 @@ jobs:
         with:
           name: Jason-Home-2-Relay-Signed
           path: relay-sign/Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk
+  deploy:
+    needs: [firmware, apk]
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    concurrency:
+      group: jason-home-oracle-production
+      cancel-in-progress: false
+    steps:
+      - name: Restore runner checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Back up, restore-test, stage, deploy and verify isolated gateway
+        run: sudo --preserve-env=GITHUB_RUN_ID,GITHUB_SHA python3 .github/scripts/deploy-curtain-relay.py
+  publish:
+    needs: [sign, deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-NanoC6-1.1.0, path: relay-release}
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-Relay-Signed, path: relay-release}
+      - name: Verify firmware, sign channel and publish exact artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python relay-release/flash.py --verify-only
+          test -n "$OTA_SIGNING_KEY_B64"
+          key="$RUNNER_TEMP/jh2-relay-ota.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          python JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release relay-release/release.json --output relay-release/latest.json
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          p=Path('relay-release');m=json.loads((p/'release.json').read_text());assert m['commit']==os.environ['GITHUB_SHA']
+          apk=p/'Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk';m['apk']={'name':apk.name,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'package':'com.jasonhome2.app','version':'2.0.11','certificateSha256':'76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1'}
+          m['deployment']={'gatewayBuild':os.environ['GITHUB_SHA'],'automationOwner':'oracle','eufyReady':4,'events':212,'snapshotRestoreVerified':True,'physicalBridgeVerified':False,'requiresBridgePairing':True}
+          (p/'integration-release.json').write_text(json.dumps(m,indent=2)+'\n')
+          with (p/'SHA256SUMS').open('a') as f:f.write(m['apk']['sha256']+'  '+apk.name+'\n')
+          PY
+          python - <<'PYTHON'
+          import json,os,urllib.request
+          api='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']
+          def call(path,data=None):
+           h={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'}
+           with urllib.request.urlopen(urllib.request.Request(api+path,None if data is None else json.dumps(data).encode(),h),timeout=45) as r:return json.load(r)
+          source=os.environ['GITHUB_SHA'];repo=call('');default=call('/git/ref/heads/'+repo['default_branch'])['object']['sha']
+          src=call('/git/commits/'+source);main=call('/git/commits/'+default)
+          entries=call('/git/trees/'+main['tree']['sha']+'?recursive=1')['tree'];workflows=next(x['sha'] for x in entries if x['path']=='.github/workflows' and x['type']=='tree')
+          tree=call('/git/trees',{'base_tree':src['tree']['sha'],'tree':[{'path':'.github/workflows','mode':'040000','type':'tree','sha':workflows}]})['sha']
+          release=call('/git/commits',{'message':'Jason Home 2 curtain relay release source; compiled inputs unchanged','tree':tree,'parents':[default,source]})['sha']
+          call('/git/refs',{'ref':'refs/heads/jh2-curtain-release-1.1.0','sha':release})
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('RELEASE_SOURCE='+release+'\n')
+          PYTHON
+          TAG=jason-home-2-nanoc6-v1.1.0
+          gh release create "$TAG" --target "$RELEASE_SOURCE" --prerelease --latest=false --title 'Jason Home 2 · Oracle Curtain Relay 1.1.0 / APK 2.0.11' --notes-file JasonHome2NanoC6/TESTING.md
+          gh release upload "$TAG" relay-release/*.bin relay-release/*.apk relay-release/*.zip relay-release/release.json relay-release/integration-release.json relay-release/SHA256SUMS relay-release/INSTALL.md relay-release/TESTING.md relay-release/latest.json
+          mkdir downloaded
+          gh release download "$TAG" -p 'jh2-runtime-1.1.0.bin' -p 'Jason-Home-2-2.0.11-ORACLE-RELAY-SIGNED.apk' -D downloaded
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          m=json.loads(Path('relay-release/integration-release.json').read_text())
+          for n,s in [('jh2-runtime-1.1.0.bin',m['files']['jh2-runtime-1.1.0.bin']),(m['apk']['name'],m['apk'])]:
+           b=Path('downloaded',n).read_bytes();assert len(b)==s['bytes'] and hashlib.sha256(b).hexdigest()==s['sha256']
+          print('Public firmware and signed APK byte size/SHA-256 verified.')
+          PY
+          cp relay-release/latest.json "$RUNNER_TEMP/jh2-relay-latest.json"
+          git config user.name 'Jason Home 2 release'
+          git config user.email '325178451+jlc3718-source@users.noreply.github.com'
+          git fetch origin jh2-nanoc6-ota
+          git checkout -B jh2-nanoc6-ota FETCH_HEAD
+          cp "$RUNNER_TEMP/jh2-relay-latest.json" latest.json
+          git add latest.json
+          git commit -m 'Publish signed Jason Home 2 Oracle curtain relay 1.1.0'
+          git push origin HEAD:jh2-nanoc6-ota

@@ -9,8 +9,9 @@ static JsonDocument lastResult;
 static std::deque<String> acknowledgments;
 static volatile uint32_t generation=0,revision=0,lastSync=0,nextSync=0;
 static volatile uint32_t localUntil=0;
-static volatile bool syncNow=false,streaming=false,online=false;
+static volatile bool syncNow=false,streaming=false,online=false,streamFailed=false;
 static uint64_t lastCommand=0,seen=0;
+static uint8_t streamFailures=0;
 static String getEndpoint(){xSemaphoreTake(lock,portMAX_DELAY);String s=endpoint;xSemaphoreGive(lock);return s;}
 static String digest(const uint8_t*data,size_t size){uint8_t d[32];mbedtls_sha256(data,size,d,0);return hexBytes(d,32);}
 static void issue(const String& error){xSemaphoreTake(lock,portMAX_DELAY);relayError=error;xSemaphoreGive(lock);}
@@ -72,14 +73,14 @@ static void playback(void*arg){
   if(stream.offset!=stream.size||!stream.complete()){error="Complete relay digest mismatch";break;}
   if(!header[6])break;
  }while(p.gen==generation&&WiFi.status()==WL_CONNECTED);
- if(error.length()){issue(error);if(!applied){JsonDocument result;result["ok"]=false;result["error"]=error;setResult(p.id,"failed",result.as<JsonVariantConst>());}}
+ if(error.length()){streamFailures++;streamFailed=streamFailures<=3;issue(error);if(!applied){JsonDocument result;result["ok"]=false;result["error"]=error;setResult(p.id,"failed",result.as<JsonVariantConst>());}}
  if(p.gen==generation){streaming=false;syncNow=true;}vTaskDelete(nullptr);
 }
 static void poller(void*){
  uint32_t backoff=1000,lastNotice=0;String boot=randomHex(8);
  for(;;){
   if(WiFi.status()!=WL_CONNECTED||!timeValid()||!getEndpoint().length()){online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
-  JsonDocument body,response;body["bridgeId"]=bridgeId;body["bootId"]=boot;
+  JsonDocument body,response;body["recoverDesired"]=streamFailed;body["bridgeId"]=bridgeId;body["bootId"]=boot;
   auto status=body["status"].to<JsonObject>();status["firmware"]=VERSION;status["build"]=BUILD_SHA;status["uptimeSeconds"]=millis()/1000;status["wifiRSSI"]=WiFi.RSSI();status["relayStreaming"]=streaming;status["assetStorage"]="oracle";status["freeHeap"]=ESP.getFreeHeap();status["flashBytes"]=ESP.getFlashChipSize();
   JsonDocument curtain;curtainCall("status",JsonVariantConst(),curtain);status["curtain"]=curtain.as<JsonVariantConst>();
   xSemaphoreTake(lock,portMAX_DELAY);status["error"]=relayError;size_t ackCount=std::min(acknowledgments.size(),size_t(32));auto aa=body["acks"].to<JsonArray>();for(size_t i=0;i<ackCount;i++){JsonDocument d;deserializeJson(d,acknowledgments[i]);aa.add(d.as<JsonVariantConst>());}xSemaphoreGive(lock);
@@ -95,12 +96,13 @@ static void poller(void*){
    uint64_t id=cmd["id"].as<uint64_t>();if(id<=seen)continue;
    if(localUntil&&(int32_t)(localUntil-millis())>0)break;
    String action=cmd["action"]|String("");JsonDocument result;bool ok=true;
-   if(action!="rawWrite"&&action!="subscribeRaw"&&action!="status"&&action!="scan"){generation++;streaming=false;}
+   if(cmd["source"].as<String>()=="manual")streamFailures=0;
+   if(action=="asset"||action=="effect"||action=="sequenceStart"||action=="sequenceStop"||action=="assetStop"||action=="rawWrite"||action=="disconnect"||(action=="power"&&!(cmd["payload"]["on"]|false))){generation++;streaming=false;}
    if(action!="disconnect"&&action!="scan"&&action!="status")ok=curtainCall("connect",JsonVariantConst(),result);
    if(ok&&action=="asset"){
     curtainCall("sequenceStop",JsonVariantConst(),result);String sha=cmd["payload"]["sha256"]|String("");uint32_t size=0;for(auto a:response["assets"].as<JsonArrayConst>())if(a["sha256"].as<String>()==sha)size=a["bytes"]|0U;
     if(!size||size>4*1024*1024){ok=false;result["error"]="Oracle asset is missing or exceeds relay limit";}
-    else{auto*p=new Play{sha,size,generation,id};activeSha=sha;streaming=true;TaskHandle_t task=nullptr;if(xTaskCreate(playback,"jh2-stream",12288,p,1,&task)!=pdPASS){delete p;ok=false;streaming=false;result["error"]="Insufficient RAM to start relay";}else{result["ok"]=true;result["message"]="Oracle program received; waiting for BLE transmission";setResult(id,"downloaded",result.as<JsonVariantConst>());seen=id;break;}}
+    else{streamFailed=false;auto*p=new Play{sha,size,generation,id};activeSha=sha;streaming=true;TaskHandle_t task=nullptr;if(xTaskCreate(playback,"jh2-stream",12288,p,1,&task)!=pdPASS){delete p;ok=false;streaming=false;result["error"]="Insufficient RAM to start relay";}else{result["ok"]=true;result["message"]="Oracle program received; waiting for BLE transmission";setResult(id,"downloaded",result.as<JsonVariantConst>());seen=id;break;}}
    }else if(ok&&action=="assetStop"){result["ok"]=true;result["message"]="Oracle streaming stopped; last curtain frame retained";}
    else if(ok)ok=curtainCall(action,cmd["payload"],result);
    result["ok"]=ok;setResult(id,ok?"applied":"failed",result.as<JsonVariantConst>());seen=id;
@@ -111,7 +113,7 @@ static void poller(void*){
   while((int32_t)(millis()-nextSync)<0&&!syncNow){
    JsonDocument waited;if(!request("/api/curtain-bridge/wait?after="+String(revision)+(streaming?"&seconds=1":"&seconds=20"),waited)){online=false;break;}
    // Check for commands after each long-poll response; full snapshots still occur at most 60 seconds apart.
-   break;
+   if(waited["changed"]|false)break;
   }
  }
 }

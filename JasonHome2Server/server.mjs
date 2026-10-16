@@ -940,7 +940,7 @@ async function route(req,res){
     if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req)));
     if(path==="/api/curtain-bridge/wait"&&method==="GET"){
       const abort=new AbortController();res.on("close",()=>abort.abort());
-      await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true});
+      await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true,changed:(curtainRelay.status().lastCommand?.id||0)>Number(url.searchParams.get("after")||0)});
     }
     if(path.startsWith("/api/curtain-bridge/assets/")&&method==="GET"){
       const sha=path.split("/").pop();if(!/^[a-f0-9]{64}$/.test(sha))throw fail(400,"Invalid asset digest");
