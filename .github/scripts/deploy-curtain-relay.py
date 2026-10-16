@@ -76,16 +76,24 @@ if old_sync in live:
  assert live.count(old_sync)==1 and live.count(bridge_init)==1
  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
+if 'attachCurtainChannel' not in live:
+ live='import {attachCurtainChannel} from "./curtain_channel.mjs";\n'+live
+ assert live.count('http.createServer((req,res)=>route(req,res)')==1
+ live=live.replace('http.createServer((req,res)=>route(req,res)','const server=http.createServer((req,res)=>route(req,res)')
+ assert live.count('})).listen(port,"0.0.0.0",')==1
+ live=live.replace('})).listen(port,"0.0.0.0",','}));\nattachCurtainChannel(server,curtainRelay);\nserver.listen(port,"0.0.0.0",')
 (stage/'server.mjs').write_text(live)
+shutil.copytree(ROOT/'JasonHome2Server/curtain_transport',stage/'curtain_transport',dirs_exist_ok=True,ignore=shutil.ignore_patterns('node_modules'))
+
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
-for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
+for name in ['curtain_bridge.mjs','curtain_channel.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
 for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1
  text=text.replace('<script src="curtain.js"></script>','<script src="curtain_remote.js"></script>\n<script src="curtain.js"></script>');html.write_text(text)
 # New image is built from the full installed app, retaining its exact private configuration outside the image.
-(stage/'Dockerfile').write_text('FROM node:22-bookworm-slim\nWORKDIR /app\nCOPY . /app/\nENV JH2_PORT=8081 JH2_DATA_DIR=/data JH2_CURTAIN_BUILD_SHA='+SHA+'\nUSER node\nCMD ["node","--no-warnings=ExperimentalWarning","server.mjs"]\n')
+(stage/'Dockerfile').write_text('FROM node:22-bookworm-slim\nWORKDIR /app\nCOPY . /app/\nRUN npm ci --prefix /app/curtain_transport --omit=dev --ignore-scripts --no-audit --no-fund\nENV JH2_PORT=8081 JH2_DATA_DIR=/data JH2_CURTAIN_BUILD_SHA='+SHA+'\nUSER node\nCMD ["node","--no-warnings=ExperimentalWarning","server.mjs"]\n')
 image='jason-home-2-web:curtain-relay-'+SHA;run('docker','build','-t',image,str(stage),stdout=subprocess.DEVNULL)
 # Preserve exactly the current environment; no .env rewrite or Eufy credential replacement.
 we['JH2_CURTAIN_BUILD_SHA']=SHA
@@ -147,8 +155,24 @@ try:
  block=config[config.index(marker):config.find('}',config.index(marker))+1];directives=[]
  for directive in ['client_max_body_size 8m;','proxy_set_header Authorization $http_authorization;','proxy_set_header X-JH2-Bridge-Token $http_x_jh2_bridge_token;']:
   if directive not in block:directives.append('        '+directive)
- if directives:
-  nginx.write_text(config.replace(marker,marker+'\n'+'\n'.join(directives),1));run('nginx','-t');run('systemctl','reload','nginx')
+ if directives:config=config.replace(marker,marker+'\n'+'\n'.join(directives),1)
+ channel_marker='location = /jason-home-2/api/curtain-bridge/channel {'
+ if channel_marker not in config:
+  channel_block='\n'.join([
+   channel_marker,
+   '        proxy_pass http://127.0.0.1:8081/api/curtain-bridge/channel;',
+   '        proxy_http_version 1.1;',
+   '        proxy_set_header Upgrade $http_upgrade;',
+   '        proxy_set_header Connection "upgrade";',
+   '        proxy_set_header Host $host;',
+   '        proxy_set_header Authorization $http_authorization;',
+   '        proxy_set_header X-JH2-Bridge-Token $http_x_jh2_bridge_token;',
+   '        proxy_buffering off;',
+   '        proxy_read_timeout 45s;',
+   '    }\n    '])
+  config=config.replace(marker,channel_block+marker,1)
+ if config!=nginx.read_text():
+  nginx.write_text(config);run('nginx','-t');run('systemctl','reload','nginx')
  base='http://127.0.0.1:8081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
  relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds']==5
  api(base,'/api/eufy/verification',cookie=cookie)
@@ -162,7 +186,7 @@ try:
   try:api(base,'/api/health');break
   except Exception:time.sleep(1)
  api(base,'/api/curtain/status',cookie=cookie)
- # Existing 1.1.1 can now authenticate through nginx; 1.1.2 will then rotate in-band.
+ # Accept either legacy HTTPS recovery or the persistent duplex command channel.
  bridge_online=False
  for i in range(18):
   relay,_=api(base,'/api/curtain/status',cookie=cookie)

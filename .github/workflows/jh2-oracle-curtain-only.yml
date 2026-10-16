@@ -1,7 +1,7 @@
 name: Jason Home 2 Oracle Curtain-Only Delivery
 on:
   push:
-    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016, codex/jh2-command-pipeline-20261016]
     paths:
       - 'JasonHome2Server/**'
       - '.github/scripts/deploy-curtain-relay.py'
@@ -28,12 +28,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm ci --prefix JasonHome2Server/curtain_transport --ignore-scripts --no-audit --no-fund
           python3 -m py_compile .github/scripts/deploy-curtain-relay.py
           node --check JasonHome2Server/server.mjs
           node --check JasonHome2Server/curtain_bridge.mjs
           node --check JasonHome2Server/curtain_remote.js
           node --check JasonHome2Server/curtain.js
           node --test \
+            JasonHome2Server/tests/curtain-channel.mjs \
             JasonHome2Server/tests/curtain-relay.mjs \
             JasonHome2Server/tests/curtain-quality.mjs \
             JasonHome2Server/tests/curtain-images.mjs \

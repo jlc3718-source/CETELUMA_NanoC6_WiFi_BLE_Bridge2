@@ -1,3 +1,4 @@
+import {attachCurtainChannel} from "./curtain_channel.mjs";
 import {createCurtainBridge} from "./curtain_bridge.mjs";
 import http from "node:http";
 import { createHmac, randomBytes, timingSafeEqual, randomUUID, createCipheriv, createDecipheriv, createHash } from "node:crypto";
@@ -940,20 +941,9 @@ async function route(req,res){
     if(!credential)throw fail(401,"Bridge authentication failed");
     if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req),credential));
     if(path==="/api/curtain-bridge/events"&&method==="GET"){
-      // NanoC6 opens outbound TLS once; Oracle pushes a wake frame on enqueue.
-      // A 5s HTTPS sync remains a fallback if any proxy drops event streams.
-      res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
-        "cache-control":"no-cache, no-transform","connection":"keep-alive",
-        "x-accel-buffering":"no","x-content-type-options":"nosniff"});
-      res.flushHeaders?.();
-      let closed=false;
-      const push=()=>{if(!closed&&!res.destroyed)res.write("data: "+curtainRelay.revision()+"\n\n");};
-      const unsubscribe=curtainRelay.subscribeWake(push);
-      const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\n\n");},10000);
-      heartbeat.unref?.();
-      const cleanup=()=>{if(closed)return;closed=true;clearInterval(heartbeat);unsubscribe();};
-      res.once("close",cleanup);
-      push();return;
+      // Retire the legacy wake-only TLS socket. Older firmware can recover
+      // HTTPS delivery and signed OTA without a second permanent TLS allocation.
+      return send(res,426,{ok:false,error:"Update NanoC6 for the persistent command channel"});
     }
     if(path==="/api/curtain-bridge/wait"&&method==="GET"){
       const abort=new AbortController();res.on("close",()=>abort.abort());
@@ -1004,7 +994,7 @@ async function route(req,res){
   if(path==="/api/curtain/call"&&method==="POST"){
     const body=await input(req);
     if(body.action==="status"){const s=curtainRelay.status();return send(res,200,{...s,...s.curtain,connected:s.online&&s.curtain?.connected,transport:"oracle-relay"});}
-    const command=curtainRelay.enqueue(body.action,body.payload||{},body.idempotencyKey||null);return send(res,202,{ok:true,queued:true,commandId:command.id,state:command.state,physicalPlaybackConfirmed:false});
+    const command=curtainRelay.enqueue(body.action,body.payload||{},body.idempotencyKey||null);return send(res,202,{ok:true,queued:true,commandId:command.id,state:command.state,bridgeOnline:curtainRelay.status().online,physicalPlaybackConfirmed:false});
   }
   if(path==="/api/curtain/command"&&method==="GET")return send(res,200,{ok:true,command:curtainRelay.command(Number(url.searchParams.get("id")))});
   if(path==="/api/curtain/retention"&&method==="GET")return send(res,200,{ok:true,...curtainRelay.retained()});
@@ -1403,9 +1393,11 @@ async function route(req,res){
   }
   throw fail(404,"Unknown API route: "+path);
 }
-http.createServer((req,res)=>route(req,res).catch(e=>{
+const server=http.createServer((req,res)=>route(req,res).catch(e=>{
   const status=Number(e.status)||(e.name==="AbortError"?504:502);
   if(status>=500)console.error("[Jason Home 2]",req.method,req.url,e.message);
   send(res,status,{ok:false,error:e.message||"Request failed"});
-})).listen(port,"0.0.0.0",()=>console.log("Jason Home 2 web on port "+port));
+}));
+attachCurtainChannel(server,curtainRelay);
+server.listen(port,"0.0.0.0",()=>console.log("Jason Home 2 web on port "+port));
 

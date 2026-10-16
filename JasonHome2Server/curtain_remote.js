@@ -15,6 +15,7 @@
   if(['asset','effect','nativePlay','sequenceStart'].includes(action))window.JH2CurtainLastSelection={action,payload};
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
+  if(queued.bridgeOnline===false)throw Error('Oracle received command '+queued.commandId+'; the Nano command channel is offline. The latest selection is saved for reconnection.');
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';
   for(let i=0;i<150;i++){
    await delay(i<20?150:400);const {command:c}=await api('/api/curtain/command?id='+queued.commandId);

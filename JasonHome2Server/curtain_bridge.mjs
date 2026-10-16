@@ -177,7 +177,8 @@ export function createCurtainBridge({db,now=Date.now}){
   if(credential==='pending'){
    const pending=get('pendingTokenHash');if(pending){put('tokenHash',pending);put('pendingTokenHash','');put('rotateCredential',false);put('credentialRotatedAt',at);}
   }
-  const bleReconnected=get('status',{}).curtain?.connected===false&&body.status?.curtain?.connected===true;
+  const previousStatus=get('status',{});
+  const bleReconnected=previousStatus.curtain?.connected===false&&body.status?.curtain?.connected===true&&body.status?.curtain?.busy!==true;
   const endedOverride=get('localOverride',0)>0&&Number(body.localOverrideUntil||0)<=at;
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
   put('localOverride',Number(body.localOverrideUntil||0));
@@ -186,7 +187,13 @@ export function createCurtainBridge({db,now=Date.now}){
    const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
   }
 
-  if(body.status&&typeof body.status==='object')put('status',JSON.parse(JSON.stringify(body.status).length<=12000?JSON.stringify(body.status):'{}'));
+  if(body.status&&typeof body.status==='object'){
+   const incoming=JSON.parse(JSON.stringify(body.status).length<=12000?JSON.stringify(body.status):'{}');
+   // Busy means the mutex is in use, not that Bluetooth disconnected.
+   if(incoming.curtain?.busy&&typeof previousStatus.curtain?.connected==='boolean')
+    incoming.curtain={...previousStatus.curtain,...incoming.curtain,connected:previousStatus.curtain.connected,ready:previousStatus.curtain.ready};
+   put('status',incoming);
+  }
   if(Array.isArray(body.notifications))put('notifications',body.notifications.slice(-48));
   for(const ack of (body.acks||[]).slice(0,32)){
    if(!int(ack.id,1,Number.MAX_SAFE_INTEGER)||!['downloaded','applied','failed'].includes(ack.state))continue;
@@ -212,17 +219,22 @@ export function createCurtainBridge({db,now=Date.now}){
     transition(null,ack.id,'confirmed_builtin_or_off',true);
    }
   }
-  db.prepare("UPDATE curtain_commands SET state='expired' WHERE state IN ('queued','downloaded') AND expires<?").run(at);
-  let rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 8").all();
-  // A local direct-BLE test blocks scheduled commands, but never traps an explicit remote manual command for 15 minutes.
-  if(Number(body.localOverrideUntil)>at)rows=rows.filter(row=>row.source==='manual');
-  const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
-  const assets=[...assetIds].map(sha=>assetManifest(sha)).filter(Boolean);
   let credentialUpdate=null;
   if(credential==='current'&&get('rotateCredential',false)===true&&versionAtLeast(body.status?.firmware,'1.1.2')){
    const next=randomBytes(32).toString('hex');put('pendingTokenHash',hash(next));credentialUpdate={endpoint:'https://150.136.245.51/jason-home-2',bridgeId:get('bridgeId'),token:next};
   }
-  return {ok:true,serverTime:at,pollSeconds:5,commands:rows.map(view),assets,desired,scheduleRevision:get('scheduleRevision',0),schedule:schedules().filter(s=>s.enabled&&s.end>at&&s.start<at+86400000).slice(0,32),manualUntil:get('manualUntil',0),scheduleActive:get('scheduleActive'),revision:Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n),credential:credentialUpdate};
+  return {...delivery(),credential:credentialUpdate};
+ }
+
+
+ function delivery(){
+  const at=now();
+  db.prepare("UPDATE curtain_commands SET state='expired' WHERE state IN ('queued','downloaded') AND expires<?").run(at);
+  const local=get('localOverride',0)>at;
+  // Filter before LIMIT so old scheduled work cannot hide a manual command.
+  const rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded')"+(local?" AND source='manual'":"")+" ORDER BY id LIMIT 8").all();
+  const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...rows.map(r=>r.action==='asset'?JSON.parse(r.payload).sha256:null),...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
+  return {ok:true,serverTime:at,pollSeconds:5,commands:rows.map(view),assets:[...assetIds].map(assetManifest).filter(Boolean),desired,scheduleRevision:get('scheduleRevision',0),schedule:schedules().filter(s=>s.enabled&&s.end>at&&s.start<at+86400000).slice(0,32),manualUntil:get('manualUntil',0),scheduleActive:get('scheduleActive'),revision:revision()};
  }
 
  function upload(input){
@@ -249,5 +261,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,delivery,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }
