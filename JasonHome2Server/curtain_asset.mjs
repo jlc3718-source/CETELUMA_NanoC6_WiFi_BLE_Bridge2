@@ -75,6 +75,30 @@ function makeRGBPackets(image,maxColors){const groups=selectRGBGroups(image,maxC
  return packets;
 }
 
+// Preserve spatial detail at 40x40 while bounding expensive BLE write counts.
+// Highly detailed photos no longer issue one colored GATT write per pixel.
+function optimizedRGBPackets(image,requestedColors){
+ const levels=requestedColors>=1600?[256,128,64,32,16]:
+              [requestedColors,128,64,32,16].filter((n,i,a)=>n<=requestedColors&&a.indexOf(n)===i);
+ let candidate=null;
+ if(requestedColors===1600){
+  // True RGB888 is still exact for simple art with few unique colors.
+  const colors=new Set();
+  for(let i=0;i<image.length;i+=4){
+   colors.add((image[i]<<16)|(image[i+1]<<8)|image[i+2]);
+   if(colors.size>128)break;
+  }
+  if(colors.size<=128)candidate=makeRGBPackets(image,1600);
+ }
+ if(candidate&&candidate.length<=260)return candidate;
+ for(const level of levels){
+  const packets=makeRGBPackets(image,level);
+  if(!candidate||packets.length<candidate.length)candidate=packets;
+  // The transfer ceiling is not an image-size limit: it is a BLE-latency budget.
+  if(packets.length<=260)return packets;
+ }
+ return candidate;
+}
 export const MAX_ASSET_BYTES=4*1024*1024;
 const vi=n=>{const a=[];do{let v=n&127;n>>>=7;a.push(v|(n?128:0));}while(n);return a;};
 function ddp(op,params=[],seq=1){const b=Buffer.alloc(24+params.length);b.set([seq&255,1,0,0,240,4,0,seq&255],0);b.writeUInt16BE(op,10);b.set(params,24);return b;}
@@ -92,7 +116,7 @@ export function compileAsset(input){
   const records=[];
   if(i===0){for(const [op,params] of [[2514,[]],[2701,[8,1]],[2713,[]]])records.push(record(0,ddp(op,params,++seq)));}
   else if(rgb)records.push(record(0,ddp(2713,[],++seq)));
-  const parts=rgb?makeRGBPackets(frames[i],count):livePackets(frames[i],count,count<=8?40:80,stable);
+  const parts=rgb?optimizedRGBPackets(frames[i],count):livePackets(frames[i],count,count<=8?40:80,stable);
   for(const part of parts){const n=Math.ceil(part.length/40),id=(++packet)&255;for(let j=0;j<n;j++)records.push(record(1,Buffer.from([id,n,n-j-1,rgb?1:4,...part.slice(j*40,(j+1)*40)])));}
   const h=Buffer.alloc(6);h.writeUInt32LE(Math.max(40,Math.min(60000,Number(input.delays?.[i])||100)),0);h.writeUInt16LE(records.length,4);out.push(h,...records);
   if(out.reduce((n,b)=>n+b.length,0)>MAX_ASSET_BYTES)throw Error('Prepared animation exceeds the 4 MB relay limit. Use fewer frames or lower color quality; the previous selection is preserved.');
