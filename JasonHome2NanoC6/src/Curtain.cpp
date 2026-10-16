@@ -24,7 +24,7 @@ static bool effect(int id){SmartDawn::Frame a,b;return SmartDawn::effectFrames(s
 static void notification(NimBLERemoteCharacteristic*c,uint8_t*data,size_t n,bool){
   if(n>1024)return;xSemaphoreTake(noticesLock,portMAX_DELAY);if(notices.size()>=48)notices.pop_front();notices.push_back({++noticeNumber,String(c->getUUID().toString().c_str()),to64(data,n)});xSemaphoreGive(noticesLock);
 }
-void curtainNotifications(JsonArray a,uint32_t since){xSemaphoreTake(noticesLock,portMAX_DELAY);for(auto&n:notices)if(n.number>since){auto v=a.add<JsonObject>();v["id"]=n.number;v["uuid"]=n.uuid;v["data"]=n.data;}xSemaphoreGive(noticesLock);}
+void curtainNotifications(JsonArray a,uint32_t since,size_t byteBudget){size_t used=0;xSemaphoreTake(noticesLock,portMAX_DELAY);for(auto&n:notices)if(n.number>since){size_t bytes=n.data.length()+n.uuid.length()+64;if(used+bytes>byteBudget)break;used+=bytes;auto v=a.add<JsonObject>();v["id"]=n.number;v["uuid"]=n.uuid;v["data"]=n.data;}xSemaphoreGive(noticesLock);}
 static bool connect(){
   if(connected())return true;disconnect();auto*scan=NimBLEDevice::getScan();scan->setActiveScan(true);scan->setInterval(80);scan->setWindow(40);auto found=scan->getResults(4500,false);String saved=state["curtainAddress"]|String("");
   const NimBLEAdvertisedDevice*target=nullptr;
