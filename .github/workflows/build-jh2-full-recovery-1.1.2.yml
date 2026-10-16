@@ -1,8 +1,8 @@
-name: Jason Home 2 Full Recovery 1.1.6
+name: Jason Home 2 Full Recovery 1.1.7
 
 on:
   push:
-    branches: [codex/jh2-fast-relay-auto-ota-1.1.6]
+    branches: [codex/jh2-direct-upnp-ota-status-1.1.7]
     paths:
       - 'JasonHome2NanoC6/**'
       - 'JasonHome2Server/**'
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: jh2-full-recovery-1.1.6
+  group: jh2-full-recovery-1.1.7
   cancel-in-progress: false
 
 jobs:
@@ -72,11 +72,11 @@ jobs:
           python JasonHome2NanoC6/tests/setup-save-regression.py --arduino-json JasonHome2NanoC6/.pio/libdeps/runtime/ArduinoJson/src
           python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
           python JasonHome2NanoC6/tools/package.py
-          test -s JasonHome2NanoC6/release/jh2-runtime-1.1.6.bin
-          test "$(stat -c %s JasonHome2NanoC6/release/jh2-full-install-1.1.6.bin)" = 4194304
+          test -s JasonHome2NanoC6/release/jh2-runtime-1.1.7.bin
+          test "$(stat -c %s JasonHome2NanoC6/release/jh2-full-install-1.1.7.bin)" = 4194304
       - uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-NanoC6-1.1.6
+          name: Jason-Home-2-NanoC6-1.1.7
           path: JasonHome2NanoC6/release/
           retention-days: 2
           if-no-files-found: error
@@ -284,7 +284,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: Jason-Home-2-NanoC6-1.1.6, path: relay-release}
+        with: {name: Jason-Home-2-NanoC6-1.1.7, path: relay-release}
       - uses: actions/download-artifact@v4
         with: {name: Jason-Home-2-Relay-Signed-2.0.15, path: relay-release}
       - uses: actions/download-artifact@v4
@@ -309,7 +309,7 @@ jobs:
           from pathlib import Path
           import hashlib,json,os
           root=Path('relay-release');manifest=json.loads((root/'release.json').read_text())
-          assert manifest['version']=='1.1.6' and manifest['commit']==os.environ['GITHUB_SHA']
+          assert manifest['version']=='1.1.7' and manifest['commit']==os.environ['GITHUB_SHA']
           deployment=json.loads((root/'deployment-verification.json').read_text())
           reboot=json.loads((root/'post-reboot-verification.json').read_text())
           assert deployment['build']==os.environ['GITHUB_SHA'] and deployment['bridgeAuthRecovered'] and deployment['liveCommandAckVerified']
@@ -321,8 +321,8 @@ jobs:
           files=sorted(p for p in root.iterdir() if p.is_file() and p.name!='SHA256SUMS')
           (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
           PY
-          git push origin "$GITHUB_SHA:refs/heads/jh2-curtain-release-1.1.6"
-          TAG=jason-home-2-nanoc6-v1.1.6
+          git push origin "$GITHUB_SHA:refs/heads/jh2-curtain-release-1.1.7"
+          TAG=jason-home-2-nanoc6-v1.1.7
           gh release create "$TAG" \
             relay-release/*.bin \
             relay-release/*.apk \
@@ -334,12 +334,12 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --latest=false \
-            --title 'Jason Home 2 · Full Recovery 1.1.6 / APK 2.0.15' \
+            --title 'Jason Home 2 · Full Recovery 1.1.7 / APK 2.0.15' \
             --notes-file JasonHome2NanoC6/TESTING.md
           mkdir public-check
           gh release download "$TAG" \
-            --pattern 'jh2-runtime-1.1.6.bin' \
-            --pattern 'jh2-full-install-1.1.6.bin' \
+            --pattern 'jh2-runtime-1.1.7.bin' \
+            --pattern 'jh2-full-install-1.1.7.bin' \
             --pattern 'Jason-Home-2-2.0.15-ORACLE-RELAY-SIGNED.apk' \
             --pattern 'integration-release.json' \
             --dir public-check
@@ -347,7 +347,7 @@ jobs:
           import hashlib,json
           from pathlib import Path
           expected=json.loads(Path('relay-release/integration-release.json').read_text())
-          for name in ['jh2-runtime-1.1.6.bin','jh2-full-install-1.1.6.bin']:
+          for name in ['jh2-runtime-1.1.7.bin','jh2-full-install-1.1.7.bin']:
               data=Path('public-check',name).read_bytes();entry=expected['files'][name]
               assert len(data)==entry['bytes'] and hashlib.sha256(data).hexdigest()==entry['sha256']
           apk=Path('public-check',expected['apk']['name']).read_bytes()
@@ -362,7 +362,7 @@ jobs:
           cp relay-release/latest.json "$RUNNER_TEMP/jh2-ota/latest.json"
           git -C "$RUNNER_TEMP/jh2-ota" add latest.json
           if ! git -C "$RUNNER_TEMP/jh2-ota" diff --cached --quiet; then
-            git -C "$RUNNER_TEMP/jh2-ota" commit -m 'Publish signed Jason Home 2 recovery 1.1.6'
+            git -C "$RUNNER_TEMP/jh2-ota" commit -m 'Publish signed Jason Home 2 recovery 1.1.7'
             git -C "$RUNNER_TEMP/jh2-ota" push origin HEAD:jh2-nanoc6-ota
           fi
           for attempt in $(seq 1 30); do
