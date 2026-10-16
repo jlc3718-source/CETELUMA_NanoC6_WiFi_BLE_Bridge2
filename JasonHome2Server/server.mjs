@@ -959,6 +959,18 @@ async function route(req,res){
       const abort=new AbortController();res.on("close",()=>abort.abort());
       await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true,changed:curtainRelay.revision()>Number(url.searchParams.get("after")||0)});
     }
+    if(path.startsWith("/api/curtain-bridge/stream/")&&method==="GET"){
+      // One authenticated response streams the entire pre-encoded animation.
+      // TCP backpressure limits live bytes in flight; Nano stores no large file.
+      const sha=path.split("/").pop();
+      if(!/^[a-f0-9]{64}$/.test(sha))throw fail(400,"Invalid relay digest");
+      const bytes=curtainRelay.asset(sha);
+      if(!bytes)throw fail(404,"Animation not found");
+      res.writeHead(200,{"content-type":"application/octet-stream",
+        "content-length":bytes.length,"x-asset-sha256":sha,
+        "cache-control":"no-store","x-content-type-options":"nosniff"});
+      res.end(bytes);return;
+    }
     if(path.startsWith("/api/curtain-bridge/assets/")&&method==="GET"){
       const sha=path.split("/").pop();if(!/^[a-f0-9]{64}$/.test(sha))throw fail(400,"Invalid asset digest");
       const asset=curtainRelay.asset(sha);if(!asset)throw fail(404,"Asset missing");
