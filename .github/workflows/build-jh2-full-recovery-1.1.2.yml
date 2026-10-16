@@ -57,6 +57,9 @@ jobs:
             JasonHome2Server/tests/curtain-test-override.mjs \
             JasonHome2Server/tests/nanoc6-sync.mjs
           python JasonHome2NanoC6/tests/test_bridge.py
+          # Firmware-only WAN PIN is scoped to signed OTA and never enables raw upload.
+          grep -q 'FW_REMOTE_PIN\[\]="7788"' JasonHome2NanoC6/src/FirmwareUpdate.cpp
+          ! grep -q 'Oracle pairing</h3>' JasonHome2NanoC6/include/BridgePage.h
           python JasonHome2Server/generate_catalog.py
           python JasonHome2NanoC6/tests/test_migration.py
           g++ -std=c++17 -O2 -I JasonHome2NanoC6/src JasonHome2NanoC6/tests/smartdawn.cpp JasonHome2NanoC6/src/SmartDawnProtocol.cpp -o /tmp/jh2-curtain
