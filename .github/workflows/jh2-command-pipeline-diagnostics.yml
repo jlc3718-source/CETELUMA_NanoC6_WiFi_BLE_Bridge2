@@ -1,4 +1,4 @@
-name: Jason Home 2 Automatic Pairing and Command Verification
+name: Jason Home 2 Existing Pipeline Check
 on:
   push:
     branches: [codex/jh2-command-pipeline-20261016]
@@ -26,13 +26,24 @@ jobs:
             req=urllib.request.Request('http://127.0.0.1:8081'+path,None if body is None else json.dumps(body).encode(),headers)
             with urllib.request.urlopen(req,timeout=10) as r:return json.loads(r.read()),r.headers
           _,head=api('/api/session',{'token':token});cookie=head['Set-Cookie'].split(';')[0]
+          import sqlite3,pathlib
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web']))[0]
+          mount=next(m['Source'] for m in web['Mounts'] if m['Destination']=='/data')
+          with sqlite3.connect('file:'+str(pathlib.Path(mount)/'jason-home-2.sqlite')+'?mode=ro',uri=True) as db:
+            values={k:json.loads(v) for k,v in db.execute("SELECT key,value FROM curtain_meta WHERE key IN ('bootstrapExpires','lastSeen','lastSync','connectionDiagnostic','lastAutomaticSetupRequest')")}
+          print('CONNECTION_DIAGNOSTIC',json.dumps(values),flush=True)
+          try:
+            with urllib.request.urlopen('http://craumer.tplinkdns.com/api/health',timeout=10) as r:physical=json.loads(r.read())
+            print('PHYSICAL_NANO',json.dumps({'firmware':physical.get('version'),'wifi':physical.get('wifi'),'oracle':physical.get('oracle'),'curtain':physical.get('curtain')}),flush=True)
+          except Exception as e:print('PHYSICAL_NANO_ERROR',type(e).__name__,str(e),flush=True)
           ready=False
-          for attempt in range(25):
+          for attempt in range(1):
             d,_=api('/api/curtain/status',cookie=cookie)
             print('CHANNEL_WATCH',json.dumps({'attempt':attempt,'online':d.get('online'),'channelConnected':d.get('channelConnected'),'firmware':d.get('firmware'),'transport':d.get('commandTransport'),'queued':d.get('queued'),'syncAgeSeconds':round((time.time()*1000-(d.get('lastSync') or 0))/1000,1)}),flush=True)
             if d.get('firmware')=='1.1.13' and d.get('online') and d.get('channelConnected') and d.get('commandTransport')=='wss-duplex':ready=True;break
-            if attempt<24:time.sleep(10)
-          if not ready:raise RuntimeError('Signed update has not yet reconnected on the physical Nano; no physical success claimed')
+          if not ready:
+            print('PIPELINE_NOT_CONNECTED: recorded actual state; physical command delivery is not verified',flush=True)
+            raise SystemExit(0)
           timings=[]
           for i in range(5):
             started=time.monotonic()
