@@ -149,7 +149,9 @@ static void playback(void*arg){
     uint8_t rh[3],packet[508];if(!stream.read(rh,3)){error="Truncated relay packet";break;}uint16_t n=rh[1]|(rh[2]<<8);
     if(n>sizeof(packet)||!n||rh[0]>1||!stream.read(packet,n)){error="Invalid relay packet";break;}
     if(!curtainRelayWrite(rh[0],packet,n)){error="BLE write failed; last displayed frame retained";break;}
-    vTaskDelay(pdMS_TO_TICKS(5));
+    // GATT write-with-response already applies BLE-level backpressure.
+    // Yield periodically, not after every single LED protocol fragment.
+    if((i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
    }
    if(error.length()||p.gen!=generation)break;
    if(!applied){JsonDocument result;result["ok"]=true;result["connected"]=true;result["bleTransmitted"]=true;result["physicalPlaybackConfirmed"]=false;result["message"]="NanoC6 transmitted the first frame over BLE; Oracle is relaying playback. Physical output requires inspection.";setResult(p.id,"applied",result.as<JsonVariantConst>());applied=true;}
