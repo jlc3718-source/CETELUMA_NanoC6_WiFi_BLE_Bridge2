@@ -233,8 +233,13 @@ export function createCurtainBridge({db,now=Date.now}){
    const r=slot(),sameActive=r.active_sha===a.sha256,samePending=r.pending_sha===a.sha256;
    if(!sameActive&&!samePending&&r.pending_sha){
     const c=r.pending_command&&db.prepare('SELECT state FROM curtain_commands WHERE id=?').get(r.pending_command);
-    if(c&&['queued','downloaded','applied'].includes(c.state))
-     throw fail(409,'Replacement is still transferring or awaiting visual confirmation');
+    if(c&&['queued','downloaded'].includes(c.state))
+     throw fail(409,'Replacement is still transferring; wait for BLE delivery before selecting a different file');
+    if(c?.state==='applied'){
+     // A deliberate new selection supersedes an unconfirmed preview. Keep
+     // the last confirmed file as rollback, not every viewed image.
+     restoreDesiredAfterFailedTransfer(r.pending_command);
+    }
    }
    db.prepare('INSERT OR IGNORE INTO curtain_assets VALUES(?,?,?,?)').run(a.sha256,a.bytes,JSON.stringify(metadata),now());
    if(!sameActive&&!samePending)
