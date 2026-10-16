@@ -56,11 +56,33 @@ test('single-active-file: A -> B -> confirmed activation prunes A and every obso
   assert.equal(b.retained().phase,'transferred_unconfirmed');
   assert.equal(b.retained().active.sha256,a.sha256,'BLE first-frame ACK cannot delete recoverable image');
   assert.equal(b.retained().retainedFiles,2);
-  assert.throws(()=>b.upload(preparedColor(0,0,255)),/awaiting visual confirmation/);
+  // Explicitly selecting a different image should not require manual
+  // confirmation of every preview. The original confirmed image remains.
+  assert.equal(b.retained().confirmationRequired,true);
+  assert.throws(()=>b.confirmDisplayed(cmdA.id),/newer command/);
   const confirmed=b.confirmDisplayed(cmdB.id);
   assert.equal(confirmed.active.sha256,other.sha256);assert.equal(confirmed.pending,null);
   assert.equal(confirmed.retainedFiles,1);assert.equal(b.asset(a.sha256),undefined);
   assert.equal(db.prepare('SELECT count(*) n FROM curtain_assets').get().n,1);
+ }finally{b.close();}
+});
+test('new user image supersedes an unconfirmed preview without accumulating history',()=>{
+ const {b}=create();try{
+  const a=b.upload(preparedColor(255,0,0)),cmdA=b.enqueue('asset',{sha256:a.sha256});
+  b.sync({acks:[{id:cmdA.id,state:'applied',result:{bleTransmitted:true}}]});
+  b.confirmDisplayed(cmdA.id);
+  const next=b.upload(preparedColor(0,255,0)),cmdB=b.enqueue('asset',{sha256:next.sha256});
+  b.sync({acks:[{id:cmdB.id,state:'applied',result:{bleTransmitted:true}}]});
+  const third=b.upload(preparedColor(0,0,255));
+  assert.equal(b.retained().retainedFiles,2,'Only confirmed A and pending C survive');
+  assert.equal(b.retained().active.sha256,a.sha256);
+  assert.equal(b.retained().pending.sha256,third.sha256);
+  assert.equal(b.asset(next.sha256),undefined,'Unconfirmed B must be garbage collected');
+  const cmdC=b.enqueue('asset',{sha256:third.sha256});
+  b.sync({acks:[{id:cmdC.id,state:'applied',result:{bleTransmitted:true}}]});
+  b.confirmDisplayed(cmdC.id);
+  assert.equal(b.retained().retainedFiles,1);
+  assert.equal(b.retained().active.sha256,third.sha256);
  }finally{b.close();}
 });
 test('failed replacement preserves previous active asset and cleans abandoned staging',()=>{
