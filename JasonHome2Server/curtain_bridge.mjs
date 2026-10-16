@@ -38,7 +38,17 @@ export function createCurtainBridge({db,now=Date.now}){
 
  function assetManifest(sha){const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);return r?{sha256:sha,bytes:r.size,...JSON.parse(r.metadata)}:null;}
  function garbageCollect(){
-  db.prepare('DELETE FROM curtain_assets WHERE sha NOT IN (SELECT active_sha FROM curtain_asset_slots WHERE active_sha IS NOT NULL UNION SELECT pending_sha FROM curtain_asset_slots WHERE pending_sha IS NOT NULL)').run();
+  // A scheduled scene or outstanding Nano transfer must never lose its bytes.
+  // Preserve these references even when reducing the ad-hoc upload history.
+  const protectedSha=new Set([slot().active_sha,slot().pending_sha].filter(Boolean));
+  for(const schedule of db.prepare('SELECT value FROM curtain_schedules').all()){
+   try{const doc=JSON.parse(schedule.value);if(doc.action==='asset'&&doc.payload?.sha256)protectedSha.add(doc.payload.sha256);}catch{}
+  }
+  for(const record of db.prepare("SELECT payload FROM curtain_commands WHERE action='asset' AND state IN ('queued','downloaded')").all()){
+   try{protectedSha.add(JSON.parse(record.payload).sha256);}catch{}
+  }
+  for(const record of db.prepare('SELECT sha FROM curtain_assets').all())
+   if(!protectedSha.has(record.sha))db.prepare('DELETE FROM curtain_assets WHERE sha=?').run(record.sha);
  }
  function retained(){
   const r=slot(),item=sha=>sha?assetManifest(sha):null;
