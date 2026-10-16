@@ -174,6 +174,16 @@ void registerFirmware(){
       n.end();
     }
     reply(200,d.as<JsonVariantConst>());});
+  web.on("/api/firmware/auto",HTTP_POST,[]{
+    if(!fwRemoteAuthorized())return replyError(401,"Firmware PIN required");
+    if(web.arg("plain").length()>96)return replyError(413,"Invalid firmware setting");
+    JsonDocument body; if(deserializeJson(body,web.arg("plain"))||!body["enabled"].is<bool>())
+      return replyError(400,"Expected enabled true or false");
+    JsonDocument next;next.set(state);next["autoUpdate"]=body["enabled"].as<bool>();
+    if(!saveJson("/state.json",next.as<JsonVariantConst>()))
+      return replyError(500,"Could not save the automatic signed firmware update setting");
+    state.set(next);JsonDocument d;d["ok"]=true;d["autoUpdate"]=state["autoUpdate"]|true;reply(200,d.as<JsonVariantConst>());
+  });
   web.on("/api/firmware/check",HTTP_POST,[]{if(!fwRemoteAuthorized())return replyError(401,"Firmware PIN required for remote signed updates");String error;FirmwareManifest m;if(!fetchManifest(available)||!parseManifest(available.as<JsonVariantConst>(),m,error))return replyError(502,error.length()?error:lastError);JsonDocument d;d["ok"]=true;d["version"]=m.version;d["newer"]=isNewer(m.version,VERSION);d["signed"]=true;reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/install",HTTP_POST,[]{if(!fwRemoteAuthorized())return replyError(401,"Firmware PIN required for remote signed updates");String error;if(available.isNull()&&!fetchManifest(available))return replyError(502,lastError);if(!queueFirmware(available.as<JsonVariantConst>(),error))return replyError(400,error);web.send(202,"application/json","{\"ok\":true,\"rebootingToUpdater\":true}");delay(400);ESP.restart();});
 #ifndef JH2_BOOT
