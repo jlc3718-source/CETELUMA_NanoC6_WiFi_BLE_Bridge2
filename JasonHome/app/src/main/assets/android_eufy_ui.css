@@ -1,0 +1,18 @@
+/* Android/Eufy edition overrides for the current Anderson 3.1.58 UI */
+.android-eufy-edition .eufyStatusGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}
+.android-eufy-edition .eufyStatusCard{display:flex;flex-direction:column;gap:5px;padding:16px;background:#09152a;border:1px solid #c1d7ff20;border-radius:12px}
+.android-eufy-edition .eufyStatusCard span{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8ea9d2}
+.android-eufy-edition .eufyStatusCard strong{font-size:15px;color:#e2edff}
+.android-eufy-edition .eufyStatusCard small{font-size:10px;color:#8299bd}
+.android-eufy-edition .eufyStatusNote{margin-top:4px}
+.android-eufy-edition #selectedControllers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.android-eufy-edition #selectedControllers .bleDevice{margin:0}
+.android-eufy-edition #selectedControllers .row.wraprow{display:none!important}
+.android-eufy-edition #bleList .bleDevice{border-color:#7fa9ff44!important}
+.android-eufy-edition .grid5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.android-eufy-edition .grid5 .btn{padding:9px 4px;font-size:11px}
+@media(max-width:650px){
+ .android-eufy-edition .eufyStatusGrid{grid-template-columns:1fr 1fr}
+ .android-eufy-edition #selectedControllers{grid-template-columns:1fr}
+ .android-eufy-edition .grid5{grid-template-columns:repeat(5,minmax(54px,1fr));overflow-x:auto}
+}
