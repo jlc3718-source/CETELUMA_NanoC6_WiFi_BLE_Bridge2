@@ -1,0 +1,168 @@
+name: Jason Home 2 NanoC6 Fast Signed OTA
+
+on:
+  push:
+    branches: [codex/jh2-fast-command-chunk-curtain-1.1.8]
+    paths:
+      - 'JasonHome2NanoC6/**'
+      - '.github/workflows/jh2-fast-nanoc6-ota.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jh2-nanoc6-signed-ota-channel
+  cancel-in-progress: false
+
+jobs:
+  nano-ota:
+    name: Verify image and publish signed Nano firmware (no Oracle reboot)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Check firmware isolation and find reusable image
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            BEFORE="${{ github.event.before }}"
+            if [[ "$BEFORE" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(JasonHome2Server/|JasonHome2Android/|\.github/scripts/deploy-curtain-relay\.py$)'; then
+                echo 'Oracle/APK source changed in this push. Full integration workflow owns release.'
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+          fi
+          VERSION="$(cat JasonHome2NanoC6/VERSION)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          BASE=7590d490f99b9e2bf20d8165f0e0f4edafa47c2e
+          if [[ "$VERSION" == "1.1.9" ]] && git cat-file -e "$BASE^{commit}" && git diff --quiet "$BASE" "$GITHUB_SHA" -- JasonHome2NanoC6; then
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+            echo "Reusing existing successful 1.1.9 Nano runtime/recovery binaries."
+          else
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "Firmware changed: building images; no Oracle deploy or APK rebuild."
+          fi
+      - name: Download exact previously built and tested 1.1.9 image
+        if: steps.source.outputs.reuse == 'true' && steps.source.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-1.1.9
+          run-id: 38934960132
+          github-token: ${{ github.token }}
+          path: release-fast
+      - uses: actions/setup-node@v4
+        if: steps.source.outputs.reuse != 'true' && steps.source.outputs.skip != 'true'
+        with: {node-version: '24'}
+      - uses: actions/cache@v4
+        if: steps.source.outputs.reuse != 'true' && steps.source.outputs.skip != 'true'
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-nanoc6-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+          restore-keys: jh2-nanoc6-pio-
+      - name: Compile and test changed Nano firmware only
+        if: steps.source.outputs.reuse != 'true' && steps.source.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+          python JasonHome2NanoC6/tests/test_bridge.py
+          python JasonHome2NanoC6/tests/test_migration.py
+          node --test JasonHome2Server/tests/curtain-relay.mjs JasonHome2Server/tests/curtain-quality.mjs
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/src JasonHome2NanoC6/tests/smartdawn.cpp JasonHome2NanoC6/src/SmartDawnProtocol.cpp -o /tmp/jh2-smartdawn
+          /tmp/jh2-smartdawn
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/include JasonHome2NanoC6/tests/runtime-upload.cpp -o /tmp/jh2-upload
+          /tmp/jh2-upload
+          python JasonHome2Server/generate_catalog.py
+          python JasonHome2NanoC6/tools/prepare.py
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
+          python JasonHome2NanoC6/tests/setup-save-regression.py --arduino-json JasonHome2NanoC6/.pio/libdeps/runtime/ArduinoJson/src
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2NanoC6/tools/package.py
+          mkdir -p release-fast
+          cp JasonHome2NanoC6/release/* release-fast/
+      - name: Verify signed-firmware input and source version
+        if: steps.source.outputs.skip != 'true'
+        env:
+          PREBUILT_SHA: 7590d490f99b9e2bf20d8165f0e0f4edafa47c2e
+        shell: bash
+        run: |
+          set -euo pipefail
+          python release-fast/flash.py --verify-only
+          python - <<'PY'
+          import json,os,pathlib,subprocess
+          root=pathlib.Path('release-fast');m=json.loads((root/'release.json').read_text())
+          v=pathlib.Path('JasonHome2NanoC6/VERSION').read_text().strip()
+          assert m['version']==v and m['product']=='jason-home-2-nanoc6'
+          assert m['flash_bytes']==4194304 and m['partitions'][-1]['label']=='storage'
+          expected=os.environ['PREBUILT_SHA'] if os.environ.get('REUSE_IMAGE')=='true' else os.environ['GITHUB_SHA']
+          assert m['commit']==expected, 'Release image source SHA mismatch'
+          assert len(m['files'][f'jh2-runtime-{v}.bin']['sha256'])==64
+          print('Verified Nano-only runtime:',v,'source:',expected)
+          PY
+        # A reused compiled image retains the precise SHA from its successful build.
+        # The next step passes REUSE_IMAGE with explicit source selection.
+      - name: Sign, publish and advance the OTA channel
+        if: steps.source.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+          REUSE_IMAGE: ${{ steps.source.outputs.reuse }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OTA_SIGNING_KEY_B64"
+          VERSION="$(cat JasonHome2NanoC6/VERSION)"
+          python - <<'PY'
+          import json,os,pathlib
+          root=pathlib.Path('release-fast');m=json.loads((root/'release.json').read_text())
+          expected='7590d490f99b9e2bf20d8165f0e0f4edafa47c2e' if os.environ['REUSE_IMAGE']=='true' else os.environ['GITHUB_SHA']
+          assert m['commit']==expected, 'Compiled firmware source does not match release'
+          assert m['version']==pathlib.Path('JasonHome2NanoC6/VERSION').read_text().strip()
+          PY
+          key="$RUNNER_TEMP/jh2-ota-signing.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          python JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release release-fast/release.json --output release-fast/latest.json
+          TAG="jason-home-2-nanoc6-v$VERSION"
+          SOURCE_SHA="$(python -c 'import json;print(json.load(open("release-fast/release.json"))["commit"])')"
+          gh release view "$TAG" >/dev/null 2>&1 && { echo "Release $TAG already exists; refusing overwrite"; exit 1; }
+          git push origin "$SOURCE_SHA:refs/heads/jh2-curtain-release-$VERSION"
+          gh release create "$TAG" \
+            release-fast/*.bin release-fast/*.zip release-fast/*.json \
+            release-fast/SHA256SUMS release-fast/INSTALL.md release-fast/TESTING.md \
+            --target "$SOURCE_SHA" --prerelease --latest=false \
+            --title "Jason Home 2 NanoC6 $VERSION | Fast signed OTA" \
+            --notes "Firmware-only signed release. No APK rebuild, Oracle backup, or server reboot. The current Oracle relay remains unchanged."
+          mkdir -p release-public
+          gh release download "$TAG" --pattern "jh2-runtime-$VERSION.bin" --dir release-public
+          python - <<'PY'
+          import hashlib,json,pathlib
+          m=json.loads(pathlib.Path('release-fast/release.json').read_text())
+          name='jh2-runtime-'+m['version']+'.bin';data=pathlib.Path('release-public',name).read_bytes()
+          assert len(data)==m['files'][name]['bytes'] and hashlib.sha256(data).hexdigest()==m['files'][name]['sha256']
+          print('Public runtime verified byte-for-byte')
+          PY
+          git config user.name 'Jason Home 2 release'
+          git config user.email '325178451+jlc3718-source@users.noreply.github.com'
+          git fetch origin jh2-nanoc6-ota
+          git worktree add --detach "$RUNNER_TEMP/jh2-ota" FETCH_HEAD
+          cp release-fast/latest.json "$RUNNER_TEMP/jh2-ota/latest.json"
+          git -C "$RUNNER_TEMP/jh2-ota" add latest.json
+          if ! git -C "$RUNNER_TEMP/jh2-ota" diff --cached --quiet; then
+            git -C "$RUNNER_TEMP/jh2-ota" commit -m "Fast signed NanoC6 OTA $VERSION"
+            git -C "$RUNNER_TEMP/jh2-ota" push origin HEAD:jh2-nanoc6-ota
+          fi
+          echo "NanoC6 signed OTA $VERSION published without rebooting Oracle."
