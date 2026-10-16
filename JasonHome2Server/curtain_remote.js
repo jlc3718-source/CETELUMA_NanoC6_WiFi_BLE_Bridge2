@@ -36,7 +36,7 @@
   const confirmButton=retention.querySelector('#jh2ConfirmCurtain');
   confirmButton.onclick=async()=>{
    const id=Number(confirmButton.dataset.commandId);
-   if(!id||!window.confirm('I can see this new picture or animation on the curtain. Make it active and remove the previous file?'))return;
+   if(!id||!window.confirm('I can see the newly selected picture, effect, or Off state on the curtain. Confirm activation and remove obsolete file data?'))return;
    confirmButton.disabled=true;
    try{await api('/api/curtain/confirm-display',{commandId:id,observed:true});await refresh();}
    catch(error){retention.querySelector('#jh2RetainedBytes').textContent=error.message;}
@@ -49,8 +49,9 @@
   async function refresh(){try{const d=await api('/api/curtain/status');p.querySelector('#jh2RelayStatus').textContent=(d.online?'Connected':'Waiting for NanoC6')+' · BLE '+(d.curtain?.connected?'connected':'disconnected')+' · '+d.queued+' queued'+(d.lastCommand?' · command '+d.lastCommand.id+': '+d.lastCommand.state:'')+(d.error?' · '+d.error:'');
    const r=d.assetRetention;if(r){const b=n=>(n/1024).toFixed(1)+' KB',active=r.active?.name||'None',pending=r.pending?.name||'None';
     retention.querySelector('#jh2RetainedBytes').textContent='Active: '+active+' · Pending: '+pending+' · '+r.phase+' · '+r.retainedFiles+' file(s), '+b(r.retainedBytes)+' retained.';
-    confirmButton.hidden=!(r.phase==='transferred_unconfirmed'&&r.pendingCommandId&&r.pending);
-    confirmButton.dataset.commandId=String(r.pendingCommandId||'');
+    confirmButton.hidden=!r.confirmationRequired;
+    confirmButton.textContent=r.confirmationAction==='asset'?'Confirm new image is visible':'Confirm new effect / Off is visible';
+    confirmButton.dataset.commandId=String(r.confirmationCommandId||'');
    }else retention.querySelector('#jh2RetainedBytes').textContent='Storage details unavailable on this Oracle version';
   }catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}}
   setTimeout(()=>{
