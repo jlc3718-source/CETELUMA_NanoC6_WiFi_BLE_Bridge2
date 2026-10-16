@@ -40,7 +40,7 @@ jobs:
           for attempt in range(1):
             d,_=api('/api/curtain/status',cookie=cookie)
             print('CHANNEL_WATCH',json.dumps({'attempt':attempt,'online':d.get('online'),'channelConnected':d.get('channelConnected'),'firmware':d.get('firmware'),'transport':d.get('commandTransport'),'queued':d.get('queued'),'syncAgeSeconds':round((time.time()*1000-(d.get('lastSync') or 0))/1000,1)}),flush=True)
-            if d.get('firmware')=='1.1.13' and d.get('online') and d.get('channelConnected') and d.get('commandTransport')=='wss-duplex':ready=True;break
+            if d.get('firmware') in ['1.1.13','1.1.14'] and d.get('online') and d.get('channelConnected') and d.get('commandTransport')=='wss-duplex':ready=True;break
           if not ready:
             print('PIPELINE_NOT_CONNECTED: recorded actual state; physical command delivery is not verified',flush=True)
             raise SystemExit(0)
@@ -56,7 +56,7 @@ jobs:
             elapsed=round((time.monotonic()-started)*1000)
             result=c.get('result') or {}
             print('REAL_COMMAND_ACK',json.dumps({'id':cid,'state':c['state'],'milliseconds':elapsed,'firmware':result.get('firmware'),'bleConnected':(result.get('curtain') or {}).get('connected'),'error':result.get('error')}),flush=True)
-            assert c['state']=='applied' and result.get('firmware')=='1.1.13','Physical Nano failed diagnostic command'
+            assert c['state']=='applied' and result.get('firmware') in ['1.1.13','1.1.14'],'Physical Nano failed diagnostic command'
             timings.append(elapsed)
-          print('PIPELINE_VERIFIED',json.dumps({'firmware':'1.1.13','transport':'wss-duplex','commands':5,'minMs':min(timings),'maxMs':max(timings),'averageMs':round(sum(timings)/len(timings)),'physicalLightOutputObserved':False}),flush=True)
+          print('PIPELINE_VERIFIED',json.dumps({'firmware':result.get('firmware'),'transport':'wss-duplex','commands':5,'minMs':min(timings),'maxMs':max(timings),'averageMs':round(sum(timings)/len(timings)),'physicalLightOutputObserved':False}),flush=True)
           PY

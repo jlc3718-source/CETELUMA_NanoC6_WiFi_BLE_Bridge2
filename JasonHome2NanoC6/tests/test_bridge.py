@@ -40,7 +40,8 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn('relayPrepareForUpdate()',ota)
   self.assertIn('esp_ota_get_running_partition()->subtype!=ESP_PARTITION_SUBTYPE_APP_FACTORY',ota)
   control=(R/'src/runtime.cpp').read_text()
-  self.assertIn('web.handleClient();curtainLoop();firmwareLoop()',control)
+  self.assertIn('web.handleClient();firmwareLoop()',control)
+  self.assertNotIn('curtainLoop()',control.split('void loop(){',1)[1])
   assert 'fetchManifest' not in ota.split('void firmwareLoop(){',1)[1].split('LocalFirmware.inc',1)[0]
  def test_oracle_manual_preempts_local_hold_and_reconnect_is_bounded(self):
   relay=(R/'src/OracleRelay.cpp').read_text()

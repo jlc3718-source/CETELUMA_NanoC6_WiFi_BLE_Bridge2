@@ -55,4 +55,4 @@ void setup(){
   replyError(404,"Not found");
  });web.begin();
 }
-void loop(){networkLoop();web.handleClient();curtainLoop();firmwareLoop();delay(2);}
+void loop(){networkLoop();web.handleClient();firmwareLoop();delay(2);}

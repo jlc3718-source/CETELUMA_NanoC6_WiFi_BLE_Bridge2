@@ -293,9 +293,16 @@ static uint64_t submittedCommand=0;
 static void commandWorker(void*){
  for(;;){
   JsonDocument*delivery=nullptr;
-  if(xQueueReceive(commandInbox,&delivery,portMAX_DELAY)!=pdTRUE)continue;
-  executeDelivery(*delivery);delete delivery;
-  xSemaphoreTake(lock,portMAX_DELAY);submittedCommand=0;xSemaphoreGive(lock);
+  if(xQueueReceive(commandInbox,&delivery,pdMS_TO_TICKS(20))==pdTRUE){
+   executeDelivery(*delivery);delete delivery;
+   xSemaphoreTake(lock,portMAX_DELAY);submittedCommand=0;xSemaphoreGive(lock);
+   // Request the next delivery after the worker can accept it. An ACK may
+   // otherwise race worker completion and leave the next command waiting.
+   syncNow=true;
+  }
+  // BLE scans, reconnects and GATT heartbeats can block. Keep them in this
+  // existing worker, never in the WebServer loop. No extra task/stack needed.
+  curtainLoop();
  }
 }
 static void commandChannel(void*){
@@ -385,8 +392,8 @@ static void commandChannel(void*){
 void relayBegin(){
  lock=xSemaphoreCreateMutex();endpoint=secrets["oracleEndpoint"]|String("");token=secrets["oracleBridgeToken"]|String("");bridgeId=secrets["oracleBridgeId"]|String("");
  commandInbox=xQueueCreate(1,sizeof(JsonDocument*));
- xTaskCreate(commandWorker,"jh2-commands",12288,nullptr,1,nullptr);
- xTaskCreate(commandChannel,"jh2-channel",12288,nullptr,1,nullptr);
+ if(!commandInbox||xTaskCreate(commandWorker,"jh2-commands",12288,nullptr,1,nullptr)!=pdPASS){issue("Cannot start BLE command worker; web recovery remains available");return;}
+ if(xTaskCreate(commandChannel,"jh2-channel",12288,nullptr,1,nullptr)!=pdPASS)issue("Cannot start Oracle command channel; web recovery remains available");
 }
 bool relayConfigure(JsonVariantConst in,String&error){
  String base=in["endpoint"]|String(""),key=in["token"]|String(""),id=in["bridgeId"]|String("");
