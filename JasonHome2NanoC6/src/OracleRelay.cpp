@@ -67,36 +67,54 @@ static void pushEvents(void*){
  }
 }
 struct RelayStream {
- // Bounded RAM cache. Oracle keeps the full program and TCP applies flow control.
- uint8_t* buffer=nullptr;uint8_t* buffers[2]{nullptr,nullptr};size_t capacity=0;size_t active=0;size_t bufferCount=0;
- uint32_t offset=0,loadedAt=0,loaded=0,size=0;
+ // Oracle is permanent storage; these two adaptively sized RAM windows
+ // form a bounded network-producer / BLE-consumer pipeline.
+ uint8_t* windows[2]{nullptr,nullptr};
+ size_t capacity=0, windowCount=0;
+ uint32_t windowOffsets[2]{0,0};
+ size_t windowSizes[2]{0,0};
+ int8_t consuming=-1;
+ uint32_t offset=0,size=0;
  String sha;mbedtls_sha256_context hash;bool verified=false,opened=false,streamMode=false;
  WiFiClientSecure socket;HTTPClient http;
+ QueueHandle_t freeQueue=nullptr,readyQueue=nullptr;
+ TaskHandle_t prefetchTask=nullptr;
+ volatile bool closing=false,done=false,failed=false;
+ uint32_t produced=0;
  RelayStream(){
-  // Two adaptively sized RAM windows, capped at 35 KiB each. Never allocate
-  // a flash cache. Reserve 48 KiB for Wi-Fi, TLS, BLE and running firmware;
-  // use at most 80% of the remaining heap for the pair.
-  const size_t free=ESP.getFreeHeap(),reserve=48*1024;
-  size_t each=free>reserve+8192?std::min<size_t>(35*1024,((free-reserve)*4/5)/2):4096;
+  // Protect Wi-Fi, BLE, TLS handshake and FreeRTOS. 80% of heap above a
+  // 48 KiB reserve, up to 2 x 35 KiB; shrink before using 4 KiB fallback.
+  const size_t freeBytes=ESP.getFreeHeap(),reserve=48*1024;
+  size_t each=freeBytes>reserve+8192?
+    std::min<size_t>(35*1024,((freeBytes-reserve)*4/5)/2):4096;
   each=std::max<size_t>(4096,(each/1024)*1024);
   for(;each>=4096;each=(each/2/1024)*1024){
-   buffers[0]=static_cast<uint8_t*>(malloc(each));
-   if(buffers[0])buffers[1]=static_cast<uint8_t*>(malloc(each));
-   if(buffers[0]&&buffers[1]){capacity=each;bufferCount=2;break;}
-   if(buffers[0])freeHeapBuffer(buffers[0]);
-   if(buffers[1])freeHeapBuffer(buffers[1]);
-   buffers[0]=buffers[1]=nullptr;
+   windows[0]=static_cast<uint8_t*>(malloc(each));
+   if(windows[0])windows[1]=static_cast<uint8_t*>(malloc(each));
+   if(windows[0]&&windows[1]){
+    capacity=each;windowCount=2;break;
+   }
+   if(windows[0])::free(windows[0]);
+   if(windows[1])::free(windows[1]);
+   windows[0]=windows[1]=nullptr;
    if(each==4096)break;
   }
-  if(!bufferCount){
-   buffers[0]=static_cast<uint8_t*>(malloc(4096));
-   if(buffers[0]){capacity=4096;bufferCount=1;}
+  if(!windowCount){
+   windows[0]=static_cast<uint8_t*>(malloc(4096));
+   if(windows[0]){capacity=4096;windowCount=1;}
   }
-  buffer=buffers[0];mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);
+  mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);
  }
- static void freeHeapBuffer(void*p){::free(p);}
- ~RelayStream(){http.end();for(auto*p:buffers)if(p)::free(p);mbedtls_sha256_free(&hash);}
- void rotateWindow(){if(bufferCount>1){active^=1;buffer=buffers[active];}}
+ ~RelayStream(){
+  closing=true;
+  // The producer alone owns the Oracle HTTP socket until it has stopped.
+  while(prefetchTask&&!done)vTaskDelay(pdMS_TO_TICKS(10));
+  http.end();
+  if(freeQueue)vQueueDelete(freeQueue);
+  if(readyQueue)vQueueDelete(readyQueue);
+  for(auto*p:windows)if(p)::free(p);
+  mbedtls_sha256_free(&hash);
+ }
  void credential(String&base,String&key){
   xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
  }
@@ -108,57 +126,117 @@ struct RelayStream {
   if(!http.begin(socket,base+"/api/curtain-bridge/stream/"+sha))return false;
   http.addHeader("Authorization","Bearer "+key);
   http.addHeader("X-JH2-Bridge-Token",key);
-  int code=http.GET();
+  const int code=http.GET();
   streamMode=code==200&&http.getSize()==(int)size&&http.header("x-asset-sha256")==sha;
   if(!streamMode)http.end();
   return streamMode;
  }
- bool nextFromStream(){
+ // Called only by the producer; no other task touches the Oracle HTTP stream.
+ bool fromStream(uint8_t*dest,uint32_t at,size_t&n){
   auto*source=http.getStreamPtr();
-  uint32_t started=millis();
-  while(!source->available()){
-   if(!source->connected()||millis()-started>=12000){http.end();streamMode=false;return false;}
+  const uint32_t began=millis();
+  while(!closing&&!source->available()){
+   if(!source->connected()||millis()-began>=12000){
+    http.end();streamMode=false;return false;
+   }
    vTaskDelay(pdMS_TO_TICKS(2));
   }
-  const size_t want=std::min(size_t(source->available()),std::min(capacity,size_t(size-offset)));
-  const int got=source->read(buffer,want);
-  if(got<=0){http.end();streamMode=false;return false;}
-  loadedAt=offset;loaded=got;return true;
+  if(closing)return false;
+  // Coalesce network bursts briefly; don't wait to fill the whole buffer.
+  uint32_t first=millis();
+  while(!closing&&n<std::min<size_t>(capacity,8192)){
+   const size_t ready=source->available(),want=std::min<size_t>(ready,
+    std::min<size_t>(capacity-n,size_t(size-at-n)));
+   if(want){
+    const int got=source->read(dest+n,want);
+    if(got<=0)break;
+    n+=got;
+   }else if(millis()-first>=6)break;
+   else vTaskDelay(pdMS_TO_TICKS(1));
+   if(millis()-first>=6)break;
+  }
+  return n>0;
  }
- bool nextFromRange(){
-  // Compatibility fallback for an interrupted stream or older Oracle deployment.
+ bool fromRange(uint8_t*dest,uint32_t at,size_t&n){
+  // Fall back to authenticated, SHA-256-verified 4 KiB ranges.
   String base,key;credential(base,key);
-  WiFiClientSecure tls;trust(tls);HTTPClient h;h.setConnectTimeout(6500);h.setTimeout(12000);
+  WiFiClientSecure tls;trust(tls);HTTPClient h;
+  h.setConnectTimeout(6500);h.setTimeout(12000);
   const char*headers[]={"x-chunk-sha256"};h.collectHeaders(headers,1);
-  if(!h.begin(tls,base+"/api/curtain-bridge/assets/"+sha+"?offset="+String(offset)+"&length=4096"))return false;
-  h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);
-  int code=h.GET(),len=h.getSize();size_t got=0;
-  bool valid=code==200&&len>0&&len<=4096&&uint32_t(len)<=size-offset;
-  if(valid)got=h.getStreamPtr()->readBytes(buffer,len);
-  String expected=h.header("x-chunk-sha256");h.end();
-  if(!valid||got!=size_t(len)||digest(buffer,got)!=expected)return false;
-  loadedAt=offset;loaded=got;return true;
+  if(!h.begin(tls,base+"/api/curtain-bridge/assets/"+sha+"?offset="+
+     String(at)+"&length=4096"))return false;
+  h.addHeader("Authorization","Bearer "+key);
+  h.addHeader("X-JH2-Bridge-Token",key);
+  const int code=h.GET(),len=h.getSize();
+  const bool valid=code==200&&len>0&&len<=4096&&
+   uint32_t(len)<=size-at&&size_t(len)<=capacity;
+  if(valid)n=h.getStreamPtr()->readBytes(dest,len);
+  const String expected=h.header("x-chunk-sha256");h.end();
+  return valid&&n==size_t(len)&&digest(dest,n)==expected;
+ }
+ static void producer(void*arg){
+  auto*self=static_cast<RelayStream*>(arg);
+  while(!self->closing&&self->produced<self->size){
+   uint8_t index=0;
+   if(xQueueReceive(self->freeQueue,&index,pdMS_TO_TICKS(100))!=pdTRUE)continue;
+   if(self->closing)break;
+   size_t n=0;const uint32_t at=self->produced;
+   bool ok=(self->streamMode&&self->fromStream(self->windows[index],at,n));
+   if(!ok){
+    self->streamMode=false;
+    n=0;ok=self->fromRange(self->windows[index],at,n);
+   }
+   if(!ok||!n){self->failed=true;break;}
+   self->windowOffsets[index]=at;
+   self->windowSizes[index]=n;
+   self->produced+=n;
+   while(!self->closing&&xQueueSend(self->readyQueue,&index,pdMS_TO_TICKS(100))!=pdTRUE){}
+  }
+  self->done=true;
+  vTaskDelete(nullptr);
+ }
+ bool start(){
+  if(!windows[0]||capacity<4096)return false;
+  open();
+  freeQueue=xQueueCreate(windowCount,sizeof(uint8_t));
+  readyQueue=xQueueCreate(windowCount,sizeof(uint8_t));
+  if(!freeQueue||!readyQueue)return false;
+  for(uint8_t i=0;i<windowCount;i++)xQueueSend(freeQueue,&i,0);
+  return xTaskCreate(producer,"jh2-asset-prefetch",4096,this,1,&prefetchTask)==pdPASS;
  }
  bool read(uint8_t*out,size_t n){
-  if(!buffer||capacity<4096){issue("Insufficient NanoC6 heap for streaming buffer");return false;}
-  if(!opened)open();
-  while(n){
+  if(!out||!windows[0]||capacity<4096){
+   issue("Insufficient NanoC6 RAM for image relay");return false;
+  }
+  if(!freeQueue&&!start()){issue("Cannot start streaming prefetch");return false;}
+  while(n&&!closing){
    if(offset>=size)return false;
-   if(offset<loadedAt||offset>=loadedAt+loaded){
-    // Rotate windows only once the previous one is fully consumed.
-    // The TLS receive queue continues collecting packets during BLE writes.
-    rotateWindow();
-    if(!((streamMode&&nextFromStream())||nextFromRange())){
-     issue("Oracle image stream stalled or failed SHA-256 chunk check");return false;
+   if(consuming<0||offset>=windowOffsets[consuming]+windowSizes[consuming]){
+    if(consuming>=0){
+     uint8_t previous=uint8_t(consuming);
+     xQueueSend(freeQueue,&previous,pdMS_TO_TICKS(100));
+     consuming=-1;
     }
+    uint8_t next=0;
+    if(xQueueReceive(readyQueue,&next,pdMS_TO_TICKS(12000))!=pdTRUE){
+     issue(failed?"Oracle asset download failed":"Oracle asset stream stalled");return false;
+    }
+    if(windowOffsets[next]!=offset||!windowSizes[next]){
+     issue("Oracle stream window ordering mismatch");return false;
+    }
+    consuming=next;
    }
-   size_t take=std::min(n,size_t(loadedAt+loaded-offset));
-   memcpy(out,buffer+offset-loadedAt,take);mbedtls_sha256_update(&hash,out,take);
+   const size_t take=std::min(n,size_t(windowOffsets[consuming]+windowSizes[consuming]-offset));
+   memcpy(out,windows[consuming]+offset-windowOffsets[consuming],take);
+   mbedtls_sha256_update(&hash,out,take);
    out+=take;offset+=take;n-=take;
   }
-  return true;
+  return n==0;
  }
- bool complete(){uint8_t d[32];mbedtls_sha256_finish(&hash,d);verified=hexBytes(d,32)==sha;return verified;}
+ bool complete(){
+  uint8_t d[32];mbedtls_sha256_finish(&hash,d);
+  verified=hexBytes(d,32)==sha;return verified;
+ }
 };
 struct Play {String sha;uint32_t size,gen;uint64_t id;};
 static void setResult(uint64_t id,const char*status,JsonVariantConst result){xSemaphoreTake(lock,portMAX_DELAY);lastCommand=id;lastAck=status;lastResult.set(result);JsonDocument ack;ack["id"]=id;ack["state"]=status;ack["result"]=result;String text;serializeJson(ack,text);acknowledgments.push_back(text);syncNow=true;xSemaphoreGive(lock);}
