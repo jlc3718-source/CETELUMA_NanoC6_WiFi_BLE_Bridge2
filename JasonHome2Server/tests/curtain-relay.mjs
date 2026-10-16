@@ -20,3 +20,17 @@ test('explicit APK manual commands preempt the 15-minute local override without 
   assert.equal(b.command(manual.id).state,'applied');
  }finally{b.close();}
 });
+
+test('remote Nano administration is allowlisted and never persists reboots as desired curtain state',()=>{
+ const {b}=create();
+ try{
+  assert.deepEqual(validateCommand('nanoInfo',{}),{});
+  assert.deepEqual(validateCommand('nanoAutoUpdate',{enabled:true}),{enabled:true});
+  assert.throws(()=>validateCommand('nanoAutoUpdate',{enabled:'true'}));
+  assert.throws(()=>validateCommand('nanoProxy',{url:'http://192.168.1.1/'}));
+  const command=b.enqueue('nanoFirmwareCheck',{},null,'manual');
+  const update=b.enqueue('nanoAutoUpdate',{enabled:false},null,'manual');
+  assert.deepEqual(b.sync({localOverrideUntil:1500000}).commands.map(x=>x.id),[command.id,update.id]);
+  assert.equal(Object.keys(b.status().desired).some(k=>k.startsWith('nano')),false);
+ }finally{b.close();}
+});
