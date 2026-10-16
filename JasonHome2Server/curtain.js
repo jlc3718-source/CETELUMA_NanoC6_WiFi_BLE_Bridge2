@@ -15,11 +15,10 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   const settings=nav.querySelector('.tab[data-tab="settings"]');nav.insertBefore(tab,settings||null);nav.style.gridTemplateColumns='repeat('+nav.querySelectorAll('.tab').length+',minmax(0,1fr))';
   const page=create('section','page jh2-curtain-page');page.dataset.page='curtain';page.hidden=true;
   page.innerHTML='<div class="v3PageTitle"><span>SMARTDAWN DN5E58</span><h2>Curtain Lights</h2></div>'+
-    '<div class="panel" hidden><strong>NanoC6 controller</strong><div class="sub">Oracle relays every command through NanoC6. Phone Bluetooth is not used. Close the SmartDawn app so NanoC6 can connect.</div><div class="jh2-curtain-row" style="margin-top:12px"><button class="btn primary" id="jh2CurtainConnect" type="button">Connect</button><button class="btn" id="jh2CurtainScan" type="button">Scan devices</button><button class="btn" id="jh2CurtainDisconnect" type="button">Disconnect</button><button class="btn" id="jh2CurtainRefresh" type="button">Refresh</button></div><div id="jh2CurtainStatus" class="jh2-curtain-status" role="status">Disconnected</div><div id="jh2CurtainDevices" class="jh2-curtain-devices" aria-label="Nearby Bluetooth devices"></div></div>'+
-    '<div class="panel"><strong>Power, brightness and speed</strong><div class="jh2-curtain-row" style="margin-top:12px"><button id="jh2CurtainOn" class="btn primary" type="button">On</button><button id="jh2CurtainOff" class="btn" type="button">Off</button></div><label class="jh2-curtain-label" for="jh2CurtainBrightness">Brightness <output id="jh2CurtainBrightnessOutput">100 / 100</output></label><input id="jh2CurtainBrightness" type="range" min="1" max="100" value="100"><div class="sub">Brightness 1 = actual curtain level 4 (lowest usable level). Brightness levels below 4 are never sent.</div><label class="jh2-curtain-label" for="jh2CurtainSpeed">Speed <output id="jh2CurtainSpeedOutput">100 / 100</output></label><input id="jh2CurtainSpeed" type="range" min="1" max="100" value="100"><div class="sub">Speed uses the original controller range of 1–100, unchanged.</div></div>'+
+    '<div class="panel"><strong>Power, brightness and speed</strong><div class="jh2-curtain-row" style="margin-top:12px"><button id="jh2CurtainOn" class="btn primary" type="button">On</button><button id="jh2CurtainOff" class="btn" type="button">Off</button></div><label class="jh2-curtain-label" for="jh2CurtainBrightness">Brightness <output id="jh2CurtainBrightnessOutput">100 / 100</output></label><input id="jh2CurtainBrightness" type="range" min="1" max="100" value="100"><div class="sub">Brightness 1 = actual curtain level 4 (lowest usable level). Brightness levels below 4 are never sent.</div><label class="jh2-curtain-label" for="jh2CurtainSpeed">Speed <output id="jh2CurtainSpeedOutput">100 / 100</output></label><input id="jh2CurtainSpeed" type="range" min="1" max="100" value="100"><div class="sub">Speed uses the original controller range of 1–100, unchanged.</div><div id="jh2CurtainStatus" class="jh2-curtain-status" role="status"></div></div>'+
     '<div class="panel"><strong>Effect sequence</strong><div class="sub">Enable selection mode to choose multiple original SmartDawn effects. Arrange their playback order, then choose the number of seconds each should play. Playback runs through NanoC6 and continues after closing the app.</div><label class="jh2-sequence-enable"><input type="checkbox" id="jh2CurtainSequenceEnable"> Enable effect sequence selection</label><label class="jh2-curtain-label" for="jh2CurtainSequenceSeconds">Time per effect (seconds, 5–3600)</label><input class="field" id="jh2CurtainSequenceSeconds" type="number" min="5" max="3600" step="1" value="60"><div id="jh2CurtainSequenceList" class="jh2-curtain-sequence-list"></div><div class="jh2-curtain-row"><button class="btn primary" type="button" id="jh2CurtainSequenceStart">Play sequence</button><button class="btn" type="button" id="jh2CurtainSequenceStop">Stop sequence</button></div><div class="sub" id="jh2CurtainSequenceStatus" role="status">Disabled • select two or more effects</div></div>'+
     '<div class="panel"><strong>87 SmartDawn effects</strong><div class="sub">Captured catalog: E-0 through E-86 (87 effects). Captured still preview images are recovered directly from your original SmartDawn screenshots.</div><input id="jh2CurtainSearch" class="field" placeholder="Find effect (e.g. E-55)" style="margin-top:10px" aria-label="Search curtain effects"><div id="jh2CurtainEffects" class="jh2-curtain-effect-grid"></div></div>';
-  // Keep every existing Curtain control intact in the first sub-tab.
+  // Curtain Controls remain independent of Oracle Studio; redundant Nano tools removed.
   const heading=page.querySelector('.v3PageTitle');
   const controls=create('div','jh2-curtain-subpanel');
   controls.id='jh2CurtainOriginalControls';
@@ -127,25 +126,6 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     if(answer){sequencePlaying=false;renderSequence();}
   });
 
-  function renderDevices(devices){
-    const area=$('jh2CurtainDevices');if(!area)return;
-    area.replaceChildren();
-    const listed=Array.isArray(devices)?devices:[];
-    if(!listed.length)return;
-    const label=create('div','jh2-curtain-device-hint','Nearby BLE devices detected. Tap the matching curtain. NanoC6 scans for the curtain.');
-    area.append(label);
-    const sorted=listed.slice().sort((a,b)=>Number(/DN5E58|SMARTDAWN|DNX/i.test(b.name||''))-Number(/DN5E58|SMARTDAWN|DNX/i.test(a.name||''))||Number(b.rssi||-127)-Number(a.rssi||-127));
-    for(const device of sorted){
-      if(!device||typeof device.address!=='string')continue;
-      const address=device.address;
-      const button=create('button','btn jh2-curtain-device');
-      button.type='button';
-      const name=String(device.name||'Unnamed BLE device');
-      button.textContent=name+' · '+address.slice(-8)+(Number.isFinite(Number(device.rssi))&&Number(device.rssi)>-127?' · '+device.rssi+' dBm':'');
-      button.addEventListener('click',()=>perform('connect',{address},'Connect '+name));
-      area.append(button);
-    }
-  }
   const perform=async (action,data,label)=>{
     if(busy)return;
     setBusy(true);status(`${label}…`);
@@ -153,30 +133,17 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
       const r=await call(action,data);
       connected=!!r.connected;
       if(typeof r.sequenceRunning==='boolean'){sequencePlaying=r.sequenceRunning;renderSequence();}
-      if(action==='scan'||Array.isArray(r.devices)&&r.devices.length)renderDevices(r.devices);
       status(`${label}: ${r.message||'Command delivered. Check the curtain lights.'}`,'success');
       return r;
     }catch(e){
-      if(Array.isArray(e.devices)&&e.devices.length)renderDevices(e.devices);
       status(e.message,'error');
     }finally{setBusy(false)}
   };
-  $('jh2CurtainConnect').addEventListener('click',async()=>{const r=await perform('connect',{},'Bluetooth connection');if(r)connected=!!r.connected});
-  $('jh2CurtainScan').addEventListener('click',()=>perform('scan',{},'Searching nearby BLE devices'));
-  $('jh2CurtainDisconnect').addEventListener('click',async()=>{const r=await perform('disconnect',{},'Disconnect');if(r)connected=false});
-  $('jh2CurtainRefresh').addEventListener('click',()=>perform('status',{},'Bluetooth status'));
   $('jh2CurtainOn').addEventListener('click',()=>perform('power',{value:true},'Power on'));
   $('jh2CurtainOff').addEventListener('click',()=>perform('power',{value:false},'Power off'));
   for(const k of ['Brightness','Speed']){
     const field=$('jh2Curtain'+k),out=$('jh2Curtain'+k+'Output');field.addEventListener('input',()=>out.textContent=field.value+' / 100');field.addEventListener('change',()=>perform(k.toLowerCase(),{value:Number(field.value)},k));
   }
-  page.querySelectorAll('[data-jh2-layout]').forEach(b=>b.addEventListener('click',async()=>{
-    const value=Number(b.dataset.jh2Layout),matrix=$('jh2CurtainMatrixPreview');
-    if(matrix)matrix.dataset.orientation=String(value);
-    const sent=await perform('layout',{value},b.textContent.trim());
-    if(sent)status('Bluetooth write acknowledged; physical rotation/flip remains unverified. The graphic above is only a local orientation preview.','error');
-    else status('No curtain Bluetooth connection. Only the local orientation illustration changed; connect before testing physical flip/rotation.','error');
-  }));
   function previewIcon(effect){
     // One-to-one still-image crop of the user-supplied SmartDawn screenshot,
     // NOT an invented animated pattern.
