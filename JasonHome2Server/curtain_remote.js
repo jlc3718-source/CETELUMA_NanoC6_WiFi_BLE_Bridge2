@@ -5,7 +5,41 @@
  async function api(path,body){const r=await fetch(base+path,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.error||'Oracle request failed');return d;}
  window.JH2_ORACLE_CURTAIN=true;
  window.JH2CurtainApi=api;
- const localNano=(action,payload={})=>new Promise((resolve,reject)=>{if(!window.AndroidCurtain?.localControllerAvailable?.())return reject(Error('Install the signed Jason Home 2 APK for local pairing over home Wi-Fi.'));const id='nano'+Date.now()+Math.random().toString(16).slice(2),old=window.__curtainNativeResult;window.__curtainNativeResult=(n,r)=>{if(n!==id)return old?.(n,r);window.__curtainNativeResult=old;r?.ok?resolve(r):reject(Error(r?.error||'Local NanoC6 request failed'));};AndroidCurtain.call(id,action,JSON.stringify(payload));});
+ const localNano=(action,payload={})=>new Promise((resolve,reject)=>{
+  if(!window.AndroidCurtain?.localControllerAvailable?.())return reject(Error('Open Jason Home 2 on home Wi-Fi to connect the Nano automatically.'));
+  const id='nano'+Date.now()+Math.random().toString(16).slice(2),old=window.__curtainNativeResult;
+  let finished=false;
+  const finish=(result,error)=>{if(finished)return;finished=true;clearTimeout(timer);if(window.__curtainNativeResult===callback)window.__curtainNativeResult=old;error?reject(error):resolve(result);};
+  const callback=(n,r)=>{if(n!==id)return old?.(n,r);r?.ok?finish(r):finish(null,Error(r?.error||'Local NanoC6 request failed'));};
+  const timer=setTimeout(()=>finish(null,Error('Nano is not reachable on home Wi-Fi')),12000);
+  window.__curtainNativeResult=callback;
+  try{AndroidCurtain.call(id,action,JSON.stringify(payload));}catch(e){finish(null,e);}
+ });
+ let pairingWork=null,nextPairAttempt=0;
+ async function ensureNanoPairing(force=false){
+  if(pairingWork)return pairingWork;
+  if(document.hidden||!window.AndroidCurtain?.localControllerAvailable?.()||(!force&&Date.now()<nextPairAttempt))return false;
+  nextPairAttempt=Date.now()+30000;
+  pairingWork=(async()=>{
+   try{
+    const state=await api('/api/curtain/status');if(state.online)return true;
+    const grant=await api('/api/curtain/autopair',{});if(grant.alreadyOnline)return true;
+    // The existing trusted APK probes mDNS/private LAN and writes /bridge/pair
+    // on home Wi-Fi. It never sends this credential to the public Nano address.
+    await localNano('pairNano',grant);
+    for(let i=0;i<16;i++){await delay(500);const current=await api('/api/curtain/status');if(current.online)return true;}
+   }catch{}
+   return false;
+  })();
+  try{return await pairingWork;}finally{pairingWork=null;}
+ }
+ window.JH2EnsureNanoPairing=ensureNanoPairing;
+ // Run independently of Settings markup: current layouts do not have a
+ // Controllers pane. A reset Nano recovers simply by opening the APK at home.
+ setTimeout(()=>ensureNanoPairing(),250);
+ setInterval(()=>ensureNanoPairing(),30000);
+ window.addEventListener('online',()=>ensureNanoPairing(true));
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensureNanoPairing(true);});
  window.JH2OracleCurtainCall=async(action,payload={})=>{
   if(action==='saveRawFile'){
    // Native Android file export remains available; it never accesses Bluetooth.
@@ -15,7 +49,7 @@
   if(['asset','effect','nativePlay','sequenceStart'].includes(action))window.JH2CurtainLastSelection={action,payload};
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
-  if(queued.bridgeOnline===false)throw Error('Oracle received command '+queued.commandId+'; the Nano command channel is offline. The latest selection is saved for reconnection.');
+  if(queued.bridgeOnline===false&&!await ensureNanoPairing(true))throw Error('Oracle received command '+queued.commandId+'. Open the APK on home Wi-Fi so the Nano can connect automatically.');
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';
   for(let i=0;i<150;i++){
    await delay(i<20?150:400);const {command:c}=await api('/api/curtain/command?id='+queued.commandId);
@@ -28,7 +62,7 @@
  let since=0,working=false;setInterval(async()=>{if(working||!document.getElementById('jh2CurtainStudioFrame')?.getAttribute('src'))return;working=true;try{const d=await api('/api/curtain/notifications?since='+since);for(const n of d.notifications){since=Math.max(since,n.id);window.__jh2CurtainRawNotify?.(n.uuid,n.data);}}catch{}finally{working=false;}},250);
  function init(){
   const settings=document.querySelector('.v3SettingsPane[data-settings-pane="controllers"]');if(!settings)return;
-  const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayPair">Pair NanoC6</button> <button class="btn" id="jh2RelayResume">Return to Oracle</button><textarea id="jh2RelayCode" class="field" hidden readonly aria-label="NanoC6 pairing configuration"></textarea><p class="sub">The Android app supports direct pairing over home Wi-Fi. Manual paste remains available if the controller cannot be reached. Local tests last 15 minutes. Files stay on Oracle; NanoC6 relays with a 4 KB RAM buffer.</p>';settings.append(p);
+  const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayResume">Return to Oracle</button><p class="sub">The APK connects the Nano automatically on home Wi-Fi. Files stay on Oracle; the Nano relays through two dynamic RAM buffers, up to 35 KiB each.</p>';settings.append(p);
   // Oracle alone retains prepared content. Confirmation is intentionally
   // explicit because the BLE acknowledgement cannot prove physical display.
   const retention=document.createElement('section');retention.className='panel';
@@ -45,7 +79,6 @@
   };
 
   p.querySelector('#jh2RelayOpen').onclick=async()=>{try{if(window.AndroidCurtain?.localControllerAvailable?.())await localNano('openNanoController');else window.open('http://craumer.tplinkdns.com/','_blank','noopener');}catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}};
-  p.querySelector('#jh2RelayPair').onclick=async()=>{try{const d=await api('/api/curtain/pair',{}),t=p.querySelector('textarea');try{await localNano('pairNano',d);t.value='';t.hidden=true;p.querySelector('#jh2RelayStatus').textContent='Pairing saved directly to NanoC6. Waiting for authenticated sync…';setTimeout(refresh,1200);}catch(localError){t.value=JSON.stringify(d);t.hidden=false;t.select();p.querySelector('#jh2RelayStatus').textContent=localError.message+' Paste the private pairing code into NanoC6 → Bridge Settings.';}}catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}};
   p.querySelector('#jh2RelayResume').onclick=()=>api('/api/curtain/resume',{}).then(refresh);
   async function refresh(){try{const d=await api('/api/curtain/status');p.querySelector('#jh2RelayStatus').textContent=(d.online?'Connected':'Waiting for NanoC6')+' · BLE '+(d.curtain?.connected?'connected':'disconnected')+' · '+d.queued+' queued'+(d.lastCommand?' · command '+d.lastCommand.id+': '+d.lastCommand.state:'')+(d.error?' · '+d.error:'');
    const r=d.assetRetention;if(r){const b=n=>(n/1024).toFixed(1)+' KB',active=r.active?.name||'None',pending=r.pending?.name||'None';

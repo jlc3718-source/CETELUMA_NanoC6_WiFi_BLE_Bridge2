@@ -12,14 +12,14 @@ function next(ws){return new Promise((resolve,reject)=>{
  const receive=bytes=>{clearTimeout(timeout);resolve(JSON.parse(bytes.toString()));};
  ws.once('message',receive);
 });}
-async function fixture(){
+async function fixture(automatic=false){
  const db=new DatabaseSync(':memory:'),bridge=createCurtainBridge({db}),server=http.createServer();
  const channel=attachCurtainChannel(server,bridge);server.listen(0,'127.0.0.1');await once(server,'listening');
- const pairing=bridge.pairing(),url='ws://127.0.0.1:'+server.address().port+'/api/curtain-bridge/channel';
+ const original=bridge.pairing(),pairing=automatic?bridge.autoPairing():original,url='ws://127.0.0.1:'+server.address().port+'/api/curtain-bridge/channel';
  const ws=new WebSocket(url,{headers:{'X-JH2-Bridge-Token':pairing.token}});await once(ws,'open');
  const report={type:'state',reportId:1,bootId:'physical-bridge-test',status:{firmware:'1.1.13',curtain:{connected:true}}};
  const welcome=next(ws);ws.send(JSON.stringify(report));await welcome;
- return {bridge,ws,report,url,close:async()=>{ws.terminate();for(const peer of channel.clients)peer.terminate();await new Promise(r=>server.close(r));channel.close();bridge.close();db.close();}};
+ return {bridge,ws,report,url,original,pairing,close:async()=>{ws.terminate();for(const peer of channel.clients)peer.terminate();await new Promise(r=>server.close(r));channel.close();bridge.close();db.close();}};
 }
 test('Oracle pushes the actual command immediately and accepts its ACK on the same socket',async()=>{
  const f=await fixture();try{
@@ -86,5 +86,14 @@ test('a closed persistent socket marks the Nano offline immediately',async()=>{
   assert.equal(f.bridge.status().online,true);assert.equal(f.bridge.status().channelConnected,true);
   const closed=once(f.ws,'close');f.ws.close();await closed;await new Promise(r=>setImmediate(r));
   assert.equal(f.bridge.status().online,false);
+ }finally{await f.close();}
+});
+
+test('automatic LAN grant authenticates the real socket and is promoted after its first report',async()=>{
+ const f=await fixture(true);try{
+  const auth=token=>f.bridge.authenticate({headers:{'x-jh2-bridge-token':token}});
+  assert.equal(auth(f.pairing.token),'current');assert.equal(auth(f.original.token),null);
+  const pushed=next(f.ws),command=f.bridge.enqueue('nanoInfo');
+  assert.equal((await pushed).commands[0].id,command.id);
  }finally{await f.close();}
 });

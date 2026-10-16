@@ -35,6 +35,7 @@ jobs:
           node --check JasonHome2Server/curtain_remote.js
           node --check JasonHome2Server/curtain.js
           node --test \
+            JasonHome2Server/tests/curtain-autopair.mjs \
             JasonHome2Server/tests/curtain-channel.mjs \
             JasonHome2Server/tests/curtain-relay.mjs \
             JasonHome2Server/tests/curtain-quality.mjs \
@@ -67,7 +68,7 @@ jobs:
           import json,pathlib,os
           d=json.loads(pathlib.Path('deployment-verification.json').read_text())
           assert d['build']==os.environ['GITHUB_SHA']
-          assert d['bridgeAuthRecovered'] is True
+          assert d['bridgeAuthRecovered'] is True or (d['bridgeNeedsPairing'] is True and d['automaticPairingReady'] is True)
           assert d['eufyReady']==4 and d['events']==212
           assert d['snapshotRestoreVerified'] and d['schedulerReconciled']
           assert d['liveCommandAckVerified'] is False and d['physicalBridgeVerified'] is False

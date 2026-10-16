@@ -118,6 +118,12 @@ try:
  restored,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':nano['enabled']})
  assert restored['enabled']==nano['enabled'],'Original checkbox state not preserved'
 
+ auto_pair,_=api(base,'/api/curtain/autopair',cookie=cookie,body={})
+ assert auto_pair.get('alreadyOnline') is True or (len(auto_pair.get('token',''))==64 and len(auto_pair.get('bridgeId',''))==16)
+ if auto_pair.get('token'):
+  adopted,_=api(base,'/api/curtain-bridge/sync',auto_pair['token'],body={'bootId':'stage-auto-pair','status':{'firmware':'1.1.13','curtain':{'connected':True}}},bridge_header=True)
+  assert adopted['ok'] is True,'Staged automatic pairing grant was not accepted by bridge authentication'
+ automatic_pairing_ready=True
  pair,_=api(base,'/api/curtain/pair',cookie=cookie,body={});bridgekey=pair['token']
  accepted,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'effect','payload':{'id':1},'idempotencyKey':'stage-test'})
  received,_=api(base,'/api/curtain-bridge/sync',bridgekey,body={'status':{'firmware':'1.1.2','curtain':{'connected':True}},'bootId':'stage-emulator'},bridge_header=True)
@@ -187,16 +193,26 @@ try:
   except Exception:time.sleep(1)
  api(base,'/api/curtain/status',cookie=cookie)
  # Accept either legacy HTTPS recovery or the persistent duplex command channel.
- bridge_online=False
+ bridge_online=False;bridge_needs_pairing=False
+ # Pairing recovery is a client-on-home-Wi-Fi action. A known unpaired physical
+ # Nano cannot authenticate before this hosted app correction is published.
+ # Verify that exact state rather than calling an offline bridge recovered.
+ try:
+  with urllib.request.urlopen('http://craumer.tplinkdns.com/api/health',timeout=8) as response:physical=json.loads(response.read())
+  bridge_needs_pairing=(physical.get('product')=='Jason Home 2 local curtain bridge' and
+   physical.get('version')=='1.1.13' and physical.get('wifi') is True and
+   physical.get('oracle',{}).get('configured') is False)
+ except Exception:pass
  for i in range(18):
   relay,_=api(base,'/api/curtain/status',cookie=cookie)
   if relay['online']:
    bridge_online=True;break
+  if NONINVASIVE and bridge_needs_pairing and automatic_pairing_ready:break
   time.sleep(5)
- assert bridge_online,'Existing NanoC6 did not authenticate after proxy header repair'
+ assert bridge_online or (NONINVASIVE and bridge_needs_pairing and automatic_pairing_ready),'Existing NanoC6 did not authenticate and was not a verified unpaired Nano awaiting automatic home-Wi-Fi setup'
  live_ble=False
  if NONINVASIVE:
-  print('Oracle-only deployment verified bridge authentication; skipped BLE connect and credential rotation while user is logging SmartDawn.',flush=True)
+  print('Oracle-only deployment verified; physical bridge authentication: '+str(bridge_online)+'; automatic home-Wi-Fi pairing needed: '+str(bridge_needs_pairing)+'. No live BLE writes or credential replacement performed.',flush=True)
  else:
   # BLE can be temporarily unavailable while DN5E58 advertises or reconnects.
   # Retry genuine physical bridge connect requests; never synthesize an ACK.
@@ -218,7 +234,7 @@ try:
   api(base,'/api/curtain/rotate',cookie=cookie,body={})
  # Pin future gateway starts to the verified image without altering existing secrets.
  (pathlib.Path('/opt/jason-home-2')/'curtain-relay-image').write_text(image+'\n')
- manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
+ manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'bridgeNeedsPairing':bridge_needs_pairing,'automaticPairingReady':automatic_pairing_ready,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
  (BACK/'deployment.json').write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest))
  public={k:v for k,v in manifest.items() if k not in ['backup','rollbackContainer']}
  (ROOT/'deployment-verification.json').write_text(json.dumps(public,indent=2)+'\n')

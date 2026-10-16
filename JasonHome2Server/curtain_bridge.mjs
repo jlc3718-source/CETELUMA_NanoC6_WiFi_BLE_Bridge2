@@ -117,19 +117,30 @@ export function createCurtainBridge({db,now=Date.now}){
     .run(TARGET,active,active?now():null,active?'legacy_unconfirmed':'idle');
  }
  expireStaging();transaction(garbageCollect);
- let wake=new Set(),subscribers=new Set(),activeChannels=0;
+ let wake=new Set(),subscribers=new Set(),activeChannels=0,bootstrapGrant=null;
  function channelOpened(){activeChannels++;let closed=false;return ()=>{if(!closed){closed=true;activeChannels=Math.max(0,activeChannels-1);}};}
  // Active outbound Nano connections receive a push immediately on enqueue.
  function signal(){for(const f of wake)f();wake.clear();for(const f of subscribers)f();}
  function subscribeWake(fn){subscribers.add(fn);return ()=>subscribers.delete(fn);}
  function revision(){return Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n);}
- function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));put('pendingTokenHash','');put('rotateCredential',false);return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
+ function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));put('pendingTokenHash','');put('rotateCredential',false);put('bootstrapTokenHash','');put('bootstrapExpires',0);bootstrapGrant=null;return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
+ function autoPairing(){
+  if(status().online)return {ok:true,alreadyOnline:true};
+  const at=now();
+  // A phone away from home must never invalidate the working Nano credential.
+  // Keep the active key until the LAN-provisioned Nano authenticates outbound.
+  if(bootstrapGrant&&bootstrapGrant.expiresAt>at)return {...bootstrapGrant};
+  const token=randomBytes(32).toString('hex'),bridgeId=get('bridgeId')||randomBytes(8).toString('hex');
+  put('bridgeId',bridgeId);put('bootstrapTokenHash',hash(token));put('bootstrapExpires',at+120000);
+  bootstrapGrant={ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId,token,expiresAt:at+120000};
+  return {...bootstrapGrant};
+ }
  function requestToken(req){
   const bearer=String(req.headers.authorization||'').replace(/^Bearer /,''),alternate=String(req.headers['x-jh2-bridge-token']||'').trim();
   // Reject conflicting credentials instead of guessing which proxy path is authoritative.
   return bearer&&alternate&&bearer!==alternate?'':alternate||bearer;
  }
- function authenticate(req){const token=requestToken(req);if(token.length!==64)return null;const actual=Buffer.from(hash(token));for(const [slot,key] of [['current','tokenHash'],['pending','pendingTokenHash']]){const expected=get(key);if(typeof expected==='string'&&expected.length===64&&timingSafeEqual(actual,Buffer.from(expected)))return slot;}return null;}
+ function authenticate(req){const token=requestToken(req);if(token.length!==64)return null;const actual=Buffer.from(hash(token));for(const [slot,key] of [['current','tokenHash'],['pending','pendingTokenHash'],['bootstrap','bootstrapTokenHash']]){if(slot==='bootstrap'&&get('bootstrapExpires',0)<=now())continue;const expected=get(key);if(typeof expected==='string'&&expected.length===64&&timingSafeEqual(actual,Buffer.from(expected)))return slot;}return null;}
  function authorized(req){return authenticate(req)!==null;}
  function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
  function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
@@ -175,6 +186,12 @@ export function createCurtainBridge({db,now=Date.now}){
  function resume(){put('manualUntil',0);put('scheduleActive',null);tick();for(const d of Object.values(get('desired',{})))enqueue(d.action,d.payload,null,'recovery');signal();return status();}
  function sync(body,credential='current'){
   tick();const at=now();put('lastSeen',at);put('lastSync',at);
+  if(credential==='bootstrap'){
+   const next=get('bootstrapTokenHash');
+   if(!next||get('bootstrapExpires',0)<=at)throw fail(401,'Automatic pairing expired');
+   put('tokenHash',next);put('bootstrapTokenHash','');put('bootstrapExpires',0);
+   put('pendingTokenHash','');put('rotateCredential',false);put('credentialRotatedAt',at);bootstrapGrant=null;
+  }
   if(credential==='pending'){
    const pending=get('pendingTokenHash');if(pending){put('tokenHash',pending);put('pendingTokenHash','');put('rotateCredential',false);put('credentialRotatedAt',at);}
   }
@@ -262,5 +279,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,delivery,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,channelOpened,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ return {status,pairing,autoPairing,authenticate,authorized,requestRotation,enqueue,command,sync,delivery,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,channelOpened,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }

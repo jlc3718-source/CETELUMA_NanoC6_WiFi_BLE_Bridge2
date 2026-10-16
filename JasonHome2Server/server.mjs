@@ -989,6 +989,7 @@ async function route(req,res){
       "x-content-type-options":"nosniff"});
     return res.end(data);
   }
+  if(path==="/api/curtain/autopair"&&method==="POST")return send(res,200,curtainRelay.autoPairing());
   if(path==="/api/curtain/pair"&&method==="POST")return send(res,200,curtainRelay.pairing());
   if(path==="/api/curtain/rotate"&&method==="POST")return send(res,200,curtainRelay.requestRotation());
   if(path==="/api/curtain/call"&&method==="POST"){
