@@ -146,12 +146,23 @@ try:
    bridge_online=True;break
   time.sleep(5)
  assert bridge_online,'Existing NanoC6 did not authenticate after proxy header repair'
- probe,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'connect','payload':{},'idempotencyKey':'deploy-connect-'+RUN})
- for i in range(15):
-  delivered,_=api(base,'/api/curtain/command?id='+str(probe['commandId']),cookie=cookie)
-  if delivered['command']['state'] in ['applied','failed']:break
-  time.sleep(2)
- assert delivered['command']['state']=='applied' and delivered['command']['result']['connected'] is True,'NanoC6 did not ACK the live BLE connection probe'
+ # BLE can be temporarily unavailable while DN5E58 advertises or reconnects.
+ # Retry genuine physical bridge connect requests; never synthesize an ACK.
+ live_ble=False
+ for attempt in range(1,5):
+  probe,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'connect','payload':{},'idempotencyKey':'deploy-connect-'+RUN+'-'+str(attempt)})
+  delivered=None
+  for i in range(25):
+   delivered,_=api(base,'/api/curtain/command?id='+str(probe['commandId']),cookie=cookie)
+   if delivered['command']['state'] in ['applied','failed','expired']:break
+   time.sleep(2)
+  cmd=delivered['command'] if delivered else {}
+  outcome=cmd.get('result') or {}
+  live_ble=cmd.get('state')=='applied' and outcome.get('connected') is True
+  print('Live BLE connect probe',attempt,'state:',cmd.get('state'),'result:',json.dumps(outcome),flush=True)
+  if live_ble:break
+  if attempt<4:time.sleep(8)
+ assert live_ble,'NanoC6 did not ACK a connected DN5E58 after four live attempts; see probe results above'
  api(base,'/api/curtain/rotate',cookie=cookie,body={})
  # Pin future gateway starts to the verified image without altering existing secrets.
  (pathlib.Path('/opt/jason-home-2')/'curtain-relay-image').write_text(image+'\n')
