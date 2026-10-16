@@ -14,7 +14,7 @@ test('HTML converter scripts parse and show offline controls',()=>{
  for(const term of ['id="prepareOffline"','id="offlineStatus"','id="saveDraft"','id="clearDraft"','restoreOfflineDraft();','scheduleDraftSave();']){
   assert.ok(converter.includes(term),'Missing offline control '+term);
  }
- assert.match(converter,/\$\('sendLive'\)\.disabled=busy\|\|!connected\|\|!sourceImage/);
+ assert.match(converter,/\$\('sendLive'\)\.disabled=busy\|\|!sourceImage\|\|\(!oracleStudio\(\)\&\&!connected\)/);
  assert.match(converter,/\$\('build'\)\.disabled=busy\|\|!sourceImage/);
  assert.match(converter,/\$\('install'\)\.disabled=busy\|\|!connected\|\|!prepared/);
 });
@@ -106,4 +106,51 @@ test('Clearing a saved project does not send to curtain',async()=>{
  assert.equal(saved.size,1);
  await ctx.transactDraft('delete');
  assert.equal(saved.size,0);
+});
+
+test('Image / GIF Studio sends to Oracle while BLE disconnected, with a durable queued command',async()=>{
+ const marker=converter.indexOf('function makeOracleScrollFrames(');
+ const end=converter.indexOf('function stopPreview()',marker);
+ assert.ok(marker>0&&end>marker);
+ const body=converter.slice(marker,end);
+ const calls=[];
+ const image=new Uint8ClampedArray(6400);
+ for(let i=0;i<image.length;i+=4){image[i]=i%255;image[i+3]=255;}
+ const fields={quality:{value:'pal8'},motion:{value:'gif'},progress:{value:0}};
+ const fakeParent={
+  JH2_ORACLE_CURTAIN:true,
+  JH2CurtainApi:async(path,payload)=>{
+   calls.push({path,payload});
+   if(path==='/api/curtain/assets')return {ok:true,sha256:'a'.repeat(64),bytes:3500};
+   if(path==='/api/curtain/call')return {ok:true,queued:true,commandId:55,state:'queued'};
+   throw Error('Unexpected Oracle route '+path);
+  }
+ };
+ const ctx={
+  window:{parent:fakeParent},Uint8ClampedArray,Uint8Array,Promise,Number,Error,btoa,
+  crypto:{randomUUID:()=> 'test-uuid'},sourceImage:image,frames:[image,image],
+  frameDelays:[90,110],importedName:'test.gif',oracleStreamRequested:false,
+  stopLive:false,connected:false,binWriter:null,
+  $:id=>fields[id]||(fields[id]={value:0}),
+  say(){},ui(){},log(){},delay:async()=>{},
+  getEncoding(){throw Error('Direct BLE encoding should not be used');}
+ };
+ runInNewContext(body,ctx,{timeout:10000});
+ await ctx.drawLive();
+ assert.equal(calls[0].path,'/api/curtain/assets');
+ assert.equal(calls[0].payload.frames.length,2);
+ assert.equal(calls[0].payload.loop,true);
+ assert.equal(calls[1].payload.action,'asset');
+ assert.equal(calls[1].payload.payload.sha256,'a'.repeat(64));
+ assert.equal(ctx.oracleStreamRequested,true);
+ assert.equal(fakeParent.JH2CurtainLastSelection.action,'asset');
+ assert.equal(fields.progress.value,100);
+ calls.length=0;fields.motion.value='scroll';
+ await ctx.drawLive();
+ assert.equal(calls[0].payload.frames.length,40);
+ assert.equal(calls[0].payload.loop,true);
+ calls.length=0;fields.motion.value='static';
+ await ctx.drawLive();
+ assert.equal(calls[0].payload.frames.length,1);
+ assert.equal(calls[0].payload.loop,false);
 });
