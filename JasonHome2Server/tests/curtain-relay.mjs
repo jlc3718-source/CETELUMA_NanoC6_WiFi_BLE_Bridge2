@@ -196,6 +196,10 @@ test('detailed multicolor GIF is packetized into bounded doodle writes without N
   for(let i=0;i<records;i++){
    const channel=compiled.bytes[off],size=compiled.bytes.readUInt16LE(off+1);off+=3;
    assert.ok(off+size<=compiled.bytes.length,'record must be complete');
+   if(frame>0&&i===0){
+    assert.equal(channel,0,'subsequent GIF frame must begin with a control packet');
+    assert.equal(compiled.bytes.readUInt16BE(off+10),2713,'clear preceding GIF frame to prevent ghosts');
+   }
    if(channel===1){
     assert.ok(size<=126,'one BLE doodle write must not exceed verified 126-byte transfer');
     assert.ok(size>=5,'must contain transport framing');
