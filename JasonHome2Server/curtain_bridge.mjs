@@ -7,7 +7,9 @@ const int=(v,a,b)=>Number.isInteger(v)&&v>=a&&v<=b;
 const UUIDS=new Set(['01020074-1972-1925-3022-077119514e44','02020074-1972-1925-3022-077119514e44','27923001-2072-1925-3022-077119514e44']);
 export function validateCommand(action,p={}){
  if(!p||typeof p!=='object'||Array.isArray(p))throw fail(400,'Invalid command payload');
- if(['connect','disconnect','scan','status','sequenceStop','assetStop'].includes(action))return {};
+ if(['connect','disconnect','scan','status','sequenceStop','assetStop',
+      'nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle'].includes(action))return {};
+ if(action==='nanoAutoUpdate'){if(typeof p.enabled!=='boolean')throw fail(400,'Auto-update must be boolean');return {enabled:p.enabled};}
  if(action==='power'){const on=p.on??p.value;if(typeof on!=='boolean')throw fail(400,'Power must be boolean');return {on};}
  if(action==='brightness'||action==='speed'){if(!int(p.value,action==='brightness'?0:1,100))throw fail(400,'Value must be 0–100 (speed 1–100)');return {value:p.value};}
  if(action==='layout'){if(![0,4,5,6].includes(p.value))throw fail(400,'Unsupported layout');return {value:p.value};}
@@ -42,7 +44,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
-  const transient=['rawWrite','subscribeRaw','scan','connect','disconnect','status'].includes(action);
+  const transient=['rawWrite','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
   if(action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
   const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
