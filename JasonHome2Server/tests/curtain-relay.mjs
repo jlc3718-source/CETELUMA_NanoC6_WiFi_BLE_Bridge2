@@ -225,7 +225,7 @@ test('new picture supersedes a previous queued or downloaded transfer while keep
   const second=b.upload(solid(150));
   assert.notEqual(first.sha256,second.sha256);
   const c2=b.enqueue('asset',{sha256:second.sha256});
-  assert.equal(b.command(c1.id).state,'downloaded','retained until new Nano command, with image bytes still available');
+  assert.equal(b.command(c1.id).state,'superseded','old in-flight visual is preempted by new manual selection');
   assert.equal(b.sync({}).commands.some(c=>c.id===c2.id),true);
   assert.equal(b.asset(second.sha256)!=null,true);
   b.sync({acks:[{id:c2.id,state:'applied',result:{bleTransmitted:true}}]});
