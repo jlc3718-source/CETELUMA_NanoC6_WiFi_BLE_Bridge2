@@ -1,0 +1,68 @@
+name: Reboot and verify Jason Home 2 Oracle relay
+on:
+  push:
+    branches: [feat/jh2-oracle-curtain-1.1.0]
+    paths: [.github/workflows/jh2-relay-reboot.yml]
+permissions:
+  contents: read
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  reboot:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Record healthy state and schedule controlled full VM reboot
+        run: |
+          python3 - <<'PY'
+          import subprocess,json,urllib.request,pathlib,os
+          info=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          request=urllib.request.Request('http://127.0.0.1:8080/api/status',headers={'Authorization':'Bearer '+env['JASON_HOME_API_TOKEN']})
+          s=json.load(urllib.request.urlopen(request,timeout=30))
+          assert s['automationOwner']=='oracle' and len(s['eufy']['readyNames'])==4 and s['calendar']['eventCount']==212
+          w=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home-2-web']))[0]
+          we=dict(x.split('=',1) for x in w['Config']['Env'] if '=' in x)
+          assert we['JH2_CURTAIN_BUILD_SHA']=='ae3255a8ff359482e3033fb961770c5f7e40fb92'
+          p=pathlib.Path('/home/ubuntu')/('jh2-relay-boot-before-'+os.environ['GITHUB_RUN_ID'])
+          p.write_text(pathlib.Path('/proc/sys/kernel/random/boot_id').read_text())
+          print('Pre-reboot verified: deployed relay, Oracle ownership, 4 Eufy strings, 212 events.')
+          PY
+          sudo systemd-run --unit="jh2-relay-reboot-$GITHUB_RUN_ID" --on-active=15s /usr/sbin/reboot
+  wait:
+    needs: reboot
+    runs-on: ubuntu-24.04
+    steps:
+      - run: sleep 45
+  verify:
+    needs: wait
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Verify new boot, scheduler, Eufy and curtain relay after reboot
+        run: |
+          python3 - <<'PY'
+          import subprocess,json,urllib.request,pathlib,os,time
+          old=(pathlib.Path('/home/ubuntu')/('jh2-relay-boot-before-'+os.environ['GITHUB_RUN_ID'])).read_text().strip()
+          current=pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+          assert old!=current,'VM boot id did not change'
+          i=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in i['Config']['Env'] if '=' in x);token=env['JASON_HOME_API_TOKEN']
+          def call(base,path,body=None,cookie=None):
+           headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'}
+           if cookie:headers['Cookie']=cookie
+           with urllib.request.urlopen(urllib.request.Request(base+path,None if body is None else json.dumps(body).encode(),headers),timeout=40) as response:return json.load(response),response.headers
+          for attempt in range(40):
+           try:
+            s,_=call('http://127.0.0.1:8080','/api/status')
+            if s['automationOwner']=='oracle' and len(s['eufy']['readyNames'])==4:break
+           except Exception:pass
+           time.sleep(2)
+          else:raise RuntimeError('Eufy did not return after reboot')
+          assert s['calendar']['eventCount']==212 and s['calendar']['revision']==88
+          _,h=call('http://127.0.0.1:8081','/api/session',{'token':token});cookie=h['Set-Cookie'].split(';')[0]
+          r,_=call('http://127.0.0.1:8081','/api/curtain/status',cookie=cookie)
+          assert r['assetStorage']=='oracle' and r['pollSeconds']==60
+          print(json.dumps({'newBoot':True,'uptimeSeconds':float(pathlib.Path('/proc/uptime').read_text().split()[0]),'owner':s['automationOwner'],'eufyReady':s['eufy']['readyNames'],'events':s['calendar']['eventCount'],'calendarRevision':s['calendar']['revision'],'relayAvailable':True,'bridgePaired':r['configured'],'physicalCurtainVerified':False,'timeSynchronized':subprocess.check_output(['timedatectl','show','-p','NTPSynchronized','--value'],text=True).strip()}))
+          PY
