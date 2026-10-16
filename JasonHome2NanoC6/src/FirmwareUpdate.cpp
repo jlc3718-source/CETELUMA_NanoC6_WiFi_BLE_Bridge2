@@ -19,6 +19,13 @@ static const char PREFIX[]="https://github.com/jlc3718-source/CETELUMA_NanoC6_Wi
 static bool busy=false;
 static bool autoTaskStarted=false;
 static JsonDocument available;
+void recordFirmwareState(const String&phase,const String&reason){
+ Preferences n;if(!n.begin("jh2-release",false))return;
+ n.putString("phase",phase);
+ n.putString("reason",reason.substring(0,180));
+ n.end();
+}
+
 static const esp_partition_t* runtimePartition(){return esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_OTA_0,"runtime");}
 static bool hexValid(const String&s,size_t n){if(s.length()!=n)return false;for(char c:s)if(!isxdigit(c))return false;return true;}
 static bool versionValid(const String&s){unsigned a,b,c;char tail;return sscanf(s.c_str(),"%u.%u.%u%c",&a,&b,&c,&tail)==3&&a<10000&&b<10000&&c<10000;}
@@ -44,9 +51,13 @@ bool selectRuntime(){auto*p=runtimePartition();return p&&runtimeValid()&&esp_ota
 bool queueFirmware(JsonVariantConst d,String&error){
   FirmwareManifest m;if(!parseManifest(d,m,error))return false;
   if(!isNewer(m.version,VERSION)){error="Only a newer Jason Home 2 runtime is accepted";return false;}
-  String encoded;serializeJson(d,encoded);Preferences n;n.begin("jh2-release",false);bool saved=n.putString("pending",encoded)==encoded.length();n.end();if(!saved){error="Could not save update request";return false;}
+  String encoded;serializeJson(d,encoded);Preferences n;
+  if(!n.begin("jh2-release",false)){error="Cannot open update state";return false;}
+  bool saved=n.putString("pending",encoded)==encoded.length();
+  if(saved){n.putString("target",m.version);n.putString("phase","queued");n.remove("reason");}
+  n.end();if(!saved){error="Could not save update request";return false;}
   auto*boot=esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"boot");
-  if(!boot||esp_ota_set_boot_partition(boot)!=ESP_OK){error="Could not select boot updater";return false;}return true;
+  if(!boot||esp_ota_set_boot_partition(boot)!=ESP_OK){error="Could not select boot updater";recordFirmwareState("failed",error);return false;}return true;
 }
 bool fetchManifest(JsonDocument&d){
   if(!timeValid()){lastError="Waiting for Internet clock sync; retry in a few seconds";return false;}
@@ -56,6 +67,7 @@ bool fetchManifest(JsonDocument&d){
 }
 bool installFirmware(JsonVariantConst d,String&error){
   FirmwareManifest m;if(!parseManifest(d,m,error))return false;
+  recordFirmwareState("downloading","");
   auto*p=runtimePartition();if(!p||p->address!=0x130000||p->size!=0x290000){error="Wrong flash layout";return false;}
   if(esp_ota_get_running_partition()->subtype!=ESP_PARTITION_SUBTYPE_APP_FACTORY){error="Runtime replacement must run from boot updater";return false;}
   WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(8000);h.setTimeout(12000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -63,15 +75,18 @@ bool installFirmware(JsonVariantConst d,String&error){
   int rc=h.GET();if(rc!=200){error="Firmware download HTTP "+String(rc);h.end();return false;}
   // The updater never writes its own factory partition, NVS or user data.
   esp_ota_handle_t handle=0;rc=esp_ota_begin(p,m.bytes,&handle);if(rc!=ESP_OK){error="Could not open runtime partition";h.end();return false;}
-  mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);mbedtls_sha256_starts(&sha,0);size_t total=0;
+  mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);mbedtls_sha256_starts(&sha,0);size_t total=0;size_t nextMilestone=262144;
   String te=h.header("Transfer-Encoding");bool chunked=te.equalsIgnoreCase("chunked");const char* why=nullptr;
   bool ok=(!te.length()||chunked)&&readBoundedHttpBody(*h.getStreamPtr(),h.getSize(),chunked,m.bytes,
-    [&](const uint8_t*b,size_t n){if(total+n>m.bytes)return false;if(esp_ota_write(handle,b,n)!=ESP_OK)return false;mbedtls_sha256_update(&sha,b,n);total+=n;return true;},
+    [&](const uint8_t*b,size_t n){if(total+n>m.bytes)return false;if(esp_ota_write(handle,b,n)!=ESP_OK)return false;mbedtls_sha256_update(&sha,b,n);total+=n;
+      if(total>=nextMilestone){recordFirmwareState("downloading",String((unsigned)(total*100/m.bytes))+"%");nextMilestone=total+262144;}
+      return true;},
     [](){return millis();},[](){delay(2);},12000,240000,why);
   uint8_t hash[32]{};mbedtls_sha256_finish(&sha,hash);mbedtls_sha256_free(&sha);h.end();
-  if(!ok||total!=m.bytes||hexBytes(hash,32)!=m.sha){esp_ota_abort(handle);error=why?String(why):"Firmware length or SHA-256 mismatch";return false;}
-  if(esp_ota_end(handle)!=ESP_OK||!selectRuntime()){error="ESP32-C6 image validation failed";return false;}
-  Preferences n;n.begin("jh2-release",false);n.putString("version",m.version);n.putString("commit",m.commit);n.remove("pending");n.end();return true;
+  if(!ok||total!=m.bytes||hexBytes(hash,32)!=m.sha){esp_ota_abort(handle);error=why?String(why):"Firmware length or SHA-256 mismatch";recordFirmwareState("failed",error);return false;}
+  recordFirmwareState("verifying","100%");
+  if(esp_ota_end(handle)!=ESP_OK||!selectRuntime()){error="ESP32-C6 image validation failed";recordFirmwareState("failed",error);return false;}
+  Preferences n;n.begin("jh2-release",false);n.putString("version",m.version);n.putString("commit",m.commit);n.remove("pending");n.end();recordFirmwareState("installed",m.version);return true;
 }
 #ifndef JH2_BOOT
 // Signed automatic updates run outside the web/BLE event loop to prevent hangs.
@@ -95,7 +110,13 @@ static void automaticFirmwareTask(void*){
 }
 #endif
 void registerFirmware(){
-  web.on("/api/firmware",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|true;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();reply(200,d.as<JsonVariantConst>());});
+  web.on("/api/firmware",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|true;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();
+    Preferences n;if(n.begin("jh2-release",true)){
+      d["phase"]=n.getString("phase","idle");d["reason"]=n.getString("reason","");
+      d["target"]=n.getString("target","");d["lastInstalled"]=n.getString("version","");
+      n.end();
+    }
+    reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/check",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;FirmwareManifest m;if(!fetchManifest(available)||!parseManifest(available.as<JsonVariantConst>(),m,error))return replyError(502,error.length()?error:lastError);JsonDocument d;d["ok"]=true;d["version"]=m.version;d["newer"]=isNewer(m.version,VERSION);d["signed"]=true;reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/install",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;if(available.isNull()&&!fetchManifest(available))return replyError(502,lastError);if(!queueFirmware(available.as<JsonVariantConst>(),error))return replyError(400,error);web.send(202,"application/json","{\"ok\":true,\"rebootingToUpdater\":true}");delay(400);ESP.restart();});
 #ifndef JH2_BOOT
