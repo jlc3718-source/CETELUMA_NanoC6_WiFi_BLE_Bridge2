@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Back up and add cached-session initialization to the installed backend
         run: |
-          sudo python3 - <<'PY'
+          sudo env "GITHUB_RUN_ID=$GITHUB_RUN_ID" python3 - <<'PY'
           import pathlib,subprocess,json,urllib.request,time,os,re,hashlib
           back=pathlib.Path('/home/ubuntu')/('jh2-eufy-startup-'+os.environ['GITHUB_RUN_ID']);back.mkdir(mode=0o700)
           original=back/'server-original.js';subprocess.run(['docker','cp','jason-home:/app/dist/server.js',str(original)],check=True)
