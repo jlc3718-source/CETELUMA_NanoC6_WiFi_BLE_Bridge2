@@ -1,6 +1,6 @@
 """Add the isolated curtain transport to the exact installed web app; never replace Eufy runtime state."""
 import json,subprocess,os,pathlib,sqlite3,urllib.request,time,hashlib,shutil,tarfile,base64
-ROOT=pathlib.Path.cwd();RUN=os.environ['GITHUB_RUN_ID'];SHA=os.environ['GITHUB_SHA'];BACK=pathlib.Path('/home/ubuntu')/('jh2-curtain-backup-'+RUN)
+ROOT=pathlib.Path.cwd();RUN=os.environ['GITHUB_RUN_ID']+'-'+os.environ.get('GITHUB_RUN_ATTEMPT','1');SHA=os.environ['GITHUB_SHA'];BACK=pathlib.Path('/home/ubuntu')/('jh2-curtain-backup-'+RUN)
 BACK.mkdir(mode=0o700,exist_ok=False)
 def run(*a,**kw):
  kw.setdefault("check",True);return subprocess.run(a,**kw)
