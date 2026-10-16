@@ -102,7 +102,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function authorized(req){return authenticate(req)!==null;}
  function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
  function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
- function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:4096,desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
+ function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:10240,assetRetention:retained(),desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
@@ -172,13 +172,26 @@ export function createCurtainBridge({db,now=Date.now}){
   return {ok:true,serverTime:at,pollSeconds:5,commands:rows.map(view),assets,desired,scheduleRevision:get('scheduleRevision',0),schedule:schedules().filter(s=>s.enabled&&s.end>at&&s.start<at+86400000).slice(0,32),manualUntil:get('manualUntil',0),scheduleActive:get('scheduleActive'),revision:Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n),credential:credentialUpdate};
  }
  function assetManifest(sha){const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);return r?{sha256:sha,bytes:r.size,...JSON.parse(r.metadata)}:null;}
- function upload(input){let a;try{a=compileAsset(input);}catch(e){throw fail(413,e.message);}const metadata={format:a.format,frames:a.frames,loop:a.loop,name:String(input.name||'Curtain asset').slice(0,100)};db.prepare('INSERT OR IGNORE INTO curtain_assets VALUES(?,?,?,?)').run(a.sha256,a.bytes,JSON.stringify(metadata),now());
-  // Keep current and scheduled assets; bounded retention for unreferenced drafts.
-  const protectedSet=new Set([get('desired',{}).visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256),a.sha256]);
-  const old=db.prepare('SELECT sha FROM curtain_assets ORDER BY created DESC').all();for(const row of old.slice(20))if(!protectedSet.has(row.sha))db.prepare('DELETE FROM curtain_assets WHERE sha=?').run(row.sha);
-  return {ok:true,...assetManifest(a.sha256)};
+ function upload(input){
+  let a;try{a=compileAsset(input);}catch(e){throw fail(413,e.message);}
+  if(input?.target&&input.target!==TARGET)throw fail(400,'Unknown curtain target');
+  const metadata={format:a.format,frames:a.frames,loop:a.loop,name:String(input.name||'Curtain asset').slice(0,100)};
+  return transaction(()=>{
+   const r=slot(),sameActive=r.active_sha===a.sha256,samePending=r.pending_sha===a.sha256;
+   if(!sameActive&&!samePending&&r.pending_sha){
+    const c=r.pending_command&&db.prepare('SELECT state FROM curtain_commands WHERE id=?').get(r.pending_command);
+    if(c&&['queued','downloaded','applied'].includes(c.state))
+     throw fail(409,'Replacement is still transferring or awaiting visual confirmation');
+   }
+   db.prepare('INSERT OR IGNORE INTO curtain_assets VALUES(?,?,?,?)').run(a.sha256,a.bytes,JSON.stringify(metadata),now());
+   if(!sameActive&&!samePending)
+    db.prepare("UPDATE curtain_asset_slots SET pending_sha=?,pending_at=?,pending_command=NULL,phase='staged',last_error='' WHERE target=?")
+      .run(a.sha256,now(),TARGET);
+   garbageCollect();
+   return {ok:true,...assetManifest(a.sha256),retention:retained(),alreadyActive:sameActive};
+  });
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
- const timer=setInterval(tick,1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
+ return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }
