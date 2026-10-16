@@ -41,6 +41,16 @@ bool authorized(){
   String cookie=web.header("Cookie");
   return cookie.indexOf("jh2_session="+apiToken)>=0;
 }
+// Public access is expressly limited to curtain controls, never pairing,
+// Wi-Fi, updater, raw BLE packets, file upload, or arbitrary local APIs.
+bool publicCurtainRequestAllowed(){
+ String host=web.hostHeader();host.toLowerCase();
+ if(host!="craumer.tplinkdns.com"&&host!="craumer.tplinkdns.com:80")return false;
+ String origin=web.header("Origin");if(origin.length()&&origin!="http://craumer.tplinkdns.com")return false;
+ String site=web.header("Sec-Fetch-Site");
+ if(site.length()&&site!="same-origin"&&site!="none")return false;
+ return true;
+}
 void trust(WiFiClientSecure&c){c.setCACert(JH2_ROOTS);c.setHandshakeTimeout(10);c.setTimeout(12);}
 bool readHttpText(HTTPClient&h,String&data,size_t limit){
   String te=h.header("Transfer-Encoding");bool chunked=te.equalsIgnoreCase("chunked");const char*error=nullptr;data="";
@@ -85,7 +95,7 @@ void startNetwork(){
   if(ssid.length()){WiFi.mode(WIFI_STA);WiFi.begin(ssid.c_str(),pw.c_str());}
   else{WiFi.mode(WIFI_AP);String ap="Jason-Home-2-Setup-"+String((uint32_t)ESP.getEfuseMac(),HEX);WiFi.softAP(ap.c_str(),"JasonHome2");}
   setenv("TZ","EST5EDT,M3.2.0/2,M11.1.0/2",1);tzset();
-  const char* hdr[]={"Cookie","Authorization","X-JH2-Token","Origin"};web.collectHeaders(hdr,4);
+  const char* hdr[]={"Cookie","Authorization","X-JH2-Token","Origin","Sec-Fetch-Site"};web.collectHeaders(hdr,5);
 }
 void networkLoop(){
   bool online=WiFi.status()==WL_CONNECTED;uint32_t now=millis();
