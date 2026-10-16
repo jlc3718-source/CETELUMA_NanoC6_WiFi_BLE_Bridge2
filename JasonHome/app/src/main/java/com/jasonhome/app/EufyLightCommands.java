@@ -1,0 +1,554 @@
+package com.jasonhome.app;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Eufy E10 light command parameter encoders.
+ *
+ * 0x0201 SetUpDeviceCmd:
+ *   A3 power, A4 brightness.
+ *
+ * 0x0206 LightTransportNewCmd:
+ *   A3 local/dynamic light id, A4 direction, A5 speed, A6 palette,
+ *   A7 grouped lamp positions for local 20xxx effects, A8 brightness,
+ *   A9 calibration/offset, AA flags, AC cloud id when present, AE/B0 update flags.
+ *
+ * 0x020D LightShowCmd:
+ *   A3 show id, A4 speed, A5 layer count, A6 execution mode, A8 reserved,
+ *   A9+ encoded layer bodies.
+ *
+ * The field order/layout follows the recovered Eufy Flutter/native serializers.
+ * T8L00/E120 uses RGBW entries; T8L02/E22 uses RGBCW entries.
+ */
+final class EufyLightCommands {
+    static final int OP_SETUP = 0x0201;
+    static final int OP_COLOR = 0x0206;
+    static final int OP_SHOW = 0x020D;
+
+    private static final int LOCAL_COLOR_ID = 20006;
+    // E120 did not animate with the synthetic 210xx DIY show ids used by E22.
+    // Use a real gallery id as the E120 0x020D carrier while the layer blob defines the effect.
+    private static final int E120_EFFECT_CARRIER_ID = 10474;
+
+    static byte[] brightness(int percent) {
+        return tlv(0xA4, new byte[]{(byte) clamp(percent, 0, 100)});
+    }
+
+    static byte[] color(String model, int rgb, int lampCount) {
+        // Preserve the physically working T8L02/E22 serializer exactly.
+        // T8L00/E120 is RGBWIC and does not accept that shortened T8L02-style
+        // field run, so give it its own complete LightTransportNewCmd payload.
+        if (isE22(model)) return colorE22(model, rgb, lampCount);
+        return colorE120(rgb, lampCount);
+    }
+
+    private static byte[] colorE22(String model, int rgb, int lampCount) {
+        int lamps = clamp(lampCount, 1, 120);
+        byte[] nativeColor = nativeColor(model, rgb);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le16(LOCAL_COLOR_ID)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{1}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(1);
+        write(palette, nativeColor);
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i = 0; i < lamps; i++) positions[i + 1] = (byte) i;
+        write(out, tlv(0xA7, positions));
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    private static byte[] colorE120(int rgb, int lampCount) {
+        int lamps = clamp(lampCount, 1, 120);
+        int r=(rgb >>> 16)&255, g=(rgb >>> 8)&255, b=rgb&255;
+
+        // T8L00's official implementation selects getColorData for this
+        // RGBW family. Keep the foreground as RGBW (R,G,B,W) and use the
+        // complete non-catalog local-color field run instead of the abbreviated
+        // payload that T8L02 happened to accept.
+        byte[] rgbw = new byte[]{(byte)r,(byte)g,(byte)b,0};
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le16(LOCAL_COLOR_ID)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{5}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(1);
+        write(palette, rgbw);
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i = 0; i < lamps; i++) positions[i + 1] = (byte) i;
+        write(out, tlv(0xA7, positions));
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, new byte[]{(byte)0xFF,(byte)0xFF,(byte)0xFF,(byte)0xFF}));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    static byte[] catalogPresetE120(int localId, int catalogId, int rawA5, int[] colors, int lampCount, boolean minimal) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le16(localId)));
+        if (minimal) {
+            write(out, tlv(0xAC, le32(catalogId)));
+            return out.toByteArray();
+        }
+
+        int lamps = clamp(lampCount, 1, 120);
+        int[] paletteColors = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x00FF00} : colors;
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{(byte) clamp(rawA5, 0, 255)}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(Math.min(255, paletteColors.length));
+        for (int color : paletteColors) write(palette, nativeColor("E120", color));
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i = 0; i < lamps; i++) positions[i + 1] = (byte) i;
+        write(out, tlv(0xA7, positions));
+
+        // Keep every other field identical to the physically verified E120
+        // solid-colour serializer. The only evidence-backed differences are
+        // the captured local/preset ID, captured catalog value, and A5 variant.
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, le32(catalogId)));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    static byte[] groupedCatalogPresetE120(int localId, int catalogId, int rawA5, int[] colors, int lampCount, int mode) {
+        int lamps = clamp(lampCount, 2, 120);
+        int[] paletteColors = colors == null || colors.length < 2 ? new int[]{0xFF0000,0x00FF00} : colors;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        write(out, tlv(0xA3, le16(localId)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{(byte) clamp(rawA5, 1, 5)}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(2);
+        write(palette, nativeColor("E120", paletteColors[0]));
+        write(palette, nativeColor("E120", paletteColors[1]));
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        int half = lamps / 2;
+        byte[] g1 = new byte[half + 1];
+        byte[] g2 = new byte[(lamps - half) + 1];
+        g1[0] = (byte) half;
+        g2[0] = (byte) (lamps - half);
+
+        boolean alternating = mode == 2 || mode == 4;
+        if (alternating) {
+            int a=1,b=1;
+            for (int i=0;i<lamps;i++) {
+                if ((i & 1)==0 && a<g1.length) g1[a++] = (byte)i;
+                else if ((i & 1)==1 && b<g2.length) g2[b++] = (byte)i;
+            }
+        } else {
+            for (int i=0;i<half;i++) g1[i+1]=(byte)i;
+            for (int i=half;i<lamps;i++) g2[i-half+1]=(byte)i;
+        }
+
+        if (mode == 1 || mode == 2) {
+            ByteArrayOutputStream groups = new ByteArrayOutputStream();
+            write(groups,g1); write(groups,g2);
+            write(out, tlv(0xA7, groups.toByteArray()));
+        } else if (mode == 3 || mode == 4) {
+            write(out, tlv(0xA7, g1));
+            write(out, tlv(0xA7, g2));
+        } else if (mode == 5) {
+            ByteArrayOutputStream groups = new ByteArrayOutputStream();
+            groups.write(2); write(groups,g1); write(groups,g2);
+            write(out, tlv(0xA7, groups.toByteArray()));
+        } else {
+            // Control: the current one-group encoding, but with the palette reversed.
+            byte[] positions = new byte[lamps + 1];
+            positions[0] = (byte) lamps;
+            for (int i=0;i<lamps;i++) positions[i+1]=(byte)i;
+            write(out, tlv(0xA7, positions));
+        }
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, le32(catalogId)));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    static byte[] groupedCatalogPresetE120Multi(int localId, int catalogId, int rawA5, int[] colors, int lampCount) {
+        int lamps=clamp(lampCount,2,120);
+        int[] source=colors==null||colors.length==0?new int[]{0xFFFFFF}:colors;
+        int count=Math.max(1,Math.min(8,source.length));
+
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        write(out,tlv(0xA3,le16(localId)));
+        write(out,tlv(0xA4,le16(0)));
+        write(out,tlv(0xA5,new byte[]{(byte)clamp(rawA5,1,5)}));
+
+        ByteArrayOutputStream palette=new ByteArrayOutputStream();
+        palette.write(count);
+        for(int i=0;i<count;i++)write(palette,nativeColor("E120",source[i]));
+        write(out,tlv(0xA6,palette.toByteArray()));
+
+        ByteArrayOutputStream groups=new ByteArrayOutputStream();
+        for(int g=0;g<count;g++){
+            int n=0;
+            for(int i=g;i<lamps;i+=count)n++;
+            groups.write(n);
+            for(int i=g;i<lamps;i+=count)groups.write(i);
+        }
+        write(out,tlv(0xA7,groups.toByteArray()));
+
+        write(out,tlv(0xA8,new byte[]{100}));
+        write(out,tlv(0xA9,new byte[]{0,0,0,0,0}));
+        write(out,tlv(0xAA,new byte[]{0}));
+        write(out,tlv(0xAB,new byte[]{0,0}));
+        write(out,tlv(0xAC,le32(catalogId)));
+        write(out,tlv(0xAD,new byte[]{0}));
+        write(out,tlv(0xAE,new byte[]{0}));
+        write(out,tlv(0xAF,new byte[]{0}));
+        write(out,tlv(0xB0,new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    static byte[] localEffectE120(int localId, int[] colors, int speed1to5, int lampCount) {
+        int lamps = clamp(lampCount, 1, 120);
+        int[] paletteColors = colors == null || colors.length == 0 ? new int[]{0xFF0000,0x0000FF} : colors;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        // Test-only T8L00 hypothesis: its custom animations may live in the same
+        // LightTransportNewCmd (0x0206) local-20xxx family as the physically
+        // verified E120 solid-colour command, rather than the T8L02-style 0x020D path.
+        write(out, tlv(0xA3, le16(localId)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{(byte)speedValue(speed1to5)}));
+
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(Math.min(255,paletteColors.length));
+        for (int color : paletteColors) write(palette, nativeColor("E120", color));
+        write(out, tlv(0xA6, palette.toByteArray()));
+
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i = 0; i < lamps; i++) positions[i + 1] = (byte) i;
+        write(out, tlv(0xA7, positions));
+
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAB, new byte[]{0,0}));
+        write(out, tlv(0xAC, new byte[]{(byte)0xFF,(byte)0xFF,(byte)0xFF,(byte)0xFF}));
+        write(out, tlv(0xAD, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xAF, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    static byte[] white(String model, int kelvin, int lampCount) {
+        if (!isE22(model)) {
+            // E120 exposes one warm-white channel; use its nominal 3000 K white.
+            return color(model, 0xFFF1C7, lampCount);
+        }
+        int k = clamp(kelvin, 1500, 9000);
+        float t = (k - 1500f) / 7500f;
+        int warm = Math.round(255f * (1f - t));
+        int cool = Math.round(255f * t);
+        return colorNative(model, new byte[]{0,0,0,(byte)warm,(byte)cool}, lampCount);
+    }
+
+    private static byte[] colorNative(String model, byte[] nativeColor, int lampCount) {
+        int lamps = clamp(lampCount, 1, 120);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le16(LOCAL_COLOR_ID)));
+        write(out, tlv(0xA4, le16(0)));
+        write(out, tlv(0xA5, new byte[]{1}));
+        ByteArrayOutputStream palette = new ByteArrayOutputStream();
+        palette.write(1);
+        write(palette, nativeColor);
+        write(out, tlv(0xA6, palette.toByteArray()));
+        byte[] positions = new byte[lamps + 1];
+        positions[0] = (byte) lamps;
+        for (int i=0;i<lamps;i++) positions[i+1]=(byte)i;
+        write(out, tlv(0xA7, positions));
+        write(out, tlv(0xA8, new byte[]{100}));
+        write(out, tlv(0xA9, new byte[]{0,0,0,0,0}));
+        write(out, tlv(0xAA, new byte[]{0}));
+        write(out, tlv(0xAE, new byte[]{0}));
+        write(out, tlv(0xB0, new byte[]{0}));
+        return out.toByteArray();
+    }
+
+    static byte[] showIdOnly(int showId) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le32(showId)));
+        return out.toByteArray();
+    }
+
+    static byte[] showWithId(String model, int showId, String effectName, int[] colors, int speed1to5, boolean reverse) {
+        int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        int speed = isE22(model) ? speedValueE22(speed1to5) : speedValue(speed1to5);
+        int layerType = layerType(effectName);
+        byte[] layer = encodeLayer(model, layerType, effectName, palette, speed, reverse);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le32(showId)));
+        write(out, tlv(0xA4, new byte[]{(byte)speed}));
+        write(out, tlv(0xA5, new byte[]{1}));
+        write(out, tlv(0xA6, new byte[]{0}));
+        write(out, tlv(0xA8, new byte[]{0}));
+        write(out, tlv(0xA9, layer));
+        return out.toByteArray();
+    }
+
+    static boolean isSolidEffect(String effectName) {
+        return "Solid".equals(effectName) || "Solid / Static".equals(effectName);
+    }
+
+    static int e120ModeId(String effectName, boolean reverse) {
+        if (isSolidEffect(effectName)) return 30014;
+        if (contains(effectName,"Breath")) return 30011;
+        if (contains(effectName,"Twinkle") || contains(effectName,"Strobe")) return 30006;
+        if (contains(effectName,"Meteor")) return 30012;
+        if (contains(effectName,"Rainbow") || contains(effectName,"Pulse")) return 30013;
+        if (contains(effectName,"Gradient") || contains(effectName,"Wipe")) return 30007;
+        if (contains(effectName,"Jump")) return 30009;
+        if (contains(effectName,"Candy")) return 30010;
+        if (contains(effectName,"Chase")) return reverse ? 30008 : 30010;
+        return 30010;
+    }
+
+    static byte[] effectE120(String effectName, int[] colors, int speed1to5, boolean reverse, int lampCount) {
+        int[] source = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        int[] palette = source.length > 8 ? java.util.Arrays.copyOf(source,8) : source;
+        int modeId = e120ModeId(effectName, reverse);
+        int speed = clamp(speed1to5,1,5);
+
+        if (palette.length > 1) {
+            return groupedCatalogPresetE120Multi(modeId,10034,speed,palette,lampCount);
+        }
+        return catalogPresetE120(modeId,10034,speed,palette,lampCount,false);
+    }
+
+    static byte[] show(String model, String effectName, int[] colors, int speed1to5, boolean reverse) {
+        int[] palette = colors == null || colors.length == 0 ? new int[]{0xFFFFFF} : colors;
+        int speed = isE22(model) ? speedValueE22(speed1to5) : speedValue(speed1to5);
+        int effectIndex = effectIndex(effectName);
+        int showId = isE22(model) ? (21000 + effectIndex) : E120_EFFECT_CARRIER_ID;
+
+        int layerType = layerType(effectName);
+        byte[] layer = encodeLayer(model, layerType, effectName, palette, speed, reverse);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, tlv(0xA3, le32(showId)));
+        write(out, tlv(0xA4, new byte[]{(byte)speed}));
+        write(out, tlv(0xA5, new byte[]{1}));
+        write(out, tlv(0xA6, new byte[]{0}));
+        write(out, tlv(0xA8, new byte[]{0}));
+        write(out, tlv(0xA9, layer));
+        return out.toByteArray();
+    }
+
+    private static byte[] encodeLayer(String model, int layerType, String effectName, int[] colors, int speed, boolean reverse) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        // layer_priority, layer_speed, range_hi, range_lo, interval_type,
+        // interval_value, layer_execution_parameter (BE), post-cycle-status, type.
+        write(out, new byte[]{
+            0, (byte)speed, 100, 0, 1, 1, 0, 1, 0, (byte)layerType
+        });
+
+        out.write(colors.length & 0xFF);
+        for (int color : colors) write(out, nativeColor(model, color));
+
+        if (layerType == 0) {
+            boolean chase = contains(effectName, "Chase") || contains(effectName, "Candy") || contains(effectName, "Meteor");
+            boolean gradient = contains(effectName, "Gradient") || contains(effectName, "Rainbow");
+            boolean wipe = contains(effectName, "Wipe");
+            boolean pulse = contains(effectName, "Pulse");
+            int fillMode = wipe ? 1 : 0;
+            int pickMode = gradient ? 1 : 0;
+            int flowDirection = reverse ? 1 : 0;
+            int directionChange = 0;
+            int gradientValue = gradient ? 8 : 0;
+            int insertMode = chase ? 1 : 0;
+            int insertRange = contains(effectName, "Candy") ? 4 : (contains(effectName, "Meteor") ? 3 : 2);
+            int blackMode = contains(effectName, "Meteor") ? 1 : 0;
+            int blackRange = contains(effectName, "Meteor") ? 9 : 0;
+            int blackPosition = 0;
+            int brightnessVariation = pulse ? 1 : 0;
+            int brightnessHi = 100;
+            int brightnessLo = pulse ? 20 : 100;
+            int cycleMethod = 0;
+            int executionParameter = 0;
+            write(out, new byte[]{
+                (byte)fillMode, (byte)pickMode, (byte)flowDirection, (byte)directionChange,
+                (byte)(gradientValue >>> 8), (byte)gradientValue,
+                (byte)insertMode, (byte)insertRange,
+                (byte)blackMode, 0, (byte)blackRange, (byte)blackPosition,
+                (byte)brightnessVariation, (byte)brightnessHi, (byte)brightnessLo,
+                (byte)cycleMethod, (byte)executionParameter
+            });
+        } else if (layerType == 1) {
+            boolean breath = contains(effectName, "Breath");
+            boolean jump = contains(effectName, "Jump");
+            int transitionMode = breath ? 2 : 0;
+            int switchMode = jump ? 1 : 0;
+            int sequence = colors.length > 1 ? 1 : 0;
+            write(out, new byte[]{
+                100, 1, (byte)Math.max(1, colors.length),
+                (byte)transitionMode, (byte)switchMode, 0, 0,
+                (byte)sequence, 0, 0
+            });
+        } else {
+            boolean twinkle = contains(effectName, "Twinkle");
+            int brightnessVariation = 0;
+            int brightnessHi = 100;
+            int brightnessLo = 20;
+            int blinkCycles = 1;
+            int positionMode = twinkle ? 1 : 0;
+            int intervalHi = twinkle ? 6 : 2;
+            int intervalLo = twinkle ? 2 : 1;
+            int quantity = twinkle ? Math.min(255, Math.max(3, colors.length * 3)) : 255;
+            int asyncFlag = twinkle ? 1 : 0;
+            int colorSwitch = colors.length > 1 ? 2 : 0;
+            write(out, new byte[]{
+                (byte)brightnessVariation,(byte)brightnessHi,(byte)brightnessLo,
+                (byte)blinkCycles,(byte)positionMode,(byte)intervalHi,(byte)intervalLo,
+                (byte)quantity,(byte)asyncFlag,(byte)colorSwitch,0,0
+            });
+        }
+        return out.toByteArray();
+    }
+
+    static int defaultLampCount(String model) {
+        // Both installed strings expose 60 controllable positions in the recovered app data.
+        return 60;
+    }
+
+    private static byte[] nativeColor(String model, int rgb) {
+        int r=(rgb >>> 16)&255, g=(rgb >>> 8)&255, b=rgb&255;
+        if (isE22(model)) {
+            return new byte[]{(byte)r,(byte)g,(byte)b,0,0};
+        }
+        // T8L00 getColorData uses packed RGB plus one warm-white channel.
+        return new byte[]{(byte)r,(byte)g,(byte)b,0};
+    }
+
+    private static boolean isE22(String model) {
+        return model != null && (model.equalsIgnoreCase("E22") || model.toUpperCase().startsWith("T8L02"));
+    }
+
+    private static int layerType(String name) {
+        if (contains(name,"Strobe") || contains(name,"Twinkle")) return 2;
+        if (contains(name,"Chase") || contains(name,"Gradient") || contains(name,"Candy") ||
+            contains(name,"Wipe") || contains(name,"Meteor") || contains(name,"Rainbow") ||
+            contains(name,"Pulse")) return 0;
+        return 1;
+    }
+
+    private static int effectIndex(String name) {
+        String[] names={
+            "Solid / Static","Jump","Breath","Strobe","Chase","Gradient Sweep",
+            "Candy Cane","Twinkle / Sparkle","Wipe / Fill","Meteor / Comet",
+            "Rainbow Flow","Pulse Wave"
+        };
+        for(int i=0;i<names.length;i++) if(names[i].equals(name)) return i;
+        return 0;
+    }
+
+    private static int speedValue(int speed1to5) {
+        switch (clamp(speed1to5,1,5)) {
+            case 1: return 20;
+            case 2: return 35;
+            case 3: return 50;
+            case 4: return 70;
+            default: return 90;
+        }
+    }
+
+    // T8L02/E22 and T8L00/E120 use very different physical speed curves.
+    // Field testing found E120 A5=3 visually near the old E22 raw=8 point,
+    // while E120 A5=5 is near the old E22 raw=50 point. Keep the E120's
+    // proven 1..5 values and compress the E22 0..100 field so one UI speed
+    // label produces a much closer real-world rate on both model families.
+    static int speedValueE22(int speed1to5) {
+        switch (clamp(speed1to5,1,5)) {
+            case 1: return 2;
+            case 2: return 4;
+            case 3: return 8;
+            case 4: return 25;
+            default: return 50;
+        }
+    }
+
+    private static boolean contains(String value, String token) {
+        return value != null && value.toLowerCase().contains(token.toLowerCase());
+    }
+
+    private static byte[] tlv(int tag, byte[] value) {
+        if (value.length > 255) throw new IllegalArgumentException("TLV too long");
+        return concat(new byte[]{(byte)tag,(byte)value.length}, value);
+    }
+
+    private static byte[] le16(int value) {
+        return new byte[]{(byte)value,(byte)(value>>>8)};
+    }
+
+    private static byte[] le32(int value) {
+        return ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array();
+    }
+
+    private static int clamp(int v,int lo,int hi) {
+        return Math.max(lo,Math.min(hi,v));
+    }
+
+    private static void write(ByteArrayOutputStream out, byte[] data) {
+        out.write(data,0,data.length);
+    }
+
+    private static byte[] concat(byte[]... parts) {
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        for(byte[] p:parts) write(out,p);
+        return out.toByteArray();
+    }
+
+    private EufyLightCommands() {}
+}

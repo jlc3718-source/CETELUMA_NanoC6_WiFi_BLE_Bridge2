@@ -1,0 +1,289 @@
+(()=>{
+  "use strict";
+  const zone="America/New_York",weekdays=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const today=()=>{const parts=new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric",month:"numeric",day:"numeric"}).formatToParts(new Date());
+    const n=type=>Number(parts.find(p=>p.type===type).value);return {year:n("year"),month:n("month"),day:n("day")};};
+  let shown=today(),lastRefresh=0,request=0,showNight=()=>{},latestState=null;
+  const formatTime=iso=>{if(!iso)return "";const d=new Date(iso);return Number.isNaN(d.getTime())?"":new Intl.DateTimeFormat("en-US",{timeZone:zone,hour:"numeric",minute:"2-digit"}).format(d);};
+
+  function openSchedulerEvent(event,night){
+    if(!event||(!event.id&&!event.name))return;
+    document.body.classList.remove("jh2DateView");
+    const detail=document.querySelector(".jh2NightDetail");if(detail)detail.hidden=true;
+    const scheduleControl=/white override\s*1/i.test(event.name)||String(event.id||"").startsWith("white-override-1")?"whiteOverride1Master"
+      :/white override\s*2/i.test(event.name)||String(event.id||"").startsWith("white-override-2")?"whiteOverride2Master"
+      :/schedule 2/i.test(event.name)?"schedule2Master":/schedule 1/i.test(event.name)?"eventsMaster":null;
+    if(scheduleControl){
+      document.querySelector('.tab[data-tab="settings"]')?.click();
+      document.querySelector('[data-settings-tab="schedules"]')?.click();
+      const control=document.getElementById(scheduleControl);
+      requestAnimationFrame(()=>{
+        control?.closest(".card")?.scrollIntoView({block:"center",behavior:"smooth"});
+        control?.focus({preventScroll:true});
+      });
+      return;
+    }
+    if(String(event.id||"").startsWith("overlap:")&&night){
+      fetch(`/jason-home-2/api/night-calendar?year=${night.year}&month=${night.month}`,{credentials:"same-origin",cache:"no-store"})
+        .then(response=>{if(!response.ok)throw new Error("Calendar unavailable");return response.json()})
+        .then(data=>{const entry=data.days.find(day=>day.day===night.day);if(entry)showNight(night.year,night.month,entry)})
+        .catch(()=>{});return;
+    }
+    const month=document.getElementById("monthSelect"),year=document.getElementById("yearSelect"),search=document.getElementById("eventSearch");
+    const date=event.at?new Date(event.at):null;
+    const targetYear=night?.year||(date&&!Number.isNaN(date.getTime())?Number(new Intl.DateTimeFormat("en-US",{timeZone:zone,year:"numeric"}).format(date)):today().year);
+    const targetMonth=night?.month||(date&&!Number.isNaN(date.getTime())?Number(new Intl.DateTimeFormat("en-US",{timeZone:zone,month:"numeric"}).format(date)):today().month);
+    if(month)month.value=String(targetMonth);
+    if(year)year.value=String(targetYear);
+    if(search)search.value="";
+    document.querySelector('.tab[data-tab="events"]')?.click();
+    month?.dispatchEvent(new Event("change",{bubbles:true}));
+    year?.dispatchEvent(new Event("change",{bubbles:true}));
+    search?.dispatchEvent(new Event("input",{bubbles:true}));
+    const id=String(event.id||""),factory=id.includes("::factory:")?id.split("::factory:")[1]:null;
+    let tries=0;
+    const seek=()=>{
+      const cards=[...document.querySelectorAll("#eventList [data-event-id],#eventList .factoryScheduledEvent,#customScheduleList [data-custom-schedule-id]")];
+      const card=cards.find(node=>(id&&(node.dataset.eventId===id||node.dataset.customScheduleId===id))||(factory&&node.dataset.factoryLightId===factory))
+        ||cards.find(node=>[...node.querySelectorAll("strong")].some(title=>title.textContent.trim()===event.name));
+      if(card){
+        document.querySelectorAll(".v3EventJumpTarget").forEach(node=>node.classList.remove("v3EventJumpTarget"));
+        card.classList.add("v3EventJumpTarget");card.tabIndex=-1;
+        card.scrollIntoView({block:"center",behavior:"smooth"});card.focus({preventScroll:true});
+      }else if(++tries<80)setTimeout(seek,100);
+    };setTimeout(seek,100);
+  }
+  function eventLink(node,event,night){
+    if(!node)return;
+    const active=!!event&&(!!event.id||!!event.name)&&event.id!=="manual-override"&&event.phase!=="Idle";
+    node.classList.toggle("v3CurrentEventLink",active);node.tabIndex=active?0:-1;
+    if(active){node.setAttribute("role","button");node.setAttribute("aria-label","Open "+event.name+" in Schedules");node.title="Open this event in Schedules"}
+    else{node.removeAttribute("role");node.removeAttribute("aria-label");node.title=""}
+    node.onclick=active?()=>openSchedulerEvent(event,night):null;
+    node.onkeydown=active?e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSchedulerEvent(event,night)}}:null;
+  }
+
+  let chooser=null;
+  function closeChooser(){if(chooser){chooser.classList.remove("open");document.body.style.overflow="";}}
+  function ensureChooser(){
+    if(chooser)return chooser;
+    chooser=document.createElement("div");chooser.className="jh2TonightChooser";chooser.innerHTML='<div class="jh2TonightChooserCard"><div class="jh2TonightChooserHead"><div><span>TONIGHT OPTIONS</span><h2>Choose another eligible event</h2><p>Only events that legitimately qualified for this lighting night are shown.</p></div><button type="button" class="btn jh2TonightChooserClose">Close</button></div><div class="jh2TonightChooserBody"><div class="sub">Loading tonight’s choices…</div></div></div>';
+    chooser.querySelector(".jh2TonightChooserClose").addEventListener("click",closeChooser);
+    chooser.addEventListener("click",e=>{if(e.target===chooser)closeChooser()});
+    document.body.appendChild(chooser);return chooser;
+  }
+  async function chooseTonightEvent(id,name,button){
+    const old=button.textContent;button.disabled=true;button.textContent="Starting…";
+    try{
+      const response=await fetch("/jason-home-2/api/tonight-options",{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify({id})});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Could not select this event");
+      button.textContent="Running until next change";
+      setTimeout(()=>{closeChooser();refresh(true)},550);
+    }catch(error){button.disabled=false;button.textContent=old;const body=chooser?.querySelector(".jh2TonightChooserBody");if(body){const msg=document.createElement("div");msg.className="jh2ChoiceError";msg.textContent=error.message;body.prepend(msg)}}
+  }
+  async function openTonightChooser(){
+    const modal=ensureChooser(),body=modal.querySelector(".jh2TonightChooserBody");body.replaceChildren();
+    const loading=document.createElement("div");loading.className="sub";loading.textContent="Loading tonight’s eligible events…";body.appendChild(loading);
+    modal.classList.add("open");document.body.style.overflow="hidden";
+    try{
+      const response=await fetch("/jason-home-2/api/tonight-options",{credentials:"same-origin",cache:"no-store"});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Tonight options unavailable");
+      body.replaceChildren();const options=data.options||[];
+      if(!options.length){const empty=document.createElement("div");empty.className="sub";empty.textContent="No eligible scheduled events were found for this lighting night.";body.appendChild(empty);return}
+      if(options.length===1){const note=document.createElement("div");note.className="jh2ChoiceNote";note.textContent="Only one event qualified for tonight, so there is no alternate winner.";body.appendChild(note)}
+      for(const option of options){
+        const item=document.createElement("article");item.className="jh2TonightChoice";
+        const title=document.createElement("strong");title.textContent=option.name;
+        const meta=document.createElement("div");meta.className="sub";meta.textContent=`${option.type||"Scheduled event"} · ${option.effect||"Static"} · speed ${option.speed||1}`;
+        const mini=window.createEventMiniPreview?.({name:option.name,colors:option.colors||[],effect:option.effect||"Static",speed:option.speed||1});
+        const chips=document.createElement("div");chips.className="jh2ChoiceColors";(option.colors||[]).forEach(color=>{const x=document.createElement("span");x.style.background=color;chips.appendChild(x)});
+        const action=document.createElement("button");action.type="button";action.className="btn";action.textContent="Run until next change";
+        const current=latestState?.runningNow,already=current&&current.id!=="manual-override"&&(current.id===option.id||current.name===option.name);
+        if(already){action.textContent="Scheduled now";action.disabled=true}
+        else action.addEventListener("click",()=>chooseTonightEvent(option.id,option.name,action));
+        item.append(title,meta);if(mini)item.appendChild(mini);item.append(chips,action);body.appendChild(item);
+      }
+    }catch(error){body.replaceChildren();const msg=document.createElement("div");msg.className="jh2ChoiceError";msg.textContent=error.message;body.appendChild(msg)}
+  }
+
+  function renderLiveState(state){
+    if(!state)return;latestState=state;
+    const row=document.querySelector(".jh2RunningNow"),info=state.runningNow||{};
+    const events=state.scheduledEvent?.events||[];
+    const runningTarget=info.id==="manual-override"
+      ? (events.find(event=>event.id&&event.name===info.name)||info)
+      : info;
+    if(row){
+      const title=row.querySelector("strong"),meta=row.querySelector("small");
+      if(title)title.textContent=info.name||"No scheduled scene running";
+      const brightness=Number(info.brightness),parts=[info.effect,Number.isFinite(brightness)?brightness+"%":null,info.phase].filter(Boolean);
+      if(meta)meta.textContent=parts.join(" · ");
+      row.dataset.linkedEventId=runningTarget?.id||"";
+    }
+    eventLink(row,runningTarget,state.scheduledEvent?.night);
+    const tonight=document.getElementById("tonightEvent");
+    if(tonight){
+      tonight.replaceChildren();
+      if(events.length)events.forEach((event,index)=>{
+        if(index)tonight.append(document.createElement("br"));
+        const link=document.createElement("span");link.textContent=event.name;
+        eventLink(link,event,state.scheduledEvent.night);tonight.append(link);
+      });
+      else tonight.textContent="Nothing scheduled for tonight";
+    }
+    const nextLabel=document.querySelector(".v3NextUpcoming");
+    if(nextLabel){
+      let labelText=nextLabel.querySelector(".jh2NextLabelText"),choice=nextLabel.querySelector(".jh2TonightOptionsButton");
+      if(!labelText||!choice){
+        nextLabel.replaceChildren();labelText=document.createElement("span");labelText.className="jh2NextLabelText";
+        choice=document.createElement("button");choice.type="button";choice.className="btn jh2TonightOptionsButton";choice.textContent="Other Options for Tonight";
+        choice.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();openTonightChooser()});
+        nextLabel.append(labelText,choice);
+      }
+      labelText.textContent="Next change";
+    }
+    const nextValue=document.getElementById("nextEvent");
+    if(nextValue){
+      const change=state.nextChange,time=formatTime(change?.at);
+      eventLink(nextValue,change,null);
+      nextValue.textContent=change?`${change.name||"Next change"}${time?" · "+time:""}`:"No upcoming change";
+    }
+  }
+  function start(){
+    const card=document.querySelector(".v3ScheduleCard"),next=document.querySelector(".v3Next");
+    if(!card||!next)return;
+    const wrap=document.createElement("section");wrap.className="jh2Calendar";wrap.setAttribute("aria-label","Scheduled lighting by night");
+    wrap.innerHTML='<div class="jh2CalendarHead"><button type="button" aria-label="Previous month">‹</button><strong></strong><button type="button" aria-label="Next month">›</button></div><div class="jh2CalendarGrid"></div>';
+    const running=document.createElement("button");running.type="button";running.className="jh2RunningNow";
+    running.innerHTML='<span>RUNNING NOW</span><strong>Loading…</strong><small></small>';
+    card.append(running,wrap,next);
+    const schedules=document.querySelector('.page[data-page="events"]');
+    const detail=document.createElement("section");detail.className="panel jh2NightDetail";detail.hidden=true;
+    (schedules.querySelector(".v3PageTitle")||schedules.firstElementChild)?.after(detail);
+    showNight=(year,month,entry)=>{
+      const date=new Date(Date.UTC(year,month-1,entry.day));
+      const label=new Intl.DateTimeFormat("en-US",{timeZone:"UTC",weekday:"long",month:"long",day:"numeric",year:"numeric"}).format(date);
+      detail.replaceChildren();
+      const head=document.createElement("div");head.className="jh2NightHead";
+      const heading=document.createElement("div"),kicker=document.createElement("span"),title=document.createElement("h2");
+      kicker.className="jh2NightKicker";kicker.textContent="SCHEDULED FOR THIS NIGHT";title.textContent=label;
+      heading.append(kicker,title);
+      const back=document.createElement("button");back.type="button";back.className="btn jh2CalendarBack";back.textContent="‹ Back to calendar";
+      back.addEventListener("click",()=>{
+        document.body.classList.remove("jh2DateView");detail.hidden=true;
+        document.querySelector('.tab[data-tab="home"]')?.click();
+        requestAnimationFrame(()=>wrap.scrollIntoView({block:"center",behavior:"smooth"}));
+      });
+      const all=document.createElement("button");all.type="button";all.className="btn";all.textContent="Show all schedules";
+      all.addEventListener("click",()=>{document.body.classList.remove("jh2DateView");detail.hidden=true;document.querySelector(".page.active")?.scrollIntoView({block:"start"})});
+      const actions=document.createElement("div");actions.className="jh2NightActions";actions.append(back,all);
+      head.append(heading,actions);detail.append(head);
+      if(!entry.events.length){const empty=document.createElement("p");empty.className="sub";empty.textContent="No scheduled events for this night.";detail.append(empty)}
+      else{
+        const list=document.createElement("div");list.className="jh2NightList";
+        entry.events.forEach(event=>{
+          const item=document.createElement("article");item.className="jh2NightItem";
+          const colors=document.createElement("div");colors.className="jh2NightColors";
+          (event.colors||[]).forEach(color=>{const swatch=document.createElement("span");swatch.style.background=color;colors.append(swatch)});
+          const name=document.createElement("strong"),meta=document.createElement("div");name.textContent=event.name;
+          meta.className="sub";meta.textContent=`${event.type||"Scheduled event"} · ${event.effect||"Solid / Static"} · speed ${event.speed||1}`;
+          const mini=window.createEventMiniPreview?.({name:event.name,colors:event.colors||[],effect:event.effect||"Static",speed:event.speed||1});
+          item.append(colors,name,meta);if(mini)item.appendChild(mini);list.append(item);
+        });detail.append(list);
+      }
+      detail.hidden=false;document.body.classList.add("jh2DateView");
+      document.querySelector('.tab[data-tab="events"]')?.click();
+      window.scrollTo({top:0,behavior:"instant"});
+    };
+    const buttons=wrap.querySelectorAll("button");
+    buttons.forEach((button,index)=>button.addEventListener("click",()=>{
+      const date=new Date(Date.UTC(shown.year,shown.month-1+(index?1:-1),1));
+      shown={year:date.getUTCFullYear(),month:date.getUTCMonth()+1,day:1};refresh(true);
+    }));
+    const style=document.createElement("style");style.textContent=`
+      .v3ScheduleCard{grid-template-columns:minmax(0,1fr)!important;row-gap:10px!important;min-width:0}
+      .v3ScheduleCard>.v3CardKicker,.v3ScheduleCard>#scheduleWindow,.v3ScheduleCard>#resumeSchedule,.v3ScheduleCard>.jh2RunningNow,.v3ScheduleCard>.jh2Calendar,.v3ScheduleCard>.v3Next{grid-column:1/-1!important;grid-row:auto!important;min-width:0;box-sizing:border-box}
+      #scheduledEventName{display:none!important}
+      .v3ScheduleCard>#scheduleWindow{font-size:12px;line-height:1.55;overflow-wrap:normal}
+      .v3ScheduleCard>#resumeSchedule{width:100%;max-width:none!important;min-height:44px;font-size:12px}
+      .jh2RunningNow{display:grid;gap:3px;width:100%;margin-top:4px;padding:11px 12px;border:1px solid #8daaff28;border-radius:13px;background:#0c1a32;color:inherit;text-align:left;font:inherit;appearance:none;touch-action:manipulation}
+      .jh2RunningNow.v3CurrentEventLink{cursor:pointer;border-color:#8fb7ff66}
+      .jh2RunningNow.v3CurrentEventLink:active{transform:scale(.995)}
+      .jh2RunningNow>span{font-size:9px;font-weight:750;letter-spacing:.14em;color:#9db9e7}
+      .jh2RunningNow>strong{font-size:13px;line-height:1.35;color:#f1f6ff;overflow-wrap:anywhere}
+      .jh2RunningNow>small{font-size:10px;line-height:1.4;color:#a8bddf}
+      .jh2Calendar{width:100%;margin:8px 0 0;padding:12px;border:1px solid #8daaff32;border-radius:17px;background:#09162c;color:#dfebff}
+      .jh2CalendarHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+      .jh2CalendarHead strong{font-size:13px;font-weight:700}
+      .jh2CalendarHead button{width:32px;height:32px;border:1px solid #7899d34d;border-radius:9px;background:#1a2e51;color:#dbe9ff;font-size:23px;line-height:1}
+      .jh2CalendarGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center;width:100%}
+      .jh2Weekday{font-size:10px;color:#9ab2da;padding:3px 0}
+      .jh2Date{min-height:37px;padding:3px 1px;border-radius:9px;font-size:11px;line-height:16px;min-width:0}
+      button.jh2Date{border:0;background:transparent;color:#dce8ff;cursor:pointer;width:100%;font-size:11px;line-height:16px}
+      button.jh2Date:focus-visible{outline:2px solid #a6c5ff;outline-offset:1px}
+      button.jh2Date:hover{background:#263f70}
+      .jh2Date.today{background:#375d9c;box-shadow:inset 0 0 0 1px #a6c5ff;color:white;font-weight:bold}
+      .jh2Dots{display:flex;flex-wrap:wrap;justify-content:center;gap:2px;max-width:36px;margin:1px auto 0}
+      .jh2Dot{width:5px;height:5px;border-radius:50%;background:#79a9ff;flex:none}
+      .v3ScheduleCard>.v3Next{margin-top:4px;padding:16px 0 3px!important;border-left:0!important;border-top:1px solid #a8c4ff30!important;align-content:start}
+      .v3ScheduleCard>.v3Next .v3TonightEventRow{min-width:0}
+      .v3TonightEventRow{align-items:flex-start!important}
+      #tonightEvent{white-space:pre-line}
+      body.jh2DateView .page[data-page="events"]>.panel:not(.jh2NightDetail){display:none!important}
+      .jh2NightDetail{width:100%;box-sizing:border-box}
+      .jh2NightHead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+      .jh2NightActions{display:flex;gap:8px;flex-wrap:wrap}
+      .jh2NightHead h2{font-size:20px;line-height:1.2;margin:5px 0 12px}
+      .jh2NightKicker{color:#9cb8e7;font-size:10px;font-weight:700;letter-spacing:.12em}
+      .jh2NightHead .btn{min-height:42px}
+      .jh2NightList{display:grid;gap:10px;margin-top:12px}
+      .jh2NightItem{padding:14px 15px;border:1px solid #9ab6ed30;border-radius:13px;background:#101f3a;min-width:0}
+      .jh2NightItem strong{display:block;overflow-wrap:anywhere;font-size:15px;margin:7px 0 3px}
+      .jh2NightColors{display:flex;gap:5px;flex-wrap:wrap}
+      .jh2NightColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}
+      .jh2NextLabelText{min-width:0}.v3NextUpcoming{display:flex!important;align-items:center;justify-content:space-between;gap:10px}.jh2TonightOptionsButton{font-size:10px!important;padding:6px 9px!important;min-height:0!important;width:auto!important;flex:0 0 auto}
+      .jh2TonightChooser{position:fixed;inset:0;z-index:26000;background:#000b;display:none;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));overflow:auto}.jh2TonightChooser.open{display:flex}.jh2TonightChooserCard{width:min(620px,100%);background:#081526;border:1px solid #7fa9ee5c;border-radius:18px;padding:16px;box-shadow:0 24px 80px #000a}.jh2TonightChooserHead{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.jh2TonightChooserHead span{font-size:9px;font-weight:750;letter-spacing:.14em;color:#9db9e7}.jh2TonightChooserHead h2{font-size:20px;margin:4px 0 5px}.jh2TonightChooserHead p{font-size:11px;line-height:1.45;color:#a8bddf;margin:0}.jh2TonightChooserClose{width:auto!important;flex:0 0 auto}.jh2TonightChooserBody{display:grid;gap:10px;margin-top:14px}.jh2TonightChoice{padding:12px;border:1px solid #91b5ee35;border-radius:13px;background:#0d1d36}.jh2TonightChoice>strong{display:block;font-size:14px;margin-bottom:3px}.jh2TonightChoice .btn{width:100%;margin-top:8px}.jh2ChoiceColors{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.jh2ChoiceColors span{width:12px;height:12px;border-radius:50%;border:1px solid #fff5}.jh2ChoiceNote{padding:10px 12px;border-radius:10px;background:#27456d55;color:#dceaff;font-size:11px}.jh2ChoiceError{padding:10px 12px;border-radius:10px;background:#7a263955;color:#ffd8df;font-size:11px}
+      @media(max-width:520px){.jh2TonightChooserHead{flex-direction:column}.jh2TonightChooserClose{width:100%!important}.v3NextUpcoming{align-items:flex-start}.jh2TonightOptionsButton{white-space:nowrap}}
+    `;document.head.append(style);
+    window.addEventListener("anderson-scheduled-event",()=>refresh(true));
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(false)});
+    setInterval(()=>refresh(false),60000);
+    refresh(true);
+  }
+  async function refresh(force){
+    const actual=today();
+    if(window.jh2CurrentMonthYear!==undefined&&
+       (window.jh2CurrentMonthYear!==actual.year||window.jh2CurrentMonthNumber!==actual.month)){
+      shown=actual;force=true;
+    }else if(shown.year===actual.year&&shown.month===actual.month&&window.jh2CurrentDay!==actual.day){force=true;}
+    if(!force&&Date.now()-lastRefresh<30000)return;
+    lastRefresh=Date.now();const sequence=++request;
+    const grid=document.querySelector(".jh2CalendarGrid");if(!grid)return;
+    try{
+      fetch("/jason-home-2/api/state",{credentials:"same-origin",cache:"no-store"})
+        .then(response=>response.ok?response.json():null)
+        .then(state=>{if(sequence===request&&state)renderLiveState(state)})
+        .catch(()=>{});
+      const response=await fetch(`/jason-home-2/api/night-calendar?year=${shown.year}&month=${shown.month}`,{credentials:"same-origin",cache:"no-store"});
+      if(!response.ok)throw new Error("Calendar unavailable");
+      const data=await response.json();if(sequence!==request)return;
+      window.jh2CurrentMonthYear=actual.year;window.jh2CurrentMonthNumber=actual.month;window.jh2CurrentDay=actual.day;
+      document.querySelector(".jh2CalendarHead strong").textContent=new Intl.DateTimeFormat("en-US",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(data.year,data.month-1,1)));
+      grid.replaceChildren();
+      weekdays.forEach(name=>{const label=document.createElement("span");label.className="jh2Weekday";label.textContent=name;grid.append(label)});
+      const offset=new Date(Date.UTC(data.year,data.month-1,1)).getUTCDay();
+      for(let i=0;i<offset;i++)grid.append(document.createElement("span"));
+      data.days.forEach(entry=>{
+        const cell=document.createElement("button");cell.type="button";cell.className="jh2Date";
+        if(data.year===actual.year&&data.month===actual.month&&entry.day===actual.day)cell.classList.add("today");
+        cell.textContent=String(entry.day);cell.title=entry.events.length?entry.events.map(e=>e.name).join(" • "):"No scheduled event";
+        cell.setAttribute("aria-label",`${data.month}/${entry.day}/${data.year}: ${entry.events.length} scheduled ${entry.events.length===1?"event":"events"}`);
+        cell.addEventListener("click",()=>showNight(data.year,data.month,entry));
+        const dots=document.createElement("span");dots.className="jh2Dots";
+        entry.events.forEach(event=>{const dot=document.createElement("span");dot.className="jh2Dot";dot.style.background=event.colors?.[0]||"#79a9ff";dots.append(dot)});
+        cell.append(dots);grid.append(cell);
+      });
+    }catch{if(sequence===request)grid.textContent="Calendar unavailable. Pull to refresh."}
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
+})();
