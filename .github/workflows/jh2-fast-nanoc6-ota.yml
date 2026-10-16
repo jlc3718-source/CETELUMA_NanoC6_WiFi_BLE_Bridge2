@@ -77,6 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+          python JasonHome2Server/generate_catalog.py
           python JasonHome2NanoC6/tests/test_bridge.py
           python JasonHome2NanoC6/tests/test_migration.py
           node --test JasonHome2Server/tests/curtain-relay.mjs JasonHome2Server/tests/curtain-quality.mjs
@@ -84,7 +85,6 @@ jobs:
           /tmp/jh2-smartdawn
           g++ -std=c++17 -O2 -I JasonHome2NanoC6/include JasonHome2NanoC6/tests/runtime-upload.cpp -o /tmp/jh2-upload
           /tmp/jh2-upload
-          python JasonHome2Server/generate_catalog.py
           python JasonHome2NanoC6/tools/prepare.py
           python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
           python JasonHome2NanoC6/tests/setup-save-regression.py --arduino-json JasonHome2NanoC6/.pio/libdeps/runtime/ArduinoJson/src
