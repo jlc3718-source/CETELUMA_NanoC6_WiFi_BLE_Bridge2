@@ -24,6 +24,7 @@ bool loadJson(const char* path, JsonDocument& doc);
 void reply(int code,JsonVariantConst value);
 void replyError(int code,const String& message);
 bool authorized();
+bool publicCurtainRequestAllowed();
 String hexBytes(const uint8_t* p,size_t len);
 Bytes fromHex(const String& value);
 String to64(const uint8_t* p,size_t len);
