@@ -117,15 +117,25 @@ export function compileAsset(input){
   if(i===0){for(const [op,params] of [[2514,[]],[2701,[8,1]],[2713,[]]])records.push(record(0,ddp(op,params,++seq)));}
   else records.push(record(0,ddp(2713,[],++seq))); // Clear previous frame, including black pixels, for every GIF encoding.
   // A 2026-10-16 SmartDawn capture shows a complete 126-byte doodle write:
-  // 4-byte DDP fragment header + 122 bytes of indexed palette/mask data.
+  // 4-byte DDP fragment header + up to 200 bytes of validated palette/mask data.
   // Pack each GIF frame as a new compressed doodle, not individual LEDs.
   // The Nano adapts any oversized fragment to the negotiated GATT MTU.
-  const nativePayloadLimit=122;
-  const parts=rgb?optimizedRGBPackets(frames[i],count,nativePayloadLimit):livePackets(frames[i],count,nativePayloadLimit,stable);
+  // Largest verified static-doodle write in the captured session: 204 bytes
+  // (4-byte DDP transport header + 200-byte compressed image payload).
+  // The separate 508-byte native upload uses a different characteristic.
+  const nativePayloadLimit=200;
+  const indexed=livePackets(frames[i],Math.min(16,count),nativePayloadLimit,
+   !rgb?stable:null);
+  const trueColor=rgb?optimizedRGBPackets(frames[i],count,nativePayloadLimit):null;
+  // Sparse RGB images retain exact colors, but when masks degenerate into one
+  // write per pixel, indexed RLE is a far faster visual approximation.
+  // Each BLE write is a serialized acknowledgement barrier.
+  const parts=trueColor&&trueColor.length<=indexed.length*2?trueColor:indexed;
+  const useRGB=parts===trueColor;
   for(const part of parts){
    const n=Math.ceil(part.length/nativePayloadLimit),id=(++packet)&255;
    for(let j=0;j<n;j++)records.push(record(1,Buffer.from(
-    [id,n,n-j-1,rgb?1:4,...part.slice(j*nativePayloadLimit,(j+1)*nativePayloadLimit)])));
+    [id,n,n-j-1,useRGB?1:4,...part.slice(j*nativePayloadLimit,(j+1)*nativePayloadLimit)])));
   }
   const h=Buffer.alloc(6);h.writeUInt32LE(Math.max(40,Math.min(60000,Number(input.delays?.[i])||100)),0);h.writeUInt16LE(records.length,4);out.push(h,...records);
   if(out.reduce((n,b)=>n+b.length,0)>MAX_ASSET_BYTES)throw Error('Prepared animation exceeds the 4 MB relay limit. Use fewer frames or lower color quality; the previous selection is preserved.');
