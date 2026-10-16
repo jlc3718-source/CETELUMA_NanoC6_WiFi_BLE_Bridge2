@@ -40,7 +40,7 @@ void setup(){
   String path=web.uri();if(path.startsWith("/jason-home-2/"))path=path.substring(13);
   if(api(path))return;
   if(!authorized())return replyError(403,"Local bridge management requires home Wi-Fi");
-  if(path=="/"){web.sendHeader("Cache-Control","no-store");web.send_P(200,"text/html",BRIDGE_PAGE);return;}
+  if(path=="/"){web.sendHeader("Cache-Control","no-store");web.send_P(200,"text/html; charset=utf-8",BRIDGE_PAGE);return;}
   for(auto&a:WEB_ASSETS)if(path==a.path){web.sendHeader("Content-Encoding","gzip");web.sendHeader("Cache-Control","no-store");web.send_P(200,a.type,(const char*)a.data,a.size);return;}
   replyError(404,"Not found");
  });web.begin();

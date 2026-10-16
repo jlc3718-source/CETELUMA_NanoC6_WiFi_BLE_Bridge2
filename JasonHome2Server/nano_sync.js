@@ -1,5 +1,6 @@
 /* Jason Home 2 NanoC6: explicit opt-in only; no on-page scheduler or BLE side effects. */
 (()=>{'use strict';
+const base=location.pathname.startsWith('/jason-home-2/')?'/jason-home-2':'';
 function init(){
  const settings=document.querySelector('.page[data-page="settings"]');
  if(!settings||document.getElementById('jh2NanoSyncPanel'))return;
@@ -27,7 +28,7 @@ function init(){
      :data.note||'NanoC6 is not configured on Oracle; sync is disabled.';
  };
  async function callApi(method,body){
-   const r=await fetch('/api/nanoc6/sync',{
+   const r=await fetch(base+'/api/nanoc6/sync',{
      method,credentials:'same-origin',cache:'no-store',
      headers:body?{'content-type':'application/json'}:{},
      body:body?JSON.stringify(body):undefined

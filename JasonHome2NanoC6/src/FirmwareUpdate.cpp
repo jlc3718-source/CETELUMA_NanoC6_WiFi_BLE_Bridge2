@@ -44,7 +44,12 @@ bool queueFirmware(JsonVariantConst d,String&error){
   auto*boot=esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"boot");
   if(!boot||esp_ota_set_boot_partition(boot)!=ESP_OK){error="Could not select boot updater";return false;}return true;
 }
-bool fetchManifest(JsonDocument&d){return timeValid()&&httpsJson(String(CHANNEL)+"?t="+String((uint32_t)time(nullptr)),nullptr,d);}
+bool fetchManifest(JsonDocument&d){
+  if(!timeValid()){lastError="Waiting for Internet clock sync; retry in a few seconds";return false;}
+  bool ok=httpsJson(String(CHANNEL)+"?t="+String((uint32_t)time(nullptr)),nullptr,d);
+  if(ok)lastError="";
+  return ok;
+}
 bool installFirmware(JsonVariantConst d,String&error){
   FirmwareManifest m;if(!parseManifest(d,m,error))return false;
   auto*p=runtimePartition();if(!p||p->address!=0x130000||p->size!=0x290000){error="Wrong flash layout";return false;}

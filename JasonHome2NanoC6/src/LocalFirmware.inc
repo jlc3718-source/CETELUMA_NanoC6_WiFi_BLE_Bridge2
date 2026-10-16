@@ -11,7 +11,7 @@
 static NetworkServer uploadServer(80);
 static bool recovery=false;
 static String recoveryToken;
-static const char UPLOAD_PAGE[]=R"HTML(<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><title>Jason Home 2 firmware</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;max-width:560px;margin:24px auto;padding:16px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:10px}button{background:#70e0c4;border:0;font-weight:bold}progress{width:100%}</style><h1>Jason Home 2</h1><h2>Upload firmware</h2><p>The controller is ready for a runtime BIN. Keep power connected until verification finishes.</p><form id=f><input id=bin type=file accept=".bin,application/octet-stream" required><button id=go>Upload, verify and restart</button></form><progress id=p max=100 value=0></progress><p id=s>Choose jh2-runtime firmware. Settings and Wi-Fi are preserved.</p><button type=button id=back>Return to controller without uploading</button><script>
+static const char UPLOAD_PAGE[]=R"HTML(<!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width,initial-scale=1"><title>Jason Home 2 firmware</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;max-width:560px;margin:24px auto;padding:16px}input,button{box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:10px}button{background:#70e0c4;border:0;font-weight:bold}progress{width:100%}</style><h1>Jason Home 2</h1><h2>Upload firmware</h2><p>The controller is ready for a runtime BIN. Keep power connected until verification finishes.</p><form id=f><input id=bin type=file accept=".bin,application/octet-stream" required><button id=go>Upload, verify and restart</button></form><progress id=p max=100 value=0></progress><p id=s>Choose jh2-runtime firmware. Settings and Wi-Fi are preserved.</p><button type=button id=back>Return to controller without uploading</button><script>
 const $=id=>document.getElementById(id);
 $('back').onclick=async()=>{const r=await fetch('/firmware/return',{method:'POST'});if(!r.ok){$('s').textContent=await r.text();return;}$('s').textContent='Rebooting to Jason Home 2. Reconnect to home Wi-Fi, then open http://jason-home-2.local/';$('back').disabled=true;setTimeout(()=>location.href='http://jason-home-2.local/',4500);};
 $('f').onsubmit=async e=>{e.preventDefault();const file=$('bin').files[0];if(!file)return;
@@ -21,7 +21,18 @@ if(data.length<=0x120000||data.length>0x290000||data[0]!==0xe9||data[12]!==13||d
 const x=new XMLHttpRequest();x.open('POST','/firmware/upload');x.setRequestHeader('Content-Type','application/octet-stream');x.timeout=240000;$('go').disabled=true;
 x.upload.onprogress=e=>{if(e.lengthComputable){$('p').value=Math.round(e.loaded*100/e.total);$('s').textContent=$('p').value<100?'Uploading: '+$('p').value+'%':'Verifying firmware…';}};
 x.onload=()=>{if(x.status===200){$('p').value=100;$('s').textContent='Firmware verified. Restarting; reopen the controller after it returns.';}else{$('go').disabled=false;$('s').textContent=x.responseText||'Upload failed. Retry here.';}};
-x.onerror=x.ontimeout=()=>{$('go').disabled=false;$('s').textContent='Connection interrupted. Reconnect to the controller and retry this page.';};x.send(file);};
+x.onerror=x.ontimeout=async()=>{
+$('s').textContent='Connection interrupted; checking whether the controller restarted after installation…';
+// The updater can close the socket while ESP32-C6 changes boot partitions.
+// Never claim failure (or success) until a new runtime responds.
+let attempts=0;const check=async()=>{
+try{const r=await fetch('/api/health',{cache:'no-store',signal:AbortSignal.timeout(2500)});
+if(r.ok){const d=await r.json();if(d.ok&&d.version){$('p').value=100;$('s').textContent='Controller restarted and is responding (version '+d.version+'). Verify the version before retrying.';return;}}}catch(e){}
+try{const r=await fetch('/firmware/status',{cache:'no-store',signal:AbortSignal.timeout(2500)});
+if(r.ok){const d=await r.json();if(d.mode==='recovery'){$('go').disabled=false;$('s').textContent='Updater is still running. Upload did not complete; retry the runtime BIN.';return;}}}catch(e){}
+if(++attempts<20){setTimeout(check,1500);return;}
+$('go').disabled=false;$('s').textContent='Could not confirm installation. Reconnect to the controller and check its version before retrying.';};
+setTimeout(check,2000);};x.send(file);};
 </script>)HTML";
 static void sendResponse(NetworkClient&c,int code,const char*type,const String&body){
   c.printf("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %u\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",code,code==200?"OK":"Error",type,(unsigned)body.length());c.print(body);
@@ -52,7 +63,7 @@ void localFirmwareLoop(){
   }
   if(bad||!headersComplete){sendResponse(c,400,"text/plain","Invalid upload headers");c.stop();return;}
   if(first=="GET /firmware/status HTTP/1.1"){sendResponse(c,200,"application/json","{\"mode\":\"recovery\"}");c.stop();return;}
-  if(first.startsWith("GET ")){sendResponse(c,200,"text/html",UPLOAD_PAGE);c.stop();return;}
+  if(first.startsWith("GET ")){sendResponse(c,200,"text/html; charset=utf-8",UPLOAD_PAGE);c.stop();return;}
   IPAddress peer=c.remoteIP(),self=c.localIP(),mask=WiFi.subnetMask(),lan=WiFi.localIP();
   uint32_t m=(uint32_t)mask;
   bool localConnection=(WiFi.getMode()&WIFI_AP)&&self==WiFi.softAPIP();
@@ -83,7 +94,7 @@ void localFirmwareLoop(){
 static bool firmwareAccess(){return authorized();}
 void registerLocalFirmware(){
   Serial.println(JH2_RUNTIME_MARKER);
-  auto page=[](){if(!firmwareAccess())return replyError(403,"Firmware access is restricted to the local network");web.send(200,"text/html",R"HTML(<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><title>Jason Home 2 firmware</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;max-width:560px;margin:24px auto;padding:16px}button{width:100%;padding:14px;background:#70e0c4;border:0;border-radius:10px;font-weight:bold}a{color:#70e0c4}</style><h1>Jason Home 2</h1><h2>Firmware upload</h2><p>Open the protected uploader, then choose a Jason Home 2 NanoC6 runtime BIN. Wi-Fi and saved settings are preserved.</p><button id=go>Open firmware uploader</button><p id=s></p><a href="/">Back to controller</a><script>document.getElementById('go').onclick=async()=>{const s=document.getElementById('s');try{const r=await fetch('/firmware/recovery',{method:'POST'});if(!r.ok)throw Error(await r.text());document.getElementById('go').disabled=true;s.textContent='Restarting into the uploader. Stay on this Wi-Fi; reconnect to the setup network if needed.';let n=0;const poll=async()=>{try{const r=await fetch('/firmware/status',{cache:'no-store'});if(r.ok&&(await r.json()).mode==='recovery'){location.reload();return;}}catch{}if(++n<90)setTimeout(poll,1000);else s.textContent='Reconnect to the controller and reopen /firmware.';};setTimeout(poll,2000);}catch(e){s.textContent=e.message;}};</script>)HTML");};
+  auto page=[](){if(!firmwareAccess())return replyError(403,"Firmware access is restricted to the local network");web.send(200,"text/html; charset=utf-8",R"HTML(<!doctype html><meta charset="utf-8"><meta name=viewport content="width=device-width,initial-scale=1"><title>Jason Home 2 firmware</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;max-width:560px;margin:24px auto;padding:16px}button{width:100%;padding:14px;background:#70e0c4;border:0;border-radius:10px;font-weight:bold}a{color:#70e0c4}</style><h1>Jason Home 2</h1><h2>Firmware upload</h2><p>Open the protected uploader, then choose a Jason Home 2 NanoC6 runtime BIN. Wi-Fi and saved settings are preserved.</p><button id=go>Open firmware uploader</button><p id=s></p><a href="/">Back to controller</a><script>document.getElementById('go').onclick=async()=>{const s=document.getElementById('s');try{const r=await fetch('/firmware/recovery',{method:'POST'});if(!r.ok)throw Error(await r.text());document.getElementById('go').disabled=true;s.textContent='Restarting into the uploader. Stay on this Wi-Fi; reconnect to the setup network if needed.';let n=0;const poll=async()=>{try{const r=await fetch('/firmware/status',{cache:'no-store'});if(r.ok&&(await r.json()).mode==='recovery'){location.reload();return;}}catch{}if(++n<90)setTimeout(poll,1000);else s.textContent='Reconnect to the controller and reopen /firmware.';};setTimeout(poll,2000);}catch(e){s.textContent=e.message;}};</script>)HTML");};
   web.on("/firmware",HTTP_GET,page);web.on("/recovery",HTTP_GET,page);
   web.on("/jason-home-2/firmware",HTTP_GET,page);web.on("/jason-home-2/recovery",HTTP_GET,page);
   web.on("/firmware/recovery",HTTP_POST,[]{

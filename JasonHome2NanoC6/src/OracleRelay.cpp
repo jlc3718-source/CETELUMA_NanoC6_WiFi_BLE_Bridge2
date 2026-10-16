@@ -19,11 +19,11 @@ static bool request(const String&path,JsonDocument&out,const String*body=nullptr
  String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);if(!base.length())return false;
  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(path.startsWith("/api/curtain-bridge/wait")?25000:12000);
  const char*headers[]={"Transfer-Encoding"};h.collectHeaders(headers,1);
- if(!h.begin(c,base+path)){issue("Cannot open Oracle HTTPS");return false;}h.addHeader("Authorization","Bearer "+key);h.addHeader("Content-Type","application/json");
+ if(!h.begin(c,base+path)){issue("Cannot open Oracle HTTPS");return false;}h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);h.addHeader("Content-Type","application/json");
  int rc=body?h.POST(*body):h.GET();String data;
  bool ok=rc==200&&readHttpText(h,data,65536);h.end();
  if(!ok){issue(rc==401?"Oracle rejected bridge credentials":"Oracle HTTPS "+String(rc));return false;}
- if(deserializeJson(out,data)){issue("Malformed Oracle reply");return false;}return true;
+ if(deserializeJson(out,data)){issue("Malformed Oracle reply");return false;}issue("");return true;
 }
 struct RelayStream {
  uint8_t buffer[4096];uint32_t offset=0,loadedAt=0,loaded=0,size=0;String sha;mbedtls_sha256_context hash;bool verified=false;
@@ -34,7 +34,7 @@ struct RelayStream {
     String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
     WiFiClientSecure c;trust(c);HTTPClient h;h.setTimeout(12000);const char*hs[]={"x-chunk-sha256"};h.collectHeaders(hs,1);
     if(!h.begin(c,base+"/api/curtain-bridge/assets/"+sha+"?offset="+String(offset)+"&length=4096"))return false;
-    h.addHeader("Authorization","Bearer "+key);int rc=h.GET();int len=h.getSize();
+    h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);int rc=h.GET();int len=h.getSize();
     bool ok=rc==200&&len>0&&len<=4096&&uint32_t(len)<=size-offset;size_t got=0;
     if(ok)got=h.getStreamPtr()->readBytes(buffer,len);
     String expected=h.header("x-chunk-sha256");h.end();
@@ -89,6 +89,9 @@ static void poller(void*){
   if(localUntil&&(int32_t)(localUntil-millis())>0)body["localOverrideUntil"]=int64_t(time(nullptr))*1000+(localUntil-millis());
   String encoded;serializeJson(body,encoded);syncNow=false;
   if(!request("/api/curtain-bridge/sync",response,&encoded)){online=false;vTaskDelay(pdMS_TO_TICKS(backoff));backoff=std::min<uint32_t>(backoff*2,30000);continue;}
+  if(response["credential"].is<JsonObjectConst>()){
+   String credentialError;if(!relayConfigure(response["credential"].as<JsonVariantConst>(),credentialError)){issue("Credential rotation failed: "+credentialError);online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
+  }
   xSemaphoreTake(lock,portMAX_DELAY);for(size_t i=0;i<ackCount&&!acknowledgments.empty();i++)acknowledgments.pop_front();xSemaphoreGive(lock);online=true;backoff=1000;lastSync=millis();nextSync=millis()+60000;revision=response["revision"]|0U;
   // Node replies with Unix time; NTP remains the primary clock. Never step an already-valid clock.
   for(auto n:body["notifications"].as<JsonArrayConst>())lastNotice=std::max(lastNotice,n["id"].as<uint32_t>());

@@ -28,9 +28,17 @@ export function createCurtainBridge({db,now=Date.now}){
  const put=(k,v)=>db.prepare('INSERT INTO curtain_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k,JSON.stringify(v));
  let wake=new Set();
  function signal(){for(const f of wake)f();wake.clear();}
- function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
- function authorized(req){const token=String(req.headers.authorization||'').replace(/^Bearer /,''),expected=get('tokenHash');if(!expected||token.length!==64)return false;return timingSafeEqual(Buffer.from(hash(token)),Buffer.from(expected));}
- function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:60,lowLatency:'outbound-long-poll',...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:4096,desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
+ function pairing(){const token=randomBytes(32).toString('hex'),id=get('bridgeId')||randomBytes(8).toString('hex');put('bridgeId',id);put('tokenHash',hash(token));put('pendingTokenHash','');put('rotateCredential',false);return {ok:true,endpoint:'https://150.136.245.51/jason-home-2',bridgeId:id,token};}
+ function requestToken(req){
+  const bearer=String(req.headers.authorization||'').replace(/^Bearer /,''),alternate=String(req.headers['x-jh2-bridge-token']||'').trim();
+  // Reject conflicting credentials instead of guessing which proxy path is authoritative.
+  return bearer&&alternate&&bearer!==alternate?'':alternate||bearer;
+ }
+ function authenticate(req){const token=requestToken(req);if(token.length!==64)return null;const actual=Buffer.from(hash(token));for(const [slot,key] of [['current','tokenHash'],['pending','pendingTokenHash']]){const expected=get(key);if(typeof expected==='string'&&expected.length===64&&timingSafeEqual(actual,Buffer.from(expected)))return slot;}return null;}
+ function authorized(req){return authenticate(req)!==null;}
+ function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
+ function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
+ function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:60,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:4096,desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
@@ -66,8 +74,11 @@ export function createCurtainBridge({db,now=Date.now}){
   const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));put('scheduleRevision',get('scheduleRevision',0)+1);put('scheduleActive','changed');tick();signal();return value;
  }
  function resume(){put('manualUntil',0);put('scheduleActive',null);tick();for(const d of Object.values(get('desired',{})))enqueue(d.action,d.payload,null,'recovery');signal();return status();}
- function sync(body){
+ function sync(body,credential='current'){
   tick();const at=now();put('lastSeen',at);put('lastSync',at);
+  if(credential==='pending'){
+   const pending=get('pendingTokenHash');if(pending){put('tokenHash',pending);put('pendingTokenHash','');put('rotateCredential',false);put('credentialRotatedAt',at);}
+  }
   const bleReconnected=get('status',{}).curtain?.connected===false&&body.status?.curtain?.connected===true;
   const endedOverride=get('localOverride',0)>0&&Number(body.localOverrideUntil||0)<=at;
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
@@ -89,7 +100,11 @@ export function createCurtainBridge({db,now=Date.now}){
   if(Number(body.localOverrideUntil)>at)rows=[];
   const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
   const assets=[...assetIds].map(sha=>assetManifest(sha)).filter(Boolean);
-  return {ok:true,serverTime:at,pollSeconds:60,commands:rows.map(view),assets,desired,scheduleRevision:get('scheduleRevision',0),schedule:schedules().filter(s=>s.enabled&&s.end>at&&s.start<at+86400000).slice(0,32),manualUntil:get('manualUntil',0),scheduleActive:get('scheduleActive'),revision:Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)};
+  let credentialUpdate=null;
+  if(credential==='current'&&get('rotateCredential',false)===true&&versionAtLeast(body.status?.firmware,'1.1.2')){
+   const next=randomBytes(32).toString('hex');put('pendingTokenHash',hash(next));credentialUpdate={endpoint:'https://150.136.245.51/jason-home-2',bridgeId:get('bridgeId'),token:next};
+  }
+  return {ok:true,serverTime:at,pollSeconds:60,commands:rows.map(view),assets,desired,scheduleRevision:get('scheduleRevision',0),schedule:schedules().filter(s=>s.enabled&&s.end>at&&s.start<at+86400000).slice(0,32),manualUntil:get('manualUntil',0),scheduleActive:get('scheduleActive'),revision:Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n),credential:credentialUpdate};
  }
  function assetManifest(sha){const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);return r?{sha256:sha,bytes:r.size,...JSON.parse(r.metadata)}:null;}
  function upload(input){let a;try{a=compileAsset(input);}catch(e){throw fail(413,e.message);}const metadata={format:a.format,frames:a.frames,loop:a.loop,name:String(input.name||'Curtain asset').slice(0,100)};db.prepare('INSERT OR IGNORE INTO curtain_assets VALUES(?,?,?,?)').run(a.sha256,a.bytes,JSON.stringify(metadata),now());
@@ -100,5 +115,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(tick,1000);timer.unref();
- return {status,pairing,authorized,enqueue,command,sync,schedules,saveSchedule,resume,upload,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),wait,close:()=>{clearInterval(timer);signal();},tick};
+ return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),wait,close:()=>{clearInterval(timer);signal();},tick};
 }

@@ -936,8 +936,9 @@ async function route(req,res){
     return send(res,200,{ok:true},{"set-cookie":cookie()});
   }
   if(path.startsWith("/api/curtain-bridge/")){
-    if(!curtainRelay.authorized(req))throw fail(401,"Bridge authentication failed");
-    if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req)));
+    const credential=curtainRelay.authenticate(req);
+    if(!credential)throw fail(401,"Bridge authentication failed");
+    if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req),credential));
     if(path==="/api/curtain-bridge/wait"&&method==="GET"){
       const abort=new AbortController();res.on("close",()=>abort.abort());
       await curtainRelay.wait(Number(url.searchParams.get("after"))||0,abort.signal,Number(url.searchParams.get("seconds"))||20);return send(res,200,{ok:true,changed:(curtainRelay.status().lastCommand?.id||0)>Number(url.searchParams.get("after")||0)});
@@ -963,6 +964,7 @@ async function route(req,res){
   if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);
   if(path==="/api/curtain/status"&&method==="GET")return send(res,200,curtainRelay.status());
   if(path==="/api/curtain/pair"&&method==="POST")return send(res,200,curtainRelay.pairing());
+  if(path==="/api/curtain/rotate"&&method==="POST")return send(res,200,curtainRelay.requestRotation());
   if(path==="/api/curtain/call"&&method==="POST"){
     const body=await input(req);
     if(body.action==="status"){const s=curtainRelay.status();return send(res,200,{...s,...s.curtain,connected:s.online&&s.curtain?.connected,transport:"oracle-relay"});}

@@ -1,0 +1,377 @@
+name: Jason Home 2 Full Recovery 1.1.2
+
+on:
+  push:
+    branches: [codex/jh2-full-recovery-1.1.2]
+    paths:
+      - 'JasonHome2NanoC6/**'
+      - 'JasonHome2Server/**'
+      - 'JasonHome2Android/**'
+      - '.github/scripts/deploy-curtain-relay.py'
+      - '.github/workflows/build-jh2-full-recovery-1.1.2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jh2-full-recovery-1.1.2
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    name: Test and build NanoC6 recovery images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-nanoc6-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+          restore-keys: jh2-nanoc6-pio-
+      - name: Install pinned build tools
+        run: python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+      - name: Test Oracle relay, Studio, migration and upload recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check JasonHome2Server/server.mjs
+          node --check JasonHome2Server/curtain_bridge.mjs
+          node --check JasonHome2Server/curtain_remote.js
+          node --check JasonHome2Server/nano_sync.js
+          node --test \
+            JasonHome2Server/tests/curtain-relay.mjs \
+            JasonHome2Server/tests/curtain-quality.mjs \
+            JasonHome2Server/tests/curtain-images.mjs \
+            JasonHome2Server/tests/curtain-photo-import.mjs \
+            JasonHome2Server/tests/curtain-offline.mjs \
+            JasonHome2Server/tests/curtain-replace-play.mjs \
+            JasonHome2Server/tests/curtain-test-override.mjs \
+            JasonHome2Server/tests/nanoc6-sync.mjs
+          python JasonHome2NanoC6/tests/test_bridge.py
+          python JasonHome2Server/generate_catalog.py
+          python JasonHome2NanoC6/tests/test_migration.py
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/src JasonHome2NanoC6/tests/smartdawn.cpp JasonHome2NanoC6/src/SmartDawnProtocol.cpp -o /tmp/jh2-curtain
+          /tmp/jh2-curtain
+          g++ -std=c++17 -O2 -I JasonHome2NanoC6/include JasonHome2NanoC6/tests/runtime-upload.cpp -o /tmp/jh2-upload
+          /tmp/jh2-upload
+          python JasonHome2NanoC6/tools/prepare.py
+      - name: Build and validate updater, runtime and full USB image
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
+          python JasonHome2NanoC6/tests/setup-save-regression.py --arduino-json JasonHome2NanoC6/.pio/libdeps/runtime/ArduinoJson/src
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2NanoC6/tools/package.py
+          test -s JasonHome2NanoC6/release/jh2-runtime-1.1.2.bin
+          test "$(stat -c %s JasonHome2NanoC6/release/jh2-full-install-1.1.2.bin)" = 4194304
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-NanoC6-1.1.2
+          path: JasonHome2NanoC6/release/
+          retention-days: 2
+          if-no-files-found: error
+
+  apk:
+    name: Build APK 2.0.12
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Compile the existing app with Oracle and local Wi-Fi transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK=/usr/local/lib/android/sdk
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' >/dev/null
+          BT="$SDK/build-tools/35.0.0"
+          JAR="$SDK/platforms/android-35/android.jar"
+          OUT="$PWD/JasonHome2Android/build"
+          mkdir -p "$OUT/classes" "$OUT/dex"
+          "$BT/aapt2" link -o "$OUT/unsigned.apk" -I "$JAR" --manifest JasonHome2Android/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 35
+          javac --release 17 -cp "$JAR" -d "$OUT/classes" JasonHome2Android/src/com/jasonhome2/app/*.java
+          "$BT/d8" --min-api 26 --lib "$JAR" --output "$OUT/dex" "$OUT/classes/com/jasonhome2/app/"*.class
+          cp "$OUT/unsigned.apk" "$OUT/with-dex.apk"
+          (cd "$OUT/dex" && zip -q -u "$OUT/with-dex.apk" classes.dex)
+          "$BT/zipalign" -f 4 "$OUT/with-dex.apk" Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk
+          "$BT/aapt2" dump badging Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk > "$OUT/badging.txt"
+          grep "package: name='com.jasonhome2.app' versionCode='13' versionName='2.0.12'" "$OUT/badging.txt"
+          ! grep -q 'permission.BLUETOOTH' "$OUT/badging.txt"
+          ! grep -q 'android.bluetooth' JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java
+          grep -q 'http://jason-home-2.local' JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java
+          grep -q 'http://192.168.68.116' JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java
+          grep -q 'usesCleartextTraffic="true"' JasonHome2Android/AndroidManifest.xml
+          tar -czf android-tools.tar.gz -C "$BT" lib/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Relay-Unsigned-2.0.12
+          path: |
+            Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk
+            android-tools.tar.gz
+          retention-days: 2
+          if-no-files-found: error
+
+  sign:
+    name: Sign APK with established identity
+    needs: [firmware, apk]
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-Relay-Unsigned-2.0.12, path: relay-sign}
+      - name: Sign and verify certificate continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd relay-sign
+          tar -xzf android-tools.tar.gz
+          export JH2_SIGN_PASS="$(cat /home/ubuntu/.jason-home-signing/password)"
+          java -jar lib/apksigner.jar sign \
+            --ks /home/ubuntu/.jason-home-signing/jason-home-release.jks \
+            --ks-key-alias jason-home \
+            --ks-pass env:JH2_SIGN_PASS \
+            --key-pass env:JH2_SIGN_PASS \
+            --out Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk \
+            Jason-Home-2-2.0.12-ORACLE-RELAY-UNSIGNED.apk
+          java -jar lib/apksigner.jar verify --verbose --print-certs Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk | tee verify.txt
+          grep -qi '76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1' verify.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Relay-Signed-2.0.12
+          path: relay-sign/Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk
+          retention-days: 2
+          if-no-files-found: error
+
+  deploy:
+    name: Back up, deploy and verify Oracle
+    needs: [firmware, apk]
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    concurrency:
+      group: jason-home-oracle-production
+      cancel-in-progress: false
+    steps:
+      - name: Restore runner checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Snapshot, restore-test, deploy, repair proxy auth and run live ACK probe
+        run: sudo --preserve-env=GITHUB_RUN_ID,GITHUB_SHA python3 .github/scripts/deploy-curtain-relay.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Oracle-Deployment-Verification
+          path: deployment-verification.json
+          retention-days: 2
+          if-no-files-found: error
+
+  schedule-reboot:
+    name: Schedule full Oracle reboot
+    needs: deploy
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    outputs:
+      boot_id: ${{ steps.reboot.outputs.boot_id }}
+    steps:
+      - id: reboot
+        name: Record current boot and schedule reboot
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "boot_id=$(cat /proc/sys/kernel/random/boot_id)" >> "$GITHUB_OUTPUT"
+          sudo systemd-run --unit="jh2-full-recovery-reboot-${GITHUB_RUN_ID}" --on-active=15s /usr/bin/systemctl reboot
+          echo 'Full Oracle reboot scheduled.'
+
+  wait-public:
+    name: Wait for Oracle to return
+    needs: schedule-reboot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify both public services after reboot window
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 45
+          for attempt in $(seq 1 72); do
+            if curl -kfsS --max-time 8 https://150.136.245.51/api/health >/dev/null \
+              && curl -kfsS --max-time 8 https://150.136.245.51/jason-home-2/api/health >/dev/null; then
+              echo 'Oracle public services returned after reboot.'
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Oracle did not return within the verification window.' >&2
+          exit 1
+
+  post-reboot:
+    name: Verify persistent state after full reboot
+    needs: [deploy, schedule-reboot, wait-public]
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    env:
+      OLD_BOOT_ID: ${{ needs.schedule-reboot.outputs.boot_id }}
+    steps:
+      - name: Check boot identity, containers, scheduler, Eufy and NanoC6
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import json,os,pathlib,subprocess,time,urllib.request
+          run_id=os.environ['GITHUB_RUN_ID'];sha=os.environ['GITHUB_SHA']
+          current=pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+          assert current and current!=os.environ['OLD_BOOT_ID'],'Oracle host did not complete a full reboot'
+          for name in ['jason-home','jason-home-2-web']:
+              running=subprocess.check_output(['sudo','docker','inspect','-f','{{.State.Running}}',name],text=True).strip()
+              assert running=='true',name+' is not running after reboot'
+          info=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home'],text=True))[0]
+          env=dict(v.split('=',1) for v in info['Config']['Env'] if '=' in v)
+          token=env['JASON_HOME_API_TOKEN']
+          def api(base,path,token_value=None,cookie=None,body=None):
+              headers={'Content-Type':'application/json'}
+              if token_value:headers['Authorization']='Bearer '+token_value
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(base+path,None if body is None else json.dumps(body).encode(),headers)
+              with urllib.request.urlopen(req,timeout=30) as response:return json.loads(response.read()),response.headers
+          status,_=api('http://127.0.0.1:8080','/api/status',token)
+          assert status['automationOwner']=='oracle'
+          assert len(status['eufy']['readyNames'])==4
+          assert status['calendar']['eventCount']==212
+          _,headers=api('http://127.0.0.1:8081','/api/session',body={'token':token})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          api('http://127.0.0.1:8081','/api/eufy/verification',cookie=cookie)
+          bridge=None
+          for _ in range(25):
+              bridge,_=api('http://127.0.0.1:8081','/api/curtain/status',cookie=cookie)
+              if bridge['online']:break
+              time.sleep(5)
+          assert bridge and bridge['online'],'NanoC6 did not reconnect after Oracle reboot'
+          deployed=json.loads(pathlib.Path('/home/ubuntu/jh2-curtain-backup-'+run_id+'/deployment.json').read_text())
+          assert deployed['build']==sha and deployed['bridgeAuthRecovered'] and deployed['liveCommandAckVerified'] and deployed['liveBleConnected']
+          gateway=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home-2-web'],text=True))[0]
+          assert gateway['Config']['Image']==deployed['image'],'Wrong gateway image restarted after host reboot'
+          result={'build':sha,'fullHostRebootVerified':True,'containersRunning':['jason-home','jason-home-2-web'],'oracleOwner':'oracle','schedulerReconciled':True,'eufyReady':len(status['eufy']['readyNames']),'events':status['calendar']['eventCount'],'bridgeOnlineAfterReboot':True,'curtainBleConnectedAfterReboot':bridge.get('curtain',{}).get('connected') is True,'credentialRotationPending':bridge.get('credentialRotationPending') is True,'physicalBridgeVerified':False}
+          pathlib.Path('post-reboot-verification.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-Oracle-Post-Reboot-Verification
+          path: post-reboot-verification.json
+          retention-days: 2
+          if-no-files-found: error
+
+  publish:
+    name: Publish exact recovery release and OTA channel
+    needs: [firmware, sign, post-reboot]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-NanoC6-1.1.2, path: relay-release}
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-Relay-Signed-2.0.12, path: relay-release}
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-Oracle-Deployment-Verification, path: relay-release}
+      - uses: actions/download-artifact@v4
+        with: {name: Jason-Home-2-Oracle-Post-Reboot-Verification, path: relay-release}
+      - name: Verify, sign and publish exact artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python relay-release/flash.py --verify-only
+          test -n "$OTA_SIGNING_KEY_B64"
+          key="$RUNNER_TEMP/jh2-relay-ota.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          python JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release relay-release/release.json --output relay-release/latest.json
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('relay-release');manifest=json.loads((root/'release.json').read_text())
+          assert manifest['version']=='1.1.2' and manifest['commit']==os.environ['GITHUB_SHA']
+          deployment=json.loads((root/'deployment-verification.json').read_text())
+          reboot=json.loads((root/'post-reboot-verification.json').read_text())
+          assert deployment['build']==os.environ['GITHUB_SHA'] and deployment['bridgeAuthRecovered'] and deployment['liveCommandAckVerified']
+          assert reboot['build']==os.environ['GITHUB_SHA'] and reboot['fullHostRebootVerified'] and reboot['bridgeOnlineAfterReboot']
+          apk=root/'Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk'
+          manifest['apk']={'name':apk.name,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'package':'com.jasonhome2.app','version':'2.0.12','certificateSha256':'76b28efd4f5d132ad3048f19bae6c35aa5f84c4a390e98c80deeebc0c3e73ae1'}
+          manifest['deployment']={**deployment,**reboot,'requiresBridgePairing':False}
+          (root/'integration-release.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          files=sorted(p for p in root.iterdir() if p.is_file() and p.name!='SHA256SUMS')
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
+          PY
+          git push origin "$GITHUB_SHA:refs/heads/jh2-curtain-release-1.1.2"
+          TAG=jason-home-2-nanoc6-v1.1.2
+          gh release create "$TAG" \
+            relay-release/*.bin \
+            relay-release/*.apk \
+            relay-release/*.zip \
+            relay-release/*.json \
+            relay-release/SHA256SUMS \
+            relay-release/INSTALL.md \
+            relay-release/TESTING.md \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false \
+            --title 'Jason Home 2 · Full Recovery 1.1.2 / APK 2.0.12' \
+            --notes-file JasonHome2NanoC6/TESTING.md
+          mkdir public-check
+          gh release download "$TAG" \
+            --pattern 'jh2-runtime-1.1.2.bin' \
+            --pattern 'jh2-full-install-1.1.2.bin' \
+            --pattern 'Jason-Home-2-2.0.12-ORACLE-RELAY-SIGNED.apk' \
+            --pattern 'integration-release.json' \
+            --dir public-check
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          expected=json.loads(Path('relay-release/integration-release.json').read_text())
+          for name in ['jh2-runtime-1.1.2.bin','jh2-full-install-1.1.2.bin']:
+              data=Path('public-check',name).read_bytes();entry=expected['files'][name]
+              assert len(data)==entry['bytes'] and hashlib.sha256(data).hexdigest()==entry['sha256']
+          apk=Path('public-check',expected['apk']['name']).read_bytes()
+          assert len(apk)==expected['apk']['bytes'] and hashlib.sha256(apk).hexdigest()==expected['apk']['sha256']
+          assert Path('public-check/integration-release.json').read_bytes()==Path('relay-release/integration-release.json').read_bytes()
+          print('Published runtime, full recovery image, signed APK and release manifest verified byte-for-byte.')
+          PY
+          git config user.name 'Jason Home 2 release'
+          git config user.email '325178451+jlc3718-source@users.noreply.github.com'
+          git fetch origin jh2-nanoc6-ota
+          git worktree add --detach "$RUNNER_TEMP/jh2-ota" FETCH_HEAD
+          cp relay-release/latest.json "$RUNNER_TEMP/jh2-ota/latest.json"
+          git -C "$RUNNER_TEMP/jh2-ota" add latest.json
+          if ! git -C "$RUNNER_TEMP/jh2-ota" diff --cached --quiet; then
+            git -C "$RUNNER_TEMP/jh2-ota" commit -m 'Publish signed Jason Home 2 recovery 1.1.2'
+            git -C "$RUNNER_TEMP/jh2-ota" push origin HEAD:jh2-nanoc6-ota
+          fi
+          for attempt in $(seq 1 30); do
+            if curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/jh2-nanoc6-ota/latest.json?run=${GITHUB_RUN_ID}-${attempt}" -o "$RUNNER_TEMP/public-latest.json" \
+              && cmp relay-release/latest.json "$RUNNER_TEMP/public-latest.json"; then
+              echo 'Public signed OTA channel verified.'
+              break
+            fi
+            if test "$attempt" = 30; then exit 1; fi
+            sleep 2
+          done
+          mapfile -t stale < <(gh release list --limit 100 --json tagName,publishedAt,isDraft | python -c 'import json,sys; rows=[r for r in json.load(sys.stdin) if r["tagName"].startswith("jason-home-2-nanoc6-v") and not r["isDraft"]]; rows.sort(key=lambda r:r["publishedAt"],reverse=True); print("\n".join(r["tagName"] for r in rows[2:]))')
+          for old in "${stale[@]}"; do gh release delete "$old" --yes; done

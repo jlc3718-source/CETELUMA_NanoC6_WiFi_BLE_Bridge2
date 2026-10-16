@@ -94,14 +94,14 @@ void networkLoop(){
   if(!online&&offlineSince&&now-offlineSince>60000&&!(WiFi.getMode()&WIFI_AP)){WiFi.mode(WIFI_AP_STA);String name="Jason-Home-2-Setup-"+String((uint32_t)ESP.getEfuseMac(),HEX);WiFi.softAP(name.c_str(),"JasonHome2");}
   wasOnline=online;
 }
-static const char SETUP[]=R"HTML(<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2 setup</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;margin:24px auto;max-width:560px;padding:15px}label,input,button{display:block;box-sizing:border-box;width:100%;margin:10px 0;padding:12px;border-radius:10px}button{background:#70e0c4;color:#061321;border:0;font-weight:bold}.sub{color:#b0c8dc}a{color:#7ce5cd}</style><h1>Jason Home 2</h1><p>Connect your NanoC6 to 2.4 GHz Wi-Fi.</p><form method="post" action="/setup"><input name="ssid" placeholder="Wi-Fi name" required maxlength="32"><input name="password" type="password" placeholder="Wi-Fi password" maxlength="63"><button>Save and restart</button></form><p class="sub">Connect to your normal Wi-Fi after saving, then open <b>http://jason-home-2.local/</b>.</p>)HTML";
+static const char SETUP[]=R"HTML(<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2 setup</title><style>body{font:16px system-ui;background:#081321;color:#eef5ff;margin:24px auto;max-width:560px;padding:15px}label,input,button{display:block;box-sizing:border-box;width:100%;margin:10px 0;padding:12px;border-radius:10px}button{background:#70e0c4;color:#061321;border:0;font-weight:bold}.sub{color:#b0c8dc}a{color:#7ce5cd}</style><h1>Jason Home 2</h1><p>Connect your NanoC6 to 2.4 GHz Wi-Fi.</p><form method="post" action="/setup"><input name="ssid" placeholder="Wi-Fi name" required maxlength="32"><input name="password" type="password" placeholder="Wi-Fi password" maxlength="63"><button>Save and restart</button></form><p class="sub">Connect to your normal Wi-Fi after saving, then open <b>http://jason-home-2.local/</b>.</p>)HTML";
 void registerSetup(){
   web.on("/setup",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");String page=SETUP;
     if(String(secrets["ssid"]|"").length()){
       page.replace("placeholder=\"Wi-Fi name\" required", "placeholder=\"Leave blank to keep saved Wi-Fi\"");
       page.replace("placeholder=\"Wi-Fi password\"", "placeholder=\"Leave blank to keep saved password\"");
     }
-    web.send(200,"text/html",page);});
+    web.send(200,"text/html; charset=utf-8",page);});
   web.on("/setup",HTTP_POST,[]{
     if(!authorized())return replyError(401,"Sign in first");
     String ssid=web.arg("ssid");
@@ -119,7 +119,7 @@ void registerSetup(){
     Preferences network; if(network.begin("jh2-network",false)){
       network.putString("ssid",ssid);network.putString("password",pw);network.end();
     }
-    web.send(200,"text/html","<h2>Saved. Rejoin your Wi-Fi and open http://jason-home-2.local/</h2>");delay(500);ESP.restart();
+    web.send(200,"text/html; charset=utf-8","<h2>Saved. Rejoin your Wi-Fi and open http://jason-home-2.local/</h2>");delay(500);ESP.restart();
   });
   web.on("/login",HTTP_GET,[]{
     if(!authorized())return replyError(403,"Local network only. Connect to home Wi-Fi to manage Jason Home 2 without a PIN.");
