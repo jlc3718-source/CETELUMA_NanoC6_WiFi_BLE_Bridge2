@@ -114,7 +114,7 @@ static void poller(void*){
   }
   if(syncNow){vTaskDelay(pdMS_TO_TICKS(30));continue;}
   while((int32_t)(millis()-nextSync)<0&&!syncNow){
-   JsonDocument waited;if(!request("/api/curtain-bridge/wait?after="+String(revision)+(streaming?"&seconds=1":"&seconds=20"),waited)){online=false;break;}
+   JsonDocument waited;if(!request("/api/curtain-bridge/wait?after="+String(revision)+(streaming?"&seconds=1":"&seconds=5"),waited)){online=false;break;}
    // Check for commands after each long-poll response; full snapshots occur every 5 seconds.
    if(waited["changed"]|false)break;
   }
