@@ -258,7 +258,8 @@ jobs:
               if bridge['online']:break
               time.sleep(5)
           assert bridge and bridge['online'],'NanoC6 did not reconnect after Oracle reboot'
-          deployed=json.loads(pathlib.Path('/home/ubuntu/jh2-curtain-backup-'+run_id+'/deployment.json').read_text())
+          deployment_path='/home/ubuntu/jh2-curtain-backup-'+run_id+'/deployment.json'
+          deployed=json.loads(subprocess.check_output(['sudo','cat',deployment_path],text=True))
           assert deployed['build']==sha and deployed['bridgeAuthRecovered'] and deployed['liveCommandAckVerified'] and deployed['liveBleConnected']
           gateway=json.loads(subprocess.check_output(['sudo','docker','inspect','jason-home-2-web'],text=True))[0]
           assert gateway['Config']['Image']==deployed['image'],'Wrong gateway image restarted after host reboot'
