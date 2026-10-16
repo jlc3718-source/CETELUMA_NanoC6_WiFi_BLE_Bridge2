@@ -1,0 +1,26 @@
+name: Jason Home 2 Curtain Single-File Validation
+on:
+  push:
+    branches: [codex/jh2-single-active-curtain-retention-20261016]
+    paths:
+      - 'JasonHome2Server/**'
+      - '.github/workflows/jh2-curtain-retention-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Validate Oracle curtain retention and safe ACK lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: JavaScript syntax and non-destructive SQLite lifecycle tests
+        run: |
+          set -euo pipefail
+          node --check JasonHome2Server/curtain_bridge.mjs
+          node --check JasonHome2Server/server.mjs
+          node --check JasonHome2Server/curtain_remote.js
+          node --test JasonHome2Server/tests/curtain-relay.mjs JasonHome2Server/tests/curtain-quality.mjs JasonHome2Server/tests/curtain-images.mjs JasonHome2Server/tests/curtain-photo-import.mjs JasonHome2Server/tests/curtain-offline.mjs JasonHome2Server/tests/curtain-replace-play.mjs JasonHome2Server/tests/curtain-test-override.mjs
