@@ -19,10 +19,10 @@ const data=new Uint8Array(await file.arrayBuffer()),marker=new TextEncoder().enc
 for(let i=0;i<=data.length-marker.length;i++){if(data[i]!==marker[0])continue;let j=1;while(j<marker.length&&data[i+j]===marker[j])j++;if(j===marker.length){found=true;break;}}
 if(data.length<=0x120000||data.length>0x290000||data[0]!==0xe9||data[12]!==13||data[13]!==0||!found){$('s').textContent='Choose a Jason Home 2 NanoC6 runtime BIN, version 1.0.3 or later.';return;}
 const x=new XMLHttpRequest();x.open('POST','/firmware/upload');x.setRequestHeader('Content-Type','application/octet-stream');x.timeout=240000;$('go').disabled=true;
-x.upload.onprogress=e=>{if(e.lengthComputable){$('p').value=Math.round(e.loaded*100/e.total);$('s').textContent=$('p').value<100?'Uploading: '+$('p').value+'%':'Verifying firmware…';}};
+x.upload.onprogress=e=>{if(e.lengthComputable){$('p').value=Math.round(e.loaded*100/e.total);$('s').textContent=$('p').value<100?'Uploading: '+$('p').value+'%':'Verifying firmware...';}};
 x.onload=()=>{if(x.status===200){$('p').value=100;$('s').textContent='Firmware verified. Restarting; reopen the controller after it returns.';}else{$('go').disabled=false;$('s').textContent=x.responseText||'Upload failed. Retry here.';}};
 x.onerror=x.ontimeout=async()=>{
-$('s').textContent='Connection interrupted; checking whether the controller restarted after installation…';
+$('s').textContent='Connection interrupted; checking whether the controller restarted after installation...';
 // The updater can close the socket while ESP32-C6 changes boot partitions.
 // Never claim failure (or success) until a new runtime responds.
 let attempts=0;const check=async()=>{
