@@ -68,12 +68,18 @@ static void pushEvents(void*){
 }
 struct RelayStream {
  // Bounded RAM cache. Oracle keeps the full program and TCP applies flow control.
- uint8_t buffer[4096];
+ uint8_t* buffer=nullptr;size_t capacity=0;
  uint32_t offset=0,loadedAt=0,loaded=0,size=0;
  String sha;mbedtls_sha256_context hash;bool verified=false,opened=false,streamMode=false;
  WiFiClientSecure socket;HTTPClient http;
- RelayStream(){mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);}
- ~RelayStream(){http.end();mbedtls_sha256_free(&hash);}
+ RelayStream(){
+  // 10 KiB heap cache (not task stack). If fragmented, gracefully use 4 KiB.
+  buffer=static_cast<uint8_t*>(malloc(10240));
+  if(buffer)capacity=10240;
+  else{buffer=static_cast<uint8_t*>(malloc(4096));if(buffer)capacity=4096;}
+  mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);
+ }
+ ~RelayStream(){http.end();if(buffer)free(buffer);mbedtls_sha256_free(&hash);}
  void credential(String&base,String&key){
   xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
  }
@@ -97,7 +103,7 @@ struct RelayStream {
    if(!source->connected()||millis()-started>=12000){http.end();streamMode=false;return false;}
    vTaskDelay(pdMS_TO_TICKS(2));
   }
-  const size_t want=std::min(size_t(source->available()),std::min(sizeof(buffer),size_t(size-offset)));
+  const size_t want=std::min(size_t(source->available()),std::min(capacity,size_t(size-offset)));
   const int got=source->read(buffer,want);
   if(got<=0){http.end();streamMode=false;return false;}
   loadedAt=offset;loaded=got;return true;
@@ -117,6 +123,7 @@ struct RelayStream {
   loadedAt=offset;loaded=got;return true;
  }
  bool read(uint8_t*out,size_t n){
+  if(!buffer||capacity<4096){issue("Insufficient NanoC6 heap for streaming buffer");return false;}
   if(!opened)open();
   while(n){
    if(offset>=size)return false;
