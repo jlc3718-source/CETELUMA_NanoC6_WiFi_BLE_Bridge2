@@ -28,10 +28,31 @@
  function init(){
   const settings=document.querySelector('.page[data-page="settings"]');if(!settings)return;
   const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayPair">Pair NanoC6</button> <button class="btn" id="jh2RelayResume">Return to Oracle</button><textarea id="jh2RelayCode" class="field" hidden readonly aria-label="NanoC6 pairing configuration"></textarea><p class="sub">The Android app supports direct pairing over home Wi-Fi. Manual paste remains available if the controller cannot be reached. Local tests last 15 minutes. Files stay on Oracle; NanoC6 relays with a 4 KB RAM buffer.</p>';settings.append(p);
+  // Oracle alone retains prepared content. Confirmation is intentionally
+  // explicit because the BLE acknowledgement cannot prove physical display.
+  const retention=document.createElement('section');retention.className='panel';
+  retention.innerHTML='<strong>Current curtain file</strong><p id="jh2RetainedBytes" class="sub">Checking Oracle storage…</p><button class="btn" id="jh2ConfirmCurtain" hidden>Confirm picture is visible on curtain</button><p class="sub">An acknowledged BLE transfer is not proof the curtain displayed the picture. The previous recoverable file is kept until confirmation.</p>';
+  p.append(retention);
+  const confirmButton=retention.querySelector('#jh2ConfirmCurtain');
+  confirmButton.onclick=async()=>{
+   const id=Number(confirmButton.dataset.commandId);
+   if(!id||!window.confirm('I can see this new picture or animation on the curtain. Make it active and remove the previous file?'))return;
+   confirmButton.disabled=true;
+   try{await api('/api/curtain/confirm-display',{commandId:id,observed:true});await refresh();}
+   catch(error){retention.querySelector('#jh2RetainedBytes').textContent=error.message;}
+   finally{confirmButton.disabled=false;}
+  };
+
   p.querySelector('#jh2RelayOpen').onclick=async()=>{try{if(window.AndroidCurtain?.localControllerAvailable?.())await localNano('openNanoController');else window.open('http://craumer.tplinkdns.com/','_blank','noopener');}catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}};
   p.querySelector('#jh2RelayPair').onclick=async()=>{try{const d=await api('/api/curtain/pair',{}),t=p.querySelector('textarea');try{await localNano('pairNano',d);t.value='';t.hidden=true;p.querySelector('#jh2RelayStatus').textContent='Pairing saved directly to NanoC6. Waiting for authenticated sync…';setTimeout(refresh,1200);}catch(localError){t.value=JSON.stringify(d);t.hidden=false;t.select();p.querySelector('#jh2RelayStatus').textContent=localError.message+' Paste the private pairing code into NanoC6 → Bridge Settings.';}}catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}};
   p.querySelector('#jh2RelayResume').onclick=()=>api('/api/curtain/resume',{}).then(refresh);
-  async function refresh(){try{const d=await api('/api/curtain/status');p.querySelector('#jh2RelayStatus').textContent=(d.online?'Connected':'Waiting for NanoC6')+' · BLE '+(d.curtain?.connected?'connected':'disconnected')+' · '+d.queued+' queued'+(d.lastCommand?' · command '+d.lastCommand.id+': '+d.lastCommand.state:'')+(d.error?' · '+d.error:'');}catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}}
+  async function refresh(){try{const d=await api('/api/curtain/status');p.querySelector('#jh2RelayStatus').textContent=(d.online?'Connected':'Waiting for NanoC6')+' · BLE '+(d.curtain?.connected?'connected':'disconnected')+' · '+d.queued+' queued'+(d.lastCommand?' · command '+d.lastCommand.id+': '+d.lastCommand.state:'')+(d.error?' · '+d.error:'');
+   const r=d.assetRetention;if(r){const b=n=>(n/1024).toFixed(1)+' KB',active=r.active?.name||'None',pending=r.pending?.name||'None';
+    retention.querySelector('#jh2RetainedBytes').textContent='Active: '+active+' · Pending: '+pending+' · '+r.phase+' · '+r.retainedFiles+' file(s), '+b(r.retainedBytes)+' retained.';
+    confirmButton.hidden=!(r.phase==='transferred_unconfirmed'&&r.pendingCommandId&&r.pending);
+    confirmButton.dataset.commandId=String(r.pendingCommandId||'');
+   }else retention.querySelector('#jh2RetainedBytes').textContent='Storage details unavailable on this Oracle version';
+  }catch(e){p.querySelector('#jh2RelayStatus').textContent=e.message;}}
   setTimeout(()=>{
    const controls=document.getElementById('jh2CurtainOriginalControls');if(!controls)return;
    const box=document.createElement('details');box.className='panel';box.innerHTML='<summary>Oracle curtain schedule</summary><p class="sub">Choose an effect, sequence or Studio animation first. Oracle starts and stops it even when the APK is closed.</p><label>Name <input id="jh2CSName" class="field" value="Curtain scene"></label><label>Start <input id="jh2CSStart" class="field" type="datetime-local"></label><label>End <input id="jh2CSEnd" class="field" type="datetime-local"></label><button class="btn" id="jh2CSSave">Schedule current selection</button><p id="jh2CSMessage" class="sub"></p><div id="jh2CSList"></div>';
