@@ -7,3 +7,30 @@ test('queue is ordered, idempotent, latest selection replaces stale selection, a
 test('reconnect discards expired raw writes; reboot restores latest desired state; local override has an expiry',()=>{const {b,time}=create();try{b.enqueue('rawWrite',{uuid:'01020074-1972-1925-3022-077119514e44',data:'AQ=='});const effect=b.enqueue('effect',{id:3});b.sync({acks:[{id:effect.id,state:'applied'}]});time(1061000);const response=b.sync({bootId:'new-boot',localOverrideUntil:1070000});assert.equal(response.commands.length,0);time(1071000);const back=b.sync({bootId:'new-boot'});assert.ok(back.commands.some(c=>c.action==='effect'));assert.ok(back.commands.every(c=>c.action!=='rawWrite'));}finally{b.close();}});
 test('Oracle schedules run without the APK and local manual control returns after expiry',()=>{const {b,time}=create();try{b.saveSchedule({id:'night',start:1000000,end:2000000,action:'effect',payload:{id:4}});b.enqueue('effect',{id:5});assert.ok(b.status().manualUntil>1000000);time(1950000);b.tick();assert.equal(b.status().desired.visual.payload.id,4);time(2000001);b.tick();assert.equal(b.status().desired.power.payload.on,false);}finally{b.close();}});
 test('asset compilation uses captured packet format and stored bytes exactly match digest',()=>{const {b}=create();try{const f=Buffer.alloc(6400);for(let i=0;i<6400;i+=4){f[i]=255;f[i+3]=255;}const input={frames:[f.toString('base64')],quality:'pal4',delays:[100],loop:false};const a=compileAsset(input);assert.equal(a.bytes.subarray(0,4).toString(),'JHC1');assert.equal(a.bytes.readUInt16LE(4),1);assert.ok(a.bytes.length<4096);const m=b.upload(input);assert.deepEqual(Buffer.from(b.asset(m.sha256)),a.bytes);assert.equal(b.upload(input).sha256,m.sha256);assert.throws(()=>b.upload({...input,frames:['AA==']}));}finally{b.close();}});
+
+test('explicit APK manual commands preempt the 15-minute local override without releasing scheduled commands',()=>{
+ const {b}=create();
+ try{
+  b.saveSchedule({id:'local-held',start:1000000,end:2000000,action:'effect',payload:{id:4}});
+  const manual=b.enqueue('brightness',{value:66},null,'manual');
+  const duringOverride=b.sync({localOverrideUntil:1500000});
+  assert.deepEqual(duringOverride.commands.map(c=>c.id),[manual.id]);
+  assert.equal(duringOverride.commands[0].source,'manual');
+  b.sync({localOverrideUntil:0,acks:[{id:manual.id,state:'applied',result:{bleTransmitted:true}}]});
+  assert.equal(b.command(manual.id).state,'applied');
+ }finally{b.close();}
+});
+
+test('remote Nano administration is allowlisted and never persists reboots as desired curtain state',()=>{
+ const {b}=create();
+ try{
+  assert.deepEqual(validateCommand('nanoInfo',{}),{});
+  assert.deepEqual(validateCommand('nanoAutoUpdate',{enabled:true}),{enabled:true});
+  assert.throws(()=>validateCommand('nanoAutoUpdate',{enabled:'true'}));
+  assert.throws(()=>validateCommand('nanoProxy',{url:'http://192.168.1.1/'}));
+  const command=b.enqueue('nanoFirmwareCheck',{},null,'manual');
+  const update=b.enqueue('nanoAutoUpdate',{enabled:false},null,'manual');
+  assert.deepEqual(b.sync({localOverrideUntil:1500000}).commands.map(x=>x.id),[command.id,update.id]);
+  assert.equal(Object.keys(b.status().desired).some(k=>k.startsWith('nano')),false);
+ }finally{b.close();}
+});

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jason Home 2 · NanoC6 Remote</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#081321;color:#edf5ff;font:15px system-ui,-apple-system,sans-serif}
+main{max-width:760px;margin:auto;padding:18px}header{display:flex;align-items:center;justify-content:space-between;gap:15px}h1{font-size:22px;margin:4px 0}h2{font-size:17px;margin:4px 0 16px}
+a{color:#9de8ef}.box{background:#14263a;border:1px solid #304660;border-radius:16px;padding:18px;margin:15px 0}
+.flex{display:flex;flex-wrap:wrap;align-items:center;gap:8px}button{background:#244960;border:1px solid #42657c;border-radius:9px;padding:11px 14px;color:#f2f9ff;font:inherit;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}button.primary{background:#166c74;border-color:#218b94}
+button.warn{border-color:#c9a26a}label{display:block;margin:12px 0}input,select{accent-color:#37c6bc;background:#081b2c;color:#fff;padding:9px;border-radius:8px;border:1px solid #47657c;font:inherit}
+input[type=range]{width:100%}.sub{color:#b6cce1;font-size:13px}.ok{color:#8df0ca}.bad{color:#ffb9b9}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.status{border-left:3px solid #6cbabb;padding-left:12px}
+</style></head><body><main>
+<header><div><h1>Jason Home 2 · NanoC6 Remote</h1><div class="sub">Secure Oracle relay · works outside home Wi-Fi</div></div><a href="/jason-home-2/">Back to Jason Home 2</a></header>
+<section class="box"><div class="flex"><strong id="online">Checking bridge…</strong><button id="refresh">Refresh status</button></div><pre class="status" id="diagnostics">Connecting to Oracle…</pre></section>
+<section class="box"><h2>SmartDawn curtain · remote direct control</h2><p class="sub">Commands run on NanoC6 over BLE. The curtain's actual physical output cannot be confirmed remotely from an acknowledgment.</p>
+<div class="flex"><button data-cmd="connect">Connect BLE</button><button data-cmd="powerOn" class="primary">Power on</button><button data-cmd="powerOff">Power off</button></div>
+<label>Brightness <output id="brightnessValue">100%</output><input id="brightness" type="range" min="0" max="100" value="100"></label>
+<button id="setBrightness">Apply brightness</button>
+<label>Native effect <select id="effect"></select></label><button id="setEffect">Play effect</button>
+<label>Speed <output id="speedValue">50</output><input id="speed" type="range" min="1" max="100" value="50"></label>
+<button id="setSpeed">Apply speed</button>
+<div class="flex"><button id="resume">Return control to Oracle scheduling</button></div></section>
+<section class="box"><h2>NanoC6 management</h2><div class="flex"><button id="nanoInfo">Read Nano diagnostics</button><button id="otaCheck">Check signed firmware</button><button id="otaInstall" class="warn">Install verified update and restart</button><button id="nanoReboot" class="warn">Restart NanoC6</button></div>
+<label><input type="checkbox" id="autoUpdate"> Automatically install newer signed firmware</label>
+<p class="sub">Firmware is signature and SHA-256 verified by the permanent Nano updater; remote access never exposes raw LAN port 80, bridge credentials, or arbitrary network routes. Wi-Fi setup remains local for recovery safety.</p></section>
+<section class="box"><h2>Command delivery</h2><pre id="result" aria-live="polite">Ready.</pre></section>
+</main><script>
+'use strict';const $=id=>document.getElementById(id),base='/jason-home-2';
+let bridgeOnline=false,busy=false;
+async function api(path,body){
+ const r=await fetch(base+path,{credentials:'same-origin',method:body===undefined?'GET':'POST',
+   headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+ const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.error||'Oracle request failed');return d;
+}
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function output(text,isError=false){$('result').className=isError?'bad':'ok';$('result').textContent=text;}
+function enable(){document.querySelectorAll('button[data-cmd],#setBrightness,#setEffect,#setSpeed,#resume,#nanoInfo,#otaCheck,#otaInstall,#nanoReboot,#autoUpdate').forEach(el=>el.disabled=!bridgeOnline||busy);}
+async function refresh(){
+ try{
+  const d=await api('/api/curtain/status');bridgeOnline=!!d.online;
+  $('online').className=d.online?'ok':'bad';$('online').textContent=d.online?'NanoC6 online':'NanoC6 offline';
+  const s=d.curtain||{};let last=d.lastCommand||{};
+  $('diagnostics').textContent='Firmware: '+(d.firmware||'unknown')+' · Uptime: '+(d.uptimeSeconds??'?')+'s\n'+
+  'Wi-Fi: '+(d.wifiIP||'unknown')+' · RSSI: '+(d.wifiRSSI??'?')+' dBm\n'+
+  'Gateway: '+(d.wifiGateway||'unknown')+' · Free RAM: '+(d.freeHeap??'?')+' B\n'+
+  'SmartDawn: '+(s.connected?'BLE connected':'BLE disconnected')+' · '+(s.name||'DN5E58')+'\n'+
+  'Streaming: '+(d.relayStreaming?'yes':'no')+' · Auto OTA: '+(d.autoUpdate===false?'off':'on')+'\n'+
+  'Last sync: '+(d.lastSync?new Date(d.lastSync).toLocaleTimeString():'never')+' · Commands queued: '+d.queued+'\n'+
+  'Latest command: '+(last.id||'none')+' '+(last.state||'')+'\n'+(d.error||'');
+  $('autoUpdate').checked=d.autoUpdate!==false;
+ }catch(e){bridgeOnline=false;$('online').textContent='Oracle connection unavailable';$('online').className='bad';$('diagnostics').textContent=e.message;}
+ enable();
+}
+async function command(action,payload={}){
+ if(!bridgeOnline||busy)return;busy=true;enable();output('Submitting '+action+' to Oracle…');
+ try{
+  const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
+  output('Queued command #'+queued.commandId+'; waiting for NanoC6 receipt…');
+  for(let i=0;i<110;i++){
+   await sleep(i<20?200:350);
+   const d=await api('/api/curtain/command?id='+encodeURIComponent(queued.commandId)),c=d.command;
+   if(c.state==='applied'){
+    output('NanoC6 acknowledged #'+c.id+' ('+action+').\n'+JSON.stringify(c.result||{},null,2));
+    return;
+   }
+   if(['failed','expired','superseded'].includes(c.state))throw Error('NanoC6 '+c.state+': '+(c.result?.error||'no detail'));
+   if(c.state==='downloaded')output('NanoC6 received #'+c.id+'; BLE delivery in progress…');
+  }
+  throw Error('NanoC6 did not confirm command before timeout. Check bridge status.');
+ }catch(e){output(e.message,true)}finally{busy=false;await refresh();}
+}
+for(let i=0;i<88;i++)$('effect').add(new Option('E-'+i,String(i)));
+for(const id of ['brightness','speed'])$(id).oninput=()=>$(id+'Value').value=$(id).value+(id==='brightness'?'%':'');
+document.querySelectorAll('button[data-cmd]').forEach(b=>b.onclick=()=>command(b.dataset.cmd==='powerOn'?'power':b.dataset.cmd==='powerOff'?'power':'connect',
+ b.dataset.cmd==='powerOn'?{on:true}:b.dataset.cmd==='powerOff'?{on:false}:{}));
+$('setBrightness').onclick=()=>command('brightness',{value:+$('brightness').value});
+$('setEffect').onclick=()=>command('effect',{id:+$('effect').value});
+$('setSpeed').onclick=()=>command('speed',{value:+$('speed').value});
+$('resume').onclick=()=>command('nanoResumeOracle');
+$('nanoInfo').onclick=()=>command('nanoInfo');
+$('otaCheck').onclick=()=>command('nanoFirmwareCheck');
+$('otaInstall').onclick=()=>{if(confirm('Install only a newer signed firmware and restart the NanoC6?'))command('nanoInstallUpdate')};
+$('nanoReboot').onclick=()=>{if(confirm('Restart the NanoC6 now? Curtain output may pause briefly.'))command('nanoReboot')};
+$('autoUpdate').onchange=()=>command('nanoAutoUpdate',{enabled:$('autoUpdate').checked});
+$('refresh').onclick=refresh;refresh();setInterval(()=>{if(!busy)refresh()},10000);
+</script></body></html>

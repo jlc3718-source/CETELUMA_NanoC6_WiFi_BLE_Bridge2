@@ -1,5 +1,9 @@
 #include "FirmwareUpdate.h"
 #include "BoundedHttpBody.h"
+#ifndef JH2_BOOT
+#include "OracleRelay.h"
+#include <freertos/task.h>
+#endif
 #include <esp_ota_ops.h>
 #include <esp_image_format.h>
 #include <mbedtls/pk.h>
@@ -13,7 +17,7 @@ kuGHPepzClPYMrJ4h5r8iNlyUFpJZcPI/FXe8+atedYKpIZZB5XlOj964Q==
 static const char CHANNEL[]="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
 static const char PREFIX[]="https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v";
 static bool busy=false;
-static uint32_t nextCheck=20000;
+static bool autoTaskStarted=false;
 static JsonDocument available;
 static const esp_partition_t* runtimePartition(){return esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_OTA_0,"runtime");}
 static bool hexValid(const String&s,size_t n){if(s.length()!=n)return false;for(char c:s)if(!isxdigit(c))return false;return true;}
@@ -69,17 +73,37 @@ bool installFirmware(JsonVariantConst d,String&error){
   if(esp_ota_end(handle)!=ESP_OK||!selectRuntime()){error="ESP32-C6 image validation failed";return false;}
   Preferences n;n.begin("jh2-release",false);n.putString("version",m.version);n.putString("commit",m.commit);n.remove("pending");n.end();return true;
 }
+#ifndef JH2_BOOT
+// Signed automatic updates run outside the web/BLE event loop to prevent hangs.
+static void automaticFirmwareTask(void*){
+  vTaskDelay(pdMS_TO_TICKS(30000));
+  for(;;){
+    if((state["autoUpdate"]|true)&&WiFi.status()==WL_CONNECTED&&timeValid()){
+      busy=true;
+      JsonDocument manifest;FirmwareManifest m;String error;
+      if(fetchManifest(manifest)&&parseManifest(manifest.as<JsonVariantConst>(),m,error)
+         &&isNewer(m.version,VERSION)&&queueFirmware(manifest.as<JsonVariantConst>(),error)){
+        // Permanent boot updater validates the download's SHA-256 and image.
+        relayPrepareForUpdate();
+        vTaskDelay(pdMS_TO_TICKS(300));
+        ESP.restart();
+      }
+      busy=false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(300000)); // check for signed releases every five minutes
+  }
+}
+#endif
 void registerFirmware(){
   web.on("/api/firmware",HTTP_GET,[]{if(!authorized())return replyError(401,"Sign in first");JsonDocument d;d["product"]="Jason Home 2 NanoC6";d["version"]=VERSION;d["commit"]=BUILD_SHA;d["runtimeSlotBytes"]=0x290000;d["bootSlotBytes"]=0x120000;d["runtimeCopies"]=1;d["rollback"]=false;d["autoUpdate"]=state["autoUpdate"]|true;d["message"]=lastError;d["available"]=available.as<JsonVariantConst>();reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/check",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;FirmwareManifest m;if(!fetchManifest(available)||!parseManifest(available.as<JsonVariantConst>(),m,error))return replyError(502,error.length()?error:lastError);JsonDocument d;d["ok"]=true;d["version"]=m.version;d["newer"]=isNewer(m.version,VERSION);d["signed"]=true;reply(200,d.as<JsonVariantConst>());});
   web.on("/api/firmware/install",HTTP_POST,[]{if(!authorized())return replyError(401,"Sign in first");String error;if(available.isNull()&&!fetchManifest(available))return replyError(502,lastError);if(!queueFirmware(available.as<JsonVariantConst>(),error))return replyError(400,error);web.send(202,"application/json","{\"ok\":true,\"rebootingToUpdater\":true}");delay(400);ESP.restart();});
-}
-void firmwareLoop(){
 #ifndef JH2_BOOT
-  if(!(state["autoUpdate"]|true)||busy||WiFi.status()!=WL_CONNECTED||!timeValid()||(int32_t)(millis()-nextCheck)<0)return;
-  nextCheck=millis()+60000;busy=true;JsonDocument d;FirmwareManifest m;String error;
-  if(fetchManifest(d)&&parseManifest(d.as<JsonVariantConst>(),m,error)&&isNewer(m.version,VERSION)&&queueFirmware(d.as<JsonVariantConst>(),error)){delay(100);ESP.restart();}
-  busy=false;
+  if(!autoTaskStarted){TaskHandle_t handle=nullptr;autoTaskStarted=xTaskCreate(automaticFirmwareTask,"jh2-auto-ota",10240,nullptr,1,&handle)==pdPASS;}
 #endif
 }
+void firmwareLoop(){
+  // Retained for API compatibility: OTA HTTPS runs in a separate FreeRTOS task.
+}
+
 #include "LocalFirmware.inc"
