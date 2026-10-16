@@ -2,7 +2,7 @@ name: Jason Home 2 Full Recovery 1.1.3
 
 on:
   push:
-    branches: [codex/jh2-full-recovery-1.1.3]
+    branches: [codex/jh2-full-recovery-1.1.2]
     paths:
       - 'JasonHome2NanoC6/**'
       - 'JasonHome2Server/**'
