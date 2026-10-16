@@ -32,12 +32,14 @@ jobs:
           node --check JasonHome2Server/server.mjs
           node --check JasonHome2Server/curtain_bridge.mjs
           node --check JasonHome2Server/curtain_remote.js
+          node --check JasonHome2Server/curtain.js
           node --test \
             JasonHome2Server/tests/curtain-relay.mjs \
             JasonHome2Server/tests/curtain-quality.mjs \
             JasonHome2Server/tests/curtain-images.mjs \
             JasonHome2Server/tests/curtain-photo-import.mjs \
             JasonHome2Server/tests/curtain-offline.mjs \
+            JasonHome2Server/tests/curtain-studio.mjs \
             JasonHome2Server/tests/curtain-replace-play.mjs \
             JasonHome2Server/tests/curtain-test-override.mjs \
             JasonHome2Server/tests/nanoc6-sync.mjs
