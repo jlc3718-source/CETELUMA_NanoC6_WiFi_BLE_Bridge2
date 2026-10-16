@@ -59,3 +59,14 @@ test('Brightness enqueue failures do not mark a failed command as synced',async(
     assert.match(warning,/Bridge enqueue unavailable/);
   }finally{follower.close();}
 });
+
+import {readFileSync} from 'node:fs';
+
+test('Oracle deployment uses the current brightness follower via curtain bridge',()=>{
+ const script=readFileSync(new URL('../../.github/scripts/deploy-curtain-relay.py',import.meta.url),'utf8');
+ assert.match(script,/curtain_bridge\.mjs/);
+ assert.match(script,/nanoc6_sync\.mjs/);
+ assert.match(script,/bridge:curtainRelay/);
+ assert.match(script,/live\.index\(bridge_init\)<live\.index\(new_sync\)/);
+ assert.match(script,/relay\['pollSeconds'\]===5/);
+});
