@@ -102,6 +102,13 @@ stagename='jh2-curtain-stage-'+RUN
 try:
  start(stagename,18081,stagedata)
  base='http://127.0.0.1:18081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
+  nano,_=api(base,'/api/nanoc6/sync',cookie=cookie)
+  assert nano['configured'] is True,'NanoC6 brightness checkbox must be enabled by Oracle bridge'
+  enabled,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':True})
+  assert enabled['enabled'] is True,'NanoC6 brightness sync could not be enabled'
+  restored,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':nano['enabled']})
+  assert restored['enabled']==nano['enabled'],'Original checkbox state not preserved'
+
  pair,_=api(base,'/api/curtain/pair',cookie=cookie,body={});bridgekey=pair['token']
  accepted,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'effect','payload':{'id':1},'idempotencyKey':'stage-test'})
  received,_=api(base,'/api/curtain-bridge/sync',bridgekey,body={'status':{'firmware':'1.1.2','curtain':{'connected':True}},'bootId':'stage-emulator'},bridge_header=True)
