@@ -191,7 +191,7 @@ export function createCurtainBridge({db,now=Date.now}){
   }
   return {ok:true,serverTime:at,pollSeconds:5,commands:rows.map(view),assets,desired,scheduleRevision:get('scheduleRevision',0),schedule:schedules().filter(s=>s.enabled&&s.end>at&&s.start<at+86400000).slice(0,32),manualUntil:get('manualUntil',0),scheduleActive:get('scheduleActive'),revision:Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n),credential:credentialUpdate};
  }
- function assetManifest(sha){const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);return r?{sha256:sha,bytes:r.size,...JSON.parse(r.metadata)}:null;}
+
  function upload(input){
   let a;try{a=compileAsset(input);}catch(e){throw fail(413,e.message);}
   if(input?.target&&input.target!==TARGET)throw fail(400,'Unknown curtain target');
