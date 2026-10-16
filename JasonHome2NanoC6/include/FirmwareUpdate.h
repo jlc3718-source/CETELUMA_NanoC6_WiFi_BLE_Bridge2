@@ -10,3 +10,4 @@ bool selectRuntime();
 bool runtimeValid();
 void registerFirmware();
 void firmwareLoop();
+void recordFirmwareState(const String&phase,const String&reason=String());
