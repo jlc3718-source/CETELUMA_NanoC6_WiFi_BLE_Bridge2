@@ -71,6 +71,7 @@ test('failed replacement preserves previous active asset and cleans abandoned st
   b.sync({acks:[{id:commandB.id,state:'failed',result:{error:'BLE disconnected'}}]});
   assert.equal(b.retained().active.sha256,a.sha256);assert.equal(b.retained().retainedFiles,1);
   assert.equal(b.asset(next.sha256),undefined);
+  assert.equal(b.status().desired.visual.payload.sha256,a.sha256,'Failed replacement must restore the known active scene');
   const unused=b.upload(preparedColor(17,25,50));assert.ok(b.asset(unused.sha256));
   time(1000000+16*60000);b.tick();
   // Passive cleanup runs on the background timer. Explicit restart also reconciles.
@@ -118,4 +119,33 @@ test('restarting Oracle recovers exactly active and pending; staging expiry neve
   assert.equal(restarted.retained().retainedFiles,1);
   restarted.close();
  }finally{a.close();db.close();}
+});
+
+test('unconfirmed native effect/off retains prior file until latest command is visibly confirmed',()=>{
+ const {b}=create();try{
+  const a=b.upload(preparedColor(255,0,0)),cmd=b.enqueue('asset',{sha256:a.sha256});
+  b.sync({acks:[{id:cmd.id,state:'applied',result:{bleTransmitted:true}}]});
+  b.confirmDisplayed(cmd.id);
+  const effect=b.enqueue('effect',{id:10});
+  b.sync({acks:[{id:effect.id,state:'applied',result:{bleTransmitted:true,physicalPlaybackConfirmed:false}}]});
+  assert.equal(b.retained().retainedFiles,1);
+  assert.equal(b.retained().confirmationAction,'effect');
+  assert.equal(b.retained().confirmationRequired,true);
+  assert.throws(()=>b.confirmDisplayed(cmd.id),/newer command/);
+  const confirmed=b.confirmDisplayed(effect.id);
+  assert.equal(confirmed.retainedFiles,0);
+  assert.equal(confirmed.active,null);
+ }finally{b.close();}
+});
+test('scheduled media survives migration and does not get deleted by later unrelated uploads',()=>{
+ const {b,db,time}=create();try{
+  const a=b.upload(preparedColor(255,0,0)),cmd=b.enqueue('asset',{sha256:a.sha256});
+  b.sync({acks:[{id:cmd.id,state:'applied',result:{bleTransmitted:true}}]});
+  b.confirmDisplayed(cmd.id);
+  b.saveSchedule({id:'future-image',start:1800000,end:2200000,action:'asset',payload:{sha256:a.sha256}});
+  const effect=b.enqueue('effect',{id:8});
+  b.sync({acks:[{id:effect.id,state:'applied',result:{bleTransmitted:true}}]});
+  b.confirmDisplayed(effect.id);
+  assert.ok(b.asset(a.sha256),'scheduled image must remain recoverable until its schedule is removed');
+ }finally{b.close();}
 });
