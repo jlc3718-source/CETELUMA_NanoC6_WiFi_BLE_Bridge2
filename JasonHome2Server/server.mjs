@@ -947,9 +947,9 @@ async function route(req,res){
         "x-accel-buffering":"no","x-content-type-options":"nosniff"});
       res.flushHeaders?.();
       let closed=false;
-      const push=()=>{if(!closed&&!res.destroyed)res.write("data: "+curtainRelay.revision()+"\\n\\n");};
+      const push=()=>{if(!closed&&!res.destroyed)res.write("data: "+curtainRelay.revision()+"\n\n");};
       const unsubscribe=curtainRelay.subscribeWake(push);
-      const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\\n\\n");},10000);
+      const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\n\n");},10000);
       heartbeat.unref?.();
       const cleanup=()=>{if(closed)return;closed=true;clearInterval(heartbeat);unsubscribe();};
       req.once("close",cleanup);res.once("close",cleanup);
