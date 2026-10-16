@@ -80,8 +80,9 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   };
   selectCurtainSubtab('controls');
   container.appendChild(page);
+  window.JH2InitManualConnection?.(controls);
   const status=(message,level='')=>{const n=$('jh2CurtainStatus');n.textContent=message;n.className='jh2-curtain-status '+level};
-  const setBusy=b=>{busy=b;page.querySelectorAll('button').forEach(x=>x.disabled=b)};
+  const setBusy=b=>{busy=b;page.querySelectorAll('button:not(.jh2ConnectionButton)').forEach(x=>x.disabled=b)};
   let playlist=[],sequencePlaying=false;
   try{
     const saved=JSON.parse(localStorage.getItem('jh2-smartdawn-sequence-v1')||'{}');

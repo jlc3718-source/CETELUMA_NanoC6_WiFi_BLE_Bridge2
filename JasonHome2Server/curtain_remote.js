@@ -15,16 +15,34 @@
   window.__curtainNativeResult=callback;
   try{AndroidCurtain.call(id,action,JSON.stringify(payload));}catch(e){finish(null,e);}
  });
- let pairingWork=null,nextPairAttempt=0,lastPairError='';
+ let pairingWork=null,nextPairAttempt=0,lastPairError='',manualSelected=false;
+ window.JH2CreateManualKey=async()=>{
+  manualSelected=true;
+  const pending=pairingWork;if(pending)await pending.catch(()=>{});
+  const result=await api('/api/curtain/pair',{manual:true});
+  lastPairError='Paste the generated key into Receive key on the Nano.';
+  return {endpoint:result.endpoint,bridgeId:result.bridgeId,token:result.token};
+ };
+ window.JH2InitManualConnection=controls=>{
+  if(!controls||document.getElementById('jh2ManualConnection'))return;
+  const panel=document.createElement('section');panel.id='jh2ManualConnection';panel.className='panel jh2-manual-connection';
+  panel.innerHTML='<strong>Manual Oracle connection</strong><p class="sub">Create a key, copy it, then paste it into Receive key on the Nano. The key stays valid until you create another.</p><button type="button" class="btn jh2ConnectionButton" id="jh2CreateKey">Create Oracle key</button> <button type="button" class="btn jh2ConnectionButton" id="jh2CopyKey" disabled>Copy key</button> <a class="btn" href="http://192.168.68.116/" target="_blank" rel="noopener">Open Nano</a><textarea id="jh2ManualKey" class="field" rows="6" readonly hidden aria-label="Oracle connection key" spellcheck="false" autocomplete="off" style="width:100%;box-sizing:border-box;margin-top:12px"></textarea><p class="sub" id="jh2ManualKeyStatus" role="status"></p>';
+  controls.insertBefore(panel,controls.children[1]||null);
+  const key=panel.querySelector('#jh2ManualKey'),message=panel.querySelector('#jh2ManualKeyStatus'),create=panel.querySelector('#jh2CreateKey'),copy=panel.querySelector('#jh2CopyKey');
+  create.onclick=async()=>{create.disabled=true;copy.disabled=true;message.textContent='Creating manual key...';try{key.value=JSON.stringify(await window.JH2CreateManualKey(),null,2);key.hidden=false;copy.disabled=false;message.textContent='Copy this key, then open Nano → Oracle → Receive key. Automatic setup will not replace it.';}catch(error){message.textContent=error.message;}finally{create.disabled=false;}};
+  copy.onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(key.value);else{key.focus();key.select();if(!document.execCommand('copy'))throw Error('Select and copy the key from the box.');}message.textContent='Key copied. Paste it into Oracle → Receive key on the Nano.';}catch(error){key.focus();key.select();message.textContent='Select and copy the key from the box.';}};
+ };
  const connectionReport=(stage,code,detail='')=>api('/api/curtain/autopair',{diagnostic:{stage,code,detail,android:/Android/i.test(window.navigator?.userAgent||'')}}).catch(()=>{});
  async function ensureNanoPairing(force=false){
   if(pairingWork)return pairingWork;
+  if(manualSelected)return false;
   if(document.hidden||(!force&&Date.now()<nextPairAttempt))return false;
   nextPairAttempt=Date.now()+30000;
   pairingWork=(async()=>{
    let stage='oracle';
    try{
     const state=await api('/api/curtain/status');if(state.online)return true;
+    if(state.manualPairing){manualSelected=true;throw Error('Manual key setup is active. Paste the key into Receive key on the Nano.');}
     stage='helper';
     if(!window.AndroidCurtain?.localControllerAvailable?.())throw Object.assign(Error('This installed APK is missing the local Nano setup helper.'),{code:'helper_missing'});
     await connectionReport('helper','ok');stage='oracle';
@@ -68,6 +86,7 @@
  };
  let since=0,working=false;setInterval(async()=>{if(working||!document.getElementById('jh2CurtainStudioFrame')?.getAttribute('src'))return;working=true;try{const d=await api('/api/curtain/notifications?since='+since);for(const n of d.notifications){since=Math.max(since,n.id);window.__jh2CurtainRawNotify?.(n.uuid,n.data);}}catch{}finally{working=false;}},250);
  function init(){
+  window.JH2InitManualConnection(document.getElementById('jh2CurtainOriginalControls'));
   const settings=document.querySelector('.v3SettingsPane[data-settings-pane="controllers"]');if(!settings)return;
   const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayResume">Return to Oracle</button><p class="sub">The APK connects the Nano automatically on home Wi-Fi. Files stay on Oracle; the Nano relays through two dynamic RAM buffers, up to 35 KiB each.</p>';settings.append(p);
   // Oracle alone retains prepared content. Confirmation is intentionally

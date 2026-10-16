@@ -105,3 +105,20 @@ test('connection diagnostics retain only bounded stage codes and never store cre
   assert.throws(()=>b.autoPairing({diagnostic:{stage:'random',code:'helper_missing'}}),/Invalid connection diagnostic/);
  }finally{b.close();db.close();}
 });
+
+test('manual recovery key is durable and automatic setup cannot replace it',()=>{
+ const db=new DatabaseSync(':memory:');let at=1000000;let b=createCurtainBridge({db,now:()=>at});
+ try{
+  const automatic=b.autoPairing(),manual=b.pairing({manual:true});
+  assert.equal(b.status().manualPairing,true);
+  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':automatic.token}}),null);
+  assert.throws(()=>b.autoPairing(),/Manual key setup is active/);
+  at+=30*86400000;
+  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':manual.token}}),'current');
+  b.close();b=createCurtainBridge({db,now:()=>at});
+  assert.equal(b.status().manualPairing,true);
+  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':manual.token}}),'current');
+  assert.throws(()=>b.autoPairing(),/Manual key setup is active/);
+  assert.ok(!JSON.stringify(db.prepare('SELECT * FROM curtain_meta').all()).includes(manual.token));
+ }finally{b.close();db.close();}
+});
