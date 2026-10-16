@@ -2,7 +2,7 @@ name: Jason Home 2 Full Recovery 1.1.9
 
 on:
   push:
-    branches: [codex/jh2-fast-command-chunk-curtain-1.1.9]
+    branches: [codex/jh2-fast-command-chunk-curtain-1.1.8]
     paths:
       - 'JasonHome2NanoC6/**'
       - 'JasonHome2Server/**'
