@@ -77,9 +77,9 @@ test('Native pixel AI returns exact 40x40 RGBA and no post-generation scaling',(
  assert.ok(design.activeBlocks>=60,'auto-framed subject should remain legible');
  const at=(x,y)=>[...data.subarray((y*40+x)*4,(y*40+x)*4+4)];
  assert.deepEqual(at(0,0),[0,0,0,255]);
- assert.deepEqual(at(16,0),[247,131,21,255]);
- assert.deepEqual(at(17,1),at(16,0));
- assert.deepEqual(at(16,2),[247,131,21,255]);
+ assert.deepEqual(at(20,20),[247,131,21,255]);
+ assert.deepEqual(at(21,21),at(20,20));
+ assert.deepEqual(at(20,22),[247,131,21,255]);
  assert.equal(design.outputGrid,'40x40');
  assert.match(converter,/usePreparedFrame\(r.pixels\)/);
  assert.match(converter,/quality:'rgbfull'/);
