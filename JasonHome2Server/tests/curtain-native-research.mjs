@@ -52,6 +52,53 @@ test('Native experimental type 0 plan verifies all BLE packets and CRC without t
  assert.deepEqual(payload,Buffer.from(b));
  assert.equal(p.firmwareSupportUnverified,true);
 });
+test('Save AVI exports standards-compliant uncompressed 40x40 RGB24 with exact preview timing',()=>{
+ const R=research(),frames=R.sampleFrames();
+ // Check both inverted scanlines and BGR pixel order.
+ frames[0].set([12,34,56,255],(39*40+0)*4);
+ frames[0].set([200,111,70,128],0);
+ const avi=R.makeAvi(frames,400),b=Buffer.from(avi.bytes),d=new DataView(b.buffer,b.byteOffset,b.byteLength);
+ const idx=s=>b.indexOf(Buffer.from(s,'ascii'));
+ assert.equal(b.toString('ascii',0,4),'RIFF');assert.equal(b.toString('ascii',8,12),'AVI ');
+ assert.equal(d.getUint32(4,true)+8,b.length);
+ const avih=idx('avih'),strh=idx('strh'),strf=idx('strf'),movi=idx('movi'),first=idx('00db'),index=idx('idx1');
+ assert.ok(avih>0&&strh>avih&&strf>strh&&movi>strf&&first>movi&&index>first);
+ assert.equal(d.getUint32(avih+8,true),400000,'400ms equals microseconds/frame 400000');
+ assert.equal(d.getUint32(avih+24,true),4,'AVI main header frame count');
+ assert.equal(d.getUint32(avih+40,true),40,'AVI main header width');
+ assert.equal(d.getUint32(avih+44,true),40,'AVI main header height');
+ assert.equal(d.getUint32(strh+28,true),400,'AVI rational rate scale');
+ assert.equal(d.getUint32(strh+32,true),1000,'AVI rational rate rate');
+ assert.equal(d.getUint32(strf+8,true),40,'BITMAPINFOHEADER size');
+ assert.equal(d.getUint32(strf+12,true),40,'BITMAPINFOHEADER width');
+ assert.equal(d.getUint32(strf+16,true),40,'BITMAPINFOHEADER height');
+ assert.equal(d.getUint16(strf+22,true),24,'24 bits per pixel');
+ assert.equal(d.getUint32(strf+28,true),0,'BI_RGB uncompressed');
+ assert.equal(d.getUint32(first+4,true),4800,'40x40x3 bytes per frame');
+ assert.deepEqual([...b.subarray(first+8,first+11)],[56,34,12],'bottom-left pixel stored first in BGR order');
+ assert.deepEqual([...b.subarray(first+8+39*120,first+8+39*120+3)],[35,56,100],'RGBA composited on black');
+ assert.equal(d.getUint32(index+4,true),4*16,'AVI index has one 16-byte entry per frame');
+ assert.equal(avi.frames,4);assert.equal(avi.delayMs,400);assert.equal(avi.seconds,1.6);
+ const slow=R.makeAvi(frames,1250);const slowBuf=new DataView(slow.bytes.buffer);
+ const slowPos=Buffer.from(slow.bytes).indexOf(Buffer.from('strh'));
+ assert.equal(slowBuf.getUint32(slowPos+28,true),1250);
+ assert.equal(slowBuf.getUint32(slowPos+32,true),1000);
+ assert.throws(()=>R.makeAvi([frames[0]],400),/2–24/);
+ assert.throws(()=>R.makeAvi(frames,0),/100–5000/);
+});
+test('Native Test Save AVI is downloadable without dry-run, CID write, or BLE command',()=>{
+ const page=read('curtain_native_test.html');
+ assert.match(page,/id="saveAvi" type="button" disabled/);
+ assert.match(page,/R\.makeAvi\(frames/);
+ assert.match(page,/JH2_40x40_/);
+ assert.match(page,/video\/x-msvideo/);
+ assert.match(page,/Save AVI creates a standalone 40×40/);
+ const start=page.indexOf("$('saveAvi').onclick="),end=page.indexOf("$('download').onclick=",start);
+ assert.ok(start>0&&end>start);
+ const handler=page.slice(start,end);
+ assert.doesNotMatch(handler,/researchUpload|rawWrite|writeUpload|2909|\.eff|fetch\(/);
+ assert.match(page,/'saveAvi'\)\.disabled=false/);
+});
 test('Hardware experiment remains limited to reserved CID, rechecks inventory and does not auto-play',()=>{
  const slot=read('curtain_native_slot.js'),page=read('curtain_native_test.html');
  new Script(slot,{filename:'curtain_native_slot.js'});

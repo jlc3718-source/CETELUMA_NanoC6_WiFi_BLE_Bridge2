@@ -64,6 +64,57 @@ function planUpload(data){
  if(restored!==bytes.length)fail('Research upload does not reassemble correctly');
  return {request,parts,meta,chunks,bytes:bytes.length,uploadType:0,crcPolynomial:'0x97',firmwareSupportUnverified:true};
 }
+// Standards-compliant uncompressed RGB24 AVI export for the manufacturer
+// /upload/video -> /webs/encode/video conversion workflow. NOT a .eff
+// and never sent directly to BLE. Preserves 40x40 frames and exact ms timing.
+function makeAvi(frames,frameDelayMs=400){
+ if(!Array.isArray(frames)||frames.length<2||frames.length>MAX_FRAMES)fail('AVI export requires 2–24 complete animation frames');
+ const delay=Number(frameDelayMs);
+ if(!Number.isInteger(delay)||delay<100||delay>5000)fail('AVI frame delay must be an integer from 100–5000 ms');
+ const count=frames.length,rowStride=Math.ceil(W*3/4)*4,frameSize=rowStride*H;
+ const buffer=new ArrayBuffer(1024+count*(frameSize+24)),v=new DataView(buffer);
+ let p=0;const offsets=[];
+ const fcc=s=>{if(s.length!==4)fail('Bad AVI FourCC');for(let i=0;i<4;i++)v.setUint8(p++,s.charCodeAt(i));};
+ const u8=n=>v.setUint8(p++,n&255);
+ const u16=n=>{v.setUint16(p,n,true);p+=2;};
+ const i16=n=>{v.setInt16(p,n,true);p+=2;};
+ const u32=n=>{v.setUint32(p,n>>>0,true);p+=4;};
+ const begin=id=>{fcc(id);const at=p;u32(0);return at;};
+ const end=at=>{v.setUint32(at,p-at-4,true);if(p&1)u8(0);};
+ fcc('RIFF');const riffLenAt=p;u32(0);fcc('AVI ');
+ const hdrl=begin('LIST');fcc('hdrl');
+ const avih=begin('avih');
+ u32(delay*1000);u32(Math.ceil(frameSize*1000/delay));u32(0);u32(0x10);
+ u32(count);u32(0);u32(1);u32(frameSize);u32(W);u32(H);
+ for(let i=0;i<4;i++)u32(0);end(avih);
+ const strl=begin('LIST');fcc('strl');
+ const strh=begin('strh');fcc('vids');fcc('DIB ');
+ u32(0);u16(0);u16(0);u32(0);
+ u32(delay);u32(1000); // exact frame duration as time_base=delay/1000.
+ u32(0);u32(count);u32(frameSize);u32(0xffffffff);u32(0);
+ i16(0);i16(0);i16(W);i16(H);end(strh);
+ const strf=begin('strf');
+ u32(40);u32(W);u32(H);u16(1);u16(24);u32(0);u32(frameSize);
+ u32(0);u32(0);u32(0);u32(0);end(strf);
+ end(strl);end(hdrl);
+ const movi=begin('LIST');fcc('movi');const moviTypeAt=p-4;
+ for(const frame of frames){
+  const rgb=normalizeFrame(frame),start=p,chunk=begin('00db');
+  // Positive BITMAPINFOHEADER height means bottom-up BGR scanlines.
+  for(let y=H-1;y>=0;y--){
+   for(let x=0;x<W;x++){const i=(y*W+x)*3;u8(rgb[i+2]);u8(rgb[i+1]);u8(rgb[i]);}
+   for(let i=W*3;i<rowStride;i++)u8(0);
+  }
+  end(chunk);offsets.push({offset:start-moviTypeAt,length:frameSize});
+ }
+ end(movi);
+ const idx=begin('idx1');
+ for(const item of offsets){fcc('00db');u32(0x10);u32(item.offset);u32(item.length);}
+ end(idx);v.setUint32(riffLenAt,p-8,true);
+ const bytes=new Uint8Array(buffer,0,p);
+ if(String.fromCharCode(...bytes.slice(0,4))!=='RIFF'||String.fromCharCode(...bytes.slice(8,12))!=='AVI '||v.getUint32(4,true)!==p-8)fail('AVI container validation failed');
+ return {bytes,frames:count,delayMs:delay,seconds:count*delay/1000,width:W,height:H,pixelFormat:'RGB24 / uncompressed DIB',intendedUse:'video source for manufacturer converter; NOT direct controller .eff'};
+}
 function sampleFrames(){
  const make=blink=>{
   const a=new Uint8Array(W*H*4);
@@ -77,5 +128,5 @@ function sampleFrames(){
   }return a;
  };return [make(false),make(true),make(false),make(true)];
 }
-root.JH2NativeResearch=Object.freeze({CID,W,H,MAX_FRAMES,encode,inspect,planUpload,sampleFrames,normalizeFrame});
+root.JH2NativeResearch=Object.freeze({CID,W,H,MAX_FRAMES,encode,inspect,planUpload,sampleFrames,normalizeFrame,makeAvi});
 })(typeof window!=='undefined'?window:globalThis);
