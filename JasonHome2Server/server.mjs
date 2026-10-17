@@ -946,7 +946,7 @@ async function route(req,res){
   // A public firmware binary mirror: this never signs or authorizes updates.
   // The Nano still validates ECDSA manifest signature, exact size and SHA-256.
   // GitHub release downloads remain the fallback if Oracle is unreachable.
-  if(method==="GET"&&/^\\/api\\/curtain\\/firmware-runtime\\/[0-9]+\\.[0-9]+\\.[0-9]+\\.bin$/.test(path)){
+  if(method==="GET"&&path.startsWith("/api/curtain/firmware-runtime/")&&path.endsWith(".bin")){
     const version=path.split("/").at(-1).slice(0,-4);
     const channel="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
     let manifestResult;
@@ -959,7 +959,7 @@ async function route(req,res){
     try{manifest=JSON.parse(manifestText);}catch{throw fail(502,"Firmware channel is not valid JSON");}
     if(manifest?.schema!==1||typeof manifest.signature!=="string"||!manifest.signature.length||
        typeof manifest.payload!=="string")throw fail(502,"Unsigned or invalid firmware manifest");
-    const fields=Object.fromEntries(manifest.payload.split("\\n").filter(Boolean).map(line=>{
+    const fields=Object.fromEntries(manifest.payload.split(String.fromCharCode(10)).filter(Boolean).map(line=>{
       const index=line.indexOf("=");if(index<1)throw fail(502,"Malformed signed firmware fields");
       return [line.slice(0,index),line.slice(index+1)];
     }));
