@@ -19,10 +19,7 @@ rows=json.load(open(sys.argv[1],encoding='utf-8'))
 max_age=timedelta(hours=int(sys.argv[2]))
 now=datetime.now(timezone.utc)
 active_prefixes=(
-    'Linux-pio-v2-',
     'Linux-anderson-objects-v2-',
-    'setup-python-',
-    'node-cache-',
 )
 
 def stamp(row):
@@ -38,6 +35,9 @@ for prefix in active_prefixes:
 for row in rows:
     cid=row.get('id')
     if not cid:
+        continue
+    # Never delete generic/shared caches or any Jason Home 2 cache.
+    if not any(str(row.get('key','')).startswith(p) for p in active_prefixes):
         continue
     # Preserve exactly one warm cache for each active family even when idle.
     if any(newest_by_family.get(prefix)==cid for prefix in active_prefixes):

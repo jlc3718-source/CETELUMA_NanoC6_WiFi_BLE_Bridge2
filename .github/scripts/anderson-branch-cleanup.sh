@@ -3,7 +3,7 @@ set -euo pipefail
 : "${GH_TOKEN:?GH_TOKEN is required}";: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 MAX_AGE_HOURS="${BRANCH_MAX_AGE_HOURS:-2}";CURRENT_BRANCH="${GITHUB_REF_NAME:-}";NOW_EPOCH="$(date -u +%s)";DELETED=0;KEPT=0
 is_protected_branch(){ case "$1" in main|ota|codex/release-current|anderson-android-icon-release|anderson-play-icon-v1.0.1|build/silverado-aaos|codex/silverado-*|codex/anderson-android-v1) return 0;;*) return 1;;esac; }
-is_anderson_work_branch(){ case "$1" in automation/*|cleanup/*|cleanup-staging*|staging/*|publish/*|work/*|diag/*|codex/v*|codex/anderson-*|codex/release-*|codex/full-code-audit-*|codex/daily-*|codex/lighting-test-*|codex/remove-*|codex/release-cleanup-*|codex/system-monitor-*|codex/white-calibration-*) return 0;;*) return 1;;esac; }
+is_anderson_work_branch(){ case "$1" in codex/anderson-*|codex/3.*|anderson-*|audit/3.*|build/anderson-*) return 0;;*) return 1;;esac; }
 # Fail closed: inability to inspect PRs or workflow activity must never cause deletion.
 OPEN_PR_JSON="$(gh api --paginate "/repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100")" || { echo 'PR inspection failed; deleting nothing';exit 1; }
 has_open_pr(){ jq -e --arg b "$1" '.[]|select(.head.repo.full_name==env.GITHUB_REPOSITORY and .head.ref==$b)' <<<"$OPEN_PR_JSON" >/dev/null; }

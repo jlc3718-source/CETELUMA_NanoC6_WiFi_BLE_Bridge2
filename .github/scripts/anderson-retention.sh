@@ -43,23 +43,22 @@ else
   KEEP_RUN_IDS+=("${LATEST_BUILD_RUNS[@]:-}")
 fi
 
-# Hard-cap repository workflow history by preserving the newest N runs across
-# all workflows. The currently executing cleanup run is naturally among these
-# newest runs and is also explicitly protected above.
+# Hard-cap only Anderson workflow history, preserving the newest N Anderson runs.
+# Jason Home / Jason Home 2 / unrelated workflows are never cleanup targets.
 if ((RUN_KEEP_LATEST>0)); then
   mapfile -t LATEST_RUN_IDS < <(
     gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
-      --jq '.workflow_runs[] | [.created_at,.id] | @tsv' \
+      --jq '.workflow_runs[] | select((.name | test("Anderson|Wi-Fi Scan Fix v3[.]0[.]10"; "i"))) | [.created_at,.id] | @tsv' \
       | sort -r | head -n "$RUN_KEEP_LATEST" | cut -f2
   )
   KEEP_RUN_IDS+=("${LATEST_RUN_IDS[@]:-}")
 fi
 
-# Delete completed runs outside the retained newest-run set. If the hard cap is
+# Delete Anderson completed runs outside the retained newest-run set. If the hard cap is
 # disabled (RUN_KEEP_LATEST=0), fall back to the age-based retention window.
 mapfile -t COMPLETED_RUN_ROWS < <(
   gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
-    --jq '.workflow_runs[] | select(.status == "completed") | [.id,.updated_at] | @tsv'
+    --jq '.workflow_runs[] | select(.status == "completed" and (.name | test("Anderson|Wi-Fi Scan Fix v3[.]0[.]10"; "i"))) | [.id,.updated_at] | @tsv'
 )
 for row in "${COMPLETED_RUN_ROWS[@]:-}"; do
   [[ -n "$row" ]] || continue
