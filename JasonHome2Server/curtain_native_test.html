@@ -19,17 +19,17 @@ input[type=checkbox]{width:auto;margin-right:8px}pre{white-space:pre-wrap;overfl
 <div class="preview"><canvas id="preview" width="40" height="40"></canvas><div><p id="source">No animation received. Choose sample or send frames from Studio.</p><p id="frameInfo">0 frames</p><label>Frame delay for local preview (ms)<input type="number" id="delay" value="400" min="100" max="5000" step="50"></label></div></div></section>
 <section><h2>2 · Build &amp; inspect experimental native .eff</h2>
 <p class="hint">Generates DNMX RGB888 multi-frame data, validates headers, byte lengths, all 500-byte BLE packets, CRC-8 (0x97), and a full packet-byte reconstruction. The encoding is still experimental: passing these tests does not prove firmware compatibility.</p>
-<div class="buttons"><button id="dryRun" class="primary">✓ Build + dry-run upload</button><button id="saveAvi" type="button" disabled>💾 Save AVI</button><button id="download" disabled>⬇ Save candidate .eff</button><button id="report" disabled>⬇ Save diagnostic report</button></div><p class="hint">Save AVI creates a standalone 40×40 uncompressed RGB24 video at the frame delay selected above. It is intended for SuperPix’s video-import/conversion path; AVI is not a native .eff file and this button does not upload to the controller. The app’s EF0/EF1 handling is still unverified.</p>
+<div class="buttons"><button id="dryRun" class="primary">✓ Build + dry-run upload</button><button id="saveAvi" type="button" disabled>🧪 Save AVI to slot &amp; test play</button><button id="download" disabled>⬇ Save candidate .eff</button><button id="report" disabled>⬇ Save diagnostic report</button></div><p class="hint">Save AVI now <strong>uploads a raw 40×40 RGB24 AVI directly to disposable CID 83928</strong>, using experimental video type 0 and the path <code>83928.avi</code>. First enable the test and enter the CID in section 4 below. After an acknowledged upload and a verified catalog entry, it sends Play. This raw-AVI path is <strong>unverified</strong>; SuperPix normally converts video to .eff, and the firmware may reject raw AVI.</p>
 <pre id="reportText">No test run yet.</pre></section>
 <section><h2>3 · Read controller inventory (no changes)</h2><p class="hint">Checks whether reserved CID <strong>83928</strong> exists before any experimental installation. This only reads controller metadata; factory effects and schedules are not changed.</p>
 <div class="buttons"><button id="readInventory" class="primary">🔍 Read slots &amp; test support</button></div><pre id="inventoryText">Not connected or inspected.</pre></section>
 <section><h2>4 · Opt-in hardware experiment</h2>
 <p>⚠️ Your controller previously reported <strong>videoMakeEnabled=false</strong> / <strong>vidUpload=0</strong>. A DNMX type-0 install might be rejected. The reserved test CID is <strong>83928 only</strong>. No other CID, Nano firmware, or Oracle schedule may be changed.</p>
-<label><input id="allowWrite" type="checkbox">Enable one experimental DNMX type-0 upload</label>
-<label><input id="allowReplace" type="checkbox">I understand that, if CID 83928 is occupied, the experiment may erase and replace only that disposable test effect. It cannot back up the current bytes over BLE.</label>
+<label><input id="allowWrite" type="checkbox">Enable experimental CID 83928 upload (DNMX or raw AVI)</label>
+<label><input id="allowReplace" type="checkbox">I understand that uploading either AVI or DNMX to an occupied CID 83928 will erase the current disposable test effect first, and its bytes cannot be recovered over BLE.</label>
 <label>Type reserved CID to unlock the experiment<input id="targetCid" type="text" inputmode="numeric" autocomplete="off" placeholder="83928"></label>
 <div class="buttons"><button id="upload" class="danger" disabled>⚠️ Test install to CID 83928</button><button id="play" disabled>▶ Test play installed CID 83928</button></div>
-<p id="status" role="status">Nothing has been transmitted. Run a dry-run and read inventory first.</p>
+<p id="status" role="status">No test transmitted. For Save AVI: select frames, enable the test below, type 83928, and press Save AVI to slot & test play.</p>
 <p class="hint">An ACK and catalog entry mean upload success, <em>not</em> proof of correct visual playback or no-scroll behavior. Inspect the curtain physically before marking the format verified. If the experiment fails, the working Oracle streamed animations remain unchanged.</p></section>
 </main>
 <script src="curtain_native_research.js"></script><script src="curtain_native_slot.js"></script>
@@ -39,7 +39,7 @@ const $=id=>document.getElementById(id),R=window.JH2NativeResearch,N=window.JH2N
 let frames=[],frameDelay=400,candidate=null,plan=null,inventory=null,report=null,timer=null,index=0,operation=false;
 const preview=$('preview').getContext('2d',{willReadFrequently:true});
 function say(s){$('status').textContent=s}
-function updateGate(){const good=Boolean(plan&&inventory&&!operation&&$('allowWrite').checked&&$('targetCid').value.trim()==='83928'&&(!inventory.some(x=>x.cid===83928)||$('allowReplace').checked));$('upload').disabled=!good;$('play').disabled=operation||!inventory?.some(x=>x.cid===83928);}
+function updateGate(){$('saveAvi').disabled=operation||frames.length<2;const good=Boolean(plan&&inventory&&!operation&&$('allowWrite').checked&&$('targetCid').value.trim()==='83928'&&(!inventory.some(x=>x.cid===83928)||$('allowReplace').checked));$('upload').disabled=!good;$('play').disabled=operation||!inventory?.some(x=>x.cid===83928);}
 function refreshHeight(){if(window.parent!==window)window.parent.postMessage({kind:'jh2-curtain-height',height:document.documentElement.scrollHeight},location.origin)}
 function showFrame(){if(!frames.length)return;const bytes=frames[index%frames.length];const img=preview.createImageData(40,40);img.data.set(bytes);preview.putImageData(img,0,0);$('frameInfo').textContent='Frame '+(index%frames.length+1)+' / '+frames.length;}
 function halt(){if(timer!==null){clearInterval(timer);timer=null;}}
@@ -56,13 +56,42 @@ $('dryRun').onclick=async()=>{try{
  report={createdAt:new Date().toISOString(),source:$('source').textContent,frameDelayLocalPreviewMs:Number($('delay').value),timingInDNMXVerified:false,firmwareCapabilityReported:{videoMakeEnabled:false,vidUpload:0},sha256:digest,format:plan.meta,transport:{opcodeStart:2930,uploadType:0,framesize:500,parts:plan.chunks,crc8Polynomial:'0x97',simulator:'passed'},hardwareResult:'NOT TESTED'};
  $('reportText').textContent=JSON.stringify(report,null,2);$('download').disabled=false;$('report').disabled=false;$('inventoryText').textContent='Dry-run passed. Read live inventory before testing.';say('DNMX file built; '+plan.chunks+' BLE chunks validated. No controller write has occurred.');refreshHeight();
  }catch(e){candidate=null;plan=null;report=null;updateGate();$('reportText').textContent='Dry-run failed: '+e.message;say('No upload: '+e.message)}};
-$('saveAvi').onclick=()=>{
+$('saveAvi').onclick=async()=>{
+ if(operation)return;
+ if(frames.length<2)return say('Select the sample animation or send Studio frames first.');
+ if(!$('allowWrite').checked||$('targetCid').value.trim()!=='83928')
+  return say('AVI test is locked. In section 4, enable the experimental upload and type 83928. This is not a local download.');
+ let avi,aviPlan;
  try{
-  if(!frames.length)throw Error('Choose the sample or transfer Studio animation frames first.');
-  const avi=R.makeAvi(frames,Math.max(100,Math.min(5000,Number($('delay').value)||400)));
-  save('JH2_40x40_'+avi.frames+'frames_'+avi.delayMs+'ms.avi',avi.bytes,'video/x-msvideo');
-  say('Saved '+avi.frames+'-frame, 40×40 RGB24 AVI ('+(avi.bytes.length/1024).toFixed(1)+' KiB, '+avi.delayMs+' ms/frame). No controller commands sent. SuperPix must convert AVI to native .eff before a potential install.');
- }catch(e){say('AVI export failed: '+e.message)}
+  avi=R.makeAvi(frames,Math.max(100,Math.min(5000,Number($('delay').value)||400)));
+  aviPlan=R.planAviUpload(avi.bytes);
+  if(aviPlan.meta.cid!==83928||aviPlan.path!=='83928.avi')
+   throw Error('AVI target mismatch');
+ }catch(e){return say('AVI packet simulation failed before any BLE writes: '+e.message)}
+ operation=true;updateGate();
+ try{
+  say('AVI dry-run passed: '+aviPlan.chunks+' CRC-verified chunks. Reading controller inventory before writing…');
+  const before=await N.inspect();inventory=before;
+  const occupied=before.some(x=>x.cid===83928);
+  if(occupied&&!$('allowReplace').checked)
+   throw Error('CID 83928 is occupied. Check the section 4 reserved-slot replacement consent box if you want to replace this disposable test effect.');
+  const notice='RAW AVI EXPERIMENT: transmit '+avi.bytes.length+' bytes as type=0 path 83928.avi to reserved CID 83928 only. '+
+   (occupied?'The old test effect in 83928 WILL BE DELETED and cannot be recovered over BLE. ':'The reserved CID currently appears empty. ')+
+   'SuperPix normally converts AVI to .eff. This may fail or be rejected. If installed, the app will try to play it. Continue?';
+  if(!window.confirm(notice)){say('AVI test cancelled. No slot was changed.');return}
+  say('Confirmed raw AVI trial. Sending only to reserved CID 83928…');
+  const result=await N.aviUpload(avi.bytes,{replaceReserved:occupied,progress:say});
+  inventory=await N.inspect();
+  const stored=inventory.find(x=>x.cid===83928);
+  if(!result.acknowledged||!stored||stored.slot!==result.slot)
+   throw Error('AVI transfer did not produce a verified effect slot; playback cancelled');
+  say('Controller acknowledged AVI upload; CID 83928 is visible in slot '+stored.slot+'. Sending test Play…');
+  const played=await N.playResearch();
+  say('AVI transmission ACKNOWLEDGED; CID 83928 is in slot '+played.slot+'. Play command sent. Check the curtain: does the animation actually display without scrolling? Physical playback is NOT yet verified.');
+ }catch(e){
+  inventory=null;
+  say('Raw AVI hardware test was rejected or failed: '+e.message+'\nExisting Oracle streaming is unchanged. If replacement began, the previous reserved test effect may require restoration.');
+ }finally{operation=false;updateGate();refreshHeight()}
 };
 $('download').onclick=()=>{if(candidate)save('JH2_CID83928_DNMX_RESEARCH_UNVERIFIED.eff',candidate)};
 $('report').onclick=()=>{if(report)save('JH2_Native_Test_Report.json',JSON.stringify(report,null,2),'application/json')};

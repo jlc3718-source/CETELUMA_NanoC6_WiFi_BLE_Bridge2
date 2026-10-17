@@ -87,17 +87,35 @@ test('Save AVI exports standards-compliant uncompressed 40x40 RGB24 with exact p
  assert.throws(()=>R.makeAvi([frames[0]],400),/2–24/);
  assert.throws(()=>R.makeAvi(frames,0),/100–5000/);
 });
-test('Native Test Save AVI is downloadable without dry-run, CID write, or BLE command',()=>{
- const page=read('curtain_native_test.html');
+test('Raw AVI upload request is a type-0 vendor packet with the literal path 83928.avi',()=>{
+ const R=research(),avi=R.makeAvi(R.sampleFrames(),400),meta=R.inspectAvi(avi.bytes),plan=R.planAviUpload(avi.bytes);
+ assert.equal(meta.format,'AVI');assert.equal(meta.cid,83928);assert.equal(meta.width,40);
+ assert.equal(meta.frames,4);assert.equal(meta.hardwareVerified,false);
+ assert.equal(plan.uploadType,0);assert.equal(plan.path,'83928.avi');
+ assert.equal(plan.bytes,avi.bytes.length);assert.equal(plan.chunks,Math.ceil(avi.bytes.length/500));
+ assert.deepEqual([...plan.request.slice(8,12)],[8,12,16,0]);
+ assert.ok(Buffer.from(plan.request).includes(Buffer.from('83928.avi')),'vendor storage-path field 8 must be present');
+ const rebuilt=Buffer.concat(plan.parts.map(b=>Buffer.from(b.subarray(8))));
+ assert.deepEqual(rebuilt,Buffer.from(avi.bytes));
+ const wrong=avi.bytes.slice();wrong[0]=0;assert.throws(()=>R.planAviUpload(wrong),/AVI RIFF/);
+ const broken=avi.bytes.slice();const d=new DataView(broken.buffer);d.setUint32(4,broken.length+3,true);
+ assert.throws(()=>R.inspectAvi(broken),/RIFF/);
+ assert.throws(()=>R.inspectAvi(R.encode(R.sampleFrames())),/AVI RIFF/);
+});
+test('Save AVI is a guarded controller upload and test play; never a local download',()=>{
+ const page=read('curtain_native_test.html'),slot=read('curtain_native_slot.js');
  assert.match(page,/id="saveAvi" type="button" disabled/);
+ assert.match(page,/Save AVI to slot &amp; test play/);
  assert.match(page,/R\.makeAvi\(frames/);
- assert.match(page,/JH2_40x40_/);
- assert.match(page,/video\/x-msvideo/);
- assert.match(page,/Save AVI creates a standalone 40×40/);
  const start=page.indexOf("$('saveAvi').onclick="),end=page.indexOf("$('download').onclick=",start);
  assert.ok(start>0&&end>start);
  const handler=page.slice(start,end);
- assert.doesNotMatch(handler,/researchUpload|rawWrite|writeUpload|2909|fetch\(/);
+ for(const v of ['R.planAviUpload(avi.bytes)',"N.inspect()","N.aviUpload(avi.bytes","N.playResearch()","window.confirm(notice)","$('allowWrite').checked","$('allowReplace').checked","value.trim()!=='83928'"])
+  assert.ok(handler.includes(v),v);
+ assert.doesNotMatch(handler,/save\(|\.download\s*=|URL\.createObjectURL/);
+ assert.match(slot,/async function aviUpload\(bytes,options=/);
+ assert.match(slot,/format==='AVI'\?window\.JH2NativeResearch\.planAviUpload\(data\)/);
+ assert.match(slot,/if\(occupied&&!replaceReserved\)throw Error/);
  assert.match(page,/'saveAvi'\)\.disabled=false/);
 });
 test('Hardware experiment remains limited to reserved CID, rechecks inventory and does not auto-play',()=>{

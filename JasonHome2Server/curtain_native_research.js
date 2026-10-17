@@ -115,6 +115,57 @@ function makeAvi(frames,frameDelayMs=400){
  if(String.fromCharCode(...bytes.slice(0,4))!=='RIFF'||String.fromCharCode(...bytes.slice(8,12))!=='AVI '||v.getUint32(4,true)!==p-8)fail('AVI container validation failed');
  return {bytes,frames:count,delayMs:delay,seconds:count*delay/1000,width:W,height:H,pixelFormat:'RGB24 / uncompressed DIB',intendedUse:'video source for manufacturer converter; NOT direct controller .eff'};
 }
+// Strict header and frame-count checks for a controlled raw AVI experiment.
+// The manufacturer normally sends a converted .eff instead of raw AVI.
+function inspectAvi(data){
+ const b=data instanceof Uint8Array?data:new Uint8Array(data);
+ if(b.length<256||b.length>8192+MAX_FRAMES*STRIDE)fail('AVI is empty, oversized, or has more than 24 RGB24 frames');
+ const str=(i,n=4)=>String.fromCharCode(...b.subarray(i,i+n));
+ const dv=new DataView(b.buffer,b.byteOffset,b.byteLength);
+ if(str(0)!=='RIFF'||str(8)!=='AVI '||dv.getUint32(4,true)+8!==b.length)fail('Invalid AVI RIFF container');
+ const find=tag=>{for(let i=12;i+4<=b.length;i++)if(str(i)===tag)return i;return -1};
+ const head=find('avih'),stream=find('strh'),bitmap=find('strf'),movi=find('movi'),index=find('idx1');
+ if(head<0||stream<0||bitmap<0||movi<0||index<0||!(head<stream&&stream<bitmap&&bitmap<movi&&movi<index))fail('AVI headers/index missing');
+ const frames=dv.getUint32(head+24,true),width=dv.getUint32(head+40,true),height=dv.getUint32(head+44,true);
+ const bmpWidth=dv.getUint32(bitmap+12,true),bmpHeight=dv.getUint32(bitmap+16,true);
+ const codec=str(stream+12),bits=dv.getUint16(bitmap+22,true),compression=dv.getUint32(bitmap+24,true);
+ if(codec!=='DIB '||frames<2||frames>MAX_FRAMES||width!==W||height!==H||bmpWidth!==W||bmpHeight!==H||bits!==24||compression!==0)fail('AVI must contain 2–24 uncompressed 40x40 RGB24 frames');
+ const frameBytes=Math.ceil(W*3/4)*4*H;
+ if(dv.getUint32(index+4,true)!==frames*16)fail('AVI frame index does not match its frame count');
+ let chunks=0;
+ for(let at=movi+4;at<index;){
+  if(str(at)==='00db'){
+   if(dv.getUint32(at+4,true)!==frameBytes||at+8+frameBytes>index)fail('AVI video frame length is not 4800 bytes');
+   chunks++;at+=8+frameBytes;
+  }else if(str(at)==='idx1')break;
+  else if(str(at)==='movi')at+=4;
+  else if(at+8<=index&&str(at)==='JUNK'){at+=8+dv.getUint32(at+4,true);}
+  else {at++;if(at>index)break}
+ }
+ if(chunks!==frames)fail('AVI container frame count failed verification');
+ return {format:'AVI',cid:CID,width,height,frames,frameBytes,totalBytes:b.length,pixelFormat:'RGB24 uncompressed',hardwareVerified:false,rawVideoUploadUnsupportedByManufacturerWorkflow:true};
+}
+function planAviUpload(data){
+ const b=data instanceof Uint8Array?data:new Uint8Array(data);
+ const meta=inspectAvi(b);
+ const chunks=Math.ceil(b.length/FRAME_SIZE),id=12;
+ if(chunks>65535)fail('AVI upload packet count overflow');
+ const field=(n,v)=>[(n<<3),...varint(v)];
+ // The captured SuperPix upload request declares field 8 = storage path.
+ // Test the raw AVI under its actual extension, never misrepresent it as .eff.
+ const path='83928.avi',pathBytes=new TextEncoder().encode(path);
+ const start=Uint8Array.from([...field(1,id),...field(2,0),...field(3,b.length),...field(4,0),...field(5,chunks),...field(6,FRAME_SIZE),...field(7,0),(8<<3)|2,...varint(pathBytes.length),...pathBytes,...field(9,CID)]);
+ const request=wrap(start,id,chunks,chunks,true);
+ const parts=Array.from({length:chunks},(_,i)=>wrap(b.slice(i*FRAME_SIZE,(i+1)*FRAME_SIZE),id,chunks,chunks-i-1));
+ let at=0;
+ for(let i=0;i<chunks;i++){
+  const p=parts[i],payload=p.slice(8);
+  if(p[7]!==crc8(payload)||p[5]*256+p[6]!==chunks-i-1)fail('AVI packet integrity check failed');
+  for(let j=0;j<payload.length;j++)if(payload[j]!==b[at++])fail('AVI reassembled bytes differ');
+ }
+ if(at!==b.length)fail('AVI packet byte count mismatch');
+ return {request,parts,meta,chunks,bytes:b.length,uploadType:0,path,experimentalRawAvi:true};
+}
 function sampleFrames(){
  const make=blink=>{
   const a=new Uint8Array(W*H*4);
@@ -128,5 +179,5 @@ function sampleFrames(){
   }return a;
  };return [make(false),make(true),make(false),make(true)];
 }
-root.JH2NativeResearch=Object.freeze({CID,W,H,MAX_FRAMES,encode,inspect,planUpload,sampleFrames,normalizeFrame,makeAvi});
+root.JH2NativeResearch=Object.freeze({CID,W,H,MAX_FRAMES,encode,inspect,planUpload,sampleFrames,normalizeFrame,makeAvi,inspectAvi,planAviUpload});
 })(typeof window!=='undefined'?window:globalThis);

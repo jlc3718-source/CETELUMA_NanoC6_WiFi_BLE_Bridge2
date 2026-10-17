@@ -168,9 +168,10 @@ async function upload(bytes,progress=()=>{}){
 // Research APIs are distinct from the proven 4 KB DN1FE installer.
 // Reading catalog does not mutate controller state. No factory CID can be targeted.
 async function inspect(){const t=await connection();try{return await inventory(t)}finally{t.close()}}
-async function researchUpload(data,{replaceReserved=false,progress=()=>{}}={}){
+async function researchUpload(data,{replaceReserved=false,progress=()=>{},format='DNMX'}={}){
  if(!window.JH2NativeResearch)throw Error('Research encoder is not loaded');
- const plan=window.JH2NativeResearch.planUpload(data);
+ if(format!=='AVI'&&format!=='DNMX')throw Error('Unsupported experimental upload format');
+ const plan=format==='AVI'?window.JH2NativeResearch.planAviUpload(data):window.JH2NativeResearch.planUpload(data);
  if(plan.meta.cid!==CID||plan.uploadType!==0)throw Error('Research file has invalid CID/upload type');
  const t=await connection();
  try{
@@ -183,7 +184,7 @@ async function researchUpload(data,{replaceReserved=false,progress=()=>{}}={}){
    const afterErase=await inventory(t);
    if(afterErase.some(e=>e.cid===CID))throw Error('Test slot 83928 could not be verified empty; cancelling experimental upload');
   }
-  progress('Starting unverified native video type-0 upload; firmware may reject it…');
+  progress('Starting unverified '+format+' type-0 upload to CID 83928; firmware may reject it…');
   const started=waitFor('start',30000);await t.writeUpload(plan.request);
   const start=await started;
   if((start[1]??0)!==0||(start[3]??0)!==0)throw Error('Video type-0 start rejected by controller: '+JSON.stringify(start));
@@ -200,8 +201,14 @@ async function researchUpload(data,{replaceReserved=false,progress=()=>{}}={}){
   await sleep(750);
   const after=await inventory(t),stored=after.find(e=>e.cid===CID);
   if(!stored||!Number.isInteger(stored.slot))throw Error('Upload acknowledged but native candidate did not persist in controller inventory; playback blocked');
-  return {acknowledged:true,cid:CID,slot:stored.slot,physicalPlaybackConfirmed:false};
+  return {acknowledged:true,cid:CID,slot:stored.slot,format,physicalPlaybackConfirmed:false};
  }finally{t.close()}
+}
+// AVI uses the same guarded inventory / reserved-slot-only transport,
+// but declares 83928.avi in the manufacturer's UploadRequest path field.
+// The manufacturer's supported flow normally converts AVI to .eff first.
+async function aviUpload(bytes,options={}){
+ return researchUpload(bytes,{...options,format:'AVI'});
 }
 async function playResearch(){
  const t=await connection();
@@ -212,5 +219,5 @@ async function playResearch(){
   return {cid:CID,slot:stored.slot,commandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close()}
 }
-window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,playResearch};
+window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,aviUpload,playResearch};
 })();
