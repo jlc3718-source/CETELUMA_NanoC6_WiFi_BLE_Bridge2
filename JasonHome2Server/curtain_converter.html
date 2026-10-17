@@ -102,9 +102,28 @@ function paint(img){
  bc.fillStyle='#000';bc.fillRect(0,0,20,20);
  const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
  if(!w||!h)throw Error('Image has no dimensions');
- const scale=Math.min(20/w,20/h);
+ // Crop to the actual non-black subject before fitting it to the LED grid.
+ // A wide empty border must not make the generated character tiny.
+ const scan=document.createElement('canvas');scan.width=160;scan.height=160;
+ const sc=scan.getContext('2d',{willReadFrequently:true});
+ sc.fillStyle='#000';sc.fillRect(0,0,160,160);
+ sc.drawImage(img,0,0,160,160);
+ const px=sc.getImageData(0,0,160,160).data;
+ let minX=160,minY=160,maxX=-1,maxY=-1;
+ for(let y=0;y<160;y++)for(let x=0;x<160;x++){
+  const i=(y*160+x)*4;
+  const lum=Math.max(px[i],px[i+1],px[i+2]);
+  if(lum>=54&&px[i+3]>=128){
+   minX=Math.min(minX,x);minY=Math.min(minY,y);
+   maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+  }
+ }
+ if(maxX<minX){minX=0;minY=0;maxX=159;maxY=159;}
+ const sw=maxX-minX+1,sh=maxY-minY+1;
+ const scale=Math.min(20/sw,20/sh);
+ const dw=sw*scale,dh=sh*scale;
  bc.imageSmoothingEnabled=true;bc.imageSmoothingQuality='high';
- bc.drawImage(img,(20-w*scale)/2,(20-h*scale)/2,w*scale,h*scale);
+ bc.drawImage(scan,minX,minY,sw,sh,(20-dw)/2,(20-dh)/2,dw,dh);
  const raw=bc.getImageData(0,0,20,20).data;
  const palette=referenceColors.length?referenceColors.map(fromHex):paletteOfPixels(raw,11);
  const output=ctx.createImageData(40,40);
