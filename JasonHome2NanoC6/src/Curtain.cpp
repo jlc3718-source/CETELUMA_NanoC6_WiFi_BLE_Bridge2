@@ -1,7 +1,7 @@
 #include "Curtain.h"
 #include "SmartDawnProtocol.h"
 #include <NimBLEDevice.h>
-#include <deque>
+#include <cstring>
 static const char* CURT_SERVICE="00000074-1972-1925-3022-077119514e44";
 static const char* CURT_WRITE="01020074-1972-1925-3022-077119514e44";
 static const char* CURT_HEART="02020074-1972-1925-3022-077119514e44";
@@ -13,8 +13,13 @@ static SmartDawn::Session session;
 static std::vector<int> sequence;
 static size_t position=0;
 static uint32_t nextEffect=0,interval=60000,lastHeart=0,retryAt=0,noticeNumber=0,lastRaw=0;
-struct Notice{uint32_t number;String uuid,data;};
-static std::deque<Notice> notices;
+// Keep raw GATT notifications in a fixed ring without allocating Strings or
+// encoding base64 inside the NimBLE host callback during five-packet catalog reads.
+static constexpr size_t NOTICE_SLOTS=48;
+struct Notice{uint32_t number=0;uint16_t length=0;uint8_t bytes[512]{};};
+static Notice notices[NOTICE_SLOTS];
+static size_t noticeHead=0,noticeCount=0;
+static volatile uint32_t nativeCatalogPackets=0,nativeProgressIgnored=0,nativeNoticeDrops=0;
 static SemaphoreHandle_t noticesLock;
 static SemaphoreHandle_t bleLock;
 static uint32_t burstPackets=0,burstErrors=0,burstFallbackPackets=0;
@@ -38,9 +43,45 @@ static void disconnect(){sequence.clear();writer=heart=upload=notify=nullptr;if(
 static bool writeFrame(const SmartDawn::Frame&f){return connected()&&writer->writeValue(f.bytes,f.length,true);}
 static bool effect(int id){SmartDawn::Frame a,b;return SmartDawn::effectFrames(session,id,a,b)&&writeFrame(a)&&writeFrame(b);}
 static void notification(NimBLERemoteCharacteristic*c,uint8_t*data,size_t n,bool){
-  if(n>1024)return;xSemaphoreTake(noticesLock,portMAX_DELAY);if(notices.size()>=48)notices.pop_front();notices.push_back({++noticeNumber,String(c->getUUID().toString().c_str()),to64(data,n)});xSemaphoreGive(noticesLock);
+  (void)c;
+  if(!data||!n||n>512){++nativeNoticeDrops;return;}
+  // 2630 is unsolicited playback progress, which the catalog and upload
+  // collectors never consume. Prioritize 2904 and upload ACKs instead.
+  const bool wholeDDP=n>=24&&data[1]==1&&data[2]==0&&data[3]==0&&
+    (data[4]==0xf0||data[4]==0xf1)&&data[5]==1;
+  const uint16_t op=wholeDDP?(uint16_t(data[10])<<8)|data[11]:0;
+  if(op==2630){++nativeProgressIgnored;return;}
+  xSemaphoreTake(noticesLock,portMAX_DELAY);
+  const size_t pos=(noticeHead+noticeCount)%NOTICE_SLOTS;
+  if(noticeCount==NOTICE_SLOTS){noticeHead=(noticeHead+1)%NOTICE_SLOTS;++nativeNoticeDrops;}
+  else ++noticeCount;
+  Notice&slot=notices[pos];
+  slot.number=++noticeNumber;
+  slot.length=uint16_t(n);
+  memcpy(slot.bytes,data,n);
+  if(op==2904)++nativeCatalogPackets;
+  xSemaphoreGive(noticesLock);
 }
-void curtainNotifications(JsonArray a,uint32_t since){xSemaphoreTake(noticesLock,portMAX_DELAY);for(auto&n:notices)if(n.number>since){auto v=a.add<JsonObject>();v["id"]=n.number;v["uuid"]=n.uuid;v["data"]=n.data;}xSemaphoreGive(noticesLock);}
+void curtainNotifications(JsonArray a,uint32_t since){
+  // Never perform String/base64/JSON allocations while holding the BLE lock.
+  uint32_t cursor=since;
+  for(size_t sent=0;sent<NOTICE_SLOTS;sent++){
+    Notice snapshot;
+    bool found=false;
+    xSemaphoreTake(noticesLock,portMAX_DELAY);
+    for(size_t i=0;i<noticeCount;i++){
+      const Notice&candidate=notices[(noticeHead+i)%NOTICE_SLOTS];
+      if(candidate.number>cursor){snapshot=candidate;found=true;break;}
+    }
+    xSemaphoreGive(noticesLock);
+    if(!found)break;
+    auto record=a.add<JsonObject>();
+    record["id"]=snapshot.number;
+    record["uuid"]=CURT_NOTIFY;
+    record["data"]=to64(snapshot.bytes,snapshot.length);
+    cursor=snapshot.number;
+  }
+}
 static bool connect(){
   if(connected())return true;disconnect();auto*scan=NimBLEDevice::getScan();scan->setActiveScan(true);scan->setInterval(80);scan->setWindow(40);auto found=scan->getResults(4500,false);String saved=state["curtainAddress"]|String("");
   const NimBLEAdvertisedDevice*target=nullptr;
@@ -58,7 +99,7 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
   bool ok=true;String message;
   if((action=="effect"||action=="nativePlay"||action=="solid"||action=="rawWrite"||action=="power")&&state["curtainSequence"].is<JsonObject>()){state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
 
-  if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["burstPackets"]=burstPackets;out["burstErrors"]=burstErrors;out["burstFallbackPackets"]=burstFallbackPackets;out["burstWithoutResponseSupported"]=heart&&heart->canWriteNoResponse();out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
+  if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["burstPackets"]=burstPackets;out["burstErrors"]=burstErrors;out["burstFallbackPackets"]=burstFallbackPackets;out["burstWithoutResponseSupported"]=heart&&heart->canWriteNoResponse();out["nativeCatalogPackets"]=nativeCatalogPackets;out["nativeProgressIgnored"]=nativeProgressIgnored;out["nativeNoticeDrops"]=nativeNoticeDrops;out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
   else if(action=="connect")ok=connect();
   else if(action=="disconnect"){state["curtainAutoConnect"]=false;saveJson("/state.json",state.as<JsonVariantConst>());disconnect();}
   else if(action=="scan"){
