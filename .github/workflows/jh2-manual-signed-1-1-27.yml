@@ -1,0 +1,122 @@
+name: Jason Home 2 Signed Nano 1.1.27 Native Catalog Receive Fix
+on:
+  push:
+    branches: [codex/jh2-native-2904-hci-receive-20261017]
+    paths: ['.github/workflows/jh2-manual-signed-1-1-27.yml']
+permissions: {contents: write}
+concurrency:
+  group: jh2-nanoc6-signed-ota-channel
+  cancel-in-progress: false
+jobs:
+  manual-package:
+    name: Build, verify, sign, release 1.1.27 (no install/no channel change)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-notify-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+          restore-keys: jh2-notify-pio-
+      - name: Validate and compile only Nano runtime and recovery updater
+        run: |
+          set -euo pipefail
+          test "$(cat JasonHome2NanoC6/VERSION)" = '1.1.27'
+          python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+          python JasonHome2Server/generate_catalog.py
+          python JasonHome2NanoC6/tests/test_bridge.py
+          python JasonHome2NanoC6/tests/test_migration.py
+          python - <<'PY'
+          from pathlib import Path
+          config=Path('JasonHome2NanoC6/platformio.ini').read_text()
+          source=Path('JasonHome2NanoC6/src/Curtain.cpp').read_text()
+          assert '-DMYNEWT_VAL_MSYS_2_BLOCK_SIZE=544' in config
+          assert 'static_assert(MYNEWT_VAL(MSYS_2_BLOCK_SIZE) >= 512' in source
+          assert 'out["nativeHostMsys2Bytes"]=MYNEWT_VAL(MSYS_2_BLOCK_SIZE)' in source
+          print('NIMBLE_HOST_RECEIVE_CONFIG_544_VERIFIED')
+          PY
+          python JasonHome2NanoC6/tools/prepare.py
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
+          python JasonHome2NanoC6/tests/setup-save-regression.py --arduino-json JasonHome2NanoC6/.pio/libdeps/runtime/ArduinoJson/src
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2NanoC6/tools/package.py
+          python - <<'PY'
+          import json,os,pathlib,hashlib
+          release=pathlib.Path('JasonHome2NanoC6/release')
+          data=json.loads((release/'release.json').read_text())
+          assert data['product']=='jason-home-2-nanoc6' and data['version']=='1.1.27'
+          assert data['commit']==os.environ['GITHUB_SHA'] and data['physically_verified'] is False
+          assert data['runtime_copies']==1 and data['rollback'] is False
+          assert data['partitions'][-1]['label']=='storage'
+          for name,meta in data['files'].items():
+            contents=(release/name).read_bytes()
+            assert hashlib.sha256(contents).hexdigest()==meta['sha256'] and len(contents)==meta['bytes']
+          print('PACKAGE_LAYOUT_AND_SHA256_VERIFIED',data['commit'],flush=True)
+          PY
+      - name: Sign with trusted production key and publish MANUAL-ONLY GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OTA_SIGNING_KEY_B64"
+          key="$RUNNER_TEMP/jh2-manual-signer.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          root=JasonHome2NanoC6/release
+          python JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release "$root/release.json" --output "$root/latest.json"
+          python - <<'PY'
+          import json,pathlib,base64,subprocess,tempfile
+          release=pathlib.Path('JasonHome2NanoC6/release')
+          signed=json.loads((release/'latest.json').read_text())
+          meta=json.loads((release/'release.json').read_text())
+          assert signed['schema']==1
+          assert 'version=1.1.27\n' in signed['payload']
+          assert 'commit='+meta['commit']+'\n' in signed['payload']
+          with tempfile.TemporaryDirectory() as p:
+            path=pathlib.Path(p);(path/'payload').write_bytes(signed['payload'].encode())
+            (path/'signature').write_bytes(base64.b64decode(signed['signature'],validate=True))
+            subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem',
+              '-signature',str(path/'signature'),str(path/'payload')],check=True)
+          print('MANUAL_MANIFEST_SIGNED_AND_VERIFIED',flush=True)
+          PY
+          tag=jason-home-2-nanoc6-v1.1.27
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Preexisting release $tag; refusing overwrite"; exit 1
+          fi
+          gh release create "$tag" \
+            "$root"/*.bin "$root"/*.json "$root"/*.zip \
+            "$root"/SHA256SUMS "$root"/INSTALL.md "$root"/TESTING.md \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title 'Jason Home 2 NanoC6 1.1.27 | Signed Manual Recovery' \
+            --notes 'Manually selected firmware package for larger SmartDawn 2904 EffectList BLE notifications. Built from verified 1.1.26 source with 544-byte NimBLE host receive blocks; does not touch Eufy or Oracle. Signed manifest included in release assets. Auto updates remain disabled; jh2-nanoc6-ota/latest.json unchanged. Physical SmartDawn readout not yet verified. Full 4MB image is recovery only; preserve Wi-Fi/NVS with the runtime BIN. No automatic rollback.'
+          mkdir -p public-verify
+          gh release download "$tag" --pattern 'jh2-runtime-1.1.27.bin' --pattern 'latest.json' --dir public-verify
+          python - <<'PY'
+          import pathlib,hashlib,json
+          manifest=json.loads(pathlib.Path('JasonHome2NanoC6/release/release.json').read_text())
+          name='jh2-runtime-1.1.27.bin'
+          data=pathlib.Path('public-verify',name).read_bytes()
+          assert len(data)==manifest['files'][name]['bytes']
+          assert hashlib.sha256(data).hexdigest()==manifest['files'][name]['sha256']
+          assert pathlib.Path('public-verify/latest.json').read_bytes()==pathlib.Path('JasonHome2NanoC6/release/latest.json').read_bytes()
+          print('PUBLIC_SIGNED_RUNTIME_VERIFIED',len(data),hashlib.sha256(data).hexdigest(),flush=True)
+          print('OTA_CHANNEL_UNCHANGED_NO_FLASH_NO_AUTOMATIC_UPDATE',flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: JH2-NanoC6-1.1.27-Manual-Signed
+          path: |
+            JasonHome2NanoC6/release/
+          retention-days: 14
+          if-no-files-found: error
