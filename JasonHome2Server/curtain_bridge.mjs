@@ -216,7 +216,14 @@ export function createCurtainBridge({db,now=Date.now}){
   const endedOverride=get('localOverride',0)>0&&Number(body.localOverrideUntil||0)<=at;
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
   put('localOverride',Number(body.localOverrideUntil||0));
-  if(reboot){put('bootId',body.bootId);put('notifications',[]);}
+  if(reboot){
+   put('bootId',body.bootId);put('notifications',[]);
+   // A raw BLE write may have been delivered immediately before restart.
+   // Its previous ACK is no longer reliable. Never replay it on a new Nano
+   // boot even when its extended delivery TTL has not yet elapsed.
+   db.prepare("UPDATE curtain_commands SET state='superseded',result=? WHERE action IN ('rawWrite','subscribeRaw') AND state IN ('queued','downloaded')")
+     .run(JSON.stringify({ok:false,error:'NanoC6 reboot interrupted native BLE operation; command will not replay'}));
+  }
   // Defer desired-state recovery during local/manual ownership.
   // Otherwise old recovery commands can sit in the queue forever.
   const hold=get('localOverride',0)>at||get('manualUntil',0)>at;
