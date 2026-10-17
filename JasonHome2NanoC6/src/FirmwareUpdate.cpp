@@ -71,6 +71,23 @@ bool queueFirmware(JsonVariantConst d,String&error){
   auto*boot=esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"boot");
   if(!boot||esp_ota_set_boot_partition(boot)!=ESP_OK){error="Could not select boot updater";recordFirmwareState("failed",error);return false;}return true;
 }
+// Anderson Home transport pattern, limited to PUBLIC SIGNED firmware assets.
+// Transport TLS does not authenticate the firmware: ECDSA manifest signature
+// and pinned SHA-256 authenticate the exact firmware before installation.
+static bool fetchSignedManifestTransport(const String&url,JsonDocument&out){
+ WiFiClientSecure client;client.setInsecure();client.setHandshakeTimeout(12);
+ HTTPClient http;http.setConnectTimeout(6000);http.setTimeout(10000);
+ http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+ const char*headers[]={"Transfer-Encoding"};http.collectHeaders(headers,1);
+ if(!http.begin(client,url)){lastError="Firmware HTTPS open failed";return false;}
+ http.addHeader("Cache-Control","no-cache, no-store, max-age=0");
+ const int status=http.GET();
+ if(status!=200){lastError="Firmware HTTPS "+String(status)+" ("+http.errorToString(status)+")";http.end();return false;}
+ String body;const bool ok=readHttpText(http,body,4096);http.end();
+ if(!ok)return false;
+ if(deserializeJson(out,body)){lastError="Invalid signed firmware manifest JSON";return false;}
+ return true;
+}
 bool fetchManifest(JsonDocument&d){
 #ifndef JH2_BOOT
   // Serialize all persistent Oracle TLS transports with the signed OTA check.
@@ -84,9 +101,9 @@ bool fetchManifest(JsonDocument&d){
   // authenticated sync: this avoids GitHub-specific ESP32 TLS / DNS failure.
   const String oracleRoot=oracleOtaRoot();
   String oracleFailure="Oracle endpoint not configured";
-  if(oracleRoot.length()&&httpsJson(oracleRoot+"/api/curtain/firmware-manifest"+suffix,nullptr,d)){lastError="";return true;}
+  if(oracleRoot.length()&&fetchSignedManifestTransport(oracleRoot+"/api/curtain/firmware-manifest"+suffix,d)){lastError="";return true;}
   if(oracleRoot.length())oracleFailure=lastError;
-  if(httpsJson(String(CHANNEL)+suffix,nullptr,d)){lastError="";return true;}
+  if(fetchSignedManifestTransport(String(CHANNEL)+suffix,d)){lastError="";return true;}
   lastError="Oracle OTA "+oracleFailure+" / GitHub OTA "+lastError;
   return false;
 }
@@ -95,7 +112,7 @@ bool installFirmware(JsonVariantConst d,String&error){
   recordFirmwareState("downloading","");
   auto*p=runtimePartition();if(!p||p->address!=0x130000||p->size!=0x290000){error="Wrong flash layout";return false;}
   if(esp_ota_get_running_partition()->subtype!=ESP_PARTITION_SUBTYPE_APP_FACTORY){error="Runtime replacement must run from boot updater";return false;}
-  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(8000);h.setTimeout(15000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  WiFiClientSecure c;c.setInsecure();c.setHandshakeTimeout(12);HTTPClient h;h.setConnectTimeout(8000);h.setTimeout(15000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   const char*hs[]={"Transfer-Encoding"};
   auto openVerifiedSource=[&](const String&url)->int{
     if(!h.begin(c,url))return -1;
