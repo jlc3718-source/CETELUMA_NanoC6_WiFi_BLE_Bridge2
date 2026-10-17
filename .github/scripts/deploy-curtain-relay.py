@@ -119,6 +119,12 @@ if old_sync in live:
  assert live.count(old_sync)==1 and live.count(bridge_init)==1
  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
+# Ship the separate native-slot button handler through the existing static
+# allowlist, including on Oracle installations with an older gateway build.
+if '"curtain_native_slot.js"' not in live:
+ assert live.count('"curtain_converter.html"')==1, 'Cannot safely extend web allowlist'
+ live=live.replace('"curtain_converter.html"','"curtain_converter.html","curtain_native_slot.js"',1)
+assert '"curtain_native_slot.js"' in live, 'Native slot handler would return HTTP 404'
 (stage/'server.mjs').write_text(live)
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
 for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs','curtain_pixel_grid.mjs','curtain_shape_art.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
