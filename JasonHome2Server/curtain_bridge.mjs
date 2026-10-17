@@ -186,7 +186,7 @@ export function createCurtainBridge({db,now=Date.now}){
   tick();garbageCollect();signal();return value;
  }
  function deleteSchedule(id){
-  if(typeof id!=='string'||!/^[\\w-]{1,80}$/.test(id))throw fail(400,'Invalid schedule ID');
+  if(typeof id!=='string'||!/^[\w-]{1,80}$/.test(id))throw fail(400,'Invalid schedule ID');
   const result=db.prepare('DELETE FROM curtain_schedules WHERE id=?').run(id);
   if(!result.changes)throw fail(404,'Curtain schedule not found');
   put('scheduleRevision',get('scheduleRevision',0)+1);
