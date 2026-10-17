@@ -99,6 +99,16 @@ jobs:
                                           hit=con.execute('select length(bytes),metadata from curtain_assets where sha=?',(ref,)).fetchone()
                                           meta=json.loads(hit[1]) if hit else {}
                                           print('ASSET_4539',{'storedOnOracle':bool(hit),'assetBytes':hit[0] if hit else None,'frames':meta.get('frames'),'format':meta.get('format')})
+                                  for aid,act,source,state,created in entries:
+                                      if act!='asset':continue
+                                      c=con.execute('select payload from curtain_commands where id=?',(aid,)).fetchone()
+                                      if not c:continue
+                                      sha=json.loads(c[0]).get('sha256')
+                                      if not sha or not re.fullmatch(r'[0-9a-f]{64}',sha):continue
+                                      hit=con.execute('select length(bytes),hex(substr(bytes,1,8)),metadata from curtain_assets where sha=?',(sha,)).fetchone()
+                                      md=json.loads(hit[2]) if hit else {}
+                                      print('QUEUED_ASSET',{'command':aid,'present':bool(hit),'bytes':hit[0] if hit else 0,'firstEightHex':hit[1] if hit else None,'format':md.get('format'),'frames':md.get('frames')})
+
                                       if 'curtain_asset_slots' in names:
                                           print('ASSET_SLOT',[(row[0],row[1],row[2]) for row in con.execute('select phase,pending_command,substr(coalesce(last_error,""),1,150) from curtain_asset_slots limit 3')])
 
