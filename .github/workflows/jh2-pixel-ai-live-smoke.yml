@@ -21,7 +21,7 @@ jobs:
           backend=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
           env=dict(item.split('=',1) for item in backend['Config']['Env'] if '=' in item)
           token=env['JASON_HOME_API_TOKEN']
-          def req(path,payload,headers=None,timeout=85):
+          def req(path,payload,headers=None,timeout=65):
             request=urllib.request.Request(base+path,
               data=json.dumps(payload).encode(),method='POST',
               headers={'content-type':'application/json',**(headers or {})})
@@ -33,6 +33,7 @@ jobs:
           with urllib.request.urlopen(before,timeout=10) as response:
             previous=json.load(response).get('queued')
           ts=time.time()
+          print('TESTING_NATIVE_AI_SHAPES',flush=True)
           answer,_=req('/api/curtain/generate-art',
             {'prompt':'A simple smiling orange pumpkin with a green stem and big black eyes'},
             {'Cookie':cookie})
