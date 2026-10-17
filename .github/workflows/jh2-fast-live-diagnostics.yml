@@ -62,6 +62,7 @@ jobs:
               if status==200:
                   print('CURTAIN',{'online':s.get('online'),'firmware':s.get('firmware'),'queue':s.get('queued'),'push':s.get('pushConnected'),'pushTransport':s.get('pushTransport'),'subscribers':s.get('pushSubscribers'),'lastSeenSecondsAgo':round((time.time()*1000-s.get('lastSeen',0))/1000,1) if s.get('lastSeen') else 'never','lastSyncSecondsAgo':round((time.time()*1000-s.get('lastSync',0))/1000,1) if s.get('lastSync') else 'never'})
                   print('NANO_INFO',{'uptimeSeconds':s.get('uptimeSeconds'),'heap':s.get('freeHeap'),'relayStreaming':s.get('relayStreaming'),'bridgeError':str(s.get('error',''))[:200],'lastCommand':(s.get('lastCommand') or {}).get('id'),'lastCommandState':(s.get('lastCommand') or {}).get('state'),'ble':{k:v for k,v in (s.get('curtain') or {}).items() if k in ('connected','ready','busy','error','name','streaming')}})
+                  print('NANO_BUILD_DETAILS',{'firmware':s.get('firmware'),'build':s.get('build'),'expectedAfterUpgrade':'1.1.18','ramBufferBytes':s.get('ramBufferBytes'),'ramBufferReserveBytes':s.get('ramBufferReserveBytes'),'freeHeap':s.get('freeHeap'),'lastDelivery':s.get('lastDelivery'),'pushConnected':s.get('pushConnected'),'lastError':str(s.get('error',''))[:140]})
                   code,r,_=call('http://127.0.0.1:8081','/api/curtain/command?id=4539',headers={'Cookie':cookie})
                   if code==200:
                       c=r.get('command') or {}
