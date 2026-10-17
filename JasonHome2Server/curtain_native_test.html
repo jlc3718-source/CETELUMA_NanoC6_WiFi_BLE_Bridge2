@@ -5,13 +5,20 @@ h1{font-size:21px}section{padding:20px;background:#152635;border:1px solid #3854
 .buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:14px 0}
 button{background:#19866c;border:1px solid #50cfb5;color:white;border-radius:10px;padding:17px 13px;font:inherit;font-weight:700;cursor:pointer}
 button:disabled{opacity:.45}canvas{width:200px;max-width:100%;image-rendering:pixelated;background:#000;border:1px solid #506a7c;border-radius:8px}
+select{width:100%;font:inherit;background:#08131d;color:#edf8ff;border:1px solid #507185;border-radius:9px;padding:11px;margin:8px 0}#slotDetails{padding:10px 0;white-space:pre-wrap;font-size:14px}#allSlots{font:12px/1.5 ui-monospace,monospace;white-space:pre;overflow:auto;max-height:260px;color:#aed7e8;background:#08131d;border:1px solid #354b5d;border-radius:8px;padding:10px}#inspect{background:#28639a}
 p{color:#bcd0d9}#status{white-space:pre-wrap;font-size:14px;line-height:1.5;color:#a5f1d3;min-height:58px}
 </style></head><body><main><section><h1>🎞️ Native Curtain Test</h1>
 <canvas id="preview" width="40" height="40" aria-label="40×40 test animation preview"></canvas>
 <div class="buttons">
 <button id="load" type="button">1. Load Test AVI</button>
 <button id="convert" type="button" disabled>2. Convert &amp; Send to Controller</button>
-</div><p id="status" role="status">Select Load Test AVI to prepare a small 40×40 animation. Conversion runs locally; no cloud server.</p>
+</div><hr style="border:0;border-top:1px solid #385466;margin:20px 0"><h2 style="font-size:17px">Controller Slots</h2>
+<button id="inspect" type="button">Read Controller Slots / IDs</button>
+<label for="slotSelect" style="display:block;margin-top:12px">Stored effects <span id="slotCount">(not read)</span></label>
+<select id="slotSelect" disabled><option value="">Press Read Controller Slots</option></select>
+<div id="slotDetails" role="status">No inventory read yet.</div>
+<pre id="allSlots" hidden aria-label="Complete controller inventory"></pre>
+<p id="status" role="status">Select Load Test AVI to prepare a small 40×40 animation. Conversion runs locally; no cloud server.</p>
 </section></main>
 <script src="curtain_native_research.js"></script>
 <script src="curtain_native_slot.js"></script>
@@ -19,9 +26,9 @@ p{color:#bcd0d9}#status{white-space:pre-wrap;font-size:14px;line-height:1.5;colo
 (()=>{'use strict';
 const $=id=>document.getElementById(id),R=window.JH2NativeResearch,N=window.JH2NativeSlot;
 const ctx=$('preview').getContext('2d');
-let frames=null,avi=null,busy=false,timer=null;
+let frames=null,avi=null,busy=false,timer=null,storedSlots=[],inventoryLoaded=false;
 function show(message){$('status').textContent=message;}
-function update(){ $('load').disabled=busy; $('convert').disabled=busy||!avi; }
+function update(){ $('load').disabled=busy; $('convert').disabled=busy||!avi; $('inspect').disabled=busy; $('slotSelect').disabled=busy||!storedSlots.length; }
 function display(){
  if(!frames?.length)return;
  let idx=0;const paint=()=>{const image=ctx.createImageData(40,40);image.data.set(frames[idx++%frames.length]);ctx.putImageData(image,0,0);};
@@ -51,9 +58,47 @@ $('convert').onclick=async()=>{
   show('SmartDawn DNMX v3 / DNX2 generated ('+Math.round(eff.length/1024)+' KB). Installing CID 83928 via NanoC6…');
   const result=await N.smartDawnUpload(eff,show);
   show('CID '+result.cid+' installed in controller slot '+result.slot+'. Native Play command sent. Check the curtain for animation.');
+  if(inventoryLoaded){
+   const at=storedSlots.findIndex(e=>e.cid===result.cid);
+   if(at>=0)storedSlots[at]={slot:result.slot,cid:result.cid};else storedSlots.push({slot:result.slot,cid:result.cid});
+   renderSlots(storedSlots);
+   resize();
+  }
  }catch(e){
   show('Native conversion or controller upload failed: '+e.message);
  }finally{busy=false;update()}
+};
+function renderSlots(entries){
+ inventoryLoaded=true;
+ storedSlots=entries.slice().sort((a,b)=>a.slot-b.slot||a.cid-b.cid);
+ const picker=$('slotSelect');picker.replaceChildren();
+ const option=(label,value)=>{const e=document.createElement('option');e.textContent=label;e.value=value;picker.appendChild(e)};
+ if(!storedSlots.length){option('No native effects reported','');$('slotDetails').textContent='Controller replied with an empty native catalog.';}
+ else for(let i=0;i<storedSlots.length;i++){
+  const e=storedSlots[i];
+  option('Slot '+e.slot+'  ·  CID '+e.cid+(e.cid===83928?'  ·  Test slot':''),String(i));
+ }
+ $('slotCount').textContent='('+storedSlots.length+' entries)';
+ $('allSlots').hidden=!storedSlots.length;
+ $('allSlots').textContent='SLOT    CID        DETAILS\n'+storedSlots.map(e=>String(e.slot).padEnd(8)+String(e.cid).padEnd(11)+(e.cid===83928?'Reserved test slot':'')).join('\n');
+ update();selectSlot();
+}
+function selectSlot(){
+ const e=storedSlots[Number($('slotSelect').value)];
+ $('slotDetails').textContent=e?'Selected slot: '+e.slot+'\nEffect CID: '+e.cid+(e.cid===83928?'\nReserved upload-test slot':''):'Select a returned slot to view its IDs.';
+}
+$('slotSelect').addEventListener('change',selectSlot);
+$('inspect').onclick=async()=>{
+ if(busy)return;busy=true;update();
+ try{
+  show('Reading all SmartDawn stored effect IDs through Oracle → NanoC6 → Bluetooth…');
+  const all=await N.inspect(show);
+  if(!Array.isArray(all)||all.some(e=>!Number.isSafeInteger(e.slot)||!Number.isSafeInteger(e.cid)))
+   throw Error('Controller returned an invalid slot list');
+  renderSlots(all);
+  show('Read completed: '+all.length+' controller slots returned. All IDs are available in the dropdown and list.');
+ }catch(error){show('Controller slot read failed: '+error.message);}
+ finally{busy=false;update();resize()}
 };
 window.addEventListener('message',e=>{
  if(e.origin!==location.origin||e.source!==window.parent||e.data?.kind!=='jh2-native-test-frames'||busy)return;

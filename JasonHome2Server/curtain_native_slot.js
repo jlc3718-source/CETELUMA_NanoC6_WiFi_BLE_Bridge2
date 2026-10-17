@@ -11,6 +11,8 @@ const UPLOAD='27923001-2072-1925-3022-077119514e44';
 const NOTIFY='01010074-1972-1925-3022-077119514e44';
 let seq=0,msg=0,catalog=[],seenInventory=false,packetResponses=new Map();
 let startWait=null,endWait=null,inventoryWait=null,receiverInstalled=false;
+const INBOUND_WAIT_MS=45000; // Oracle -> Nano command and Nano -> Oracle notification each need 5 s relay cycles.
+let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
 const sleep=ms=>new Promise(ok=>setTimeout(ok,ms));
 function b64(data){let str='';for(let i=0;i<data.length;i+=512)str+=String.fromCharCode(...data.subarray(i,i+512));return btoa(str);}
 function varint(n){if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid native protobuf integer');const a=[];do{let v=n&127;n=Math.floor(n/128);if(n)v|=128;a.push(v)}while(n);return a;}
@@ -24,6 +26,7 @@ function waitFor(name,ms){if(callback(name))throw Error('Native upload already w
  const obj={resolve,reject,timer};if(name==='start')startWait=obj;else if(name==='end')endWait=obj;else inventoryWait=obj;});}
 function receive(view){
  const raw=view instanceof Uint8Array?view:new Uint8Array(view.buffer,view.byteOffset,view.byteLength);
+ observedNotifications++;
  if(raw.length<5||raw[3]!==0)return;
  const id=raw[0],count=raw[1],remaining=raw[2];
  if(!count||count>100||remaining>=count)return;
@@ -37,6 +40,7 @@ function receive(view){
  for(const p of parts){data.set(p,at);at+=p.length;}
  if(data.length<20||data[0]!==0xf1||data[1]!==1)return;
  const op=data[6]*256+data[7],body=data.slice(20);
+ lastSmartDawnOp=op;
  try{
   if(op===2904){seenInventory=true;for(const entry of decodeEffects(body)){const n=catalog.findIndex(e=>e.cid===entry.cid&&e.slot===entry.slot);if(n>=0)catalog[n]=entry;else catalog.push(entry);}signal('inventory',true);}
   if(op===2931||op===2934){const result={};for(const [f,v,w]of proto(body))if(w===0)result[f]=v;signal(op===2931?'start':'end',result);}
@@ -131,12 +135,29 @@ async function ddp(t,op,n1,n2){
  const id=(++msg)&65535;packet[2]=id>>8;packet[3]=id&255;packet[6]=op>>8;packet[7]=op&255;packet.set(args,20);
  const k=(++seq)&255;for(let at=0;at<packet.length;at+=40){const part=packet.slice(at,at+40),total=Math.ceil(packet.length/40),frame=new Uint8Array(part.length+4);frame.set([k,total,total-1-at/40,0]);frame.set(part,4);await t.writeCmd(frame);await sleep(10);}
 }
-async function inventory(t){
+async function inventory(t,progress=()=>{}){
+ // A round trip goes through 5-second Oracle/Nano poll windows in both directions.
+ // Arm the waiter before issuing 2904; tolerate multiple relay cycles and give
+ // the UI readout of the actual BLE notification state if nothing returns.
+ const before=observedNotifications;
  catalog=[];packetResponses.clear();seenInventory=false;
- const waiter=waitFor('inventory',5000);
- await ddp(t,2904);await waiter;await sleep(1600);
- if(!seenInventory||catalog.length<1)throw Error('Native inventory unavailable; controller slot untouched');
- return catalog.slice();
+ progress('Requesting native controller slot inventory (2904)…');
+ const waiter=waitFor('inventory',INBOUND_WAIT_MS);
+ waiter.catch(()=>{}); // May expire before the outbound rawWrite receives its ACK.
+ try{
+  await ddp(t,2904);
+  await waiter;
+  if(!seenInventory)throw Error('Controller did not acknowledge inventory');
+  // Snapshot only the current 2904 response; every stored slot is shown, not
+  // just the disposable testing slot.
+  const result=catalog.slice().sort((a,b)=>a.slot-b.slot||a.cid-b.cid);
+  lastInventoryRead={at:new Date().toISOString(),count:result.length,notifications:observedNotifications-before};
+  return result;
+ }catch(error){
+  const count=observedNotifications-before;
+  const detail=' ('+count+' BLE notifications observed; last native opcode '+(lastSmartDawnOp??'none')+').';
+  throw Error(error.message+detail+' Check NanoC6 BLE connection and notifications; no slot was changed.');
+ }
 }
 async function upload(bytes,progress=()=>{}){
  const pack=filePlan(bytes); // validate BEFORE connecting or removing anything
@@ -150,10 +171,10 @@ async function upload(bytes,progress=()=>{}){
    for(let i=0;i<2;i++){const list=await inventory(t);if(list.some(x=>x.cid===CID))throw Error('Could not verify removal of CID 83928; native upload cancelled');}
   }
   progress('Starting verified 4 KB controller upload…');
-  const started=waitFor('start',30000);await t.writeUpload(pack.request);
+  const started=waitFor('start',INBOUND_WAIT_MS);started.catch(()=>{});await t.writeUpload(pack.request);
   const start=await started;
   if((start[1]??0)!==0||(start[3]??0)!==0)throw Error('SmartDawn rejected upload start');
-  const done=waitFor('end',60000);
+  const done=waitFor('end',Math.max(120000,pack.parts.length*9000+30000));done.catch(()=>{});
   for(let i=0;i<pack.parts.length;i++){await t.writeUpload(pack.parts[i]);progress('Sending native upload chunk '+(i+1)+' / '+pack.parts.length);await sleep(25);}
   const result=await done;if((result[1]??0)!==0)throw Error('SmartDawn rejected native upload completion');
   progress('Checking controller slot inventory…');
@@ -167,7 +188,7 @@ async function upload(bytes,progress=()=>{}){
 }
 // Research APIs are distinct from the proven 4 KB DN1FE installer.
 // Reading catalog does not mutate controller state. No factory CID can be targeted.
-async function inspect(){const t=await connection();try{return await inventory(t)}finally{t.close()}}
+async function inspect(progress=()=>{}){const t=await connection();try{return await inventory(t,progress)}finally{t.close()}}
 async function researchUpload(data,{replaceReserved=false,progress=()=>{},format='DNMX'}={}){
  if(!window.JH2NativeResearch)throw Error('Research encoder is not loaded');
  if(format!=='AVI'&&format!=='DNMX')throw Error('Unsupported experimental upload format');
@@ -185,11 +206,11 @@ async function researchUpload(data,{replaceReserved=false,progress=()=>{},format
    if(afterErase.some(e=>e.cid===CID))throw Error('Test slot 83928 could not be verified empty; cancelling experimental upload');
   }
   progress('Starting unverified '+format+' type-0 upload to CID 83928; firmware may reject it…');
-  const started=waitFor('start',30000);await t.writeUpload(plan.request);
+  const started=waitFor('start',INBOUND_WAIT_MS);started.catch(()=>{});await t.writeUpload(plan.request);
   const start=await started;
   if((start[1]??0)!==0||(start[3]??0)!==0)throw Error('Video type-0 start rejected by controller: '+JSON.stringify(start));
   // Type-0 transfer has never been physically verified; do not fake success.
-  const done=waitFor('end',Math.max(120000,plan.parts.length*1800));
+  const done=waitFor('end',Math.max(120000,plan.parts.length*9000+30000));done.catch(()=>{});
   for(let i=0;i<plan.parts.length;i++){
    await t.writeUpload(plan.parts[i]);
    if(i===0||(i+1)%10===0||i+1===plan.parts.length)progress('Experimental type-0 chunk '+(i+1)+' / '+plan.parts.length);
@@ -254,7 +275,7 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
   const response=await started;
   if((response[1]??0)!==0||(response[3]??0)!==0)
    throw Error('Controller rejected native .eff upload start: '+JSON.stringify(response));
-  const done=waitFor('end',Math.max(120000,plan.parts.length*1500));
+  const done=waitFor('end',Math.max(120000,plan.parts.length*9000+30000));done.catch(()=>{});
   for(let i=0;i<plan.parts.length;i++){
    await t.writeUpload(plan.parts[i]);
    if(i===0||(i+1)%10===0||i+1===plan.parts.length)progress('BLE '+(i+1)+'/'+plan.parts.length);

@@ -13,10 +13,17 @@ function modules(){
  new Script(read('curtain_native_slot.js'),{filename:'curtain_native_slot.js'}).runInNewContext(sandbox);
  return {R:sandbox.window.JH2NativeResearch,N:sandbox.window.JH2NativeSlot};
 }
-test('Native Test page retains exactly two buttons with a preview and no cloud calls',()=>{
+test('Native Test has AVI actions plus a read-only slot/ID inspector with a dropdown',()=>{
  const page=read('curtain_native_test.html'),host=read('curtain.js');
  const ids=[...page.matchAll(/<button\s[^>]*id="([^"]+)"/g)].map(x=>x[1]);
- assert.deepEqual(ids,['load','convert']);
+ assert.deepEqual(ids,['load','convert','inspect']);
+ assert.match(page,/id="slotSelect" disabled/);
+ assert.match(page,/id="slotDetails"/);
+ assert.match(page,/id="allSlots" hidden/);
+ assert.match(page,/Read Controller Slots \/ IDs/);
+ assert.match(page,/N\.inspect\(show\)/);
+ assert.match(page,/\.slot\-b\.slot/);
+ assert.match(page,/e\.cid===83928/);
  assert.match(page,/1\. Load Test AVI/);
  assert.match(page,/2\. Convert &amp; Send to Controller/);
  assert.match(page,/R\.sampleFrames\(\)/);
@@ -98,6 +105,27 @@ test('manufacturer native type-0 upload stays on reserved CID 83928 and retains 
  assert.ok(transport.indexOf('await inventory(t)')<transport.indexOf('await ddp(t,2909,CID)'));
  assert.ok(transport.indexOf('await ddp(t,2606,CID,newSlot.slot)')>transport.indexOf('const after=await inventory(t)'));
  assert.doesNotMatch(transport,/83494|83944/,'must not touch production/factory effects');
+});
+test('slot inspector preserves all inventory entries and gives a relay-safe notification deadline',()=>{
+ const source=read('curtain_native_slot.js'),page=read('curtain_native_test.html');
+ assert.match(source,/const INBOUND_WAIT_MS=45000/);
+ assert.match(source,/const waiter=waitFor\('inventory',INBOUND_WAIT_MS\)/);
+ assert.match(source,/async function inspect\(progress=\(\)=>\{\}\)/);
+ assert.match(source,/return await inventory\(t,progress\)/);
+ assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.slot-b\.slot\|\|a\.cid-b\.cid\)/);
+ assert.match(source,/observedNotifications-before/);
+ assert.match(source,/lastSmartDawnOp/);
+ assert.match(source,/no slot was changed/);
+ // 2904 must be a read-only request; nothing here can erase a slot or trigger Play.
+ const inventory=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
+ assert.match(inventory,/await ddp\(t,2904\)/);
+ assert.doesNotMatch(inventory,/2909|2606|writeUpload/);
+ const inspect=source.slice(source.indexOf('async function inspect('),source.indexOf('async function researchUpload('));
+ assert.doesNotMatch(inspect,/2909|2606|writeUpload/);
+ const handler=page.slice(page.indexOf("$('inspect').onclick="),page.indexOf("window.addEventListener('message'",page.indexOf("$('inspect').onclick=")));
+ assert.match(handler,/renderSlots\(all\)/);
+ assert.match(handler,/update\(\)/);
+ assert.doesNotMatch(handler,/N\.vendorUpload|N\.smartDawnUpload|playResearch|delete|\.download/);
 });
 test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
  const script=read('../.github/scripts/deploy-curtain-relay.py');
