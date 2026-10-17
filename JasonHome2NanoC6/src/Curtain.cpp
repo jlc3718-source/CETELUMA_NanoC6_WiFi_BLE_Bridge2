@@ -17,6 +17,11 @@ struct Notice{uint32_t number;String uuid,data;};
 static std::deque<Notice> notices;
 static SemaphoreHandle_t noticesLock;
 static SemaphoreHandle_t bleLock;
+static SemaphoreHandle_t localLock;
+static bool localWaiting=false,localRunning=false;
+static uint32_t localRequestId=0;
+static String localAction;
+static JsonDocument localInput,localResult;
 static bool connected(){return client&&client->isConnected()&&writer;}
 static void disconnect(){sequence.clear();writer=heart=upload=notify=nullptr;if(client){client->disconnect();NimBLEDevice::deleteClient(client);client=nullptr;}}
 static bool writeFrame(const SmartDawn::Frame&f){return connected()&&writer->writeValue(f.bytes,f.length,true);}
@@ -25,28 +30,35 @@ static void notification(NimBLERemoteCharacteristic*c,uint8_t*data,size_t n,bool
   if(n>1024)return;xSemaphoreTake(noticesLock,portMAX_DELAY);if(notices.size()>=48)notices.pop_front();notices.push_back({++noticeNumber,String(c->getUUID().toString().c_str()),to64(data,n)});xSemaphoreGive(noticesLock);
 }
 void curtainNotifications(JsonArray a,uint32_t since,size_t byteBudget){size_t used=0;xSemaphoreTake(noticesLock,portMAX_DELAY);for(auto&n:notices)if(n.number>since){size_t bytes=n.data.length()+n.uuid.length()+64;if(used+bytes>byteBudget)break;used+=bytes;auto v=a.add<JsonObject>();v["id"]=n.number;v["uuid"]=n.uuid;v["data"]=n.data;}xSemaphoreGive(noticesLock);}
-static bool connect(){
-  if(connected())return true;disconnect();auto*scan=NimBLEDevice::getScan();scan->setActiveScan(true);scan->setInterval(80);scan->setWindow(40);auto found=scan->getResults(4500,false);String saved=state["curtainAddress"]|String("");
+static bool connect(const String&requested=String("")){
+  if(connected()&&(!requested.length()||requested.equalsIgnoreCase(String(client->getPeerAddress().toString().c_str()))))return true;
+  disconnect();auto*scan=NimBLEDevice::getScan();scan->setActiveScan(true);scan->setInterval(80);scan->setWindow(40);auto found=scan->getResults(4500,false);String saved=state["curtainAddress"]|String("");String wanted=requested.length()?requested:saved;
   const NimBLEAdvertisedDevice*target=nullptr;
-  for(int i=0;i<found.getCount();i++){auto*d=found.getDevice(i);String name=d->getName().c_str(),address=d->getAddress().toString().c_str();if(name=="DN5E58"||(saved.length()&&saved.equalsIgnoreCase(address))){target=d;break;}}
-  if(!target){scan->clearResults();lastError="DN5E58 not found. Close the phone Bluetooth connection and retry.";return false;}
+  for(int i=0;i<found.getCount();i++){auto*d=found.getDevice(i);String name=d->getName().c_str(),address=d->getAddress().toString().c_str();if(wanted.length()?wanted.equalsIgnoreCase(address):name=="DN5E58"){target=d;break;}}
+  if(!target){scan->clearResults();lastError=requested.length()?"Selected controller not found. Scan again and move it within Bluetooth range.":"DN5E58 not found. Use Scan to select the controller.";return false;}
+  // Retain an address value, never a scan-owned device pointer across connect.
+  const NimBLEAddress targetAddress=target->getAddress();String address=targetAddress.toString().c_str();scan->clearResults();
   client=NimBLEDevice::createClient();if(!client)return false;client->setConnectTimeout(6000);client->setConnectRetries(0);
-  bool ok=client->connect(target);String address=target->getAddress().toString().c_str();scan->clearResults();if(!ok){disconnect();lastError="Curtain connection failed";return false;}
+  bool ok=client->connect(targetAddress);if(!ok){disconnect();lastError="Curtain connection failed";return false;}
   auto*svc=client->getService(CURT_SERVICE);if(!svc){disconnect();lastError="SmartDawn service not found";return false;}
   writer=svc->getCharacteristic(CURT_WRITE);heart=svc->getCharacteristic(CURT_HEART);upload=svc->getCharacteristic(CURT_UPLOAD);notify=svc->getCharacteristic(CURT_NOTIFY);
   if(!writer||!writer->canWrite()){disconnect();return false;}
   if(notify&&notify->canNotify())notify->subscribe(true,notification);session={};state["curtainAddress"]=address;state["curtainAutoConnect"]=true;saveJson("/state.json",state.as<JsonVariantConst>());return true;
 }
-void curtainBegin(){bleLock=xSemaphoreCreateRecursiveMutex();noticesLock=xSemaphoreCreateMutex();NimBLEDevice::init("JasonHome2-NanoC6");NimBLEDevice::setMTU(517);NimBLEDevice::setPower(3);}
+void curtainBegin(){bleLock=xSemaphoreCreateRecursiveMutex();noticesLock=xSemaphoreCreateMutex();localLock=xSemaphoreCreateMutex();NimBLEDevice::init("JasonHome2-NanoC6");NimBLEDevice::setMTU(517);NimBLEDevice::setPower(3);}
 static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&out){
   bool ok=true;String message;
   if((action=="effect"||action=="nativePlay"||action=="solid"||action=="rawWrite"||action=="power")&&state["curtainSequence"].is<JsonObject>()){state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
 
   if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
-  else if(action=="connect")ok=connect();
+  else if(action=="connect"){
+    String address=in["address"]|String("");bool valid=address.length()==0||address.length()==17;
+    for(size_t i=0;valid&&i<address.length();i++)valid=i%3==2?address[i]==':':isxdigit(address[i]);
+    if(!valid){ok=false;message="Select a valid Bluetooth address from Scan.";}else ok=connect(address);
+  }
   else if(action=="disconnect"){state["curtainAutoConnect"]=false;saveJson("/state.json",state.as<JsonVariantConst>());disconnect();}
   else if(action=="scan"){
-    auto*scan=NimBLEDevice::getScan();scan->setActiveScan(true);auto found=scan->getResults(4000,false);auto a=out["devices"].to<JsonArray>();for(int i=0;i<found.getCount();i++){auto*d=found.getDevice(i);auto item=a.add<JsonObject>();item["name"]=d->getName().c_str();item["address"]=d->getAddress().toString().c_str();item["rssi"]=d->getRSSI();}scan->clearResults();
+    auto*scan=NimBLEDevice::getScan();scan->setActiveScan(true);auto found=scan->getResults(4000,false);auto a=out["devices"].to<JsonArray>();for(int i=0;i<found.getCount();i++){auto*d=found.getDevice(i);auto item=a.add<JsonObject>();item["name"]=d->getName().c_str();item["address"]=d->getAddress().toString().c_str();item["rssi"]=d->getRSSI();}scan->clearResults();out["message"]=String(a.size())+" Bluetooth device(s) found. Select the curtain, then Connect.";
   }
   else if(action=="sequenceStop"){sequence.clear();state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
   else if(!connected()){ok=false;message="Curtain is disconnected";}
@@ -78,7 +90,7 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
     if(!ok||ids.size()<2||ids.size()>88||seconds<5||seconds>3600)ok=false;
     else{ok=effect(ids[0]);if(ok){sequence=ids;position=1;interval=seconds*1000UL;nextEffect=millis()+interval;state["curtainSequence"]=in;saveJson("/state.json",state.as<JsonVariantConst>());}else sequence.clear();}
   }else{ok=false;message="Unknown curtain action";}
-  out["sequenceRunning"]=!sequence.empty();out["sequenceCount"]=sequence.size();out["sequenceIntervalSeconds"]=interval/1000;out["ok"]=ok;out["connected"]=connected();out["ready"]=connected();out["mtu"]=client?client->getMTU():23;out["bleTransmitted"]=ok&&action!="status"&&action!="scan";out["physicalPlaybackConfirmed"]=false;out["message"]=ok?"NanoC6 BLE request completed; physical playback is not confirmed":message.length()?message:lastError;out["error"]=ok?String(""):out["message"].as<String>();return ok;
+  out["sequenceRunning"]=!sequence.empty();out["sequenceCount"]=sequence.size();out["sequenceIntervalSeconds"]=interval/1000;out["ok"]=ok;out["connected"]=connected();out["ready"]=connected();out["mtu"]=client?client->getMTU():23;out["bleTransmitted"]=ok&&action!="status"&&action!="scan";out["physicalPlaybackConfirmed"]=false;if(!out["message"].is<String>())out["message"]=ok?"NanoC6 BLE request completed; physical playback is not confirmed":message.length()?message:lastError;out["error"]=ok?String(""):out["message"].as<String>();return ok;
 }
 static void loopUnlocked(){
   uint32_t now=millis();if(!connected()){
@@ -99,6 +111,30 @@ bool curtainCall(const String&action,JsonVariantConst in,JsonDocument&out){
  bool ok=callUnlocked(action,in,out);xSemaphoreGiveRecursive(bleLock);return ok;
 }
 void curtainLoop(){if(xSemaphoreTakeRecursive(bleLock,0)==pdTRUE){loopUnlocked();xSemaphoreGiveRecursive(bleLock);}}
+bool curtainSubmitLocal(const String&action,JsonVariantConst input,JsonDocument&out){
+ if(!localLock||xSemaphoreTake(localLock,pdMS_TO_TICKS(10))!=pdTRUE){out["ok"]=false;out["error"]="Bluetooth worker unavailable";return false;}
+ if(localWaiting||localRunning){xSemaphoreGive(localLock);out["ok"]=false;out["error"]="Bluetooth request already in progress";return false;}
+ localAction=action;localInput.set(input);localResult.clear();localWaiting=true;
+ if(!++localRequestId)++localRequestId;
+ out["ok"]=true;out["pending"]=true;out["requestId"]=localRequestId;
+ xSemaphoreGive(localLock);return true;
+}
+bool curtainLocalResult(uint32_t id,JsonDocument&out){
+ if(!localLock||xSemaphoreTake(localLock,pdMS_TO_TICKS(10))!=pdTRUE){out["ok"]=false;out["error"]="Bluetooth worker unavailable";return false;}
+ bool known=id&&id==localRequestId;
+ if(!known){out["ok"]=false;out["error"]="Bluetooth request no longer available; retry";}
+ else if(localWaiting||localRunning){out["ok"]=true;out["pending"]=true;out["requestId"]=id;}
+ else{out.set(localResult);out["pending"]=false;out["requestId"]=id;}
+ xSemaphoreGive(localLock);return known;
+}
+bool curtainServiceLocal(){
+ if(!localLock||xSemaphoreTake(localLock,0)!=pdTRUE)return false;
+ if(!localWaiting){xSemaphoreGive(localLock);return false;}
+ localWaiting=false;localRunning=true;String action=localAction;JsonDocument input;input.set(localInput);localInput.clear();
+ xSemaphoreGive(localLock);
+ JsonDocument result;curtainCall(action,input.as<JsonVariantConst>(),result);
+ xSemaphoreTake(localLock,portMAX_DELAY);localResult.set(result);localRunning=false;xSemaphoreGive(localLock);return true;
+}
 bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){
  xSemaphoreTakeRecursive(bleLock,portMAX_DELAY);
  auto*ch=channel==0?writer:channel==1?heart:nullptr;

@@ -29,7 +29,12 @@ static bool api(const String& path){
   out["stateAuthority"]="oracle";out["wifi"]=WiFi.status()==WL_CONNECTED;out["ip"]=WiFi.localIP().toString();out["setupAP"]=(WiFi.getMode()&WIFI_AP)!=0;
   out["timeValid"]=timeValid();out["uptimeSeconds"]=millis()/1000;out["freeHeap"]=ESP.getFreeHeap();out["largestHeapBlock"]=ESP.getMaxAllocHeap();
   relayDescribe(out["oracle"].to<JsonObject>());out["directEufy"]=false;portMappingStatus(out["portMapping"].to<JsonObject>());JsonDocument curtain;curtainCall("status",in.as<JsonVariantConst>(),curtain);out["curtain"]=curtain.as<JsonVariantConst>();
- }else if(path=="/api/curtain/call"&&post){String action=in["action"]|String("");if(action!="status"&&action!="scan")relayLocalOverride();bool ok=curtainCall(in["action"]|String(""),in["payload"],out);reply(ok?200:400,out.as<JsonVariantConst>());return true;
+ }else if(path=="/api/curtain/call"&&post){String action=in["action"]|String("");
+  if(isAdmin&&(in["async"]|false)){
+   bool ok=curtainSubmitLocal(action,in["payload"],out);if(ok&&action!="status"&&action!="scan")relayLocalOverride();reply(ok?202:409,out.as<JsonVariantConst>());return true;
+  }
+  if(action!="status"&&action!="scan")relayLocalOverride();bool ok=curtainCall(action,in["payload"],out);reply(ok?200:400,out.as<JsonVariantConst>());return true;
+ }else if(path=="/api/curtain/call"&&!post){bool known=curtainLocalResult(strtoul(web.arg("requestId").c_str(),nullptr,10),out);reply(known?200:404,out.as<JsonVariantConst>());return true;
  }else if(path=="/api/curtain/notifications"&&!post){curtainNotifications(out["notifications"].to<JsonArray>(),strtoul(web.arg("since").c_str(),nullptr,10));
  }else if(path=="/api/bridge/status"&&!post){out["ok"]=true;relayDescribe(out["oracle"].to<JsonObject>());
  }else if(path=="/api/bridge/sync"&&post){relaySyncNow();out["ok"]=true;

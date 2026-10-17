@@ -292,6 +292,7 @@ static QueueHandle_t commandInbox=nullptr;
 static uint64_t submittedCommand=0;
 static void commandWorker(void*){
  for(;;){
+  if(curtainServiceLocal())continue;
   JsonDocument*delivery=nullptr;
   if(xQueueReceive(commandInbox,&delivery,pdMS_TO_TICKS(20))==pdTRUE){
    executeDelivery(*delivery);delete delivery;
@@ -356,6 +357,12 @@ static void commandChannel(void*){
    socket.beginSslWithCA("150.136.245.51",443,"/jason-home-2/api/curtain-bridge/channel",JH2_ROOTS,"jh2-bridge");
    socket.setExtraHeaders(headers.c_str());socket.setReconnectInterval(1500);
    socket.enableHeartbeat(10000,5000,2);
+  }
+  // Do not start another TLS allocation while BLE/streaming owns the heap.
+  // A failed handshake otherwise retries continuously with the library's
+  // default two-minute handshake timeout and can starve local recovery.
+  if(!pushOnline&&(ESP.getFreeHeap()<66*1024||ESP.getMaxAllocHeap()<20*1024)){
+   socket.disconnect();issue("Waiting for free RAM before Oracle TLS connection");vTaskDelay(pdMS_TO_TICKS(1000));continue;
   }
   socket.loop();
   if(pushOnline){

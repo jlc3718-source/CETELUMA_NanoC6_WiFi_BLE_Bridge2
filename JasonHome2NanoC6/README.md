@@ -1,17 +1,17 @@
-# Jason Home 2 NanoC6 1.1.2 — Oracle curtain relay
+# Jason Home 2 NanoC6 1.1.16
 
-Existing APK controls → authenticated Oracle queue → outbound NanoC6 HTTPS → SmartDawn BLE.
+Use `jh2-runtime-1.1.16.bin` in the Nano's existing Firmware upload page for an ordinary update. This preserves Wi-Fi and Oracle credentials. The full 4 MB `jh2-full-install-1.1.16.bin` is a recovery image flashed at **0x0**; it resets Wi-Fi and Oracle setup.
 
-Use the runtime BIN through the existing local Firmware upload page to preserve Wi-Fi, pairing and the partition map. A complete 4 MB image flashed at 0x0 replaces NVS and filesystem; it requires Wi-Fi setup and Oracle pairing again. Do not use it as an ordinary update.
+After a full flash, join the Nano's Jason-Home-2-Setup Wi-Fi and save your home Wi-Fi. Rejoin home Wi-Fi and open `http://jason-home-2.local/`.
 
-In the APK Settings, open NanoC6 curtain relay → Pair NanoC6. APK 2.0.12 can securely send the private configuration to the local NanoC6; manual paste remains as a fallback. Do not share this code. Bridge Settings reports connection, BLE identity, last command/ACK, 60-second recovery polling, firmware/flash/RAM use and errors. A long poll provides prompt commands while online. Bridge credentials rotate in-band after 1.1.2 reconnects without changing the Oracle API token or Eufy credentials.
+On the Nano's Curtain tab, tap **Scan Bluetooth**, choose the curtain by name and address, then **Connect selected**. The selected address is retained after a successful connection. Scanning and connection from the local page run in the BLE worker so the web server can continue answering. The existing synchronous command API remains compatible.
 
-Files stay on Oracle. NanoC6 reads 4 KB TLS-protected, digest-checked ranges into RAM and transmits captured SmartDawn packets over BLE. No animation file is written to NanoC6 flash. Oracle validates/prepares the Studio's 40×40 output; existing subject framing, AI service, presets and previews remain in the web application. Native slot installation uses the existing verified 4096-byte CID 83928 procedure and actual curtain notifications. Raw GIF bytes are never uploaded as native effects. The experimental override retains its existing warnings.
+Reopen the APK and go to **Curtain controls → Manual Oracle connection → Create Oracle key → Copy key**. On the Nano, open **Oracle**, paste the complete key, tap **Receive key**, then **Receive commands**. Creating another key replaces the previous key. Opening the APK and pressing curtain command buttons do not run setup or replace that key.
 
-Static/GIF relay programs support at most 180 frames and 4 MB of compiled packets. BLE throughput limits frame rate; the programmed hold time is added after transmission. Native effects and sequences run on the NanoC6/curtain after closing the APK. Live GIF relay requires Oracle connectivity. On loss, the curtain retains the last displayed frame or native effect; no offline GIF guarantee is made. Oracle reissues its latest desired scene after NanoC6 restart.
+Oracle sends commands through the Nano's authenticated outbound TLS WebSocket on TCP 443. Commands and acknowledgements use the same persistent connection. Local Bluetooth controls work independently. The command socket uses an eight-second TLS handshake limit and delays connection attempts if available RAM is insufficient. Signed firmware and asset downloads retain their existing verification.
 
-Local Curtain controls use NanoC6 BLE directly. Tests pause Oracle commands for 15 minutes; Return to Oracle ends that pause. Oracle owns curtain event scheduling. No on-device calendar owner, phone Bluetooth, UPnP, DDNS, or inbound port mapping is used.
+Files remain on Oracle. NanoC6 relays image data through two dynamic RAM buffers, up to 35 KiB each, using 80% of the heap above a 48 KiB reserve with the existing smaller-buffer fallback. No animation is stored on Nano flash. Native effects and sequences continue after closing the APK; live image/GIF streaming requires Oracle connectivity.
 
-The 4 MB partition map is unchanged: permanent updater 0x10000/0x120000; runtime 0x130000/0x290000; settings filesystem 0x3C0000/0x40000. The current updater's runtime size guard requires padding small runtime files above 0x120000; the release manifest reports the padded upload file. This padding is not executable code. There is one runtime slot, so automatic rollback is unavailable. The permanent uploader remains the recovery path; use the previous verified runtime BIN if needed.
+The 4 MB partition map is unchanged: permanent updater at 0x10000/0x120000; runtime at 0x130000/0x290000; settings filesystem at 0x3C0000/0x40000. There is one runtime slot. Keep the previous runtime and permanent uploader available for recovery.
 
-Build provenance, SHA-256 and chip/partition validation accompany each release. Compilation and automated tests do not prove physical BLE output. Pairing, real curtain output, restart behavior and phone-Bluetooth-off acceptance require hardware verification.
+Build tests and cryptographic image checks do not establish physical BLE output. Confirm the selected curtain responds and Oracle receives its real command acknowledgement after installation.
