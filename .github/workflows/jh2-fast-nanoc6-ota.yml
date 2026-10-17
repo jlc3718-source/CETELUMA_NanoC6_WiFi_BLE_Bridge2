@@ -1,3 +1,7 @@
+# RECOVERY FREEZE 2026-10-17: Jason Home 2 signed OTA channel is pinned to 1.1.12.
+# Publishing is intentionally disabled. The 1.1.13-1.1.16 code remains
+# archived in immutable Git tags/releases, never as an automatic firmware target.
+# Future firmware advancement requires explicit unfreeze and physical acceptance.
 name: Jason Home 2 NanoC6 Fast Signed OTA
 
 on:
@@ -17,6 +21,7 @@ concurrency:
 
 jobs:
   nano-ota:
+    if: ${{ false }} # Recovery freeze: no build, publish, or signed channel advancement
     name: Verify image and publish signed Nano firmware (no Oracle reboot)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
