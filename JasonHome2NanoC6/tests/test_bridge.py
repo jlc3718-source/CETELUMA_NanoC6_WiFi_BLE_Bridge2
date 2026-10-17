@@ -108,6 +108,16 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn("'Running firmware '",bridge)
   curtain=(R/'src/Curtain.cpp').read_text()
   self.assertIn('action=="status"?pdMS_TO_TICKS(15):portMAX_DELAY',curtain)
+ def test_signed_ota_download_mirrors_binary_without_bypassing_verification(self):
+  fw=(R/'src/FirmwareUpdate.cpp').read_text()
+  self.assertIn('/api/curtain/firmware-runtime/',fw)
+  self.assertIn('oracleOtaRoot()',fw)
+  self.assertIn('if(code!=200)h.end()',fw)
+  self.assertIn('openVerifiedSource(m.url)',fw)
+  self.assertIn('total!=m.bytes',fw)
+  self.assertIn('hexBytes(hash,32)!=m.sha',fw)
+  self.assertIn('parseManifest',fw)
+  self.assertNotIn('setInsecure(',fw)
  def test_ota_channel_falls_back_to_oracle_without_bypassing_signature(self):
   fw=(R/'src/FirmwareUpdate.cpp').read_text()
   self.assertIn('/api/curtain/firmware-manifest',fw)

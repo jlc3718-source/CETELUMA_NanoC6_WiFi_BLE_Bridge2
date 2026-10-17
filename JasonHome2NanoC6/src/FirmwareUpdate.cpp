@@ -16,6 +16,12 @@ kuGHPepzClPYMrJ4h5r8iNlyUFpJZcPI/FXe8+atedYKpIZZB5XlOj964Q==
 )KEY";
 static const char CHANNEL[]="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
 static const char PREFIX[]="https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v";
+static String oracleOtaRoot(){
+  String root=secrets["oracleEndpoint"]|String("");
+  if(!root.startsWith("https://"))return "";
+  while(root.endsWith("/"))root.remove(root.length()-1);
+  return root;
+}
 static bool busy=false;
 static bool autoTaskStarted=false;
 static JsonDocument available;
@@ -61,16 +67,15 @@ bool queueFirmware(JsonVariantConst d,String&error){
 }
 bool fetchManifest(JsonDocument&d){
   if(!timeValid()){lastError="Waiting for Internet clock sync; retry in a few seconds";return false;}
-  // Use the already-working Oracle TLS route first when GitHub's certificate
-  // chain/DNS handshake fails on the ESP32-C6 (HTTPClient HTTPS -1).
-  // Both sources return the original release JSON; parseManifest still verifies
-  // the pinned ECDSA public key, exact product and canonical GitHub release URL.
   const String suffix="?t="+String((uint32_t)time(nullptr));
-  const String oracle="https://150.136.245.51/jason-home-2/api/curtain/firmware-manifest"+suffix;
-  if(httpsJson(oracle,nullptr,d)){lastError="";return true;}
-  const String oracleError=lastError;
+  // Reuse the same Oracle HTTPS origin that already carries working SSE and
+  // authenticated sync: this avoids GitHub-specific ESP32 TLS / DNS failure.
+  const String oracleRoot=oracleOtaRoot();
+  String oracleFailure="Oracle endpoint not configured";
+  if(oracleRoot.length()&&httpsJson(oracleRoot+"/api/curtain/firmware-manifest"+suffix,nullptr,d)){lastError="";return true;}
+  if(oracleRoot.length())oracleFailure=lastError;
   if(httpsJson(String(CHANNEL)+suffix,nullptr,d)){lastError="";return true;}
-  lastError="Oracle OTA "+oracleError+" / GitHub OTA "+lastError;
+  lastError="Oracle OTA "+oracleFailure+" / GitHub OTA "+lastError;
   return false;
 }
 bool installFirmware(JsonVariantConst d,String&error){
@@ -78,9 +83,25 @@ bool installFirmware(JsonVariantConst d,String&error){
   recordFirmwareState("downloading","");
   auto*p=runtimePartition();if(!p||p->address!=0x130000||p->size!=0x290000){error="Wrong flash layout";return false;}
   if(esp_ota_get_running_partition()->subtype!=ESP_PARTITION_SUBTYPE_APP_FACTORY){error="Runtime replacement must run from boot updater";return false;}
-  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(8000);h.setTimeout(12000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  if(!h.begin(c,m.url)){error="Firmware URL unavailable";return false;}const char*hs[]={"Transfer-Encoding"};h.collectHeaders(hs,1);
-  int rc=h.GET();if(rc!=200){error="Firmware download HTTP "+String(rc);h.end();return false;}
+  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(8000);h.setTimeout(15000);h.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  const char*hs[]={"Transfer-Encoding"};
+  auto openVerifiedSource=[&](const String&url)->int{
+    if(!h.begin(c,url))return -1;
+    h.collectHeaders(hs,1);
+    int code=h.GET();
+    if(code!=200)h.end();
+    return code;
+  };
+  const String oracleRoot=oracleOtaRoot();
+  const int oracleCode=oracleRoot.length()?
+    openVerifiedSource(oracleRoot+"/api/curtain/firmware-runtime/"+m.version+".bin"):-1;
+  // The OTA manifest's trusted ECDSA signature pins the exact GitHub URL and
+  // release SHA-256; both byte sources must match that same signed digest.
+  int rc=oracleCode==200?200:openVerifiedSource(m.url);
+  if(rc!=200){
+    error="Firmware HTTPS Oracle "+String(oracleCode)+" / GitHub "+String(rc);
+    h.end();return false;
+  }
   // The updater never writes its own factory partition, NVS or user data.
   esp_ota_handle_t handle=0;rc=esp_ota_begin(p,m.bytes,&handle);if(rc!=ESP_OK){error="Could not open runtime partition";h.end();return false;}
   mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);mbedtls_sha256_starts(&sha,0);size_t total=0;size_t nextMilestone=262144;
