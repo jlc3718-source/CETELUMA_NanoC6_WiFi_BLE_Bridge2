@@ -222,6 +222,138 @@ $('send').onclick=async()=>{if(!prepared)return;setBusy(true);show('Saving the 4
  show('Command '+id+' sent. Waiting for Nano and Bluetooth…');
  const ms=await ack(id,90000);show('ACK received after '+(ms/1000).toFixed(2)+' seconds. Look at the physical curtain to confirm the picture.');
  }catch(e){show(e.message);}finally{setBusy(false);}};
+
+function copyFrame(frame){return {data:new Uint8ClampedArray(frame.data)};}
+function previewDelay(){return Math.max(100,Math.min(5000,Math.round(Number($('frameDelay').value)||400)));}
+function stopPreview(){if(previewTimer!==null){clearInterval(previewTimer);previewTimer=null;}$('playFrames').textContent='▶ Play preview';}
+function renderFrame(){
+ if(!animationFrames.length){
+  animationCtx.clearRect(0,0,40,40);$('animationStatus').textContent='No animation frames yet.';setBusy(busy);return;
+ }
+ selectedFrame=(selectedFrame+animationFrames.length)%animationFrames.length;
+ const frame=animationFrames[selectedFrame],image=animationCtx.createImageData(40,40);
+ image.data.set(frame.data);animationCtx.imageSmoothingEnabled=false;animationCtx.putImageData(image,0,0);
+ $('animationStatus').textContent='Frame '+(selectedFrame+1)+' of '+animationFrames.length+' · '+previewDelay()+' ms per frame';
+ for(const tile of $('frameStrip').children)tile.classList.toggle('active',Number(tile.dataset.frame)===selectedFrame);
+ setBusy(busy);
+}
+function frameThumbnail(frame){
+ const cv=document.createElement('canvas');cv.width=40;cv.height=40;
+ const cc=cv.getContext('2d'),image=cc.createImageData(40,40);image.data.set(frame.data);cc.putImageData(image,0,0);
+ return cv.toDataURL('image/png');
+}
+function updateFrameStrip(){
+ const panel=$('frameStrip');panel.replaceChildren();
+ animationFrames.forEach((frame,i)=>{
+  const tile=document.createElement('button');tile.type='button';tile.dataset.frame=String(i);
+  const img=document.createElement('img');img.src=frameThumbnail(frame);img.alt='Frame '+(i+1);
+  const title=document.createElement('small');title.textContent='Frame '+(i+1);
+  tile.append(img,title);tile.onclick=()=>{stopPreview();selectedFrame=i;renderFrame();};panel.append(tile);
+ });
+ renderFrame();
+}
+function setFrames(frames){stopPreview();animationFrames=frames;selectedFrame=0;updateFrameStrip();}
+function startPreview(){
+ if(animationFrames.length<2)return show('Create at least two frames to preview.');
+ stopPreview();previewTimer=setInterval(()=>{
+  if(selectedFrame===animationFrames.length-1&&!$('loop').checked){stopPreview();return;}
+  selectedFrame=(selectedFrame+1)%animationFrames.length;renderFrame();
+ },previewDelay());$('playFrames').textContent='▶ Playing';
+}
+// Motion operates on the actual 20x20 logical 2x2 LED blocks, without re-rendering
+// high-resolution imagery or interpolating colors. The preview equals the upload.
+function frameMotion(base,index,total,motion){
+ const phase=index*2*Math.PI/total,out=new Uint8ClampedArray(6400);
+ const cs=Math.cos(phase),sn=Math.sin(phase);
+ for(let y=0;y<20;y++)for(let x=0;x<20;x++){
+  let xx=x,yy=y,level=1,scale=1,turn=0;
+  if(motion==='bounce')yy=y-Math.round((1-cs)*1.3);
+  else if(motion==='float')yy=y-Math.round(2*cs);
+  else if(motion==='sway')xx=x-Math.round(2*cs);
+  else if(motion==='wave')xx=x-Math.round(1.8*Math.sin(phase+y*.35));
+  else if(motion==='spin')turn=phase;
+  else if(motion==='pulse')scale=1+.10*cs;
+  else if(motion==='blink')scale=cs<-.6?.55:1;
+  else if(motion==='flicker')level=.6+.4*((1+cs)/2);
+  const tx=xx-9.5,ty=yy-9.5;
+  const rx=(tx*Math.cos(turn)+ty*Math.sin(turn))/scale+9.5;
+  const ry=(-tx*Math.sin(turn)+ty*Math.cos(turn))/scale+9.5;
+  const sourceX=Math.round(rx),sourceY=Math.round(ry);
+  const valid=sourceX>=0&&sourceX<20&&sourceY>=0&&sourceY<20;
+  const src=(sourceY*2*40+sourceX*2)*4;
+  for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+   const target=((y*2+dy)*40+x*2+dx)*4;
+   for(let c=0;c<3;c++)out[target+c]=valid?Math.round(base[src+c]*level):0;
+   out[target+3]=255;
+  }
+ }
+ return {data:out};
+}
+$('autoFrames').onclick=()=>{
+ if(!prepared)return show('Generate or upload a still image first.');
+ const total=Number($('frameCount').value),base=new Uint8ClampedArray(prepared.data),motion=$('motion').value;
+ setFrames(Array.from({length:total},(_,i)=>frameMotion(base,i,total,motion)));
+ show('Created '+total+' motion frames with no additional AI requests. Preview before publishing.');
+};
+$('aiFrames').onclick=async()=>{
+ const prompt=$('prompt').value.trim();if(prompt.length<3)return show('Describe the animation subject first.');
+ const total=Number($('frameCount').value),motion=$('motionPrompt').value.trim()||$('motion').value;
+ const previous=animationFrames,previousStill=prepared?copyFrame(prepared):null;
+ const frames=[];let paletteLock=referenceColors.length?referenceColors.map(fromHex):null;
+ setBusy(true);stopPreview();
+ try{
+  for(let frameIndex=0;frameIndex<total;frameIndex++){
+   show('FLUX drawing keyframe '+(frameIndex+1)+' of '+total+' · one AI request per frame…');
+   const response=await api('/api/curtain/generate-art',{
+    prompt,referenceId:chosenFactory,referenceColors,style:$('style').value,
+    colorLimit:Number($('colors').value),motion,frameCount:total,frameIndex
+   });
+   await load(response.image,paletteLock);
+   frames.push(copyFrame(prepared));
+   if(!paletteLock)paletteLock=paletteOfPixels(prepared.data,Number($('colors').value)||6);
+  }
+  setFrames(frames);show(total+' AI keyframes prepared. Preview, edit and Publish Animation when ready.');
+ }catch(e){setFrames(previous);show('AI animation failed: '+e.message+'. Previously prepared frames were preserved.');}
+ finally{
+  if(previousStill){prepared=previousStill;ctx.putImageData(prepared,0,0);$('image').src=canvas.toDataURL('image/png');}
+  setBusy(false);
+ }
+};
+$('frameDelay').onchange=()=>{const ms=previewDelay();$('frameDelay').value=String(ms);if(previewTimer!==null)startPreview();else renderFrame();};
+$('playFrames').onclick=startPreview;$('pauseFrames').onclick=stopPreview;
+$('prevFrame').onclick=()=>{stopPreview();selectedFrame--;renderFrame();};
+$('nextFrame').onclick=()=>{stopPreview();selectedFrame++;renderFrame();};
+$('loop').onchange=()=>{if(previewTimer!==null)startPreview();};
+$('addFrame').onclick=()=>{
+ if(!prepared)return;if(animationFrames.length>=180)return show('Maximum 180 frames.');
+ stopPreview();animationFrames.splice(selectedFrame+1,0,copyFrame(prepared));selectedFrame++;
+ updateFrameStrip();show('Current picture added as an animation frame.');
+};
+$('duplicateFrame').onclick=()=>{
+ if(!animationFrames.length||animationFrames.length>=180)return;
+ stopPreview();animationFrames.splice(selectedFrame+1,0,copyFrame(animationFrames[selectedFrame]));selectedFrame++;updateFrameStrip();
+};
+$('removeFrame').onclick=()=>{if(!animationFrames.length)return;stopPreview();animationFrames.splice(selectedFrame,1);selectedFrame=Math.min(selectedFrame,animationFrames.length-1);updateFrameStrip();};
+$('clearFrames').onclick=()=>{setFrames([]);show('Animation cleared; the still image is preserved.');};
+$('leftFrame').onclick=()=>{if(selectedFrame<=0)return;stopPreview();[animationFrames[selectedFrame-1],animationFrames[selectedFrame]]=[animationFrames[selectedFrame],animationFrames[selectedFrame-1]];selectedFrame--;updateFrameStrip();};
+$('rightFrame').onclick=()=>{if(selectedFrame>=animationFrames.length-1)return;stopPreview();[animationFrames[selectedFrame+1],animationFrames[selectedFrame]]=[animationFrames[selectedFrame],animationFrames[selectedFrame+1]];selectedFrame++;updateFrameStrip();};
+$('publishAnimation').onclick=async()=>{
+ if(animationFrames.length<2)return show('Add at least two animation frames.');
+ stopPreview();setBusy(true);show('Publishing '+animationFrames.length+' 40×40 frames to Oracle…');
+ try{
+  const asset=await api('/api/curtain/assets',{
+   name:($('prompt').value.trim().slice(0,65)||'40x40 animation')+' animation',
+   frames:animationFrames.map(f=>base64(new Uint8Array(f.data))),
+   delays:animationFrames.map(()=>previewDelay()),quality:'rgbfull',loop:$('loop').checked
+  });
+  const payload={sha256:asset.sha256},id=await queue('asset',payload);
+  window.parent.JH2CurtainLastSelection={action:'asset',payload};
+  show('Animation asset saved. Command '+id+' queued; Nano is receiving frames over Oracle…');
+  const ms=await ack(id,120000);
+  show('Nano acknowledged first animation frame after '+(ms/1000).toFixed(2)+' seconds. Oracle continues streaming the remaining frames over BLE; inspect the curtain for the actual motion.');
+ }catch(e){show('Animation publish failed: '+e.message);}
+ finally{setBusy(false);}
+};
 $('stop').onclick=async()=>{try{const id=await queue('assetStop');show('Stop queued as command '+id);}catch(e){show(e.message);}};
 $('connection').onclick=async()=>{try{const x=await api('/api/curtain/status');$('testResult').textContent='Oracle '+(x.online?'CONNECTED':'OFFLINE')+' · Nano '+(x.firmware||'?')+' · Push '+(typeof x.pushConnected==='boolean'?(x.pushConnected?'CONNECTED':'DISCONNECTED (HTTPS fallback)'):'not reported by firmware 1.1.12')+' · Queue '+(x.queued||0);}catch(e){$('testResult').textContent=e.message;}};
 $('speed').onclick=async()=>{setBusy(true);let times=[];$('testResult').textContent='Testing Oracle → Nano…';
