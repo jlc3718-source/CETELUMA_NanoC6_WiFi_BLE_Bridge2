@@ -73,7 +73,7 @@ static void pushEvents(void*){
 }
 struct RelayStream {
  // Two independently adaptive producer/consumer windows. Reserve heap for
- // TLS, Wi-Fi and BLE, then use up to 80% of the remaining available RAM.
+ // TLS, Wi-Fi and BLE, then use up to 60% of the remaining available RAM.
  static constexpr size_t MIN_WINDOW=4096,SAFETY_RESERVE=96*1024;
  uint8_t* windows[2]{nullptr,nullptr};
  size_t windowCapacities[2]{0,0},windowCount=0;
@@ -92,7 +92,7 @@ struct RelayStream {
   // memory demand dynamically reduces or increases the safe buffer target.
   size_t pool=ESP.getFreeHeap()+windowCapacities[0]+windowCapacities[1];
   if(pool<=SAFETY_RESERVE+2*MIN_WINDOW)return MIN_WINDOW;
-  return std::min<size_t>(8U<<10,std::max(MIN_WINDOW,((((pool-SAFETY_RESERVE)*4)/5)/2/1024)*1024));
+  return std::min<size_t>(8U<<10,std::max(MIN_WINDOW,((((pool-SAFETY_RESERVE)*3)/5)/2/1024)*1024));
  }
  void reportWindows(){
   liveBufferWindows=uint8_t(windowCount);
@@ -435,4 +435,4 @@ void relayPauseForFirmwareCheck(bool hold){
 }
 void relayPrepareForUpdate(){generation++;streaming=false;syncNow=true;}
 void relayLocalOverride(bool resume){localUntil=resume?0:millis()+15*60000;generation++;streaming=false;syncNow=true;}
-void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=1;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=liveBufferBytes;out["ramBufferTargetBytes"]=liveBufferTargetBytes;out["ramBufferWindows"]=liveBufferWindows;out["ramBufferLimitPercent"]=80;out["ramBufferReserveBytes"]=96*1024;out["wakeSignalCount"]=wakeSignals;out["lastWakeAgoSeconds"]=lastWakeAt?(millis()-lastWakeAt)/1000:-1;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
+void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=1;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=liveBufferBytes;out["ramBufferTargetBytes"]=liveBufferTargetBytes;out["ramBufferWindows"]=liveBufferWindows;out["ramBufferLimitPercent"]=60;out["ramBufferReserveBytes"]=96*1024;out["wakeSignalCount"]=wakeSignals;out["lastWakeAgoSeconds"]=lastWakeAt?(millis()-lastWakeAt)/1000:-1;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
