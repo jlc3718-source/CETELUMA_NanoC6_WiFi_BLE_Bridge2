@@ -210,6 +210,67 @@ async function researchUpload(data,{replaceReserved=false,progress=()=>{},format
 async function aviUpload(bytes,options={}){
  return researchUpload(bytes,{...options,format:'AVI'});
 }
+// The vendor encoder returns a real DNMX/DNCX .eff with a temporary cloud CID.
+// Remap ONLY that video's CID to the reserved disposable CID 83928.
+function planVendorEff(data,cloudCid){
+ if(!(data instanceof Uint8Array)||data.length<8192||data.length>600000)throw Error('Vendor .eff has an unsafe size');
+ const kind=String.fromCharCode(...data.subarray(0,4));
+ if(kind!=='DNMX'&&kind!=='DNCX')throw Error('Vendor did not return DNMX/DNCX effect bytes');
+ const view=new DataView(data.buffer,data.byteOffset,data.byteLength);
+ if(data[5]!==1||view.getUint16(6,true)!==40||view.getUint16(8,true)!==40)
+  throw Error('Vendor effect is not a single 40x40 curtain animation');
+ const sourceCid=view.getUint32(14,true);
+ if(!Number.isSafeInteger(cloudCid)||cloudCid<=0||cloudCid!==sourceCid)
+  throw Error('Vendor effect CID is inconsistent with conversion response');
+ const offset=view.getUint32(128,true),frames=view.getUint16(134,true);
+ if(offset<4096||offset+4096>data.length||frames<2)throw Error('Converted effect does not contain a valid multi-frame native container');
+ // The backend has already verified the original returned file. Upload uses
+ // a local COPY, so the vendor bytes can be re-inspected separately.
+ const fixed=data.slice();
+ new DataView(fixed.buffer).setUint32(14,CID,true);
+ const chunks=Math.ceil(fixed.length/500),id=12;
+ if(chunks>1200)throw Error('Converted effect would require too many BLE packets');
+ const path=new TextEncoder().encode('83928.eff');
+ const field=(n,v)=>[(n<<3),...varint(v)];
+ const requestBody=Uint8Array.from([...field(1,id),...field(2,0),...field(3,fixed.length),...field(4,0),...field(5,chunks),...field(6,500),...field(7,0),66,...varint(path.length),...path,...field(9,CID)]);
+ const request=wrap(requestBody,id,chunks,chunks,true);
+ const parts=Array.from({length:chunks},(_,i)=>wrap(fixed.subarray(i*500,(i+1)*500),id,chunks,chunks-i-1));
+ for(const p of parts)if(p[7]!==crc8(p.slice(8)))throw Error('Vendor BLE packet CRC error');
+ return {request,parts,cloudCid,sourceCid,cid:CID,format:kind,bytes:fixed.length};
+}
+async function vendorUpload(data,cloudCid,progress=()=>{}){
+ const plan=planVendorEff(data,cloudCid); // Validate before any destructive command
+ const t=await connection();
+ try{
+  progress('Reading controller effect list…');
+  let before=await inventory(t),old=before.find(e=>e.cid===CID);
+  if(old){
+   progress('Replacing only reserved test effect CID 83928…');
+   await ddp(t,2909,CID);await sleep(600);
+   for(let i=0;i<2;i++){const current=await inventory(t);if(current.some(x=>x.cid===CID))throw Error('Reserved slot could not be verified empty; no upload attempted');}
+  }
+  progress('Sending manufacturer-converted '+plan.format+' effect ('+plan.bytes+' bytes)…');
+  const started=waitFor('start',30000);await t.writeUpload(plan.request);
+  const response=await started;
+  if((response[1]??0)!==0||(response[3]??0)!==0)
+   throw Error('Controller rejected converted .eff upload start: '+JSON.stringify(response));
+  const done=waitFor('end',Math.max(120000,plan.parts.length*1500));
+  for(let i=0;i<plan.parts.length;i++){
+   await t.writeUpload(plan.parts[i]);
+   if(i===0||(i+1)%10===0||i+1===plan.parts.length)progress('BLE '+(i+1)+'/'+plan.parts.length);
+   await sleep(25);
+  }
+  const end=await done;
+  if((end[1]??0)!==0)throw Error('Controller rejected converted effect completion: '+JSON.stringify(end));
+  progress('Verifying effect in controller inventory…');
+  await sleep(500);
+  const after=await inventory(t),newSlot=after.find(e=>e.cid===CID);
+  if(!newSlot||!Number.isInteger(newSlot.slot))throw Error('Native effect upload acknowledged, but CID 83928 was not stored; playback cancelled');
+  progress('Calling native Play for CID 83928, slot '+newSlot.slot+'…');
+  await ddp(t,2606,CID,newSlot.slot);
+  return {cid:CID,slot:newSlot.slot,format:plan.format,installed:true,playCommandSent:true,physicalPlaybackConfirmed:false};
+ }finally{t.close()}
+}
 async function playResearch(){
  const t=await connection();
  try{
@@ -219,5 +280,5 @@ async function playResearch(){
   return {cid:CID,slot:stored.slot,commandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close()}
 }
-window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,aviUpload,playResearch};
+window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,aviUpload,playResearch,planVendorEff,vendorUpload};
 })();

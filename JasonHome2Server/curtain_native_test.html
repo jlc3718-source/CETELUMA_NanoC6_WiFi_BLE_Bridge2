@@ -1,116 +1,76 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Jason Home 2 · Native Animation Test</title>
-<style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08131d;color:#edf8ff;font:15px system-ui;line-height:1.45}main{max-width:760px;margin:auto;padding:16px}
-h1{font-size:24px;margin:4px 0}h2{font-size:17px;margin:0 0 10px}.eyebrow{color:#7bd7cd;font-size:12px;letter-spacing:.1em;font-weight:bold}
-section{background:#152635;border:1px solid #385466;border-radius:16px;padding:17px;margin-bottom:14px}p{color:#c5d5dd}.hint{font-size:13px}
-button{font:inherit;font-weight:700;background:#284656;border:1px solid #548091;color:white;border-radius:9px;padding:12px;cursor:pointer}button.primary{background:#16836c;border-color:#36d2a6}button.danger{background:#643f32;border-color:#c6795a}button:disabled{opacity:.45}
-.buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}.buttons>*{flex:1 1 145px}
-label{display:block;margin:10px 0;color:#d6e7ef}input[type=text],input[type=number],input[type=file]{display:block;width:100%;margin:5px 0;padding:12px;background:#091b27;border:1px solid #57707c;border-radius:8px;color:white;font:inherit}
-input[type=checkbox]{width:auto;margin-right:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#08131d;padding:12px;border-radius:9px;max-height:310px;overflow:auto;color:#b9f0df}
-.preview{display:flex;gap:20px;align-items:center;flex-wrap:wrap}canvas{width:220px;max-width:100%;image-rendering:pixelated;border:2px solid #57707c;background:#000;aspect-ratio:1}#status{white-space:pre-wrap;color:#8ce9ce}
-</style></head><body><main>
-<section><div class="eyebrow">SMARTDAWN DN5E58 · 40 × 40</div><h1>🧪 Native Animation Test</h1>
-<p>Research workspace for non-scrolling, controller-stored animation. This is <strong>separate</strong> from the working Oracle streaming and 4 KB native buttons. The multi-frame DNMX file is reconstructed from SuperPix 4.4.1, not yet proven installable on this controller.</p>
-</section>
-<section><h2>1 · Choose test frames</h2><p class="hint">Use <strong>Test in Native tab</strong> from the Studio, or load the local blinking pumpkin sample. All output is exactly 40×40 pixels. No AI credits.</p>
-<div class="buttons"><button id="sample" class="primary">🎃 Load 4-frame sample</button><button id="previewBtn">▶ Preview frames</button><button id="pauseBtn">⏸ Pause</button></div>
-<div class="preview"><canvas id="preview" width="40" height="40"></canvas><div><p id="source">No animation received. Choose sample or send frames from Studio.</p><p id="frameInfo">0 frames</p><label>Frame delay for local preview (ms)<input type="number" id="delay" value="400" min="100" max="5000" step="50"></label></div></div></section>
-<section><h2>2 · Build &amp; inspect experimental native .eff</h2>
-<p class="hint">Generates DNMX RGB888 multi-frame data, validates headers, byte lengths, all 500-byte BLE packets, CRC-8 (0x97), and a full packet-byte reconstruction. The encoding is still experimental: passing these tests does not prove firmware compatibility.</p>
-<div class="buttons"><button id="dryRun" class="primary">✓ Build + dry-run upload</button><button id="saveAvi" type="button" disabled>🧪 Save AVI to slot &amp; test play</button><button id="download" disabled>⬇ Save candidate .eff</button><button id="report" disabled>⬇ Save diagnostic report</button></div><p class="hint">Save AVI now <strong>uploads a raw 40×40 RGB24 AVI directly to disposable CID 83928</strong>, using experimental video type 0 and the path <code>83928.avi</code>. First enable the test and enter the CID in section 4 below. After an acknowledged upload and a verified catalog entry, it sends Play. This raw-AVI path is <strong>unverified</strong>; SuperPix normally converts video to .eff, and the firmware may reject raw AVI.</p>
-<pre id="reportText">No test run yet.</pre></section>
-<section><h2>3 · Read controller inventory (no changes)</h2><p class="hint">Checks whether reserved CID <strong>83928</strong> exists before any experimental installation. This only reads controller metadata; factory effects and schedules are not changed.</p>
-<div class="buttons"><button id="readInventory" class="primary">🔍 Read slots &amp; test support</button></div><pre id="inventoryText">Not connected or inspected.</pre></section>
-<section><h2>4 · Opt-in hardware experiment</h2>
-<p>⚠️ Your controller previously reported <strong>videoMakeEnabled=false</strong> / <strong>vidUpload=0</strong>. A DNMX type-0 install might be rejected. The reserved test CID is <strong>83928 only</strong>. No other CID, Nano firmware, or Oracle schedule may be changed.</p>
-<label><input id="allowWrite" type="checkbox">Enable experimental CID 83928 upload (DNMX or raw AVI)</label>
-<label><input id="allowReplace" type="checkbox">I understand that uploading either AVI or DNMX to an occupied CID 83928 will erase the current disposable test effect first, and its bytes cannot be recovered over BLE.</label>
-<label>Type reserved CID to unlock the experiment<input id="targetCid" type="text" inputmode="numeric" autocomplete="off" placeholder="83928"></label>
-<div class="buttons"><button id="upload" class="danger" disabled>⚠️ Test install to CID 83928</button><button id="play" disabled>▶ Test play installed CID 83928</button></div>
-<p id="status" role="status">No test transmitted. For Save AVI: select frames, enable the test below, type 83928, and press Save AVI to slot & test play.</p>
-<p class="hint">An ACK and catalog entry mean upload success, <em>not</em> proof of correct visual playback or no-scroll behavior. Inspect the curtain physically before marking the format verified. If the experiment fails, the working Oracle streamed animations remain unchanged.</p></section>
-</main>
-<script src="curtain_native_research.js"></script><script src="curtain_native_slot.js"></script>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jason Home 2 · Native Curtain Test</title>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{background:#08131d;color:#edf8ff;font:15px system-ui;margin:0}main{max-width:640px;margin:auto;padding:17px}
+h1{font-size:21px}section{padding:20px;background:#152635;border:1px solid #385466;border-radius:16px}
+.buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:14px 0}
+button{background:#19866c;border:1px solid #50cfb5;color:white;border-radius:10px;padding:17px 13px;font:inherit;font-weight:700;cursor:pointer}
+button:disabled{opacity:.45}canvas{width:200px;max-width:100%;image-rendering:pixelated;background:#000;border:1px solid #506a7c;border-radius:8px}
+p{color:#bcd0d9}#status{white-space:pre-wrap;font-size:14px;line-height:1.5;color:#a5f1d3;min-height:58px}
+</style></head><body><main><section><h1>🎞️ Native Curtain Test</h1>
+<canvas id="preview" width="40" height="40" aria-label="40×40 test animation preview"></canvas>
+<div class="buttons">
+<button id="load" type="button">1. Load Test AVI</button>
+<button id="convert" type="button" disabled>2. Convert &amp; Send to Controller</button>
+</div><p id="status" role="status">Select Load Test AVI to prepare a small 40×40 animation.</p>
+</section></main>
+<script src="curtain_native_research.js"></script>
+<script src="curtain_native_slot.js"></script>
 <script>
 (()=>{'use strict';
 const $=id=>document.getElementById(id),R=window.JH2NativeResearch,N=window.JH2NativeSlot;
-let frames=[],frameDelay=400,candidate=null,plan=null,inventory=null,report=null,timer=null,index=0,operation=false;
-const preview=$('preview').getContext('2d',{willReadFrequently:true});
-function say(s){$('status').textContent=s}
-function updateGate(){$('saveAvi').disabled=operation||frames.length<2;const good=Boolean(plan&&inventory&&!operation&&$('allowWrite').checked&&$('targetCid').value.trim()==='83928'&&(!inventory.some(x=>x.cid===83928)||$('allowReplace').checked));$('upload').disabled=!good;$('play').disabled=operation||!inventory?.some(x=>x.cid===83928);}
-function refreshHeight(){if(window.parent!==window)window.parent.postMessage({kind:'jh2-curtain-height',height:document.documentElement.scrollHeight},location.origin)}
-function showFrame(){if(!frames.length)return;const bytes=frames[index%frames.length];const img=preview.createImageData(40,40);img.data.set(bytes);preview.putImageData(img,0,0);$('frameInfo').textContent='Frame '+(index%frames.length+1)+' / '+frames.length;}
-function halt(){if(timer!==null){clearInterval(timer);timer=null;}}
-function start(){halt();if(!frames.length)return;frameDelay=Math.max(100,Math.min(5000,Number($('delay').value)||400));timer=setInterval(()=>{index=(index+1)%frames.length;showFrame()},frameDelay);}
-function loadFrames(list,label,delay){halt();if(!Array.isArray(list)||list.length<2||list.length>R.MAX_FRAMES)throw Error('Provide 2–24 frames');const fresh=list.map(x=>new Uint8ClampedArray(x.data||x));for(const f of fresh)if(f.length!==6400)throw Error('Only exact 40×40 RGBA frames are supported');frames=fresh;index=0;candidate=null;plan=null;inventory=null;report=null;$('source').textContent=label;$('delay').value=String(Math.max(100,Math.min(5000,Number(delay)||400)));$('saveAvi').disabled=false;$('download').disabled=true;$('report').disabled=true;$('reportText').textContent='Frames changed. Run a fresh dry-run before any upload.';$('inventoryText').textContent='Inventory must be checked again before installing.';updateGate();showFrame();refreshHeight();}
-function save(name,data,type){const blob=data instanceof Blob?data:new Blob([data],{type:type||'application/octet-stream'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),15000);}
-$('sample').onclick=()=>{try{loadFrames(R.sampleFrames(),'4-frame blinking pumpkin test (no AI)',400)}catch(e){say(e.message)}};
-$('previewBtn').onclick=start;$('pauseBtn').onclick=halt;$('delay').onchange=()=>{if(timer!==null)start()};
-$('dryRun').onclick=async()=>{try{
- if(!frames.length)throw Error('Import an animation or choose the sample first.');
- candidate=R.encode(frames);plan=R.planUpload(candidate);inventory=null;updateGate();
- // Browser crypto digest provides additional round-trip evidence but is not required for packet validation.
- let digest='unavailable';if(crypto?.subtle){const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',candidate));digest=[...hash].map(x=>x.toString(16).padStart(2,'0')).join('');}
- report={createdAt:new Date().toISOString(),source:$('source').textContent,frameDelayLocalPreviewMs:Number($('delay').value),timingInDNMXVerified:false,firmwareCapabilityReported:{videoMakeEnabled:false,vidUpload:0},sha256:digest,format:plan.meta,transport:{opcodeStart:2930,uploadType:0,framesize:500,parts:plan.chunks,crc8Polynomial:'0x97',simulator:'passed'},hardwareResult:'NOT TESTED'};
- $('reportText').textContent=JSON.stringify(report,null,2);$('download').disabled=false;$('report').disabled=false;$('inventoryText').textContent='Dry-run passed. Read live inventory before testing.';say('DNMX file built; '+plan.chunks+' BLE chunks validated. No controller write has occurred.');refreshHeight();
- }catch(e){candidate=null;plan=null;report=null;updateGate();$('reportText').textContent='Dry-run failed: '+e.message;say('No upload: '+e.message)}};
-$('saveAvi').onclick=async()=>{
- if(operation)return;
- if(frames.length<2)return say('Select the sample animation or send Studio frames first.');
- if(!$('allowWrite').checked||$('targetCid').value.trim()!=='83928')
-  return say('AVI test is locked. In section 4, enable the experimental upload and type 83928. This is not a local download.');
- let avi,aviPlan;
- try{
-  avi=R.makeAvi(frames,Math.max(100,Math.min(5000,Number($('delay').value)||400)));
-  aviPlan=R.planAviUpload(avi.bytes);
-  if(aviPlan.meta.cid!==83928||aviPlan.path!=='83928.avi')
-   throw Error('AVI target mismatch');
- }catch(e){return say('AVI packet simulation failed before any BLE writes: '+e.message)}
- operation=true;updateGate();
- try{
-  say('AVI dry-run passed: '+aviPlan.chunks+' CRC-verified chunks. Reading controller inventory before writing…');
-  const before=await N.inspect();inventory=before;
-  const occupied=before.some(x=>x.cid===83928);
-  if(occupied&&!$('allowReplace').checked)
-   throw Error('CID 83928 is occupied. Check the section 4 reserved-slot replacement consent box if you want to replace this disposable test effect.');
-  const notice='RAW AVI EXPERIMENT: transmit '+avi.bytes.length+' bytes as type=0 path 83928.avi to reserved CID 83928 only. '+
-   (occupied?'The old test effect in 83928 WILL BE DELETED and cannot be recovered over BLE. ':'The reserved CID currently appears empty. ')+
-   'SuperPix normally converts AVI to .eff. This may fail or be rejected. If installed, the app will try to play it. Continue?';
-  if(!window.confirm(notice)){say('AVI test cancelled. No slot was changed.');return}
-  say('Confirmed raw AVI trial. Sending only to reserved CID 83928…');
-  const result=await N.aviUpload(avi.bytes,{replaceReserved:occupied,progress:say});
-  inventory=await N.inspect();
-  const stored=inventory.find(x=>x.cid===83928);
-  if(!result.acknowledged||!stored||stored.slot!==result.slot)
-   throw Error('AVI transfer did not produce a verified effect slot; playback cancelled');
-  say('Controller acknowledged AVI upload; CID 83928 is visible in slot '+stored.slot+'. Sending test Play…');
-  const played=await N.playResearch();
-  say('AVI transmission ACKNOWLEDGED; CID 83928 is in slot '+played.slot+'. Play command sent. Check the curtain: does the animation actually display without scrolling? Physical playback is NOT yet verified.');
- }catch(e){
-  inventory=null;
-  say('Raw AVI hardware test was rejected or failed: '+e.message+'\nExisting Oracle streaming is unchanged. If replacement began, the previous reserved test effect may require restoration.');
- }finally{operation=false;updateGate();refreshHeight()}
+const ctx=$('preview').getContext('2d'),api=(path,body)=>window.parent.JH2CurtainApi(path,body);
+let frames=null,avi=null,busy=false,timer=null;
+function show(message){$('status').textContent=message;}
+function update(){ $('load').disabled=busy; $('convert').disabled=busy||!avi; }
+function display(){
+ if(!frames?.length)return;
+ let idx=0;const paint=()=>{const image=ctx.createImageData(40,40);image.data.set(frames[idx++%frames.length]);ctx.putImageData(image,0,0);};
+ if(timer)clearInterval(timer);paint();timer=setInterval(paint,400);
+}
+function load(list,label){
+ if(!Array.isArray(list)||list.length<2||list.length>24||list.some(f=>!(f instanceof Uint8Array||f instanceof Uint8ClampedArray||Array.isArray(f))||f.length!==6400))throw Error('Test must contain 2–24 complete 40×40 RGBA frames');
+ frames=list.map(f=>new Uint8ClampedArray(f));
+ avi=R.makeAvi(frames,400);
+ if(avi.bytes.length>800000)throw Error('Test video exceeds manufacturer upload limit');
+ R.inspectAvi(avi.bytes);
+ display();update();show(label+' loaded: '+avi.frames+' frames, '+avi.width+'×'+avi.height+' AVI ('+Math.round(avi.bytes.length/1024)+' KB).');
+}
+function base64(bytes){let s='';for(let i=0;i<bytes.length;i+=1024)s+=String.fromCharCode(...bytes.subarray(i,i+1024));return btoa(s);}
+const sleep=ms=>new Promise(ok=>setTimeout(ok,ms));
+$('load').onclick=()=>{
+ if(busy)return;try{load(R.sampleFrames(),'Test AVI')}catch(e){show('Load failed: '+e.message)}
 };
-$('download').onclick=()=>{if(candidate)save('JH2_CID83928_DNMX_RESEARCH_UNVERIFIED.eff',candidate)};
-$('report').onclick=()=>{if(report)save('JH2_Native_Test_Report.json',JSON.stringify(report,null,2),'application/json')};
-$('readInventory').onclick=async()=>{if(operation)return;operation=true;updateGate();say('Reading SmartDawn effect list (2904), no storage writes…');try{inventory=await N.inspect();$('inventoryText').textContent='Total catalog entries: '+inventory.length+'\nReserved CID 83928: '+(inventory.find(x=>x.cid===83928)?JSON.stringify(inventory.find(x=>x.cid===83928)):'EMPTY')+'\nVideo upload capability: not established by inventory.\nNo changes made.';say('Inventory read. Test slot is '+(inventory.some(x=>x.cid===83928)?'occupied':'empty')+'.');}catch(e){inventory=null;$('inventoryText').textContent='Read failed: '+e.message;say('No controller write attempted.')}finally{operation=false;updateGate();refreshHeight()}};
-for(const id of ['allowWrite','allowReplace','targetCid'])$(id).addEventListener(id==='targetCid'?'input':'change',updateGate);
-$('upload').onclick=async()=>{if(operation||!plan||!inventory||!$('allowWrite').checked||$('targetCid').value.trim()!=='83928'||(inventory.some(x=>x.cid===83928)&&!$('allowReplace').checked))return;
- const occupied=inventory.some(x=>x.cid===83928);
- if(!window.confirm('EXPERIMENTAL SmartDawn video upload, type 0, CID 83928 ONLY. '+(occupied?'This will erase the existing reserved test effect and cannot restore its unknown bytes. ':'')+'Firmware compatibility is unverified. Proceed?'))return;
- operation=true;updateGate();say('Rechecking controller inventory before experimental upload…');
- try{const result=await N.researchUpload(candidate,{replaceReserved:occupied,progress:say});
-  inventory=await N.inspect();const slot=inventory.find(x=>x.cid===83928);
-  if(report){report.hardwareResult={uploadAcknowledged:!!result.acknowledged,catalogVerified:!!slot,slot:slot?.slot??null,physicalPlaybackConfirmed:false};$('reportText').textContent=JSON.stringify(report,null,2)}
-  say('Controller upload was acknowledged and CID 83928 appears in inventory (slot '+result.slot+'). Use Test play, then confirm visible no-scroll motion yourself.');}
- catch(e){inventory=null;if(report){report.hardwareResult={result:'error',message:e.message};$('reportText').textContent=JSON.stringify(report,null,2)}say('Experimental upload failed or was rejected: '+e.message+'\nWorking Oracle animation is unchanged. Reserved slot may need recovery if replacement was selected.');}
- finally{operation=false;updateGate();refreshHeight()}
+$('convert').onclick=async()=>{
+ if(busy||!avi)return;
+ busy=true;update();
+ try{
+  show('Uploading AVI to SuperPix conversion server…');
+  const start=await api('/api/curtain/vendor-video/start',{avi:base64(avi.bytes)});
+  if(!start?.jobId)throw Error('Manufacturer did not start a conversion job');
+  let ready=null;
+  for(let i=0;i<48;i++){
+   show('SuperPix is converting 40×40 AVI to native .eff… ('+(i+1)+'/48)');
+   await sleep(3000);
+   const result=await api('/api/curtain/vendor-video/status?id='+encodeURIComponent(start.jobId));
+   if(result.state==='ready'){ready=result;break}
+  }
+  if(!ready)throw Error('SuperPix conversion did not complete in the supported window');
+  if(typeof ready.eff!=='string'||!Number.isSafeInteger(ready.cid))throw Error('Manufacturer returned incomplete native effect');
+  const bytes=Uint8Array.from(atob(ready.eff),c=>c.charCodeAt(0));
+  // Strict native format and CID validation BEFORE touching reserved test slot.
+  N.planVendorEff(bytes,ready.cid);
+  show('Manufacturer converted AVI to '+ready.format+' ('+Math.round(bytes.length/1024)+' KB). Installing reserved CID 83928…');
+  const result=await N.vendorUpload(bytes,ready.cid,show);
+  show('CID '+result.cid+' saved to controller slot '+result.slot+'. Native Play command sent. Confirm animation on curtain.');
+ }catch(e){show('Could not complete manufacturer conversion or controller playback: '+e.message);}
+ finally{busy=false;update()}
 };
-$('play').onclick=async()=>{if(operation||!inventory?.some(x=>x.cid===83928))return;operation=true;updateGate();try{const result=await N.playResearch();say('Play command sent for reserved CID 83928, slot '+result.slot+'. Observe the curtain to confirm actual motion; this is not hardware verification by software.');}catch(e){say('Play attempt failed: '+e.message)}finally{operation=false;updateGate()}};
-window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==window.parent)return;const m=event.data||{};if(m.kind!=='jh2-native-test-frames')return;try{loadFrames(m.frames,'Animation from Image / GIF Studio ('+m.frames.length+' frames)',m.delay);say('Studio frames received. Start with Build + dry-run upload.')}catch(e){say('Studio import rejected: '+e.message)}});
-window.addEventListener('load',()=>{if(window.parent!==window)window.parent.postMessage({kind:'jh2-native-test-ready'},location.origin);refreshHeight()});
-new ResizeObserver(refreshHeight).observe(document.body);updateGate();refreshHeight();
+window.addEventListener('message',e=>{
+ if(e.origin!==location.origin||e.source!==window.parent||e.data?.kind!=='jh2-native-test-frames'||busy)return;
+ try{load(e.data.frames,'Studio animation')}catch(err){show(err.message)}
+});
+function resize(){if(window.parent!==window)window.parent.postMessage({kind:'jh2-curtain-height',height:Math.max(500,document.documentElement.scrollHeight)},location.origin)}
+window.addEventListener('load',()=>{resize();if(window.parent!==window)window.parent.postMessage({kind:'jh2-native-test-ready'},location.origin)});
+update();
 })();
 </script></body></html>

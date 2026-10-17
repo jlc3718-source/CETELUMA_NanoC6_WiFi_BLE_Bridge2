@@ -119,6 +119,16 @@ if old_sync in live:
  assert live.count(old_sync)==1 and live.count(bridge_init)==1
  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
+# Vendor's verified cloud API conversion remains isolated from Eufy/Nano logic.
+vendor_import='import {createVendorVideo} from "./curtain_vendor_video.mjs";'
+if vendor_import not in live:live=vendor_import+'\n'+live
+vendor_init='const vendorVideo=createVendorVideo(curtainRelay);'
+if vendor_init not in live:
+ assert live.count(bridge_init)==1, 'Native conversion missing dedicated curtain bridge'
+ live=live.replace(bridge_init,bridge_init+'\n'+vendor_init,1)
+assert live.count(vendor_init)==1 and live.index(bridge_init)<live.index(vendor_init)
+assert '/api/curtain/vendor-video/start' in live and '/api/curtain/vendor-video/status' in live
+
 # The installed gateway may predate its static allowlist. Add exactly one
 # authenticated static handler without replacing the user's existing gateway.
 # authenticatedRead is called only AFTER the session check.
@@ -138,7 +148,7 @@ if 'path==="/curtain_native_test.html"' not in live or 'path==="/curtain_native_
 assert 'path==="/curtain_native_test.html"' in live and 'path==="/curtain_native_research.js"' in live, 'Research iframe static routes not installed'
 (stage/'server.mjs').write_text(live)
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
-for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs','curtain_pixel_grid.mjs','curtain_shape_art.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
+for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs','curtain_pixel_grid.mjs','curtain_shape_art.mjs','curtain_vendor_video.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
 for name in ['curtain.js','curtain_converter.html','curtain_native_slot.js','curtain_native_test.html','curtain_native_research.js','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
