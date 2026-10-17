@@ -1,0 +1,56 @@
+name: Jason Home 2 OTA Network and TLS Diagnostics
+on:
+  push:
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    paths: ['.github/workflows/jh2-ota-live-network-check.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  ota-network:
+    name: Check Oracle HTTPS, public signed firmware, and live Nano status (read only)
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Check public URLs and certificate chains
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import socket,ssl,urllib.request,urllib.error,json,subprocess,time
+          hosts=[('150.136.245.51',443),('raw.githubusercontent.com',443),('github.com',443)]
+          for host,port in hosts:
+            try:
+              start=time.monotonic()
+              conn=socket.create_connection((host,port),timeout=7)
+              print('TCP',host,'connected_in',round((time.monotonic()-start)*1000),'ms',flush=True)
+              try:
+                conn.settimeout(7)
+                tls=ssl.create_default_context().wrap_socket(conn,server_hostname=host)
+                print('TLS',host,'protocol',tls.version(),'verified',True,'SAN',tls.getpeercert().get('subjectAltName',[])[:6],flush=True)
+                tls.close()
+              except Exception as e:print('TLS_FAILURE',host,type(e).__name__,str(e)[:200],flush=True)
+            except Exception as e:print('TCP_FAILURE',host,type(e).__name__,str(e)[:200],flush=True)
+          urls=[
+            'https://150.136.245.51/jason-home-2/api/curtain/firmware-manifest',
+            'https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json',
+            'http://127.0.0.1:8081/api/curtain/firmware-manifest'
+          ]
+          for url in urls:
+            try:
+              start=time.monotonic()
+              with urllib.request.urlopen(url,timeout=11) as response:
+                data=response.read(20000)
+                print('MANIFEST',url.split('/')[2],'http',response.status,'bytes',len(data),'elapsedMs',round((time.monotonic()-start)*1000),'signed',b'signature' in data,flush=True)
+            except Exception as e:print('MANIFEST_FAILED',url.split('/')[2],type(e).__name__,str(e)[:200],flush=True)
+          try:
+            inspect=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+            env=dict(v.split('=',1) for v in inspect['Config']['Env'] if '=' in v)
+            token=env['JASON_HOME_API_TOKEN']
+            request=urllib.request.Request('http://127.0.0.1:8081/api/session',
+              data=json.dumps({'token':token}).encode(),headers={'content-type':'application/json'},method='POST')
+            with urllib.request.urlopen(request,timeout=8) as f:
+              cookie=f.headers.get('set-cookie','').split(';')[0]
+            req=urllib.request.Request('http://127.0.0.1:8081/api/curtain/status',headers={'Cookie':cookie})
+            with urllib.request.urlopen(req,timeout=8) as response:s=json.load(response)
+            print('NANO',{'online':s.get('online'),'firmware':s.get('firmware'),'freeHeap':s.get('freeHeap'),'pushConnected':s.get('pushConnected'),'pushSubscribers':s.get('pushSubscribers'),'relayStreaming':s.get('relayStreaming'),'queue':s.get('queued'),'lastSync':s.get('lastSync'),'lastSeen':s.get('lastSeen')},flush=True)
+          except Exception as e:print('NANO_STATUS_FAILED',type(e).__name__,str(e)[:200],flush=True)
+          PY
