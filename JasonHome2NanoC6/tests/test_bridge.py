@@ -128,6 +128,11 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn('mbedtls_pk_verify',fw)
   self.assertIn('m.url!=expected',fw)
   self.assertNotIn('setInsecure(',fw)
+ def test_fast_1_2_second_oracle_fallback_with_validated_push(self):
+  relay=(R/'src/OracleRelay.cpp').read_text()
+  self.assertIn('nextSync=millis()+1200',relay)
+  self.assertIn('out["pollSeconds"]=1',relay)
+  self.assertIn('wait?after=',relay)
  def test_oracle_persistent_push_and_single_image_stream(self):
   relay=(R/'src/OracleRelay.cpp').read_text()
   server=(R.parent/'JasonHome2Server/server.mjs').read_text()
