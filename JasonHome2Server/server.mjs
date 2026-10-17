@@ -915,7 +915,7 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_quality.js","curtain_image_headers.js","nano_sync.js","curtain_remote.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_native_slot.js","curtain_quality.js","curtain_image_headers.js","nano_sync.js","curtain_remote.js"]);
   if(!allowed.has(name)&&!/^curtain_real_(?:0[0-9]|10)\.js$/.test(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
