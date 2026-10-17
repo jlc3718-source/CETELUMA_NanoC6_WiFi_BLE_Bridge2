@@ -15,8 +15,9 @@ const INBOUND_WAIT_MS=45000; // Oracle -> Nano command and Nano -> Oracle notifi
 let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
 let lastSentOpcode=null,transmittedRequests=0,lastNativeRcode=null;
 // DN5E58 has 87 recovered factory effects; the controller can contain more.
-const KNOWN_FACTORY_EFFECTS=87;
+const KNOWN_FACTORY_EFFECTS=88; // October 15 original stock E-0...E-87 (plus any user-created effects)
 let inventoryResponseAt=0,inventoryBatchCount=0,inventoryUniqueFrames=new Set();
+const initializedReadConnections=new WeakSet();
 let uploadSessionSequence=0,lastUploadSessionId=0,uploadResponses=[];
 function nextUploadSessionId(){
  // Both original applications use a new upload message ID per transfer.
@@ -38,28 +39,28 @@ function decodeVarint(b,i){let v=0,f=1;for(let k=0;k<10;k++){if(i>=b.length)thro
 function proto(b){let p=0,out=[];while(p<b.length){let t;[t,p]=decodeVarint(b,p);const field=Math.floor(t/8),wire=t&7;let v;if(wire===0)[v,p]=decodeVarint(b,p);else if(wire===2){let n;[n,p]=decodeVarint(b,p);if(p+n>b.length)throw Error('Truncated protobuf field');v=b.slice(p,p+n);p+=n;}else if(wire===5){p+=4;continue;}else if(wire===1){p+=8;continue;}else throw Error('Unrecognized protobuf wire');out.push([field,v,wire]);}return out;}
 // Actual SuperPix 4.4.1 EffectList protobuf. Preserve every EffectInfo,
 // including slot/id 0 (protobuf defaults omitted from the wire).
-function decodeEffects(body){
+// Restored October 15 working EffectList field mapping and CID-based acceptance.
+// Each 2904 reply contains an array of nested EffectInfo protobuf records.
+// Missing zero-valued protobuf fields are zero, never a reason to discard E-0.
+function newEffectList(data){
  const out=[];
- for(const [field,buf,wire] of proto(body)){
-  if(field!==1||wire!==2)continue;
-  const entry={id:0,slot:0,type:0,cid:null,title:'',bookmark:0,diy:0};
-  for(const [f,v,w] of proto(buf)){
-   if(w===0){
-    if(f===1)entry.id=v;
-    if(f===2)entry.type=v;
-    if(f===3)entry.slot=v;
-    if(f===4)entry.cid=v;
-    if(f===5)entry.bookmark=v;
-    if(f===7)entry.diy=v;
-   }else if(w===2&&f===6){
-    entry.title=new TextDecoder().decode(v).slice(0,120);
-   }
+ for(const [f,v,w] of proto(data)){
+  if(f!==1||w!==2)continue;
+  const item={id:0,type:0,slot:0,cid:null,title:''};
+  for(const [k,t,ww] of proto(v)){
+   if(ww===0){
+    if(k===1)item.id=t;
+    if(k===2)item.type=t;
+    if(k===3)item.slot=t;
+    if(k===4)item.cid=t;
+   }else if(k===6&&ww===2)item.title=new TextDecoder().decode(t).slice(0,120);
   }
-  if(Number.isSafeInteger(entry.slot)&&entry.slot>=0&&Number.isSafeInteger(entry.id)&&entry.id>=0)
-   out.push(entry);
+  // This is the same acceptance criterion as October's successful reader.
+  if(item.cid!=null)out.push(item);
  }
  return out;
 }
+function decodeEffects(body){return newEffectList(body);}
 function callback(name){if(name==='start')return startWait;if(name==='end')return endWait;return inventoryWait;}
 function signal(name,data){const c=callback(name);if(!c)return;if(name==='start')startWait=null;else if(name==='end')endWait=null;else inventoryWait=null;clearTimeout(c.timer);c.resolve(data);}
 function waitFor(name,ms){if(callback(name))throw Error('Native upload already waiting for '+name);
@@ -89,7 +90,7 @@ function receive(view){
  const size=parts.reduce((a,p)=>a+p.length,0),data=new Uint8Array(size);let at=0;
  for(const p of parts){data.set(p,at);at+=p.length;}
  // SuperPix's DDP decoder accepts all extended flags >= 0xF0, not just F1.
- if(data.length<20||data[0]<0xf0)return;
+ if(data.length<20||(data[0]!==0xf1&&data[0]!==0xf0)||data[1]!==1)return; // Original F1 plus previously observed F0
  const op=data[6]*256+data[7],body=data.slice(20);
  lastSmartDawnOp=op;lastNativeRcode=data[14];
  if(op>=2931&&op<=2934){
@@ -111,7 +112,7 @@ function receive(view){
    inventoryResponseAt=Date.now();
    seenInventory=true;
    for(const entry of entries){
-    const keyOf=e=>e.cid===null?'unknown:'+e.id+':'+e.slot:e.cid+':'+e.slot;
+    const keyOf=e=>e.cid+':'+e.slot; // October 15 catalog identity
     const key=keyOf(entry),n=catalog.findIndex(e=>keyOf(e)===key);
     if(n>=0)catalog[n]={...catalog[n],...entry};
     else catalog.push(entry);
@@ -221,59 +222,57 @@ async function ddp(t,op,n1,n2,body){
   transmittedRequests++;lastSentOpcode=op;
   await sleep(10);}
 }
-async function inventory(t,progress=()=>{},{quietMs=11000,maxMs=76000,minExpected=KNOWN_FACTORY_EFFECTS}={}){
- // SuperPix retains EffectList across MULTIPLE opcode-2904 responses.
- // The first reply may have only 19 effects from one CID. Wait for the
- // actual multi-batch stream to become quiet (two Nano poll cycles).
- const start=Date.now(),before=observedNotifications;
+async function inventory(t,progress=()=>{},{quietMs=11500,maxMs=98000,minExpected=KNOWN_FACTORY_EFFECTS}={}){
+ // Restored October 15 controller read sequence: 205 -> 167 -> 2904.
+ // Oracle/Nano is not a direct BLE connection: keep collecting 2904
+ // notifications through the relay after each command, without resetting the
+ // catalog on the first response or reporting a 19-entry group as complete.
+ const startAt=Date.now(),before=observedNotifications;
  catalog=[];packetResponses.clear();seenInventory=false;
  inventoryResponseAt=0;inventoryBatchCount=0;inventoryUniqueFrames.clear();
- let lastError=null;
+ if(!initializedReadConnections.has(t)){
+  // October 15 proven connect sequence is performed ONCE per BLE session,
+  // not on every inventory read during erase/verify/upload.
+  progress('Initializing original SmartDawn read session (205 → 167)…');
+  await ddp(t,205);
+  await ddp(t,167);
+  initializedReadConnections.add(t);
+  await sleep(150);
+ }
  for(let attempt=1;attempt<=2;attempt++){
-  progress(attempt===1?'Reading all controller effect-list batches (2904)…':
-   'Only '+catalog.length+' of at least '+minExpected+' expected effects returned; requesting remaining batches…');
-  const already=inventoryBatchCount,waiter=waitFor('inventory',attempt===1?22000:INBOUND_WAIT_MS);
+  const previous=inventoryBatchCount;
+  progress(attempt===1?'Reading controller effect catalog (2904)…':
+   'Verifying full catalog with original 2904 refresh ('+catalog.length+' entries received)…');
+  const waiter=waitFor('inventory',INBOUND_WAIT_MS);
   waiter.catch(()=>{});
   try{
-   if(attempt===2&&!seenInventory){
-    progress('Establishing SmartDawn read session (205)…');
-    await ddp(t,205,undefined,undefined,Uint8Array.from([10,0,16,0,26,0]));
-    await sleep(650);
-   }
    await ddp(t,2904);
-   if(already)inventoryResponseAt=Date.now(); // Allow time for the second response stream to arrive.
-   if(!already)await waiter;
-   else{
-    // Second read of an existing list may replay a packet we already have.
-    // Do not block for an unnecessary new or duplicate packet ACK.
-    if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
-   }
+   if(previous===0)await waiter;
+   else if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
   }catch(error){
-   lastError=error;
    if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
-   if(!seenInventory&&attempt===1)continue;
-   if(!seenInventory)throw Error(error.message+' ('+(observedNotifications-before)+
-     ' BLE notifications; last native opcode '+(lastSmartDawnOp??'none')+
-     '). No controller slot changed.');
+   if(attempt===2&&!seenInventory)throw Error('Original 2904 reader received no effect list: '+error.message);
+   if(!seenInventory)continue;
   }
-  // The BLE receiver keeps merging lists while the API waits.
-  // Only return after 11 seconds without a NEW native 2904 response,
-  // not immediately after the first 19-entry chunk.
-  while(inventoryResponseAt&&Date.now()-inventoryResponseAt<quietMs&&Date.now()-start<maxMs){
-   await sleep(Math.min(300,quietMs));
-  }
-  if(catalog.length>=minExpected||Date.now()-start>=maxMs)break;
+  if(previous>0&&inventoryResponseAt)inventoryResponseAt=Date.now();
+  // Allow two full 5-second NanoC6 relay polls after the LAST incoming list.
+  while(inventoryResponseAt&&Date.now()-inventoryResponseAt<quietMs&&Date.now()-startAt<maxMs)
+   await sleep(200);
+  if(Date.now()-startAt>=maxMs)break;
+  // Always perform the second read, even after an apparently complete first
+  // batch. That was how the original reader verified erase and replacement.
  }
- if(!seenInventory)throw Error((lastError?.message||'SmartDawn inventory response timeout')+
-  '; 0 complete 2904 replies observed. No controller slot changed.');
- const result=catalog.slice().sort((a,b)=>a.id-b.id||a.slot-b.slot||(a.cid??0)-(b.cid??0));
- const partial=result.length<minExpected;
- result.partial=partial;result.batches=inventoryBatchCount;result.expectedAtLeast=minExpected;
- lastInventoryRead={at:new Date().toISOString(),count:result.length,batches:inventoryBatchCount,partial,notifications:observedNotifications-before};
- progress((partial?'Partial inventory: ':'Controller inventory: ')+result.length+
-  ' effects in '+inventoryBatchCount+' response batches'+(partial?' (expected at least '+minExpected+').':' complete enough for known factory catalog.')+
-  ' Last request '+(lastSentOpcode??'none')+', last reply '+(lastSmartDawnOp??'none')+
-  ', return code '+(lastNativeRcode??'none')+'.');
+ if(!seenInventory)throw Error('Controller returned no 2904 EffectList. Nothing deleted or uploaded.');
+ const result=catalog.slice().sort((a,b)=>a.id-b.id||a.slot-b.slot||a.cid-b.cid);
+ result.partial=result.length<minExpected;
+ result.batches=inventoryBatchCount;
+ result.expectedAtLeast=minExpected;
+ lastInventoryRead={at:new Date().toISOString(),count:result.length,batches:inventoryBatchCount,
+  partial:result.partial,notifications:observedNotifications-before};
+ progress((result.partial?'Partial':'Read')+' native catalog: '+result.length+
+  ' records from '+inventoryBatchCount+' distinct controller responses'+
+  (result.partial?'; expected at least '+minExpected+' factory effects. Upload and delete blocked.':'')+
+  ' · last reply '+(lastSmartDawnOp??'none'));
  return result;
 }
 async function upload(bytes,progress=()=>{}){

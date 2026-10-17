@@ -142,13 +142,13 @@ test('each native AVI upload gets a fresh SmartDawn session ID and waits for act
 test('slot inspector preserves all inventory entries and gives a relay-safe notification deadline',()=>{
  const source=read('curtain_native_slot.js'),page=read('curtain_native_test.html');
  assert.match(source,/const INBOUND_WAIT_MS=45000/);
- assert.match(source,/waiter=waitFor\('inventory',attempt===1\?22000:INBOUND_WAIT_MS\)/);
+ assert.match(source,/const waiter=waitFor\('inventory',INBOUND_WAIT_MS\)/);
  assert.match(source,/async function inspect\(progress=\(\)=>\{\}\)/);
  assert.match(source,/return await inventory\(t,progress\)/);
  assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.id-b\.id/);
  assert.match(source,/observedNotifications-before/);
  assert.match(source,/lastSmartDawnOp/);
- assert.match(source,/No controller slot changed/);
+ assert.match(source,/Nothing deleted or uploaded/);
  // 2904 must be a read-only request; nothing here can erase a slot or trigger Play.
  const inventory=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
  assert.match(inventory,/await ddp\(t,2904\)/);
@@ -171,12 +171,11 @@ test('SmartDawn inventory accepts legitimate F0 replies and duplicate BLE fragme
  const body=Uint8Array.from([...effect(2,83928),...effect(1,12345)]);
  const frame=new Uint8Array(20+body.length);frame[0]=0xF0;frame[1]=1;frame[6]=2904>>8;frame[7]=2904&255;frame.set(body,20);
  const cut=29,head=Uint8Array.from([55,2,1,0,...frame.slice(0,cut)]),tail=Uint8Array.from([55,2,0,0,...frame.slice(cut)]);
- const writes=[],t={writeCmd:async b=>{writes.push(Buffer.from(b));N._receive(head);N._receive(head);N._receive(tail);}};
- const entries=await N._inventory(t,()=>{},{minExpected:2,quietMs:30,maxMs:200});
+ const writes=[],t={writeCmd:async b=>{writes.push(Buffer.from(b));const op=b[10]*256+b[11];if(op===2904){N._receive(head);N._receive(head);N._receive(tail);}}};
+ const entries=await N._inventory(t,()=>{},{minExpected:2,quietMs:30,maxMs:450});
  assert.deepEqual(Array.from(entries,x=>[x.slot,x.cid]),[[1,12345],[2,83928]]);
- assert.equal(writes.length,1);
- assert.equal(writes[0][4],240);assert.equal(writes[0][5],4);
- assert.equal(writes[0][10]*256+writes[0][11],2904);
+ assert.deepEqual(writes.map(w=>w[10]*256+w[11]),[205,167,2904,2904]);
+ assert.equal(writes.every(w=>w[4]===240&&w[5]===4),true);
 });
 test('EffectList streams 87 effects across five responses, preserving ID zero and repeated 15924 CIDs',async()=>{
  const src=read('curtain_native_slot.js').replace('window.JH2NativeSlot={','window.JH2NativeSlot={_receive:receive,_inventory:inventory,');
@@ -202,8 +201,10 @@ test('EffectList streams 87 effects across five responses, preserving ID zero an
  const groups=[Array.from({length:19},(_,i)=>i),Array.from({length:19},(_,i)=>i+19),
    Array.from({length:18},(_,i)=>i+38),Array.from({length:19},(_,i)=>i+56),
    Array.from({length:12},(_,i)=>i+75)];
- let writes=0;const transport={writeCmd:async()=>{writes++;
-  if(writes!==1)return;
+ let requests=[],responded=false;const transport={writeCmd:async b=>{
+  const op=b[10]*256+b[11];requests.push(op);
+  if(op!==2904||responded)return;
+  responded=true;
   for(let i=0;i<groups.length;i++)setTimeout(()=>send(groups[i],i+1),i*12);
  }};
  const result=await N._inventory(transport,()=>{},{quietMs:35,maxMs:1500,minExpected:87});
@@ -214,21 +215,38 @@ test('EffectList streams 87 effects across five responses, preserving ID zero an
  assert.equal(result.filter(x=>x.cid===15924).length,55);
  assert.equal(result.at(-1).id,86);
  assert.equal(result.at(-1).title,'Effect 86');
- assert.equal(writes,1,'Complete streamed inventory needs only one read request');
+ assert.deepEqual(requests,[205,167,2904,2904],'Original handshake first, then two verification reads');
 });
-test('inventory timeout retries manufacturer 205 handshake and reissues read-only 2904',()=>{
+test('inventory restores working manufacturer 205/167 handshake and reissues read-only 2904',()=>{
  const source=read('curtain_native_slot.js');
  const scan=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
  assert.match(scan,/attempt<=2/);
- assert.match(scan,/if\(attempt===2&&!seenInventory\)/);
- assert.match(scan,/await ddp\(t,205,undefined,undefined,Uint8Array\.from\(\[10,0,16,0,26,0\]\)\)/);
+ assert.match(scan,/if\(!initializedReadConnections\.has\(t\)\)/);
+ assert.match(scan,/await ddp\(t,205\)/);
+ assert.match(scan,/await ddp\(t,167\)/);
+ assert.match(scan,/initializedReadConnections\.add\(t\)/);
  assert.match(scan,/await ddp\(t,2904\)/);
- assert.match(scan,/lastSentOpcode/);
- assert.match(scan,/lastNativeRcode/);
+ assert.match(scan,/inventoryResponseAt/);
+ assert.match(scan,/inventoryBatchCount/);
  assert.doesNotMatch(scan,/2909|2606|writeUpload/);
  const ddp=source.slice(source.indexOf('async function ddp('),source.indexOf('async function inventory('));
  assert.match(ddp,/bleTransmitted===false/);
  assert.match(ddp,/connected===false/);
+});
+test('original catalog reader maps EffectInfo fields exactly and accepts CID 15924 shared across 55 effects',()=>{
+ const source=read('curtain_native_slot.js');
+ const map=source.slice(source.indexOf('function newEffectList('),source.indexOf('function callback('));
+ assert.match(map,/if\(k===1\)item\.id=t/);
+ assert.match(map,/if\(k===2\)item\.type=t/);
+ assert.match(map,/if\(k===3\)item\.slot=t/);
+ assert.match(map,/if\(k===4\)item\.cid=t/);
+ assert.match(map,/if\(item\.cid!=null\)out\.push\(item\)/);
+ assert.match(source,/const KNOWN_FACTORY_EFFECTS=88/);
+ assert.match(source,/const initializedReadConnections=new WeakSet\(\)/);
+ const inventory=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
+ assert.ok(inventory.indexOf('await ddp(t,205)')<inventory.indexOf('await ddp(t,167)'));
+ assert.ok(inventory.indexOf('await ddp(t,167)')<inventory.indexOf('await ddp(t,2904)'));
+ assert.doesNotMatch(inventory,/2909|2930|2606/);
 });
 test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
  const script=read('../.github/scripts/deploy-curtain-relay.py');
