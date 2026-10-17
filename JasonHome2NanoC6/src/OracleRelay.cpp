@@ -381,17 +381,22 @@ static void poller(void*){
    // Send each ACK before moving to the next ordered command.
    break;
   }
-  if(syncNow){vTaskDelay(pdMS_TO_TICKS(30));continue;}
+  if(syncNow){vTaskDelay(pdMS_TO_TICKS(20));continue;}
+  const uint32_t pushGraceStart=millis();
   while((int32_t)(millis()-nextSync)<0&&!syncNow){
-   // Push active: Oracle wakes us directly; a periodic full sync checks missed
-   // events, acknowledgments and desired state. Avoid a second TLS wait.
-   if(pushOnline){vTaskDelay(pdMS_TO_TICKS(25));continue;}
-   // Emergency fallback when the persistent push connection is unavailable.
+   // A 200 OK event-stream response is not proof that Nginx/router
+   // actually forwarded the wake-up. Give SSE 400 ms, then use the
+   // authenticated 1 s change-wait even if pushOnline still says true.
+   if(pushOnline&&millis()-pushGraceStart<400){
+    vTaskDelay(pdMS_TO_TICKS(20));continue;
+   }
    JsonDocument waited;
    if(!request("/api/curtain-bridge/wait?after="+String(revision)+"&seconds=1",waited)){
-    online=false;vTaskDelay(pdMS_TO_TICKS(250));break;
+    // If the wake request fails, force an authenticated full sync rather
+    // than declaring the Nano offline while its main connection works.
+    syncNow=true;break;
    }
-   if(waited["changed"]|false)break;
+   if(waited["changed"]|false){syncNow=true;break;}
   }
  }
 }
