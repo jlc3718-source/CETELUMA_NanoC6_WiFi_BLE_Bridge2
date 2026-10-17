@@ -945,9 +945,12 @@ async function route(req,res){
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
         "cache-control":"no-cache, no-transform","connection":"keep-alive",
         "x-accel-buffering":"no","x-content-type-options":"nosniff"});
+      // Push each wakeup immediately; never wait for a TCP coalescing interval.
+      res.socket?.setNoDelay(true);
       res.flushHeaders?.();
+      res.write(": stream connected\n\n");
       let closed=false;
-      const push=()=>{if(!closed&&!res.destroyed)res.write("data: "+curtainRelay.revision()+"\n\n");};
+      const push=()=>{if(!closed&&!res.destroyed){res.write("data: "+curtainRelay.revision()+"\n\n");res.flush?.();}};
       const unsubscribe=curtainRelay.subscribeWake(push);
       const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\n\n");},10000);
       heartbeat.unref?.();
