@@ -203,11 +203,11 @@ test('native file plan accepts only the reserved 83928 CID and exact 4 KB DN1FE 
  assert.equal(plan.parts[8].length,104);
  const wrong=image.slice();wrong[4]=217;
  assert.throws(()=>native.filePlan(wrong),/Native CID metadata/);
- const moved=wrong.slice();moved.set([215,143,5],36);
+ const moved=wrong.slice();moved[4]=215;moved.set([215,143,5],36);
  const patched=native.filePlan(moved);
  assert.equal(patched.parts.length,9);
  assert.deepEqual([...patched.parts[0].slice(12,16)],[216,71,1,0]);
- assert.equal(moved[4],217,'imported native file must remain unchanged');
+ assert.equal(moved[4],215,'imported native file must remain unchanged');
  const scrolling=image.slice();scrolling.set([232,71,1,0],4);
  assert.throws(()=>native.filePlan(scrolling),/E-89 scrolling template/);
  assert.throws(()=>native.filePlan(new Uint8Array(6400)),/4,096-byte DN1FE/);
