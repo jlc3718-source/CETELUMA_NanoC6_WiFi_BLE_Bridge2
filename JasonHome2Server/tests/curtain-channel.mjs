@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -96,4 +97,19 @@ test('automatic LAN grant authenticates the real socket and is promoted after it
   const pushed=next(f.ws),command=f.bridge.enqueue('nanoInfo');
   assert.equal((await pushed).commands[0].id,command.id);
  }finally{await f.close();}
+});
+
+
+test('NanoC6 1.1.12 push events remain available alongside newer WebSocket delivery',()=>{
+ const source=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+ const start=source.indexOf('if(path==="/api/curtain-bridge/events"&&method==="GET")');
+ const end=source.indexOf('if(path==="/api/curtain-bridge/wait"&&method==="GET")',start);
+ assert.ok(start>=0&&end>start,'Legacy event stream route must exist');
+ const handler=source.slice(start,end);
+ assert.match(handler,/text\/event-stream/);
+ assert.match(handler,/curtainRelay\.subscribeWake\(push\)/);
+ assert.match(handler,/curtainRelay\.revision\(\)/);
+ assert.match(handler,/x-accel-buffering/);
+ assert.match(handler,/clearInterval\(heartbeat\);unsubscribe\(\)/);
+ assert.doesNotMatch(handler,/\b426\b/,'Legacy firmware must not be forced into five-second HTTPS fallback');
 });
