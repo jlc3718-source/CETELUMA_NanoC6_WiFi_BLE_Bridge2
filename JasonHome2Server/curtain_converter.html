@@ -38,6 +38,8 @@ canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelat
 <div class="buttons"><button id="playFrames">▶ Play preview</button><button id="pauseFrames">⏸ Pause</button><button id="prevFrame">◀ Previous</button><button id="nextFrame">Next ▶</button></div>
 <div class="buttons"><button id="addFrame">Add current picture</button><button id="duplicateFrame">Duplicate frame</button><button id="leftFrame">Move left</button><button id="rightFrame">Move right</button><button id="removeFrame">Remove frame</button><button id="clearFrames">Clear frames</button></div>
 <div class="buttons"><button id="publishAnimation" class="primary" disabled>🚀 Publish Animation · Oracle streaming</button><button id="uploadControllerSlot" class="primary" type="button">⬆ Upload to Controller Slot &amp; Play</button></div>
+<div class="buttons"><button id="testNativeFrames" type="button">🧪 Test these frames in Native tab</button></div>
+<p class="hint">Native testing is isolated: creates an experimental DNMX frame-based candidate, runs CRC/packet checks and requires separate hardware consent. It does not change the existing Oracle streaming button.</p>
 <label for="nativeFile">Verified SmartDawn native animation file (.eff, 4 KB)</label><input type="file" id="nativeFile" accept=".eff,.bin,application/octet-stream">
 <label class="hint" style="display:block;margin-top:8px"><input type="checkbox" id="confirmNative" style="width:auto;display:inline-block"> I verified this native file is the **non-scrolling** effect I want to save in reserved CID 83928.</label>
 <p class="hint" id="nativeSlotNote">Separate controller-native upload. The existing Oracle JHC1 multi-frame animation is not interchangeable with a SmartDawn native .eff. This button requires a valid native animation file; it will not silently substitute a scrolling E-89 first frame.</p>
@@ -65,7 +67,7 @@ const api=(url,body)=>window.parent.JH2CurtainApi(url,body);
 let prepared=null,busy=false,animationFrames=[],selectedFrame=0,previewTimer=null,nativeEffect=null;
 const animationCanvas=$('animationPreview'),animationCtx=animationCanvas.getContext('2d',{willReadFrequently:true});
 const show=text=>{$('message').textContent=text};
-function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed','aiFrames','autoFrames','addFrame','publishAnimation','uploadControllerSlot'])$(id).disabled=v||(id==='send'&&!prepared)||(id==='autoFrames'&&!prepared)||(id==='addFrame'&&!prepared)||(id==='publishAnimation'&&animationFrames.length<2);}
+function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed','aiFrames','autoFrames','addFrame','publishAnimation','uploadControllerSlot','testNativeFrames'])$(id).disabled=v||(id==='send'&&!prepared)||(id==='autoFrames'&&!prepared)||(id==='addFrame'&&!prepared)||(id==='publishAnimation'&&animationFrames.length<2);}
 // Original SmartDawn factory previews are already loaded in the parent Curtain tab.
 // Workers AI is text-to-image, so use the selected preview's actual palette for
 // prompt guidance AND final palette mapping; never pretend to upload a reference image.
@@ -487,6 +489,17 @@ $('saveAnimationSchedule').onclick=async()=>{
 };
 refreshAnimationSchedules().catch(e=>scheduleStatus('Could not load schedules: '+e.message));
 
+$('testNativeFrames').onclick=()=>{
+ if(busy)return;
+ if(animationFrames.length<2||animationFrames.length>24){
+  return $('nativeSlotStatus').textContent='Native research accepts 2–24 complete frames. Prepare animation frames in Studio first (without modifying the published Oracle asset).';
+ }
+ if(window.parent===window)return $('nativeSlotStatus').textContent='Open from Jason Home 2 → Curtain → Image / GIF Studio.';
+ window.parent.postMessage({
+  kind:'jh2-native-test-open',frames:animationFrames.map(f=>new Uint8ClampedArray(f.data)),delay:previewDelay()
+ },location.origin);
+ $('nativeSlotStatus').textContent='Sent exact 40×40 animation to the separate Native Test tab. No upload started.';
+};
 $('nativeFile').onchange=async event=>{
  nativeEffect=null;
  const file=event.target.files?.[0];if(!file){$('nativeSlotStatus').textContent='No native file selected.';return;}

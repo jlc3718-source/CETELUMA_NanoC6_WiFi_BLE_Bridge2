@@ -165,5 +165,52 @@ async function upload(bytes,progress=()=>{}){
   return {cid:CID,slot:newSlot.slot,saved:true,playCommandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close();}
 }
-window.JH2NativeSlot={upload,filePlan};
+// Research APIs are distinct from the proven 4 KB DN1FE installer.
+// Reading catalog does not mutate controller state. No factory CID can be targeted.
+async function inspect(){const t=await connection();try{return await inventory(t)}finally{t.close()}}
+async function researchUpload(data,{replaceReserved=false,progress=()=>{}}={}){
+ if(!window.JH2NativeResearch)throw Error('Research encoder is not loaded');
+ const plan=window.JH2NativeResearch.planUpload(data);
+ if(plan.meta.cid!==CID||plan.uploadType!==0)throw Error('Research file has invalid CID/upload type');
+ const t=await connection();
+ try{
+  progress('Rechecking all stored effect IDs…');
+  const before=await inventory(t),occupied=before.find(e=>e.cid===CID);
+  if(occupied&&!replaceReserved)throw Error('Reserved CID 83928 is occupied. No storage writes made; explicit replacement authorization required.');
+  if(occupied){
+   progress('Erasing only the explicitly approved reserved test CID 83928…');
+   await ddp(t,2909,CID);await sleep(600);
+   const afterErase=await inventory(t);
+   if(afterErase.some(e=>e.cid===CID))throw Error('Test slot 83928 could not be verified empty; cancelling experimental upload');
+  }
+  progress('Starting unverified native video type-0 upload; firmware may reject it…');
+  const started=waitFor('start',30000);await t.writeUpload(plan.request);
+  const start=await started;
+  if((start[1]??0)!==0||(start[3]??0)!==0)throw Error('Video type-0 start rejected by controller: '+JSON.stringify(start));
+  // Type-0 transfer has never been physically verified; do not fake success.
+  const done=waitFor('end',Math.max(120000,plan.parts.length*1800));
+  for(let i=0;i<plan.parts.length;i++){
+   await t.writeUpload(plan.parts[i]);
+   if(i===0||(i+1)%10===0||i+1===plan.parts.length)progress('Experimental type-0 chunk '+(i+1)+' / '+plan.parts.length);
+   await sleep(25);
+  }
+  const finish=await done;
+  if((finish[1]??0)!==0)throw Error('SmartDawn rejected experimental upload completion: '+JSON.stringify(finish));
+  progress('Upload ACK received. Verifying CID 83928 in live effect catalog…');
+  await sleep(750);
+  const after=await inventory(t),stored=after.find(e=>e.cid===CID);
+  if(!stored||!Number.isInteger(stored.slot))throw Error('Upload acknowledged but native candidate did not persist in controller inventory; playback blocked');
+  return {acknowledged:true,cid:CID,slot:stored.slot,physicalPlaybackConfirmed:false};
+ }finally{t.close()}
+}
+async function playResearch(){
+ const t=await connection();
+ try{
+  const effects=await inventory(t),stored=effects.find(e=>e.cid===CID);
+  if(!stored||!Number.isInteger(stored.slot))throw Error('Reserved CID 83928 is absent; play command cancelled');
+  await ddp(t,2606,CID,stored.slot);
+  return {cid:CID,slot:stored.slot,commandSent:true,physicalPlaybackConfirmed:false};
+ }finally{t.close()}
+}
+window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,playResearch};
 })();
