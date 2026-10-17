@@ -107,6 +107,18 @@ jobs:
                               if table=='curtain_commands':
                                   entries=con.execute('select id,action,source,state,created from curtain_commands where state in ("queued","downloaded") order by id limit 10').fetchall()
                                   print('CURTAIN_PENDING_COMMANDS',[(n,a,source,state,round((time.time()*1000-created)/1000,1)) for n,a,source,state,created in entries])
+                                  if 'curtain_meta' in names:
+                                      keys=con.execute("select key,value from curtain_meta where key in ('localOverride','manualUntil','desired','lastSeen')").fetchall()
+                                      safe=[]
+                                      for k,v in keys:
+                                          if k=='desired':continue
+                                          try:
+                                              value=json.loads(v)
+                                              remaining=round((value-time.time()*1000)/1000,1) if k in ('localOverride','manualUntil') and isinstance(value,(int,float)) else None
+                                              safe.append({'key':k,'activeSecondsRemaining':max(0,remaining) if remaining is not None else None})
+                                          except:pass
+                                      print('CURTAIN_MANUAL_HOLDS',safe)
+
                                   asset=con.execute('select id,payload,created,state from curtain_commands where id=4539').fetchone()
                                   if asset:
                                       command_id,payload,created,state=asset
