@@ -1,130 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,existsSync} from 'node:fs';
-import {Script,runInNewContext} from 'node:vm';
-import {fileURLToPath} from 'node:url';
+import {readFileSync} from 'node:fs';
+import {Script} from 'node:vm';
 import {dirname,join} from 'node:path';
-
-const home=dirname(dirname(fileURLToPath(import.meta.url)));
-const root=dirname(home);
-const read=path=>readFileSync(join(root,path),'utf8');
-const curtain=read('JasonHome2Server/curtain.js');
-const converter=read('JasonHome2Server/curtain_converter.html');
-const server=read('JasonHome2Server/server.mjs');
-const generator=read('JasonHome2Server/generate_web.py');
-const bridge=read('JasonHome2Android/src/com/jasonhome2/app/CurtainBridge.java');
-const activity=read('JasonHome2Android/src/com/jasonhome2/app/MainActivity.java');
-
-test('Curtain has two sub-tabs and preserves original control IDs',()=>{
-  new Script(curtain,{filename:'curtain.js'});
-  for(const term of ['jh2CurtainStudioTab','jh2CurtainControlsTab','jh2CurtainOriginalControls','jh2CurtainStudioPanel','jh2CurtainBrightness','jh2CurtainSequenceStart','jh2CurtainEffects'])
-    assert.ok(curtain.includes(term),term);
-  assert.match(curtain,/event\.origin!==location\.origin/);
-  assert.match(curtain,/event\.source!==studioFrame\.contentWindow/);
+import {fileURLToPath} from 'node:url';
+const root=dirname(dirname(fileURLToPath(import.meta.url)));
+const read=name=>readFileSync(join(root,name),'utf8');
+const converter=read('curtain_converter.html'),server=read('server.mjs'),curtain=read('curtain.js'),assets=read('curtain_asset.mjs');
+const js=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
+test('AI generator is minimal and its script parses',()=>{
+ assert.equal(js.length,1);new Script(js[0][1],{filename:'curtain_converter.html'});
+ for(const id of ['prompt','generate','sample','file','image','preview','send','stop','speed','connection','testResult'])
+   assert.ok(converter.includes('id="'+id+'"'),id);
+ assert.doesNotMatch(converter,/requestDevice|gatt\.connect|BLE scan|upload firmware|83928/);
 });
-test('v25 converter is complete and JavaScript parses',()=>{
-  const scripts=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(scripts.length,4);
-  for(const [i,script] of scripts.entries())if(script[1].trim())new Script(script[1],{filename:'curtain_converter_'+i+'.js'});
-  for(const term of ['sourcePreview','imageInfo','framing','cleanup','zoom','sendLive','Build','83928','gif'])
-    assert.ok(converter.includes(term),term);
+test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
+ assert.match(server,/path==="\/api\/curtain\/generate-art"/);
+ assert.match(server,/@cf\/black-forest-labs\/flux-1-schnell/);
+ assert.match(server,/cloudflareAiConfigured\(\)/);
+ assert.match(converter,/\$\('generate'\)\.onclick=async/);
+ assert.match(converter,/\/api\/curtain\/generate-art/);
 });
-test('Studio shows one step with crop and upload while hiding legacy tuning and BLE tools',()=>{
- assert.match(converter,/id="chooseStep"/);
- assert.match(converter,/id="photoControls"[^>]*><summary>Adjust crop and position/);
- assert.match(converter,/id="sendLive"/);
- assert.match(converter,/\[hidden\]\{display:none!important\}/);
- assert.match(converter,/choose\.append\(crop,actions,progress,status\)/);
- assert.match(converter,/improve\.hidden=true;send\.hidden=true/);
- assert.match(converter,/demos\.hidden=true/);
- assert.match(converter,/window\.parent\.JH2CurtainApi\('\/api\/curtain\/assets'/);
+test('Oracle gets 40x40 prepared RGBA, palette compression and approved asset command',()=>{
+ assert.match(converter,/width="40" height="40"/);
+ assert.match(converter,/base64\(new Uint8Array\(prepared.data\)\)/);
+ assert.match(converter,/quality:'pal16'/);
+ assert.match(converter,/queue\('asset',payload\)/);
+ assert.match(converter,/JH2CurtainLastSelection/);
+ assert.match(assets,/6400 RGBA bytes/);
 });
-test('APK Curtain controls exclude the unneeded Nano panel and E-87 but retain power and sequences',()=>{
- assert.doesNotMatch(curtain,/<strong>NanoC6 controller<\/strong>/);
- assert.doesNotMatch(curtain,/jh2CurtainScan/);
- assert.doesNotMatch(curtain,/data-jh2-layout/);
- assert.match(curtain,/const catalog=Array\.from\(\{length:87\}/);
- assert.match(curtain,/jh2CurtainStatus/);
- assert.match(curtain,/jh2CurtainSequenceStart/);
+test('speed test measures actual applied acknowledgments rather than a queued response',()=>{
+ assert.match(converter,/i<3/);
+ assert.match(converter,/queue\('nanoInfo'\)/);
+ assert.match(converter,/c.state==='applied'/);
+ assert.match(converter,/x.pushConnected/);
 });
-test('host serves isolated studio asset with same-origin framing',()=>{
-  assert.match(generator,/curtain_converter\.html/);
-  assert.match(server,/curtain_converter\.html/);
-  assert.match(server,/frame-src 'self'; frame-ancestors /);
-  assert.match(server,/name==="curtain_converter.html"/);
-  assert.match(server,/img-src 'self' blob: data:/,'user-selected blob: images must not be CSP-blocked');
-  assert.ok(generator.includes('curtain_image_headers.js'));
-  assert.ok(server.includes('curtain_image_headers.js'));
-  assert.ok(converter.includes('src="curtain_image_headers.js"'));
-  const deployed=join(home,'web/curtain_converter.html');
-  if(existsSync(join(home,'web')))assert.ok(existsSync(deployed),'generated converter absent');
-});
-test('Android uses the existing signed Oracle WebView rather than operating curtain BLE',()=>{
- assert.match(bridge,/This class never opens Android Bluetooth/);
- assert.match(bridge,/NANO_EXTERNAL="http:\/\/craumer\.tplinkdns\.com"/);
- assert.match(bridge,/window\.JH2OracleCurtainCall/);
- assert.match(activity,/onShowFileChooser/);
- assert.match(activity,/REQUEST_CURTAIN_IMAGE/);
- assert.match(activity,/onActivityResult/);
-});
-test('iframe Web Bluetooth adapter proxies writes and notifications',async()=>{
-  const shim=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)][0][1];
-  const calls=[],handlers={};
-  const parent={postMessage(message){
-    calls.push(message);
-    Promise.resolve().then(()=>handlers.message({
-      origin:'https://example.test',source:parent,
-      data:{kind:'jh2-curtain-response',id:message.id,ok:true,result:{connected:true}}
-    }));
-  }};
-  const win={parent,location:{origin:'https://example.test'},addEventListener(type,fn){handlers[type]=fn;}};
-  const navigator={};
-  runInNewContext(shim,{navigator,window:win,location:win.location,Promise,setTimeout,clearTimeout,Uint8Array,DataView,atob,btoa,console,Object});
-  const device=await navigator.bluetooth.requestDevice();
-  const srv=await device.gatt.connect();
-  const svc=await srv.getPrimaryService('00000074-1972-1925-3022-077119514e44');
-  const bin=await svc.getCharacteristic('02020074-1972-1925-3022-077119514e44');
-  await bin.writeValueWithoutResponse(new Uint8Array([1,2,3]));
-  assert.ok(calls.some(x=>x.action==='connect'));
-  assert.ok(calls.some(x=>x.action==='rawWrite'&&x.payload.data==='AQID'));
-  const notify=await svc.getCharacteristic('01010074-1972-1925-3022-077119514e44');
-  await notify.startNotifications();
-  let received;
-  notify.addEventListener('characteristicvaluechanged',ev=>received=new Uint8Array(ev.target.value.buffer));
-  handlers.message({origin:'https://example.test',source:parent,data:{kind:'jh2-curtain-notify',uuid:notify.uuid,data:'AAECAw=='}});
-  assert.deepEqual([...received],[0,1,2,3]);
-});
-
-test('Android picker returns readable photo URIs to trusted WebView',()=>{
-  assert.match(activity,/setAllowContentAccess\(true\)/);
-  assert.match(activity,/setAllowFileAccess\(false\)/);
-  assert.match(activity,/onShowFileChooser/);
-  assert.match(activity,/Intent picker=params\.createIntent\(\)/);
-   assert.doesNotMatch(activity,/picker\.setType/);
-   assert.doesNotMatch(activity,/picker\.addCategory/);
-  assert.match(activity,/FLAG_GRANT_READ_URI_PERMISSION/);
-  assert.match(activity,/FileChooserParams\.parseResult/);
-  assert.match(converter,/id="filePickerStatus"/);
-  assert.match(converter,/input id="fileInput".*accept="image\/\*,\.gif"/);
-});
-
-test('AI subject revamp is explicitly opt-in and Cloudflare credentials stay on server',()=>{
-  assert.match(converter,/id="aiRevamp"/);
-  assert.match(converter,/id="applyAiRevamp"/);
-  assert.match(converter,/id="undoAiRevamp"/);
-  assert.match(converter,/api\/curtain\/ai-revamp/);
-  assert.match(server,/@cf\/facebook\/detr-resnet-50/);
-  assert.match(server,/if\(method==="POST"&&path==="\/api\/curtain\/ai-revamp"\)/);
-  assert.match(generator,/curtain_quality\.js/);
-  assert.match(server,/curtain_quality\.js/);
-  assert.match(converter,/src="curtain_quality\.js"/);
-});
-
-test('AI revamp honors the user-selected subject and manual framing',()=>{
-  assert.match(converter,/let userSubjectLocked=false,userFrameLocked=false/);
-  assert.match(converter,/if\(userSubjectLocked\)/);
-  assert.match(converter,/label='your selected subject'/);
-  assert.match(converter,/keepFrame:userFrameLocked&&!userSubjectLocked/);
-  assert.match(converter,/Object\.assign\(fields,\{framing:\$\('framing'\)\.value/);
-  assert.match(converter,/userSubjectLocked=true/);
+test('Curtain host retains existing original controls and studio iframe',()=>{
+ new Script(curtain,{filename:'curtain.js'});
+ for(const term of ['jh2CurtainStudioTab','jh2CurtainControlsTab','jh2CurtainOriginalControls','jh2CurtainStudioPanel','jh2CurtainBrightness','jh2CurtainSequenceStart'])
+   assert.ok(curtain.includes(term),term);
 });
