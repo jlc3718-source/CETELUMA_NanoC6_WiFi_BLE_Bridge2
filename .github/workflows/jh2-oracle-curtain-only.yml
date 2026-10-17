@@ -37,6 +37,7 @@ jobs:
             JasonHome2Server/tests/curtain-relay.mjs \
             JasonHome2Server/tests/curtain-images.mjs \
             JasonHome2Server/tests/curtain-studio.mjs \
+            JasonHome2Server/tests/curtain-native-research.mjs \
             JasonHome2Server/tests/nanoc6-sync.mjs
   deploy:
     name: Back up, stage, deploy and verify Oracle curtain (no host reboot, no BLE scan)

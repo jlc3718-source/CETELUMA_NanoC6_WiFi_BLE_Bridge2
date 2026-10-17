@@ -128,10 +128,18 @@ if '"curtain_native_slot.js"' not in live:
  handler='''\n  if(path==="/curtain_native_slot.js"){\n    const file=join(root,"curtain_native_slot.js");\n    if(!existsSync(file))return send(res,404,{ok:false,error:"Missing native slot module"});\n    const data=readFileSync(file);\n    res.writeHead(200,{"content-type":"text/javascript; charset=utf-8","content-length":data.length,\n      "cache-control":"no-store","x-content-type-options":"nosniff"});\n    res.end(data);return;\n  }\n'''
  live=live.replace(anchor,anchor+handler,1)
 assert 'curtain_native_slot.js' in live, 'Native slot button would load a missing handler'
+# The installed server's original allowlist predates our standalone Native Test iframe.
+# Add explicit authenticated, no-cache routes instead of widening any public endpoints.
+if '"curtain_native_test.html"' not in live or '"curtain_native_research.js"' not in live:
+ anchor='function authenticatedRead(req,res,path){'
+ assert live.count(anchor)==1, 'Cannot locate authenticated static handler for research tab'
+ handler='''\n  if(path==="/curtain_native_test.html"||path==="/curtain_native_research.js"){\n    const name=path.slice(1),file=join(root,name);\n    if(!existsSync(file))return send(res,404,{ok:false,error:"Missing native research page"});\n    const data=readFileSync(file);\n    res.writeHead(200,{"content-type":(name.endsWith(".js")?"text/javascript":"text/html")+"; charset=utf-8",\n      "content-length":data.length,"cache-control":"no-store",\n      "content-security-policy":"default-src 'self' 'unsafe-inline' data:; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors 'self'",\n      "x-content-type-options":"nosniff"});res.end(data);return;\n  }\n'''
+ live=live.replace(anchor,anchor+handler,1)
+assert '"curtain_native_test.html"' in live and '"curtain_native_research.js"' in live, 'Research iframe static routes not installed'
 (stage/'server.mjs').write_text(live)
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
 for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs','curtain_pixel_grid.mjs','curtain_shape_art.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
-for name in ['curtain.js','curtain_converter.html','curtain_native_slot.js','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
+for name in ['curtain.js','curtain_converter.html','curtain_native_slot.js','curtain_native_test.html','curtain_native_research.js','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1
