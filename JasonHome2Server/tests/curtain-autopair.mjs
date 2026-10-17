@@ -71,7 +71,7 @@ test('legacy explicit LAN setup remains callable but opening the APK never start
 });
 test('an offline APK command never starts Nano setup or writes its connection settings',async()=>{
  const p=phone();
- await assert.rejects(p.context.JH2OracleCurtainCall('power',{on:true}),/Manual Oracle connection/);
+ await assert.rejects(p.context.JH2OracleCurtainCall('power',{on:true}),/automatic home-Wi-Fi recovery/);
  assert.deepEqual(p.calls.map(c=>c.url),['/jason-home-2/api/curtain/call']);
  assert.equal(p.scheduled.length,0);
 });
@@ -128,19 +128,34 @@ test('connection diagnostics retain only bounded stage codes and never store cre
  }finally{b.close();db.close();}
 });
 
-test('manual recovery key is durable and automatic setup cannot replace it',()=>{
+test('manual recovery remains valid until 1.1.12 authenticates through automatic bootstrap',()=>{
  const db=new DatabaseSync(':memory:');let at=1000000;let b=createCurtainBridge({db,now:()=>at});
  try{
-  const automatic=b.autoPairing(),manual=b.pairing({manual:true});
+  const manual=b.pairing({manual:true});
   assert.equal(b.status().manualPairing,true);
-  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':automatic.token}}),null);
-  assert.throws(()=>b.autoPairing(),/Manual key setup is active/);
-  at+=30*86400000;
-  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':manual.token}}),'current');
+  const grant=b.autoPairing();
+  const auth=token=>b.authenticate({headers:{'x-jh2-bridge-token':token}});
+  assert.equal(auth(manual.token),'current');
+  assert.equal(auth(grant.token),'bootstrap');
+  at+=1000;
+  assert.equal(auth(manual.token),'current','Current key survives unconfirmed auto-pair attempt');
+  const synced=b.sync({bootId:'nano-112',status:{firmware:'1.1.12',curtain:{connected:false}}},'bootstrap');
+  assert.equal(synced.ok,true);
+  assert.equal(auth(grant.token),'current');
+  assert.equal(auth(manual.token),null);
+  assert.equal(b.status().manualPairing,false);
   b.close();b=createCurtainBridge({db,now:()=>at});
-  assert.equal(b.status().manualPairing,true);
-  assert.equal(b.authenticate({headers:{'x-jh2-bridge-token':manual.token}}),'current');
-  assert.throws(()=>b.autoPairing(),/Manual key setup is active/);
-  assert.ok(!JSON.stringify(db.prepare('SELECT * FROM curtain_meta').all()).includes(manual.token));
+  assert.equal(b.status().manualPairing,false,'Automatic mode persists after Oracle restart');
+  assert.ok(!JSON.stringify(db.prepare('SELECT * FROM curtain_meta').all()).includes(grant.token));
  }finally{b.close();db.close();}
+});
+test('hosted app starts automatic recovery and keeps manual key generation advanced-only',()=>{
+ const src=readFileSync(new URL('../curtain_remote.js',import.meta.url),'utf8');
+ assert.match(src,/setTimeout\(attemptAuto,500\)/);
+ assert.match(src,/setInterval\(attemptAuto,60000\)/);
+ assert.match(src,/document\.addEventListener\('visibilitychange',attemptAuto\)/);
+ assert.match(src,/window\.addEventListener\('online',attemptAuto\)/);
+ assert.match(src,/<details class="jh2-manual-recovery">/);
+ assert.match(src,/Reconnect Nano automatically/);
+ assert.doesNotMatch(src,/Use Manual Oracle connection below/);
 });

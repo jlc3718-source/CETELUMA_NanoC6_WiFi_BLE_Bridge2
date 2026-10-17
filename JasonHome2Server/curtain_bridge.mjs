@@ -133,7 +133,8 @@ export function createCurtainBridge({db,now=Date.now}){
    return {ok:true};
   }
   if(status().online)return {ok:true,alreadyOnline:true};
-  if(get('manualPairing',false))throw fail(409,'Manual key setup is active. Paste the generated key into Receive key on the Nano.');
+  // A previous manual recovery does not block safe automatic re-pairing. The
+  // current key remains accepted until the Nano authenticates using a staged grant.
   put('lastAutomaticSetupRequest',now());
   const at=now();
   // A phone away from home must never invalidate the working Nano credential.
@@ -198,7 +199,7 @@ export function createCurtainBridge({db,now=Date.now}){
   if(credential==='bootstrap'){
    const next=get('bootstrapTokenHash');
    if(!next||get('bootstrapExpires',0)<=at)throw fail(401,'Automatic pairing expired');
-   put('tokenHash',next);put('bootstrapTokenHash','');put('bootstrapExpires',0);
+   put('tokenHash',next);put('bootstrapTokenHash','');put('bootstrapExpires',0);put('manualPairing',false);
    put('pendingTokenHash','');put('rotateCredential',false);put('credentialRotatedAt',at);bootstrapGrant=null;
   }
   if(credential==='pending'){
