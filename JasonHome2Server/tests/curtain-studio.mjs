@@ -5,7 +5,7 @@ import {Script} from 'node:vm';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parsePixelGrid} from '../curtain_pixel_grid.mjs';
-import {renderShapeArt} from '../curtain_shape_art.mjs';
+import {renderShapeArt,subjectBlockArt} from '../curtain_shape_art.mjs';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const read=name=>readFileSync(join(root,name),'utf8');
 const converter=read('curtain_converter.html'),server=read('server.mjs'),curtain=read('curtain.js'),assets=read('curtain_asset.mjs');
@@ -126,4 +126,12 @@ test('AI geometric drawing produces exact 40x40 blocks with pumpkin face cutouts
   assert.deepEqual(bytes.subarray(i,i+4),bytes.subarray(j,j+4));
  }
  assert.deepEqual(art.palette,['#000000','#FA8117','#188A30']);
+});
+
+test('Pumpkin block-art fallback is recognizable, fully filled and exact-preview safe',()=>{
+ const art=subjectBlockArt('Happy Halloween pumpkin with a green stem');
+ assert.equal(art.mode,'recognizable-block-art-preset');
+ assert.ok(art.activeBlocks>=75,'A readable pumpkin must fill a useful portion of the curtain');
+ assert.equal(Buffer.from(art.rgba,'base64').length,6400);
+ assert.equal(subjectBlockArt('unrecognized abstract figure'),null);
 });

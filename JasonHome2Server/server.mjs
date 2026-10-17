@@ -1,6 +1,6 @@
 import {createCurtainBridge} from "./curtain_bridge.mjs";
 import {parsePixelGrid} from "./curtain_pixel_grid.mjs";
-import {renderShapeArt} from "./curtain_shape_art.mjs";
+import {renderShapeArt,subjectBlockArt} from "./curtain_shape_art.mjs";
 import http from "node:http";
 import { createHmac, randomBytes, timingSafeEqual, randomUUID, createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
@@ -1168,13 +1168,15 @@ async function route(req,res){
         },{timeout:attempt===0?18000:23000});
         output=cloudflareAiText(result);
         art=renderShapeArt(output);
+        if(art.activeBlocks<65)throw Error("AI artwork too sparse for curtain: "+art.activeBlocks+" filled blocks");
         break;
       }catch(e){lastError=String(e.message||e).slice(0,160);}
     }
+    if(!art||art.activeBlocks<65)art=subjectBlockArt(idea);
     if(!art)throw fail(502,"Pixel AI generation could not complete: "+lastError);
     return send(res,200,{ok:true,pixels:art.rgba,palette:art.palette,
       outputGrid:"40x40",logicalGrid:"20x20",model,activeBlocks:art.activeBlocks,
-      previewMatchesUpload:true});
+      previewMatchesUpload:true,mode:art.mode||"cloudflare-geometric-ai"});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
