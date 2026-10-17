@@ -1,0 +1,56 @@
+name: Jason Home 2 three-command physical ACK timing
+on:
+  push:
+    branches: [codex/jh2-physical-ack-test-20261017]
+    paths: ['.github/workflows/jh2-safe-live-latency-check.yml']
+permissions:
+  contents: read
+jobs:
+  safe-read-and-management-command-timing:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 7
+    steps:
+      - name: Measure three real NanoC6 nanoInfo acknowledgments without BLE commands
+        shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=RUN_ID python3 - <<'PY'
+          import json,time,os,urllib.request,subprocess
+          backend=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(v.split('=',1) for v in backend['Config']['Env'] if '=' in v)
+          token=env['JASON_HOME_API_TOKEN']
+          url='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=None):
+            h={'Content-Type':'application/json'}
+            if cookie:h['Cookie']=cookie
+            r=urllib.request.Request(url+path,data=None if body is None else json.dumps(body).encode(),headers=h)
+            with urllib.request.urlopen(r,timeout=12) as x:return json.loads(x.read()),x.headers
+          _,headers=api('/api/session',{'token':token})
+          cookie=headers['Set-Cookie'].split(';',1)[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          print('BEFORE',json.dumps({k:status.get(k) for k in ('online','firmware','pushConnected','commandTransport','queued','lastSync')}),flush=True)
+          if not status.get('online'):
+            print('NO_LIVE_NANO: cannot time actual commands until connected.',flush=True)
+            raise SystemExit(1)
+          times=[]
+          for n in range(3):
+            stamp=time.monotonic()
+            body={'action':'nanoInfo','payload':{},'idempotencyKey':'safe-latency-'+os.environ['RUN_ID']+'-'+str(n)}
+            queued,_=api('/api/curtain/call',body,cookie)
+            cid=queued['commandId']
+            current={'state':'queued'}
+            for _ in range(240):
+              data,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              current=data['command']
+              if current['state'] in ('applied','failed','expired','superseded'):break
+              time.sleep(.25)
+            elapsed=int((time.monotonic()-stamp)*1000)
+            print('NANO_COMMAND_ACK',json.dumps({'number':n+1,'commandId':cid,'state':current['state'],'elapsedMs':elapsed,'firmware':(current.get('result') or {}).get('firmware'),'error':(current.get('result') or {}).get('error')}),flush=True)
+            if current['state']!='applied':raise SystemExit(2)
+            times.append(elapsed)
+          after,_=api('/api/curtain/status',cookie=cookie)
+          print('AFTER',json.dumps({k:after.get(k) for k in ('online','firmware','pushConnected','commandTransport','queued','lastSync')}),flush=True)
+          print('VERIFIED_REAL_ACK',json.dumps({'count':3,'ms':times,'averageMs':round(sum(times)/3),'minMs':min(times),'maxMs':max(times),'physicalLightOutputObserved':False}),flush=True)
+          PY
