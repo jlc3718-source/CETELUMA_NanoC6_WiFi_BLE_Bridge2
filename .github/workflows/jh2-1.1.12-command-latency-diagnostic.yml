@@ -1,0 +1,62 @@
+name: Jason Home 2 1.1.12 Live Command Latency Diagnostic
+on:
+  push:
+    branches: [codex/jh2-1.1.12-drive-delivery-20261017]
+    paths: ['.github/workflows/jh2-1.1.12-command-latency-diagnostic.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Measure real Nano status-command acknowledgments (no BLE control or server deployment)
+        shell: bash
+        env:
+          PROBE_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=PROBE_RUN python3 - <<'PY'
+          import json,os,subprocess,urllib.request,urllib.error,time,sqlite3,pathlib
+          base='http://127.0.0.1:8081'
+          b=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          token=dict(x.split('=',1) for x in b['Config']['Env'] if '=' in x)['JASON_HOME_API_TOKEN']
+          def api(path,body=None,cookie=None):
+              data=None if body is None else json.dumps(body).encode()
+              headers={'Accept':'application/json','Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(base+path,data,headers)
+              with urllib.request.urlopen(req,timeout=10) as res:return json.loads(res.read()),res.headers
+          _,h=api('/api/session',{'token':token})
+          cookie=h['Set-Cookie'].split(';',1)[0]
+          d,_=api('/api/curtain/status',cookie=cookie)
+          print('PRECHECK',json.dumps({'online':d.get('online'),'firmware':d.get('firmware'),'pushConnected':d.get('pushConnected'),'transport':d.get('commandTransport'),'pollSeconds':d.get('pollSeconds'),'queued':d.get('queued'),'lastSync':d.get('lastSync')}),flush=True)
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web']))[0]
+          mount=next(m['Source'] for m in web['Mounts'] if m['Destination']=='/data')
+          path=pathlib.Path(mount)/'jason-home-2.sqlite'
+          with sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True) as conn:
+              rows=conn.execute("SELECT id, action, state, source, (strftime('%s','now')*1000-created)/1000.0 age_s FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 12").fetchall()
+          print('PENDING_QUEUE',json.dumps([{'id':r[0],'action':r[1],'state':r[2],'source':r[3],'ageSeconds':round(r[4],2)} for r in rows]),flush=True)
+          if not d.get('online') or d.get('firmware')!='1.1.12':
+              print('SKIP: physical Nano not confirmed online on 1.1.12',flush=True)
+              raise SystemExit(0)
+          timings=[]
+          for i in range(3):
+              start=time.monotonic()
+              k='jh2-latency-'+os.environ['PROBE_RUN']+'-'+str(i)
+              res,_=api('/api/curtain/call',{'action':'nanoInfo','payload':{},'idempotencyKey':k},cookie)
+              id=res['commandId'];queued_ms=round((time.monotonic()-start)*1000)
+              state='queued';last={}
+              until=time.monotonic()+13
+              while time.monotonic()<until:
+                  x,_=api('/api/curtain/command?id='+str(id),cookie=cookie)
+                  last=x.get('command') or {};state=last.get('state')
+                  if state in ('applied','failed','expired','superseded'):break
+                  time.sleep(.075)
+              elapsed=round((time.monotonic()-start)*1000)
+              timings.append(elapsed)
+              print('PHYSICAL_NANO_INFO',json.dumps({'attempt':i+1,'id':id,'enqueueMs':queued_ms,'state':state,'elapsedMs':elapsed,'resultFirmware':(last.get('result') or {}).get('firmware'),'error':(last.get('result') or {}).get('error')}),flush=True)
+              if state!='applied':break
+              time.sleep(1)
+          print('TIMINGS_MS',json.dumps(timings),flush=True)
+          PY
