@@ -26,6 +26,16 @@ def api(base,path,token=None,cookie=None,body=None,bridge_header=False):
   data=r.read();return json.loads(data),r.headers
 backend=inspect('jason-home');web=inspect('jason-home-2-web');be=env(backend);we=env(web);token=be['JASON_HOME_API_TOKEN'];BASE='http://127.0.0.1:8080'
 before,_=api(BASE,'/api/status',token);assert len(before['eufy']['readyNames'])==4;assert before['calendar']['eventCount']==212
+# Browser recovery can leave the Nano offline independently of Oracle deployments.
+# Record its baseline state; never require hardware reconnection to deliver a web-only fix.
+try:
+ _,previous_headers=api('http://127.0.0.1:8081','/api/session',body={'token':token})
+ previous_cookie=previous_headers['Set-Cookie'].split(';')[0]
+ previous_relay,_=api('http://127.0.0.1:8081','/api/curtain/status',cookie=previous_cookie)
+ bridge_previously_online=bool(previous_relay.get('online'))
+except Exception:
+ bridge_previously_online=False
+print('Predeployment Nano reachable:',bridge_previously_online,flush=True)
 owner_before=before['automationOwner'];calendar_revision=before['calendar']['revision']
 backend_file=BACK/'backend-server.js';cpout('jason-home','/app/dist/server.js',backend_file);backend_digest=hashlib.sha256(backend_file.read_bytes()).hexdigest()
 for name,i in [('backend',backend),('web',web)]:
@@ -202,7 +212,8 @@ try:
   if relay['online']:
    bridge_online=True;break
   time.sleep(5)
- assert bridge_online,'Existing NanoC6 did not authenticate after proxy header repair'
+ assert bridge_online or not bridge_previously_online,'NanoC6 was online before the deployment but failed to reconnect'
+ if not bridge_online:print('Nano was already offline: production web-only deployment will continue; no physical bridge claim.',flush=True)
  live_ble=False
  if NONINVASIVE:
   print('Oracle-only deployment verified bridge authentication; skipped BLE connect and credential rotation while user is logging SmartDawn.',flush=True)
@@ -227,7 +238,7 @@ try:
   api(base,'/api/curtain/rotate',cookie=cookie,body={})
  # Pin future gateway starts to the verified image without altering existing secrets.
  (pathlib.Path('/opt/jason-home-2')/'curtain-relay-image').write_text(image+'\n')
- manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
+ manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'bridgeWasOfflineBefore':not bridge_previously_online,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
  (BACK/'deployment.json').write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest))
  public={k:v for k,v in manifest.items() if k not in ['backup','rollbackContainer']}
  (ROOT/'deployment-verification.json').write_text(json.dumps(public,indent=2)+'\n')
