@@ -941,9 +941,20 @@ async function route(req,res){
     if(!credential)throw fail(401,"Bridge authentication failed");
     if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req),credential));
     if(path==="/api/curtain-bridge/events"&&method==="GET"){
-      // Retire the legacy wake-only TLS socket. Older firmware can recover
-      // HTTPS delivery and signed OTA without a second permanent TLS allocation.
-      return send(res,426,{ok:false,error:"Update NanoC6 for the persistent command channel"});
+      // NanoC6 opens outbound TLS once; Oracle pushes a wake frame on enqueue.
+      // A 5s HTTPS sync remains a fallback if any proxy drops event streams.
+      res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
+        "cache-control":"no-cache, no-transform","connection":"keep-alive",
+        "x-accel-buffering":"no","x-content-type-options":"nosniff"});
+      res.flushHeaders?.();
+      let closed=false;
+      const push=()=>{if(!closed&&!res.destroyed)res.write("data: "+curtainRelay.revision()+"\n\n");};
+      const unsubscribe=curtainRelay.subscribeWake(push);
+      const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\n\n");},10000);
+      heartbeat.unref?.();
+      const cleanup=()=>{if(closed)return;closed=true;clearInterval(heartbeat);unsubscribe();};
+      res.once("close",cleanup);
+      push();return;
     }
     if(path==="/api/curtain-bridge/wait"&&method==="GET"){
       const abort=new AbortController();res.on("close",()=>abort.abort());
