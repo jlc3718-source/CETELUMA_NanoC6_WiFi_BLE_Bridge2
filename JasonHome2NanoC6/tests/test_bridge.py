@@ -108,6 +108,14 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn("'Running firmware '",bridge)
   curtain=(R/'src/Curtain.cpp').read_text()
   self.assertIn('action=="status"?pdMS_TO_TICKS(15):portMAX_DELAY',curtain)
+ def test_ota_channel_falls_back_to_oracle_without_bypassing_signature(self):
+  fw=(R/'src/FirmwareUpdate.cpp').read_text()
+  self.assertIn('/api/curtain/firmware-manifest',fw)
+  self.assertIn('if(httpsJson(oracle,nullptr,d))',fw)
+  self.assertIn('if(httpsJson(String(CHANNEL)+suffix,nullptr,d))',fw)
+  self.assertIn('mbedtls_pk_verify',fw)
+  self.assertIn('m.url!=expected',fw)
+  self.assertNotIn('setInsecure(',fw)
  def test_oracle_persistent_push_and_single_image_stream(self):
   relay=(R/'src/OracleRelay.cpp').read_text()
   server=(R.parent/'JasonHome2Server/server.mjs').read_text()

@@ -61,9 +61,17 @@ bool queueFirmware(JsonVariantConst d,String&error){
 }
 bool fetchManifest(JsonDocument&d){
   if(!timeValid()){lastError="Waiting for Internet clock sync; retry in a few seconds";return false;}
-  bool ok=httpsJson(String(CHANNEL)+"?t="+String((uint32_t)time(nullptr)),nullptr,d);
-  if(ok)lastError="";
-  return ok;
+  // Use the already-working Oracle TLS route first when GitHub's certificate
+  // chain/DNS handshake fails on the ESP32-C6 (HTTPClient HTTPS -1).
+  // Both sources return the original release JSON; parseManifest still verifies
+  // the pinned ECDSA public key, exact product and canonical GitHub release URL.
+  const String suffix="?t="+String((uint32_t)time(nullptr));
+  const String oracle="https://150.136.245.51/jason-home-2/api/curtain/firmware-manifest"+suffix;
+  if(httpsJson(oracle,nullptr,d)){lastError="";return true;}
+  const String oracleError=lastError;
+  if(httpsJson(String(CHANNEL)+suffix,nullptr,d)){lastError="";return true;}
+  lastError="Oracle OTA "+oracleError+" / GitHub OTA "+lastError;
+  return false;
 }
 bool installFirmware(JsonVariantConst d,String&error){
   FirmwareManifest m;if(!parseManifest(d,m,error))return false;

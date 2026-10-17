@@ -23,8 +23,8 @@ jobs:
           python JasonHome2NanoC6/tools/package.py
       - uses: actions/upload-artifact@v4
         with:
-          name: Nano-1.1.18-TEST-ONLY
+          name: Nano-1.1.19-TEST-ONLY
           path: |
-            JasonHome2NanoC6/release/jh2-runtime-1.1.18.bin
-            JasonHome2NanoC6/release/jh2-full-install-1.1.18.bin
+            JasonHome2NanoC6/release/jh2-runtime-1.1.19.bin
+            JasonHome2NanoC6/release/jh2-full-install-1.1.19.bin
             JasonHome2NanoC6/release/SHA256SUMS
