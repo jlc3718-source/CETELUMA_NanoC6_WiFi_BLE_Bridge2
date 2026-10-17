@@ -211,7 +211,7 @@ function inspectSmartDawnEff(data){
  const offset=d.getUint32(128,true),entryStride=d.getUint16(132,true),count=d.getUint16(134,true);
  const itemStride=d.getUint32(4096+5,true),itemCount=d.getUint32(4096+9,true),itemWidth=d.getUint16(4096+13,true),itemHeight=d.getUint16(4096+15,true);
  if(cid!==CID||width!==W||height!==H||stride!==STRIDE||offset!==4096||entryStride!==STRIDE||itemStride!==STRIDE||itemWidth!==W||itemHeight!==H)
-  fail('SmartDawn native file CID, directory or dimensions do not match reserved 40x40 test');
+  fail('SmartDawn native file CID, directory or dimensions do not match reserved CID 83928 40x40 test');
  if(count<2||count>MAX_FRAMES||itemCount!==count||b[136]!==0||b[138]!==1||b[4096+157]!==1||b[4096+158]!==20)
   fail('SmartDawn native v3 frame count or effect flags mismatch');
  const used=8192+count*STRIDE,expected=Math.ceil(used/4096)*4096;
