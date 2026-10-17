@@ -1,0 +1,30 @@
+name: Nano recovery test build
+on:
+  push:
+    branches: [codex/jh2-dynamic-buffer-wakeup-test-20261017]
+    paths: ['.github/workflows/jh2-nano-recovery-test.yml', 'JasonHome2NanoC6/**']
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: |
+          python -m pip install platformio==6.2.0 esptool==5.5.0 Pillow==11.3.0
+          python JasonHome2Server/generate_catalog.py
+          python JasonHome2NanoC6/tests/test_bridge.py
+          python JasonHome2NanoC6/tests/test_migration.py
+          python JasonHome2NanoC6/tools/prepare.py
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -e boot -j 4
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -t buildfs
+          python JasonHome2NanoC6/tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nano-test-only
+          path: |
+            JasonHome2NanoC6/release/jh2-runtime-1.1.17.bin
+            JasonHome2NanoC6/release/jh2-full-install-1.1.17.bin
+            JasonHome2NanoC6/release/SHA256SUMS
