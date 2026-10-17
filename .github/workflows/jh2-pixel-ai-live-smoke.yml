@@ -28,7 +28,7 @@ jobs:
             with urllib.request.urlopen(request,timeout=timeout) as response:
               return json.load(response),dict(response.headers)
           _,hdr=req('/api/session',{'token':token})
-          cookie=hdr['Set-Cookie'].split(';')[0]
+          cookie=next(v for k,v in hdr.items() if k.lower()=='set-cookie').split(';')[0]
           before=urllib.request.Request(base+'/api/curtain/status',headers={'Cookie':cookie})
           with urllib.request.urlopen(before,timeout=10) as response:
             previous=json.load(response).get('queued')
