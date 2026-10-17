@@ -24,6 +24,11 @@ static void issue(const String& error){xSemaphoreTake(lock,portMAX_DELAY);relayE
 static bool request(const String&path,JsonDocument&out,const String*body=nullptr){
  String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);if(!base.length())return false;
  struct BusyGuard{BusyGuard(){pollerHttpActive=true;}~BusyGuard(){pollerHttpActive=false;}} guard;
+ // A simultaneous long-lived SSE TLS connection can starve the ESP32-C6 of
+ // handshake memory. Ask SSE to close and finish before a command sync.
+ const uint32_t drainingSince=millis();
+ while(pushOnline&&millis()-drainingSince<1800)
+  vTaskDelay(pdMS_TO_TICKS(15));
  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(path.startsWith("/api/curtain-bridge/wait")?6000:12000);
  const char*headers[]={"Transfer-Encoding"};h.collectHeaders(headers,1);
  if(!h.begin(c,base+path)){issue("Cannot open Oracle HTTPS");return false;}h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);h.addHeader("Content-Type","application/json");
@@ -37,7 +42,7 @@ static bool request(const String&path,JsonDocument&out,const String*body=nullptr
 // Header/framing data can be HTTP chunked; only "data: <revision>" lines matter.
 static void pushEvents(void*){
  for(;;){
-  if(otaTlsExclusive||streaming||WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
+  if(otaTlsExclusive||pollerHttpActive||streaming||WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
    pushOnline=false;vTaskDelay(pdMS_TO_TICKS(2000));continue;
   }
   String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
@@ -53,7 +58,7 @@ static void pushEvents(void*){
   auto*source=http.getStreamPtr();uint32_t lastData=millis();
   char line[128]{};size_t used=0;
   pushOnline=true;
-  while(!otaTlsExclusive&&!streaming&&WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
+  while(!otaTlsExclusive&&!pollerHttpActive&&!streaming&&WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
    if(!source->available()){vTaskDelay(pdMS_TO_TICKS(15));continue;}
    int chr=source->read();if(chr<0)continue;lastData=millis();
    if(chr=='\r')continue;
@@ -228,6 +233,9 @@ struct RelayStream {
    const size_t available=self->windowCapacities[index];
    bool ok=(self->streamMode&&self->fromStream(self->windows[index],at,n,available));
    if(!ok){
+    // Closing the abandoned stream frees its TLS heap before opening a new
+    // authenticated ranged request. Two TLS sockets must never overlap here.
+    self->http.end();
     self->streamMode=false;
     n=0;ok=self->fromRange(self->windows[index],at,n,available);
    }
@@ -400,6 +408,9 @@ static void poller(void*){
    if(pushOnline&&millis()-pushGraceStart<400){
     vTaskDelay(pdMS_TO_TICKS(20));continue;
    }
+   // With server push already connected, avoid a second TLS socket for
+   // change-wait. The next bounded full sync still runs within ~1.2 s.
+   if(pushOnline){vTaskDelay(pdMS_TO_TICKS(20));continue;}
    JsonDocument waited;
    if(!request("/api/curtain-bridge/wait?after="+String(revision)+"&seconds=1",waited)){
     // If the wake request fails, force an authenticated full sync rather
