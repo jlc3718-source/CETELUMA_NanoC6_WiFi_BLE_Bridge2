@@ -299,7 +299,11 @@ struct Play {String sha;uint32_t size,gen;uint64_t id;};
 static void setResult(uint64_t id,const char*status,JsonVariantConst result){xSemaphoreTake(lock,portMAX_DELAY);lastCommand=id;lastAck=status;lastResult.set(result);JsonDocument ack;ack["id"]=id;ack["state"]=status;ack["result"]=result;String text;serializeJson(ack,text);acknowledgments.push_back(text);syncNow=true;xSemaphoreGive(lock);}
 static void playback(void*arg){
  Play p=*static_cast<Play*>(arg);delete static_cast<Play*>(arg);bool applied=false;String error;
- do{
+ // A looping animation MUST periodically return TLS ownership to the command
+ // poller. Otherwise Eufy schedule OFF can never interrupt endless playback.
+ for(;;){
+  const uint32_t syncBeforeLoop=lastSync;
+  {
   RelayStream stream;stream.sha=p.sha;stream.size=p.size;uint8_t header[8];
   if(!stream.read(header,8)){error="Oracle asset header download failed: "+relayError;break;}
   if(memcmp(header,"JHC1",4)){error="Invalid relay program header";break;}
@@ -323,7 +327,19 @@ static void playback(void*arg){
   if(error.length()||p.gen!=generation)break;
   if(stream.offset!=stream.size||!stream.complete()){error="Complete relay digest mismatch";break;}
   if(!header[6])break;
- }while(p.gen==generation&&WiFi.status()==WL_CONNECTED);
+  } // Frees asset TLS socket and all buffers BEFORE command sync may connect.
+  if(p.gen!=generation||WiFi.status()!=WL_CONNECTED)break;
+  streaming=false;syncNow=true;
+  const uint32_t checkStart=millis();
+  while(p.gen==generation&&lastSync==syncBeforeLoop&&millis()-checkStart<4000
+        &&WiFi.status()==WL_CONNECTED)
+   vTaskDelay(pdMS_TO_TICKS(20));
+  // Allow the poller to process all returned commands, including scheduled
+  // power-off, before the next potentially long animation loop begins.
+  vTaskDelay(pdMS_TO_TICKS(180));
+  if(p.gen!=generation||WiFi.status()!=WL_CONNECTED)break;
+  streaming=true;
+ }
  if(error.length()){streamFailures++;streamFailed=streamFailures<=3;issue(error);if(!applied){JsonDocument result;result["ok"]=false;result["error"]=error;setResult(p.id,"failed",result.as<JsonVariantConst>());}}
  if(p.gen==generation){streaming=false;syncNow=true;}vTaskDelete(nullptr);
 }
@@ -332,8 +348,9 @@ static void poller(void*){
  for(;;){
   if(otaTlsExclusive){vTaskDelay(pdMS_TO_TICKS(40));continue;}
   if(WiFi.status()!=WL_CONNECTED||!timeValid()||!getEndpoint().length()){online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
-  // Release HTTPS transport for playback and resume sync at applied ACK.
-  if(streaming&&lastAck=="downloaded"){vTaskDelay(pdMS_TO_TICKS(120));continue;}
+  // Never open a concurrent control TLS socket while an asset is streamed.
+  // Looping playback opens a bounded sync window between complete loops.
+  if(streaming){vTaskDelay(pdMS_TO_TICKS(120));continue;}
   JsonDocument body,response;body["recoverDesired"]=streamFailed;body["bridgeId"]=bridgeId;body["bootId"]=boot;
   auto status=body["status"].to<JsonObject>();status["firmware"]=VERSION;status["build"]=BUILD_SHA;status["uptimeSeconds"]=millis()/1000;status["wifiRSSI"]=WiFi.RSSI();status["wifiIP"]=WiFi.localIP().toString();status["wifiGateway"]=WiFi.gatewayIP().toString();status["autoUpdate"]=state["autoUpdate"]|true;status["relayStreaming"]=streaming;status["assetStorage"]="oracle";status["freeHeap"]=ESP.getFreeHeap();status["flashBytes"]=ESP.getFlashChipSize();
   JsonDocument curtain;curtainCall("status",JsonVariantConst(),curtain);status["curtain"]=curtain.as<JsonVariantConst>();
