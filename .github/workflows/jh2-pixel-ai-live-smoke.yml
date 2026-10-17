@@ -1,0 +1,58 @@
+name: Jason Home 2 Native Pixel AI One-Shot Smoke
+on:
+  push:
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    paths: ['.github/workflows/jh2-pixel-ai-live-smoke.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  validate-live-pixel-generator:
+    name: One 20x20 AI test; exact 40x40 pixels; no BLE command
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Validate one Cloudflare pixel design without sending to curtain
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,base64,urllib.request,urllib.error,time
+          import subprocess
+          base='http://127.0.0.1:8081'
+          backend=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(item.split('=',1) for item in backend['Config']['Env'] if '=' in item)
+          token=env['JASON_HOME_API_TOKEN']
+          def req(path,payload,headers=None,timeout=85):
+            request=urllib.request.Request(base+path,
+              data=json.dumps(payload).encode(),method='POST',
+              headers={'content-type':'application/json',**(headers or {})})
+            with urllib.request.urlopen(request,timeout=timeout) as response:
+              return json.load(response),dict(response.headers)
+          _,hdr=req('/api/session',{'token':token})
+          cookie=hdr['Set-Cookie'].split(';')[0]
+          before=urllib.request.Request(base+'/api/curtain/status',headers={'Cookie':cookie})
+          with urllib.request.urlopen(before,timeout=10) as response:
+            previous=json.load(response).get('queued')
+          ts=time.time()
+          answer,_=req('/api/curtain/generate-art',
+            {'prompt':'A simple smiling orange pumpkin with a green stem and big black eyes'},
+            {'Cookie':cookie})
+          pixels=base64.b64decode(answer['pixels'],validate=True)
+          assert len(pixels)==40*40*4,'not native 40x40 RGBA'
+          assert answer['previewMatchesUpload'] is True
+          colors={tuple(pixels[i:i+3]) for i in range(0,len(pixels),4)}
+          assert 2<=len(colors)<=12,('bad colors',len(colors))
+          for y in range(0,40,2):
+            for x in range(0,40,2):
+              o=(y*40+x)*4;sample=pixels[o:o+4]
+              for yy in range(y,y+2):
+                for xx in range(x,x+2):
+                  p=(yy*40+xx)*4
+                  assert pixels[p:p+4]==sample,'block grid is inconsistent'
+          after=urllib.request.Request(base+'/api/curtain/status',headers={'Cookie':cookie})
+          with urllib.request.urlopen(after,timeout=10) as response:
+            current=json.load(response).get('queued')
+          assert current==previous,'AI generation enqueued an unexpected curtain command'
+          print('PIXEL_AI_LIVE_PASS','model',answer.get('model'),'colors',len(colors),
+            'coloredBlocks',answer.get('activeBlocks'),'milliseconds',round((time.time()-ts)*1000),
+            'bytes',len(pixels),'queuedBefore',previous,'queuedAfter',current)
+          PY
