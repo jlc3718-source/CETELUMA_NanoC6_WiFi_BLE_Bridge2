@@ -189,6 +189,7 @@ function usePreparedFrame(frame){
 async function load(src,paletteOverride=null){
  const img=new Image();await new Promise((ok,fail)=>{img.onload=ok;img.onerror=()=>fail(Error('Could not load this image'));img.src=src});
  paint(img,paletteOverride);
+ setBusy(busy);
  $('image').src=canvas.toDataURL('image/png');$('image').hidden=false;$('placeholder').hidden=true;
  show('Preview ready. Tap Show on curtain to send it.');
 }
