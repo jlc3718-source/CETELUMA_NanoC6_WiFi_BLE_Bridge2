@@ -70,6 +70,11 @@ jobs:
               else: print('CURTAIN_STATUS_HTTP',status)
               code,_,_=call('http://127.0.0.1:8081','/api/curtain/generate-art',{'prompt':'x'},headers={'Cookie':cookie})
               print('AI_ROUTE_VALIDATION',code)
+              code,ai,_=call('http://127.0.0.1:8081','/api/ai',headers={'Cookie':cookie})
+              if code==200:
+                  print('AI_PROVIDER_STATUS',{'http':code,'configured':ai.get('configured'),'provider':ai.get('provider'),'cloudflareConfigured':ai.get('cloudflareConfigured'),'usageRemaining':(ai.get('usage') or {}).get('remaining') if isinstance(ai.get('usage'),dict) else None})
+              else:print('AI_PROVIDER_HTTP',code)
+
           for name,mounts,env in [('curtain',wmount,wenv),('eufy',bmount,benv)]:
               folder=mounts.get('/data')
               files=[]
