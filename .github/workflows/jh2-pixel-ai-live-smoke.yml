@@ -40,6 +40,7 @@ jobs:
           pixels=base64.b64decode(answer['pixels'],validate=True)
           assert len(pixels)==40*40*4,'not native 40x40 RGBA'
           assert answer['previewMatchesUpload'] is True
+          assert answer['activeBlocks']>=65,'The rendered AI subject is too small to recognize'
           colors={tuple(pixels[i:i+3]) for i in range(0,len(pixels),4)}
           assert 2<=len(colors)<=12,('bad colors',len(colors))
           for y in range(0,40,2):
