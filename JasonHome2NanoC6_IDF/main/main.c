@@ -1,0 +1,287 @@
+/*
+ * Jason Home 2 native ESP-IDF diagnostic: Bluetooth-only, READ-ONLY.
+ * One dedicated ESP32-C6 NimBLE central, no Wi-Fi/Oracle/Eufy/flash changes.
+ * Manufacturer-observed request sequence: 205, 167, 2904.
+ *
+ * This image is an engineering probe, NOT a drop-in replacement for the
+ * working Jason Home 2 runtime. Never install on the production Nano
+ * until the Oracle transport has been migrated and accepted.
+ */
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_err.h"
+#include "nvs_flash.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "host/ble_hs.h"
+#include "host/util/util.h"
+#include "os/os_mbuf.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "effectlist.h"
+
+#if !CONFIG_BT_NIMBLE_ENABLED
+#error "The ESP-IDF NimBLE host must be enabled."
+#endif
+#if CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE < 512
+#error "NimBLE's actual host receive mbuf must fit a complete large native EffectList notification."
+#endif
+
+static const char *TAG="JH2_IDF_BLE";
+static const char TARGET[]="DN5E58";
+static const ble_uuid128_t SVC_UUID=BLE_UUID128_INIT(
+  0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x00,0x00);
+static const ble_uuid128_t WRITE_UUID=BLE_UUID128_INIT(
+  0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x02,0x01);
+static const ble_uuid128_t NOTIFY_UUID=BLE_UUID128_INIT(
+  0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x01,0x01);
+
+static uint16_t connection=BLE_HS_CONN_HANDLE_NONE;
+static uint16_t service_start=0,service_end=0,writer=0,notifier=0,cccd=0;
+static uint16_t next_def_after_notify=UINT16_MAX;
+static uint8_t own_addr=0,request_index=0,sequence=0;
+static bool requested=false,finished=false;
+static uint32_t notification_count=0,catalog_packets=0,catalog_unique=0;
+static uint8_t catalog_seen[JH2_FACTORY_EFFECTS]={0};
+static int64_t started_at=0;
+static const uint16_t READ_OPS[]={205,167,2904};
+
+static int gap_event(struct ble_gap_event *event,void *arg);
+static void begin_scan(void);
+static void fail(const char *stage,int rc){
+    ESP_LOGE(TAG,"DIAGNOSTIC_FAILURE stage=%s rc=%d no_controller_mutation",stage,rc);
+}
+
+static void begin_scan(void){
+    if(connection!=BLE_HS_CONN_HANDLE_NONE)return;
+    if(ble_hs_id_infer_auto(0,&own_addr)!=0)return;
+    struct ble_gap_disc_params params={0};
+    params.passive=0; // active scan obtains DN5E58 name when in scan response
+    params.filter_duplicates=0;
+    int rc=ble_gap_disc(own_addr,BLE_HS_FOREVER,&params,gap_event,NULL);
+    if(rc)fail("scan",rc);
+}
+
+static int write_done(uint16_t conn,const struct ble_gatt_error *error,
+                      struct ble_gatt_attr *attr,void *arg);
+static void send_next(void){
+    if(connection==BLE_HS_CONN_HANDLE_NONE||!writer||request_index>=3)return;
+    uint16_t opcode=READ_OPS[request_index];
+    uint8_t frame[24]={0};
+    uint8_t id=sequence++;
+    frame[0]=id;frame[1]=1;frame[2]=0;frame[3]=0;
+    frame[4]=0xf0;frame[5]=4;
+    frame[6]=0;frame[7]=id;
+    frame[10]=(uint8_t)(opcode>>8);
+    frame[11]=(uint8_t)opcode;
+    ESP_LOGI(TAG,"CATALOG_READ_TX stage=%d opcode=%u payload_bytes=24",request_index+1,opcode);
+    int rc=ble_gattc_write_flat(connection,writer,frame,sizeof(frame),write_done,NULL);
+    if(rc)fail("catalog_read_write",rc);
+}
+static int write_done(uint16_t conn,const struct ble_gatt_error *error,
+                      struct ble_gatt_attr *attr,void *arg){
+    (void)conn;(void)attr;(void)arg;
+    if(error->status){fail("write_ack",error->status);return 0;}
+    ++request_index;
+    if(request_index<3)send_next();
+    else{
+        requested=true;started_at=esp_timer_get_time();
+        ESP_LOGI(TAG,"CATALOG_READ_ARMED no_upload_no_delete waiting_for_five_groups");
+    }
+    return 0;
+}
+static int subscribe_done(uint16_t conn,const struct ble_gatt_error *error,
+                          struct ble_gatt_attr *attr,void *arg){
+    (void)conn;(void)attr;(void)arg;
+    if(error->status)fail("subscribe_ack",error->status);
+    else{
+        ESP_LOGI(TAG,"NOTIFY_SUBSCRIBED cccd=%u; sending manufacturer read only",cccd);
+        request_index=0;sequence=0;
+        send_next();
+    }
+    return 0;
+}
+static int descriptor_found(uint16_t conn,const struct ble_gatt_error *error,
+                            uint16_t chr_handle,const struct ble_gatt_dsc *dsc,void *arg){
+    (void)conn;(void)chr_handle;(void)arg;
+    if(error->status==0){
+        if(ble_uuid_u16(&dsc->uuid.u)==BLE_GATT_DSC_CLT_CFG_UUID16)cccd=dsc->handle;
+        return 0;
+    }
+    if(error->status!=BLE_HS_EDONE){fail("descriptor_discovery",error->status);return 0;}
+    if(!cccd){fail("missing_notification_cccd",-1);return 0;}
+    const uint8_t enabled[]={1,0};
+    int rc=ble_gattc_write_flat(connection,cccd,enabled,2,subscribe_done,NULL);
+    if(rc)fail("enable_notifications",rc);
+    return 0;
+}
+static int characteristic_found(uint16_t conn,const struct ble_gatt_error *error,
+                                const struct ble_gatt_chr *chr,void *arg){
+    (void)conn;(void)arg;
+    if(error->status==0){
+        if(ble_uuid_cmp(&chr->uuid.u,&WRITE_UUID.u)==0)writer=chr->val_handle;
+        if(ble_uuid_cmp(&chr->uuid.u,&NOTIFY_UUID.u)==0)notifier=chr->val_handle;
+        if(chr->def_handle>notifier && notifier && chr->def_handle<next_def_after_notify)
+            next_def_after_notify=chr->def_handle;
+        return 0;
+    }
+    if(error->status!=BLE_HS_EDONE){fail("characteristic_discovery",error->status);return 0;}
+    if(!writer||!notifier){fail("missing_write_or_notify",-1);return 0;}
+    uint16_t limit=service_end;
+    if(next_def_after_notify!=UINT16_MAX&&next_def_after_notify>notifier+1)
+        limit=next_def_after_notify-1;
+    ESP_LOGI(TAG,"CHARACTERISTICS write=%u notify=%u descriptor_limit=%u",writer,notifier,limit);
+    int rc=ble_gattc_disc_all_dscs(connection,notifier,limit,descriptor_found,NULL);
+    if(rc)fail("descriptor_start",rc);
+    return 0;
+}
+static int service_found(uint16_t conn,const struct ble_gatt_error *error,
+                         const struct ble_gatt_svc *svc,void *arg){
+    (void)conn;(void)arg;
+    if(error->status==0){
+        if(ble_uuid_cmp(&svc->uuid.u,&SVC_UUID.u)==0){
+            service_start=svc->start_handle;service_end=svc->end_handle;
+        }
+        return 0;
+    }
+    if(error->status!=BLE_HS_EDONE){fail("service_discovery",error->status);return 0;}
+    if(!service_start){fail("missing_smartdawn_service",-1);return 0;}
+    ESP_LOGI(TAG,"SMARTDAWN_SERVICE handles=%u-%u",service_start,service_end);
+    int rc=ble_gattc_disc_all_chrs(connection,service_start,service_end,characteristic_found,NULL);
+    if(rc)fail("characteristic_start",rc);
+    return 0;
+}
+static int mtu_done(uint16_t conn,const struct ble_gatt_error *error,uint16_t mtu,void *arg){
+    (void)arg;
+    if(error->status)ESP_LOGW(TAG,"MTU negotiation returned error %d",error->status);
+    ESP_LOGI(TAG,"ATT_MTU=%u",mtu);
+    int rc=ble_gattc_disc_all_svcs(conn,service_found,NULL);
+    if(rc)fail("service_start",rc);
+    return 0;
+}
+static void on_notification(struct os_mbuf *om){
+    uint16_t len=OS_MBUF_PKTLEN(om);
+    ++notification_count;
+    if(len<24 || len>520){
+        ESP_LOGW(TAG,"NOTIFICATION_UNEXPECTED_SIZE size=%u",len);
+        return;
+    }
+    uint8_t raw[520];
+    if(os_mbuf_copydata(om,0,len,raw))return;
+    if(raw[1]!=1||raw[2]!=0||raw[3]!=0){
+        ESP_LOGW(TAG,"FRAGMENTED_NOTICE id=%u count=%u remain=%u length=%u",
+                 raw[0],raw[1],raw[2],len);
+        return;
+    }
+    const uint8_t *ddp=raw+4;
+    if(ddp[0]!=0xf0 && ddp[0]!=0xf1)return;
+    uint16_t opcode=((uint16_t)ddp[6]<<8)|ddp[7];
+    if(opcode==2630)return; // playback progress
+    if(opcode!=2904){
+        ESP_LOGI(TAG,"OTHER_NOTICE opcode=%u total_bytes=%u",opcode,len);
+        return;
+    }
+    ++catalog_packets;
+    jh2_catalog_batch batch;
+    int rc=jh2_effectlist_parse(ddp,len-4,&batch);
+    if(rc){
+        ESP_LOGW(TAG,"CATALOG_PARSE_FAIL message_id=%u gatt_size=%u rc=%d",raw[0],len,rc);
+        return;
+    }
+    for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++)
+        if(batch.found[i]&&!catalog_seen[i]){catalog_seen[i]=1;++catalog_unique;}
+    ESP_LOGI(TAG,"CATALOG_REPLY message_id=%u gatt_bytes=%u effects=%u first=%u last=%u unique=%u",
+             raw[0],len,(unsigned)batch.count,batch.first,batch.last,(unsigned)catalog_unique);
+    if(!finished && catalog_unique==JH2_FACTORY_EFFECTS){
+        finished=true;
+        ESP_LOGI(TAG,"SUCCESS_NATIVE_CATALOG_88_OF_88 reply_packets=%u notifications=%u",
+                 (unsigned)catalog_packets,(unsigned)notification_count);
+    }
+}
+static int gap_event(struct ble_gap_event *event,void *arg){
+    (void)arg;
+    switch(event->type){
+    case BLE_GAP_EVENT_DISC:{
+        struct ble_hs_adv_fields f;
+        if(ble_hs_adv_parse_fields(&f,event->disc.data,event->disc.length_data)!=0)return 0;
+        if(f.name_len!=strlen(TARGET)||memcmp(f.name,TARGET,f.name_len)!=0)return 0;
+        ESP_LOGI(TAG,"FOUND_TARGET %s",TARGET);
+        if(ble_gap_disc_cancel()!=0)return 0;
+        int rc=ble_gap_connect(own_addr,&event->disc.addr,30000,NULL,gap_event,NULL);
+        if(rc){fail("gap_connect",rc);begin_scan();}
+        return 0;
+    }
+    case BLE_GAP_EVENT_CONNECT:
+        if(event->connect.status){
+            fail("connect",event->connect.status);begin_scan();return 0;
+        }
+        connection=event->connect.conn_handle;
+        ESP_LOGI(TAG,"SMARTDAWN_CONNECTED conn=%u",connection);
+        {
+            int rc=ble_gattc_exchange_mtu(connection,mtu_done,NULL);
+            if(rc)fail("exchange_mtu",rc);
+        }
+        return 0;
+    case BLE_GAP_EVENT_NOTIFY_RX:
+        if(event->notify_rx.attr_handle==notifier)on_notification(event->notify_rx.om);
+        return 0;
+    case BLE_GAP_EVENT_DISCONNECT:
+        ESP_LOGW(TAG,"BLE_DISCONNECTED reason=%u",event->disconnect.reason);
+        connection=BLE_HS_CONN_HANDLE_NONE;
+        service_start=service_end=writer=notifier=cccd=0;
+        next_def_after_notify=UINT16_MAX;
+        requested=finished=false;
+        request_index=0;
+        memset(catalog_seen,0,sizeof(catalog_seen));
+        catalog_packets=catalog_unique=notification_count=0;
+        begin_scan();
+        return 0;
+    case BLE_GAP_EVENT_DISC_COMPLETE:
+        if(connection==BLE_HS_CONN_HANDLE_NONE)begin_scan();
+        return 0;
+    case BLE_GAP_EVENT_MTU:
+        ESP_LOGI(TAG,"NEGOTIATED_MTU %u",event->mtu.value);
+        return 0;
+    default:return 0;
+    }
+}
+static void on_sync(void){
+    int rc=ble_hs_util_ensure_addr(0);
+    if(rc){fail("ensure_address",rc);return;}
+    ESP_LOGI(TAG,"NIMBLE_NATIVE_READY msys2=%d no_wifi diagnostics_only",
+             CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
+    begin_scan();
+}
+static void on_reset(int reason){fail("nimble_reset",reason);}
+static void host_task(void *parameter){
+    (void)parameter;
+    nimble_port_run();
+    nimble_port_freertos_deinit();
+}
+void app_main(void){
+    // Deliberately NEVER erase NVS; production Wi-Fi and pairing data survive.
+    esp_err_t rc=nvs_flash_init();
+    if(rc!=ESP_OK){
+        ESP_LOGE(TAG,"NVS_INIT_FAILED rc=%d; refusing destructive recovery",rc);
+        return;
+    }
+    rc=nimble_port_init();
+    if(rc!=ESP_OK){fail("nimble_port_init",rc);return;}
+    ble_hs_cfg.reset_cb=on_reset;
+    ble_hs_cfg.sync_cb=on_sync;
+    ble_att_set_preferred_mtu(517);
+    ESP_LOGW(TAG,"DIAGNOSTIC_ONLY; native ESP-IDF inventory read; no Wi-Fi/Oracle/OTA");
+    nimble_port_freertos_init(host_task);
+    while(true){
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        if(requested && !finished && started_at &&
+           esp_timer_get_time()-started_at>20000000LL){
+            ESP_LOGW(TAG,"PARTIAL_CATALOG received=%u of 88 reply_packets=%u notifications=%u",
+                     (unsigned)catalog_unique,(unsigned)catalog_packets,(unsigned)notification_count);
+            started_at=esp_timer_get_time();
+        }
+    }
+}
