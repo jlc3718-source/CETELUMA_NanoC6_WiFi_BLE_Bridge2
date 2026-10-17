@@ -47,15 +47,26 @@ function wrap(data,id,total,left,full=false){const out=new Uint8Array(data.lengt
 function filePlan(data){
  if(!(data instanceof Uint8Array)||data.length!==4096||[68,78,1,254].some((x,i)=>data[i]!==x))
   throw Error('Native controller slot requires a 4,096-byte DN1FE .eff file, not a JHC1 animation or GIF');
- const cid=new DataView(data.buffer,data.byteOffset,data.byteLength).getUint32(4,true);
+ const sourceCid=new DataView(data.buffer,data.byteOffset,data.byteLength).getUint32(4,true);
  // The only E-89 source template we captured is *known to scroll*.
  // Never accept it as a native no-scroll animation by accident.
- if(cid===83944)throw Error('E-89 scrolling template is not a verified no-scroll animation');
- if(cid!==CID)throw Error('Refusing to overwrite another effect: native file CID must be 83928');
- const chunks=Math.ceil(data.length/500),id=12;
+ if(sourceCid===83944)throw Error('E-89 scrolling template is not a verified no-scroll animation');
+ const native=data.slice(); // never modify the user's imported original
+ if(sourceCid!==CID){
+  const old=varint(sourceCid),updated=varint(CID);
+  if(old.length!==updated.length)throw Error('Native CID does not fit verified SmartDawn header layout');
+  let found=0;
+  for(let i=8;i<128;i++){
+   if(i+old.length>native.length||!old.every((v,j)=>native[i+j]===v))continue;
+   native.set(updated,i);found++;
+  }
+  if(found!==1)throw Error('Native CID metadata does not match known layout; no upload attempted');
+  new DataView(native.buffer).setUint32(4,CID,true);
+ }
+ const chunks=Math.ceil(native.length/500),id=12;
  const field=(n,v)=>[(n<<3),...varint(v)];
  const header=Uint8Array.from([...field(1,id),...field(2,3),...field(3,data.length),...field(4,0),...field(5,chunks),...field(6,500),...field(7,0),...field(9,CID)]);
- const request=wrap(header,id,chunks,chunks,true),parts=Array.from({length:chunks},(_,i)=>wrap(data.slice(i*500,(i+1)*500),id,chunks,chunks-i-1));
+ const request=wrap(header,id,chunks,chunks,true),parts=Array.from({length:chunks},(_,i)=>wrap(native.slice(i*500,(i+1)*500),id,chunks,chunks-i-1));
  for(const part of parts)if(part[7]!==crc8(part.slice(8)))throw Error('Native packet CRC mismatch');
  return {request,parts};
 }
