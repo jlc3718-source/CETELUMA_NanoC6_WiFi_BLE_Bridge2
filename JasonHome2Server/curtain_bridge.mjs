@@ -213,9 +213,12 @@ export function createCurtainBridge({db,now=Date.now}){
    }
   }
   db.prepare("UPDATE curtain_commands SET state='expired' WHERE state IN ('queued','downloaded') AND expires<?").run(at);
-  let rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 8").all();
-  // A local direct-BLE test blocks scheduled commands, but never traps an explicit remote manual command for 15 minutes.
-  if(Number(body.localOverrideUntil)>at)rows=rows.filter(row=>row.source==='manual');
+  // Prioritize live user commands over delayed schedule/recovery traffic.
+  // Filter local override BEFORE LIMIT so eight old recovery commands cannot hide a fresh action.
+  const local=Number(body.localOverrideUntil)>at;
+  const rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded')"+
+     (local?" AND source='manual'":"")+
+     " ORDER BY CASE WHEN source='manual' THEN 0 WHEN source='schedule' THEN 1 ELSE 2 END,id LIMIT 8").all();
   const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
   const assets=[...assetIds].map(sha=>assetManifest(sha)).filter(Boolean);
   let credentialUpdate=null;
