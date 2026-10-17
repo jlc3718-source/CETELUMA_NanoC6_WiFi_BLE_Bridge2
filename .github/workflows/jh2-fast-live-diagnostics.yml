@@ -71,6 +71,16 @@ jobs:
               else: print('CURTAIN_STATUS_HTTP',status)
               code,_,_=call('http://127.0.0.1:8081','/api/curtain/generate-art',{'prompt':'x'},headers={'Cookie':cookie})
               print('AI_ROUTE_VALIDATION',code)
+              code,manifest,_=call('http://127.0.0.1:8081','/api/curtain/firmware-manifest')
+              print('SIGNED_OTA_PROXY',{'http':code,'schema':manifest.get('schema'),'signed':bool(manifest.get('signature')),'publishedVersion':next((line.split('=',1)[1] for line in manifest.get('payload','').split('\\n') if line.startswith('version=')),None)})
+              try:
+                  req=urllib.request.Request('http://127.0.0.1:8081/curtain_converter.html',headers={'Cookie':cookie})
+                  with urllib.request.urlopen(req,timeout=8) as response:
+                      html=response.read().decode('utf8')
+                  print('BLOCK_ART_STUDIO',{'http':200,'blockGrid':('block.width=20' in html),'originalPreviews':('JH2_CURTAIN_IMAGE_SRC' in html),'pixelPalette':('paletteOfPixels' in html)})
+              except Exception as e:
+                  print('BLOCK_ART_STUDIO_ERROR',type(e).__name__,str(e)[:100])
+
               code,ai,_=call('http://127.0.0.1:8081','/api/ai',headers={'Cookie':cookie})
               if code==200:
                   print('AI_PROVIDER_STATUS',{'http':code,'configured':ai.get('configured'),'provider':ai.get('provider'),'cloudflareConfigured':ai.get('cloudflareConfigured'),'usageRemaining':(ai.get('usage') or {}).get('remaining') if isinstance(ai.get('usage'),dict) else None})
