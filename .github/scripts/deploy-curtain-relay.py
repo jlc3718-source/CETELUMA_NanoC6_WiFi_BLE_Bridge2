@@ -122,7 +122,7 @@ assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),
 (stage/'server.mjs').write_text(live)
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
 for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs','curtain_pixel_grid.mjs','curtain_shape_art.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
-for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
+for name in ['curtain.js','curtain_converter.html','curtain_native_slot.js','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1
