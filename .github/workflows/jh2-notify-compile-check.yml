@@ -1,0 +1,53 @@
+name: JH2 1.1.26 BLE Callback Build Check (no publish)
+on:
+  push:
+    branches: [codex/jh2-nanoc6-large-notify-recovery-20261017]
+    paths:
+      - 'JasonHome2NanoC6/src/Curtain.cpp'
+      - 'JasonHome2NanoC6/VERSION'
+      - '.github/workflows/jh2-notify-compile-check.yml'
+permissions: {contents: read}
+jobs:
+  test-only:
+    name: Compile NanoC6 runtime without OTA/signing/flashing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-notify-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+          restore-keys: jh2-notify-pio-
+      - name: Test BLE receive source and compile NanoC6 1.1.26 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat JasonHome2NanoC6/VERSION)" = "1.1.26"
+          python -m pip install platformio==6.2.0
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('JasonHome2NanoC6/src/Curtain.cpp').read_text()
+          assert 'static Notice notices[NOTICE_SLOTS]' in s
+          assert 'memcpy(slot.bytes,data,n)' in s
+          assert 'to64(snapshot.bytes,snapshot.length)' in s
+          assert s.index('xSemaphoreGive(noticesLock);\n    if(!found)break;')<s.index('to64(snapshot.bytes,snapshot.length)')
+          assert 'if(op==2630){++nativeProgressIgnored;return;}' in s
+          assert 'if(op==2904)++nativeCatalogPackets;' in s
+          assert 'nativeNoticeDrops' in s
+          assert 'std::deque<Notice>' not in s
+          print('Receive-path regression assertions PASS')
+          PY
+          python JasonHome2NanoC6/tools/prepare.py
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -j 4
+          python - <<'PY'
+          from pathlib import Path
+          b=Path('JasonHome2NanoC6/.pio/build/runtime/firmware.bin')
+          assert b.is_file() and 0<b.stat().st_size<0x290000
+          print('UNPUBLISHED_TEST_BUILD_OK',b.stat().st_size)
+          PY
