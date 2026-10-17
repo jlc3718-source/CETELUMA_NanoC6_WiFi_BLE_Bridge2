@@ -145,6 +145,15 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn('void relayPauseForFirmwareCheck(bool hold)',header)
   self.assertIn('relayPauseForFirmwareCheck(true)',fw)
   self.assertIn('relayPauseForFirmwareCheck(false)',fw)
+ def test_eufy_power_off_interrupts_looping_oracle_animation_at_loop_boundary(self):
+  relay=(R/'src/OracleRelay.cpp').read_text()
+  self.assertIn('for(;;){\n  const uint32_t syncBeforeLoop=lastSync;',relay)
+  self.assertIn('} // Frees asset TLS socket and all buffers BEFORE command sync may connect.',relay)
+  self.assertIn('streaming=false;syncNow=true;',relay)
+  self.assertIn('lastSync==syncBeforeLoop&&millis()-checkStart<4000',relay)
+  self.assertIn('if(p.gen!=generation||WiFi.status()!=WL_CONNECTED)break;',relay)
+  self.assertIn('if(streaming){vTaskDelay(pdMS_TO_TICKS(120));continue;}',relay)
+  self.assertIn('action=="power"&&!(cmd["payload"]["on"]|false)',relay)
  def test_oracle_tls_transports_do_not_overlap_and_failed_stream_closes(self):
   relay=(R/'src/OracleRelay.cpp').read_text()
   self.assertIn('if(otaTlsExclusive||pollerHttpActive||streaming',relay)
