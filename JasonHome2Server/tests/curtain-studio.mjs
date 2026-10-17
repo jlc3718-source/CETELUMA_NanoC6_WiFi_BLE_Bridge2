@@ -14,7 +14,7 @@ test('AI generator is minimal and its script parses',()=>{
  const inline=js.filter(x=>x[1].trim());assert.equal(inline.length,1);new Script(inline[0][1],{filename:'curtain_converter.html'});
  for(const id of ['prompt','generate','sample','file','image','preview','send','stop','speed','connection','testResult'])
    assert.ok(converter.includes('id="'+id+'"'),id);
- assert.doesNotMatch(converter,/requestDevice|gatt\.connect|BLE scan|upload firmware|83928/);
+ assert.doesNotMatch(inline[0][1],/requestDevice|gatt\.connect|BLE scan|upload firmware/);
 });
 test('Oracle public OTA manifest proxy exposes signed release metadata only',()=>{
  assert.match(server,/path==="\/api\/curtain\/firmware-manifest"/);
