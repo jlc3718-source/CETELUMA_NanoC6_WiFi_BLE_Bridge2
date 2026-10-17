@@ -20,6 +20,14 @@ test('Oracle public OTA manifest proxy exposes signed release metadata only',()=
  assert.match(server,/manifest\.signature/);
  assert.match(server,/redirect:"error"/);
 });
+test('Oracle serves exact canonical signed SHA-verified runtime BIN without a new key',()=>{
+ assert.match(server,/firmware-runtime/);
+ assert.match(server,/fields\.url!==canonical/);
+ assert.match(server,/createHash\("sha256"\)\.update\(bytes\)/);
+ assert.match(server,/fields\.product!==/);
+ assert.match(server,/manifest\.signature/);
+ assert.match(server,/x-firmware-sha256/);
+});
 test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
  assert.match(server,/@cf\/black-forest-labs\/flux-1-schnell/);

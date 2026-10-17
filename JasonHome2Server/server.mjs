@@ -943,6 +943,46 @@ async function route(req,res){
     if(manifest?.schema!==1||typeof manifest.payload!=="string"||typeof manifest.signature!=="string")throw fail(502,"Signed release manifest is incomplete");
     return send(res,200,manifest,{"cache-control":"no-store"});
   }
+  // A public firmware binary mirror: this never signs or authorizes updates.
+  // The Nano still validates ECDSA manifest signature, exact size and SHA-256.
+  // GitHub release downloads remain the fallback if Oracle is unreachable.
+  if(method==="GET"&&/^\\/api\\/curtain\\/firmware-runtime\\/[0-9]+\\.[0-9]+\\.[0-9]+\\.bin$/.test(path)){
+    const version=path.split("/").at(-1).slice(0,-4);
+    const channel="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
+    let manifestResult;
+    try{manifestResult=await fetch(channel,{signal:AbortSignal.timeout(12000),redirect:"error",headers:{"accept":"application/json"}});}
+    catch{throw fail(503,"Signed firmware channel unreachable");}
+    if(!manifestResult.ok)throw fail(502,"Firmware channel HTTP "+manifestResult.status);
+    const manifestText=await manifestResult.text();
+    if(manifestText.length>16000)throw fail(502,"Firmware manifest too large");
+    let manifest;
+    try{manifest=JSON.parse(manifestText);}catch{throw fail(502,"Firmware channel is not valid JSON");}
+    if(manifest?.schema!==1||typeof manifest.signature!=="string"||!manifest.signature.length||
+       typeof manifest.payload!=="string")throw fail(502,"Unsigned or invalid firmware manifest");
+    const fields=Object.fromEntries(manifest.payload.split("\\n").filter(Boolean).map(line=>{
+      const index=line.indexOf("=");if(index<1)throw fail(502,"Malformed signed firmware fields");
+      return [line.slice(0,index),line.slice(index+1)];
+    }));
+    const canonical="https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v"+version+"/jh2-runtime-"+version+".bin";
+    if(fields.product!=="jason-home-2-nanoc6"||fields.version!==version||
+       fields.url!==canonical||!/^[0-9a-f]{64}$/.test(fields.sha256||"")||
+       !/^[0-9]{4,8}$/.test(fields.bytes||""))throw fail(404,"Firmware version is not the currently signed release");
+    const byteCount=Number(fields.bytes);
+    if(!Number.isSafeInteger(byteCount)||byteCount<1024||byteCount>0x290000)
+      throw fail(502,"Firmware size outside Nano runtime partition");
+    let upstream;
+    try{upstream=await fetch(canonical,{signal:AbortSignal.timeout(60000),redirect:"follow",headers:{"accept":"application/octet-stream"}});}
+    catch{throw fail(503,"Public signed firmware binary is temporarily unreachable");}
+    if(!upstream.ok)throw fail(502,"Firmware release download HTTP "+upstream.status);
+    const announced=Number(upstream.headers.get("content-length")||0);
+    if(announced&&announced!==byteCount)throw fail(502,"Firmware release length mismatch");
+    const bytes=Buffer.from(await upstream.arrayBuffer());
+    if(bytes.length!==byteCount||createHash("sha256").update(bytes).digest("hex")!==fields.sha256)
+      throw fail(502,"Firmware release hash mismatch");
+    res.writeHead(200,{"content-type":"application/octet-stream","content-length":bytes.length,
+      "cache-control":"no-store","x-firmware-sha256":fields.sha256,"x-content-type-options":"nosniff"});
+    return res.end(bytes);
+  }
   if(path==="/api/session"&&method==="POST"){
     const value=await input(req),candidate=String(value.token||"");
     if(!candidate||!secureEqual(candidate,upstreamToken))throw fail(401,"Invalid Oracle API key");
