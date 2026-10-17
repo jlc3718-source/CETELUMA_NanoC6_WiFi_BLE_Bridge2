@@ -69,6 +69,17 @@ else:
  # Update the already-isolated route blocks without touching other application code.
  for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
   a=src.index(start);b=src.index(end,a);x=live.index(start);y=live.index(end,x);live=live[:x]+src[a:b]+live[y:]
+# Preserve the active full web app while installing the isolated AI Curtain route.
+# Prior deployments copied curtain pages but omitted this API route entirely.
+route_start='  if(method==="POST"&&path==="/api/curtain/generate-art")'
+route_after='  if(method==="POST"&&path==="/api/curtain/ai-revamp")'
+assert src.count(route_start)==1 and src.count(route_after)==1
+if route_start not in live:
+ assert live.count(route_after)==1, 'The installed AI revamp route moved; refuse unsafe deployment'
+ ai_block=src[src.index(route_start):src.index(route_after)]
+ live=live.replace(route_after,ai_block+route_after,1)
+assert live.count(route_start)==1, 'AI generator must be registered exactly once'
+assert 'function cloudflareAiConfigured()' in live and 'async function cloudflareAiRun(' in live, 'Cloudflare helpers must exist in installed gateway'
 old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
 bridge_init='const curtainRelay=createCurtainBridge({db});'
 new_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});'
@@ -103,6 +114,12 @@ stagename='jh2-curtain-stage-'+RUN
 try:
  start(stagename,18081,stagedata)
  base='http://127.0.0.1:18081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
+ # A deliberately invalid prompt confirms the generator route exists without spending AI credits.
+ try:
+  api(base,'/api/curtain/generate-art',cookie=cookie,body={'prompt':'x'})
+  raise AssertionError('Short prompt unexpectedly accepted')
+ except urllib.error.HTTPError as err:
+  assert err.code==400, 'AI generator API not registered on staged gateway'
  nano,_=api(base,'/api/nanoc6/sync',cookie=cookie)
  assert nano['configured'] is True,'NanoC6 brightness checkbox must be enabled by Oracle bridge'
  enabled,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':True})
