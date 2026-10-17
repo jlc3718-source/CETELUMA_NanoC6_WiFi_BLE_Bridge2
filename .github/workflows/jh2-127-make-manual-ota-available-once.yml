@@ -1,0 +1,65 @@
+name: Jason Home 2 Publish 1.1.27 To Manual Signed Update
+on:
+  push:
+    branches: [codex/jh2-native-2904-hci-receive-20261017]
+    paths: ['.github/workflows/jh2-127-make-manual-ota-available-once.yml']
+permissions: {contents: write}
+concurrency:
+  group: jh2-nanoc6-signed-ota-channel
+  cancel-in-progress: false
+jobs:
+  promotion:
+    name: Verify signed runtime and publish normal release + signed update channel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Verify release bytes and production signature before channel change
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export GH_REPO=jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          TAG=jason-home-2-nanoc6-v1.1.27
+          mkdir -p "$RUNNER_TEMP/jh2"
+          gh release download "$TAG" --pattern 'latest.json' --pattern 'jh2-runtime-1.1.27.bin' --dir "$RUNNER_TEMP/jh2"
+          python3 - <<'PY'
+          import pathlib,base64,hashlib,json,tempfile,subprocess
+          root=pathlib.Path(__import__('os').environ['RUNNER_TEMP'])/'jh2'
+          manifest=json.loads((root/'latest.json').read_text())
+          assert manifest['schema']==1 and len(manifest['signature'])>60
+          fields=dict(x.split('=',1) for x in manifest['payload'].splitlines())
+          assert fields['version']=='1.1.27' and fields['product']=='jason-home-2-nanoc6'
+          assert fields['url']=='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.1.27/jh2-runtime-1.1.27.bin'
+          binary=(root/'jh2-runtime-1.1.27.bin').read_bytes()
+          assert len(binary)==int(fields['bytes']) and hashlib.sha256(binary).hexdigest()==fields['sha256']
+          with tempfile.TemporaryDirectory() as temp:
+            dir=pathlib.Path(temp)
+            (dir/'payload').write_bytes(manifest['payload'].encode())
+            (dir/'sig').write_bytes(base64.b64decode(manifest['signature'],validate=True))
+            subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem',
+              '-signature',str(dir/'sig'),str(dir/'payload')],check=True)
+          print('SIGNED_1127_AND_RUNTIME_MATCH_VERIFIED',fields['sha256'])
+          PY
+          gh release edit "$TAG" --draft=false --prerelease=false --latest=false
+          gh release view "$TAG" --json isDraft,isPrerelease,assets > "$RUNNER_TEMP/release.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          j=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'release.json').read_text())
+          assert j['isDraft']==False and j['isPrerelease']==False
+          assert {'latest.json','jh2-runtime-1.1.27.bin'}<={x['name'] for x in j['assets']}
+          print('NORMAL_GITHUB_RELEASE_VERIFIED')
+          PY
+          git config user.name 'Jason Home 2 signed firmware channel'
+          git config user.email '325178451+jlc3718-source@users.noreply.github.com'
+          git fetch origin jh2-nanoc6-ota
+          git worktree add --detach "$RUNNER_TEMP/jh2ota" FETCH_HEAD
+          cp "$RUNNER_TEMP/jh2/latest.json" "$RUNNER_TEMP/jh2ota/latest.json"
+          git -C "$RUNNER_TEMP/jh2ota" add latest.json
+          if ! git -C "$RUNNER_TEMP/jh2ota" diff --cached --quiet; then
+            git -C "$RUNNER_TEMP/jh2ota" commit -m 'Publish signed manual NanoC6 update 1.1.27'
+            git -C "$RUNNER_TEMP/jh2ota" push origin HEAD:jh2-nanoc6-ota
+          fi
+          echo 'SIGNED_MANUAL_CHANNEL_1127_READY - device autoUpdate flag unchanged'
