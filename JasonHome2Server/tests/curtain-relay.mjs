@@ -308,3 +308,21 @@ test('BLE inventory fragment journal survives successive Nano syncs without losi
   assert.deepEqual(b.notifications().map(x=>x.id),[1],'reboot resets BLE notification numbering and history');
  }finally{b.close()}
 });
+
+test('native BLE rawWrite survives 60-second queue delay, accepts late Nano ACK, expires only after 240 seconds',()=>{
+ const {b,time}=create();
+ try{
+  const cmd=b.enqueue('rawWrite',{uuid:'01020074-1972-1925-3022-077119514e44',data:'AQ=='});
+  assert.equal(cmd.expires,1000000+240000);
+  time(1065000);
+  assert.equal(b.command(cmd.id).state,'queued','Do not expire a live write after the old 60-second deadline');
+  const pending=b.sync({});
+  assert.ok(pending.commands.some(x=>x.id===cmd.id));
+  b.sync({acks:[{id:cmd.id,state:'applied',result:{ok:true,connected:true,bleTransmitted:true,mtu:512}}]});
+  assert.equal(b.command(cmd.id).state,'applied','Later Nano ACK must complete original write');
+  const abandoned=b.enqueue('rawWrite',{uuid:'01020074-1972-1925-3022-077119514e44',data:'AQ=='});
+  time(1306000);
+  b.sync({});
+  assert.equal(b.command(abandoned.id).state,'expired','Unacknowledged native writes eventually expire; no indefinite replay');
+ }finally{b.close()}
+});

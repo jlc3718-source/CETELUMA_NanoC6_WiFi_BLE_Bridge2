@@ -168,7 +168,7 @@ export function createCurtainBridge({db,now=Date.now}){
   if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
   if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
-  const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),transient?now()+60000:now()+86400000,idempotency,source);
+  const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),action==='rawWrite'?now()+240000:(action==='connect'||action==='subscribeRaw')?now()+150000:transient?now()+60000:now()+86400000,idempotency,source);
   if(action==='asset'&&slot().pending_sha===payload.sha256)db.prepare("UPDATE curtain_asset_slots SET pending_command=?,phase='queued' WHERE target=?").run(Number(r.lastInsertRowid),TARGET);
   if(['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)||(action==='power'&&payload.on===false))
    put('lastVisualCommandId',Number(r.lastInsertRowid));

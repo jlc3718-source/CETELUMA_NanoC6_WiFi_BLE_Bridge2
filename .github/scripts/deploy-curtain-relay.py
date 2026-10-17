@@ -42,6 +42,30 @@ for name,i in [('backend',backend),('web',web)]:
  (BACK/(name+'-inspect.json')).write_text(json.dumps(i));(BACK/(name+'-inspect.json')).chmod(0o600)
 backupdb(dbhost(backend,be.get('JASON_HOME_DB','/data/jason-home.sqlite')),BACK/'backend.sqlite')
 webdb=dbhost(web,'/data/jason-home-2.sqlite');backupdb(webdb,BACK/'web.sqlite')
+# Read-only forensic snapshot: identify where the user's native commands stopped.
+# Do not print UUID payloads, credentials, raw BLE packets, or Eufy data.
+try:
+ with sqlite3.connect('file:'+str(webdb)+'?mode=ro',uri=True) as conn:
+  entries=conn.execute("SELECT id,action,state,created,expires,result FROM curtain_commands WHERE action IN ('rawWrite','connect','subscribeRaw') ORDER BY id DESC LIMIT 18").fetchall()
+  now_ms=int(time.time()*1000)
+  summary=[]
+  for id,action,st,created,expires,raw in entries:
+   try: detail=json.loads(raw or '{}')
+   except Exception:detail={}
+   summary.append({'id':id,'action':action,'state':st,
+     'ageSec':max(0,(now_ms-created)//1000),'ttlRemainingSec':(expires-now_ms)//1000,
+     'error':str(detail.get('error') or '')[:140],
+     'bleTransmitted':detail.get('bleTransmitted'),'connected':detail.get('connected')})
+  print('Predeployment native command states (read only):',json.dumps(summary),flush=True)
+except Exception as exc:print('Predeployment native command read unavailable:',type(exc).__name__,flush=True)
+if 'previous_relay' in locals():
+ print('Predeployment bridge status (read only):',json.dumps({
+  'online':previous_relay.get('online'),'lastSync':previous_relay.get('lastSync'),
+  'queued':previous_relay.get('queued'),
+  'connected':(previous_relay.get('curtain') or {}).get('connected'),
+  'mtu':(previous_relay.get('curtain') or {}).get('mtu'),
+  'lastCommand':(previous_relay.get('lastCommand') or {}).get('id')}),flush=True)
+
 cpout('jason-home-2-web','/app',BACK/'web-app')
 shutil.copyfile('/home/ubuntu/repo/JasonHomeServer/.env',BACK/'backend.env');(BACK/'backend.env').chmod(0o600)
 nginx=pathlib.Path('/etc/nginx/sites-available/jason-home');shutil.copyfile(nginx,BACK/'nginx.conf')

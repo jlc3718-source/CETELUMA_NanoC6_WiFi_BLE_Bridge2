@@ -16,13 +16,25 @@
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';
-  for(let i=0;i<150;i++){
-   await delay(i<20?150:400);const {command:c}=await api('/api/curtain/command?id='+queued.commandId);
-   if(status&&c.state==='downloaded')status.textContent='NanoC6 received command '+c.id+' · sending over BLE';
-   if(c.state==='applied')return {ok:true,...c.result,commandId:c.id,state:c.state,message:c.result?.message||'NanoC6 transmitted over BLE. Check the curtain for physical confirmation.'};
-   if(['failed','expired','superseded'].includes(c.state))throw Error(c.result?.error||'Command '+c.state);
+  const deadline=Date.now()+(action==='rawWrite'?165000:(action==='connect'||action==='subscribeRaw')?125000:85000);
+  let lastState=queued.state||'queued';
+  while(Date.now()<deadline){
+   await delay(350);
+   const {command:c}=await api('/api/curtain/command?id='+queued.commandId);
+   lastState=c.state;
+   if(status&&c.state==='downloaded')status.textContent='NanoC6 received command #'+c.id+' · BLE write in progress';
+   if(c.state==='applied')return {ok:true,...c.result,commandId:c.id,state:c.state,
+     message:c.result?.message||'NanoC6 transmitted over BLE; physical output requires inspection'};
+   if(['failed','expired','superseded'].includes(c.state))
+    throw Error('Oracle command #'+c.id+' '+c.state+': '+(c.result?.error||c.result?.message||'NanoC6 did not apply the command'));
   }
-  throw Error('Oracle queued the command; NanoC6 has not confirmed BLE delivery. Check Bridge Settings.');
+  const live=await api('/api/curtain/status');
+  const stage='Command #'+queued.commandId+' still '+lastState+
+   '; NanoC6 '+(live.online?'online':'offline')+
+   ', BLE '+(live.curtain?.connected?'connected':'disconnected')+
+   ', queued '+(live.queued??'?')+', last Nano ID '+(live.lastCommandId??'?')+
+   ', last sync '+(live.lastSync?new Date(live.lastSync).toLocaleTimeString():'none')+'.';
+  throw Error(stage+' Do not resend the write before checking its status.');
  };
  let since=0,working=false;setInterval(async()=>{if(working||!document.getElementById('jh2CurtainStudioFrame')?.getAttribute('src'))return;working=true;try{const d=await api('/api/curtain/notifications?since='+since);for(const n of d.notifications){since=Math.max(since,n.id);window.__jh2CurtainRawNotify?.(n.uuid,n.data);}}catch{}finally{working=false;}},250);
  function init(){

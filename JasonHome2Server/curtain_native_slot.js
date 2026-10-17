@@ -199,20 +199,31 @@ async function connection(){
  };
  window.addEventListener('message',listener);
  const rpc=(action,payload={})=>new Promise((resolve,reject)=>{
-  const id='cv'+(++count),timer=setTimeout(()=>{pending.delete(id);reject(Error('Native '+action+' timed out'))},65000);
+  const id='cv'+(++count),timer=setTimeout(()=>{pending.delete(id);reject(Error('Native '+action+' acknowledgement timed out after 190 seconds; inspect its Oracle command ID before retrying'))},190000);
   pending.set(id,{resolve,reject,timer});
   window.parent.postMessage({kind:'jh2-curtain-request',id,action,payload},location.origin);
  });
  try{
-  const connected=await rpc('connect');
-   const reported=Number(connected?.mtu||0);
-   // 2026-10-14 HCI capture: the controller's 2904 notifications are
-   // 350/364/370/396/163 bytes. 396+3 ATT overhead requires MTU >=399.
-   // Android negotiated 512. A smaller Nano MTU cannot receive the catalog.
-   if(reported>0&&reported<399)throw Error(
-    'NanoC6 BLE MTU '+reported+' is too small for native 2904 responses (requires at least 399; working phone negotiated 512). No controller effect was modified.');
-   await rpc('subscribeRaw',{uuid:NOTIFY});
-   if(reported>0)window.JH2NativeBleMtu=reported;
+  // Reuse NanoC6's existing BLE notification subscription when connected.
+  // The original firmware subscribes to CURT_NOTIFY during connect().
+  const live=await oracleApi('/api/curtain/status');
+  if(!live.online)throw Error('NanoC6 is offline from Oracle (last sync '+
+   (live.lastSync?new Date(live.lastSync).toLocaleString():'never')+
+   '). No controller write was queued.');
+  let reported=Number(live.curtain?.mtu||0);
+  if(live.curtain?.connected===true){
+   window.JH2NativeTransport='existing-nano-ble';
+  }else{
+   const connected=await rpc('connect');
+   if(connected?.ok===false||connected?.connected!==true)
+    throw Error('NanoC6 did not confirm a SmartDawn BLE connection');
+   reported=Number(connected.mtu||0);
+   window.JH2NativeTransport='reconnected-nano-ble';
+  }
+  // Captured phone negotiated 512; a 396-byte notification needs MTU >=399.
+  if(reported>0&&reported<399)throw Error(
+   'NanoC6 BLE MTU '+reported+' is insufficient for a 396-byte inventory reply (needs >=399; working phone used 512). No slot changed.');
+  if(reported>0)window.JH2NativeBleMtu=reported;
   timer=setInterval(receiveOracle,300);await receiveOracle();
  }catch(e){closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);throw e;}
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});

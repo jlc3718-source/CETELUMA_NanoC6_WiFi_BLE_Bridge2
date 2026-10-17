@@ -251,10 +251,14 @@ test('original catalog reader maps EffectInfo fields exactly and accepts CID 159
 test('real 2026-10-14 HCI capture requires 399-byte MTU for 396-byte inventory notifications',()=>{
  const native=read('curtain_native_slot.js');
  const connection=native.slice(native.indexOf('async function connection(){'),native.indexOf('async function ddp('));
- assert.match(connection,/const reported=Number\(connected\?\.mtu\|\|0\)/);
+ assert.match(connection,/let reported=Number\(live\.curtain\?\.mtu\|\|0\)/);
  assert.match(connection,/reported>0&&reported<399/);
- assert.match(connection,/working phone negotiated 512/);
- assert.ok(connection.indexOf('reported>0&&reported<399')<connection.indexOf("await rpc('subscribeRaw'"),'Refuse inadequate negotiated MTU before inventory requests');
+ assert.match(connection,/live\.curtain\?\.connected===true/);
+ assert.match(connection,/window\.JH2NativeTransport='existing-nano-ble'/);
+ assert.doesNotMatch(connection,/rpc\('subscribeRaw'/);
+ assert.match(connection,/oracleApi\('\/api\/curtain\/status'\)/);
+ assert.match(connection,/working phone used 512/);
+ assert.ok(connection.indexOf('reported>0&&reported<399')<connection.indexOf('timer=setInterval(receiveOracle'),'Reject an inadequate MTU before inventory reads');
  const inspect=native.slice(native.indexOf('async function inspect('),native.indexOf('async function researchUpload('));
  assert.match(inspect,/NanoC6 negotiated BLE MTU/);
 });
@@ -267,6 +271,16 @@ test('duplicate 83928 CIDs observed in E-87 and E-88 never trigger an ambiguous 
   assert.match(chunk,/\.length>1/,'Duplicate CID must stop all writes');
   assert.ok(chunk.indexOf('.length>1')<chunk.indexOf('await ddp(t,2909,CID)'),'CID collision gate must precede erase');
  }
+});
+test('native RPC timeout exceeds Oracle delivery wait, and rawWrite transport is reusable',()=>{
+ const source=read('curtain_native_slot.js'),remote=read('curtain_remote.js'),bridge=read('curtain_bridge.mjs');
+ assert.match(source,/setTimeout\(\(\)=>\{pending\.delete\(id\);reject\(Error\([\s\S]*?\)\)\},190000\)/);
+ assert.match(remote,/action==='rawWrite'\?165000/);
+ assert.match(remote,/Command #/);
+ assert.match(remote,/lastState/);
+ assert.match(bridge,/action==='rawWrite'\?now\(\)\+240000/);
+ assert.match(bridge,/\(action==='connect'\|\|action==='subscribeRaw'\)\?now\(\)\+150000/);
+ assert.ok(190000>165000&&240000>190000,'Deadlines must be ordered: relay TTL > iframe timer > Oracle command poll');
 });
 test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
  const script=read('../.github/scripts/deploy-curtain-relay.py');
