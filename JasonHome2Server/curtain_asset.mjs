@@ -130,7 +130,7 @@ export function compileAsset(input){
   // Sparse RGB images retain exact colors, but when masks degenerate into one
   // write per pixel, indexed RLE is a far faster visual approximation.
   // Each BLE write is a serialized acknowledgement barrier.
-  const parts=trueColor&&trueColor.length<=indexed.length*2?trueColor:indexed;
+  const parts=trueColor&&(count===1600||trueColor.length<=indexed.length*2)?trueColor:indexed;
   const useRGB=parts===trueColor;
   for(const part of parts){
    const n=Math.ceil(part.length/nativePayloadLimit),id=(++packet)&255;

@@ -1,4 +1,5 @@
 import {createCurtainBridge} from "./curtain_bridge.mjs";
+import {parsePixelGrid} from "./curtain_pixel_grid.mjs";
 import http from "node:http";
 import { createHmac, randomBytes, timingSafeEqual, randomUUID, createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
@@ -1132,16 +1133,47 @@ async function route(req,res){
   }
   if(method==="POST"&&path==="/api/curtain/generate-art"){
     const body=await input(req),idea=String(body?.prompt||"").trim();
-    if(idea.length<3||idea.length>260)throw fail(400,"Describe block art in 3–260 characters");
-    if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured. Set it up in the AI tab, or use the sample pumpkin.");
-    const referenceColors=Array.isArray(body.referenceColors)?body.referenceColors.slice(0,7):[];
-    if(referenceColors.some(v=>typeof v!=="string"||!/^#[0-9a-fA-F]{6}$/.test(v)))throw fail(400,"Invalid SmartDawn reference palette");
-    const palette=referenceColors.length?" Use only these dominant colors from the selected original SmartDawn curtain preview: "+referenceColors.join(", ")+".":" Use no more than 12 distinct vivid LED colors.";
-    const prompt="PIXEL ART SPRITE, not illustration, not photography. Make "+idea+". Designed exclusively for a 40 by 40 RGB LED matrix, with just 20 by 20 BLOCKY logical pixel clusters enlarged to squares. Minecraft-style chunky block art. ONE large recognizable centered subject filling most of the grid, 8-12 FLAT SOLID colors only, clear 2x2 square pixels, simplified geometric silhouette, exaggerated thick outlines, high contrast, pure black #000000 empty background. NO fine lines, smooth curves, soft shading, realistic textures, blur, gradients, antialiasing, words, watermark, scenery or tiny details. Must remain fully identifiable when viewed from far away on a 40x40 grid."+palette;
-    const result=await cloudflareAiRun("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4},{timeout:60000});
-    const image=result?.result?.image||result?.image;
-    if(typeof image!=="string"||!image.length||image.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))throw fail(502,"Cloudflare returned no usable pixel-art image");
-    return send(res,200,{ok:true,image:"data:image/jpeg;base64,"+image,model:"FLUX.1 schnell",outputGrid:"40x40",logicalPixelGrid:"20x20",maxColors:referenceColors.length?referenceColors.length+1:12});
+    if(idea.length<3||idea.length>260)throw fail(400,"Describe pixel art in 3–260 characters");
+    if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured.");
+    const refs=Array.isArray(body.referenceColors)?body.referenceColors.slice(0,7):[];
+    if(refs.some(v=>typeof v!=="string"||!/^#[0-9a-fA-F]{6}$/.test(v)))throw fail(400,"Invalid SmartDawn reference palette");
+    // A conventional diffusion image model outputs high-resolution pictures
+    // that cannot survive a 40x40 curtain. The chat AI instead draws the
+    // exact palette-indexed 20x20 block matrix. Two-by-two LED blocks are
+    // expanded once on the server and never recomputed on the browser.
+    const instructions=[
+      "Create one readable Minecraft-style 20 by 20 PIXEL SPRITE for a 40 by 40 RGB LED curtain.",
+      "Return ONLY a JSON object with keys palette and rows.",
+      "palette: an array of 2 to 12 hex RGB strings. Index 0 MUST be #000000 pure black background.",
+      "rows: EXACTLY 20 strings. Each string MUST have EXACTLY 20 characters, one for each block.",
+      "Grid characters must be 0..9,A,B corresponding to indices into palette.",
+      "0 is fully black. Use color indices 1..B only when those indices exist in palette.",
+      "One huge recognizable centered subject with bold silhouette and obvious features.",
+      "Occupy at least 45 colored grid cells; prefer 150-260 colored blocks for a clear subject.",
+      "Use broad flat color areas, blocky outlines, deliberate symmetry and minimal facial details.",
+      "No backgrounds, perspective, gradients, photographic shading, text or high-resolution drawing.",
+      "Do not create another picture for the preview: the rows ARE the finished LEDs.",
+      refs.length?"Factory effect palette preference (after black): "+refs.join(", "):"Choose vivid, legible colors for this subject.",
+      "User subject: "+idea
+    ].join("\n");
+    let parsed,lastFailure="";
+    for(let attempt=0;attempt<2;attempt++){
+      const userText=attempt===0?instructions:
+        instructions+"\nIMPORTANT: The previous draft was invalid: "+lastFailure+
+        ". Check 20 rows of EXACTLY 20 characters and an indexed palette; return corrected JSON only.";
+      const result=await cloudflareAiChat({
+        model:AI_MODEL,messages:[{role:"system",content:"You are a pixel art grid generator, not an image illustrator. Output strictly valid JSON without markdown."},{role:"user",content:userText}],
+        temperature:0.35,max_completion_tokens:3200,
+        response_format:{type:"json_object"}
+      },{timeout:65000});
+      const reply=cloudflareAiText(result);
+      try{parsed=parsePixelGrid(reply);break;}
+      catch(e){lastFailure=String(e.message).slice(0,180);}
+    }
+    if(!parsed)throw fail(502,"Pixel AI could not produce a valid 40×40 design: "+lastFailure);
+    return send(res,200,{ok:true,pixels:parsed.rgba,palette:parsed.palette,outputGrid:"40x40",
+      logicalGrid:"20x20",model:AI_MODEL,activeBlocks:parsed.activeBlocks,
+      previewMatchesUpload:true});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());

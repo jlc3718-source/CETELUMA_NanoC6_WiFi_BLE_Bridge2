@@ -30,7 +30,10 @@ test('Oracle serves exact canonical signed SHA-verified runtime BIN without a ne
 });
 test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
- assert.match(server,/@cf\/black-forest-labs\/flux-1-schnell/);
+ assert.match(server,/model:AI_MODEL/);
+ assert.match(server,/cloudflareAiChat/);
+ assert.match(server,/parsePixelGrid/);
+ assert.doesNotMatch(server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")')),/flux-1-schnell/);
  assert.match(server,/cloudflareAiConfigured\(\)/);
  assert.match(server,/20 by 20 BLOCKY logical pixel clusters/);
  assert.match(server,/referenceColors/);
@@ -45,6 +48,9 @@ test('Oracle gets 40x40 prepared RGBA, palette compression and approved asset co
  assert.match(converter,/loadFactoryGallery/);
  assert.match(converter,/output\.data\[dest\+3\]=255/);
  assert.match(converter,/base64\(new Uint8Array\(prepared.data\)\)/);
+ assert.match(converter,/usePreparedFrame\(r.pixels\)/);
+ assert.match(converter,/canvas.toDataURL\('image\/png'\)/);
+ assert.match(converter,/quality:'rgbfull'/);
  assert.match(converter,/quality:'pal16'/);
  assert.match(converter,/queue\('asset',payload\)/);
  assert.match(converter,/JH2CurtainLastSelection/);

@@ -92,6 +92,10 @@ else:
  assert live.count(manifest_after)==1
  live=live.replace(manifest_after,manifest_block+manifest_after,1)
 assert live.count(manifest_start)==1
+# The generated pixel matrix renderer is isolated; ensure its import and
+# implementation are deployed alongside the AI route, not just server.mjs.
+pixel_import='import {parsePixelGrid} from "./curtain_pixel_grid.mjs";'
+if pixel_import not in live:live=pixel_import+'\n'+live
 # Preserve the active full web app while installing the isolated AI Curtain route.
 # Prior deployments copied curtain pages but omitted this API route entirely.
 route_start='  if(method==="POST"&&path==="/api/curtain/generate-art")'
@@ -115,7 +119,7 @@ if old_sync in live:
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
 (stage/'server.mjs').write_text(live)
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
-for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
+for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs','curtain_pixel_grid.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
 for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
