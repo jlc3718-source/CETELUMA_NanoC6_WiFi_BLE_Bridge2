@@ -27,7 +27,7 @@ canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelat
 <p class="hint">Generate related AI keyframes, or animate the current picture without using AI credits. Edit, preview, and publish an exact 40×40 animation.</p>
 <div class="settings">
 <label>Frame count<select id="frameCount"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option></select></label>
-<label>Motion<select id="motion"><option value="bounce">Bounce</option><option value="blink">Blink</option><option value="sway">Sway</option><option value="wave">Wave</option><option value="pulse">Pulse</option><option value="spin">Rotate</option><option value="flicker">Flicker</option><option value="float">Float</option></select></label>
+<label>Motion<select id="motion"><option value="bounce">Bounce</option><option value="blink">Blink</option><option value="sway">Sway</option><option value="wave">Wave</option><option value="pulse">Pulse</option><option value="spin">Rotate</option><option value="flicker">Flicker (color only)</option><option value="sparkle">Sparkle (local pixels)</option><option value="float">Float</option></select></label>
 <label>Frame delay (ms)<input id="frameDelay" type="number" min="100" max="5000" step="50" value="400"></label>
 <label>Playback<label class="hint" style="display:block;margin-top:12px"><input id="loop" type="checkbox" checked>Loop continuously</label></label>
 </div>
@@ -282,6 +282,63 @@ function startPreview(){
 // high-resolution imagery or interpolating colors. The preview equals the upload.
 function frameMotion(base,index,total,motion){
  const phase=index*2*Math.PI/total,out=new Uint8ClampedArray(6400);
+ // Localized pixel effects preserve the exact 40x40 subject outline and the
+ // 2x2 logical LED groups. Never scale the entire pumpkin to blink its eyes.
+ if(['blink','pulse','flicker','sparkle'].includes(motion)){
+  out.set(base);
+  const read=(x,y)=>{const p=(2*y*40+2*x)*4;return [base[p],base[p+1],base[p+2]];};
+  const write=(x,y,color)=>{for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+   const p=((2*y+dy)*40+2*x+dx)*4;
+   for(let k=0;k<3;k++)out[p+k]=Math.max(0,Math.min(255,Math.round(color[k])));
+   out[p+3]=255;
+  }};
+  if(motion==='blink'){
+   if(Math.cos(phase)<-0.25){
+    let minX=20,minY=20,maxX=-1,maxY=-1;
+    for(let y=0;y<20;y++)for(let x=0;x<20;x++){
+     if(Math.max(...read(x,y))<50)continue;
+     minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+    }
+    if(maxX>=minX&&maxY>=minY){
+     const w=maxX-minX+1,h=maxY-minY+1,centerY=Math.round(minY+.43*h);
+     for(const centerX of [Math.round(minX+.35*w),Math.round(minX+.65*w)]){
+      const rx=Math.max(1,Math.round(w*.11)),ry=Math.max(1,Math.round(h*.10));
+      for(let y=Math.max(0,centerY-ry);y<=Math.min(19,centerY+ry);y++)
+       for(let x=Math.max(0,centerX-rx);x<=Math.min(19,centerX+rx);x++){
+        if(Math.max(...read(x,y))>=48||y===centerY)continue;
+        let found=null;
+        for(let radius=1;radius<=5&&!found;radius++){
+         for(let yy=-radius;yy<=radius&&!found;yy++)for(let xx=-radius;xx<=radius;xx++){
+          const u=x+xx,v=y+yy;
+          if(u<0||u>19||v<0||v>19||Math.max(Math.abs(xx),Math.abs(yy))!==radius)continue;
+          const c=read(u,v);
+          if(Math.max(...c)>=70){found=c;break;}
+         }
+        }
+        if(found)write(x,y,found);
+       }
+     }
+    }
+   }
+  }else{
+   for(let y=0;y<20;y++)for(let x=0;x<20;x++){
+    const c=read(x,y),max=Math.max(...c);if(max<35)continue;
+    if(motion==='pulse'){
+     const level=.72+.28*(1+Math.cos(phase))/2;
+     write(x,y,c.map(v=>v*level));
+    }else if(motion==='flicker'){
+     if(c[0]>c[1]*1.15&&c[0]>c[2]*1.25){
+      const level=.82+.18*(1+Math.cos(phase+(x*7+y*11)%13))/2;
+      write(x,y,c.map(v=>v*level));
+     }
+    }else if(motion==='sparkle'){
+     if((x*29+y*17+index*11)%47===0)write(x,y,c.map(v=>v*.67+255*.33));
+    }
+   }
+  }
+  return {data:out};
+ }
+
  const cs=Math.cos(phase),sn=Math.sin(phase);
  for(let y=0;y<20;y++)for(let x=0;x<20;x++){
   let xx=x,yy=y,level=1,scale=1,turn=0;
