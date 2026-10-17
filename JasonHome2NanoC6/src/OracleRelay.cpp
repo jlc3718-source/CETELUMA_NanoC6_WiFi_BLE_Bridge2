@@ -13,13 +13,15 @@ static volatile uint32_t localUntil=0;
 static volatile bool syncNow=false,streaming=false,online=false,streamFailed=false,pushOnline=false;
 static uint64_t lastCommand=0,seen=0;
 static uint8_t streamFailures=0;
+static volatile uint32_t liveBufferBytes=0,liveBufferTargetBytes=0,wakeSignals=0,lastWakeAt=0;
+static volatile uint8_t liveBufferWindows=0;
 static uint64_t restartAfterAck=0;
 static String getEndpoint(){xSemaphoreTake(lock,portMAX_DELAY);String s=endpoint;xSemaphoreGive(lock);return s;}
 static String digest(const uint8_t*data,size_t size){uint8_t d[32];mbedtls_sha256(data,size,d,0);return hexBytes(d,32);}
 static void issue(const String& error){xSemaphoreTake(lock,portMAX_DELAY);relayError=error;xSemaphoreGive(lock);}
 static bool request(const String&path,JsonDocument&out,const String*body=nullptr){
  String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);if(!base.length())return false;
- WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(path.startsWith("/api/curtain-bridge/wait")?25000:12000);
+ WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(path.startsWith("/api/curtain-bridge/wait")?6000:12000);
  const char*headers[]={"Transfer-Encoding"};h.collectHeaders(headers,1);
  if(!h.begin(c,base+path)){issue("Cannot open Oracle HTTPS");return false;}h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);h.addHeader("Content-Type","application/json");
  int rc=body?h.POST(*body):h.GET();String data;
@@ -56,7 +58,7 @@ static void pushEvents(void*){
     line[used]=0;
     if(used>6&&strncmp(line,"data: ",6)==0){
      const unsigned long incoming=strtoul(line+6,nullptr,10);
-     if(incoming>revision)syncNow=true;
+     if(incoming>revision){++wakeSignals;lastWakeAt=millis();syncNow=true;}
     }
     used=0;continue;
    }
@@ -67,10 +69,11 @@ static void pushEvents(void*){
  }
 }
 struct RelayStream {
- // Oracle is permanent storage; these two adaptively sized RAM windows
- // form a bounded network-producer / BLE-consumer pipeline.
+ // Two independently adaptive producer/consumer windows. Reserve heap for
+ // TLS, Wi-Fi and BLE, then use up to 80% of the remaining available RAM.
+ static constexpr size_t MIN_WINDOW=4096,SAFETY_RESERVE=48*1024;
  uint8_t* windows[2]{nullptr,nullptr};
- size_t capacity=0, windowCount=0;
+ size_t windowCapacities[2]{0,0},windowCount=0;
  uint32_t windowOffsets[2]{0,0};
  size_t windowSizes[2]{0,0};
  int8_t consuming=-1;
@@ -81,28 +84,56 @@ struct RelayStream {
  TaskHandle_t prefetchTask=nullptr;
  volatile bool closing=false,done=false,failed=false;
  uint32_t produced=0;
+ size_t targetEach() const {
+  // Own allocated bytes count as recoverable pool; changing live TLS/BLE
+  // memory demand dynamically reduces or increases the safe buffer target.
+  size_t pool=ESP.getFreeHeap()+windowCapacities[0]+windowCapacities[1];
+  if(pool<=SAFETY_RESERVE+2*MIN_WINDOW)return MIN_WINDOW;
+  return std::max(MIN_WINDOW,((((pool-SAFETY_RESERVE)*4)/5)/2/1024)*1024);
+ }
+ void reportWindows(){
+  liveBufferWindows=uint8_t(windowCount);
+  liveBufferBytes=uint32_t(windowCapacities[0]+windowCapacities[1]);
+  liveBufferTargetBytes=uint32_t(targetEach()*windowCount);
+ }
+ void adaptWindow(uint8_t index){
+  // This index came from freeQueue: BLE cannot be accessing it now.
+  if(!windows[index])return;
+  size_t prior=windowCapacities[index],wanted=targetEach();
+  if(wanted>prior){
+   size_t available=ESP.getFreeHeap();
+   if(available<=SAFETY_RESERVE+1024)return;
+   wanted=std::min(wanted,prior+available-SAFETY_RESERVE);
+   wanted=(wanted/1024)*1024;
+  }
+  wanted=std::max(MIN_WINDOW,wanted);
+  if(wanted==prior)return;
+  auto*updated=static_cast<uint8_t*>(realloc(windows[index],wanted));
+  if(!updated&&wanted>prior+8192){
+   size_t half=((prior+(wanted-prior)/2)/1024)*1024;
+   updated=static_cast<uint8_t*>(realloc(windows[index],half));
+   if(updated)wanted=half;
+  }
+  if(updated){windows[index]=updated;windowCapacities[index]=wanted;reportWindows();}
+ }
  RelayStream(){
-  // Protect Wi-Fi, BLE, TLS handshake and FreeRTOS. 80% of heap above a
-  // 48 KiB reserve, up to 2 x 35 KiB; shrink before using 4 KiB fallback.
-  const size_t freeBytes=ESP.getFreeHeap(),reserve=48*1024;
-  size_t each=freeBytes>reserve+8192?
-    std::min<size_t>(35*1024,((freeBytes-reserve)*4/5)/2):4096;
-  each=std::max<size_t>(4096,(each/1024)*1024);
-  for(;each>=4096;each=(each/2/1024)*1024){
+  size_t each=targetEach();
+  for(;each>=MIN_WINDOW;each=(each/2/1024)*1024){
    windows[0]=static_cast<uint8_t*>(malloc(each));
    if(windows[0])windows[1]=static_cast<uint8_t*>(malloc(each));
    if(windows[0]&&windows[1]){
-    capacity=each;windowCount=2;break;
+    windowCapacities[0]=windowCapacities[1]=each;windowCount=2;break;
    }
    if(windows[0])::free(windows[0]);
    if(windows[1])::free(windows[1]);
    windows[0]=windows[1]=nullptr;
-   if(each==4096)break;
+   if(each==MIN_WINDOW)break;
   }
   if(!windowCount){
-   windows[0]=static_cast<uint8_t*>(malloc(4096));
-   if(windows[0]){capacity=4096;windowCount=1;}
+   windows[0]=static_cast<uint8_t*>(malloc(MIN_WINDOW));
+   if(windows[0]){windowCapacities[0]=MIN_WINDOW;windowCount=1;}
   }
+  reportWindows();
   mbedtls_sha256_init(&hash);mbedtls_sha256_starts(&hash,0);
  }
  ~RelayStream(){
@@ -113,6 +144,7 @@ struct RelayStream {
   if(freeQueue)vQueueDelete(freeQueue);
   if(readyQueue)vQueueDelete(readyQueue);
   for(auto*p:windows)if(p)::free(p);
+  liveBufferBytes=0;liveBufferTargetBytes=0;liveBufferWindows=0;
   mbedtls_sha256_free(&hash);
  }
  void credential(String&base,String&key){
@@ -132,7 +164,7 @@ struct RelayStream {
   return streamMode;
  }
  // Called only by the producer; no other task touches the Oracle HTTP stream.
- bool fromStream(uint8_t*dest,uint32_t at,size_t&n){
+ bool fromStream(uint8_t*dest,uint32_t at,size_t&n,size_t capacity){
   auto*source=http.getStreamPtr();
   const uint32_t began=millis();
   while(!closing&&!source->available()){
@@ -144,20 +176,24 @@ struct RelayStream {
   if(closing)return false;
   // Coalesce network bursts briefly; don't wait to fill the whole buffer.
   uint32_t first=millis();
-  while(!closing&&n<std::min<size_t>(capacity,8192)){
-   const size_t ready=source->available(),want=std::min<size_t>(ready,
-    std::min<size_t>(capacity-n,size_t(size-at-n)));
+  // Fill whatever arrives, up to the REAL window capacity; do not stall BLE
+  // waiting for an entire large window.
+  while(!closing&&n<capacity&&n<size-at){
+   size_t ready=source->available();
+   size_t want=std::min(ready,std::min(capacity-n,size_t(size-at-n)));
    if(want){
-    const int got=source->read(dest+n,want);
+    int got=source->read(dest+n,want);
     if(got<=0)break;
     n+=got;
-   }else if(millis()-first>=6)break;
-   else vTaskDelay(pdMS_TO_TICKS(1));
-   if(millis()-first>=6)break;
+   }else{
+    if(millis()-first>=12)break;
+    vTaskDelay(pdMS_TO_TICKS(1));
+   }
+   if(millis()-first>=18)break;
   }
   return n>0;
  }
- bool fromRange(uint8_t*dest,uint32_t at,size_t&n){
+ bool fromRange(uint8_t*dest,uint32_t at,size_t&n,size_t capacity){
   // Fall back to authenticated, SHA-256-verified 4 KiB ranges.
   String base,key;credential(base,key);
   WiFiClientSecure tls;trust(tls);HTTPClient h;
@@ -180,20 +216,15 @@ struct RelayStream {
    uint8_t index=0;
    if(xQueueReceive(self->freeQueue,&index,pdMS_TO_TICKS(100))!=pdTRUE)continue;
    if(self->closing)break;
-   // If TLS/BLE needs the heap, release an unused spare window. Never free
-   // the window being read or transmitted. The 4 KiB minimum is preserved.
-   if(self->windowCount==2&&ESP.getFreeHeap()<36*1024){
-    uint8_t spare=0;
-    if(xQueueReceive(self->freeQueue,&spare,0)==pdTRUE&&spare!=index){
-     ::free(self->windows[spare]);self->windows[spare]=nullptr;
-     self->windowCount=1;
-    }
-   }
+   // Size adjusts every time a free window returns to the producer.
+   // Neither buffer is freed or resized while the consumer owns it.
+   self->adaptWindow(index);
    size_t n=0;const uint32_t at=self->produced;
-   bool ok=(self->streamMode&&self->fromStream(self->windows[index],at,n));
+   const size_t available=self->windowCapacities[index];
+   bool ok=(self->streamMode&&self->fromStream(self->windows[index],at,n,available));
    if(!ok){
     self->streamMode=false;
-    n=0;ok=self->fromRange(self->windows[index],at,n);
+    n=0;ok=self->fromRange(self->windows[index],at,n,available);
    }
    if(!ok||!n){self->failed=true;break;}
    self->windowOffsets[index]=at;
@@ -205,7 +236,7 @@ struct RelayStream {
   vTaskDelete(nullptr);
  }
  bool start(){
-  if(!windows[0]||capacity<4096)return false;
+  if(!windows[0]||windowCapacities[0]<MIN_WINDOW)return false;
   open();
   freeQueue=xQueueCreate(windowCount,sizeof(uint8_t));
   readyQueue=xQueueCreate(windowCount,sizeof(uint8_t));
@@ -217,7 +248,7 @@ struct RelayStream {
   return false;
  }
  bool read(uint8_t*out,size_t n){
-  if(!out||!windows[0]||capacity<4096){
+  if(!out||!windows[0]||windowCapacities[0]<MIN_WINDOW){
    issue("Insufficient NanoC6 RAM for image relay");return false;
   }
   if(!freeQueue&&!start()){issue("Cannot start streaming prefetch");return false;}
@@ -375,4 +406,4 @@ bool relayConfigure(JsonVariantConst in,String&error){
 void relaySyncNow(){syncNow=true;}
 void relayPrepareForUpdate(){generation++;streaming=false;syncNow=true;}
 void relayLocalOverride(bool resume){localUntil=resume?0:millis()+15*60000;generation++;streaming=false;syncNow=true;}
-void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=ESP.getFreeHeap()>100*1024?71680:std::max<uint32_t>(8192,ESP.getFreeHeap()>48*1024?(ESP.getFreeHeap()-48*1024)*4/5:4096);out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
+void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=liveBufferBytes;out["ramBufferTargetBytes"]=liveBufferTargetBytes;out["ramBufferWindows"]=liveBufferWindows;out["ramBufferLimitPercent"]=80;out["ramBufferReserveBytes"]=48*1024;out["wakeSignalCount"]=wakeSignals;out["lastWakeAgoSeconds"]=lastWakeAt?(millis()-lastWakeAt)/1000:-1;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
