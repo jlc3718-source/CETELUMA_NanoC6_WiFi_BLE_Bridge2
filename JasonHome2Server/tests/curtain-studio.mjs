@@ -5,6 +5,7 @@ import {Script} from 'node:vm';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parsePixelGrid} from '../curtain_pixel_grid.mjs';
+import {renderShapeArt} from '../curtain_shape_art.mjs';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const read=name=>readFileSync(join(root,name),'utf8');
 const converter=read('curtain_converter.html'),server=read('server.mjs'),curtain=read('curtain.js'),assets=read('curtain_asset.mjs');
@@ -31,13 +32,13 @@ test('Oracle serves exact canonical signed SHA-verified runtime BIN without a ne
 });
 test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
- assert.match(server,/model:pixelModel/);
+ assert.match(server,/renderShapeArt/);
  assert.match(server,/@cf\/meta\/llama-3\.1-8b-instruct-fast/);
  assert.match(server,/cloudflareAiChat/);
  assert.match(server,/parsePixelGrid/);
  assert.doesNotMatch(server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")')),/flux-1-schnell/);
  assert.match(server,/cloudflareAiConfigured\(\)/);
- assert.match(server,/EXACTLY 20 strings/);
+ assert.match(server,/6-20 filled drawing primitives/);
  assert.match(server,/referenceColors/);
  assert.match(converter,/\$\('generate'\)\.onclick=async/);
  assert.match(converter,/\/api\/curtain\/generate-art/);
@@ -104,4 +105,25 @@ test('AI small artwork is auto-framed instead of rejecting below 45 blocks',()=>
 test('AI all black output is rejected without enqueuing',()=>{
  const rows=Array(20).fill('0'.repeat(20));
  assert.throws(()=>parsePixelGrid(JSON.stringify({palette:['#000000','#FF8800'],rows})),/no usable subject/);
+});
+
+test('AI geometric drawing produces exact 40x40 blocks with pumpkin face cutouts',()=>{
+ const art=renderShapeArt(JSON.stringify({
+  palette:['#000000','#FA8117','#188A30'],
+  shapes:[
+    {type:'ellipse',x:2,y:5,w:16,h:13,color:1},
+    {type:'rect',x:9,y:2,w:3,h:5,color:2},
+    {type:'ellipse',x:6,y:10,w:3,h:2,color:0},
+    {type:'ellipse',x:12,y:10,w:3,h:2,color:0},
+    {type:'rect',x:7,y:14,w:7,h:2,color:0}
+  ]
+ }));
+ const bytes=Buffer.from(art.rgba,'base64');
+ assert.equal(bytes.length,6400);
+ assert.ok(art.activeBlocks>70);
+ for(let y=0;y<40;y+=2)for(let x=0;x<40;x+=2){
+  const i=(y*40+x)*4,j=((y+1)*40+x+1)*4;
+  assert.deepEqual(bytes.subarray(i,i+4),bytes.subarray(j,j+4));
+ }
+ assert.deepEqual(art.palette,['#000000','#FA8117','#188A30']);
 });

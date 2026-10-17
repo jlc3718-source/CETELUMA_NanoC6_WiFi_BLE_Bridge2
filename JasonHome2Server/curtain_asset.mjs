@@ -126,11 +126,23 @@ export function compileAsset(input){
   const nativePayloadLimit=200;
   const indexed=livePackets(frames[i],Math.min(16,count),nativePayloadLimit,
    !rgb?stable:null);
-  const trueColor=rgb?optimizedRGBPackets(frames[i],count,nativePayloadLimit):null;
+  // For ≤15 nonblack colors, the indexed 16-color SmartDawn protocol
+  // transmits every ORIGINAL RGB value exactly and needs far fewer BLE ACKs.
+  // This does not quantize the AI preview or change its transmitted pixels.
+  const exactColors=new Map();
+  for(let p=0;p<frames[i].length;p+=4){
+    const R=frames[i][p],G=frames[i][p+1],B=frames[i][p+2],key=(R<<16)|(G<<8)|B;
+    if(key===0)continue;
+    if(!exactColors.has(key))exactColors.set(key,[R,G,B]);
+    if(exactColors.size>15)break;
+  }
+  const exactPalette=rgb&&exactColors.size<=15?[[0,0,0],...exactColors.values()]:null;
+  const exactPackets=exactPalette?livePackets(frames[i],16,nativePayloadLimit,exactPalette):null;
+  const trueColor=rgb&&!exactPackets?optimizedRGBPackets(frames[i],count,nativePayloadLimit):null;
   // Sparse RGB images retain exact colors, but when masks degenerate into one
   // write per pixel, indexed RLE is a far faster visual approximation.
   // Each BLE write is a serialized acknowledgement barrier.
-  const parts=trueColor&&(count===1600||trueColor.length<=indexed.length*2)?trueColor:indexed;
+  const parts=exactPackets||((trueColor&&(count===1600||trueColor.length<=indexed.length*2))?trueColor:indexed);
   const useRGB=parts===trueColor;
   for(const part of parts){
    const n=Math.ceil(part.length/nativePayloadLimit),id=(++packet)&255;

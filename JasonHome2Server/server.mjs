@@ -1,5 +1,6 @@
 import {createCurtainBridge} from "./curtain_bridge.mjs";
 import {parsePixelGrid} from "./curtain_pixel_grid.mjs";
+import {renderShapeArt} from "./curtain_shape_art.mjs";
 import http from "node:http";
 import { createHmac, randomBytes, timingSafeEqual, randomUUID, createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
@@ -1134,47 +1135,45 @@ async function route(req,res){
   if(method==="POST"&&path==="/api/curtain/generate-art"){
     const body=await input(req),idea=String(body?.prompt||"").trim();
     if(idea.length<3||idea.length>260)throw fail(400,"Describe pixel art in 3–260 characters");
-    if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured.");
+    if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured");
     const refs=Array.isArray(body.referenceColors)?body.referenceColors.slice(0,7):[];
-    if(refs.some(v=>typeof v!=="string"||!/^#[0-9a-fA-F]{6}$/.test(v)))throw fail(400,"Invalid SmartDawn reference palette");
-    // A conventional diffusion image model outputs high-resolution pictures
-    // that cannot survive a 40x40 curtain. The chat AI instead draws the
-    // exact palette-indexed 20x20 block matrix. Two-by-two LED blocks are
-    // expanded once on the server and never recomputed on the browser.
-    const pixelModel="@cf/meta/llama-3.1-8b-instruct-fast";
-    const instructions=[
-      "Create one readable Minecraft-style 20 by 20 PIXEL SPRITE for a 40 by 40 RGB LED curtain.",
-      "Return ONLY a JSON object with keys palette and rows.",
-      "palette: an array of 2 to 12 hex RGB strings. Index 0 MUST be #000000 pure black background.",
-      "rows: EXACTLY 20 strings. Each string MUST have EXACTLY 20 characters, one for each block.",
-      "Grid characters must be 0..9,A,B corresponding to indices into palette.",
-      "0 is fully black. Use color indices 1..B only when those indices exist in palette.",
-      "One huge recognizable centered subject with bold silhouette and obvious features.",
-      "Draw a LARGE SOLID SILHOUETTE covering at least 12 columns and 12 rows, with 90-200 colored blocks.",
-      "Fill the subject interior in solid color; use BLACK 0 for small eyes, mouth, and outline details.",
-      "Use broad flat color areas, blocky outlines, deliberate symmetry and minimal facial details.",
-      "No backgrounds, perspective, gradients, photographic shading, text or high-resolution drawing.",
-      "Do not create another picture for the preview: the rows ARE the finished LEDs.",
-      refs.length?"Factory effect palette preference (after black): "+refs.join(", "):"Choose vivid, legible colors for this subject.",
-      "User subject: "+idea
+    if(refs.some(x=>typeof x!=="string"||!/^#[0-9a-f]{6}$/i.test(x)))throw fail(400,"Invalid original-effect palette");
+    // Small geometric plans are far more reliable than asking a language model
+    // to output 400 individual pixel indices. Rendering is deterministic.
+    const prompt=[
+      "Draw this precise subject as recognizable, blocky 20x20 LED PIXEL ART: "+idea,
+      "Return ONLY one JSON object with keys palette and shapes. No markdown.",
+      "palette contains 3-10 vivid hexadecimal #RRGGBB colors. palette[0] MUST be #000000.",
+      "shapes is an ordered array of 6-20 filled drawing primitives in a 20x20 coordinate system.",
+      "Each primitive: {type:'ellipse' or 'rect' or 'line' or 'polygon', x, y, w, h, color}.",
+      "color is the numeric index into palette, 0 makes cutouts/eyes/mouth on the filled shape.",
+      "For polygon specify points:[[x,y],...] and color; line uses x,y,x2,y2,stroke,color.",
+      "Draw a LARGE CENTERED SILHOUETTE first, filling roughly 14x14 blocks, then smaller colored details.",
+      "Use basic geometric shapes with thick, solid fills; no gradients or text.",
+      "Examples: pumpkin is a big orange ellipse plus stem, black eyes, and black curved/rectangular smile.",
+      "Avoid tiny empty icons, disconnected fragments, scenery, or outlines without solid fills.",
+      refs.length?"Prefer these exact colors after black: "+refs.join(", "):"Choose bright high contrast LED colors.",
+      "Your entire answer must be parseable JSON with double quoted keys and string values."
     ].join("\n");
-    let parsed,lastFailure="";
-    for(let attempt=0;attempt<2;attempt++){
-      const userText=attempt===0?instructions:
-        instructions+"\nIMPORTANT: The previous draft was invalid: "+lastFailure+
-        ". Check 20 rows of EXACTLY 20 characters and an indexed palette; return corrected JSON only.";
-      const result=await cloudflareAiChat({
-        model:pixelModel,messages:[{role:"system",content:"You are a pixel art grid generator, not an image illustrator. Output strictly valid JSON without markdown."},{role:"user",content:userText}],
-        temperature:0.25,max_completion_tokens:1600,
-        response_format:{type:"json_object"}
-      },{timeout:24000});
-      const reply=cloudflareAiText(result);
-      try{parsed=parsePixelGrid(reply);break;}
-      catch(e){lastFailure=String(e.message).slice(0,180);}
+    let art,lastError="",model="";
+    const candidates=["@cf/meta/llama-3.1-8b-instruct-fast",AI_MODEL].filter((v,i,a)=>a.indexOf(v)===i);
+    for(let attempt=0;attempt<candidates.length;attempt++){
+      model=candidates[attempt];
+      let output;
+      try{
+        const result=await cloudflareAiChat({
+          model,messages:[{role:"system",content:"Return concise valid JSON containing an ordered palette and filled pixel-art shapes."},
+            {role:"user",content:prompt+(lastError?"\nCorrect previous failure: "+lastError:"")}],
+          temperature:0.3,max_completion_tokens:1100
+        },{timeout:attempt===0?18000:23000});
+        output=cloudflareAiText(result);
+        art=renderShapeArt(output);
+        break;
+      }catch(e){lastError=String(e.message||e).slice(0,160);}
     }
-    if(!parsed)throw fail(502,"Pixel AI could not produce a valid 40×40 design: "+lastFailure);
-    return send(res,200,{ok:true,pixels:parsed.rgba,palette:parsed.palette,outputGrid:"40x40",
-      logicalGrid:"20x20",model:pixelModel,activeBlocks:parsed.activeBlocks,
+    if(!art)throw fail(502,"Pixel AI generation could not complete: "+lastError);
+    return send(res,200,{ok:true,pixels:art.rgba,palette:art.palette,
+      outputGrid:"40x40",logicalGrid:"20x20",model,activeBlocks:art.activeBlocks,
       previewMatchesUpload:true});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
