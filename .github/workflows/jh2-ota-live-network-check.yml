@@ -42,7 +42,7 @@ jobs:
                 print('MANIFEST',url.split('/')[2],'http',response.status,'bytes',len(data),'elapsedMs',round((time.monotonic()-start)*1000),'signed',b'signature' in data,flush=True)
             except Exception as e:print('MANIFEST_FAILED',url.split('/')[2],type(e).__name__,str(e)[:200],flush=True)
           try:
-            inspect=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+            inspect=json.loads(subprocess.check_output(['sudo','-n','docker','inspect','jason-home']))[0]
             env=dict(v.split('=',1) for v in inspect['Config']['Env'] if '=' in v)
             token=env['JASON_HOME_API_TOKEN']
             request=urllib.request.Request('http://127.0.0.1:8081/api/session',
