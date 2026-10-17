@@ -22,7 +22,7 @@ jobs:
           node --check JasonHome2Server/server.mjs
           node --check JasonHome2Server/curtain_bridge.mjs
           node --test JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
-  # Read-only emergency queue examination while native-pixel AI deploy finishes.
+  # Read-only post-deploy confirmation: recovery queue must not stick during manual ownership.
   live-check:
     name: Read-only Oracle and Eufy queue inspection
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
