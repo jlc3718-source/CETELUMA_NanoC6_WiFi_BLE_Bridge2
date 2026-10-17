@@ -10,6 +10,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 6
     steps:
+      - uses: actions/checkout@v4
       - name: Wait for signed Nano update and measure real command acknowledgments
         shell: bash
         env:
@@ -39,6 +40,14 @@ jobs:
                 cert=tls.getpeercert()
                 print('ORACLE_TLS',json.dumps({'verified':True,'version':tls.version(),'issuer':cert.get('issuer'),'subjectAltName':cert.get('subjectAltName'),'notAfter':cert.get('notAfter')}),flush=True)
           except Exception as e:print('ORACLE_TLS',json.dumps({'verified':False,'error':str(e)}),flush=True)
+          roots=pathlib.Path('JasonHome2NanoC6/include/Roots.h').read_text().split('R"PEM(',1)[1].split(')PEM"',1)[0]
+          try:
+            ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT);ctx.load_verify_locations(cadata=roots)
+            ctx.minimum_version=ssl.TLSVersion.TLSv1_2;ctx.maximum_version=ssl.TLSVersion.TLSv1_2
+            with socket.create_connection(('150.136.245.51',443),timeout=4) as tcp:
+              with ctx.wrap_socket(tcp,server_hostname='150.136.245.51') as tls:
+                print('EXACT_FIRMWARE_TLS',json.dumps({'verified':True,'version':tls.version()}),flush=True)
+          except Exception as e:print('EXACT_FIRMWARE_TLS',json.dumps({'verified':False,'error':str(e)}),flush=True)
           upgrades=[]
           for log in pathlib.Path('/var/log/nginx').glob('*.log'):
             tail=subprocess.check_output(['tail','-n','1500',str(log)],text=True,errors='replace')
