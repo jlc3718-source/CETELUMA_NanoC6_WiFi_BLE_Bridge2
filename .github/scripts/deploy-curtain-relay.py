@@ -119,6 +119,13 @@ if old_sync in live:
  assert live.count(old_sync)==1 and live.count(bridge_init)==1
  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
+# Enable Eufy as the one schedule authority in the deployed gateway, not merely in source.
+eufy_master='curtainRelay.setEufyMasterEnabled(true);'
+if eufy_master not in live:
+ assert live.count(new_sync)==1, 'Eufy follow injection requires a single Nano follower'
+ live=live.replace(new_sync,eufy_master+chr(10)+new_sync,1)
+assert live.count(eufy_master)==1 and live.index(bridge_init)<live.index(eufy_master)<live.index(new_sync),'Eufy master must start before follower'
+
 # Vendor's verified cloud API conversion remains isolated from Eufy/Nano logic.
 vendor_import='import {createVendorVideo} from "./curtain_vendor_video.mjs";'
 if vendor_import not in live:live=vendor_import+'\n'+live
