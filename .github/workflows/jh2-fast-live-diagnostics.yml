@@ -22,7 +22,7 @@ jobs:
           node --check JasonHome2Server/server.mjs
           node --check JasonHome2Server/curtain_bridge.mjs
           node --test JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
-  # Verify the production brightness-sync queue after manual-override guard deployment.
+  # Read-only emergency queue examination while native-pixel AI deploy finishes.
   live-check:
     name: Read-only Oracle and Eufy queue inspection
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
