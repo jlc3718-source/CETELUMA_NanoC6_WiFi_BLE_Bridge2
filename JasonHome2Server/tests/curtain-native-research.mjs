@@ -144,7 +144,10 @@ test('slot inspector preserves all inventory entries and gives a relay-safe noti
  assert.match(source,/const INBOUND_WAIT_MS=45000/);
  assert.match(source,/const waiter=waitFor\('inventory',INBOUND_WAIT_MS\)/);
  assert.match(source,/async function inspect\(progress=\(\)=>\{\}\)/);
- assert.match(source,/return await inventory\(t,progress\)/);
+ assert.match(source,/return await inventory\(transport,progress\)/);
+ assert.match(source,/for\(let attempt=0;attempt<2;attempt\+\+\)/,'Read-only reboot recovery has a strict one-retry limit');
+ assert.match(source,/two fresh Oracle syncs/);
+ assert.match(source,/if\(!rebooted\|\|attempt!==0\)throw error/);
  assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.id-b\.id/);
  assert.match(source,/observedNotifications-before/);
  assert.match(source,/lastSmartDawnOp/);
