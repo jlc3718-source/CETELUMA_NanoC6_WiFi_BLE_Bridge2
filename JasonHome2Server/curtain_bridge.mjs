@@ -183,8 +183,24 @@ export function createCurtainBridge({db,now=Date.now}){
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
   put('localOverride',Number(body.localOverrideUntil||0));
   if(reboot){put('bootId',body.bootId);put('notifications',[]);}
-  if((reboot||endedOverride||bleReconnected||body.recoverDesired===true)&&get('localOverride',0)<=at){
-   const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
+  // Defer desired-state recovery during local/manual ownership.
+  // Otherwise old recovery commands can sit in the queue forever.
+  const hold=get('localOverride',0)>at||get('manualUntil',0)>at;
+  const wantsRecovery=reboot||endedOverride||bleReconnected||body.recoverDesired===true;
+  if(hold){
+   const stale=db.prepare("UPDATE curtain_commands SET state='superseded' WHERE source='recovery' AND state='queued'").run();
+   if(wantsRecovery||stale.changes>0){
+    put('recoveryDeferred',true);
+    if(stale.changes>0)signal();
+   }
+  }else if(wantsRecovery||get('recoveryDeferred',false)===true){
+   put('recoveryDeferred',false);
+   const desired=get('desired',{});
+   for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){
+    const d=desired[key];
+    const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));
+    if(!pending)enqueue(d.action,d.payload,null,'recovery');
+   }
   }
 
   if(body.status&&typeof body.status==='object')put('status',JSON.parse(JSON.stringify(body.status).length<=12000?JSON.stringify(body.status):'{}'));

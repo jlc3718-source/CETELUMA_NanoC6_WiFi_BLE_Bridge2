@@ -244,3 +244,25 @@ test('live manual command cannot be hidden behind older recovery entries or loca
   assert.deepEqual(local.commands.map(c=>c.id),[manual.id],'filter before LIMIT must prevent recovery backlog starvation');
  }finally{b.close();}
 });
+
+test('Manual curtain control clears stale recovery and replays desired only after hold',()=>{
+ const {b,time}=create();
+ try{
+  const power=b.enqueue('power',{on:true},null,'recovery');
+  const speed=b.enqueue('speed',{value:29},null,'recovery');
+  const user=b.enqueue('brightness',{value:54},null,'manual');
+  assert.equal(b.status().manualUntil,1900000);
+  const held=b.sync({bootId:'new-nano'});
+  assert.equal(b.command(power.id).state,'superseded');
+  assert.equal(b.command(speed.id).state,'superseded');
+  assert.deepEqual(held.commands.map(x=>x.id),[user.id]);
+  b.sync({acks:[{id:user.id,state:'applied',result:{bleTransmitted:true}}]});
+  assert.equal(b.status().queued,0);
+  assert.equal(b.sync({bootId:'new-nano'}).commands.length,0,'No recovery during hold');
+  time(1900001);
+  const resume=b.sync({bootId:'new-nano'});
+  assert.deepEqual(new Set(resume.commands.map(x=>x.action)),new Set(['power','speed','brightness']));
+  assert.equal(resume.commands.length,3);
+  assert.equal(b.sync({bootId:'new-nano'}).commands.length,3,'No duplicate recovery');
+ }finally{b.close()}
+});
