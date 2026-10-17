@@ -326,10 +326,39 @@ async function upload(bytes,progress=()=>{}){
 }
 // Research APIs are distinct from the proven 4 KB DN1FE installer.
 // Reading catalog does not mutate controller state. No factory CID can be targeted.
-async function inspect(progress=()=>{}){const t=await connection();try{
-  progress('NanoC6 negotiated BLE MTU '+(window.JH2NativeBleMtu||'not reported')+' (working captured MTU: 512).');
-  return await inventory(t,progress);
- }finally{t.close()}}
+// A Nano restart invalidates an in-flight BLE session. Only inventory reads
+// may be retried automatically: 205, 167 and 2904 do not erase or upload files.
+// Never apply this recovery to an ambiguous native file write/delete operation.
+async function inspect(progress=()=>{}){
+ for(let attempt=0;attempt<2;attempt++){
+  let transport=null;
+  try{
+   transport=await connection();
+   progress('NanoC6 negotiated BLE MTU '+(window.JH2NativeBleMtu||'not reported')+' (working captured MTU: 512).');
+   return await inventory(transport,progress);
+  }catch(error){
+   const rebooted=/NanoC6 reboot interrupted native BLE operation/i.test(String(error?.message||error));
+   if(!rebooted||attempt!==0)throw error;
+   progress('NanoC6 restarted during inventory. Waiting for two fresh Oracle syncs, then retrying this READ ONLY once. No effect will be deleted or uploaded.');
+   const api=window.parent?.JH2CurtainApi;
+   if(typeof api!=='function')throw error;
+   let stable=0,previousSync=0,latest=null;
+   for(let check=0;check<10;check++){
+    await sleep(4000);
+    latest=await api('/api/curtain/status');
+    const synced=Number(latest.lastSync||0);
+    const fresh=latest.online===true&&synced>0&&Date.now()-synced<20000;
+    if(!fresh){stable=0;previousSync=0;continue;}
+    if(Number(latest.uptimeSeconds||0)>=10&&synced!==previousSync)stable++;
+    else if(Number(latest.uptimeSeconds||0)<10)stable=0;
+    previousSync=synced;
+    if(stable>=2)break;
+   }
+   if(stable<2)throw Error('NanoC6 did not remain online through two fresh Oracle syncs after restart. Firmware '+(latest?.firmware??'unknown')+', uptime '+(latest?.uptimeSeconds??'unknown')+' seconds. No inventory retry or controller changes.');
+   progress('NanoC6 is responding after restart; retrying controller inventory once without changing any effect...');
+  }finally{if(transport)transport.close();}
+ }
+}
 async function researchUpload(data,{replaceReserved=false,progress=()=>{},format='DNMX'}={}){
  if(!window.JH2NativeResearch)throw Error('Research encoder is not loaded');
  if(format!=='AVI'&&format!=='DNMX')throw Error('Unsupported experimental upload format');
