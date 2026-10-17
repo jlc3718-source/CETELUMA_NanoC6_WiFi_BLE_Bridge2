@@ -139,7 +139,15 @@ export function createCurtainBridge({db,now=Date.now}){
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
   const transient=['rawWrite','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
   if(action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
-  if(action==='asset'&&![slot().active_sha,slot().pending_sha].includes(payload.sha256))throw fail(409,'Asset is no longer staged or active');
+  // Existing scheduled Oracle assets remain valid after newer user artwork
+  // replaces the current slot; GC separately retains all scheduled digests.
+  const outsideSlot=action==='asset'&&![slot().active_sha,slot().pending_sha].includes(payload.sha256);
+  if(outsideSlot){
+   const pinned=(source==='schedule'||source==='recovery')&&schedules().some(s=>s.enabled&&s.action==='asset'&&s.payload.sha256===payload.sha256);
+   if(!pinned)throw fail(409,'Asset is no longer staged or active');
+   db.prepare("UPDATE curtain_asset_slots SET pending_sha=?,pending_at=?,pending_command=NULL,phase='staged',last_error='' WHERE target=?")
+     .run(payload.sha256,now(),TARGET);
+  }
   const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
@@ -170,7 +178,19 @@ export function createCurtainBridge({db,now=Date.now}){
   if(!/^[\w-]{1,80}$/.test(s.id||'')||!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.end<=s.start||s.end-s.start>31*86400000)throw fail(400,'Supply a valid start and end date');
   const payload=validateCommand(s.action,s.payload);if(!['asset','effect','nativePlay','sequenceStart','power'].includes(s.action))throw fail(400,'Unsupported scheduled action');
   if(s.action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Scheduled asset is missing');
-  const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));put('scheduleRevision',get('scheduleRevision',0)+1);put('scheduleActive','changed');tick();signal();return value;
+  const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};
+  db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));
+  put('scheduleRevision',get('scheduleRevision',0)+1);
+  // Adding a FUTURE schedule must never suddenly turn off a manually lit curtain.
+  if(value.enabled&&value.start<=now()&&value.end>now())put('scheduleActive',null);
+  tick();garbageCollect();signal();return value;
+ }
+ function deleteSchedule(id){
+  if(typeof id!=='string'||!/^[\\w-]{1,80}$/.test(id))throw fail(400,'Invalid schedule ID');
+  const result=db.prepare('DELETE FROM curtain_schedules WHERE id=?').run(id);
+  if(!result.changes)throw fail(404,'Curtain schedule not found');
+  put('scheduleRevision',get('scheduleRevision',0)+1);
+  tick();garbageCollect();signal();return {id,deleted:true};
  }
  function resume(){put('manualUntil',0);put('scheduleActive',null);tick();for(const d of Object.values(get('desired',{})))enqueue(d.action,d.payload,null,'recovery');signal();return status();}
  function sync(body,credential='current'){
@@ -273,5 +293,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
- return {status,manualHoldActive,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ return {status,manualHoldActive,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,deleteSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }

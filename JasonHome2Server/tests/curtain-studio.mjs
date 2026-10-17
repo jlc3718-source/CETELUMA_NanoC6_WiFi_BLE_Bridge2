@@ -214,3 +214,19 @@ test('native file plan accepts only the reserved 83928 CID and exact 4 KB DN1FE 
  const bad=image.slice();bad[0]=74;
  assert.throws(()=>native.filePlan(bad),/DN1FE/);
 });
+
+test('Studio schedules saved animation frames through Oracle without touching native CID',()=>{
+ for(const id of ['animationScheduler','scheduleName','scheduleStart','scheduleEnd',
+  'saveAnimationSchedule','refreshAnimationSchedules','animationScheduleStatus','animationScheduleList'])
+  assert.ok(converter.includes('id="'+id+'"'),id);
+ assert.match(converter,/function refreshAnimationSchedules\(/);
+ assert.match(converter,/action:'asset',payload:\{sha256:asset\.sha256\}/);
+ assert.match(converter,/animationFrames\.map\(f=>base64\(new Uint8Array\(f\.data\)\)\)/);
+ assert.match(converter,/id:'studio-'\+crypto\.randomUUID\(\)/);
+ assert.match(converter,/remove:true/);
+ assert.match(server,/curtainRelay\.deleteSchedule\(body\.id\)/);
+ const relay=read('curtain_bridge.mjs');
+ assert.match(relay,/function deleteSchedule\(id\)/);
+ assert.match(relay,/source==='schedule'/);
+ assert.match(relay,/if\(value\.enabled&&value\.start<=now\(\)&&value\.end>now\(\)\)/);
+});

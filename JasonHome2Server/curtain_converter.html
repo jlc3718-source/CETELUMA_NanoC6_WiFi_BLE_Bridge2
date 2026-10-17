@@ -43,6 +43,17 @@ canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelat
 <p class="hint" id="nativeSlotNote">Separate controller-native upload. The existing Oracle JHC1 multi-frame animation is not interchangeable with a SmartDawn native .eff. This button requires a valid native animation file; it will not silently substitute a scrolling E-89 first frame.</p>
 <p id="nativeSlotStatus" role="status">Controller slot untouched.</p>
 <p class="hint">Publish uploads one multi-frame asset to Oracle. The Nano streams it and transmits the individual frames to the curtain over BLE. Actual playback speed depends on BLE transfer time.</p></section>
+<section id="animationScheduler"><h2>🗓️ Schedule this curtain animation</h2>
+<p class="hint">Save your current Studio frames to Oracle and play them automatically during a date/time window. Scheduling uses Oracle → NanoC6 streaming, not the native controller slot. Only this curtain is affected.</p>
+<div class="settings">
+<label>Schedule name<input id="scheduleName" maxlength="70" value="Curtain animation"></label>
+<label>Start date & time<input id="scheduleStart" type="datetime-local"></label>
+<label>End date & time<input id="scheduleEnd" type="datetime-local"></label>
+</div>
+<p class="hint">Times use this device's time zone. One-time windows (maximum 31 days). A looping animation repeats until the window ends; without Loop it plays once. Manual curtain commands temporarily override scheduling for 15 minutes.</p>
+<div class="buttons"><button id="saveAnimationSchedule" class="primary" type="button">📅 Save animation &amp; schedule</button><button id="refreshAnimationSchedules" type="button">↻ Refresh schedules</button></div>
+<p id="animationScheduleStatus" role="status">Nothing has been scheduled from this Studio session.</p>
+<div id="animationScheduleList" aria-label="Saved animation schedules"></div></section>
 <section><h2>⚡ Physical speed check</h2><p class="hint">Measure three real Oracle → Nano command acknowledgments without changing the curtain lights. For a visible picture/dual-buffer test, choose Sample pumpkin and Show on curtain.</p>
 <div class="buttons"><button id="speed">Measure three commands</button><button id="connection">Check push connection</button></div>
 <p id="testResult" role="status">Not tested yet.</p></section></main>
@@ -344,6 +355,81 @@ $('removeFrame').onclick=()=>{if(!animationFrames.length)return;stopPreview();an
 $('clearFrames').onclick=()=>{setFrames([]);show('Animation cleared; the still image is preserved.');};
 $('leftFrame').onclick=()=>{if(selectedFrame<=0)return;stopPreview();[animationFrames[selectedFrame-1],animationFrames[selectedFrame]]=[animationFrames[selectedFrame],animationFrames[selectedFrame-1]];selectedFrame--;updateFrameStrip();};
 $('rightFrame').onclick=()=>{if(selectedFrame>=animationFrames.length-1)return;stopPreview();[animationFrames[selectedFrame+1],animationFrames[selectedFrame]]=[animationFrames[selectedFrame],animationFrames[selectedFrame+1]];selectedFrame++;updateFrameStrip();};
+
+// Schedule a copy of the animation on Oracle; never trigger the live publish
+// button or erase a controller-native slot as a scheduling side effect.
+let savingCurtainSchedule=false;
+const scheduleStatus=text=>$('animationScheduleStatus').textContent=text;
+function scheduleWhen(ms){return new Date(ms).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});}
+function scheduleLocalValue(date){
+ const d=new Date(date.getTime()-date.getTimezoneOffset()*60000);
+ return d.toISOString().slice(0,16);
+}
+const scheduleClockNow=new Date();
+$('scheduleStart').value=scheduleLocalValue(new Date(scheduleClockNow.getTime()+15*60000));
+$('scheduleEnd').value=scheduleLocalValue(new Date(scheduleClockNow.getTime()+75*60000));
+async function refreshAnimationSchedules(){
+ const list=$('animationScheduleList');
+ const response=await api('/api/curtain/schedules');
+ const rows=(response.schedules||[]).filter(s=>s.id.startsWith('studio-')).sort((a,b)=>a.start-b.start);
+ list.replaceChildren();
+ if(!rows.length){const p=document.createElement('p');p.className='hint';p.textContent='No saved Studio animation schedules.';list.append(p);return;}
+ for(const s of rows){
+  const line=document.createElement('div');line.className='settings';
+  line.style.borderTop='1px solid #385466';line.style.paddingTop='10px';
+  const info=document.createElement('div');
+  info.textContent=(s.enabled?'● Active':'○ Disabled')+' · '+s.name+' · '+scheduleWhen(s.start)+' → '+scheduleWhen(s.end);
+  const actions=document.createElement('div');actions.className='buttons';actions.style.marginTop='0';
+  const toggle=document.createElement('button');toggle.type='button';toggle.textContent=s.enabled?'Disable':'Enable';
+  const remove=document.createElement('button');remove.type='button';remove.textContent='Delete';
+  toggle.onclick=async()=>{
+   if(savingCurtainSchedule)return;savingCurtainSchedule=true;toggle.disabled=true;remove.disabled=true;
+   try{
+    await api('/api/curtain/schedules',{...s,enabled:!s.enabled});
+    scheduleStatus((s.enabled?'Disabled ':'Enabled ')+s.name);await refreshAnimationSchedules();
+   }catch(e){scheduleStatus('Schedule update failed: '+e.message);}
+   finally{savingCurtainSchedule=false;}
+  };
+  remove.onclick=async()=>{
+   if(savingCurtainSchedule||!window.confirm('Delete this curtain animation schedule?'))return;
+   savingCurtainSchedule=true;toggle.disabled=true;remove.disabled=true;
+   try{
+    await api('/api/curtain/schedules',{id:s.id,remove:true});
+    scheduleStatus('Deleted '+s.name);await refreshAnimationSchedules();
+   }catch(e){scheduleStatus('Schedule deletion failed: '+e.message);}
+   finally{savingCurtainSchedule=false;}
+  };
+  actions.append(toggle,remove);line.append(info,actions);list.append(line);
+ }
+}
+$('refreshAnimationSchedules').onclick=()=>refreshAnimationSchedules().then(()=>scheduleStatus('Schedules refreshed.')).catch(e=>scheduleStatus('Could not refresh schedules: '+e.message));
+$('saveAnimationSchedule').onclick=async()=>{
+ if(busy||savingCurtainSchedule)return;
+ if(animationFrames.length<2)return scheduleStatus('Create at least two animation frames before scheduling.');
+ const start=new Date($('scheduleStart').value).getTime();
+ const end=new Date($('scheduleEnd').value).getTime();
+ if(!Number.isFinite(start)||!Number.isFinite(end)||start<Date.now()+10000||end<=start||end-start>31*86400000)
+  return scheduleStatus('Choose a future start and later end (maximum 31 days).');
+ const name=$('scheduleName').value.trim()||'Curtain animation';
+ savingCurtainSchedule=true;$('saveAnimationSchedule').disabled=true;
+ try{
+  scheduleStatus('Saving the exact '+animationFrames.length+'-frame animation to Oracle…');
+  const asset=await api('/api/curtain/assets',{
+   name,frames:animationFrames.map(f=>base64(new Uint8Array(f.data))),
+   delays:animationFrames.map(()=>previewDelay()),quality:'rgbfull',loop:$('loop').checked
+  });
+  scheduleStatus('Creating the schedule without playing it now…');
+  const result=await api('/api/curtain/schedules',{
+   id:'studio-'+crypto.randomUUID(),name,enabled:true,start,end,
+   action:'asset',payload:{sha256:asset.sha256}
+  });
+  scheduleStatus('Saved '+result.schedule.name+' for '+scheduleWhen(start)+' → '+scheduleWhen(end)+'. Physical playback awaits its scheduled time.');
+  await refreshAnimationSchedules();
+ }catch(e){scheduleStatus('Schedule not saved: '+e.message);}
+ finally{savingCurtainSchedule=false;$('saveAnimationSchedule').disabled=busy;}
+};
+refreshAnimationSchedules().catch(e=>scheduleStatus('Could not load schedules: '+e.message));
+
 $('nativeFile').onchange=async event=>{
  nativeEffect=null;
  const file=event.target.files?.[0];if(!file){$('nativeSlotStatus').textContent='No native file selected.';return;}

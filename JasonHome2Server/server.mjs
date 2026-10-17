@@ -1073,7 +1073,7 @@ async function route(req,res){
   if(path==="/api/curtain/resume"&&method==="POST")return send(res,200,curtainRelay.resume());
   if(path==="/api/curtain/schedules"){
     if(method==="GET")return send(res,200,{ok:true,schedules:curtainRelay.schedules()});
-    if(method==="POST")return send(res,200,{ok:true,schedule:curtainRelay.saveSchedule(await input(req))});
+    if(method==="POST"){const body=await input(req);if(body?.remove===true)return send(res,200,{ok:true,...curtainRelay.deleteSchedule(body.id)});return send(res,200,{ok:true,schedule:curtainRelay.saveSchedule(body)});}
   }
   if(method==="GET"&&path==="/api/nanoc6/sync")return send(res,200,nanoC6BrightnessSync.status());
   if(method==="POST"&&path==="/api/nanoc6/sync"){
