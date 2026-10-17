@@ -69,6 +69,19 @@ else:
  # Update the already-isolated route blocks without touching other application code.
  for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
   a=src.index(start);b=src.index(end,a);x=live.index(start);y=live.index(end,x);live=live[:x]+src[a:b]+live[y:]
+# Maintain the same public, ECDSA-verified OTA manifest fallback without
+# rewriting Eufy service code or exposing any private settings.
+manifest_start='  // Public signed release manifest only.'
+manifest_after='  if(path==="/api/session"&&method==="POST"){'
+assert src.count(manifest_start)==1 and src.count(manifest_after)==1
+manifest_block=src[src.index(manifest_start):src.index(manifest_after)]
+if manifest_start in live:
+ assert live.count(manifest_start)==1
+ live=live[:live.index(manifest_start)]+manifest_block+live[live.index(manifest_after,live.index(manifest_start)):]
+else:
+ assert live.count(manifest_after)==1
+ live=live.replace(manifest_after,manifest_block+manifest_after,1)
+assert live.count(manifest_start)==1
 # Preserve the active full web app while installing the isolated AI Curtain route.
 # Prior deployments copied curtain pages but omitted this API route entirely.
 route_start='  if(method==="POST"&&path==="/api/curtain/generate-art")'

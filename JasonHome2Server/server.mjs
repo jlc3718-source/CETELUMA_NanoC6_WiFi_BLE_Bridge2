@@ -929,6 +929,20 @@ const loginPage=`<!doctype html><html lang="en"><meta name="viewport" content="w
 async function route(req,res){
   const url=new URL(req.url||"/","http://127.0.0.1"),path=url.pathname,method=req.method||"GET";
   if(path==="/api/health")return send(res,200,{ok:true,service:"jason-home-2-web",upstream:upstreamUrl,build:process.env.JH2_BUILD_SHA||"local"});
+  // Public signed release manifest only. No API credentials, device state or
+  // uploaded files are served here. Nano still verifies the pinned ECDSA key.
+  if(path==="/api/curtain/firmware-manifest"&&method==="GET"){
+    const controllerChannel="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
+    let result;
+    try{result=await fetch(controllerChannel,{signal:AbortSignal.timeout(9000),redirect:"error",headers:{"accept":"application/json"}});}
+    catch{throw fail(503,"Signed firmware channel is temporarily unreachable");}
+    if(!result.ok)throw fail(502,"Signed firmware channel returned "+result.status);
+    const bytes=await result.text();
+    if(bytes.length>16000)throw fail(502,"Firmware manifest exceeds safe size");
+    let manifest;try{manifest=JSON.parse(bytes);}catch{throw fail(502,"Invalid signed firmware manifest");}
+    if(manifest?.schema!==1||typeof manifest.payload!=="string"||typeof manifest.signature!=="string")throw fail(502,"Signed release manifest is incomplete");
+    return send(res,200,manifest,{"cache-control":"no-store"});
+  }
   if(path==="/api/session"&&method==="POST"){
     const value=await input(req),candidate=String(value.token||"");
     if(!candidate||!secureEqual(candidate,upstreamToken))throw fail(401,"Invalid Oracle API key");

@@ -14,6 +14,12 @@ test('AI generator is minimal and its script parses',()=>{
    assert.ok(converter.includes('id="'+id+'"'),id);
  assert.doesNotMatch(converter,/requestDevice|gatt\.connect|BLE scan|upload firmware|83928/);
 });
+test('Oracle public OTA manifest proxy exposes signed release metadata only',()=>{
+ assert.match(server,/path==="\/api\/curtain\/firmware-manifest"/);
+ assert.match(server,/jh2-nanoc6-ota\/latest\.json/);
+ assert.match(server,/manifest\.signature/);
+ assert.match(server,/redirect:"error"/);
+});
 test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
  assert.match(server,/@cf\/black-forest-labs\/flux-1-schnell/);
