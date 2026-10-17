@@ -145,6 +145,15 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn('void relayPauseForFirmwareCheck(bool hold)',header)
   self.assertIn('relayPauseForFirmwareCheck(true)',fw)
   self.assertIn('relayPauseForFirmwareCheck(false)',fw)
+ def test_oracle_tls_transports_do_not_overlap_and_failed_stream_closes(self):
+  relay=(R/'src/OracleRelay.cpp').read_text()
+  self.assertIn('if(otaTlsExclusive||pollerHttpActive||streaming',relay)
+  self.assertIn('while(!otaTlsExclusive&&!pollerHttpActive&&!streaming',relay)
+  self.assertIn('while(pushOnline&&millis()-drainingSince<1800)',relay)
+  self.assertIn('self->http.end();\n    self->streamMode=false;',relay)
+  self.assertIn('if(pushOnline){vTaskDelay(pdMS_TO_TICKS(20));continue;}',relay)
+  self.assertIn('mbedtls_sha256_finish(&hash',relay)
+  self.assertIn('x-chunk-sha256',relay)
  def test_fast_1_2_second_oracle_fallback_with_validated_push(self):
   relay=(R/'src/OracleRelay.cpp').read_text()
   self.assertIn('nextSync=millis()+1200',relay)
