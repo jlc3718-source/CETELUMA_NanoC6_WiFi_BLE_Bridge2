@@ -121,7 +121,7 @@ class RelayArchitecture(unittest.TestCase):
  def test_ota_channel_falls_back_to_oracle_without_bypassing_signature(self):
   fw=(R/'src/FirmwareUpdate.cpp').read_text()
   self.assertIn('/api/curtain/firmware-manifest',fw)
-  self.assertIn('if(httpsJson(oracle,nullptr,d))',fw)
+  self.assertIn('httpsJson(oracleRoot+"/api/curtain/firmware-manifest"+suffix,nullptr,d)',fw)
   self.assertIn('if(httpsJson(String(CHANNEL)+suffix,nullptr,d))',fw)
   self.assertIn('mbedtls_pk_verify',fw)
   self.assertIn('m.url!=expected',fw)
