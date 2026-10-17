@@ -37,7 +37,7 @@ jobs:
           times=[]
           for n in range(3):
             stamp=time.monotonic()
-            body={'action':'nanoInfo','payload':{},'idempotencyKey':'safe-latency-'+os.environ['RUN_ID']+'-'+str(n)}
+            body={'action':'nanoInfo','payload':{},'idempotencyKey':'safe-after-oracle-priority-'+os.environ['RUN_ID']+'-'+str(n)}
             queued,_=api('/api/curtain/call',body,cookie)
             cid=queued['commandId']
             current={'state':'queued'}
