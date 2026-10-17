@@ -15,7 +15,7 @@ const INBOUND_WAIT_MS=45000; // Oracle -> Nano command and Nano -> Oracle notifi
 let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
 let lastSentOpcode=null,transmittedRequests=0,lastNativeRcode=null;
 // DN5E58 has 87 recovered factory effects; the controller can contain more.
-const KNOWN_FACTORY_EFFECTS=88; // October 15 original stock E-0...E-87 (plus any user-created effects)
+const KNOWN_FACTORY_EFFECTS=88; // HCI captures show 88 stock entries; 89-90 after experiment
 let inventoryResponseAt=0,inventoryBatchCount=0,inventoryUniqueFrames=new Set();
 const initializedReadConnections=new WeakSet();
 let uploadSessionSequence=0,lastUploadSessionId=0,uploadResponses=[];
@@ -204,7 +204,15 @@ async function connection(){
   window.parent.postMessage({kind:'jh2-curtain-request',id,action,payload},location.origin);
  });
  try{
-  await rpc('connect');await rpc('subscribeRaw',{uuid:NOTIFY});
+  const connected=await rpc('connect');
+   const reported=Number(connected?.mtu||0);
+   // 2026-10-14 HCI capture: the controller's 2904 notifications are
+   // 350/364/370/396/163 bytes. 396+3 ATT overhead requires MTU >=399.
+   // Android negotiated 512. A smaller Nano MTU cannot receive the catalog.
+   if(reported>0&&reported<399)throw Error(
+    'NanoC6 BLE MTU '+reported+' is too small for native 2904 responses (requires at least 399; working phone negotiated 512). No controller effect was modified.');
+   await rpc('subscribeRaw',{uuid:NOTIFY});
+   if(reported>0)window.JH2NativeBleMtu=reported;
   timer=setInterval(receiveOracle,300);await receiveOracle();
  }catch(e){closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);throw e;}
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});
@@ -280,7 +288,10 @@ async function upload(bytes,progress=()=>{}){
  const t=await connection();
  try{
   progress('Reading controller effect inventory…');
-  const before=await inventory(t);if(before.partial)throw Error('Incomplete controller inventory; upload cancelled to protect other effects');let original=before.find(x=>x.cid===CID);
+  const before=await inventory(t);if(before.partial)throw Error('Incomplete controller inventory; upload cancelled to protect other effects');
+   const matching=before.filter(x=>x.cid===CID);
+   if(matching.length>1)throw Error('Unsafe duplicate CID 83928: '+matching.map(e=>'E-'+e.id+' (slot '+e.slot+')').join(', ')+'. Deletion blocked to protect all effects.');
+   let original=matching[0];
   if(original){
    progress('Erasing ONLY reserved CID 83928…');
    await ddp(t,2909,CID);await sleep(600);
@@ -304,7 +315,10 @@ async function upload(bytes,progress=()=>{}){
 }
 // Research APIs are distinct from the proven 4 KB DN1FE installer.
 // Reading catalog does not mutate controller state. No factory CID can be targeted.
-async function inspect(progress=()=>{}){const t=await connection();try{return await inventory(t,progress)}finally{t.close()}}
+async function inspect(progress=()=>{}){const t=await connection();try{
+  progress('NanoC6 negotiated BLE MTU '+(window.JH2NativeBleMtu||'not reported')+' (working captured MTU: 512).');
+  return await inventory(t,progress);
+ }finally{t.close()}}
 async function researchUpload(data,{replaceReserved=false,progress=()=>{},format='DNMX'}={}){
  if(!window.JH2NativeResearch)throw Error('Research encoder is not loaded');
  if(format!=='AVI'&&format!=='DNMX')throw Error('Unsupported experimental upload format');
@@ -313,7 +327,10 @@ async function researchUpload(data,{replaceReserved=false,progress=()=>{},format
  const t=await connection();
  try{
   progress('Rechecking all stored effect IDs…');
-  const before=await inventory(t);if(before.partial)throw Error('Incomplete controller inventory; experimental upload cancelled');const occupied=before.find(e=>e.cid===CID);
+  const before=await inventory(t);if(before.partial)throw Error('Incomplete controller inventory; experimental upload cancelled');
+   const matches=before.filter(e=>e.cid===CID);
+   if(matches.length>1)throw Error('Unsafe duplicate CID 83928 ('+matches.map(e=>'E-'+e.id).join(', ')+'); deletion blocked.');
+   const occupied=matches[0];
   if(occupied&&!replaceReserved)throw Error('Reserved CID 83928 is occupied. No storage writes made; explicit replacement authorization required.');
   if(occupied){
    progress('Erasing only the explicitly approved reserved test CID 83928…');
@@ -380,7 +397,10 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
  const t=await connection();
  try{
   progress('Reading controller effect list…');
-  let before=await inventory(t);if(before.partial)throw Error('Incomplete controller effect list; no upload or deletion attempted');let old=before.find(e=>e.cid===CID);
+  let before=await inventory(t);if(before.partial)throw Error('Incomplete controller effect list; no upload or deletion attempted');
+  const matches=before.filter(e=>e.cid===CID);
+  if(matches.length>1)throw Error('Unsafe duplicate CID 83928: '+matches.map(e=>'E-'+e.id+' / slot '+e.slot).join(', ')+'. No deletion attempted.');
+  let old=matches[0];
   progress('Controller inventory read: '+before.length+' slot/CID entries.',before);
   if(old){
    progress('Replacing only reserved test effect CID 83928…');

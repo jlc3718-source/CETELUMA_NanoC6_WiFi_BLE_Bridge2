@@ -248,6 +248,26 @@ test('original catalog reader maps EffectInfo fields exactly and accepts CID 159
  assert.ok(inventory.indexOf('await ddp(t,167)')<inventory.indexOf('await ddp(t,2904)'));
  assert.doesNotMatch(inventory,/2909|2930|2606/);
 });
+test('real 2026-10-14 HCI capture requires 399-byte MTU for 396-byte inventory notifications',()=>{
+ const native=read('curtain_native_slot.js');
+ const connection=native.slice(native.indexOf('async function connection(){'),native.indexOf('async function ddp('));
+ assert.match(connection,/const reported=Number\(connected\?\.mtu\|\|0\)/);
+ assert.match(connection,/reported>0&&reported<399/);
+ assert.match(connection,/working phone negotiated 512/);
+ assert.ok(connection.indexOf('reported>0&&reported<399')<connection.indexOf("await rpc('subscribeRaw'"),'Refuse inadequate negotiated MTU before inventory requests');
+ const inspect=native.slice(native.indexOf('async function inspect('),native.indexOf('async function researchUpload('));
+ assert.match(inspect,/NanoC6 negotiated BLE MTU/);
+});
+test('duplicate 83928 CIDs observed in E-87 and E-88 never trigger an ambiguous delete',()=>{
+ const source=read('curtain_native_slot.js');
+ for(const fn of ['async function upload(','async function researchUpload(','async function vendorUpload(']){
+  const start=source.indexOf(fn),next=source.indexOf('async function ',start+fn.length);
+  const chunk=source.slice(start,next<0?undefined:next);
+  assert.match(chunk,/\.filter\([^\n]+\.cid===CID\)/,'Each uploader must inventory every record matching test CID');
+  assert.match(chunk,/\.length>1/,'Duplicate CID must stop all writes');
+  assert.ok(chunk.indexOf('.length>1')<chunk.indexOf('await ddp(t,2909,CID)'),'CID collision gate must precede erase');
+ }
+});
 test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
  const script=read('../.github/scripts/deploy-curtain-relay.py');
  assert.match(script,/curtain_native_test\.html/);
