@@ -75,7 +75,7 @@ test('Full animation Studio preserves legacy still-image tools and composes true
  assert.match(converter,/quality:'rgbfull'/);
  assert.match(converter,/await queue\('asset',payload\)/);
  assert.match(converter,/await ack\(id,120000\)/);
- assert.match(assets,/frames\.length>180/);
+ assert.match(assets,/images\.length>180/);
  assert.match(assets,/Each prepared frame must contain 6400 RGBA bytes/);
  assert.match(assets,/Math\.max\(40,Math\.min\(60000/);
 });
@@ -83,7 +83,7 @@ test('Cloudflare FLUX generation enforces simplified art and bounded keyframe in
  const route=server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),
                          server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")'));
  for(const term of ['"blocky"','"simple"','"classic"','styleRules','body.colorLimit',
-  'body.frameCount','body.frameIndex','total>12','frame>=total','Frame ","No tiny details',
+  'body.frameCount','body.frameIndex','total>12','frame>=total','"Frame "+(frame+1)','"No tiny details',
   'const motion=String(body.motion||"")']){
   assert.ok(route.includes(term),term);
  }
