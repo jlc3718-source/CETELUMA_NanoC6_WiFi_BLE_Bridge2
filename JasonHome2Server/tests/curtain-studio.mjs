@@ -230,3 +230,27 @@ test('Studio schedules saved animation frames through Oracle without touching na
  assert.match(relay,/source==='schedule'/);
  assert.match(relay,/if\(value\.enabled&&value\.start<=now\(\)&&value\.end>now\(\)\)/);
 });
+
+test('local animation effects retain frame geometry instead of scaling the whole art',()=>{
+ const script=js.filter(x=>x[1].trim())[0][1];
+ const begin=script.indexOf('function frameMotion('),end=script.indexOf("\n$('autoFrames')",begin);
+ assert.ok(begin>=0&&end>begin);
+ const fn=new Script('('+script.slice(begin,end)+')').runInNewContext({Uint8ClampedArray});
+ const base=new Uint8ClampedArray(6400);
+ for(let p=3;p<6400;p+=4)base[p]=255;
+ for(let y=12;y<36;y+=2)for(let x=10;x<32;x+=2)
+  for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+   const p=((y+dy)*40+x+dx)*4;base[p]=240;base[p+1]=121;base[p+2]=12;
+  }
+ const on=(bytes,x,y)=>Math.max(...bytes.slice((y*40+x)*4,(y*40+x)*4+3))>40;
+ for(const mode of ['pulse','flicker','sparkle']){
+  const frame=fn(base,1,4,mode).data;
+  assert.equal(frame.length,6400);
+  assert.equal(on(frame,10,12),true);
+  assert.equal(on(frame,0,0),false);
+  for(let y=0;y<40;y+=2)for(let x=0;x<40;x+=2){
+   const a=(y*40+x)*4,b=((y+1)*40+x+1)*4;
+   assert.deepEqual([...frame.slice(a,a+4)],[...frame.slice(b,b+4)]);
+  }
+ }
+});
