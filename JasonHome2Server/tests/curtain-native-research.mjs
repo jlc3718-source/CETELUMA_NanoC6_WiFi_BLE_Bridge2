@@ -93,7 +93,12 @@ test('manufacturer native type-0 upload stays on reserved CID 83928 and retains 
  assert.equal(plan.format,'DNMX');assert.equal(plan.bytes,b.length);
  assert.ok(plan.request[0]>=1&&plan.request[0]<=240);assert.equal(plan.request[0],plan.sessionId);assert.equal(plan.request[3],17);
  const wire=Buffer.from(plan.request);assert.ok(wire.includes(Buffer.from('83928.eff')));
- assert.deepEqual([...plan.request.slice(8,12)],[8,plan.sessionId,16,0],'type=0 per manufacturer');
+ assert.equal(plan.request[8],8,'Protobuf UploadRequest.id is field 1');
+ const code=plan.request[9],twoBytes=(code&128)!==0;
+ const decodedSession=(code&127)|(twoBytes?(plan.request[10]&127)<<7:0);
+ assert.equal(decodedSession,plan.sessionId,'Variable-length session ID must match the BLE wrapper');
+ const afterId=twoBytes?11:10;
+ assert.deepEqual([...plan.request.slice(afterId,afterId+2)],[16,0],'type=0 per manufacturer');
  assert.equal(plan.parts.every(p=>p[0]===plan.sessionId),true,'All BLE data fragments share the upload session ID');
  assert.deepEqual(Buffer.concat(plan.parts.map(p=>Buffer.from(p.subarray(8)))),Buffer.from(b));
  const bad=b.slice();new DataView(bad.buffer).setUint32(14,93444,true);
