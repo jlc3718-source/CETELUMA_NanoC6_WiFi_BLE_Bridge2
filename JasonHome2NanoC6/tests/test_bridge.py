@@ -4,7 +4,8 @@ R=Path(__file__).resolve().parents[1]
 class RelayArchitecture(unittest.TestCase):
  def test_relay_never_stores_animation_files(self):
   s=(R/'src/OracleRelay.cpp').read_text()
-  self.assertIn('SAFETY_RESERVE=88*1024',s)
+  self.assertIn('SAFETY_RESERVE=96*1024',s)
+  self.assertIn('8U<<10',s)
   self.assertIn('targetEach()',s)
   self.assertIn('adaptWindow(index)',s)
   self.assertIn('windowCapacities',s)
