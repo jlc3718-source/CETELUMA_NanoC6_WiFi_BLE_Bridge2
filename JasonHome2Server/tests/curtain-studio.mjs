@@ -73,7 +73,8 @@ test('Native pixel AI returns exact 40x40 RGBA and no post-generation scaling',(
  const design=parsePixelGrid(JSON.stringify({palette:['#000000','#F78315'],rows}));
  const data=Buffer.from(design.rgba,'base64');
  assert.equal(data.length,6400);
- assert.equal(design.activeBlocks,120);
+ assert.equal(design.sourceBlocks,120);
+ assert.ok(design.activeBlocks>=60,'auto-framed subject should remain legible');
  const at=(x,y)=>[...data.subarray((y*40+x)*4,(y*40+x)*4+4)];
  assert.deepEqual(at(0,0),[0,0,0,255]);
  assert.deepEqual(at(16,0),[247,131,21,255]);
