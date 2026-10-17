@@ -34,7 +34,7 @@ static bool request(const String&path,JsonDocument&out,const String*body=nullptr
 // Header/framing data can be HTTP chunked; only "data: <revision>" lines matter.
 static void pushEvents(void*){
  for(;;){
-  if(WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
+  if(streaming||WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
    pushOnline=false;vTaskDelay(pdMS_TO_TICKS(2000));continue;
   }
   String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
@@ -50,7 +50,7 @@ static void pushEvents(void*){
   auto*source=http.getStreamPtr();uint32_t lastData=millis();
   char line[128]{};size_t used=0;
   pushOnline=true;
-  while(WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
+  while(!streaming&&WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
    if(!source->available()){vTaskDelay(pdMS_TO_TICKS(15));continue;}
    int chr=source->read();if(chr<0)continue;lastData=millis();
    if(chr=='\r')continue;
@@ -160,7 +160,7 @@ struct RelayStream {
   http.addHeader("X-JH2-Bridge-Token",key);
   const int code=http.GET();
   streamMode=code==200&&http.getSize()==(int)size&&http.header("x-asset-sha256")==sha;
-  if(!streamMode)http.end();
+  if(!streamMode){issue("Oracle asset-stream HTTP "+String(code)+" / byte length "+String(http.getSize()));http.end();}
   return streamMode;
  }
  // Called only by the producer; no other task touches the Oracle HTTP stream.
@@ -200,7 +200,7 @@ struct RelayStream {
   h.setConnectTimeout(6500);h.setTimeout(12000);
   const char*headers[]={"x-chunk-sha256"};h.collectHeaders(headers,1);
   if(!h.begin(tls,base+"/api/curtain-bridge/assets/"+sha+"?offset="+
-     String(at)+"&length=4096"))return false;
+     String(at)+"&length=4096")){issue("Oracle asset range HTTPS could not begin");return false;}
   h.addHeader("Authorization","Bearer "+key);
   h.addHeader("X-JH2-Bridge-Token",key);
   const int code=h.GET(),len=h.getSize();
@@ -208,7 +208,9 @@ struct RelayStream {
    uint32_t(len)<=size-at&&size_t(len)<=capacity;
   if(valid)n=h.getStreamPtr()->readBytes(dest,len);
   const String expected=h.header("x-chunk-sha256");h.end();
-  return valid&&n==size_t(len)&&digest(dest,n)==expected;
+  const bool correct=valid&&n==size_t(len)&&digest(dest,n)==expected;
+  if(!correct)issue("Oracle asset-range HTTP "+String(code)+" / received "+String(n)+" / expected "+String(len));
+  return correct;
  }
  static void producer(void*arg){
   auto*self=static_cast<RelayStream*>(arg);
@@ -237,6 +239,7 @@ struct RelayStream {
  }
  bool start(){
   if(!windows[0]||windowCapacities[0]<MIN_WINDOW)return false;
+  for(uint8_t i=0;i<20&&pushOnline;i++)vTaskDelay(pdMS_TO_TICKS(25));
   open();
   freeQueue=xQueueCreate(windowCount,sizeof(uint8_t));
   readyQueue=xQueueCreate(windowCount,sizeof(uint8_t));
@@ -287,7 +290,7 @@ static void playback(void*arg){
  Play p=*static_cast<Play*>(arg);delete static_cast<Play*>(arg);bool applied=false;String error;
  do{
   RelayStream stream;stream.sha=p.sha;stream.size=p.size;uint8_t header[8];
-  if(!stream.read(header,8)){error="Oracle asset header download failed (TLS or memory)";break;}
+  if(!stream.read(header,8)){error="Oracle asset header download failed: "+relayError;break;}
   if(memcmp(header,"JHC1",4)){error="Invalid relay program header";break;}
   uint16_t frames=header[4]|(header[5]<<8);if(!frames||frames>180){error="Invalid relay frame count";break;}
   for(uint16_t f=0;f<frames&&p.gen==generation;f++){
@@ -317,6 +320,8 @@ static void poller(void*){
  uint32_t backoff=1000,lastNotice=0;String boot=randomHex(8);
  for(;;){
   if(WiFi.status()!=WL_CONNECTED||!timeValid()||!getEndpoint().length()){online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
+  // Release HTTPS transport for playback and resume sync at applied ACK.
+  if(streaming&&lastAck=="downloaded"){vTaskDelay(pdMS_TO_TICKS(120));continue;}
   JsonDocument body,response;body["recoverDesired"]=streamFailed;body["bridgeId"]=bridgeId;body["bootId"]=boot;
   auto status=body["status"].to<JsonObject>();status["firmware"]=VERSION;status["build"]=BUILD_SHA;status["uptimeSeconds"]=millis()/1000;status["wifiRSSI"]=WiFi.RSSI();status["wifiIP"]=WiFi.localIP().toString();status["wifiGateway"]=WiFi.gatewayIP().toString();status["autoUpdate"]=state["autoUpdate"]|true;status["relayStreaming"]=streaming;status["assetStorage"]="oracle";status["freeHeap"]=ESP.getFreeHeap();status["flashBytes"]=ESP.getFlashChipSize();
   JsonDocument curtain;curtainCall("status",JsonVariantConst(),curtain);status["curtain"]=curtain.as<JsonVariantConst>();

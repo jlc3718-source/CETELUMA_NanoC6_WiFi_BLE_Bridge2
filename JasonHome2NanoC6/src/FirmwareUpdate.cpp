@@ -17,7 +17,13 @@ kuGHPepzClPYMrJ4h5r8iNlyUFpJZcPI/FXe8+atedYKpIZZB5XlOj964Q==
 static const char CHANNEL[]="https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
 static const char PREFIX[]="https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v";
 static String oracleOtaRoot(){
+#ifdef JH2_BOOT
+  // Public Oracle firmware mirror; ECDSA/SHA verification still required.
+  String root="https://150.136.245.51/jason-home-2";
+#else
   String root=secrets["oracleEndpoint"]|String("");
+  if(!root.length())root="https://150.136.245.51/jason-home-2";
+#endif
   if(!root.startsWith("https://"))return "";
   while(root.endsWith("/"))root.remove(root.length()-1);
   return root;

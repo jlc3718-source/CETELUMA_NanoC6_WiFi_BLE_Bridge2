@@ -112,6 +112,8 @@ class RelayArchitecture(unittest.TestCase):
   fw=(R/'src/FirmwareUpdate.cpp').read_text()
   self.assertIn('/api/curtain/firmware-runtime/',fw)
   self.assertIn('oracleOtaRoot()',fw)
+  self.assertIn('#ifdef JH2_BOOT',fw)
+  self.assertIn('String root="https://150.136.245.51/jason-home-2";',fw)
   self.assertIn('if(code!=200)h.end()',fw)
   self.assertIn('openVerifiedSource(m.url)',fw)
   self.assertIn('total!=m.bytes',fw)
