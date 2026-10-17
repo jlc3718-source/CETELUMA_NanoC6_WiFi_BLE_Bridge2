@@ -1141,6 +1141,7 @@ async function route(req,res){
     // that cannot survive a 40x40 curtain. The chat AI instead draws the
     // exact palette-indexed 20x20 block matrix. Two-by-two LED blocks are
     // expanded once on the server and never recomputed on the browser.
+    const pixelModel="@cf/meta/llama-3.1-8b-instruct-fast";
     const instructions=[
       "Create one readable Minecraft-style 20 by 20 PIXEL SPRITE for a 40 by 40 RGB LED curtain.",
       "Return ONLY a JSON object with keys palette and rows.",
@@ -1162,17 +1163,17 @@ async function route(req,res){
         instructions+"\nIMPORTANT: The previous draft was invalid: "+lastFailure+
         ". Check 20 rows of EXACTLY 20 characters and an indexed palette; return corrected JSON only.";
       const result=await cloudflareAiChat({
-        model:AI_MODEL,messages:[{role:"system",content:"You are a pixel art grid generator, not an image illustrator. Output strictly valid JSON without markdown."},{role:"user",content:userText}],
-        temperature:0.35,max_completion_tokens:3200,
+        model:pixelModel,messages:[{role:"system",content:"You are a pixel art grid generator, not an image illustrator. Output strictly valid JSON without markdown."},{role:"user",content:userText}],
+        temperature:0.25,max_completion_tokens:1600,
         response_format:{type:"json_object"}
-      },{timeout:65000});
+      },{timeout:24000});
       const reply=cloudflareAiText(result);
       try{parsed=parsePixelGrid(reply);break;}
       catch(e){lastFailure=String(e.message).slice(0,180);}
     }
     if(!parsed)throw fail(502,"Pixel AI could not produce a valid 40×40 design: "+lastFailure);
     return send(res,200,{ok:true,pixels:parsed.rgba,palette:parsed.palette,outputGrid:"40x40",
-      logicalGrid:"20x20",model:AI_MODEL,activeBlocks:parsed.activeBlocks,
+      logicalGrid:"20x20",model:pixelModel,activeBlocks:parsed.activeBlocks,
       previewMatchesUpload:true});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));

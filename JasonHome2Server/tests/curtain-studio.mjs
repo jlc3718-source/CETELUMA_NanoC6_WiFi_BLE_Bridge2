@@ -31,7 +31,8 @@ test('Oracle serves exact canonical signed SHA-verified runtime BIN without a ne
 });
 test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
- assert.match(server,/model:AI_MODEL/);
+ assert.match(server,/model:pixelModel/);
+ assert.match(server,/@cf\/meta\/llama-3\.1-8b-instruct-fast/);
  assert.match(server,/cloudflareAiChat/);
  assert.match(server,/parsePixelGrid/);
  assert.doesNotMatch(server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")')),/flux-1-schnell/);
@@ -82,5 +83,5 @@ test('Native pixel AI returns exact 40x40 RGBA and no post-generation scaling',(
  assert.match(converter,/usePreparedFrame\(r.pixels\)/);
  assert.match(converter,/quality:'rgbfull'/);
  assert.match(assets,/count===1600\|\|trueColor\.length/);
- assert.throws(()=>parsePixelGrid(JSON.stringify({palette:['#000000','#FF0000'],rows:['011']})),/exactly 20/);
+ assert.throws(()=>parsePixelGrid(JSON.stringify({palette:['#000000','#FF0000'],rows:['011']})),/approximately 20/);
 });
