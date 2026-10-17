@@ -1,6 +1,6 @@
-/** Jason Home 2 Eufy schedule follower for SmartDawn NanoC6.
- * Opt-in setting remains OFF by default, preserving the user's earlier choice.
- * Follow actual Eufy scheduler/override power AND brightness; never alter Eufy.
+/** Jason Home 2 Eufy-master schedule follower for SmartDawn NanoC6.
+ * Follows current Eufy power and brightness automatically whenever the
+ * Oracle bridge has Eufy master mode enabled. Never modifies Eufy.
  * All actions travel over the existing authenticated Oracle -> Nano bridge.
  */
 export function createNanoC6BrightnessSync({meta,put,upstream,bridge,logger=console}) {
@@ -8,13 +8,14 @@ export function createNanoC6BrightnessSync({meta,put,upstream,bridge,logger=cons
   let previousLevel=null,previousPower=null,busy=false,checkedAt=null,lastError='',
       lastApplied=null,lastQueuedPower=null,consecutiveErrors=0,online=false,
       lastUptime=null,pendingPower=null,pendingBrightness=null;
-  const enabled=()=>meta('nanoc6_brightness_sync_enabled_v1',false)===true;
+  const master=()=>bridge?.eufyMasterEnabled?.()===true;
+  const enabled=()=>master()||meta('nanoc6_brightness_sync_enabled_v1',false)===true;
   const bridgeOnline=()=>{
     const current=typeof bridge?.status==='function'?bridge.status():null;
     return current?.online!==false;
   };
   const status=()=>({
-    enabled:enabled(),configured,online:configured&&bridgeOnline()&&online,
+    enabled:enabled(),eufyMasterSchedule:master(),configured,online:configured&&bridgeOnline()&&online,
     active:enabled()&&configured&&bridgeOnline()&&online,
     lastApplied,lastQueuedPower,lastCheckedAt:checkedAt,error:lastError||null,
     note:configured?'Follows Eufy on/off and brightness; queued commands require Nano ACK.':'Oracle curtain bridge unavailable.'
@@ -64,6 +65,9 @@ export function createNanoC6BrightnessSync({meta,put,upstream,bridge,logger=cons
         lastUptime=live.uptimeSeconds;
       }
       if(!bridgeOnline()||(typeof bridge?.manualHoldActive==='function'&&bridge.manualHoldActive())){
+        // Any disconnected/manual interval can change actual curtain power.
+        // Reconcile the current Eufy state when Nano ownership returns.
+        previousPower=null;previousLevel=null;pendingPower=null;pendingBrightness=null;
         online=bridgeOnline();lastError='';return status();
       }
       confirmPending('power');confirmPending('brightness');
@@ -94,6 +98,7 @@ export function createNanoC6BrightnessSync({meta,put,upstream,bridge,logger=cons
   }
   async function setEnabled(value){
     if(typeof value!=='boolean')throw Error('Enable must be true or false');
+    if(master()&&!value)throw Error('Curtain follows the Eufy master schedule; edit the Eufy scheduler to change on/off times.');
     if(value&&!configured)throw Error('NanoC6 is not configured on Oracle. No sync commands sent.');
     put('nanoc6_brightness_sync_enabled_v1',value);
     previousPower=null;previousLevel=null;pendingPower=null;pendingBrightness=null;

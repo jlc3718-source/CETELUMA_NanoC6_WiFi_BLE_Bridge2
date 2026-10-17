@@ -180,7 +180,10 @@ try:
  except urllib.error.HTTPError as err:
   assert err.code==400, 'AI generator API not registered on staged gateway'
  nano,_=api(base,'/api/nanoc6/sync',cookie=cookie)
- assert nano['configured'] is True,'NanoC6 brightness checkbox must be enabled by Oracle bridge'
+ assert nano['configured'] is True,'NanoC6 follower must be connected to Oracle bridge'
+ assert nano['enabled'] is True and nano['eufyMasterSchedule'] is True,'Curtain must auto-follow Eufy timing even when old opt-in was disabled'
+ linked,_=api(base,'/api/curtain/status',cookie=cookie)
+ assert linked['eufyMasterSchedule'] is True,'Separate curtain scheduler must not be active'
  enabled,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':True})
  assert enabled['enabled'] is True,'NanoC6 brightness sync could not be enabled'
  restored,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':nano['enabled']})
@@ -227,6 +230,7 @@ try:
   nginx.write_text(config.replace(marker,marker+'\n'+'\n'.join(directives),1));run('nginx','-t');run('systemctl','reload','nginx')
  base='http://127.0.0.1:8081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
  relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds']==5
+ assert relay['eufyMasterSchedule'] is True,'Production curtain must follow Eufy automatic on/off'
  api(base,'/api/eufy/verification',cookie=cookie)
  reconcile,_=api(BASE,'/api/reconcile',token,body={});assert reconcile.get('ok') is True and not reconcile.get('errors')
  after,_=api(BASE,'/api/status',token);assert after['automationOwner']=='oracle';assert len(after['eufy']['readyNames'])==4;assert after['calendar']['revision']==before['calendar']['revision'];assert after['calendar']['eventCount']==212

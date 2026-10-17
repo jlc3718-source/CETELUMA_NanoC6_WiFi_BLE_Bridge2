@@ -135,3 +135,56 @@ test('Oracle deploy keeps current scheduler follower and native-slot app assets'
  assert.match(script,/live\.index\(bridge_init\)<live\.index\(new_sync\)/);
  assert.match(script,/relay\['pollSeconds'\]==5/);
 });
+
+test('linked Eufy master mode automatically follows every power, brightness and schedule transition',async()=>{
+ const store=new Map([['nanoc6_brightness_sync_enabled_v1',false]]),sent=[],states=new Map();
+ let active={power:false,brightness:45},connected=true,held=false,master=true;
+ const bridge={
+  eufyMasterEnabled:()=>master,manualHoldActive:()=>held,
+  status:()=>({online:connected}),
+  enqueue:(action,payload,idempotency,source)=>{const id=sent.length+1;sent.push({id,action,payload,source});states.set(id,'queued');return {id};},
+  command:id=>({state:states.get(id)})
+ };
+ const follower=create(store,async()=>({calendar:{current:active?{scene:active}:null}}),bridge);
+ try{
+  assert.equal(follower.status().enabled,true,'stored legacy opt-out cannot prevent the Eufy master link');
+  assert.equal(follower.status().eufyMasterSchedule,true);
+  await follower.poll();
+  assert.deepEqual(sent.map(x=>[x.action,x.payload]),[['power',{on:false}]]);
+  active={power:true,brightness:54};await follower.poll();
+  assert.deepEqual(sent.slice(1).map(x=>[x.action,x.payload]),[['power',{on:true}],['brightness',{value:54}]]);
+  active={power:true,brightness:78};await follower.poll();
+  assert.deepEqual(sent.at(-1).payload,{value:78},'brightness follows Eufy event changes');
+  active=null;await follower.poll();
+  assert.deepEqual(sent.at(-1).payload,{on:false},'off time is inherited without creating a second schedule');
+  await assert.rejects(follower.setEnabled(false),/Eufy master schedule/);
+  assert.equal(follower.status().enabled,true,'linked schedule cannot silently be disabled');
+  connected=false;await follower.poll();
+  const prior=sent.length;
+  active={power:true,brightness:30};
+  await follower.poll();assert.equal(sent.length,prior,'offline Nano receives no commands');
+  connected=true;await follower.poll();
+  assert.deepEqual(sent.slice(prior).map(x=>[x.action,x.payload]),[['power',{on:true}],['brightness',{value:30}]]);
+  held=true;await follower.poll();
+  active={power:false,brightness:30};const count=sent.length;await follower.poll();
+  assert.equal(sent.length,count,'local physical override respected');
+  held=false;await follower.poll();
+  assert.deepEqual(sent.at(-1).payload,{on:false},'release of local override immediately catches up to Eufy');
+ }finally{follower.close()}
+});
+test('production startup and UI both use Eufy as the only curtain scheduling authority',()=>{
+ const server=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+ const ui=readFileSync(new URL('../nano_sync.js',import.meta.url),'utf8');
+ const curtain=readFileSync(new URL('../curtain.js',import.meta.url),'utf8');
+ const remote=readFileSync(new URL('../curtain_remote.js',import.meta.url),'utf8');
+ const bridge=server.indexOf('const curtainRelay=createCurtainBridge({db});');
+ const master=server.indexOf('curtainRelay.setEufyMasterEnabled(true);');
+ const follower=server.indexOf('const nanoC6BrightnessSync=createNanoC6BrightnessSync(');
+ assert.ok(bridge>=0&&bridge<master&&master<follower);
+ assert.match(curtain,/jh2CurtainEufyScheduleLinked/);
+ assert.match(ui,/Curtain follows Eufy schedule/);
+ assert.doesNotMatch(ui,/jh2NanoSyncEnabled|type="checkbox"/);
+ assert.doesNotMatch(remote,/Oracle curtain schedule|jh2CSSave|jh2CSStart/);
+ const script=readFileSync(new URL('../../.github/scripts/deploy-curtain-relay.py',import.meta.url),'utf8');
+ assert.match(script,/eufy_master='curtainRelay\.setEufyMasterEnabled\(true\);'/);
+});

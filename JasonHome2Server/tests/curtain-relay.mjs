@@ -266,3 +266,28 @@ test('Manual curtain control clears stale recovery and replays desired only afte
   assert.equal(b.sync({bootId:'new-nano'}).commands.length,3,'No duplicate recovery');
  }finally{b.close()}
 });
+
+test('Eufy-master schedule supersedes independent curtain schedule but keeps stored scenes and visuals',()=>{
+ const {b,time}=create();
+ try{
+  // Legacy independently scheduled scenes must remain stored, not drive the curtain.
+  const original=b.saveSchedule({id:'old-curtain-night',start:1000000,end:1200000,action:'effect',payload:{id:4}});
+  assert.equal(original.id,'old-curtain-night');
+  assert.ok(b.sync({}).commands.some(c=>c.source==='schedule'));
+  assert.equal(b.setEufyMasterEnabled(true),true);
+  assert.equal(b.status().eufyMasterSchedule,true);
+  assert.equal(b.schedules().length,1,'legacy independent schedule retained for recovery');
+  assert.equal(b.sync({}).commands.some(c=>c.source==='schedule'),false,'no stale independent commands remain queued');
+  time(1200001);b.tick();
+  assert.equal(b.sync({}).commands.some(c=>c.source==='schedule'),false,'legacy schedule off must not turn curtain off');
+  assert.equal(b.manualHoldActive(),false,'Eufy master does not wait for old manual clock hold');
+  const follow=b.enqueue('power',{on:true},null,'eufy-sync');
+  assert.equal(follow.source,'eufy-sync');
+  assert.equal(b.status().desired.power.payload.on,true);
+  b.enqueue('effect',{id:6},null,'manual');
+  assert.equal(b.status().desired.visual.payload.id,6,'curtain effect choice stays independent');
+  const status=b.status();assert.equal(status.eufyMasterSchedule,true);
+  assert.equal(b.manualHoldActive(),false,'direct curtain controls cannot lock out Eufy schedule changes for 15 minutes');
+  b.tick();assert.equal(b.sync({}).commands.some(c=>c.source==='schedule'),false);
+ }finally{b.close()}
+});

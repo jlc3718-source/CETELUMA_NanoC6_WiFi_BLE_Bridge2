@@ -145,6 +145,9 @@ db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NUL
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
 const curtainRelay=createCurtainBridge({db});
+// The existing Eufy scheduler is the only timing authority for curtain power.
+// Keep curtain effects independent, but never require a second on/off calendar.
+curtainRelay.setEufyMasterEnabled(true);
 const vendorVideo=createVendorVideo(curtainRelay);
 const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}

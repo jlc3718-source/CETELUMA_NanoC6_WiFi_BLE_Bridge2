@@ -23,6 +23,9 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   const controls=create('div','jh2-curtain-subpanel');
   controls.id='jh2CurtainOriginalControls';
   while(heading.nextSibling)controls.appendChild(heading.nextSibling);
+  const eufyLink=create('div','sub','Curtain power and brightness follow the existing Eufy schedule automatically, including dusk/dawn and any future schedule changes. Select curtain effects separately.');
+  eufyLink.id='jh2CurtainEufyScheduleLinked';
+  controls.prepend(eufyLink);
   const subnav=create('div','jh2-curtain-subnav');
   subnav.setAttribute('role','tablist');
   subnav.setAttribute('aria-label','Curtain tools');
