@@ -1,98 +1,83 @@
-name: JH2 Curtain Inventory Forensics Once
+name: JH2 Curtain Single Read-Only Catalog Diagnostic
 on:
   push:
     branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
     paths: ['.github/workflows/jh2-inventory-notification-forensics-once.yml']
 permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
 jobs:
   inspect:
-    name: Read-only BLE notice and Oracle status inspection
+    name: One native 205-167-2904 read and exact Oracle notice audit
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 4
     steps:
-      - name: Inspect live notice IDs and native response group IDs, no BLE writes
+      - name: Read-only native catalog protocol; no delete, upload, or play
         shell: bash
         run: |
           sudo -n python3 - <<'PY'
-          import json,base64,subprocess,urllib.request,datetime,collections,time
+          import json,time,base64,subprocess,urllib.request,uuid
           info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
           token=dict(v.split('=',1) for v in info['Config']['Env'] if '=' in v)['JASON_HOME_API_TOKEN']
           host='http://127.0.0.1:8081'
           def api(path,body=None,cookie=''):
-            req=urllib.request.Request(host+path,data=json.dumps(body).encode() if body is not None else None,
-              headers={'content-type':'application/json',**({'Cookie':cookie} if cookie else {})},
-              method='POST' if body is not None else 'GET')
-            with urllib.request.urlopen(req,timeout=13) as f: return json.load(f),f.headers
-          _,h=api('/api/session',{'token':token})
-          cookie=h.get('Set-Cookie','').split(';')[0]
+              data=None if body is None else json.dumps(body,separators=(',',':')).encode()
+              req=urllib.request.Request(host+path,data=data,
+                headers={'content-type':'application/json',**({'Cookie':cookie} if cookie else {})},
+                method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=12) as f:return json.load(f),f.headers
+          _,headers=api('/api/session',{'token':token})
+          cookie=headers.get('Set-Cookie','').split(';')[0]
           status,_=api('/api/curtain/status',cookie=cookie)
-          print('STATUS',{'online':status.get('online'),'fw':status.get('firmware'),'uptime':status.get('uptimeSeconds'),
-            'mtu':(status.get('curtain') or {}).get('mtu'),'connected':(status.get('curtain') or {}).get('connected'),
-            'autoOTA':status.get('autoUpdate'),'queued':status.get('queued'),'lastSync':status.get('lastSync')},flush=True)
-          notices,_=api('/api/curtain/notifications?since=0',cookie=cookie)
-          notices=notices.get('notifications',[])
-          print('NOTICE_COUNT',len(notices),'RANGE',(notices[0]['id'],notices[-1]['id']) if notices else None,flush=True)
-          def readvar(buf,pos):
-            val=0;factor=1
-            for _ in range(10):
-              if pos>=len(buf):raise ValueError('truncated varint')
-              c=buf[pos];pos+=1;val+=(c&127)*factor
-              if not c&128:return val,pos
-              factor*=128
-            raise ValueError('oversized varint')
-          def fields(buf):
-            pos=0;result=[]
-            while pos<len(buf):
-              typ,pos=readvar(buf,pos);f,w=typ>>3,typ&7
-              if w==0:v,pos=readvar(buf,pos)
-              elif w==2:
-                n,pos=readvar(buf,pos);v=buf[pos:pos+n];pos+=n
-              elif w==5:v=buf[pos:pos+4];pos+=4
-              elif w==1:v=buf[pos:pos+8];pos+=8
-              else:raise ValueError('invalid protobuf')
-              result.append((f,w,v))
-            return result
-          buffers={};reports=[]
-          previous=None;missing=0;lost=[]
+          curtain=status.get('curtain') or {}
+          safe={'online':status.get('online'),'connected':curtain.get('connected'),'mtu':curtain.get('mtu'),
+                'autoUpdate':status.get('autoUpdate'),'uptime':status.get('uptimeSeconds'),
+                'queued':status.get('queued'),'streaming':status.get('relayStreaming')}
+          print('BEFORE',safe,flush=True)
+          assert safe['online'] is True and safe['connected'] is True and (safe['mtu'] or 0)>=399, 'No BLE read allowed when disconnected or MTU too small'
+          assert safe['autoUpdate'] is False and (safe['uptime'] or 0)>=80 and safe['queued']==0, 'Nano reboot/queue still unstable'
+          assert not safe['streaming'],'Do not interrupt an active stream'
+          old,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max([n['id'] for n in old.get('notifications',[])] or [0])
+          print('CURSOR_BEFORE',cursor,flush=True)
+          uuid_write='01020074-1972-1925-3022-077119514e44'
+          def frame(op,identifier):
+              p=bytearray(20);p[0]=240;p[1]=4;p[2]=identifier>>8;p[3]=identifier&255;p[6]=op>>8;p[7]=op&255
+              return bytes([identifier&255,1,0,0])+bytes(p)
+          for idx,op in enumerate([205,167,2904],start=10):
+              payload={'uuid':uuid_write,'data':base64.b64encode(frame(op,idx)).decode()}
+              queued,_=api('/api/curtain/call',{'action':'rawWrite','payload':payload,'idempotencyKey':'jhc-catalog-single-read-20261017-'+str(op)},cookie=cookie)
+              ident=queued['commandId'];deadline=time.monotonic()+45
+              while time.monotonic()<deadline:
+                  command,_=api('/api/curtain/command?id='+str(ident),cookie=cookie)
+                  row=command['command']
+                  if row['state'] in ('applied','superseded','expired','failed'):break
+                  time.sleep(.6)
+              else:raise RuntimeError('Timed out waiting for read command '+str(ident))
+              print('READ_WRITE_ACK',{'op':op,'id':ident,'state':row['state'],
+                'bleTransmitted':(row.get('result') or {}).get('bleTransmitted')},flush=True)
+              assert row['state']=='applied' and (row.get('result') or {}).get('bleTransmitted') is True,'BLE read command not applied; stop without retrying'
+          time.sleep(13)
+          data,_=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)
+          notices=data.get('notifications',[])
+          print('NEW_NOTICES',len(notices),'ID_RANGE',([notices[0]['id'],notices[-1]['id']] if notices else []),flush=True)
+          gaps=[(a['id'],b['id']) for a,b in zip(notices,notices[1:]) if b['id']>a['id']+1]
+          print('NOTICE_GAPS',gaps,flush=True)
+          reports=[];counts={}
           for n in notices:
-            nid=n.get('id')
-            if previous is not None and nid>previous+1:
-              missing+=nid-previous-1;lost.append((previous+1,nid-1))
-            previous=nid
-            try:
-              b=base64.b64decode(n['data'],validate=True)
-              if len(b)<4:continue
-              mid,count,remaining,flag=b[:4]
-              if not (count>0 and remaining<count and flag==0):continue
-              ix=count-remaining-1
-              key=(mid,count)
-              r=buffers.get(key)
-              if not r or (ix==0 and r['parts'][0] is not None and r['parts'][0]!=b[4:]):
-                r={'parts':[None]*count,'first':nid,'ids':[]};buffers[key]=r
-              r['parts'][ix]=b[4:]
-              r['ids'].append(nid)
-              if all(p is not None for p in r['parts']):
-                data=b''.join(r['parts'])
-                op=int.from_bytes(data[6:8],'big') if len(data)>=20 else -1
-                effects=[]
-                if op==2904:
-                  try:
-                    for field,wire,value in fields(data[20:]):
-                      if field!=1 or wire!=2:continue
-                      effect=fields(value)
-                      effectid=next((v for f,w,v in effect if f==1 and w==0),0)
-                      slot=next((v for f,w,v in effect if f==3 and w==0),0)
-                      cid=next((v for f,w,v in effect if f==4 and w==0),None)
-                      effects.append((effectid,slot,cid))
-                  except Exception as e:effects=['decode-error:'+type(e).__name__]
-                reports.append({'id':mid,'op':op,'noticeIDs':r['ids'],'bytes':len(data),
-                  'frames':count,'effects':len(effects),'effectIDRange':(effects[0][0],effects[-1][0]) if effects and isinstance(effects[0],tuple) else None,
-                  'first':r['first']})
-                del buffers[key]
-            except Exception as e:
-              print('NOTICE_PARSE_ERROR',nid,type(e).__name__,flush=True)
-          print('JOURNAL_GAPS',missing,lost[-12:],flush=True)
-          print('NATIVE_REPLIES',json.dumps(reports[-55:],separators=(',',':')),flush=True)
-          print('INCOMPLETE_FRAGMENT_GROUPS',[(m,c,r['first'],sum(p is not None for p in r['parts']),c) for (m,c),r in list(buffers.items())[-10:]],flush=True)
-          print('END_READONLY_FORENSICS',flush=True)
+              try:
+                  raw=base64.b64decode(n['data'],validate=True)
+                  if len(raw)<24 or raw[3]!=0:continue
+                  if raw[1]!=1:continue
+                  ddp=raw[4:]
+                  if ddp[0] not in (240,241):continue
+                  op=int.from_bytes(ddp[6:8],'big');counts[op]=counts.get(op,0)+1
+                  if op==2904:
+                      reports.append({'id':n['id'],'msg':raw[0],'size':len(ddp),'payloadBytes':len(ddp)-20,'header':ddp[:8].hex()})
+              except Exception as e:
+                  print('PACKET_PARSE_ERROR',n.get('id'),type(e).__name__,flush=True)
+          print('OPCODE_COUNTS',counts,flush=True)
+          print('2904_ORACLE_PACKETS',reports,flush=True)
+          print('AFTER',{'bootUptime':api('/api/curtain/status',cookie=cookie)[0].get('uptimeSeconds')},flush=True)
           PY
