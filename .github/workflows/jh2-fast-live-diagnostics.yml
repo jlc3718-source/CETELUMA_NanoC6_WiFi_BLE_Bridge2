@@ -61,6 +61,12 @@ jobs:
               status,s,_=call('http://127.0.0.1:8081','/api/curtain/status',headers={'Cookie':cookie})
               if status==200:
                   print('CURTAIN',{'online':s.get('online'),'firmware':s.get('firmware'),'queue':s.get('queued'),'push':s.get('pushConnected'),'pushTransport':s.get('pushTransport'),'subscribers':s.get('pushSubscribers'),'lastSeenSecondsAgo':round((time.time()*1000-s.get('lastSeen',0))/1000,1) if s.get('lastSeen') else 'never','lastSyncSecondsAgo':round((time.time()*1000-s.get('lastSync',0))/1000,1) if s.get('lastSync') else 'never'})
+                  print('NANO_INFO',{'uptimeSeconds':s.get('uptimeSeconds'),'heap':s.get('freeHeap'),'relayStreaming':s.get('relayStreaming'),'bridgeError':str(s.get('error',''))[:200],'lastCommand':(s.get('lastCommand') or {}).get('id'),'lastCommandState':(s.get('lastCommand') or {}).get('state'),'ble':{k:v for k,v in (s.get('curtain') or {}).items() if k in ('connected','ready','busy','error','name','streaming')}})
+                  code,r,_=call('http://127.0.0.1:8081','/api/curtain/command?id=4539',headers={'Cookie':cookie})
+                  if code==200:
+                      c=r.get('command') or {}
+                      print('COMMAND_4539',{'state':c.get('state'),'action':c.get('action'),'source':c.get('source'),'created':c.get('created'),'resultSummary':str(c.get('result',''))[:200]})
+
               else: print('CURTAIN_STATUS_HTTP',status)
               code,_,_=call('http://127.0.0.1:8081','/api/curtain/generate-art',{'prompt':'x'},headers={'Cookie':cookie})
               print('AI_ROUTE_VALIDATION',code)
@@ -85,6 +91,17 @@ jobs:
                               if table=='curtain_commands':
                                   entries=con.execute('select id,action,source,state,created from curtain_commands where state in ("queued","downloaded") order by id limit 10').fetchall()
                                   print('CURTAIN_PENDING_COMMANDS',[(n,a,source,state,round((time.time()*1000-created)/1000,1)) for n,a,source,state,created in entries])
+                                  asset=con.execute('select id,payload,created,state from curtain_commands where id=4539').fetchone()
+                                  if asset:
+                                      command_id,payload,created,state=asset
+                                      ref=json.loads(payload).get('sha256')
+                                      if ref and re.fullmatch(r'[a-f0-9]{64}',ref):
+                                          hit=con.execute('select length(bytes),metadata from curtain_assets where sha=?',(ref,)).fetchone()
+                                          meta=json.loads(hit[1]) if hit else {}
+                                          print('ASSET_4539',{'storedOnOracle':bool(hit),'assetBytes':hit[0] if hit else None,'frames':meta.get('frames'),'format':meta.get('format')})
+                                      if 'curtain_asset_slots' in names:
+                                          print('ASSET_SLOT',[(row[0],row[1],row[2]) for row in con.execute('select phase,pending_command,substr(coalesce(last_error,""),1,150) from curtain_asset_slots limit 3')])
+
 
                           if 'created' in cols and 'state' in cols:
                               arr=con.execute('select state,min(created),max(created) from "'+table+'" group by state').fetchall()
