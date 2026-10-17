@@ -9,13 +9,14 @@ textarea{resize:vertical;min-height:75px}button{font:inherit;font-weight:700;pad
 button.primary{background:#16836c;border-color:#36d2a6}button:disabled{opacity:.5}.buttons,.preview{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.buttons>*{flex:1 1 145px}
 .preview>*{flex:1 1 190px}#image{max-width:100%;height:240px;object-fit:contain;background:#000;border:1px solid #476372;border-radius:9px}
 canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelated;border:1px solid #476372;border-radius:9px}
-#message,#testResult{white-space:pre-wrap;color:#8ce9ce;min-height:22px}.eyebrow{color:#7bd7cd;letter-spacing:.08em;font-size:12px;font-weight:bold}
+#factoryGallery{display:flex;gap:9px;overflow-x:auto;padding:10px 0;scroll-snap-type:x proximity}#factoryGallery button{flex:0 0 90px;min-width:90px;padding:5px;scroll-snap-align:start}#factoryGallery button.selected{outline:2px solid #7debd7}#factoryGallery img{width:77px;height:77px;object-fit:cover;image-rendering:pixelated}details{margin:14px 0}summary{cursor:pointer;color:#80e4d3;font-weight:bold}#message,#testResult{white-space:pre-wrap;color:#8ce9ce;min-height:22px}.eyebrow{color:#7bd7cd;letter-spacing:.08em;font-size:12px;font-weight:bold}
 </style></head><body><main>
-<section><div class="eyebrow">JASON HOME 2 · 40 × 40 CURTAIN</div><h1>✨ AI Cartoon Generator</h1>
-<p>Describe a picture. AI draws a simple colorful cartoon, then prepares it for your curtain.</p>
+<section><div class="eyebrow">JASON HOME 2 · 40 × 40 CURTAIN</div><h1>✨ 40×40 Block Art</h1>
+<p>AI creates big, Minecraft-style pixel shapes built for a 40×40 curtain. What you see on the LED preview is exactly what gets sent.</p>
 <label for="prompt">What would you like?</label><textarea id="prompt" maxlength="260" placeholder="A happy pumpkin with a big smile">A happy orange pumpkin with a big smile</textarea>
-<div class="buttons"><button id="generate" class="primary">✨ Generate cartoon</button><button id="sample">🎃 Sample pumpkin (no AI)</button></div>
+<div class="buttons"><button id="generate" class="primary">✨ Generate block art</button><button id="sample">🎃 Sample pumpkin (no AI)</button></div>
 <p class="hint">Generate uses your existing Cloudflare AI credits. The sample does not use AI. Nothing is sent to the curtain until you choose Show on curtain.</p>
+<details id="factoryPanel"><summary>Use one of your 87 original SmartDawn previews as a color reference</summary><p class="hint">Choose an existing effect preview to borrow its color palette. No controller download or AI charge is needed.</p><div id="factoryGallery" aria-label="Original SmartDawn effect previews"></div><p id="factorySelection" class="hint">No factory reference selected.</p></details>
 <label for="file">Or choose a saved image</label><input type="file" id="file" accept="image/*">
 </section>
 <section><h2>See the real 40×40 LED preview</h2><div class="preview"><div>Original<br><img id="image" hidden alt="Generated cartoon"><p id="placeholder">Generate or choose a picture to begin.</p></div><div>Exact 40×40 pixels, enlarged<br><canvas id="preview" width="40" height="40"></canvas></div></div>
@@ -31,18 +32,96 @@ const api=(url,body)=>window.parent.JH2CurtainApi(url,body);
 let prepared=null,busy=false;
 const show=text=>{$('message').textContent=text};
 function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed'])$(id).disabled=v||(id==='send'&&!prepared);}
+// Original SmartDawn factory previews are already loaded in the parent Curtain tab.
+// Workers AI is text-to-image, so use the selected preview's actual palette for
+// prompt guidance AND final palette mapping; never pretend to upload a reference image.
+let chosenFactory=null,referenceColors=[];
+const rgbHex=c=>'#'+c.map(x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0')).join('').toUpperCase();
+const fromHex=s=>[1,3,5].map(i=>parseInt(s.slice(i,i+2),16));
+const dist=(a,b)=>2*(a[0]-b[0])**2+3*(a[1]-b[1])**2+(a[2]-b[2])**2;
+function paletteOfPixels(data,limit=12){
+ const bins=new Map();
+ for(let i=0;i<data.length;i+=4){
+  if(data[i+3]<100||Math.max(data[i],data[i+1],data[i+2])<45)continue;
+  const rgb=[data[i],data[i+1],data[i+2]],key=rgb.map(v=>v>>4).join(',');
+  const e=bins.get(key)||{sum:[0,0,0],n:0};e.n++;for(let k=0;k<3;k++)e.sum[k]+=rgb[k];bins.set(key,e);
+ }
+ const candidates=[...bins.values()].map(v=>({rgb:v.sum.map(x=>Math.round(x/v.n)),n:v.n}));
+ if(!candidates.length)return [[255,126,28]];
+ candidates.sort((a,b)=>b.n-a.n);
+ const centers=[candidates[0].rgb];
+ while(centers.length<Math.min(limit,candidates.length)){
+  let best=null,score=-1;
+  for(const c of candidates){
+   const d=Math.min(...centers.map(v=>dist(c.rgb,v)));
+   const weight=Math.sqrt(c.n)*d;
+   if(d>100&&weight>score){score=weight;best=c.rgb;}
+  }
+  if(!best)break;centers.push(best);
+ }
+ for(let iter=0;iter<5;iter++){
+  const groups=centers.map(()=>({sum:[0,0,0],n:0}));
+  for(const c of candidates){let closest=0,score=Infinity;
+   centers.forEach((v,k)=>{const d=dist(c.rgb,v);if(d<score){score=d;closest=k;}});
+   const g=groups[closest];g.n+=c.n;for(let k=0;k<3;k++)g.sum[k]+=c.rgb[k]*c.n;
+  }
+  centers.forEach((v,k)=>{const g=groups[k];if(g.n)centers[k]=g.sum.map(x=>Math.round(x/g.n));});
+ }
+ return centers;
+}
+async function setFactoryReference(id,src,button){
+ const image=new Image();
+ await new Promise((yes,no)=>{image.onload=yes;image.onerror=no;image.src=src;});
+ const ref=document.createElement('canvas');ref.width=40;ref.height=40;
+ const rc=ref.getContext('2d',{willReadFrequently:true});rc.drawImage(image,0,0,40,40);
+ // Use the real factory thumbnail as the reference for the text-image palette.
+ referenceColors=paletteOfPixels(rc.getImageData(0,0,40,40).data,7).map(rgbHex);
+ chosenFactory=id;
+ for(const tile of $('factoryGallery').children)tile.classList.toggle('selected',tile===button);
+ $('factorySelection').textContent='E-'+id+' palette: '+referenceColors.join(' ');
+ // Reapply only when next loading artwork, never silently replace an existing picture.
+}
+function loadFactoryGallery(){
+ const srcs=window.parent?.JH2_CURTAIN_IMAGE_SRC||{};
+ const panel=$('factoryGallery');if(panel.childElementCount)return;
+ for(let id=0;id<87;id++){
+  const src=srcs[String(id)];if(!src)continue;
+  const tile=document.createElement('button');tile.type='button';tile.title='Factory effect E-'+id;
+  const image=document.createElement('img');image.src=src;image.alt='E-'+id+' original SmartDawn preview';image.loading='lazy';
+  const label=document.createElement('small');label.textContent='E-'+id;
+  tile.append(image,label);tile.onclick=()=>setFactoryReference(id,src,tile).catch(e=>show('Reference preview: '+e.message));panel.append(tile);
+ }
+ if(!panel.childElementCount)$('factorySelection').textContent='Open Curtain controls once to load the saved original previews.';
+}
+$('factoryPanel').addEventListener('toggle',()=>{if($('factoryPanel').open)loadFactoryGallery();});
 function paint(img){
- ctx.fillStyle='#000';ctx.fillRect(0,0,40,40);
+ // Sample at 20×20 logical BLOCK pixels, each becoming an exact 2×2 LED group.
+ // No high-definition antialiasing, dithering, or hidden smoothing on the output.
+ const block=document.createElement('canvas');block.width=20;block.height=20;
+ const bc=block.getContext('2d',{willReadFrequently:true});
+ bc.fillStyle='#000';bc.fillRect(0,0,20,20);
  const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
  if(!w||!h)throw Error('Image has no dimensions');
- const scale=Math.min(40/w,40/h),dw=w*scale,dh=h*scale;
- ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(img,(40-dw)/2,(40-dh)/2,dw,dh);
- let pixels=ctx.getImageData(0,0,40,40);
- for(let i=0;i<pixels.data.length;i+=4){
- const d=pixels.data,a=d[i+3]/255;if(Math.max(d[i],d[i+1],d[i+2])*a<18)d[i]=d[i+1]=d[i+2]=0;
- else for(let j=0;j<3;j++)d[i+j]=Math.min(255,Math.round(d[i+j]*1.12));d[i+3]=255;
+ const scale=Math.min(20/w,20/h);
+ bc.imageSmoothingEnabled=true;bc.imageSmoothingQuality='high';
+ bc.drawImage(img,(20-w*scale)/2,(20-h*scale)/2,w*scale,h*scale);
+ const raw=bc.getImageData(0,0,20,20).data;
+ const palette=referenceColors.length?referenceColors.map(fromHex):paletteOfPixels(raw,11);
+ const output=ctx.createImageData(40,40);
+ for(let y=0;y<20;y++)for(let x=0;x<20;x++){
+  const i=(y*20+x)*4,rgb=[raw[i],raw[i+1],raw[i+2]];
+  const bright=Math.max(...rgb)*raw[i+3]/255;
+  let color=[0,0,0];
+  if(bright>=40){
+   let score=Infinity;for(const p of palette){const d=dist(rgb,p);if(d<score){score=d;color=p;}}
+  }
+  for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+   const dest=((2*y+dy)*40+2*x+dx)*4;
+   output.data[dest]=color[0];output.data[dest+1]=color[1];output.data[dest+2]=color[2];output.data[dest+3]=255;
+  }
  }
- ctx.putImageData(pixels,0,0);prepared=pixels;setBusy(false);
+ ctx.imageSmoothingEnabled=false;ctx.putImageData(output,0,0);
+ prepared=output;setBusy(false);
 }
 async function load(src){
  const img=new Image();await new Promise((ok,fail)=>{img.onload=ok;img.onerror=()=>fail(Error('Could not load this image'));img.src=src});
@@ -69,13 +148,13 @@ async function ack(id,timeout=60000){const start=performance.now();while(perform
  await new Promise(r=>setTimeout(r,350));
  }throw Error('Command '+id+' did not receive a Nano ACK');}
 $('generate').onclick=async()=>{const prompt=$('prompt').value.trim();if(prompt.length<3)return show('Enter a picture idea first.');
- setBusy(true);show('AI is drawing your cartoon…');try{const r=await api('/api/curtain/generate-art',{prompt});await load(r.image);}
+ setBusy(true);show('AI is drawing curtain-ready block art…');try{const r=await api('/api/curtain/generate-art',{prompt,referenceId:chosenFactory,referenceColors});await load(r.image);}
  catch(e){show('Generation failed: '+e.message);}finally{setBusy(false);}};
 $('sample').onclick=pumpkin;
 $('file').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>8*1024*1024)return show('Choose a picture smaller than 8 MB.');
  const url=URL.createObjectURL(file);setBusy(true);try{await load(url);}catch(e){show(e.message);}finally{URL.revokeObjectURL(url);setBusy(false);}};
 $('send').onclick=async()=>{if(!prepared)return;setBusy(true);show('Saving the 40×40 picture on Oracle…');
- try{const asset=await api('/api/curtain/assets',{name:$('prompt').value.slice(0,70)||'AI cartoon',frames:[base64(new Uint8Array(prepared.data))],delays:[100],quality:'pal16',loop:false});
+ try{const asset=await api('/api/curtain/assets',{name:$('prompt').value.slice(0,70)||'40x40 block art',frames:[base64(new Uint8Array(prepared.data))],delays:[100],quality:'pal16',loop:false});
  const payload={sha256:asset.sha256},id=await queue('asset',payload);window.parent.JH2CurtainLastSelection={action:'asset',payload};
  show('Command '+id+' sent. Waiting for Nano and Bluetooth…');
  const ms=await ack(id,90000);show('ACK received after '+(ms/1000).toFixed(2)+' seconds. Look at the physical curtain to confirm the picture.');

@@ -18,11 +18,18 @@ test('Generate uses configured Cloudflare Workers AI, never an automatic paid ca
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
  assert.match(server,/@cf\/black-forest-labs\/flux-1-schnell/);
  assert.match(server,/cloudflareAiConfigured\(\)/);
+ assert.match(server,/20 by 20 BLOCKY logical pixel clusters/);
+ assert.match(server,/referenceColors/);
  assert.match(converter,/\$\('generate'\)\.onclick=async/);
  assert.match(converter,/\/api\/curtain\/generate-art/);
 });
 test('Oracle gets 40x40 prepared RGBA, palette compression and approved asset command',()=>{
  assert.match(converter,/width="40" height="40"/);
+ assert.match(converter,/block\.width=20/);
+ assert.match(converter,/referenceColors\.map\(fromHex\)/);
+ assert.match(converter,/JH2_CURTAIN_IMAGE_SRC/);
+ assert.match(converter,/loadFactoryGallery/);
+ assert.match(converter,/output\.data\[dest\+3\]=255/);
  assert.match(converter,/base64\(new Uint8Array\(prepared.data\)\)/);
  assert.match(converter,/quality:'pal16'/);
  assert.match(converter,/queue\('asset',payload\)/);

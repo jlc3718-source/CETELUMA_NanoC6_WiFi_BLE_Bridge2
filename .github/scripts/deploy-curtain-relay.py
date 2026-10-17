@@ -74,9 +74,12 @@ else:
 route_start='  if(method==="POST"&&path==="/api/curtain/generate-art")'
 route_after='  if(method==="POST"&&path==="/api/curtain/ai-revamp")'
 assert src.count(route_start)==1 and src.count(route_after)==1
-if route_start not in live:
- assert live.count(route_after)==1, 'The installed AI revamp route moved; refuse unsafe deployment'
- ai_block=src[src.index(route_start):src.index(route_after)]
+assert live.count(route_after)==1, 'The installed AI revamp route moved; refuse unsafe deployment'
+ai_block=src[src.index(route_start):src.index(route_after)]
+if route_start in live:
+ assert live.count(route_start)==1, 'Duplicate existing curtain generator route'
+ live=live[:live.index(route_start)]+ai_block+live[live.index(route_after,live.index(route_start)):]
+else:
  live=live.replace(route_after,ai_block+route_after,1)
 assert live.count(route_start)==1, 'AI generator must be registered exactly once'
 assert 'function cloudflareAiConfigured()' in live and 'async function cloudflareAiRun(' in live, 'Cloudflare helpers must exist in installed gateway'

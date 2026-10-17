@@ -1077,14 +1077,17 @@ async function route(req,res){
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
   if(method==="POST"&&path==="/api/curtain/generate-art"){
-   const body=await input(req),idea=String(body?.prompt||"").trim();
-   if(idea.length<3||idea.length>260)throw fail(400,"Describe a cartoon in 3–260 characters");
-   if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured. Set it up in the AI tab, or use the free sample pumpkin.");
-   const prompt="Single large centered friendly cartoon of "+idea+". Bold silhouette, cheerful expression, vivid flat colors, solid pure black background. One recognizable subject occupying almost all of a square image. No words, no scenery, no watermark, no gradients, no tiny details. Clean icon legible at 40x40 pixels.";
-   const result=await cloudflareAiRun("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4},{timeout:60000});
-   const image=result?.result?.image||result?.image;
-   if(typeof image!=="string"||!image.length||image.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))throw fail(502,"Cloudflare returned no usable cartoon image");
-   return send(res,200,{ok:true,image:"data:image/jpeg;base64,"+image,model:"FLUX.1 schnell"});
+    const body=await input(req),idea=String(body?.prompt||"").trim();
+    if(idea.length<3||idea.length>260)throw fail(400,"Describe block art in 3–260 characters");
+    if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured. Set it up in the AI tab, or use the sample pumpkin.");
+    const referenceColors=Array.isArray(body.referenceColors)?body.referenceColors.slice(0,7):[];
+    if(referenceColors.some(v=>typeof v!=="string"||!/^#[0-9a-fA-F]{6}$/.test(v)))throw fail(400,"Invalid SmartDawn reference palette");
+    const palette=referenceColors.length?" Use only these dominant colors from the selected original SmartDawn curtain preview: "+referenceColors.join(", ")+".":" Use no more than 12 distinct vivid LED colors.";
+    const prompt="PIXEL ART SPRITE, not illustration, not photography. Make "+idea+". Designed exclusively for a 40 by 40 RGB LED matrix, with just 20 by 20 BLOCKY logical pixel clusters enlarged to squares. Minecraft-style chunky block art. ONE large recognizable centered subject filling most of the grid, 8-12 FLAT SOLID colors only, clear 2x2 square pixels, simplified geometric silhouette, exaggerated thick outlines, high contrast, pure black #000000 empty background. NO fine lines, smooth curves, soft shading, realistic textures, blur, gradients, antialiasing, words, watermark, scenery or tiny details. Must remain fully identifiable when viewed from far away on a 40x40 grid."+palette;
+    const result=await cloudflareAiRun("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4},{timeout:60000});
+    const image=result?.result?.image||result?.image;
+    if(typeof image!=="string"||!image.length||image.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))throw fail(502,"Cloudflare returned no usable pixel-art image");
+    return send(res,200,{ok:true,image:"data:image/jpeg;base64,"+image,model:"FLUX.1 schnell",outputGrid:"40x40",logicalPixelGrid:"20x20",maxColors:referenceColors.length?referenceColors.length+1:12});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
