@@ -1,0 +1,65 @@
+name: Jason Home 2 Disable Nano Auto Update (one time)
+on:
+  push:
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    paths: ['.github/workflows/jh2-disable-auto-update-once.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  disable-auto-ota:
+    name: Persist autoUpdate=false on NanoC6 and verify live acknowledgment
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Issue one authorized Nano management command without flashing or BLE writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,time,urllib.request,urllib.error
+          host='http://127.0.0.1:8081'
+          config=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(v.split('=',1) for v in config['Config']['Env'] if '=' in v)
+          token=env['JASON_HOME_API_TOKEN']
+          def api(path,body=None,cookie=''):
+              headers={'Content-Type':'application/json'}
+              if cookie: headers['Cookie']=cookie
+              data=None if body is None else json.dumps(body,separators=(',',':')).encode()
+              req=urllib.request.Request(host+path,data=data,headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=15) as response: return json.load(response),response.headers
+          _,headers=api('/api/session',{'token':token})
+          cookie=headers.get('Set-Cookie','').split(';')[0]
+          before,_=api('/api/curtain/status',cookie=cookie)
+          print('BEFORE',{'online':before.get('online'),'firmware':before.get('firmware'),'autoUpdate':before.get('autoUpdate'),'queued':before.get('queued'),'uptimeSeconds':before.get('uptimeSeconds'),'lastSync':before.get('lastSync')},flush=True)
+          assert before.get('online') is True, 'Nano offline; no setting changed'
+          if before.get('autoUpdate') is False:
+              print('AUTO_UPDATE_ALREADY_DISABLED',flush=True)
+              raise SystemExit(0)
+          sent,_=api('/api/curtain/call',{'action':'nanoAutoUpdate','payload':{'enabled':False},'idempotencyKey':'jh2-disable-ota-20261017-1844'},cookie)
+          ident=sent['commandId']
+          print('DISABLE_COMMAND_QUEUED',ident,flush=True)
+          outcome=None
+          deadline=time.monotonic()+100
+          while time.monotonic()<deadline:
+              q,_=api('/api/curtain/command?id='+str(ident),cookie=cookie)
+              command=q['command']
+              state=command['state']
+              if state in ('applied','failed','expired','superseded'):
+                  outcome=command
+                  break
+              time.sleep(0.8)
+          if outcome is None:
+              print('COMMAND_NOT_FINAL',ident,flush=True)
+              raise SystemExit('Setting unverified, inspect command ID before retry')
+          result=outcome.get('result') or {}
+          print('COMMAND_RESULT',{'id':ident,'state':outcome['state'],'ok':result.get('ok'),'autoUpdate':result.get('autoUpdate'),'error':str(result.get('error',''))[:160]},flush=True)
+          assert outcome['state']=='applied' and result.get('ok') is True and result.get('autoUpdate') is False, 'Nano failed to acknowledge disabled auto OTA'
+          for i in range(18):
+              after,_=api('/api/curtain/status',cookie=cookie)
+              if after.get('online') is True and after.get('autoUpdate') is False and int(after.get('lastSync') or 0)>int(before.get('lastSync') or 0):
+                  print('VERIFIED_PERSISTED_AUTO_OTA_OFF',{'firmware':after.get('firmware'),'autoUpdate':after['autoUpdate'],'lastSync':after.get('lastSync'),'online':after.get('online')},flush=True)
+                  break
+              time.sleep(2)
+          else: raise SystemExit('Command ACKed, but subsequent synced device status has not yet confirmed autoUpdate=false')
+          PY
