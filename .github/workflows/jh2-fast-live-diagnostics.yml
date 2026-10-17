@@ -1,0 +1,85 @@
+name: Jason Home 2 Fast Live Diagnostics
+on:
+  push:
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    paths:
+      - '.github/workflows/jh2-fast-live-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-tests:
+    name: Parallel AI Studio and bridge regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: |
+          node --check JasonHome2Server/server.mjs
+          node --check JasonHome2Server/curtain_bridge.mjs
+          node --test JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
+  live-check:
+    name: Oracle push and three harmless status ACKs
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Observe deployed gateway, push and status-command latency without changing lights
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import os, json, subprocess, urllib.request, urllib.error, http.cookiejar, time
+          def call(path,body=None,expect=None):
+              url='http://127.0.0.1:8081'+path
+              hdr={'Content-Type':'application/json'}
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(url,data=data,headers=hdr,method='POST' if data is not None else 'GET')
+              try:
+                  with opener.open(req,timeout=10) as resp:
+                      code=resp.status; obj=json.load(resp)
+              except urllib.error.HTTPError as e:
+                  code=e.code; obj=json.loads(e.read().decode() or '{}')
+              if expect is not None and code!=expect: raise RuntimeError(f'{path} returned unexpected HTTP {code}')
+              if code>=400 and expect is None: raise RuntimeError(f'{path} HTTP {code}')
+              return obj,code
+          inspect=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          fields=dict(e.split('=',1) for e in inspect['Config']['Env'] if '=' in e)
+          key=fields['JASON_HOME_API_TOKEN']
+          jar=http.cookiejar.CookieJar()
+          opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+          health,_=call('/api/health')
+          assert health.get('ok'), 'Oracle web gateway unhealthy'
+          call('/api/session',{'token':key},expect=200)
+          before,_=call('/api/curtain/status')
+          print('ORACLE_BUILD',health.get('build','not-in-health'))
+          print('NANO',before.get('firmware','?'),'ONLINE',before.get('online'),'PUSH',before.get('pushConnected'),'TRANSPORT',before.get('pushTransport'),'SSE_SUBSCRIBERS',before.get('pushSubscribers'),'QUEUE',before.get('queued'))
+          # A short invalid prompt must get a validation error rather than Unknown API route; no AI credits used.
+          check,code=call('/api/curtain/generate-art',{'prompt':'x'},expect=400)
+          print('AI_ROUTE', 'RECOGNIZED' if code==400 else 'FAILED')
+          if not before.get('online'):
+              print('NANO_ACK_TEST SKIPPED: bridge offline')
+          else:
+              times=[]
+              for n in range(3):
+                  stamp=time.monotonic()
+                  queued,_=call('/api/curtain/call',{'action':'status','payload':{},'idempotencyKey':'fast-health-'+str(os.getpid())+'-'+str(n)})
+                  command_id=queued['commandId']
+                  while time.monotonic()-stamp<25:
+                      cur,_=call('/api/curtain/command?id='+str(command_id))
+                      state=cur['command']['state']
+                      if state=='applied':
+                          times.append(round(time.monotonic()-stamp,3))
+                          break
+                      if state in ('failed','expired','superseded'):
+                          raise RuntimeError('status ACK was '+state)
+                      time.sleep(.15)
+                  else:
+                      raise RuntimeError('status ACK exceeded 25 seconds')
+              print('NANO_ACK_SECONDS',times,'MEAN',round(sum(times)/len(times),3))
+          after,_=call('/api/curtain/status')
+          print('PUSH_AFTER',after.get('pushConnected'),'TRANSPORT',after.get('pushTransport'),'SUBSCRIBERS',after.get('pushSubscribers'),'QUEUE',after.get('queued'))
+          assert health.get('ok') and code==400
+          PY
