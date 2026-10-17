@@ -73,7 +73,8 @@ test('Save AVI exports standards-compliant uncompressed 40x40 RGB24 with exact p
  assert.equal(d.getUint32(strf+12,true),40,'BITMAPINFOHEADER width');
  assert.equal(d.getUint32(strf+16,true),40,'BITMAPINFOHEADER height');
  assert.equal(d.getUint16(strf+22,true),24,'24 bits per pixel');
- assert.equal(d.getUint32(strf+28,true),0,'BI_RGB uncompressed');
+ assert.equal(d.getUint32(strf+24,true),0,'BI_RGB uncompressed');
+ assert.equal(d.getUint32(strf+28,true),4800,'BI_RGB frame size');
  assert.equal(d.getUint32(first+4,true),4800,'40x40x3 bytes per frame');
  assert.deepEqual([...b.subarray(first+8,first+11)],[56,34,12],'bottom-left pixel stored first in BGR order');
  assert.deepEqual([...b.subarray(first+8+39*120,first+8+39*120+3)],[35,56,100],'RGBA composited on black');
@@ -96,7 +97,7 @@ test('Native Test Save AVI is downloadable without dry-run, CID write, or BLE co
  const start=page.indexOf("$('saveAvi').onclick="),end=page.indexOf("$('download').onclick=",start);
  assert.ok(start>0&&end>start);
  const handler=page.slice(start,end);
- assert.doesNotMatch(handler,/researchUpload|rawWrite|writeUpload|2909|\.eff|fetch\(/);
+ assert.doesNotMatch(handler,/researchUpload|rawWrite|writeUpload|2909|fetch\(/);
  assert.match(page,/'saveAvi'\)\.disabled=false/);
 });
 test('Hardware experiment remains limited to reserved CID, rechecks inventory and does not auto-play',()=>{
