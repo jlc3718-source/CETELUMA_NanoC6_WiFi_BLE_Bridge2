@@ -32,7 +32,13 @@ jobs:
           with sqlite3.connect('file:'+str(pathlib.Path(mount)/'jason-home-2.sqlite')+'?mode=ro',uri=True) as db:
             values={k:json.loads(v) for k,v in db.execute("SELECT key,value FROM curtain_meta WHERE key IN ('bootstrapExpires','lastSeen','lastSync','connectionDiagnostic','lastAutomaticSetupRequest')")}
           print('CONNECTION_DIAGNOSTIC',json.dumps(values),flush=True)
-          import re,http.client
+          import re,http.client,ssl,socket,hashlib,tempfile
+          try:
+            with socket.create_connection(('150.136.245.51',443),timeout=4) as tcp:
+              with ssl.create_default_context().wrap_socket(tcp,server_hostname='150.136.245.51') as tls:
+                cert=tls.getpeercert()
+                print('ORACLE_TLS',json.dumps({'verified':True,'version':tls.version(),'issuer':cert.get('issuer'),'subjectAltName':cert.get('subjectAltName'),'notAfter':cert.get('notAfter')}),flush=True)
+          except Exception as e:print('ORACLE_TLS',json.dumps({'verified':False,'error':str(e)}),flush=True)
           upgrades=[]
           for log in pathlib.Path('/var/log/nginx').glob('*.log'):
             tail=subprocess.check_output(['tail','-n','1500',str(log)],text=True,errors='replace')
@@ -50,10 +56,11 @@ jobs:
             except Exception as e:print('NANO_HTTP_PROBE',json.dumps({'path':path,'tcpConnected':connected,'error':str(e),'milliseconds':round((time.monotonic()-started)*1000)}),flush=True)
             finally:c.close()
 
-          try:
-            with urllib.request.urlopen('http://craumer.tplinkdns.com/api/health',timeout=10) as r:physical=json.loads(r.read())
-            print('PHYSICAL_NANO',json.dumps({'firmware':physical.get('version'),'wifi':physical.get('wifi'),'timeValid':physical.get('timeValid'),'uptimeSeconds':physical.get('uptimeSeconds'),'freeHeap':physical.get('freeHeap'),'oracle':physical.get('oracle'),'curtain':physical.get('curtain')}),flush=True)
-          except Exception as e:print('PHYSICAL_NANO_ERROR',type(e).__name__,str(e),flush=True)
+          for sample in range(3):
+            try:
+              with urllib.request.urlopen('http://craumer.tplinkdns.com/api/health',timeout=4) as r:physical=json.loads(r.read())
+              print('PHYSICAL_NANO',json.dumps({'sample':sample,'firmware':physical.get('version'),'wifi':physical.get('wifi'),'timeValid':physical.get('timeValid'),'uptimeSeconds':physical.get('uptimeSeconds'),'freeHeap':physical.get('freeHeap'),'largestHeapBlock':physical.get('largestHeapBlock'),'oracle':physical.get('oracle'),'curtain':physical.get('curtain')}),flush=True)
+            except Exception as e:print('PHYSICAL_NANO_ERROR',type(e).__name__,str(e),flush=True)
           ready=False
           for attempt in range(1):
             d,_=api('/api/curtain/status',cookie=cookie)
