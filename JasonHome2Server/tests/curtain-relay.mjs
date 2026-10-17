@@ -291,3 +291,20 @@ test('Eufy-master schedule supersedes independent curtain schedule but keeps sto
   b.tick();assert.equal(b.sync({}).commands.some(c=>c.source==='schedule'),false);
  }finally{b.close()}
 });
+
+test('BLE inventory fragment journal survives successive Nano syncs without losing earlier packet IDs',()=>{
+ const {b,time}=create();
+ try{
+  const notify='01010074-1972-1925-3022-077119514e44',packet=id=>({id,uuid:notify,data:Buffer.from([id,2,1,0,240]).toString('base64')});
+  b.sync({bootId:'one',notifications:[packet(100)]});
+  assert.deepEqual(b.notifications().map(x=>x.id),[100]);
+  time(1005000);b.sync({bootId:'one',notifications:[]});
+  assert.deepEqual(b.notifications().map(x=>x.id),[100],'empty five-second relay sync must not erase packet');
+  time(1010000);b.sync({bootId:'one',notifications:[packet(101),packet(101)]});
+  assert.deepEqual(b.notifications().map(x=>x.id),[100,101],'deduplicate retransmitted fragments by ID');
+  time(1015000);b.sync({bootId:'one',notifications:[packet(102)]});
+  assert.deepEqual(b.notifications().filter(x=>x.id>100).map(x=>x.id),[101,102]);
+  b.sync({bootId:'two',notifications:[packet(1)]});
+  assert.deepEqual(b.notifications().map(x=>x.id),[1],'reboot resets BLE notification numbering and history');
+ }finally{b.close()}
+});

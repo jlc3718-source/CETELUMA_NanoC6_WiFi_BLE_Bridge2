@@ -32,19 +32,41 @@ function receive(view){
  if(!count||count>100||remaining>=count)return;
  const index=count-remaining-1;
  let parts=packetResponses.get(id);
- if(!parts||parts.length!==count||index===0){parts=Array(count).fill(null);packetResponses.set(id,parts);}
- parts[index]=raw.slice(4);
+ // The app's notification feed and the Oracle poller can deliver the same
+ // packet independently. Never reset an in-flight multipart response on a
+ // duplicated first fragment; doing so loses later pieces of inventory.
+ if(!parts||parts.length!==count){parts=Array(count).fill(null);packetResponses.set(id,parts);}
+ const bytes=raw.slice(4),previous=parts[index];
+ if(previous){
+  if(previous.length===bytes.length&&previous.every((value,i)=>value===bytes[i]))return;
+  if(index!==0)return;  // Conflicting later fragment: wait for a fresh first.
+  parts=Array(count).fill(null);packetResponses.set(id,parts);
+ }
+ parts[index]=bytes;
  if(parts.some(x=>!x))return;
  packetResponses.delete(id);
  const size=parts.reduce((a,p)=>a+p.length,0),data=new Uint8Array(size);let at=0;
  for(const p of parts){data.set(p,at);at+=p.length;}
- if(data.length<20||data[0]!==0xf1||data[1]!==1)return;
+ // SuperPix's DDP decoder accepts all extended flags >= 0xF0, not just F1.
+ if(data.length<20||data[0]<0xf0)return;
  const op=data[6]*256+data[7],body=data.slice(20);
  lastSmartDawnOp=op;
  try{
-  if(op===2904){seenInventory=true;for(const entry of decodeEffects(body)){const n=catalog.findIndex(e=>e.cid===entry.cid&&e.slot===entry.slot);if(n>=0)catalog[n]=entry;else catalog.push(entry);}signal('inventory',true);}
+  if(op===2904){
+   const entries=decodeEffects(body);
+   if(!entries.length&&body.length)throw Error('Native inventory response contained no valid slot/CID entries');
+   seenInventory=true;
+   for(const entry of entries){const n=catalog.findIndex(e=>e.cid===entry.cid&&e.slot===entry.slot);if(n>=0)catalog[n]=entry;else catalog.push(entry);}
+   signal('inventory',true);
+  }
   if(op===2931||op===2934){const result={};for(const [f,v,w]of proto(body))if(w===0)result[f]=v;signal(op===2931?'start':'end',result);}
- }catch(err){if(window.console)console.warn('SmartDawn native notification:',err);}
+ }catch(err){
+  if(op===2904&&inventoryWait){
+   const pending=inventoryWait;inventoryWait=null;clearTimeout(pending.timer);
+   pending.reject(Error('Controller returned an invalid inventory packet: '+err.message));
+  }
+  if(window.console)console.warn('SmartDawn native notification:',err);
+ }
 }
 function crc8(bytes){let crc=0;for(const b of bytes){crc^=b;for(let i=0;i<8;i++)crc=(crc&128)?((crc<<1)^0x97)&255:(crc<<1)&255;}return crc;}
 function wrap(data,id,total,left,full=false){const out=new Uint8Array(data.length+8);out.set([id,total>>8,total&255,17,255,left>>8,left&255]);out.set(data,8);out[7]=crc8(full?out:data);return out;}
@@ -136,28 +158,32 @@ async function ddp(t,op,n1,n2){
  const k=(++seq)&255;for(let at=0;at<packet.length;at+=40){const part=packet.slice(at,at+40),total=Math.ceil(packet.length/40),frame=new Uint8Array(part.length+4);frame.set([k,total,total-1-at/40,0]);frame.set(part,4);await t.writeCmd(frame);await sleep(10);}
 }
 async function inventory(t,progress=()=>{}){
- // A round trip goes through 5-second Oracle/Nano poll windows in both directions.
- // Arm the waiter before issuing 2904; tolerate multiple relay cycles and give
- // the UI readout of the actual BLE notification state if nothing returns.
+ // BLE write acknowledgement is not a reply from the controller. Wait for the
+ // actual 2904 EffectList and retry once if that notification never arrives.
  const before=observedNotifications;
- catalog=[];packetResponses.clear();seenInventory=false;
- progress('Requesting native controller slot inventory (2904)…');
- const waiter=waitFor('inventory',INBOUND_WAIT_MS);
- waiter.catch(()=>{}); // May expire before the outbound rawWrite receives its ACK.
- try{
-  await ddp(t,2904);
-  await waiter;
-  if(!seenInventory)throw Error('Controller did not acknowledge inventory');
-  // Snapshot only the current 2904 response; every stored slot is shown, not
-  // just the disposable testing slot.
-  const result=catalog.slice().sort((a,b)=>a.slot-b.slot||a.cid-b.cid);
-  lastInventoryRead={at:new Date().toISOString(),count:result.length,notifications:observedNotifications-before};
-  return result;
- }catch(error){
-  const count=observedNotifications-before;
-  const detail=' ('+count+' BLE notifications observed; last native opcode '+(lastSmartDawnOp??'none')+').';
-  throw Error(error.message+detail+' Check NanoC6 BLE connection and notifications; no slot was changed.');
+ for(let attempt=1;attempt<=2;attempt++){
+  catalog=[];packetResponses.clear();seenInventory=false;
+  progress(attempt===1?'Reading native controller slots (2904)…':
+    'No inventory response; retrying the read-only slot request…');
+  const waiter=waitFor('inventory',attempt===1?25000:INBOUND_WAIT_MS);
+  waiter.catch(()=>{});
+  try{
+   await ddp(t,2904);
+   await waiter;
+   if(!seenInventory)throw Error('Controller did not send an inventory acknowledgement');
+   const result=catalog.slice().sort((a,b)=>a.slot-b.slot||a.cid-b.cid);
+   lastInventoryRead={at:new Date().toISOString(),count:result.length,notifications:observedNotifications-before};
+   progress('Controller returned '+result.length+' stored slot / CID records.');
+   return result;
+  }catch(error){
+   if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
+   if(attempt===1&&/inventory response timeout/.test(error.message))continue;
+   throw Error(error.message+' ('+(observedNotifications-before)+
+      ' BLE notifications received this read; last native opcode '+
+      (lastSmartDawnOp??'none')+'). Slot inventory read only; nothing erased or uploaded.');
+  }
  }
+ throw Error('Controller inventory response unavailable; no slot was changed');
 }
 async function upload(bytes,progress=()=>{}){
  const pack=filePlan(bytes); // validate BEFORE connecting or removing anything

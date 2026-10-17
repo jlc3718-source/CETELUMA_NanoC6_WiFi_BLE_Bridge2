@@ -109,13 +109,13 @@ test('manufacturer native type-0 upload stays on reserved CID 83928 and retains 
 test('slot inspector preserves all inventory entries and gives a relay-safe notification deadline',()=>{
  const source=read('curtain_native_slot.js'),page=read('curtain_native_test.html');
  assert.match(source,/const INBOUND_WAIT_MS=45000/);
- assert.match(source,/const waiter=waitFor\('inventory',INBOUND_WAIT_MS\)/);
+ assert.match(source,/const waiter=waitFor\('inventory',attempt===1\?25000:INBOUND_WAIT_MS\)/);
  assert.match(source,/async function inspect\(progress=\(\)=>\{\}\)/);
  assert.match(source,/return await inventory\(t,progress\)/);
  assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.slot-b\.slot\|\|a\.cid-b\.cid\)/);
  assert.match(source,/observedNotifications-before/);
  assert.match(source,/lastSmartDawnOp/);
- assert.match(source,/no slot was changed/);
+ assert.match(source,/nothing erased or uploaded/);
  // 2904 must be a read-only request; nothing here can erase a slot or trigger Play.
  const inventory=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
  assert.match(inventory,/await ddp\(t,2904\)/);
@@ -126,6 +126,24 @@ test('slot inspector preserves all inventory entries and gives a relay-safe noti
  assert.match(handler,/renderSlots\(all\)/);
  assert.match(handler,/update\(\)/);
  assert.doesNotMatch(handler,/N\.vendorUpload|N\.smartDawnUpload|playResearch|delete|\.download/);
+});
+test('SmartDawn inventory accepts legitimate F0 replies and duplicate BLE fragments without touching a slot',async()=>{
+ const src=read('curtain_native_slot.js').replace('window.JH2NativeSlot={','window.JH2NativeSlot={_receive:receive,_inventory:inventory,');
+ const sandbox={window:{console},Uint8Array,DataView,TextEncoder,Number,Math,Map,Array,String,Date,
+  navigator:{bluetooth:null},setTimeout,clearTimeout,setInterval,clearInterval};
+ new Script(src).runInNewContext(sandbox);
+ const N=sandbox.window.JH2NativeSlot;
+ const v=n=>{let p=Number(n),out=[];do{let x=p&127;p=Math.floor(p/128);out.push(x|(p?128:0))}while(p);return out};
+ const effect=(slot,cid)=>{const entry=[24,...v(slot),32,...v(cid)];return [10,...v(entry.length),...entry]};
+ const body=Uint8Array.from([...effect(2,83928),...effect(1,12345)]);
+ const frame=new Uint8Array(20+body.length);frame[0]=0xF0;frame[1]=1;frame[6]=2904>>8;frame[7]=2904&255;frame.set(body,20);
+ const cut=29,head=Uint8Array.from([55,2,1,0,...frame.slice(0,cut)]),tail=Uint8Array.from([55,2,0,0,...frame.slice(cut)]);
+ const writes=[],t={writeCmd:async b=>{writes.push(Buffer.from(b));N._receive(head);N._receive(head);N._receive(tail);}};
+ const entries=await N._inventory(t,()=>{});
+ assert.deepEqual(Array.from(entries,x=>[x.slot,x.cid]),[[1,12345],[2,83928]]);
+ assert.equal(writes.length,1);
+ assert.equal(writes[0][4],240);assert.equal(writes[0][5],4);
+ assert.equal(writes[0][10]*256+writes[0][11],2904);
 });
 test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
  const script=read('../.github/scripts/deploy-curtain-relay.py');

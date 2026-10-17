@@ -238,7 +238,20 @@ export function createCurtainBridge({db,now=Date.now}){
   }
 
   if(body.status&&typeof body.status==='object')put('status',JSON.parse(JSON.stringify(body.status).length<=12000?JSON.stringify(body.status):'{}'));
-  if(Array.isArray(body.notifications))put('notifications',body.notifications.slice(-48));
+  // Maintain a bounded, short-lived journal of authenticated Nano BLE notices.
+   // Replacing the array every 5-second sync drops a fragmented inventory
+   // response before the web client has fetched and reassembled it.
+   if(Array.isArray(body.notifications)){
+     const old=get('notifications',[]),received=body.notifications.slice(-64);
+     const latest=new Map();
+     for(const n of [...old,...received]){
+       if(!n||!int(n.id,1,0xffffffff)||typeof n.uuid!=='string'||!/^[A-Za-z0-9+/]*={0,2}$/.test(n.data||'')||String(n.data).length>1600)continue;
+       latest.set(n.id,{id:n.id,uuid:n.uuid,data:n.data,receivedAt:at});
+     }
+     // Keep recent 256 packets. No AVI or firmware bytes are stored here.
+     const merged=[...latest.values()].sort((a,b)=>a.id-b.id).slice(-256);
+     put('notifications',merged);
+   }
   for(const ack of (body.acks||[]).slice(0,32)){
    if(!int(ack.id,1,Number.MAX_SAFE_INTEGER)||!['downloaded','applied','failed'].includes(ack.state))continue;
    const old=db.prepare('SELECT state,action,payload FROM curtain_commands WHERE id=?').get(ack.id);
