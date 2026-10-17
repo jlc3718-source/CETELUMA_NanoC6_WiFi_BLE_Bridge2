@@ -13,6 +13,7 @@ let seq=0,msg=0,catalog=[],seenInventory=false,packetResponses=new Map();
 let startWait=null,endWait=null,inventoryWait=null,receiverInstalled=false;
 const INBOUND_WAIT_MS=45000; // Oracle -> Nano command and Nano -> Oracle notification each need 5 s relay cycles.
 let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
+let lastSentOpcode=null,transmittedRequests=0,lastNativeRcode=null;
 const sleep=ms=>new Promise(ok=>setTimeout(ok,ms));
 function b64(data){let str='';for(let i=0;i<data.length;i+=512)str+=String.fromCharCode(...data.subarray(i,i+512));return btoa(str);}
 function varint(n){if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid native protobuf integer');const a=[];do{let v=n&127;n=Math.floor(n/128);if(n)v|=128;a.push(v)}while(n);return a;}
@@ -50,7 +51,7 @@ function receive(view){
  // SuperPix's DDP decoder accepts all extended flags >= 0xF0, not just F1.
  if(data.length<20||data[0]<0xf0)return;
  const op=data[6]*256+data[7],body=data.slice(20);
- lastSmartDawnOp=op;
+ lastSmartDawnOp=op;lastNativeRcode=data[14];
  try{
   if(op===2904){
    const entries=decodeEffects(body);
@@ -151,11 +152,16 @@ async function connection(){
  return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),
   close:()=>{closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);}};
 }
-async function ddp(t,op,n1,n2){
+async function ddp(t,op,n1,n2,body){
  const args=[];if(n1!==undefined)args.push(8,...varint(n1));if(n2!==undefined)args.push(16,...varint(n2));
+ if(body){if(!(body instanceof Uint8Array)||body.length>80)throw Error('Invalid DDP request body');args.push(...body);}
  const packet=new Uint8Array(20+args.length);packet[0]=240;packet[1]=4;
  const id=(++msg)&65535;packet[2]=id>>8;packet[3]=id&255;packet[6]=op>>8;packet[7]=op&255;packet.set(args,20);
- const k=(++seq)&255;for(let at=0;at<packet.length;at+=40){const part=packet.slice(at,at+40),total=Math.ceil(packet.length/40),frame=new Uint8Array(part.length+4);frame.set([k,total,total-1-at/40,0]);frame.set(part,4);await t.writeCmd(frame);await sleep(10);}
+ const k=(++seq)&255;for(let at=0;at<packet.length;at+=40){const part=packet.slice(at,at+40),total=Math.ceil(packet.length/40),frame=new Uint8Array(part.length+4);frame.set([k,total,total-1-at/40,0]);frame.set(part,4);const ack=await t.writeCmd(frame);
+  if(ack?.ok===false||ack?.connected===false||ack?.bleTransmitted===false)
+   throw Error('NanoC6 did not transmit native request '+op+' over BLE');
+  transmittedRequests++;lastSentOpcode=op;
+  await sleep(10);}
 }
 async function inventory(t,progress=()=>{}){
  // BLE write acknowledgement is not a reply from the controller. Wait for the
@@ -165,9 +171,17 @@ async function inventory(t,progress=()=>{}){
   catalog=[];packetResponses.clear();seenInventory=false;
   progress(attempt===1?'Reading native controller slots (2904)…':
     'No inventory response; retrying the read-only slot request…');
-  const waiter=waitFor('inventory',attempt===1?25000:INBOUND_WAIT_MS);
+  const waiter=waitFor('inventory',attempt===1?22000:INBOUND_WAIT_MS);
   waiter.catch(()=>{});
   try{
+   if(attempt===2){
+    // SuperPix 4.4.1 establishes DeviceShakeHands (opcode 205) before
+    // requesting M_EFFECT_LIST (2904). This is the manufacturer flow,
+    // with empty id/cid/sid fields and no device writes.
+    progress('Retry: establishing SmartDawn read session (205), then inventory (2904)…');
+    await ddp(t,205,undefined,undefined,Uint8Array.from([10,0,16,0,26,0]));
+    await sleep(650);
+   }
    await ddp(t,2904);
    await waiter;
    if(!seenInventory)throw Error('Controller did not send an inventory acknowledgement');
@@ -179,8 +193,10 @@ async function inventory(t,progress=()=>{}){
    if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
    if(attempt===1&&/inventory response timeout/.test(error.message))continue;
    throw Error(error.message+' ('+(observedNotifications-before)+
-      ' BLE notifications received this read; last native opcode '+
-      (lastSmartDawnOp??'none')+'). Slot inventory read only; nothing erased or uploaded.');
+      ' BLE notifications received; request '+(lastSentOpcode??'none')+
+      ' sent '+transmittedRequests+' fragments; last incoming opcode '+
+      (lastSmartDawnOp??'none')+', return code '+(lastNativeRcode??'none')+
+      '). Inventory read only; nothing erased or uploaded.');
   }
  }
  throw Error('Controller inventory response unavailable; no slot was changed');

@@ -109,7 +109,7 @@ test('manufacturer native type-0 upload stays on reserved CID 83928 and retains 
 test('slot inspector preserves all inventory entries and gives a relay-safe notification deadline',()=>{
  const source=read('curtain_native_slot.js'),page=read('curtain_native_test.html');
  assert.match(source,/const INBOUND_WAIT_MS=45000/);
- assert.match(source,/const waiter=waitFor\('inventory',attempt===1\?25000:INBOUND_WAIT_MS\)/);
+ assert.match(source,/const waiter=waitFor\('inventory',attempt===1\?22000:INBOUND_WAIT_MS\)/);
  assert.match(source,/async function inspect\(progress=\(\)=>\{\}\)/);
  assert.match(source,/return await inventory\(t,progress\)/);
  assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.slot-b\.slot\|\|a\.cid-b\.cid\)/);
@@ -144,6 +144,20 @@ test('SmartDawn inventory accepts legitimate F0 replies and duplicate BLE fragme
  assert.equal(writes.length,1);
  assert.equal(writes[0][4],240);assert.equal(writes[0][5],4);
  assert.equal(writes[0][10]*256+writes[0][11],2904);
+});
+test('inventory timeout retries manufacturer 205 handshake and reissues read-only 2904',()=>{
+ const source=read('curtain_native_slot.js');
+ const scan=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
+ assert.match(scan,/attempt<=2/);
+ assert.match(scan,/if\(attempt===2\)/);
+ assert.match(scan,/await ddp\(t,205,undefined,undefined,Uint8Array\.from\(\[10,0,16,0,26,0\]\)\)/);
+ assert.match(scan,/await ddp\(t,2904\)/);
+ assert.match(scan,/lastSentOpcode/);
+ assert.match(scan,/lastNativeRcode/);
+ assert.doesNotMatch(scan,/2909|2606|writeUpload/);
+ const ddp=source.slice(source.indexOf('async function ddp('),source.indexOf('async function inventory('));
+ assert.match(ddp,/bleTransmitted===false/);
+ assert.match(ddp,/connected===false/);
 });
 test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
  const script=read('../.github/scripts/deploy-curtain-relay.py');
