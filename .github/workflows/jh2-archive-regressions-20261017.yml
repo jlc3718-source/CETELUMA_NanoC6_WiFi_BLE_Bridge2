@@ -1,0 +1,65 @@
+name: Archive Jason Home 2 regressions 1.1.13-1.1.16
+on:
+  push:
+    branches: [codex/jh2-archive-regressions-20261017]
+    paths: ['.github/workflows/jh2-archive-regressions-20261017.yml']
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve failed candidate firmware releases and exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p archive
+          cat > archive/README.txt <<'TXT'
+          Jason Home 2 — historical troubleshooting archive (2026-10-17)
+          Versions 1.1.13, 1.1.14, 1.1.15, 1.1.16 are NOT APPROVED for OTA.
+          Signed production OTA recovery channel is FROZEN at 1.1.12.
+          These packages and source code are preserved exclusively for debugging.
+          1.1.13 replaced HTTP/SSE polling transport with WSS; no physical command ACK proven.
+          1.1.14 reorganized BLE worker; live end-to-end commands remained unverified.
+          1.1.15 restored manual pairing controls; live command channel unverified.
+          1.1.16 restored scan/select and changed TLS handling; live Nano repeatedly
+          displayed reconnecting, zero commands received, and short uptime samples.
+          No single definitive root cause established. Keep all original Git history.
+          For recovery use jh2-full-install-1.1.12.bin and APK 2.0.17 instead.
+          Full install USB offset 0x0. Full flash replaces Wi-Fi/identity setup.
+          TXT
+          for ver in 1.1.13 1.1.14 1.1.15 1.1.16; do
+            echo "Archiving $ver"
+            tag="jason-home-2-nanoc6-v$ver"
+            folder="archive/$ver"
+            mkdir -p "$folder"
+            git rev-parse "$tag^{commit}" > "$folder/source-commit.txt"
+            git archive --format=tar.gz --prefix="jh2-$ver/" "$tag" \
+              JasonHome2NanoC6 JasonHome2Server JasonHome2Android \
+              '.github/workflows/jh2-fast-nanoc6-ota.yml' \
+              '.github/workflows/jh2-oracle-curtain-only.yml' > "$folder/source-$ver.tar.gz"
+            curl --fail --location --retry 3 --silent --show-error \
+              "https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/$tag/Jason-Home-2-NanoC6-$ver-Install.zip" \
+              -o "$folder/Jason-Home-2-NanoC6-$ver-Install.zip"
+            curl --fail --location --retry 3 --silent --show-error \
+              "https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/$tag/SHA256SUMS" -o "$folder/original-SHA256SUMS.txt"
+            curl --fail --location --retry 3 --silent --show-error \
+              "https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/$tag/release.json" -o "$folder/original-release.json"
+            unzip -t -q "$folder/Jason-Home-2-NanoC6-$ver-Install.zip"
+            tar -tzf "$folder/source-$ver.tar.gz" >/dev/null
+            printf 'tag=%s\ncommit=%s\n' "$tag" "$(cat "$folder/source-commit.txt")" > "$folder/origin.txt"
+          done
+          find archive -type f -print0 | sort -z | xargs -0 sha256sum > archive-file-hashes.txt
+          zip -q -r -9 Jason-Home-2-1.1.13-to-1.1.16-HISTORICAL-ARCHIVE.zip archive archive-file-hashes.txt
+          unzip -t -q Jason-Home-2-1.1.13-to-1.1.16-HISTORICAL-ARCHIVE.zip
+          sha256sum Jason-Home-2-1.1.13-to-1.1.16-HISTORICAL-ARCHIVE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-1.1.13-to-1.1.16-HISTORICAL-ARCHIVE
+          path: Jason-Home-2-1.1.13-to-1.1.16-HISTORICAL-ARCHIVE.zip
+          retention-days: 7
+          if-no-files-found: error
