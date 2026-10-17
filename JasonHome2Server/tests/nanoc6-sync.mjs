@@ -70,3 +70,19 @@ test('Oracle deployment uses the current brightness follower via curtain bridge'
  assert.match(script,/live\.index\(bridge_init\)<live\.index\(new_sync\)/);
  assert.match(script,/relay\['pollSeconds'\]==5/);
 });
+
+test('Brightness follower defers without enqueuing during a manual curtain override, then resumes once',async()=>{
+ let holding=true,online=true,events=0;
+ const follower=createNanoC6BrightnessSync({
+  meta:(k,d)=>k==='nanoc6_brightness_sync_enabled_v1'?true:d,
+  put:()=>{},upstream:async()=>({calendar:{current:{scene:{brightness:64,power:true}}}}),
+  bridge:{manualHoldActive:()=>holding,status:()=>({online}),enqueue:()=>{events++}},
+  logger:{warn:()=>{}}
+ });
+ try{
+  await follower.poll();assert.equal(events,0);
+  holding=false;online=false;await follower.poll();assert.equal(events,0,'Must not queue during Nano disconnection');
+  online=true;await follower.poll();assert.equal(events,1,'Must resume latest level after hold');
+  await follower.poll();assert.equal(events,1,'Must dedupe after delivery is queued');
+ }finally{follower.close()}
+});

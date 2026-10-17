@@ -133,6 +133,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
  function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
  function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:subscribers.size>0?'sse-push':'https-fallback',pushConnected:subscribers.size>0,pushTransport:subscribers.size>0?'sse':'https-fallback',pushSubscribers:subscribers.size,credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:10240,assetRetention:retained(),desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
+ function manualHoldActive(){const t=now();return get('localOverride',0)>t||get('manualUntil',0)>t;}
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
@@ -216,6 +217,10 @@ export function createCurtainBridge({db,now=Date.now}){
   // Prioritize live user commands over delayed schedule/recovery traffic.
   // Filter local override BEFORE LIMIT so eight old recovery commands cannot hide a fresh action.
   const local=Number(body.localOverrideUntil)>at;
+  // Manual Curtain changes take precedence: don't retain a stale background
+  // brightness command that would unexpectedly apply after the hold ends.
+  if(local||manualHoldActive())
+   db.prepare("UPDATE curtain_commands SET state='superseded' WHERE source='brightness-sync' AND state IN ('queued','downloaded')").run();
   const rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded')"+
      (local?" AND source='manual'":"")+
      " ORDER BY CASE WHEN source='manual' THEN 0 WHEN source='schedule' THEN 1 ELSE 2 END,id LIMIT 8").all();
@@ -252,5 +257,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ return {status,manualHoldActive,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }

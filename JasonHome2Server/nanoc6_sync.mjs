@@ -16,6 +16,9 @@ export function createNanoC6BrightnessSync({meta,put,upstream,bridge,logger=cons
   });
   async function writeBrightness(level){
     if(!bridge)throw Error('Oracle curtain bridge unavailable');
+    if((typeof bridge.manualHoldActive==='function'&&bridge.manualHoldActive())||
+       (typeof bridge.status==='function'&&!bridge.status().online))
+       return {ok:true,deferred:true};
     bridge.enqueue('brightness',{value:level},null,'brightness-sync');
     return {ok:true,queued:true};
   }
@@ -31,7 +34,8 @@ export function createNanoC6BrightnessSync({meta,put,upstream,bridge,logger=cons
       const level=Math.max(1,Math.min(100,Math.round(Number(scene.brightness)||0)));
       if(!Number.isFinite(Number(scene.brightness))||Number(scene.brightness)<1)return status();
       if(previousLevel===level&&online)return status();
-      await writeBrightness(level);
+      const applied=await writeBrightness(level);
+      if(applied.deferred){lastError='';online=typeof bridge.status==='function'&&!!bridge.status().online;return status();}
       previousLevel=level;lastApplied=level;lastError='';consecutiveErrors=0;online=true;
     }catch(error){
       online=false;session='';lastError=String(error?.message||error).slice(0,180);
