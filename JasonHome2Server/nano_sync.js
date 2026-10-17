@@ -6,10 +6,10 @@ function init(){
  if(!settings||document.getElementById('jh2NanoSyncPanel'))return;
  const panel=document.createElement('div');
  panel.className='panel';panel.id='jh2NanoSyncPanel';
- panel.innerHTML='<strong>NanoC6 · Follow Eufy brightness</strong>'+
- '<div class="sub">When NanoC6 is connected and ready, use the Eufy schedule’s current brightness. Disabled by default; no Nano commands are sent unless enabled. Uses the authenticated Oracle curtain relay; no separate NanoC6 URL or PIN is needed.</div>'+
+ panel.innerHTML='<strong>NanoC6 · Follow Eufy power and brightness</strong>'+
+ '<div class="sub">When enabled, the curtain turns ON and OFF with the active Eufy schedule or manual override and follows its brightness. Disabled by default until you opt in; uses only the authenticated Oracle curtain relay.</div>'+
  '<label style="display:flex;align-items:center;gap:10px;margin-top:12px">'+
- '<input id="jh2NanoSyncEnabled" type="checkbox" aria-label="Enable NanoC6 brightness synchronization">'+
+ '<input id="jh2NanoSyncEnabled" type="checkbox" aria-label="Follow Eufy schedule: on/off + brightnesshronization">'+
  '<span>Enable NanoC6 brightness sync</span></label>'+
  '<div class="sub" id="jh2NanoSyncStatus" role="status" style="margin-top:9px">Loading NanoC6 status…</div>'+
  '<button class="btn" id="jh2NanoSyncRefresh" type="button" style="margin-top:9px">Refresh status</button>';
@@ -23,7 +23,7 @@ function init(){
    checkbox.disabled=!data.configured||working;
    status.textContent=data.configured
      ?(data.enabled?'Enabled':'Disabled')+' · '+(data.online?'Connected':'Waiting for NanoC6')+
-       (data.lastApplied!=null?' · Last synced '+data.lastApplied+'%':'')+
+       (data.lastQueuedPower!==null&&data.lastQueuedPower!==undefined?' · Power '+(data.lastQueuedPower?'ON':'OFF')+' queued':'')+(data.lastApplied!=null?' · Brightness '+data.lastApplied+'% queued':'')+
        (data.error?' · '+data.error:'')
      :data.note||'NanoC6 is not configured on Oracle; sync is disabled.';
  };
