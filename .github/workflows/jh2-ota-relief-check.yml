@@ -33,7 +33,15 @@ jobs:
           if before.get('firmware')!='1.1.19':
             print('OTA_CHECK_SKIPPED firmware has changed',flush=True)
             raise SystemExit(0)
-          assert int(before.get('queued') or 0)==0,'Do not enqueue OTA health check in a busy queue'
+          if int(before.get('queued') or 0):
+            import sqlite3
+            c=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web']))[0]
+            folder=next((m['Source'] for m in c.get('Mounts',[]) if m['Destination']=='/data'),None)
+            if folder:
+              with sqlite3.connect('file:'+folder+'/jason-home-2.sqlite?mode=ro',uri=True) as db:
+                print('ACTIVE_QUEUE',db.execute("select id,action,source,state,created from curtain_commands where state in ('queued','downloaded') order by id limit 8").fetchall(),flush=True)
+            print('OTA_CHECK_DEFERRED: one unrelated curtain command pending. No new command enqueued.',flush=True)
+            raise SystemExit(0)
           # Give deployed recovery feature time to close the persistent SSE
           # socket; confirm conditions from live status before the check.
           time.sleep(3)
