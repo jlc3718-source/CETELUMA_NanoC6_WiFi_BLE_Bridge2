@@ -1,6 +1,12 @@
 #include "Curtain.h"
 #include "SmartDawnProtocol.h"
 #include <NimBLEDevice.h>
+#include <nimconfig.h>
+#include "nimble/porting/nimble/include/syscfg/syscfg.h"
+// Check the effective host compilation values, not just a build flag.
+static_assert(MYNEWT_VAL(MSYS_2_BLOCK_SIZE) >= 512,
+  "The NimBLE host is not building with a large-enough receive mbuf");
+
 #include <cstring>
 static const char* CURT_SERVICE="00000074-1972-1925-3022-077119514e44";
 static const char* CURT_WRITE="01020074-1972-1925-3022-077119514e44";
@@ -99,7 +105,7 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
   bool ok=true;String message;
   if((action=="effect"||action=="nativePlay"||action=="solid"||action=="rawWrite"||action=="power")&&state["curtainSequence"].is<JsonObject>()){state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
 
-  if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["burstPackets"]=burstPackets;out["burstErrors"]=burstErrors;out["burstFallbackPackets"]=burstFallbackPackets;out["burstWithoutResponseSupported"]=heart&&heart->canWriteNoResponse();out["nativeCatalogPackets"]=nativeCatalogPackets;out["nativeProgressIgnored"]=nativeProgressIgnored;out["nativeNoticeDrops"]=nativeNoticeDrops;out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
+  if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["burstPackets"]=burstPackets;out["burstErrors"]=burstErrors;out["burstFallbackPackets"]=burstFallbackPackets;out["burstWithoutResponseSupported"]=heart&&heart->canWriteNoResponse();out["nativeCatalogPackets"]=nativeCatalogPackets;out["nativeHostMsys2Bytes"]=MYNEWT_VAL(MSYS_2_BLOCK_SIZE);out["nativeProgressIgnored"]=nativeProgressIgnored;out["nativeNoticeDrops"]=nativeNoticeDrops;out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
   else if(action=="connect")ok=connect();
   else if(action=="disconnect"){state["curtainAutoConnect"]=false;saveJson("/state.json",state.as<JsonVariantConst>());disconnect();}
   else if(action=="scan"){
