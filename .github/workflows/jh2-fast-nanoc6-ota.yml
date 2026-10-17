@@ -2,7 +2,7 @@ name: Jason Home 2 NanoC6 Fast Signed OTA
 
 on:
   push:
-    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    branches: [codex/jh2-dynamic-buffer-wakeup-test-20261017]
     paths:
       - 'JasonHome2NanoC6/**'
       - '.github/workflows/jh2-fast-nanoc6-ota.yml'
