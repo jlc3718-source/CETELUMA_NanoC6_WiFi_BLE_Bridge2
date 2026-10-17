@@ -1,0 +1,98 @@
+name: JH2 Curtain Inventory Forensics Once
+on:
+  push:
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    paths: ['.github/workflows/jh2-inventory-notification-forensics-once.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    name: Read-only BLE notice and Oracle status inspection
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect live notice IDs and native response group IDs, no BLE writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,base64,subprocess,urllib.request,datetime,collections,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          token=dict(v.split('=',1) for v in info['Config']['Env'] if '=' in v)['JASON_HOME_API_TOKEN']
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+            req=urllib.request.Request(host+path,data=json.dumps(body).encode() if body is not None else None,
+              headers={'content-type':'application/json',**({'Cookie':cookie} if cookie else {})},
+              method='POST' if body is not None else 'GET')
+            with urllib.request.urlopen(req,timeout=13) as f: return json.load(f),f.headers
+          _,h=api('/api/session',{'token':token})
+          cookie=h.get('Set-Cookie','').split(';')[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          print('STATUS',{'online':status.get('online'),'fw':status.get('firmware'),'uptime':status.get('uptimeSeconds'),
+            'mtu':(status.get('curtain') or {}).get('mtu'),'connected':(status.get('curtain') or {}).get('connected'),
+            'autoOTA':status.get('autoUpdate'),'queued':status.get('queued'),'lastSync':status.get('lastSync')},flush=True)
+          notices,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          notices=notices.get('notifications',[])
+          print('NOTICE_COUNT',len(notices),'RANGE',(notices[0]['id'],notices[-1]['id']) if notices else None,flush=True)
+          def readvar(buf,pos):
+            val=0;factor=1
+            for _ in range(10):
+              if pos>=len(buf):raise ValueError('truncated varint')
+              c=buf[pos];pos+=1;val+=(c&127)*factor
+              if not c&128:return val,pos
+              factor*=128
+            raise ValueError('oversized varint')
+          def fields(buf):
+            pos=0;result=[]
+            while pos<len(buf):
+              typ,pos=readvar(buf,pos);f,w=typ>>3,typ&7
+              if w==0:v,pos=readvar(buf,pos)
+              elif w==2:
+                n,pos=readvar(buf,pos);v=buf[pos:pos+n];pos+=n
+              elif w==5:v=buf[pos:pos+4];pos+=4
+              elif w==1:v=buf[pos:pos+8];pos+=8
+              else:raise ValueError('invalid protobuf')
+              result.append((f,w,v))
+            return result
+          buffers={};reports=[]
+          previous=None;missing=0;lost=[]
+          for n in notices:
+            nid=n.get('id')
+            if previous is not None and nid>previous+1:
+              missing+=nid-previous-1;lost.append((previous+1,nid-1))
+            previous=nid
+            try:
+              b=base64.b64decode(n['data'],validate=True)
+              if len(b)<4:continue
+              mid,count,remaining,flag=b[:4]
+              if not (count>0 and remaining<count and flag==0):continue
+              ix=count-remaining-1
+              key=(mid,count)
+              r=buffers.get(key)
+              if not r or (ix==0 and r['parts'][0] is not None and r['parts'][0]!=b[4:]):
+                r={'parts':[None]*count,'first':nid,'ids':[]};buffers[key]=r
+              r['parts'][ix]=b[4:]
+              r['ids'].append(nid)
+              if all(p is not None for p in r['parts']):
+                data=b''.join(r['parts'])
+                op=int.from_bytes(data[6:8],'big') if len(data)>=20 else -1
+                effects=[]
+                if op==2904:
+                  try:
+                    for field,wire,value in fields(data[20:]):
+                      if field!=1 or wire!=2:continue
+                      effect=fields(value)
+                      effectid=next((v for f,w,v in effect if f==1 and w==0),0)
+                      slot=next((v for f,w,v in effect if f==3 and w==0),0)
+                      cid=next((v for f,w,v in effect if f==4 and w==0),None)
+                      effects.append((effectid,slot,cid))
+                  except Exception as e:effects=['decode-error:'+type(e).__name__]
+                reports.append({'id':mid,'op':op,'noticeIDs':r['ids'],'bytes':len(data),
+                  'frames':count,'effects':len(effects),'effectIDRange':(effects[0][0],effects[-1][0]) if effects and isinstance(effects[0],tuple) else None,
+                  'first':r['first']})
+                del buffers[key]
+            except Exception as e:
+              print('NOTICE_PARSE_ERROR',nid,type(e).__name__,flush=True)
+          print('JOURNAL_GAPS',missing,lost[-12:],flush=True)
+          print('NATIVE_REPLIES',json.dumps(reports[-55:],separators=(',',':')),flush=True)
+          print('INCOMPLETE_FRAGMENT_GROUPS',[(m,c,r['first'],sum(p is not None for p in r['parts']),c) for (m,c),r in list(buffers.items())[-10:]],flush=True)
+          print('END_READONLY_FORENSICS',flush=True)
+          PY
