@@ -54,6 +54,16 @@ jobs:
             for at,status in re.findall(r'\[([^\]]+)\].*"GET /jason-home-2/api/curtain-bridge/channel[^"\n]*" (\d{3}) ',tail):
               upgrades.append({'at':at,'status':int(status)})
           print('ORACLE_WS_UPGRADES',json.dumps(upgrades[-15:]),flush=True)
+          home_ip=socket.gethostbyname('craumer.tplinkdns.com')
+          print('HOME_DDNS_TARGET',home_ip,flush=True)
+          tls_errors=[]
+          for log in pathlib.Path('/var/log/nginx').glob('*error*.log'):
+            tail=subprocess.check_output(['tail','-n','4000',str(log)],text=True,errors='replace')
+            for line in tail.splitlines():
+              client=re.search(r'client: ([^, ]+)',line)
+              if client and client.group(1)==home_ip and ('SSL' in line or 'handshak' in line):
+                tls_errors.append(line.split(', client:',1)[0][-1200:])
+          print('HOME_TLS_ERRORS',json.dumps(tls_errors[-12:]),flush=True)
           for path in ['/api/firmware/access','/api/bridge/status','/']:
             c=http.client.HTTPConnection('craumer.tplinkdns.com',80,timeout=3);started=time.monotonic();connected=False
             try:
