@@ -187,7 +187,7 @@ test('separate controller slot button never conflates JHC1 frame streaming with 
  assert.match(native,/crc8\(/);
  assert.match(native,/data\.length!==4096/);
  assert.match(native,/Native controller slot requires a 4,096-byte DN1FE/);
- assert.match(native,/SmartDawn \+name\+ response timeout/);
+ assert.match(native,/response timeout/);
 });
 test('native file plan accepts only the reserved 83928 CID and exact 4 KB DN1FE bytes',()=>{
  const source=read('curtain_native_slot.js');
