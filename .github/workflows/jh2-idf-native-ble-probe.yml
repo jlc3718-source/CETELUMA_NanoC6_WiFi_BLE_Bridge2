@@ -1,0 +1,65 @@
+name: JH2 Native ESP-IDF NanoC6 BLE Inventory Proof Build
+on:
+  push:
+    branches: [codex/jh2-native-espidf-c6-ble-inventory-20261017]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-idf-native-ble-probe.yml'
+permissions: {contents: read}
+jobs:
+  compile-test:
+    name: Native IDF 5.5.1 ESP32-C6 build; absolutely no OTA or device deployment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native protocol tests on x86 Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/effectlist.c \
+            JasonHome2NanoC6_IDF/tests/effectlist_test.c \
+            -o /tmp/jh2-idf-native-effectlist
+          /tmp/jh2-idf-native-effectlist
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path("JasonHome2NanoC6_IDF")
+          s=(base/"main/main.c").read_text()
+          assert all(x in s for x in ("READ_OPS[]={205,167,2904}","BLE_GAP_EVENT_NOTIFY_RX",
+             "ble_gattc_exchange_mtu","ble_gattc_disc_all_svcs","ble_gattc_disc_all_chrs",
+             "ble_gattc_disc_all_dscs","ble_gattc_write_flat","SUCCESS_NATIVE_CATALOG_88_OF_88"))
+          assert "nvs_flash_erase(" not in s
+          assert "esp_ota_" not in s and "esp_wifi_" not in s
+          assert "CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=544" in (base/"sdkconfig.defaults").read_text()
+          print("NO_DESTRUCTIVE_WRITES_SOURCE_CHECK_PASS",flush=True)
+          PY
+      - name: Compile in official ESP-IDF 5.5.1 for ESP32-C6
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Check native image identity and include build report
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          test -s JasonHome2NanoC6_IDF/build/bootloader/bootloader.bin
+          test -s JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
+          grep -q 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=544' JasonHome2NanoC6_IDF/sdkconfig.defaults
+          sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          wc -c JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          echo "NATIVE_ESP_IDF_C6_BLE_PROBE_BUILT_NO_DEPLOY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-IDF-ESP32C6-native-inventory-BUILD-ONLY
+          path: |
+            JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+            JasonHome2NanoC6_IDF/build/bootloader/bootloader.bin
+            JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
+            JasonHome2NanoC6_IDF/build/flasher_args.json
+            JasonHome2NanoC6_IDF/build/config/sdkconfig.h
+          retention-days: 14
+          if-no-files-found: error
