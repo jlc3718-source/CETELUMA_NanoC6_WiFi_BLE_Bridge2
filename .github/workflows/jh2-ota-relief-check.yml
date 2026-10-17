@@ -1,0 +1,58 @@
+name: Jason Home 2 OTA Recovery Proof
+on:
+  push:
+    branches: [codex/jh2-70k-buffers-studio-simplify-20261016]
+    paths: ['.github/workflows/jh2-ota-relief-check.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify:
+    name: Signed OTA check on existing 1.1.19 without reflashing or BLE calls
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request,urllib.error
+          base='http://127.0.0.1:8081'
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(s.split('=',1) for s in info['Config']['Env'] if '=' in s)
+          token=env['JASON_HOME_API_TOKEN']
+          def request(path,body=None,cookie=None):
+            data=None if body is None else json.dumps(body).encode()
+            headers={'content-type':'application/json'}
+            if cookie:headers['Cookie']=cookie
+            req=urllib.request.Request(base+path,headers=headers,data=data,method='POST' if data is not None else 'GET')
+            with urllib.request.urlopen(req,timeout=16) as response:return json.load(response),response.headers
+          _,headers=request('/api/session',{'token':token})
+          cookie=headers.get('set-cookie','').split(';')[0]
+          before,_=request('/api/curtain/status',cookie=cookie)
+          print('BEFORE',{'firmware':before.get('firmware'),'online':before.get('online'),'freeHeap':before.get('freeHeap'),'pushConnected':before.get('pushConnected'),'queue':before.get('queued')},flush=True)
+          assert before.get('online'),'NanoC6 is not connected'
+          if before.get('firmware')!='1.1.19':
+            print('OTA_CHECK_SKIPPED firmware has changed',flush=True)
+            raise SystemExit(0)
+          assert int(before.get('queued') or 0)==0,'Do not enqueue OTA health check in a busy queue'
+          # Give deployed recovery feature time to close the persistent SSE
+          # socket; confirm conditions from live status before the check.
+          time.sleep(3)
+          state,_=request('/api/curtain/status',cookie=cookie)
+          print('AFTER_OTA_TLS_RELIEF',{'firmware':state.get('firmware'),'freeHeap':state.get('freeHeap'),'pushConnected':state.get('pushConnected'),'queue':state.get('queued')},flush=True)
+          assert state.get('firmware')=='1.1.19' and not state.get('pushConnected'),'SSE was not released safely'
+          key='one-time-ota-tls-relief-20261017'
+          queued,_=request('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},'idempotencyKey':key},cookie=cookie)
+          ident=queued['commandId']
+          start=time.monotonic()
+          while time.monotonic()-start<70:
+            result,_=request('/api/curtain/command?id='+str(ident),cookie=cookie)
+            command=result['command']
+            if command['state'] in ('applied','failed','expired','superseded'):
+              details=command.get('result') or {}
+              print('NANO_OTA_CHECK',{'state':command['state'],'commandId':ident,'current':details.get('current'),'available':details.get('available'),'newer':details.get('newer'),'signed':details.get('signed'),'error':str(details.get('error',''))[:180],'elapsedSeconds':round(time.monotonic()-start,1)},flush=True)
+              break
+            time.sleep(.35)
+          else:print('NANO_OTA_CHECK_TIMEOUT',ident,flush=True)
+          after,_=request('/api/curtain/status',cookie=cookie)
+          print('FINAL_STATUS',{'firmware':after.get('firmware'),'online':after.get('online'),'pushConnected':after.get('pushConnected'),'queue':after.get('queued')},flush=True)
+          PY
