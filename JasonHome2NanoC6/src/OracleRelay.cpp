@@ -71,7 +71,7 @@ static void pushEvents(void*){
 struct RelayStream {
  // Two independently adaptive producer/consumer windows. Reserve heap for
  // TLS, Wi-Fi and BLE, then use up to 80% of the remaining available RAM.
- static constexpr size_t MIN_WINDOW=4096,SAFETY_RESERVE=48*1024;
+ static constexpr size_t MIN_WINDOW=4096,SAFETY_RESERVE=88*1024;
  uint8_t* windows[2]{nullptr,nullptr};
  size_t windowCapacities[2]{0,0},windowCount=0;
  uint32_t windowOffsets[2]{0,0};
@@ -89,7 +89,7 @@ struct RelayStream {
   // memory demand dynamically reduces or increases the safe buffer target.
   size_t pool=ESP.getFreeHeap()+windowCapacities[0]+windowCapacities[1];
   if(pool<=SAFETY_RESERVE+2*MIN_WINDOW)return MIN_WINDOW;
-  return std::max(MIN_WINDOW,((((pool-SAFETY_RESERVE)*4)/5)/2/1024)*1024);
+  return std::min<size_t>(35U<<10,std::max(MIN_WINDOW,((((pool-SAFETY_RESERVE)*4)/5)/2/1024)*1024));
  }
  void reportWindows(){
   liveBufferWindows=uint8_t(windowCount);
@@ -287,7 +287,8 @@ static void playback(void*arg){
  Play p=*static_cast<Play*>(arg);delete static_cast<Play*>(arg);bool applied=false;String error;
  do{
   RelayStream stream;stream.sha=p.sha;stream.size=p.size;uint8_t header[8];
-  if(!stream.read(header,8)||memcmp(header,"JHC1",4)){error="Invalid relay program header";break;}
+  if(!stream.read(header,8)){error="Oracle asset header download failed (TLS or memory)";break;}
+  if(memcmp(header,"JHC1",4)){error="Invalid relay program header";break;}
   uint16_t frames=header[4]|(header[5]<<8);if(!frames||frames>180){error="Invalid relay frame count";break;}
   for(uint16_t f=0;f<frames&&p.gen==generation;f++){
    uint8_t fh[6];if(!stream.read(fh,6)){error="Oracle stream interrupted; last frame retained";break;}
@@ -411,4 +412,4 @@ bool relayConfigure(JsonVariantConst in,String&error){
 void relaySyncNow(){syncNow=true;}
 void relayPrepareForUpdate(){generation++;streaming=false;syncNow=true;}
 void relayLocalOverride(bool resume){localUntil=resume?0:millis()+15*60000;generation++;streaming=false;syncNow=true;}
-void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=liveBufferBytes;out["ramBufferTargetBytes"]=liveBufferTargetBytes;out["ramBufferWindows"]=liveBufferWindows;out["ramBufferLimitPercent"]=80;out["ramBufferReserveBytes"]=48*1024;out["wakeSignalCount"]=wakeSignals;out["lastWakeAgoSeconds"]=lastWakeAt?(millis()-lastWakeAt)/1000:-1;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
+void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=5;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=liveBufferBytes;out["ramBufferTargetBytes"]=liveBufferTargetBytes;out["ramBufferWindows"]=liveBufferWindows;out["ramBufferLimitPercent"]=80;out["ramBufferReserveBytes"]=88*1024;out["wakeSignalCount"]=wakeSignals;out["lastWakeAgoSeconds"]=lastWakeAt?(millis()-lastWakeAt)/1000:-1;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
