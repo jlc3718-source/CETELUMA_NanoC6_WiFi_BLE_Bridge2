@@ -1073,6 +1073,16 @@ async function route(req,res){
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
+  if(method==="POST"&&path==="/api/curtain/generate-art"){
+   const body=await input(req),idea=String(body?.prompt||"").trim();
+   if(idea.length<3||idea.length>260)throw fail(400,"Describe a cartoon in 3–260 characters");
+   if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured. Set it up in the AI tab, or use the free sample pumpkin.");
+   const prompt="Single large centered friendly cartoon of "+idea+". Bold silhouette, cheerful expression, vivid flat colors, solid pure black background. One recognizable subject occupying almost all of a square image. No words, no scenery, no watermark, no gradients, no tiny details. Clean icon legible at 40x40 pixels.";
+   const result=await cloudflareAiRun("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4},{timeout:60000});
+   const image=result?.result?.image||result?.image;
+   if(typeof image!=="string"||!image.length||image.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))throw fail(502,"Cloudflare returned no usable cartoon image");
+   return send(res,200,{ok:true,image:"data:image/jpeg;base64,"+image,model:"FLUX.1 schnell"});
+  }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
   if(method==="POST"&&path==="/api/ai/key"){
