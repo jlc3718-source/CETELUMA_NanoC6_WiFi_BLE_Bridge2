@@ -1,0 +1,33 @@
+name: Jason Home 2 verified 1.1.12 recovery file delivery
+on:
+  push:
+    branches: [codex/jh2-1.1.12-drive-delivery-20261017]
+    paths: ['.github/workflows/jh2-1.1.12-recovery-delivery.yml']
+permissions:
+  contents: read
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch full 1.1.12 and signed APK 2.0.17, validate binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovery
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.1.12/jh2-full-install-1.1.12.bin' \
+            -o recovery/jh2-full-install-1.1.12.bin
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-apk-v2.0.17/Jason-Home-2-2.0.17-ORACLE-RELAY-SIGNED.apk' \
+            -o recovery/Jason-Home-2-2.0.17-ORACLE-RELAY-SIGNED.apk
+          test "$(stat -c '%s' recovery/jh2-full-install-1.1.12.bin)" = '4194304'
+          test "$(stat -c '%s' recovery/Jason-Home-2-2.0.17-ORACLE-RELAY-SIGNED.apk)" = '29099'
+          echo '4b8ca9925adaaad052535f664e32a10c46871daf7834a1e12b279448455470bd  recovery/jh2-full-install-1.1.12.bin' | sha256sum -c -
+          sha256sum recovery/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jason-Home-2-1.1.12-Full-Recovery-and-APK-2.0.17
+          path: recovery/*
+          retention-days: 2
+          if-no-files-found: error
