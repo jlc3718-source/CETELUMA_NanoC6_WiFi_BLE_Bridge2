@@ -140,7 +140,9 @@ jobs:
           TAG="jason-home-2-nanoc6-v$VERSION"
           SOURCE_SHA="$(python -c 'import json;print(json.load(open("release-fast/release.json"))["commit"])')"
           gh release view "$TAG" >/dev/null 2>&1 && { echo "Release $TAG already exists; refusing overwrite"; exit 1; }
-          git push origin "$SOURCE_SHA:refs/heads/jh2-curtain-release-$VERSION"
+          # The source commit already exists on the tracked firmware branch.
+          # Do not create a redundant release branch: workflow-file changes
+          # would require GitHub Apps workflow permission unnecessarily.
           gh release create "$TAG" \
             release-fast/*.bin release-fast/*.zip release-fast/*.json \
             release-fast/SHA256SUMS release-fast/INSTALL.md release-fast/TESTING.md \
