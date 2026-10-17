@@ -1,0 +1,43 @@
+name: JH2 1.1.27 Live Post-Flash Health Check
+on:
+  push:
+    branches: [codex/jh2-native-2904-hci-receive-20261017]
+    paths: ['.github/workflows/jh2-127-health-after-flash-once.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  status:
+    name: Read NanoC6 status twice, no commands
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read-only post-flash status
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(p.split('=',1) for p in info['Config']['Env'] if '=' in p)
+          token=env['JASON_HOME_API_TOKEN']
+          def api(path,payload=None,cookie=''):
+            raw=json.dumps(payload).encode() if payload is not None else None
+            h={'Content-Type':'application/json'}
+            if cookie:h['Cookie']=cookie
+            req=urllib.request.Request('http://127.0.0.1:8081'+path,data=raw,headers=h,method='POST' if raw is not None else 'GET')
+            with urllib.request.urlopen(req,timeout=15) as r:return json.load(r),r.headers
+          _,h=api('/api/session',{'token':token});cookie=h.get('Set-Cookie','').split(';')[0]
+          for i in range(3):
+            try:
+              s,_=api('/api/curtain/status',cookie=cookie)
+              c=s.get('curtain') or {}
+              print('NANO_HEALTH_SNAPSHOT',{'sample':i+1,'firmware':s.get('firmware'),'online':s.get('online'),
+                'uptimeSeconds':s.get('uptimeSeconds'),'autoUpdate':s.get('autoUpdate'),'queued':s.get('queued'),
+                'relayStreaming':s.get('relayStreaming'),'lastSync':s.get('lastSync'),'freeHeap':s.get('freeHeap'),
+                'connected':c.get('connected'),'mtu':c.get('mtu'),'hostMsys2':c.get('nativeHostMsys2Bytes'),
+                'catalogPackets':c.get('nativeCatalogPackets'),'nativeNoticeDrops':c.get('nativeNoticeDrops'),
+                'lastCommand':(s.get('lastCommand') or {}).get('id')},flush=True)
+            except Exception as e:print('READ_ONLY_STATUS_ERROR',type(e).__name__,str(e)[:180],flush=True)
+            if i<2:time.sleep(9)
+          PY
