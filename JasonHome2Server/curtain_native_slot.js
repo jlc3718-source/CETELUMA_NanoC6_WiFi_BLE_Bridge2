@@ -48,6 +48,9 @@ function filePlan(data){
  if(!(data instanceof Uint8Array)||data.length!==4096||[68,78,1,254].some((x,i)=>data[i]!==x))
   throw Error('Native controller slot requires a 4,096-byte DN1FE .eff file, not a JHC1 animation or GIF');
  const cid=new DataView(data.buffer,data.byteOffset,data.byteLength).getUint32(4,true);
+ // The only E-89 source template we captured is *known to scroll*.
+ // Never accept it as a native no-scroll animation by accident.
+ if(cid===83944)throw Error('E-89 scrolling template is not a verified no-scroll animation');
  if(cid!==CID)throw Error('Refusing to overwrite another effect: native file CID must be 83928');
  const chunks=Math.ceil(data.length/500),id=12;
  const field=(n,v)=>[(n<<3),...varint(v)];
@@ -67,7 +70,28 @@ async function connection(){
   return {writeCmd:data=>write(cmd,data),writeUpload:data=>write(bin,data),close:()=>{try{d.gatt.disconnect()}catch(_){}}};
  }
  if(window.parent===window)throw Error('Open Native Upload inside Jason Home 2 Curtain Studio');
- const pending=new Map();let count=0;
+ const pending=new Map();let count=0,closed=false,timer=null,cursor=0,fetching=false;
+ const oracleApi=window.parent.JH2CurtainApi;
+ // Android WebView deliberately has no direct Bluetooth implementation.
+ // NanoC6 forwards BLE notifications to Oracle via authenticated sync;
+ // watch that notification feed while uploading each native chunk.
+ if(typeof oracleApi!=='function')
+  throw Error('Oracle curtain API unavailable; use Chrome Bluetooth or reconnect Jason Home 2');
+ const prior=await oracleApi('/api/curtain/notifications?since=0');
+ for(const n of prior.notifications||[])cursor=Math.max(cursor,Number(n.id)||0);
+ const receiveOracle=async()=>{
+  if(closed||fetching)return;fetching=true;
+  try{
+   const data=await oracleApi('/api/curtain/notifications?since='+cursor);
+   for(const n of data.notifications||[]){
+    if(!Number.isInteger(n.id)||n.id<=cursor)continue;
+    cursor=n.id;
+    if(String(n.uuid).toLowerCase()!==NOTIFY)continue;
+    receive(Uint8Array.from(atob(n.data),x=>x.charCodeAt(0)));
+   }
+  }catch(err){if(window.console)console.warn('Native slot Oracle BLE notifications:',err);}
+  finally{fetching=false;}
+ };
  const listener=event=>{
   if(event.origin!==location.origin||event.source!==window.parent)return;
   const m=event.data||{};
@@ -82,10 +106,13 @@ async function connection(){
   pending.set(id,{resolve,reject,timer});
   window.parent.postMessage({kind:'jh2-curtain-request',id,action,payload},location.origin);
  });
- try{await rpc('connect');await rpc('subscribeRaw',{uuid:NOTIFY});}
- catch(e){window.removeEventListener('message',listener);throw e;}
+ try{
+  await rpc('connect');await rpc('subscribeRaw',{uuid:NOTIFY});
+  timer=setInterval(receiveOracle,300);await receiveOracle();
+ }catch(e){closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);throw e;}
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});
- return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),close:()=>window.removeEventListener('message',listener)};
+ return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),
+  close:()=>{closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);}};
 }
 async function ddp(t,op,n1,n2){
  const args=[];if(n1!==undefined)args.push(8,...varint(n1));if(n2!==undefined)args.push(16,...varint(n2));
@@ -112,10 +139,10 @@ async function upload(bytes,progress=()=>{}){
    for(let i=0;i<2;i++){const list=await inventory(t);if(list.some(x=>x.cid===CID))throw Error('Could not verify removal of CID 83928; native upload cancelled');}
   }
   progress('Starting verified 4 KB controller upload…');
-  const started=waitFor('start',8000);await t.writeUpload(pack.request);
+  const started=waitFor('start',30000);await t.writeUpload(pack.request);
   const start=await started;
   if((start[1]??0)!==0||(start[3]??0)!==0)throw Error('SmartDawn rejected upload start');
-  const done=waitFor('end',18000);
+  const done=waitFor('end',60000);
   for(let i=0;i<pack.parts.length;i++){await t.writeUpload(pack.parts[i]);progress('Sending native upload chunk '+(i+1)+' / '+pack.parts.length);await sleep(25);}
   const result=await done;if((result[1]??0)!==0)throw Error('SmartDawn rejected native upload completion');
   progress('Checking controller slot inventory…');
