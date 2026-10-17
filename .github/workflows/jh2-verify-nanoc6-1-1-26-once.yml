@@ -1,0 +1,125 @@
+name: Jason Home 2 Verify 1.1.26 Native Effect Inventory Once
+on:
+  push:
+    branches: [codex/jh2-nanoc6-large-notify-recovery-20261017]
+    paths: ['.github/workflows/jh2-verify-nanoc6-1-1-26-once.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  inventory:
+    name: Confirm deployed Nano 1.1.26 and read 88 native effects; no erase or upload
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Firmware health and one 205/167/2904 catalog trace
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import base64,json,subprocess,time,urllib.request,collections
+          host='http://127.0.0.1:8081'
+          env=dict(kv.split('=',1) for kv in json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]['Config']['Env'] if '=' in kv)
+          token=env['JASON_HOME_API_TOKEN']
+          def api(path,body=None,cookie=''):
+              raw=json.dumps(body,separators=(',',':')).encode() if body is not None else None
+              req=urllib.request.Request(host+path,data=raw,method='POST' if raw is not None else 'GET',headers={'content-type':'application/json',**({'Cookie':cookie} if cookie else {})})
+              with urllib.request.urlopen(req,timeout=14) as resp:return json.load(resp),resp.headers
+          _,h=api('/api/session',{'token':token})
+          cookie=h.get('Set-Cookie','').split(';')[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          curtain=status.get('curtain') or {}
+          before={k:status.get(k) for k in ('online','firmware','uptimeSeconds','autoUpdate','queued','relayStreaming','lastSync')}
+          before.update({'connected':curtain.get('connected'),'mtu':curtain.get('mtu'),
+                         'catalogPackets':curtain.get('nativeCatalogPackets'),'progressIgnored':curtain.get('nativeProgressIgnored'),
+                         'noticeDrops':curtain.get('nativeNoticeDrops')})
+          print('BEFORE',before,flush=True)
+          assert before['firmware']=='1.1.26','Live Nano is not running 1.1.26; stop safely'
+          assert before['online'] is True and before['connected'] is True and int(before['mtu'] or 0)>=399,'BLE disconnected or MTU too low; no command sent'
+          assert before['autoUpdate'] is False,'Expected automatic firmware updates to remain disabled'
+          assert int(before['queued'] or 0)==0 and not before['relayStreaming'],'Active queue/stream; avoid interference'
+          assert int(before['uptimeSeconds'] or 0)>=45,'Wait for reboot recovery; no command sent'
+          incoming,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max([n['id'] for n in incoming.get('notifications',[])] or [0])
+          def frame(op,identifier):
+              p=bytearray(20);p[0]=240;p[1]=4;p[2]=identifier>>8;p[3]=identifier&255;p[6]=op>>8;p[7]=op&255
+              return bytes([identifier&255,1,0,0])+bytes(p)
+          uuid='01020074-1972-1925-3022-077119514e44'
+          sent=[]
+          for identifier,op in [(41,205),(42,167),(43,2904)]:
+              payload={'uuid':uuid,'data':base64.b64encode(frame(op,identifier)).decode()}
+              queued,_=api('/api/curtain/call',{'action':'rawWrite','payload':payload,'idempotencyKey':'read-1126-'+str(op)+'-'+str(int(time.time()))},cookie=cookie)
+              id=queued['commandId'];sent.append(id)
+              for i in range(90):
+                  reply,_=api('/api/curtain/command?id='+str(id),cookie=cookie)
+                  command=reply['command']
+                  if command['state'] in ('applied','failed','expired','superseded'):break
+                  time.sleep(.5)
+              else:raise RuntimeError('No ACK for read opcode '+str(op))
+              ack=command.get('result') or {}
+              print('READ_ACK',{'opcode':op,'commandId':id,'state':command['state'],'bleTransmitted':ack.get('bleTransmitted')},flush=True)
+              if command['state']!='applied' or ack.get('bleTransmitted') is not True:raise RuntimeError('Read opcode '+str(op)+' not transmitted; no further requests')
+          time.sleep(14)
+          notices,_=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)
+          notices=notices.get('notifications',[])
+          print('NOTIFICATION_COUNT',len(notices),'lastId',notices[-1]['id'] if notices else None,flush=True)
+          reports=[];parts={}
+          for n in notices:
+              try:
+                  raw=base64.b64decode(n['data'])
+                  if len(raw)<24 or raw[3]!=0:continue
+                  total=int(raw[1]);remaining=int(raw[2]);mid=int(raw[0])
+                  if total<1 or remaining>=total:continue
+                  index=total-remaining-1;key=(mid,total)
+                  if key not in parts:parts[key]=[None]*total
+                  parts[key][index]=raw[4:]
+                  if all(p is not None for p in parts[key]):
+                      data=b''.join(parts.pop(key))
+                      if len(data)>=20 and data[0] in (240,241):
+                          op=int.from_bytes(data[6:8],'big')
+                          if op==2904:
+                              reports.append({'msg':mid,'bytes':len(data),'noticeId':n['id'],'bodyBytes':len(data)-20,'bodyBase64':base64.b64encode(data[20:]).decode()})
+              except Exception as e:print('DECODE_ERROR',type(e).__name__,str(e)[:120],flush=True)
+          def varint(data,p):
+              value=0;shift=0
+              while p<len(data):
+                  x=data[p];p+=1;value|=(x&127)<<shift
+                  if not x&128:return value,p
+                  shift+=7
+              raise ValueError('truncated protobuf')
+          def fields(data):
+              p=0;items=[]
+              while p<len(data):
+                  tag,p=varint(data,p);field=tag>>3;wire=tag&7
+                  if wire==0:val,p=varint(data,p)
+                  elif wire==2:
+                      size,p=varint(data,p);val=data[p:p+size];p+=size
+                  elif wire==5:val=data[p:p+4];p+=4
+                  elif wire==1:val=data[p:p+8];p+=8
+                  else:raise ValueError('invalid wire')
+                  items.append((field,wire,val))
+              return items
+          effectIDs=[];summaries=[]
+          for report in reports:
+              effects=[]
+              for field,wire,entry in fields(base64.b64decode(report['bodyBase64'])):
+                  if field!=1 or wire!=2:continue
+                  pairs=fields(entry)
+                  effectid=next((v for f,w,v in pairs if f==1 and w==0),0)
+                  slot=next((v for f,w,v in pairs if f==3 and w==0),0)
+                  cid=next((v for f,w,v in pairs if f==4 and w==0),None)
+                  if cid is not None:effects.append((effectid,slot,cid))
+              effectIDs.extend(e[0] for e in effects)
+              summaries.append({'message':report['msg'],'bytes':report['bytes'],'entries':len(effects),'range':[effects[0][0],effects[-1][0]] if effects else []})
+          unique=sorted(set(effectIDs))
+          print('2904_CATALOG_GROUPS',summaries,flush=True)
+          print('TOTAL_EFFECTS',len(unique),'MISSING_FROM_0_TO_87',sorted(set(range(88))-set(unique)),flush=True)
+          end,_=api('/api/curtain/status',cookie=cookie)
+          c=end.get('curtain') or {}
+          print('NANO_COUNTERS',{'firmware':end.get('firmware'),'uptime':end.get('uptimeSeconds'),
+             'catalogPacketsBefore':before['catalogPackets'],'catalogPacketsAfter':c.get('nativeCatalogPackets'),
+             'ignoredProgressAfter':c.get('nativeProgressIgnored'),'noticeDropsAfter':c.get('nativeNoticeDrops'),
+             'autoUpdate':end.get('autoUpdate'),'queued':end.get('queued')},flush=True)
+          assert len(unique)==88 and not (set(range(88))-set(unique)),'EffectList still incomplete; keep destructive uploads blocked'
+          print('PHYSICAL_INVENTORY_PASS_88_READ_ONLY',flush=True)
+          PY
