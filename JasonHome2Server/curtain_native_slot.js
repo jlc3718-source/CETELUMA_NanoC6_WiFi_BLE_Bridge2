@@ -14,6 +14,9 @@ let startWait=null,endWait=null,inventoryWait=null,receiverInstalled=false;
 const INBOUND_WAIT_MS=45000; // Oracle -> Nano command and Nano -> Oracle notification each need 5 s relay cycles.
 let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
 let lastSentOpcode=null,transmittedRequests=0,lastNativeRcode=null;
+// DN5E58 has 87 recovered factory effects; the controller can contain more.
+const KNOWN_FACTORY_EFFECTS=87;
+let inventoryResponseAt=0,inventoryBatchCount=0,inventoryUniqueFrames=new Set();
 let uploadSessionSequence=0,lastUploadSessionId=0,uploadResponses=[];
 function nextUploadSessionId(){
  // Both original applications use a new upload message ID per transfer.
@@ -33,7 +36,30 @@ function b64(data){let str='';for(let i=0;i<data.length;i+=512)str+=String.fromC
 function varint(n){if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid native protobuf integer');const a=[];do{let v=n&127;n=Math.floor(n/128);if(n)v|=128;a.push(v)}while(n);return a;}
 function decodeVarint(b,i){let v=0,f=1;for(let k=0;k<10;k++){if(i>=b.length)throw Error('Truncated native protobuf');const c=b[i++];v+=(c&127)*f;if(!(c&128))return [v,i];f*=128;}throw Error('Native protobuf overflow');}
 function proto(b){let p=0,out=[];while(p<b.length){let t;[t,p]=decodeVarint(b,p);const field=Math.floor(t/8),wire=t&7;let v;if(wire===0)[v,p]=decodeVarint(b,p);else if(wire===2){let n;[n,p]=decodeVarint(b,p);if(p+n>b.length)throw Error('Truncated protobuf field');v=b.slice(p,p+n);p+=n;}else if(wire===5){p+=4;continue;}else if(wire===1){p+=8;continue;}else throw Error('Unrecognized protobuf wire');out.push([field,v,wire]);}return out;}
-function decodeEffects(body){let out=[];for(const [field,b,wire] of proto(body)){if(field!==1||wire!==2)continue;const entry={};for(const [f,v,w]of proto(b))if(w===0){if(f===3)entry.slot=v;if(f===4)entry.cid=v;}if(Number.isInteger(entry.cid)&&Number.isInteger(entry.slot))out.push(entry);}return out;}
+// Actual SuperPix 4.4.1 EffectList protobuf. Preserve every EffectInfo,
+// including slot/id 0 (protobuf defaults omitted from the wire).
+function decodeEffects(body){
+ const out=[];
+ for(const [field,buf,wire] of proto(body)){
+  if(field!==1||wire!==2)continue;
+  const entry={id:0,slot:0,type:0,cid:null,title:'',bookmark:0,diy:0};
+  for(const [f,v,w] of proto(buf)){
+   if(w===0){
+    if(f===1)entry.id=v;
+    if(f===2)entry.type=v;
+    if(f===3)entry.slot=v;
+    if(f===4)entry.cid=v;
+    if(f===5)entry.bookmark=v;
+    if(f===7)entry.diy=v;
+   }else if(w===2&&f===6){
+    entry.title=new TextDecoder().decode(v).slice(0,120);
+   }
+  }
+  if(Number.isSafeInteger(entry.slot)&&entry.slot>=0&&Number.isSafeInteger(entry.id)&&entry.id>=0)
+   out.push(entry);
+ }
+ return out;
+}
 function callback(name){if(name==='start')return startWait;if(name==='end')return endWait;return inventoryWait;}
 function signal(name,data){const c=callback(name);if(!c)return;if(name==='start')startWait=null;else if(name==='end')endWait=null;else inventoryWait=null;clearTimeout(c.timer);c.resolve(data);}
 function waitFor(name,ms){if(callback(name))throw Error('Native upload already waiting for '+name);
@@ -74,8 +100,22 @@ function receive(view){
   if(op===2904){
    const entries=decodeEffects(body);
    if(!entries.length&&body.length)throw Error('Native inventory response contained no valid slot/CID entries');
+   // Oracle polling and parent forwarding may duplicate the same native DDP
+   // response. Deduplicate full messages, not effect groups.
+   let fingerprint=2166136261;
+   for(const c of data)fingerprint=Math.imul(fingerprint^c,16777619)>>>0;
+   const key=data.length+':'+fingerprint;
+   if(inventoryUniqueFrames.has(key))return;
+   inventoryUniqueFrames.add(key);
+   inventoryBatchCount++;
+   inventoryResponseAt=Date.now();
    seenInventory=true;
-   for(const entry of entries){const n=catalog.findIndex(e=>e.cid===entry.cid&&e.slot===entry.slot);if(n>=0)catalog[n]=entry;else catalog.push(entry);}
+   for(const entry of entries){
+    const keyOf=e=>e.cid===null?'unknown:'+e.id+':'+e.slot:e.cid+':'+e.slot;
+    const key=keyOf(entry),n=catalog.findIndex(e=>keyOf(e)===key);
+    if(n>=0)catalog[n]={...catalog[n],...entry};
+    else catalog.push(entry);
+   }
    signal('inventory',true);
   }
   if(op===2931||op===2934){const result={};for(const [f,v,w]of proto(body))if(w===0)result[f]=v;signal(op===2931?'start':'end',result);}
@@ -181,50 +221,67 @@ async function ddp(t,op,n1,n2,body){
   transmittedRequests++;lastSentOpcode=op;
   await sleep(10);}
 }
-async function inventory(t,progress=()=>{}){
- // BLE write acknowledgement is not a reply from the controller. Wait for the
- // actual 2904 EffectList and retry once if that notification never arrives.
- const before=observedNotifications;
+async function inventory(t,progress=()=>{},{quietMs=11000,maxMs=76000,minExpected=KNOWN_FACTORY_EFFECTS}={}){
+ // SuperPix retains EffectList across MULTIPLE opcode-2904 responses.
+ // The first reply may have only 19 effects from one CID. Wait for the
+ // actual multi-batch stream to become quiet (two Nano poll cycles).
+ const start=Date.now(),before=observedNotifications;
+ catalog=[];packetResponses.clear();seenInventory=false;
+ inventoryResponseAt=0;inventoryBatchCount=0;inventoryUniqueFrames.clear();
+ let lastError=null;
  for(let attempt=1;attempt<=2;attempt++){
-  catalog=[];packetResponses.clear();seenInventory=false;
-  progress(attempt===1?'Reading native controller slots (2904)…':
-    'No inventory response; retrying the read-only slot request…');
-  const waiter=waitFor('inventory',attempt===1?22000:INBOUND_WAIT_MS);
+  progress(attempt===1?'Reading all controller effect-list batches (2904)…':
+   'Only '+catalog.length+' of at least '+minExpected+' expected effects returned; requesting remaining batches…');
+  const already=inventoryBatchCount,waiter=waitFor('inventory',attempt===1?22000:INBOUND_WAIT_MS);
   waiter.catch(()=>{});
   try{
-   if(attempt===2){
-    // SuperPix 4.4.1 establishes DeviceShakeHands (opcode 205) before
-    // requesting M_EFFECT_LIST (2904). This is the manufacturer flow,
-    // with empty id/cid/sid fields and no device writes.
-    progress('Retry: establishing SmartDawn read session (205), then inventory (2904)…');
+   if(attempt===2&&!seenInventory){
+    progress('Establishing SmartDawn read session (205)…');
     await ddp(t,205,undefined,undefined,Uint8Array.from([10,0,16,0,26,0]));
     await sleep(650);
    }
    await ddp(t,2904);
-   await waiter;
-   if(!seenInventory)throw Error('Controller did not send an inventory acknowledgement');
-   const result=catalog.slice().sort((a,b)=>a.slot-b.slot||a.cid-b.cid);
-   lastInventoryRead={at:new Date().toISOString(),count:result.length,notifications:observedNotifications-before};
-   progress('Controller returned '+result.length+' stored slot / CID records.');
-   return result;
+   if(already)inventoryResponseAt=Date.now(); // Allow time for the second response stream to arrive.
+   if(!already)await waiter;
+   else{
+    // Second read of an existing list may replay a packet we already have.
+    // Do not block for an unnecessary new or duplicate packet ACK.
+    if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
+   }
   }catch(error){
+   lastError=error;
    if(inventoryWait){clearTimeout(inventoryWait.timer);inventoryWait=null;}
-   if(attempt===1&&/inventory response timeout/.test(error.message))continue;
-   throw Error(error.message+' ('+(observedNotifications-before)+
-      ' BLE notifications received; request '+(lastSentOpcode??'none')+
-      ' sent '+transmittedRequests+' fragments; last incoming opcode '+
-      (lastSmartDawnOp??'none')+', return code '+(lastNativeRcode??'none')+
-      '). Inventory read only; nothing erased or uploaded.');
+   if(!seenInventory&&attempt===1)continue;
+   if(!seenInventory)throw Error(error.message+' ('+(observedNotifications-before)+
+     ' BLE notifications; last native opcode '+(lastSmartDawnOp??'none')+
+     '). No controller slot changed.');
   }
+  // The BLE receiver keeps merging lists while the API waits.
+  // Only return after 11 seconds without a NEW native 2904 response,
+  // not immediately after the first 19-entry chunk.
+  while(inventoryResponseAt&&Date.now()-inventoryResponseAt<quietMs&&Date.now()-start<maxMs){
+   await sleep(Math.min(300,quietMs));
+  }
+  if(catalog.length>=minExpected||Date.now()-start>=maxMs)break;
  }
- throw Error('Controller inventory response unavailable; no slot was changed');
+ if(!seenInventory)throw Error((lastError?.message||'SmartDawn inventory response timeout')+
+  '; 0 complete 2904 replies observed. No controller slot changed.');
+ const result=catalog.slice().sort((a,b)=>a.id-b.id||a.slot-b.slot||(a.cid??0)-(b.cid??0));
+ const partial=result.length<minExpected;
+ result.partial=partial;result.batches=inventoryBatchCount;result.expectedAtLeast=minExpected;
+ lastInventoryRead={at:new Date().toISOString(),count:result.length,batches:inventoryBatchCount,partial,notifications:observedNotifications-before};
+ progress((partial?'Partial inventory: ':'Controller inventory: ')+result.length+
+  ' effects in '+inventoryBatchCount+' response batches'+(partial?' (expected at least '+minExpected+').':' complete enough for known factory catalog.')+
+  ' Last request '+(lastSentOpcode??'none')+', last reply '+(lastSmartDawnOp??'none')+
+  ', return code '+(lastNativeRcode??'none')+'.');
+ return result;
 }
 async function upload(bytes,progress=()=>{}){
  const pack=filePlan(bytes); // validate BEFORE connecting or removing anything
  const t=await connection();
  try{
   progress('Reading controller effect inventory…');
-  const before=await inventory(t);let original=before.find(x=>x.cid===CID);
+  const before=await inventory(t);if(before.partial)throw Error('Incomplete controller inventory; upload cancelled to protect other effects');let original=before.find(x=>x.cid===CID);
   if(original){
    progress('Erasing ONLY reserved CID 83928…');
    await ddp(t,2909,CID);await sleep(600);
@@ -257,7 +314,7 @@ async function researchUpload(data,{replaceReserved=false,progress=()=>{},format
  const t=await connection();
  try{
   progress('Rechecking all stored effect IDs…');
-  const before=await inventory(t),occupied=before.find(e=>e.cid===CID);
+  const before=await inventory(t);if(before.partial)throw Error('Incomplete controller inventory; experimental upload cancelled');const occupied=before.find(e=>e.cid===CID);
   if(occupied&&!replaceReserved)throw Error('Reserved CID 83928 is occupied. No storage writes made; explicit replacement authorization required.');
   if(occupied){
    progress('Erasing only the explicitly approved reserved test CID 83928…');
@@ -324,7 +381,7 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
  const t=await connection();
  try{
   progress('Reading controller effect list…');
-  let before=await inventory(t),old=before.find(e=>e.cid===CID);
+  let before=await inventory(t);if(before.partial)throw Error('Incomplete controller effect list; no upload or deletion attempted');let old=before.find(e=>e.cid===CID);
   progress('Controller inventory read: '+before.length+' slot/CID entries.',before);
   if(old){
    progress('Replacing only reserved test effect CID 83928…');

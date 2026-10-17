@@ -68,35 +68,47 @@ $('convert').onclick=async()=>{
   show('Native conversion or controller upload failed: '+e.message);
  }finally{busy=false;update()}
 };
+function typeLabel(type){return ({1:'Micro-app',2:'Music',3:'Animation',4:'Scrolling text'})[type]||'Type '+type;}
 function renderSlots(entries){
  inventoryLoaded=true;
- storedSlots=entries.slice().sort((a,b)=>a.slot-b.slot||a.cid-b.cid);
+ const incomplete=entries.partial===true;
+ storedSlots=entries.slice().sort((a,b)=>(a.id??0)-(b.id??0)||a.slot-b.slot||(a.cid??0)-(b.cid??0));
  const picker=$('slotSelect');picker.replaceChildren();
- const option=(label,value)=>{const e=document.createElement('option');e.textContent=label;e.value=value;picker.appendChild(e)};
- if(!storedSlots.length){option('No native effects reported','');$('slotDetails').textContent='Controller replied with an empty native catalog.';}
+ const option=(label,value)=>{const o=document.createElement('option');o.textContent=label;o.value=value;picker.appendChild(o)};
+ if(!storedSlots.length){option('No native effects reported','');$('slotDetails').textContent='No effects received from controller.';}
  else for(let i=0;i<storedSlots.length;i++){
   const e=storedSlots[i];
-  option('Slot '+e.slot+'  ·  CID '+e.cid+(e.cid===83928?'  ·  Test slot':''),String(i));
+  option('ID '+(e.id??'?')+' · Slot '+e.slot+' · CID '+(e.cid??'not reported')+(e.title?' · '+e.title:'')+(e.cid===83928?' · Test':''),String(i));
  }
- $('slotCount').textContent='('+storedSlots.length+' entries)';
+ $('slotCount').textContent='('+storedSlots.length+' effects'+(incomplete?'; partial read':'')+')';
  $('allSlots').hidden=!storedSlots.length;
- $('allSlots').textContent='SLOT    CID        DETAILS\n'+storedSlots.map(e=>String(e.slot).padEnd(8)+String(e.cid).padEnd(11)+(e.cid===83928?'Reserved test slot':'')).join('\n');
+ $('allSlots').textContent='ID     SLOT   CID        TYPE   TITLE\\n'+storedSlots.map(e=>
+  String(e.id??'?').padEnd(7)+String(e.slot).padEnd(7)+String(e.cid??'not reported').padEnd(11)+
+  String(e.type??'?').padEnd(7)+(e.title||'')+(e.cid===83928?' [RESERVED TEST]':'')).join('\\n');
  update();selectSlot();
 }
 function selectSlot(){
- const e=storedSlots[Number($('slotSelect').value)];
- $('slotDetails').textContent=e?'Selected slot: '+e.slot+'\nEffect CID: '+e.cid+(e.cid===83928?'\nReserved upload-test slot':''):'Select a returned slot to view its IDs.';
+ const i=Number($('slotSelect').value),e=storedSlots[i];
+ $('slotDetails').textContent=e?
+  'Effect ID: '+(e.id??'not supplied')+'\\nController slot: '+e.slot+
+  '\\nCID: '+(e.cid??'not reported')+'\\nType: '+typeLabel(e.type)+
+  (e.title?'\\nTitle: '+e.title:'')+(e.cid===83928?'\\nReserved test CID':''):
+  'Select a returned effect to inspect its IDs.';
 }
 $('slotSelect').addEventListener('change',selectSlot);
 $('inspect').onclick=async()=>{
  if(busy)return;busy=true;update();
  try{
-  show('Reading all SmartDawn stored effect IDs through Oracle → NanoC6 → Bluetooth…');
+  show('Reading every native effect list batch via Oracle → NanoC6 → Bluetooth…');
   const all=await N.inspect(show);
-  if(!Array.isArray(all)||all.some(e=>!Number.isSafeInteger(e.slot)||!Number.isSafeInteger(e.cid)))
-   throw Error('Controller returned an invalid slot list');
+  if(!Array.isArray(all)||all.some(e=>!Number.isSafeInteger(e.slot)||!Number.isSafeInteger(e.id)||
+    !(Number.isSafeInteger(e.cid)||e.cid===null)))
+   throw Error('Controller returned an invalid effect-list entry');
   renderSlots(all);
-  show('Read completed: '+all.length+' controller slots returned. All IDs are available in the dropdown and list.');
+  show((all.partial?'Incomplete controller read — ': 'Controller read complete — ')+
+   all.length+' effect entries from '+all.batches+' native response batches'+
+   (all.partial?'; expected at least '+all.expectedAtLeast+'. No uploads permitted until the list is complete.':
+   '. IDs, slots, CIDs, types and names are displayed above.'));
  }catch(error){show('Controller slot read failed: '+error.message);}
  finally{busy=false;update();resize()}
 };

@@ -22,7 +22,10 @@ test('Native Test has AVI actions plus a read-only slot/ID inspector with a drop
  assert.match(page,/id="allSlots" hidden/);
  assert.match(page,/Read Controller Slots \/ IDs/);
  assert.match(page,/N\.inspect\(show\)/);
- assert.match(page,/\.slot\-b\.slot/);
+ assert.match(page,/\.id\?\?0/);
+ assert.match(page,/Effect ID:/);
+ assert.match(page,/CID:/);
+ assert.match(page,/typeLabel\(e\.type\)/);
  assert.match(page,/e\.cid===83928/);
  assert.match(page,/1\. Load Test AVI/);
  assert.match(page,/2\. Convert &amp; Send to Controller/);
@@ -139,13 +142,13 @@ test('each native AVI upload gets a fresh SmartDawn session ID and waits for act
 test('slot inspector preserves all inventory entries and gives a relay-safe notification deadline',()=>{
  const source=read('curtain_native_slot.js'),page=read('curtain_native_test.html');
  assert.match(source,/const INBOUND_WAIT_MS=45000/);
- assert.match(source,/const waiter=waitFor\('inventory',attempt===1\?22000:INBOUND_WAIT_MS\)/);
+ assert.match(source,/waiter=waitFor\('inventory',attempt===1\?22000:INBOUND_WAIT_MS\)/);
  assert.match(source,/async function inspect\(progress=\(\)=>\{\}\)/);
  assert.match(source,/return await inventory\(t,progress\)/);
- assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.slot-b\.slot\|\|a\.cid-b\.cid\)/);
+ assert.match(source,/catalog\.slice\(\)\.sort\(\(a,b\)=>a\.id-b\.id/);
  assert.match(source,/observedNotifications-before/);
  assert.match(source,/lastSmartDawnOp/);
- assert.match(source,/nothing erased or uploaded/);
+ assert.match(source,/No controller slot changed/);
  // 2904 must be a read-only request; nothing here can erase a slot or trigger Play.
  const inventory=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
  assert.match(inventory,/await ddp\(t,2904\)/);
@@ -159,7 +162,7 @@ test('slot inspector preserves all inventory entries and gives a relay-safe noti
 });
 test('SmartDawn inventory accepts legitimate F0 replies and duplicate BLE fragments without touching a slot',async()=>{
  const src=read('curtain_native_slot.js').replace('window.JH2NativeSlot={','window.JH2NativeSlot={_receive:receive,_inventory:inventory,');
- const sandbox={window:{console},Uint8Array,DataView,TextEncoder,Number,Math,Map,Array,String,Date,
+ const sandbox={window:{console},Uint8Array,DataView,TextEncoder,TextDecoder,Number,Math,Map,Array,String,Date,
   navigator:{bluetooth:null},setTimeout,clearTimeout,setInterval,clearInterval};
  new Script(src).runInNewContext(sandbox);
  const N=sandbox.window.JH2NativeSlot;
@@ -169,17 +172,55 @@ test('SmartDawn inventory accepts legitimate F0 replies and duplicate BLE fragme
  const frame=new Uint8Array(20+body.length);frame[0]=0xF0;frame[1]=1;frame[6]=2904>>8;frame[7]=2904&255;frame.set(body,20);
  const cut=29,head=Uint8Array.from([55,2,1,0,...frame.slice(0,cut)]),tail=Uint8Array.from([55,2,0,0,...frame.slice(cut)]);
  const writes=[],t={writeCmd:async b=>{writes.push(Buffer.from(b));N._receive(head);N._receive(head);N._receive(tail);}};
- const entries=await N._inventory(t,()=>{});
+ const entries=await N._inventory(t,()=>{},{minExpected:2,quietMs:30,maxMs:200});
  assert.deepEqual(Array.from(entries,x=>[x.slot,x.cid]),[[1,12345],[2,83928]]);
  assert.equal(writes.length,1);
  assert.equal(writes[0][4],240);assert.equal(writes[0][5],4);
  assert.equal(writes[0][10]*256+writes[0][11],2904);
 });
+test('EffectList streams 87 effects across five responses, preserving ID zero and repeated 15924 CIDs',async()=>{
+ const src=read('curtain_native_slot.js').replace('window.JH2NativeSlot={','window.JH2NativeSlot={_receive:receive,_inventory:inventory,');
+ const sandbox={window:{console},Uint8Array,DataView,TextEncoder,TextDecoder,Number,Math,Map,Array,String,Date,
+  navigator:{bluetooth:null},setTimeout,clearTimeout,setInterval,clearInterval};
+ new Script(src).runInNewContext(sandbox);
+ const N=sandbox.window.JH2NativeSlot;
+ const vint=n=>{const out=[];do{let byte=n&127;n=Math.floor(n/128);out.push(byte|(n?128:0));}while(n);return out};
+ const field=(n,v)=>[n*8,...vint(v)];
+ const ef=i=>{
+  const slot=i<55?i:i-55,cid=i<55?15924:15193+i-55;
+  const title=new TextEncoder().encode('Effect '+i);
+  const entry=[...field(1,i),...field(2,3),...(slot?[...field(3,slot)]:[]),...field(4,cid),50,...vint(title.length),...title];
+  return [10,...vint(entry.length),...entry];
+ };
+ const send=(list,num)=>{
+  const payload=Uint8Array.from(list.flatMap(ef)),frame=new Uint8Array(20+payload.length);
+  frame[0]=0xF1;frame[1]=1;frame[2]=num>>8;frame[3]=num&255;
+  frame[6]=2904>>8;frame[7]=2904&255;frame.set(payload,20);
+  const half=Math.ceil(frame.length/2),first=Uint8Array.from([num,2,1,0,...frame.slice(0,half)]),last=Uint8Array.from([num,2,0,0,...frame.slice(half)]);
+  N._receive(first);N._receive(first);N._receive(last);
+ };
+ const groups=[Array.from({length:19},(_,i)=>i),Array.from({length:19},(_,i)=>i+19),
+   Array.from({length:18},(_,i)=>i+38),Array.from({length:19},(_,i)=>i+56),
+   Array.from({length:12},(_,i)=>i+75)];
+ let writes=0;const transport={writeCmd:async()=>{writes++;
+  if(writes!==1)return;
+  for(let i=0;i<groups.length;i++)setTimeout(()=>send(groups[i],i+1),i*12);
+ }};
+ const result=await N._inventory(transport,()=>{},{quietMs:35,maxMs:1500,minExpected:87});
+ assert.equal(result.length,87,'No 19-entry early completion allowed');
+ assert.equal(result.batches,5);
+ assert.equal(result.partial,false);
+ assert.deepEqual(Array.from(result.slice(0,3),x=>[x.id,x.slot,x.cid]),[[0,0,15924],[1,1,15924],[2,2,15924]]);
+ assert.equal(result.filter(x=>x.cid===15924).length,55);
+ assert.equal(result.at(-1).id,86);
+ assert.equal(result.at(-1).title,'Effect 86');
+ assert.equal(writes,1,'Complete streamed inventory needs only one read request');
+});
 test('inventory timeout retries manufacturer 205 handshake and reissues read-only 2904',()=>{
  const source=read('curtain_native_slot.js');
  const scan=source.slice(source.indexOf('async function inventory(t,'),source.indexOf('async function upload(bytes,'));
  assert.match(scan,/attempt<=2/);
- assert.match(scan,/if\(attempt===2\)/);
+ assert.match(scan,/if\(attempt===2&&!seenInventory\)/);
  assert.match(scan,/await ddp\(t,205,undefined,undefined,Uint8Array\.from\(\[10,0,16,0,26,0\]\)\)/);
  assert.match(scan,/await ddp\(t,2904\)/);
  assert.match(scan,/lastSentOpcode/);
