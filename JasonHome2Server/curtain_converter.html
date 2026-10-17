@@ -9,12 +9,13 @@ textarea{resize:vertical;min-height:75px}button{font:inherit;font-weight:700;pad
 button.primary{background:#16836c;border-color:#36d2a6}button:disabled{opacity:.5}.buttons,.preview{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.buttons>*{flex:1 1 145px}
 .preview>*{flex:1 1 190px}#image{max-width:100%;height:240px;object-fit:contain;image-rendering:pixelated;background:#000;border:1px solid #476372;border-radius:9px}
 canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelated;border:1px solid #476372;border-radius:9px}
-#factoryGallery{display:flex;gap:9px;overflow-x:auto;padding:10px 0;scroll-snap-type:x proximity}#factoryGallery button{flex:0 0 90px;min-width:90px;padding:5px;scroll-snap-align:start}#factoryGallery button.selected{outline:2px solid #7debd7}#factoryGallery img{width:77px;height:77px;object-fit:cover;image-rendering:pixelated}details{margin:14px 0}summary{cursor:pointer;color:#80e4d3;font-weight:bold}#message,#testResult{white-space:pre-wrap;color:#8ce9ce;min-height:22px}.eyebrow{color:#7bd7cd;letter-spacing:.08em;font-size:12px;font-weight:bold}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin:10px 0}.settings label{font-size:13px;color:#c0d7df}.settings select,.settings input{display:block;width:100%;margin-top:4px;background:#081a25;color:#f5fcff;border:1px solid #517282;border-radius:9px;padding:9px;font:inherit}.settings input[type=checkbox]{width:auto;display:inline-block;margin-right:8px}.frame-strip{display:flex;gap:8px;overflow-x:auto;padding:9px 0;min-height:94px}.frame-strip button{flex:0 0 79px;padding:5px;background:#142c3c}.frame-strip button.active{outline:2px solid #4ef4bf}.frame-strip img{width:65px;height:65px;image-rendering:pixelated;display:block}#animationPreview{max-width:225px;width:100%;image-rendering:pixelated}#animationStatus{color:#a9e3d2}#factoryGallery{display:flex;gap:9px;overflow-x:auto;padding:10px 0;scroll-snap-type:x proximity}#factoryGallery button{flex:0 0 90px;min-width:90px;padding:5px;scroll-snap-align:start}#factoryGallery button.selected{outline:2px solid #7debd7}#factoryGallery img{width:77px;height:77px;object-fit:cover;image-rendering:pixelated}details{margin:14px 0}summary{cursor:pointer;color:#80e4d3;font-weight:bold}#message,#testResult{white-space:pre-wrap;color:#8ce9ce;min-height:22px}.eyebrow{color:#7bd7cd;letter-spacing:.08em;font-size:12px;font-weight:bold}
 </style></head><body><main>
 <section><div class="eyebrow">JASON HOME 2 · 40 × 40 CURTAIN</div><h1>✨ Original AI Cartoon Studio</h1>
 <p>Original FLUX image model · automatically prepared for your 40×40 curtain. The LED preview is the exact picture sent.</p>
 <label for="prompt">What would you like?</label><textarea id="prompt" maxlength="260" placeholder="A happy pumpkin with a big smile">A happy orange pumpkin with a big smile</textarea>
-<div class="buttons"><button id="generate" class="primary">✨ Generate block art</button><button id="sample">🎃 Sample pumpkin (no AI)</button></div>
+<div class="settings"><label>Artwork style<select id="style"><option value="blocky">Extra blocky</option><option value="simple" selected>Simple (recommended)</option><option value="classic">Classic pixel art</option></select></label><label>Maximum colors<select id="colors"><option value="4">4</option><option value="6" selected>6</option><option value="8">8</option><option value="12">12</option></select></label></div>
+<div class="buttons"><button id="generate" class="primary">✨ Generate block art</button><button id="sample">🎃 Sample pumpkin (no AI)</button></div><p class="hint">Simple art favors chunky, solid shapes and high contrast instead of tiny details.</p>
 <p class="hint">Generate uses your existing Cloudflare AI credits. The sample does not use AI. Nothing is sent to the curtain until you choose Show on curtain.</p>
 <details id="factoryPanel"><summary>Use one of your 87 original SmartDawn previews as a color reference</summary><p class="hint">Choose an existing effect preview to borrow its color palette. No controller download or AI charge is needed.</p><div id="factoryGallery" aria-label="Original SmartDawn effect previews"></div><p id="factorySelection" class="hint">No factory reference selected.</p></details>
 <label for="file">Or choose a saved image</label><input type="file" id="file" accept="image/*">
@@ -22,6 +23,22 @@ canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelat
 <section><h2>See the real 40×40 LED preview</h2><div class="preview"><div>Generated LED artwork — exact pixels<br><img id="image" hidden alt="Exact 40×40 generated LED artwork"><p id="placeholder">Generate or choose a picture to begin.</p></div><div>Exact 40×40 pixels, enlarged<br><canvas id="preview" width="40" height="40"></canvas></div></div>
 <div class="buttons"><button class="primary" id="send" disabled>Show on curtain</button><button id="stop">Stop animation</button></div>
 <p id="message" role="status">Ready.</p></section>
+<section id="animationStudio"><h2>🎞️ Animation Studio</h2>
+<p class="hint">Generate related AI keyframes, or animate the current picture without using AI credits. Edit, preview, and publish an exact 40×40 animation.</p>
+<div class="settings">
+<label>Frame count<select id="frameCount"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option></select></label>
+<label>Motion<select id="motion"><option value="bounce">Bounce</option><option value="blink">Blink</option><option value="sway">Sway</option><option value="wave">Wave</option><option value="pulse">Pulse</option><option value="spin">Rotate</option><option value="flicker">Flicker</option><option value="float">Float</option></select></label>
+<label>Frame delay (ms)<input id="frameDelay" type="number" min="100" max="5000" step="50" value="400"></label>
+<label>Playback<label class="hint" style="display:block;margin-top:12px"><input id="loop" type="checkbox" checked>Loop continuously</label></label>
+</div>
+<label for="motionPrompt">Describe animation (optional)</label><input id="motionPrompt" maxlength="120" placeholder="Blink twice and smile, with the same character and background">
+<div class="buttons"><button id="aiFrames" class="primary">✨ Generate AI animation</button><button id="autoFrames">Animate current art · free</button></div>
+<p class="hint">AI animation calls FLUX separately for each frame, using one AI request per frame. Free motion reuses the current picture for more consistent movement.</p>
+<div class="preview"><div><strong>Animated 40×40 LED preview</strong><div><canvas id="animationPreview" width="40" height="40"></canvas></div><p id="animationStatus" role="status">No animation frames yet.</p></div><div><strong>Individual frames (tap to inspect)</strong><div id="frameStrip" class="frame-strip" aria-label="Animation frames"></div></div></div>
+<div class="buttons"><button id="playFrames">▶ Play preview</button><button id="pauseFrames">⏸ Pause</button><button id="prevFrame">◀ Previous</button><button id="nextFrame">Next ▶</button></div>
+<div class="buttons"><button id="addFrame">Add current picture</button><button id="duplicateFrame">Duplicate frame</button><button id="leftFrame">Move left</button><button id="rightFrame">Move right</button><button id="removeFrame">Remove frame</button><button id="clearFrames">Clear frames</button></div>
+<div class="buttons"><button id="publishAnimation" class="primary" disabled>🚀 Publish Animation</button></div>
+<p class="hint">Publish uploads one multi-frame asset to Oracle. The Nano streams it and transmits the individual frames to the curtain over BLE. Actual playback speed depends on BLE transfer time.</p></section>
 <section><h2>⚡ Physical speed check</h2><p class="hint">Measure three real Oracle → Nano command acknowledgments without changing the curtain lights. For a visible picture/dual-buffer test, choose Sample pumpkin and Show on curtain.</p>
 <div class="buttons"><button id="speed">Measure three commands</button><button id="connection">Check push connection</button></div>
 <p id="testResult" role="status">Not tested yet.</p></section></main>
@@ -29,9 +46,10 @@ canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelat
 (()=>{'use strict';
 const $=id=>document.getElementById(id),canvas=$('preview'),ctx=canvas.getContext('2d',{willReadFrequently:true});
 const api=(url,body)=>window.parent.JH2CurtainApi(url,body);
-let prepared=null,busy=false;
+let prepared=null,busy=false,animationFrames=[],selectedFrame=0,previewTimer=null;
+const animationCanvas=$('animationPreview'),animationCtx=animationCanvas.getContext('2d',{willReadFrequently:true});
 const show=text=>{$('message').textContent=text};
-function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed'])$(id).disabled=v||(id==='send'&&!prepared);}
+function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed','aiFrames','autoFrames','addFrame','publishAnimation'])$(id).disabled=v||(id==='send'&&!prepared)||(id==='autoFrames'&&!prepared)||(id==='addFrame'&&!prepared)||(id==='publishAnimation'&&animationFrames.length<2);}
 // Original SmartDawn factory previews are already loaded in the parent Curtain tab.
 // Workers AI is text-to-image, so use the selected preview's actual palette for
 // prompt guidance AND final palette mapping; never pretend to upload a reference image.
@@ -94,7 +112,7 @@ function loadFactoryGallery(){
  if(!panel.childElementCount)$('factorySelection').textContent='Open Curtain controls once to load the saved original previews.';
 }
 $('factoryPanel').addEventListener('toggle',()=>{if($('factoryPanel').open)loadFactoryGallery();});
-function paint(img){
+function paint(img,paletteOverride=null){
  // Sample at 20×20 logical BLOCK pixels, each becoming an exact 2×2 LED group.
  // No high-definition antialiasing, dithering, or hidden smoothing on the output.
  const block=document.createElement('canvas');block.width=20;block.height=20;
@@ -124,14 +142,24 @@ function paint(img){
  const dw=sw*scale,dh=sh*scale;
  bc.imageSmoothingEnabled=true;bc.imageSmoothingQuality='high';
  bc.drawImage(scan,minX,minY,sw,sh,(20-dw)/2,(20-dh)/2,dw,dh);
+ // Extra blocky reduces fine detail before palette quantization.
+ if($('style').value==='blocky'){
+  const data=bc.getImageData(0,0,20,20);
+  for(let y=0;y<20;y+=2)for(let x=0;x<20;x+=2){
+   const pos=(y*20+x)*4;
+   for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++)for(let k=0;k<4;k++)
+    data.data[((y+dy)*20+x+dx)*4+k]=data.data[pos+k];
+  }
+  bc.putImageData(data,0,0);
+ }
  const raw=bc.getImageData(0,0,20,20).data;
- const palette=referenceColors.length?referenceColors.map(fromHex):paletteOfPixels(raw,11);
+ const palette=paletteOverride||(referenceColors.length?referenceColors.map(fromHex):paletteOfPixels(raw,Number($('colors').value)||6));
  const output=ctx.createImageData(40,40);
  for(let y=0;y<20;y++)for(let x=0;x<20;x++){
   const i=(y*20+x)*4,rgb=[raw[i],raw[i+1],raw[i+2]];
   const bright=Math.max(...rgb)*raw[i+3]/255;
   let color=[0,0,0];
-  if(bright>=40){
+  if(bright>=55){
    let score=Infinity;for(const p of palette){const d=dist(rgb,p);if(d<score){score=d;color=p;}}
   }
   for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
@@ -157,9 +185,9 @@ function usePreparedFrame(frame){
  setBusy(false);
  show('Native 40×40 preview ready — these exact pixels will be sent.');
 }
-async function load(src){
+async function load(src,paletteOverride=null){
  const img=new Image();await new Promise((ok,fail)=>{img.onload=ok;img.onerror=()=>fail(Error('Could not load this image'));img.src=src});
- paint(img);
+ paint(img,paletteOverride);
  $('image').src=canvas.toDataURL('image/png');$('image').hidden=false;$('placeholder').hidden=true;
  show('Preview ready. Tap Show on curtain to send it.');
 }
@@ -183,7 +211,7 @@ async function ack(id,timeout=60000){const start=performance.now();while(perform
  await new Promise(r=>setTimeout(r,350));
  }throw Error('Command '+id+' did not receive a Nano ACK');}
 $('generate').onclick=async()=>{const prompt=$('prompt').value.trim();if(prompt.length<3)return show('Enter a picture idea first.');
- setBusy(true);show('Original FLUX AI is drawing your picture…');try{const r=await api('/api/curtain/generate-art',{prompt,referenceId:chosenFactory,referenceColors});await load(r.image);}
+ setBusy(true);show('Original FLUX AI is drawing simplified artwork…');try{const r=await api('/api/curtain/generate-art',{prompt,referenceId:chosenFactory,referenceColors,style:$('style').value,colorLimit:Number($('colors').value)});await load(r.image);}
  catch(e){show('Generation failed: '+e.message);}finally{setBusy(false);}};
 $('sample').onclick=pumpkin;
 $('file').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>8*1024*1024)return show('Choose a picture smaller than 8 MB.');
