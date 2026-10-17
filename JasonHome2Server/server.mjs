@@ -994,25 +994,8 @@ async function route(req,res){
   if(path.startsWith("/api/curtain-bridge/")){
     const credential=curtainRelay.authenticate(req);
     if(!credential)throw fail(401,"Bridge authentication failed");
-    if(path==="/api/curtain-bridge/sync"&&method==="POST"){
-      const report=await input(req);
-      // One-time, eight-minute OTA recovery window for existing 1.1.19.
-      // Its HTTPS client cannot allocate another TLS session while long-lived
-      // SSE push consumes the free heap. Keep 1s authenticated polling alive.
-      if(report?.status?.firmware==="1.1.19"&&!route._otaReliefStarted){
-        route._otaReliefStarted=true;
-        route._otaReliefUntil=Date.now()+8*60*1000;
-      }
-      if(report?.status?.firmware==="1.1.20")route._otaReliefUntil=0;
-      if(Date.now()<(route._otaReliefUntil||0))
-        for(const client of route._otaReliefStreams||[])if(!client.destroyed)client.end();
-      return send(res,200,curtainRelay.sync(report,credential));
-    }
+    if(path==="/api/curtain-bridge/sync"&&method==="POST")return send(res,200,curtainRelay.sync(await input(req),credential));
     if(path==="/api/curtain-bridge/events"&&method==="GET"){
-      if(Date.now()<(route._otaReliefUntil||0)){
-        res.writeHead(503,{"cache-control":"no-store","retry-after":"3"});
-        return res.end("OTA temporary TLS memory recovery");
-      }
       // NanoC6 opens outbound TLS once; Oracle pushes a wake frame on enqueue.
       // A 5s HTTPS sync remains a fallback if any proxy drops event streams.
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
@@ -1025,11 +1008,9 @@ async function route(req,res){
       let closed=false;
       const push=()=>{if(!closed&&!res.destroyed){res.write("data: "+curtainRelay.revision()+"\n\n");res.flush?.();}};
       const unsubscribe=curtainRelay.subscribeWake(push);
-      if(!route._otaReliefStreams)route._otaReliefStreams=new Set();
-      route._otaReliefStreams.add(res);
       const heartbeat=setInterval(()=>{if(!closed&&!res.destroyed)res.write(": keepalive\n\n");},10000);
       heartbeat.unref?.();
-      const cleanup=()=>{if(closed)return;closed=true;clearInterval(heartbeat);unsubscribe();route._otaReliefStreams?.delete(res);};
+      const cleanup=()=>{if(closed)return;closed=true;clearInterval(heartbeat);unsubscribe();};
       res.once("close",cleanup);
       push();return;
     }
