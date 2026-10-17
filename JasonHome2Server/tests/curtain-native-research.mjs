@@ -30,7 +30,8 @@ test('Native Test has AVI actions plus a read-only slot/ID inspector with a drop
  assert.match(page,/R\.readAviFrames\(avi\.bytes\)/);
  assert.match(page,/R\.encodeSmartDawn\(source/);
  assert.match(page,/R\.inspectSmartDawnEff\(eff\)/);
- assert.match(page,/N\.smartDawnUpload\(eff,show\)/);
+ assert.match(page,/N\.smartDawnUpload\(eff,\(message,entries\)=>/);
+ assert.match(page,/renderSlots\(entries\)/);
  assert.doesNotMatch(page,/vendor-video|effect\/list|SuperPix cloud|JH2CurtainApi|\.download\s*=|URL\.createObjectURL/);
  assert.match(host,/curtain_native_test\.html/);
  const code=[...page.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim());
@@ -90,9 +91,10 @@ test('manufacturer native type-0 upload stays on reserved CID 83928 and retains 
  const plan=N.planVendorEff(b,83928);
  assert.equal(plan.cid,83928);assert.equal(plan.sourceCid,83928);
  assert.equal(plan.format,'DNMX');assert.equal(plan.bytes,b.length);
- assert.equal(plan.request[0],12);assert.equal(plan.request[3],17);
+ assert.ok(plan.request[0]>=1&&plan.request[0]<=240);assert.equal(plan.request[0],plan.sessionId);assert.equal(plan.request[3],17);
  const wire=Buffer.from(plan.request);assert.ok(wire.includes(Buffer.from('83928.eff')));
- assert.deepEqual([...plan.request.slice(8,12)],[8,12,16,0],'type=0 per manufacturer');
+ assert.deepEqual([...plan.request.slice(8,12)],[8,plan.sessionId,16,0],'type=0 per manufacturer');
+ assert.equal(plan.parts.every(p=>p[0]===plan.sessionId),true,'All BLE data fragments share the upload session ID');
  assert.deepEqual(Buffer.concat(plan.parts.map(p=>Buffer.from(p.subarray(8)))),Buffer.from(b));
  const bad=b.slice();new DataView(bad.buffer).setUint32(14,93444,true);
  assert.throws(()=>N.planVendorEff(bad,83928),/CID/);
@@ -105,6 +107,29 @@ test('manufacturer native type-0 upload stays on reserved CID 83928 and retains 
  assert.ok(transport.indexOf('await inventory(t)')<transport.indexOf('await ddp(t,2909,CID)'));
  assert.ok(transport.indexOf('await ddp(t,2606,CID,newSlot.slot)')>transport.indexOf('const after=await inventory(t)'));
  assert.doesNotMatch(transport,/83494|83944/,'must not touch production/factory effects');
+});
+test('each native AVI upload gets a fresh SmartDawn session ID and waits for actual start ACK',()=>{
+ const {R,N}=modules(),data=R.encodeSmartDawn(R.sampleFrames(),{timestamp:0});
+ const one=N.planVendorEff(data,83928),two=N.planVendorEff(data,83928);
+ assert.ok(one.sessionId>0&&one.sessionId<256);
+ assert.ok(two.sessionId>0&&two.sessionId<256);
+ assert.notEqual(two.sessionId,one.sessionId,'No fixed session 12 reused on the next upload');
+ assert.equal(one.request[0],one.sessionId);
+ assert.equal(two.request[0],two.sessionId);
+ assert.equal(one.parts.every(p=>p[0]===one.sessionId),true);
+ assert.equal(two.parts.every(p=>p[0]===two.sessionId),true);
+ const source=read('curtain_native_slot.js');
+ const uploader=source.slice(source.indexOf('async function vendorUpload('),source.indexOf('async function smartDawnUpload('));
+ assert.match(uploader,/waitFor\('start',65000\)/);
+ assert.match(uploader,/no animation data was transferred/);
+ assert.match(uploader,/uploadTrace\(\)/);
+ assert.match(uploader,/response\[5\]/,'Manufacturer SimpleMessage i3 is field five');
+ assert.match(uploader,/await started/);
+ assert.ok(uploader.indexOf('await started')<uploader.indexOf('for(let i=0;i<plan.parts.length;i++)'),'No data chunks until explicit controller ACK');
+ assert.match(uploader,/await ddp\(t,2909,CID\)/);
+ assert.match(uploader,/progress\('Controller inventory read: '/);
+
+ assert.doesNotMatch(uploader,/2909,83944|2943|eraseAll/);
 });
 test('slot inspector preserves all inventory entries and gives a relay-safe notification deadline',()=>{
  const source=read('curtain_native_slot.js'),page=read('curtain_native_test.html');

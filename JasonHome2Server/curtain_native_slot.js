@@ -14,6 +14,20 @@ let startWait=null,endWait=null,inventoryWait=null,receiverInstalled=false;
 const INBOUND_WAIT_MS=45000; // Oracle -> Nano command and Nano -> Oracle notification each need 5 s relay cycles.
 let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
 let lastSentOpcode=null,transmittedRequests=0,lastNativeRcode=null;
+let uploadSessionSequence=0,lastUploadSessionId=0,uploadResponses=[];
+function nextUploadSessionId(){
+ // Both original applications use a new upload message ID per transfer.
+ uploadSessionSequence=(uploadSessionSequence+1)%240;
+ const id=1+((Math.floor(Date.now()/1000)+uploadSessionSequence)%240);
+ lastUploadSessionId=id;
+ return id;
+}
+function uploadTrace(){
+ return 'session '+lastUploadSessionId+
+  ', last controller opcode '+(lastSmartDawnOp??'none')+
+  ', recent upload opcodes '+(uploadResponses.length?uploadResponses.join(','):'none')+
+  ', BLE notifications '+observedNotifications;
+}
 const sleep=ms=>new Promise(ok=>setTimeout(ok,ms));
 function b64(data){let str='';for(let i=0;i<data.length;i+=512)str+=String.fromCharCode(...data.subarray(i,i+512));return btoa(str);}
 function varint(n){if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid native protobuf integer');const a=[];do{let v=n&127;n=Math.floor(n/128);if(n)v|=128;a.push(v)}while(n);return a;}
@@ -52,6 +66,10 @@ function receive(view){
  if(data.length<20||data[0]<0xf0)return;
  const op=data[6]*256+data[7],body=data.slice(20);
  lastSmartDawnOp=op;lastNativeRcode=data[14];
+ if(op>=2931&&op<=2934){
+  uploadResponses.push(op+':'+data[14]);
+  if(uploadResponses.length>16)uploadResponses.shift();
+ }
  try{
   if(op===2904){
    const entries=decodeEffects(body);
@@ -291,7 +309,7 @@ function planVendorEff(data,cloudCid){
  // a local COPY, so the vendor bytes can be re-inspected separately.
  const fixed=data.slice();
  new DataView(fixed.buffer).setUint32(14,CID,true);
- const chunks=Math.ceil(fixed.length/500),id=12;
+ const chunks=Math.ceil(fixed.length/500),id=nextUploadSessionId();
  if(chunks>1200)throw Error('Converted effect would require too many BLE packets');
  const path=new TextEncoder().encode('83928.eff');
  const field=(n,v)=>[(n<<3),...varint(v)];
@@ -299,7 +317,7 @@ function planVendorEff(data,cloudCid){
  const request=wrap(requestBody,id,chunks,chunks,true);
  const parts=Array.from({length:chunks},(_,i)=>wrap(fixed.subarray(i*500,(i+1)*500),id,chunks,chunks-i-1));
  for(const p of parts)if(p[7]!==crc8(p.slice(8)))throw Error('Vendor BLE packet CRC error');
- return {request,parts,cloudCid,sourceCid,cid:CID,format:kind,bytes:fixed.length};
+ return {request,parts,cloudCid,sourceCid,cid:CID,format:kind,bytes:fixed.length,sessionId:id};
 }
 async function vendorUpload(data,cloudCid,progress=()=>{}){
  const plan=planVendorEff(data,cloudCid); // Validate before any destructive command
@@ -307,16 +325,30 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
  try{
   progress('Reading controller effect list…');
   let before=await inventory(t),old=before.find(e=>e.cid===CID);
+  progress('Controller inventory read: '+before.length+' slot/CID entries.',before);
   if(old){
    progress('Replacing only reserved test effect CID 83928…');
    await ddp(t,2909,CID);await sleep(600);
    for(let i=0;i<2;i++){const current=await inventory(t);if(current.some(x=>x.cid===CID))throw Error('Reserved slot could not be verified empty; no upload attempted');}
   }
-  progress('Sending locally encoded '+plan.format+' native effect ('+plan.bytes+' bytes)…');
-  const started=waitFor('start',30000);await t.writeUpload(plan.request);
-  const response=await started;
-  if((response[1]??0)!==0||(response[3]??0)!==0)
-   throw Error('Controller rejected native .eff upload start: '+JSON.stringify(response));
+  progress('Starting SmartDawn native '+plan.format+' upload ('+plan.bytes+' bytes, session '+plan.sessionId+')…');
+  uploadResponses=[];
+  const started=waitFor('start',65000);started.catch(()=>{});
+  try{
+   const accepted=await t.writeUpload(plan.request);
+   if(accepted?.ok===false||accepted?.connected===false||accepted?.bleTransmitted===false)
+    throw Error('NanoC6 could not write UploadRequest to SmartDawn over BLE');
+  }catch(err){
+   if(startWait){clearTimeout(startWait.timer);startWait=null;}
+   throw Error('Upload start delivery failed: '+err.message+' ('+uploadTrace()+')');
+  }
+  let response;
+  try{response=await started;}
+  catch(err){
+   throw Error(err.message+' ('+uploadTrace()+'). Controller did not acknowledge type-0 native .eff upload; no animation data was transferred.');
+  }
+  if((response[1]??0)!==0||(response[5]??0)!==0)
+   throw Error('Controller rejected type-0 native .eff upload start: '+JSON.stringify(response)+' ('+uploadTrace()+')');
   const done=waitFor('end',Math.max(120000,plan.parts.length*9000+30000));done.catch(()=>{});
   for(let i=0;i<plan.parts.length;i++){
    await t.writeUpload(plan.parts[i]);

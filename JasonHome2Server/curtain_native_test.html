@@ -56,7 +56,7 @@ $('convert').onclick=async()=>{
   const meta=R.inspectSmartDawnEff(eff);
   if(meta.cid!==83928||meta.version!==3||meta.itemHeader!=='DNX2')throw Error('Invalid locally generated native effect');
   show('SmartDawn DNMX v3 / DNX2 generated ('+Math.round(eff.length/1024)+' KB). Installing CID 83928 via NanoC6…');
-  const result=await N.smartDawnUpload(eff,show);
+  const result=await N.smartDawnUpload(eff,(message,entries)=>{show(message);if(Array.isArray(entries))renderSlots(entries);});
   show('CID '+result.cid+' installed in controller slot '+result.slot+'. Native Play command sent. Check the curtain for animation.');
   if(inventoryLoaded){
    const at=storedSlots.findIndex(e=>e.cid===result.cid);
