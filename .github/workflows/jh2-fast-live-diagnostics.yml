@@ -23,63 +23,80 @@ jobs:
           node --check JasonHome2Server/curtain_bridge.mjs
           node --test JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
   live-check:
-    name: Oracle push and three harmless status ACKs
+    name: Read-only Oracle and Eufy queue inspection
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 6
+    timeout-minutes: 4
     steps:
-      - name: Observe deployed gateway, push and status-command latency without changing lights
+      - name: Inspect deployed services, queue age, and push transport without enqueuing
         shell: bash
         run: |
           sudo -n python3 - <<'PY'
-          import os, json, subprocess, urllib.request, urllib.error, http.cookiejar, time
-          def call(path,body=None,expect=None):
-              url='http://127.0.0.1:8081'+path
-              hdr={'Content-Type':'application/json'}
-              data=json.dumps(body).encode() if body is not None else None
-              req=urllib.request.Request(url,data=data,headers=hdr,method='POST' if data is not None else 'GET')
+          import json, subprocess, sqlite3, urllib.request, urllib.error, time, re, os
+          from pathlib import Path
+          def inspect(name): return json.loads(subprocess.check_output(['docker','inspect',name]))[0]
+          def load(name):
+              i=inspect(name)
+              mounts={m['Destination']:m.get('Source') for m in i.get('Mounts',[])}
+              env=dict(v.split('=',1) for v in i['Config']['Env'] if '=' in v)
+              return i,mounts,env
+          def call(host,path,body=None,headers=None):
+              req=urllib.request.Request(host+path,data=json.dumps(body).encode() if body is not None else None,headers={'Content-Type':'application/json',**(headers or {})},method='POST' if body is not None else 'GET')
               try:
-                  with opener.open(req,timeout=10) as resp:
-                      code=resp.status; obj=json.load(resp)
+                  with urllib.request.urlopen(req,timeout=8) as resp:
+                      return resp.status,json.load(resp),dict(resp.headers)
               except urllib.error.HTTPError as e:
-                  code=e.code; obj=json.loads(e.read().decode() or '{}')
-              if expect is not None and code!=expect: raise RuntimeError(f'{path} returned unexpected HTTP {code}')
-              if code>=400 and expect is None: raise RuntimeError(f'{path} HTTP {code}')
-              return obj,code
-          inspect=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
-          fields=dict(e.split('=',1) for e in inspect['Config']['Env'] if '=' in e)
-          key=fields['JASON_HOME_API_TOKEN']
-          jar=http.cookiejar.CookieJar()
-          opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-          health,_=call('/api/health')
-          assert health.get('ok'), 'Oracle web gateway unhealthy'
-          call('/api/session',{'token':key},expect=200)
-          before,_=call('/api/curtain/status')
-          print('ORACLE_BUILD',health.get('build','not-in-health'))
-          print('NANO',before.get('firmware','?'),'ONLINE',before.get('online'),'PUSH',before.get('pushConnected'),'TRANSPORT',before.get('pushTransport'),'SSE_SUBSCRIBERS',before.get('pushSubscribers'),'QUEUE',before.get('queued'))
-          # A short invalid prompt must get a validation error rather than Unknown API route; no AI credits used.
-          check,code=call('/api/curtain/generate-art',{'prompt':'x'},expect=400)
-          print('AI_ROUTE', 'RECOGNIZED' if code==400 else 'FAILED')
-          if not before.get('online'):
-              print('NANO_ACK_TEST SKIPPED: bridge offline')
-          else:
-              times=[]
-              for n in range(3):
-                  stamp=time.monotonic()
-                  queued,_=call('/api/curtain/call',{'action':'status','payload':{},'idempotencyKey':'fast-health-'+str(os.getpid())+'-'+str(n)})
-                  command_id=queued['commandId']
-                  while time.monotonic()-stamp<25:
-                      cur,_=call('/api/curtain/command?id='+str(command_id))
-                      state=cur['command']['state']
-                      if state=='applied':
-                          times.append(round(time.monotonic()-stamp,3))
-                          break
-                      if state in ('failed','expired','superseded'):
-                          raise RuntimeError('status ACK was '+state)
-                      time.sleep(.15)
-                  else:
-                      raise RuntimeError('status ACK exceeded 25 seconds')
-              print('NANO_ACK_SECONDS',times,'MEAN',round(sum(times)/len(times),3))
-          after,_=call('/api/curtain/status')
-          print('PUSH_AFTER',after.get('pushConnected'),'TRANSPORT',after.get('pushTransport'),'SUBSCRIBERS',after.get('pushSubscribers'),'QUEUE',after.get('queued'))
-          assert health.get('ok') and code==400
+                  try: data=json.loads(e.read().decode() or '{}')
+                  except: data={}
+                  return e.code,data,dict(e.headers)
+          backend,bmount,benv=load('jason-home')
+          web,wmount,wenv=load('jason-home-2-web')
+          print('CONTAINERS',[(i['Name'],i['State']['Status'],i['State'].get('RestartCount',i.get('RestartCount')),i['State'].get('StartedAt')) for i in (backend,web)])
+          token=benv['JASON_HOME_API_TOKEN']
+          status,health,_=call('http://127.0.0.1:8081','/api/health')
+          print('WEB_HEALTH',status,health.get('ok'),health.get('build','unknown'))
+          status,session,h=call('http://127.0.0.1:8081','/api/session',{'token':token})
+          print('SESSION',status)
+          if status==200:
+              cookie=h.get('Set-Cookie',h.get('set-cookie','')).split(';')[0]
+              status,s,_=call('http://127.0.0.1:8081','/api/curtain/status',headers={'Cookie':cookie})
+              if status==200:
+                  print('CURTAIN',{'online':s.get('online'),'firmware':s.get('firmware'),'queue':s.get('queued'),'push':s.get('pushConnected'),'pushTransport':s.get('pushTransport'),'subscribers':s.get('pushSubscribers'),'lastSeenSecondsAgo':round((time.time()*1000-s.get('lastSeen',0))/1000,1) if s.get('lastSeen') else 'never','lastSyncSecondsAgo':round((time.time()*1000-s.get('lastSync',0))/1000,1) if s.get('lastSync') else 'never'})
+              else: print('CURTAIN_STATUS_HTTP',status)
+              code,_,_=call('http://127.0.0.1:8081','/api/curtain/generate-art',{'prompt':'x'},headers={'Cookie':cookie})
+              print('AI_ROUTE_VALIDATION',code)
+          for name,mounts,env in [('curtain',wmount,wenv),('eufy',bmount,benv)]:
+              folder=mounts.get('/data')
+              files=[]
+              if folder and Path(folder).is_dir():
+                  files=[p for p in Path(folder).glob('*.sqlite') if p.is_file()]+[p for p in Path(folder).glob('*.db') if p.is_file()]
+              print(name.upper()+'_DATABASES',len(files))
+              for p in files[:4]:
+                  try:
+                      con=sqlite3.connect('file:'+str(p)+'?mode=ro',uri=True,timeout=2)
+                      names=[r[0] for r in con.execute("select name from sqlite_master where type='table'").fetchall()]
+                      print(name.upper()+'_QUEUE_TABLES',[n for n in names if re.search('command|queue|job|outbox|task',n,re.I)])
+                      for table in names:
+                          if not re.search('command|queue|job|outbox|task',table,re.I) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',table):continue
+                          cols=[x[1] for x in con.execute('pragma table_info("'+table+'")')]
+                          count=con.execute('select count(*) from "'+table+'"').fetchone()[0]
+                          print('QUEUE_TABLE',name,table,'total',count)
+                          if 'state' in cols:
+                              print('STATES',table,con.execute('select state,count(*) from "'+table+'" group by state order by 2 desc limit 12').fetchall())
+                          if 'created' in cols and 'state' in cols:
+                              arr=con.execute('select state,min(created),max(created) from "'+table+'" group by state').fetchall()
+                              now=int(time.time()*1000)
+                              def age(n):
+                                  if not n:return None
+                                  if n<10**11:n*=1000
+                                  return round((now-n)/1000,1)
+                              print('AGES_SECONDS',table,[(state,age(low),age(high)) for state,low,high in arr])
+                      con.close()
+                  except Exception as e: print('SQLITE_READ_ERROR',name,type(e).__name__,str(e)[:180])
+          code,bs,_=call('http://127.0.0.1:8080','/api/status',headers={'Authorization':'Bearer '+token})
+          print('EUFY_BACKEND_HTTP',code)
+          if code==200:
+              print('EUFY_STATUS_SUMMARY',{k:v for k,v in bs.items() if re.search(r'queue|pending|lag|online|ready|error|worker|sync',k,re.I) and isinstance(v,(int,float,bool,str))})
+              for key,val in bs.items():
+                  if isinstance(val,dict) and re.search(r'command|queue|worker|scheduler|relay',key,re.I):
+                      print('EUFY_SUBSTATUS',key,{k:v for k,v in val.items() if re.search(r'queue|pending|lag|online|ready|error|worker|sync|count',k,re.I) and isinstance(v,(int,float,bool,str))})
           PY
