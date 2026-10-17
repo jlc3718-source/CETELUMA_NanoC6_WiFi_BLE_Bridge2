@@ -1,88 +1,137 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {createNanoC6BrightnessSync} from '../nanoc6_sync.mjs';
 
-test('NanoC6 sync defaults OFF, queues through Oracle only after opt-in, and suppresses duplicate brightness',async()=>{
-  const store=new Map(),sent=[];
-  let scene={brightness:40,power:true};
-  const bridge={enqueue:(action,payload,idempotency,source)=>sent.push({action,payload,idempotency,source})};
-  const follower=createNanoC6BrightnessSync({
-    meta:(k,d)=>store.has(k)?store.get(k):d,
-    put:(k,v)=>store.set(k,v),
-    upstream:async()=>({calendar:{current:{scene}}}),
-    bridge,
-    logger:{warn:()=>{}}
-  });
-  try{
-    assert.equal(follower.status().enabled,false);
-    assert.equal(follower.status().configured,true);
-    await follower.poll();assert.equal(sent.length,0);
-    await follower.setEnabled(true);
-    assert.equal(sent.length,0,'Checkbox must not send immediate control commands');
-    await follower.poll();
-    assert.deepEqual(sent[0],{action:'brightness',payload:{value:40},idempotency:null,source:'brightness-sync'});
-    await follower.poll();assert.equal(sent.length,1,'Unchanged brightness must not be resent');
-    scene={brightness:75,power:true};await follower.poll();
-    assert.deepEqual(sent[1].payload,{value:75});
-    scene={brightness:2,power:false};await follower.poll();
-    assert.equal(sent.length,2,'Powered-off schedule must not send brightness');
-    await follower.setEnabled(false);scene={brightness:99,power:true};
-    await follower.poll();assert.equal(sent.length,2,'Disable immediately suppresses future writes');
-  }finally{follower.close();}
+const create=(store,upstream,bridge)=>createNanoC6BrightnessSync({
+ meta:(key,fallback)=>store.has(key)?store.get(key):fallback,
+ put:(key,value)=>store.set(key,value),upstream,bridge,logger:{warn:()=>{}}
 });
 
-test('NanoC6 sync refuses enable when Oracle bridge is unavailable',async()=>{
-  const follower=createNanoC6BrightnessSync({
-    meta:(k,d)=>d,put:()=>{throw Error('should not write')},
-    upstream:async()=>{throw Error('should not poll')},logger:{warn:()=>{}}
-  });
-  try{
-    assert.equal(follower.status().configured,false);
-    await assert.rejects(follower.setEnabled(true),/not configured/);
-    await follower.poll();
-  }finally{follower.close();}
+test('Eufy follower remains opt-in and schedules ON, brightness, OFF, then ON again',async()=>{
+ const store=new Map(),sent=[];
+ let scene={power:true,brightness:40};
+ const bridge={enqueue:(action,payload,idempotency,source)=>{
+  const job={id:sent.length+1,action,payload,idempotency,source};sent.push(job);return job;
+ },status:()=>({online:true})};
+ const follower=create(store,async()=>({calendar:{current:scene?{scene}:null}}),bridge);
+ try{
+  assert.equal(follower.status().enabled,false);
+  await follower.poll();assert.equal(sent.length,0);
+  await follower.setEnabled(true);
+  assert.equal(sent.length,0,'Enabling is opt-in; next scheduler poll takes effect');
+  await follower.poll();
+  assert.deepEqual(sent.map(x=>[x.action,x.payload]),[
+   ['power',{on:true}],['brightness',{value:40}]
+  ]);
+  assert.equal(sent.every(x=>x.source==='eufy-sync'),true);
+  await follower.poll();assert.equal(sent.length,2,'No duplicates on unchanged scene');
+  scene={power:true,brightness:75};await follower.poll();
+  assert.deepEqual(sent[2].payload,{value:75});
+  scene={power:false,brightness:2};await follower.poll();
+  assert.deepEqual(sent[3],{id:4,action:'power',payload:{on:false},idempotency:null,source:'eufy-sync'});
+  scene=null;await follower.poll();assert.equal(sent.length,4,'No repeated off in unscheduled gap');
+  scene={power:true,brightness:75};await follower.poll();
+  assert.deepEqual(sent.slice(4).map(x=>[x.action,x.payload]),[
+   ['power',{on:true}],['brightness',{value:75}]
+  ]);
+  assert.equal(follower.status().lastQueuedPower,true);
+  await follower.setEnabled(false);scene={power:false};await follower.poll();
+  assert.equal(sent.length,6,'Disabled means no Eufy power or brightness writes');
+ }finally{follower.close();}
 });
 
-test('Brightness enqueue failures do not mark a failed command as synced',async()=>{
-  let warning='',store=new Map([['nanoc6_brightness_sync_enabled_v1',true]]);
-  const follower=createNanoC6BrightnessSync({
-    meta:(k,d)=>store.has(k)?store.get(k):d,
-    put:(k,v)=>store.set(k,v),
-    upstream:async()=>({calendar:{current:{scene:{brightness:60,power:true}}}}),
-    bridge:{enqueue:()=>{throw Error('Bridge enqueue unavailable');}},
-    logger:{warn:s=>{warning=s;}}
-  });
-  try{
-    await follower.poll();
-    assert.equal(follower.status().lastApplied,null);
-    assert.match(follower.status().error,/Bridge enqueue unavailable/);
-    assert.match(warning,/Bridge enqueue unavailable/);
-  }finally{follower.close();}
+test('No valid Eufy calendar must never turn curtain off',async()=>{
+ const store=new Map([['nanoc6_brightness_sync_enabled_v1',true]]),sent=[];
+ const follower=create(store,async()=>({calendar:{note:'still loading'}}),{
+  status:()=>({online:true}),enqueue:(a,p)=>sent.push([a,p])
+ });
+ try{
+  await follower.poll();
+  assert.equal(sent.length,0);assert.match(follower.status().error,/not available/);
+ }finally{follower.close();}
 });
 
-import {readFileSync} from 'node:fs';
+test('Manual Eufy override controls curtain power, while manual curtain hold defers it',async()=>{
+ const store=new Map([['nanoc6_brightness_sync_enabled_v1',true]]),sent=[];
+ let localHold=true,override={active:true,scene:{power:false,brightness:90}};
+ const follower=create(store,async()=>({override,calendar:{current:{scene:{power:true,brightness:70}}}}),{
+  manualHoldActive:()=>localHold,status:()=>({online:true}),
+  enqueue:(action,payload)=>sent.push({action,payload})
+ });
+ try{
+  await follower.poll();assert.equal(sent.length,0);
+  localHold=false;await follower.poll();assert.deepEqual(sent,[{action:'power',payload:{on:false}}]);
+  override={active:true,scene:{power:true,brightness:45}};
+  await follower.poll();assert.deepEqual(sent.slice(1),[
+   {action:'power',payload:{on:true}},{action:'brightness',payload:{value:45}}
+  ]);
+ }finally{follower.close();}
+});
 
-test('Oracle deployment uses the current brightness follower via curtain bridge',()=>{
+test('Offline bridge defers and replays latest Eufy scheduled state after reconnect',async()=>{
+ const store=new Map([['nanoc6_brightness_sync_enabled_v1',true]]),sent=[];
+ let bridgeLive=false,scene={power:true,brightness:64};
+ const follower=create(store,async()=>({calendar:{current:{scene}}}),{
+  status:()=>({online:bridgeLive}),enqueue:(action,payload)=>{sent.push({action,payload})}
+ });
+ try{
+  await follower.poll();assert.equal(sent.length,0);
+  scene={power:false,brightness:64};
+  await follower.poll();assert.equal(sent.length,0);
+  bridgeLive=true;await follower.poll();assert.deepEqual(sent,[{action:'power',payload:{on:false}}]);
+ }finally{follower.close();}
+});
+
+test('Failed power ACK and brightness ACK retry instead of falsely claiming success',async()=>{
+ const store=new Map([['nanoc6_brightness_sync_enabled_v1',true]]),sent=[],states=new Map();
+ const follower=create(store,async()=>({calendar:{current:{scene:{power:true,brightness:60}}}}),{
+  status:()=>({online:true}),enqueue:(action,payload)=>{
+   const id=sent.length+1;sent.push({id,action,payload});states.set(id,'queued');return {id};
+  },command:id=>({state:states.get(id)})
+ });
+ try{
+  await follower.poll();assert.equal(sent.length,2);
+  states.set(1,'failed');states.set(2,'failed');
+  await follower.poll();
+  assert.deepEqual(sent.slice(2).map(x=>x.action),['power','brightness']);
+ }finally{follower.close();}
+});
+
+test('Bridge enqueue failures do not mark failed commands synced',async()=>{
+ let warning='',store=new Map([['nanoc6_brightness_sync_enabled_v1',true]]);
+ const follower=createNanoC6BrightnessSync({
+  meta:(k,d)=>store.has(k)?store.get(k):d,put:()=>{},
+  upstream:async()=>({calendar:{current:{scene:{brightness:60,power:true}}}}),
+  bridge:{enqueue:()=>{throw Error('Bridge enqueue unavailable');}},
+  logger:{warn:s=>{warning=s;}}
+ });
+ try{
+  await follower.poll();
+  assert.equal(follower.status().lastQueuedPower,null);
+  assert.match(follower.status().error,/Bridge enqueue unavailable/);
+  assert.match(warning,/Bridge enqueue unavailable/);
+ }finally{follower.close();}
+});
+
+test('NanoC6 sync refuses enable when Oracle bridge unavailable',async()=>{
+ const follower=createNanoC6BrightnessSync({
+  meta:(k,d)=>d,put:()=>{throw Error('should not write')},
+  upstream:async()=>{throw Error('should not poll')},logger:{warn:()=>{}}
+ });
+ try{
+  assert.equal(follower.status().configured,false);
+  await assert.rejects(follower.setEnabled(true),/not configured/);
+  await follower.poll();
+ }finally{follower.close();}
+});
+
+test('Oracle deploy keeps current scheduler follower and native-slot app assets',()=>{
  const script=readFileSync(new URL('../../.github/scripts/deploy-curtain-relay.py',import.meta.url),'utf8');
  assert.match(script,/curtain_bridge\.mjs/);
  assert.match(script,/nanoc6_sync\.mjs/);
+ assert.match(script,/curtain_native_slot\.js/);
  assert.match(script,/bridge:curtainRelay/);
  assert.match(script,/live\.index\(bridge_init\)<live\.index\(new_sync\)/);
  assert.match(script,/relay\['pollSeconds'\]==5/);
-});
-
-test('Brightness follower defers without enqueuing during a manual curtain override, then resumes once',async()=>{
- let holding=true,online=true,events=0;
- const follower=createNanoC6BrightnessSync({
-  meta:(k,d)=>k==='nanoc6_brightness_sync_enabled_v1'?true:d,
-  put:()=>{},upstream:async()=>({calendar:{current:{scene:{brightness:64,power:true}}}}),
-  bridge:{manualHoldActive:()=>holding,status:()=>({online}),enqueue:()=>{events++}},
-  logger:{warn:()=>{}}
- });
- try{
-  await follower.poll();assert.equal(events,0);
-  holding=false;online=false;await follower.poll();assert.equal(events,0,'Must not queue during Nano disconnection');
-  online=true;await follower.poll();assert.equal(events,1,'Must resume latest level after hold');
-  await follower.poll();assert.equal(events,1,'Must dedupe after delivery is queued');
- }finally{follower.close()}
 });
