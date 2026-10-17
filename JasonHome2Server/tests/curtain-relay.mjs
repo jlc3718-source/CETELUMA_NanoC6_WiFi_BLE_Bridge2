@@ -232,3 +232,15 @@ test('new picture supersedes a previous queued or downloaded transfer while keep
   assert.equal(b.command(c2.id).state,'applied');
  }finally{b.close();}
 });
+
+test('live manual command cannot be hidden behind older recovery entries or local BLE override',()=>{
+ const {b}=create();
+ try{
+  for(let i=0;i<12;i++)b.enqueue('nanoInfo',{},'recovery-'+i,'recovery');
+  const manual=b.enqueue('nanoInfo',{},'manual-now','manual');
+  const first=b.sync({status:{firmware:'1.1.12'}});
+  assert.equal(first.commands[0].id,manual.id,'user command must be first');
+  const local=b.sync({localOverrideUntil:1010000,status:{firmware:'1.1.12'}});
+  assert.deepEqual(local.commands.map(c=>c.id),[manual.id],'filter before LIMIT must prevent recovery backlog starvation');
+ }finally{b.close();}
+});
