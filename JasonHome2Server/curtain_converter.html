@@ -140,7 +140,8 @@ function paint(img,paletteOverride=null){
  const sw=maxX-minX+1,sh=maxY-minY+1;
  const scale=Math.min(20/sw,20/sh);
  const dw=sw*scale,dh=sh*scale;
- bc.imageSmoothingEnabled=true;bc.imageSmoothingQuality='high';
+ // Never blur the source as it is reduced to block-sized LED pixels.
+ bc.imageSmoothingEnabled=false;
  bc.drawImage(scan,minX,minY,sw,sh,(20-dw)/2,(20-dh)/2,dw,dh);
  // Extra blocky reduces fine detail before palette quantization.
  if($('style').value==='blocky'){
@@ -168,7 +169,7 @@ function paint(img,paletteOverride=null){
   }
  }
  ctx.imageSmoothingEnabled=false;ctx.putImageData(output,0,0);
- prepared=output;setBusy(false);
+ prepared=output;
 }
 function usePreparedFrame(frame){
  if(typeof frame!=="string"||frame.length>12000)throw Error("AI did not return an LED frame");
