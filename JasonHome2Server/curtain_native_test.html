@@ -11,14 +11,14 @@ p{color:#bcd0d9}#status{white-space:pre-wrap;font-size:14px;line-height:1.5;colo
 <div class="buttons">
 <button id="load" type="button">1. Load Test AVI</button>
 <button id="convert" type="button" disabled>2. Convert &amp; Send to Controller</button>
-</div><p id="status" role="status">Select Load Test AVI to prepare a small 40×40 animation.</p>
+</div><p id="status" role="status">Select Load Test AVI to prepare a small 40×40 animation. Conversion runs locally; no cloud server.</p>
 </section></main>
 <script src="curtain_native_research.js"></script>
 <script src="curtain_native_slot.js"></script>
 <script>
 (()=>{'use strict';
 const $=id=>document.getElementById(id),R=window.JH2NativeResearch,N=window.JH2NativeSlot;
-const ctx=$('preview').getContext('2d'),api=(path,body)=>window.parent.JH2CurtainApi(path,body);
+const ctx=$('preview').getContext('2d');
 let frames=null,avi=null,busy=false,timer=null;
 function show(message){$('status').textContent=message;}
 function update(){ $('load').disabled=busy; $('convert').disabled=busy||!avi; }
@@ -31,39 +31,29 @@ function load(list,label){
  if(!Array.isArray(list)||list.length<2||list.length>24||list.some(f=>!(f instanceof Uint8Array||f instanceof Uint8ClampedArray||Array.isArray(f))||f.length!==6400))throw Error('Test must contain 2–24 complete 40×40 RGBA frames');
  frames=list.map(f=>new Uint8ClampedArray(f));
  avi=R.makeAvi(frames,400);
- if(avi.bytes.length>800000)throw Error('Test video exceeds manufacturer upload limit');
+ if(avi.bytes.length>800000)throw Error('Test AVI is too large');
  R.inspectAvi(avi.bytes);
  display();update();show(label+' loaded: '+avi.frames+' frames, '+avi.width+'×'+avi.height+' AVI ('+Math.round(avi.bytes.length/1024)+' KB).');
 }
-function base64(bytes){let s='';for(let i=0;i<bytes.length;i+=1024)s+=String.fromCharCode(...bytes.subarray(i,i+1024));return btoa(s);}
-const sleep=ms=>new Promise(ok=>setTimeout(ok,ms));
 $('load').onclick=()=>{
- if(busy)return;try{load(R.sampleFrames(),'Test AVI')}catch(e){show('Load failed: '+e.message)}
+ if(busy)return;
+ try{load(R.sampleFrames(),'Test AVI')}catch(e){show('Load failed: '+e.message)}
 };
 $('convert').onclick=async()=>{
  if(busy||!avi)return;
  busy=true;update();
  try{
-  show('Uploading AVI to SuperPix conversion server…');
-  const start=await api('/api/curtain/vendor-video/start',{avi:base64(avi.bytes)});
-  if(!start?.jobId)throw Error('Manufacturer did not start a conversion job');
-  let ready=null;
-  for(let i=0;i<48;i++){
-   show('SuperPix is converting 40×40 AVI to native .eff… ('+(i+1)+'/48)');
-   await sleep(3000);
-   const result=await api('/api/curtain/vendor-video/status?id='+encodeURIComponent(start.jobId));
-   if(result.state==='ready'){ready=result;break}
-  }
-  if(!ready)throw Error('SuperPix conversion did not complete in the supported window');
-  if(typeof ready.eff!=='string'||!Number.isSafeInteger(ready.cid))throw Error('Manufacturer returned incomplete native effect');
-  const bytes=Uint8Array.from(atob(ready.eff),c=>c.charCodeAt(0));
-  // Strict native format and CID validation BEFORE touching reserved test slot.
-  N.planVendorEff(bytes,ready.cid);
-  show('Manufacturer converted AVI to '+ready.format+' ('+Math.round(bytes.length/1024)+' KB). Installing reserved CID 83928…');
-  const result=await N.vendorUpload(bytes,ready.cid,show);
-  show('CID '+result.cid+' saved to controller slot '+result.slot+'. Native Play command sent. Confirm animation on curtain.');
- }catch(e){show('Could not complete manufacturer conversion or controller playback: '+e.message);}
- finally{busy=false;update()}
+  show('Converting test AVI locally using the SmartDawn 1.2.4 native format…');
+  const source=R.readAviFrames(avi.bytes);
+  const eff=R.encodeSmartDawn(source,{name:'JH2 TEST',timestamp:Math.floor(Date.now()/1000)});
+  const meta=R.inspectSmartDawnEff(eff);
+  if(meta.cid!==83928||meta.version!==3||meta.itemHeader!=='DNX2')throw Error('Invalid locally generated native effect');
+  show('SmartDawn DNMX v3 / DNX2 generated ('+Math.round(eff.length/1024)+' KB). Installing CID 83928 via NanoC6…');
+  const result=await N.smartDawnUpload(eff,show);
+  show('CID '+result.cid+' installed in controller slot '+result.slot+'. Native Play command sent. Check the curtain for animation.');
+ }catch(e){
+  show('Native conversion or controller upload failed: '+e.message);
+ }finally{busy=false;update()}
 };
 window.addEventListener('message',e=>{
  if(e.origin!==location.origin||e.source!==window.parent||e.data?.kind!=='jh2-native-test-frames'||busy)return;

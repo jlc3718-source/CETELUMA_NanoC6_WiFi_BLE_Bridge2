@@ -249,11 +249,11 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
    await ddp(t,2909,CID);await sleep(600);
    for(let i=0;i<2;i++){const current=await inventory(t);if(current.some(x=>x.cid===CID))throw Error('Reserved slot could not be verified empty; no upload attempted');}
   }
-  progress('Sending manufacturer-converted '+plan.format+' effect ('+plan.bytes+' bytes)…');
+  progress('Sending locally encoded '+plan.format+' native effect ('+plan.bytes+' bytes)…');
   const started=waitFor('start',30000);await t.writeUpload(plan.request);
   const response=await started;
   if((response[1]??0)!==0||(response[3]??0)!==0)
-   throw Error('Controller rejected converted .eff upload start: '+JSON.stringify(response));
+   throw Error('Controller rejected native .eff upload start: '+JSON.stringify(response));
   const done=waitFor('end',Math.max(120000,plan.parts.length*1500));
   for(let i=0;i<plan.parts.length;i++){
    await t.writeUpload(plan.parts[i]);
@@ -271,6 +271,15 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
   return {cid:CID,slot:newSlot.slot,format:plan.format,installed:true,playCommandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close()}
 }
+// SmartDawn 1.2.4's native EffectLocalMaker output: already local,
+// no manufacturer network and no AVI bytes ever sent to BLE.
+async function smartDawnUpload(bytes,progress=()=>{}){
+ if(!window.JH2NativeResearch)throw Error('SmartDawn native encoder is not loaded');
+ const meta=window.JH2NativeResearch.inspectSmartDawnEff(bytes);
+ if(meta.cid!==CID||meta.version!==3||meta.itemHeader!=='DNX2'||meta.frames<2)
+  throw Error('Only validated SmartDawn v3 video effects for CID 83928 may be installed');
+ return vendorUpload(bytes,CID,progress);
+}
 async function playResearch(){
  const t=await connection();
  try{
@@ -280,5 +289,5 @@ async function playResearch(){
   return {cid:CID,slot:stored.slot,commandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close()}
 }
-window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,aviUpload,playResearch,planVendorEff,vendorUpload};
+window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,aviUpload,playResearch,planVendorEff,vendorUpload,smartDawnUpload};
 })();

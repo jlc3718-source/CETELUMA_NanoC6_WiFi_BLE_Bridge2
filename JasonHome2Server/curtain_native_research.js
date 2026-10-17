@@ -166,6 +166,90 @@ function planAviUpload(data){
  if(at!==b.length)fail('AVI packet byte count mismatch');
  return {request,parts,meta,chunks,bytes:b.length,uploadType:0,path,experimentalRawAvi:true};
 }
+// SmartDawn 1.2.4 EffectLocalMaker-compatible local video encoder.
+// Reverse engineered from bundled assets/HTML/assets/index-CL_jUmAY.js:
+// startExec => DNMX v3 + directory, writeItemHeader => DNX2 v3,
+// encode => X-major / Y-minor RGB888, 4096 byte final alignment.
+// No cloud connection, video transcription or new controller CID allocation.
+function readAviFrames(data){
+ const b=data instanceof Uint8Array?data:new Uint8Array(data),meta=inspectAvi(b);
+ const str=(at,n=4)=>String.fromCharCode(...b.subarray(at,at+n));
+ const dv=new DataView(b.buffer,b.byteOffset,b.byteLength);
+ let movi=-1,stop=-1;
+ // Traverse RIFF chunks and LISTs; do not hunt arbitrary pixel bytes for FourCCs.
+ for(let at=12;at+8<=b.length;){
+  const id=str(at),size=dv.getUint32(at+4,true),end=at+8+size;
+  if(end>b.length)fail('AVI RIFF chunk crosses file boundary');
+  if(id==='LIST'&&str(at+8)==='movi'){movi=at+12;stop=end;break;}
+  at=end+(size&1);
+ }
+ if(movi<0||stop<0)fail('AVI has no video frames');
+ const frames=[],rowSize=Math.ceil(W*3/4)*4,frameSize=rowSize*H;
+ for(let at=movi;at+8<=stop;){
+  const id=str(at),size=dv.getUint32(at+4,true);
+  if(at+8+size>stop)fail('AVI frame exceeds movi chunk');
+  if(id==='00db'){
+   if(size!==frameSize)fail('AVI frame payload mismatch');
+   const rgba=new Uint8Array(W*H*4),start=at+8;
+   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const input=start+(H-1-y)*rowSize+x*3,output=(y*W+x)*4;
+    rgba[output]=b[input+2];rgba[output+1]=b[input+1];rgba[output+2]=b[input];rgba[output+3]=255;
+   }
+   frames.push(rgba);
+  }
+  at+=8+size+(size&1);
+ }
+ if(frames.length!==meta.frames)fail('AVI decoded frame count differs from header');
+ return frames;
+}
+function inspectSmartDawnEff(data){
+ const b=data instanceof Uint8Array?data:new Uint8Array(data);
+ if(b.length<8192||b.length%4096!==0||b.length>1048576)fail('SmartDawn native effect requires 4096-byte alignment');
+ const name=(at,n)=>String.fromCharCode(...b.subarray(at,at+n)),d=new DataView(b.buffer,b.byteOffset,b.byteLength);
+ if(name(0,4)!=='DNMX'||b[4]!==3||b[5]!==1||name(4096,4)!=='DNX2'||b[4100]!==3)fail('Not a SmartDawn DNMX v3 / DNX2 v3 file');
+ const cid=d.getUint32(14,true),width=d.getUint16(6,true),height=d.getUint16(8,true),stride=d.getUint32(10,true);
+ const offset=d.getUint32(128,true),entryStride=d.getUint16(132,true),count=d.getUint16(134,true);
+ const itemStride=d.getUint32(4096+5,true),itemCount=d.getUint32(4096+9,true),itemWidth=d.getUint16(4096+13,true),itemHeight=d.getUint16(4096+15,true);
+ if(cid!==CID||width!==W||height!==H||stride!==STRIDE||offset!==4096||entryStride!==STRIDE||itemStride!==STRIDE||itemWidth!==W||itemHeight!==H)
+  fail('SmartDawn native file CID, directory or dimensions do not match reserved 40x40 test');
+ if(count<2||count>MAX_FRAMES||itemCount!==count||b[136]!==0||b[138]!==1||b[4096+157]!==1||b[4096+158]!==20)
+  fail('SmartDawn native v3 frame count or effect flags mismatch');
+ const used=8192+count*STRIDE,expected=Math.ceil(used/4096)*4096;
+ if(b.length!==expected)fail('SmartDawn native frame data or end padding mismatch');
+ for(let i=used;i<expected;i++)if(b[i]!==0)fail('Native effect has nonzero padding');
+ return {format:'DNMX',version:3,itemHeader:'DNX2',itemVersion:3,cid,width,height,frames:count,frameBytes:STRIDE,pixels:'column-major RGB888',bytes:b.length,hardwareVerified:false};
+}
+function encodeSmartDawn(frames,{cid=CID,name='JH2 NATIVE TEST',timestamp=0}={}){
+ if(cid!==CID)fail('Only disposable reserved CID 83928 can be encoded');
+ if(!Array.isArray(frames)||frames.length<2||frames.length>MAX_FRAMES)fail('SmartDawn encoder requires 2–24 video frames');
+ if(!Number.isInteger(timestamp)||timestamp<0||timestamp>0xffffffff)fail('Invalid native timestamp');
+ const count=frames.length,used=8192+count*STRIDE,b=new Uint8Array(Math.ceil(used/4096)*4096),d=new DataView(b.buffer);
+ b.set([68,78,77,88,3,1]);  // DNMX, version 3, one effect
+ d.setUint16(6,W,true);d.setUint16(8,H,true);d.setUint32(10,STRIDE,true);
+ d.setUint32(14,CID,true);d.setUint32(18,timestamp,true);
+ const title=new TextEncoder().encode(String(name));b.set(title.subarray(0,24),38);
+ b[124]=20;
+ d.setUint32(128,4096,true);d.setUint16(132,STRIDE,true);d.setUint16(134,count,true);
+ b[136]=0;b[137]=0;b[138]=1;b[141]=0;
+ b.set([68,78,88,50,3],4096);   // DNX2 item, version 3
+ d.setUint32(4101,STRIDE,true);d.setUint32(4105,count,true);
+ d.setUint16(4109,W,true);d.setUint16(4111,H,true);
+ b.set(title.subarray(0,32),4096+56);b[4096+157]=1;b[4096+158]=20;
+ for(let n=0;n<count;n++){
+  const frame=frames[n]?.data||frames[n];
+  if(!frame||frame.length!==W*H*4)fail('SmartDawn encoder expects exact 40x40 RGBA frames');
+  let dst=8192+n*STRIDE;
+  // The manufacturer's encoder runs x outer / y inner, *not* usual row-major.
+  for(let x=0;x<W;x++)for(let y=0;y<H;y++){
+   const at=(x+y*W)*4,alpha=Number(frame[at+3])/255;
+   b[dst++]=Math.round(frame[at]*alpha);
+   b[dst++]=Math.round(frame[at+1]*alpha);
+   b[dst++]=Math.round(frame[at+2]*alpha);
+  }
+ }
+ inspectSmartDawnEff(b);
+ return b;
+}
 function sampleFrames(){
  const make=blink=>{
   const a=new Uint8Array(W*H*4);
@@ -179,5 +263,5 @@ function sampleFrames(){
   }return a;
  };return [make(false),make(true),make(false),make(true)];
 }
-root.JH2NativeResearch=Object.freeze({CID,W,H,MAX_FRAMES,encode,inspect,planUpload,sampleFrames,normalizeFrame,makeAvi,inspectAvi,planAviUpload});
+root.JH2NativeResearch=Object.freeze({CID,W,H,MAX_FRAMES,encode,inspect,planUpload,sampleFrames,normalizeFrame,makeAvi,inspectAvi,planAviUpload,readAviFrames,encodeSmartDawn,inspectSmartDawnEff});
 })(typeof window!=='undefined'?window:globalThis);

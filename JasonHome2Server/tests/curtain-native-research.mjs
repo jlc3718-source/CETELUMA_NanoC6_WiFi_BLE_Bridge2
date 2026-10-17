@@ -4,68 +4,105 @@ import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
 import {join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createVendorVideo} from '../curtain_vendor_video.mjs';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const read=p=>readFileSync(join(root,p),'utf8');
-function research(){
- const sandbox={window:{},Uint8Array,Uint8ClampedArray,DataView,TextEncoder,Math,Number,Object,String,Array};
- new Script(read('curtain_native_research.js')).runInNewContext(sandbox);
- return sandbox.window.JH2NativeResearch;
+function modules(){
+ const sandbox={window:{},Uint8Array,Uint8ClampedArray,DataView,TextEncoder,TextDecoder,Math,Number,Object,String,Array,Date};
+ new Script(read('curtain_native_research.js'),{filename:'curtain_native_research.js'}).runInNewContext(sandbox);
+ sandbox.window.JH2NativeResearch=sandbox.window.JH2NativeResearch;
+ new Script(read('curtain_native_slot.js'),{filename:'curtain_native_slot.js'}).runInNewContext(sandbox);
+ return {R:sandbox.window.JH2NativeResearch,N:sandbox.window.JH2NativeSlot};
 }
-test('native test tab is only two buttons and a preview, no extra upload modes',()=>{
+test('Native Test page retains exactly two buttons with a preview and no cloud calls',()=>{
  const page=read('curtain_native_test.html'),host=read('curtain.js');
- assert.deepEqual([...page.matchAll(/<button\s[^>]*id="([^"]+)"/g)].map(x=>x[1]),['load','convert']);
- assert.match(page,/1\. Load Test AVI/);assert.match(page,/2\. Convert &amp; Send to Controller/);
+ const ids=[...page.matchAll(/<button\s[^>]*id="([^"]+)"/g)].map(x=>x[1]);
+ assert.deepEqual(ids,['load','convert']);
+ assert.match(page,/1\. Load Test AVI/);
+ assert.match(page,/2\. Convert &amp; Send to Controller/);
  assert.match(page,/R\.sampleFrames\(\)/);
- assert.match(page,/vendor-video\/start/);
- assert.match(page,/vendor-video\/status/);
- assert.match(page,/N\.vendorUpload\(bytes,ready\.cid,show\)/);
- assert.match(page,/N\.planVendorEff\(bytes,ready\.cid\)/);
- assert.doesNotMatch(page,/URL\.createObjectURL|\.download\s*=/);
+ assert.match(page,/R\.readAviFrames\(avi\.bytes\)/);
+ assert.match(page,/R\.encodeSmartDawn\(source/);
+ assert.match(page,/R\.inspectSmartDawnEff\(eff\)/);
+ assert.match(page,/N\.smartDawnUpload\(eff,show\)/);
+ assert.doesNotMatch(page,/vendor-video|effect\/list|SuperPix cloud|JH2CurtainApi|\.download\s*=|URL\.createObjectURL/);
  assert.match(host,/curtain_native_test\.html/);
- const scripts=[...page.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim());
- assert.equal(scripts.length,1);new Script(scripts[0]);
+ const code=[...page.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim());
+ assert.equal(code.length,1);new Script(code[0],{filename:'curtain_native_test.html'});
 });
-test('40x40 sample produces an AVI with 4 distinct RGB24 video frames',()=>{
- const R=research(),frames=R.sampleFrames(),avi=R.makeAvi(frames,400);
- assert.equal(frames.length,4);assert.equal(avi.frames,4);assert.equal(avi.width,40);assert.equal(avi.height,40);
- assert.equal(Buffer.from(avi.bytes).toString('ascii',0,4),'RIFF');
+test('generated small AVI decodes to exact source RGB pixels and distinct frames',()=>{
+ const {R}=modules(),frames=R.sampleFrames(),avi=R.makeAvi(frames,400);
+ assert.equal(avi.frames,4);assert.equal(avi.width,40);assert.equal(avi.height,40);
  assert.equal(R.inspectAvi(avi.bytes).frames,4);
- assert.deepEqual([...frames[0].subarray(0,4)],[0,0,0,255]);
- assert.notDeepEqual([...frames[0]],[...frames[1]]);
+ const decoded=R.readAviFrames(avi.bytes);
+ assert.equal(decoded.length,frames.length);
+ for(let n=0;n<frames.length;n++)assert.deepEqual(Buffer.from(decoded[n]),Buffer.from(frames[n]));
+ assert.notDeepEqual(Buffer.from(decoded[0]),Buffer.from(decoded[1]));
+ const bad=avi.bytes.slice();bad[0]=0;assert.throws(()=>R.readAviFrames(bad),/AVI/);
 });
-test('manufacturer conversion path uses native video upload, poll and effect retrieval',async()=>{
- const source=read('curtain_vendor_video.mjs'),server=read('server.mjs');
- for(const route of ['/upload/video','/encode/video','/effect/list','/effect/get/'])assert.ok(source.includes(route),route);
- for(const term of ['application/octet-stream','application/x-www-form-urlencoded','sid','video:upload.message','width:"40"','height:"40"','createVendorVideo'])assert.ok(source.includes(term),term);
- assert.match(source,/HOST="https:\/\/hk\.daniaokeji\.com\/webs"/);
- assert.match(source,/candidate.*x\.name===job\.name/);
- assert.match(source,/effectCid!==cid/);
- assert.match(server,/createVendorVideo\(curtainRelay\)/);
- assert.match(server,/\/api\/curtain\/vendor-video\/start/);
- assert.match(server,/\/api\/curtain\/vendor-video\/status/);
- const client=createVendorVideo({status(){return {curtain:{sn:'DN5E58'}}}});
- await assert.rejects(client.start({avi:'bad base64'}),/valid small AVI/);
+test('SmartDawn 1.2.4 EffectLocalMaker DNMX v3 / DNX2 byte-for-byte metadata',()=>{
+ const {R}=modules(),frames=R.readAviFrames(R.makeAvi(R.sampleFrames(),400).bytes);
+ frames[0].set([13,23,37,255],(7*40+12)*4);
+ frames[0].set([201,122,82,255],(1*40+0)*4);
+ const b=R.encodeSmartDawn(frames,{name:'JH2 TEST',timestamp:123456789}),d=new DataView(b.buffer);
+ assert.equal(b.length,28672,'4096-byte aligned total: 8192+4*4800 then padding');
+ assert.equal(String.fromCharCode(...b.slice(0,4)),'DNMX');
+ assert.equal(b[4],3,'manufacturer DNMX version 3');assert.equal(b[5],1);
+ assert.equal(d.getUint16(6,true),40);assert.equal(d.getUint16(8,true),40);
+ assert.equal(d.getUint32(10,true),4800);assert.equal(d.getUint32(14,true),83928);
+ assert.equal(d.getUint32(18,true),123456789);
+ assert.equal(new TextDecoder().decode(b.slice(38,46)),'JH2 TEST');
+ assert.equal(b[124],20);
+ assert.equal(d.getUint32(128,true),4096);
+ assert.equal(d.getUint16(132,true),4800);
+ assert.equal(d.getUint16(134,true),4);
+ assert.equal(b[136],0);assert.equal(b[137],0);assert.equal(b[138],1);assert.equal(b[141],0);
+ assert.equal(String.fromCharCode(...b.slice(4096,4100)),'DNX2');
+ assert.equal(b[4100],3);
+ assert.equal(d.getUint32(4101,true),4800);
+ assert.equal(d.getUint32(4105,true),4);
+ assert.equal(d.getUint16(4109,true),40);assert.equal(d.getUint16(4111,true),40);
+ assert.equal(b[4096+157],1);assert.equal(b[4096+158],20);
+ // In manufacturer code: for (x=0..39) for (y=0..39),
+ // pixel source is ((x+y*width)*4), output is contiguous RGB.
+ const at=8192+(12*40+7)*3;
+ assert.deepEqual([...b.subarray(at,at+3)],[13,23,37]);
+ const secondary=8192+(0*40+1)*3;
+ assert.deepEqual([...b.subarray(secondary,secondary+3)],[201,122,82]);
+ for(let i=8192+4*4800;i<b.length;i++)assert.equal(b[i],0,'padding must be zero');
+ const meta=R.inspectSmartDawnEff(b);
+ assert.equal(meta.format,'DNMX');assert.equal(meta.itemHeader,'DNX2');
+ assert.equal(meta.cid,83928);assert.equal(meta.frames,4);assert.equal(meta.hardwareVerified,false);
+ assert.throws(()=>R.encodeSmartDawn(frames,{cid:83944}),/83928/);
+ const wrong=b.slice();wrong[4]=1;assert.throws(()=>R.inspectSmartDawnEff(wrong),/DNMX v3/);
+ const broken=b.slice();new DataView(broken.buffer).setUint32(14,83944,true);
+ assert.throws(()=>R.inspectSmartDawnEff(broken),/83928/);
+ const truncated=b.subarray(0,b.length-1);assert.throws(()=>R.inspectSmartDawnEff(truncated),/4096/);
 });
-test('vendor installer accepts only original manufacturer native .eff, remaps reserved CID and plays after inventory',()=>{
- const native=read('curtain_native_slot.js');
- new Script(native);
- assert.match(native,/const CID=83928/);
- assert.match(native,/function planVendorEff\(data,cloudCid\)/);
- assert.match(native,/kind!=='DNMX'&&kind!=='DNCX'/);
- assert.match(native,/view\.getUint16\(6,true\)!==40/);
- assert.match(native,/new DataView\(fixed\.buffer\)\.setUint32\(14,CID,true\)/);
- assert.match(native,/new TextEncoder\(\)\.encode\('83928\.eff'\)/);
- assert.match(native,/async function vendorUpload\(/);
- assert.match(native,/await ddp\(t,2909,CID\)/);
- assert.match(native,/await ddp\(t,2606,CID,newSlot\.slot\)/);
- const part=native.slice(native.indexOf('async function vendorUpload'),native.indexOf('async function playResearch'));
- assert.ok(part.indexOf('const plan=planVendorEff')<part.indexOf('const t=await connection()'));
- assert.ok(part.indexOf('await inventory(t)')<part.indexOf('await ddp(t,2909,CID)'));
+test('manufacturer native type-0 upload stays on reserved CID 83928 and retains play ordering',()=>{
+ const {R,N}=modules(),b=R.encodeSmartDawn(R.sampleFrames(),{timestamp:0});
+ const plan=N.planVendorEff(b,83928);
+ assert.equal(plan.cid,83928);assert.equal(plan.sourceCid,83928);
+ assert.equal(plan.format,'DNMX');assert.equal(plan.bytes,b.length);
+ assert.equal(plan.request[0],12);assert.equal(plan.request[3],17);
+ const wire=Buffer.from(plan.request);assert.ok(wire.includes(Buffer.from('83928.eff')));
+ assert.deepEqual([...plan.request.slice(8,12)],[8,12,16,0],'type=0 per manufacturer');
+ assert.deepEqual(Buffer.concat(plan.parts.map(p=>Buffer.from(p.subarray(8)))),Buffer.from(b));
+ const bad=b.slice();new DataView(bad.buffer).setUint32(14,93444,true);
+ assert.throws(()=>N.planVendorEff(bad,83928),/CID/);
+ const slot=read('curtain_native_slot.js');
+ assert.match(slot,/async function smartDawnUpload\(bytes,progress=/);
+ assert.match(slot,/inspectSmartDawnEff\(bytes\)/);
+ assert.match(slot,/return vendorUpload\(bytes,CID,progress\)/);
+ const transport=slot.slice(slot.indexOf('async function vendorUpload'),slot.indexOf('async function smartDawnUpload'));
+ assert.ok(transport.indexOf('const plan=planVendorEff')<transport.indexOf('const t=await connection()'));
+ assert.ok(transport.indexOf('await inventory(t)')<transport.indexOf('await ddp(t,2909,CID)'));
+ assert.ok(transport.indexOf('await ddp(t,2606,CID,newSlot.slot)')>transport.indexOf('const after=await inventory(t)'));
+ assert.doesNotMatch(transport,/83494|83944/,'must not touch production/factory effects');
 });
-test('Oracle publisher copies the conversion module and preserves existing Eufy application',()=>{
- const py=read('../.github/scripts/deploy-curtain-relay.py');
- assert.match(py,/curtain_vendor_video\.mjs/);
- assert.match(py,/vendorVideo=createVendorVideo/);
- assert.match(py,/eufyReady/);
+test('Oracle publisher keeps existing authenticated static files for native UI and JS',()=>{
+ const script=read('../.github/scripts/deploy-curtain-relay.py');
+ assert.match(script,/curtain_native_test\.html/);
+ assert.match(script,/curtain_native_research\.js/);
+ assert.match(script,/curtain_native_slot\.js/);
+ assert.match(script,/eufyReady/);
 });
