@@ -37,19 +37,24 @@ canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelat
 <div class="preview"><div><strong>Animated 40×40 LED preview</strong><div><canvas id="animationPreview" width="40" height="40"></canvas></div><p id="animationStatus" role="status">No animation frames yet.</p></div><div><strong>Individual frames (tap to inspect)</strong><div id="frameStrip" class="frame-strip" aria-label="Animation frames"></div></div></div>
 <div class="buttons"><button id="playFrames">▶ Play preview</button><button id="pauseFrames">⏸ Pause</button><button id="prevFrame">◀ Previous</button><button id="nextFrame">Next ▶</button></div>
 <div class="buttons"><button id="addFrame">Add current picture</button><button id="duplicateFrame">Duplicate frame</button><button id="leftFrame">Move left</button><button id="rightFrame">Move right</button><button id="removeFrame">Remove frame</button><button id="clearFrames">Clear frames</button></div>
-<div class="buttons"><button id="publishAnimation" class="primary" disabled>🚀 Publish Animation</button></div>
+<div class="buttons"><button id="publishAnimation" class="primary" disabled>🚀 Publish Animation · Oracle streaming</button><button id="uploadControllerSlot" class="primary" type="button">⬆ Upload to Controller Slot &amp; Play</button></div>
+<label for="nativeFile">Verified SmartDawn native animation file (.eff, 4 KB)</label><input type="file" id="nativeFile" accept=".eff,.bin,application/octet-stream">
+<label class="hint" style="display:block;margin-top:8px"><input type="checkbox" id="confirmNative" style="width:auto;display:inline-block"> I verified this native file is the **non-scrolling** effect I want to save in reserved CID 83928.</label>
+<p class="hint" id="nativeSlotNote">Separate controller-native upload. The existing Oracle JHC1 multi-frame animation is not interchangeable with a SmartDawn native .eff. This button requires a valid native animation file; it will not silently substitute a scrolling E-89 first frame.</p>
+<p id="nativeSlotStatus" role="status">Controller slot untouched.</p>
 <p class="hint">Publish uploads one multi-frame asset to Oracle. The Nano streams it and transmits the individual frames to the curtain over BLE. Actual playback speed depends on BLE transfer time.</p></section>
 <section><h2>⚡ Physical speed check</h2><p class="hint">Measure three real Oracle → Nano command acknowledgments without changing the curtain lights. For a visible picture/dual-buffer test, choose Sample pumpkin and Show on curtain.</p>
 <div class="buttons"><button id="speed">Measure three commands</button><button id="connection">Check push connection</button></div>
 <p id="testResult" role="status">Not tested yet.</p></section></main>
+<script src="curtain_native_slot.js"></script>
 <script>
 (()=>{'use strict';
 const $=id=>document.getElementById(id),canvas=$('preview'),ctx=canvas.getContext('2d',{willReadFrequently:true});
 const api=(url,body)=>window.parent.JH2CurtainApi(url,body);
-let prepared=null,busy=false,animationFrames=[],selectedFrame=0,previewTimer=null;
+let prepared=null,busy=false,animationFrames=[],selectedFrame=0,previewTimer=null,nativeEffect=null;
 const animationCanvas=$('animationPreview'),animationCtx=animationCanvas.getContext('2d',{willReadFrequently:true});
 const show=text=>{$('message').textContent=text};
-function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed','aiFrames','autoFrames','addFrame','publishAnimation'])$(id).disabled=v||(id==='send'&&!prepared)||(id==='autoFrames'&&!prepared)||(id==='addFrame'&&!prepared)||(id==='publishAnimation'&&animationFrames.length<2);}
+function setBusy(v){busy=v;for(const id of ['generate','sample','file','send','speed','aiFrames','autoFrames','addFrame','publishAnimation','uploadControllerSlot'])$(id).disabled=v||(id==='send'&&!prepared)||(id==='autoFrames'&&!prepared)||(id==='addFrame'&&!prepared)||(id==='publishAnimation'&&animationFrames.length<2);}
 // Original SmartDawn factory previews are already loaded in the parent Curtain tab.
 // Workers AI is text-to-image, so use the selected preview's actual palette for
 // prompt guidance AND final palette mapping; never pretend to upload a reference image.
@@ -339,6 +344,36 @@ $('removeFrame').onclick=()=>{if(!animationFrames.length)return;stopPreview();an
 $('clearFrames').onclick=()=>{setFrames([]);show('Animation cleared; the still image is preserved.');};
 $('leftFrame').onclick=()=>{if(selectedFrame<=0)return;stopPreview();[animationFrames[selectedFrame-1],animationFrames[selectedFrame]]=[animationFrames[selectedFrame],animationFrames[selectedFrame-1]];selectedFrame--;updateFrameStrip();};
 $('rightFrame').onclick=()=>{if(selectedFrame>=animationFrames.length-1)return;stopPreview();[animationFrames[selectedFrame+1],animationFrames[selectedFrame]]=[animationFrames[selectedFrame],animationFrames[selectedFrame+1]];selectedFrame++;updateFrameStrip();};
+$('nativeFile').onchange=async event=>{
+ nativeEffect=null;
+ const file=event.target.files?.[0];if(!file){$('nativeSlotStatus').textContent='No native file selected.';return;}
+ if(file.size!==4096){$('nativeSlotStatus').textContent='Rejected: native slot file must be exactly 4096 bytes. JHC1, GIF and PNG are not native effect files.';return;}
+ try{
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  window.JH2NativeSlot.filePlan(bytes);
+  nativeEffect=bytes;
+  $('nativeSlotStatus').textContent='Native CID 83928 file validated ('+file.name+'). Confirm non-scrolling behavior before uploading.';
+ }catch(e){$('nativeSlotStatus').textContent='Native file rejected: '+e.message;}
+};
+$('uploadControllerSlot').onclick=async()=>{
+ if(busy)return;
+ if(!nativeEffect){
+  $('nativeSlotStatus').textContent='No validated controller-native animation available. The frames generated above are Oracle JHC1 frames, not a SmartDawn .eff file. To avoid overwriting the controller with an E-89 scrolling still, select a verified non-scrolling 4 KB .eff file first. No controller changes were made.';
+  return;
+ }
+ if(!$('confirmNative').checked){
+  $('nativeSlotStatus').textContent='Confirm that your .eff file has the desired no-scroll native animation before replacing slot 83928.';
+  return;
+ }
+ if(!window.confirm('Replace reserved SmartDawn CID 83928 with this native .eff file, then play the newly installed slot? Only CID 83928 will be erased.'))return;
+ setBusy(true);stopPreview();
+ try{
+  const outcome=await window.JH2NativeSlot.upload(nativeEffect,message=>$('nativeSlotStatus').textContent=message);
+  $('nativeSlotStatus').textContent='Native upload verified at CID '+outcome.cid+' / slot '+outcome.slot+
+   '. Play command transmitted. Confirm the curtain shows your desired animation without scrolling.';
+ }catch(e){$('nativeSlotStatus').textContent='Native slot upload failed: '+e.message+'; Oracle animation was not modified.';}
+ finally{setBusy(false);}
+};
 $('publishAnimation').onclick=async()=>{
  if(animationFrames.length<2)return show('Add at least two animation frames.');
  stopPreview();setBusy(true);show('Publishing '+animationFrames.length+' 40×40 frames to Oracle…');
