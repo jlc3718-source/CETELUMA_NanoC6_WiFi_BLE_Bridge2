@@ -122,13 +122,18 @@ try:
  restored,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':nano['enabled']})
  assert restored['enabled']==nano['enabled'],'Original checkbox state not preserved'
 
+ # Only this isolated database copy is reset for compatibility checks. The
+ # production manual key must survive deployment without any rotation.
+ api(base,'/api/curtain/pair',cookie=cookie,body={})
  auto_pair,_=api(base,'/api/curtain/autopair',cookie=cookie,body={})
  assert auto_pair.get('alreadyOnline') is True or (len(auto_pair.get('token',''))==64 and len(auto_pair.get('bridgeId',''))==16)
  if auto_pair.get('token'):
   adopted,_=api(base,'/api/curtain-bridge/sync',auto_pair['token'],body={'bootId':'stage-auto-pair','status':{'firmware':'1.1.13','curtain':{'connected':True}}},bridge_header=True)
   assert adopted['ok'] is True,'Staged automatic pairing grant was not accepted by bridge authentication'
  automatic_pairing_ready=True
- pair,_=api(base,'/api/curtain/pair',cookie=cookie,body={});bridgekey=pair['token']
+ pair,_=api(base,'/api/curtain/pair',cookie=cookie,body={'manual':True});bridgekey=pair['token']
+ manual_status,_=api(base,'/api/curtain/status',cookie=cookie)
+ assert manual_status['manualPairing'] is True,'Manual key mode was not retained'
  accepted,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'effect','payload':{'id':1},'idempotencyKey':'stage-test'})
  received,_=api(base,'/api/curtain-bridge/sync',bridgekey,body={'status':{'firmware':'1.1.2','curtain':{'connected':True}},'bootId':'stage-emulator'},bridge_header=True)
  assert received['commands'];cid=received['commands'][0]['id']

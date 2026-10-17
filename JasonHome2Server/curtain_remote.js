@@ -59,12 +59,8 @@
   try{return await pairingWork;}finally{pairingWork=null;}
  }
  window.JH2EnsureNanoPairing=ensureNanoPairing;
- // Run independently of Settings markup: current layouts do not have a
- // Controllers pane. A reset Nano recovers simply by opening the APK at home.
- setTimeout(()=>ensureNanoPairing(),250);
- setInterval(()=>ensureNanoPairing(),30000);
- window.addEventListener('online',()=>ensureNanoPairing(true));
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)ensureNanoPairing(true);});
+ // Manual recovery is explicit. Opening the APK or pressing a curtain
+ // command must never reconfigure the Nano in the background.
  window.JH2OracleCurtainCall=async(action,payload={})=>{
   if(action==='saveRawFile'){
    // Native Android file export remains available; it never accesses Bluetooth.
@@ -74,7 +70,7 @@
   if(['asset','effect','nativePlay','sequenceStart'].includes(action))window.JH2CurtainLastSelection={action,payload};
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
-  if(queued.bridgeOnline===false&&!await ensureNanoPairing(true))throw Error('Oracle received command '+queued.commandId+'. '+(lastPairError||'The Nano connection is unavailable.'));
+  if(queued.bridgeOnline===false)throw Error('Oracle received command '+queued.commandId+'. The Nano Oracle connection is offline. Use Manual Oracle connection below.');
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';
   for(let i=0;i<150;i++){
    await delay(i<20?150:400);const {command:c}=await api('/api/curtain/command?id='+queued.commandId);
@@ -88,7 +84,7 @@
  function init(){
   window.JH2InitManualConnection(document.getElementById('jh2CurtainOriginalControls'));
   const settings=document.querySelector('.v3SettingsPane[data-settings-pane="controllers"]');if(!settings)return;
-  const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayResume">Return to Oracle</button><p class="sub">The APK connects the Nano automatically on home Wi-Fi. Files stay on Oracle; the Nano relays through two dynamic RAM buffers, up to 35 KiB each.</p>';settings.append(p);
+  const p=document.createElement('div');p.className='panel';p.innerHTML='<strong>NanoC6 curtain relay</strong><p id="jh2RelayStatus" class="sub">Checking…</p><button class="btn" id="jh2RelayOpen">Open NanoC6 Controller</button> <a class="btn" id="jh2RelayRemote" href="/jason-home-2/nano/">Oracle Nano fallback</a> <button class="btn" id="jh2RelayResume">Return to Oracle</button><p class="sub">Use Manual Oracle connection in Curtain controls to install a key. Files stay on Oracle; the Nano relays through two dynamic RAM buffers, up to 35 KiB each.</p>';settings.append(p);
   // Oracle alone retains prepared content. Confirmation is intentionally
   // explicit because the BLE acknowledgement cannot prove physical display.
   const retention=document.createElement('section');retention.className='panel';

@@ -41,6 +41,9 @@ function phone({online=false,available=true,localWorks=true,loadControlsDuringSe
    calls.push({url,body:options.body&&JSON.parse(options.body)});
    let data;
    if(url.endsWith('/api/curtain/status'))data={ok:true,online:online||paired};
+   else if(url.endsWith('/api/curtain/call'))data={ok:true,commandId:4180,bridgeOnline:online||paired};
+   else if(url.includes('/api/curtain/command?id='))data={ok:true,command:{id:4180,state:'applied',result:{bleTransmitted:true}}};
+   else if(url.endsWith('/api/curtain/pair'))data={ok:true,token:'3'.repeat(64),bridgeId:'2'.repeat(16),endpoint:'https://150.136.245.51/jason-home-2'};
    else if(url.endsWith('/api/curtain/autopair')&&options.body&&JSON.parse(options.body).diagnostic)data={ok:true};
    else if(url.endsWith('/api/curtain/autopair'))data={ok:true,token:'1'.repeat(64),bridgeId:'2'.repeat(16),endpoint:'https://150.136.245.51/jason-home-2'};
    else throw Error('Unexpected endpoint '+url);
@@ -60,11 +63,30 @@ function phone({online=false,available=true,localWorks=true,loadControlsDuringSe
  vm.runInNewContext(readFileSync(new URL('../curtain_remote.js',import.meta.url),'utf8'),context);
  return {context,calls,scheduled};
 }
-test('opening the APK pairs over its existing LAN bridge without any Settings pane or button',async()=>{
- const p=phone();assert.equal(p.scheduled.length,1);
+test('legacy explicit LAN setup remains callable but opening the APK never starts it',async()=>{
+ const p=phone();assert.equal(p.scheduled.length,0);
  assert.equal(await p.context.JH2EnsureNanoPairing(),true);
  assert.equal(p.calls.filter(c=>c.action==='pairNano').length,1);
  assert.equal(p.calls.some(c=>c.url?.endsWith('/api/curtain/pair')),false);
+});
+test('an offline APK command never starts Nano setup or writes its connection settings',async()=>{
+ const p=phone();
+ await assert.rejects(p.context.JH2OracleCurtainCall('power',{on:true}),/Manual Oracle connection/);
+ assert.deepEqual(p.calls.map(c=>c.url),['/jason-home-2/api/curtain/call']);
+ assert.equal(p.scheduled.length,0);
+});
+test('an online APK command waits for its real acknowledgement without reconfiguring the Nano',async()=>{
+ const p=phone({online:true});
+ const result=await p.context.JH2OracleCurtainCall('power',{on:true});
+ assert.equal(result.bleTransmitted,true);
+ assert.deepEqual(p.calls.map(c=>c.url),['/jason-home-2/api/curtain/call','/jason-home-2/api/curtain/command?id=4180']);
+});
+test('creating a manual key is explicit and prevents subsequent legacy setup calls',async()=>{
+ const p=phone();const key=await p.context.JH2CreateManualKey();
+ assert.equal(key.token.length,64);
+ assert.deepEqual(p.calls[0],{url:'/jason-home-2/api/curtain/pair',body:{manual:true}});
+ assert.equal(await p.context.JH2EnsureNanoPairing(true),false);
+ assert.equal(p.calls.length,1);
 });
 test('mobile-data/local-discovery failure is quiet and never invokes public Nano pairing',async()=>{
  const p=phone({localWorks:false});assert.equal(await p.context.JH2EnsureNanoPairing(),false);
