@@ -11,7 +11,7 @@ const read=name=>readFileSync(join(root,name),'utf8');
 const converter=read('curtain_converter.html'),server=read('server.mjs'),curtain=read('curtain.js'),assets=read('curtain_asset.mjs');
 const js=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
 test('AI generator is minimal and its script parses',()=>{
- assert.equal(js.length,1);new Script(js[0][1],{filename:'curtain_converter.html'});
+ const inline=js.filter(x=>x[1].trim());assert.equal(inline.length,1);new Script(inline[0][1],{filename:'curtain_converter.html'});
  for(const id of ['prompt','generate','sample','file','image','preview','send','stop','speed','connection','testResult'])
    assert.ok(converter.includes('id="'+id+'"'),id);
  assert.doesNotMatch(converter,/requestDevice|gatt\.connect|BLE scan|upload firmware|83928/);
@@ -166,4 +166,44 @@ test('Pumpkin block-art fallback is recognizable, fully filled and exact-preview
  assert.ok(art.activeBlocks>=75,'A readable pumpkin must fill a useful portion of the curtain');
  assert.equal(Buffer.from(art.rgba,'base64').length,6400);
  assert.equal(subjectBlockArt('unrecognized abstract figure'),null);
+});
+
+test('separate controller slot button never conflates JHC1 frame streaming with a native SmartDawn .eff upload',()=>{
+ const native=read('curtain_native_slot.js');
+ new Script(native,{filename:'curtain_native_slot.js'});
+ for(const id of ['publishAnimation','uploadControllerSlot','nativeFile','confirmNative','nativeSlotStatus'])
+  assert.match(converter,new RegExp('id="'+id+'"'));
+ assert.match(converter,/curtain_native_slot\.js/);
+ assert.match(converter,/window\.JH2NativeSlot\.upload/);
+ assert.match(converter,/nativeEffect\)/);
+ assert.match(converter,/!nativeEffect/);
+ assert.match(converter,/confirmNative/);
+ assert.match(native,/CID=83928/);
+ assert.match(native,/ddp\(t,2904\)/);
+ assert.match(native,/ddp\(t,2909,CID\)/);
+ assert.match(native,/ddp\(t,2606,CID,newSlot\.slot\)/);
+ assert.match(native,/2931/);
+ assert.match(native,/2934/);
+ assert.match(native,/crc8\(/);
+ assert.match(native,/data\.length!==4096/);
+ assert.match(native,/Native controller slot requires a 4,096-byte DN1FE/);
+ assert.match(native,/SmartDawn \+name\+ response timeout/);
+});
+test('native file plan accepts only the reserved 83928 CID and exact 4 KB DN1FE bytes',()=>{
+ const source=read('curtain_native_slot.js');
+ const context={window:{},navigator:{},Uint8Array,DataView,Number,Error,Math,Array,Promise,console,setTimeout,clearTimeout};
+ new Script(source).runInNewContext(context);
+ const native=context.window.JH2NativeSlot;
+ const image=new Uint8Array(4096);image.set([68,78,1,254,216,71,1,0],0);
+ // Reserved CID 83928 little endian: 0x000147D8.
+ const plan=native.filePlan(image);
+ assert.equal(plan.parts.length,9);
+ assert.equal(plan.request.length>8,true);
+ assert.equal(plan.parts[0].length,508);
+ assert.equal(plan.parts[8].length,104);
+ const wrong=image.slice();wrong[4]=217;
+ assert.throws(()=>native.filePlan(wrong),/CID must be 83928/);
+ assert.throws(()=>native.filePlan(new Uint8Array(6400)),/4,096-byte DN1FE/);
+ const bad=image.slice();bad[0]=74;
+ assert.throws(()=>native.filePlan(bad),/DN1FE/);
 });
