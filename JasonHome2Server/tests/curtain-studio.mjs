@@ -32,13 +32,13 @@ test('Oracle serves exact canonical signed SHA-verified runtime BIN without a ne
 });
 test('Generate uses configured Cloudflare Workers AI, never an automatic paid call',()=>{
  assert.match(server,/path==="\/api\/curtain\/generate-art"/);
- assert.match(server,/renderShapeArt/);
- assert.match(server,/@cf\/meta\/llama-3\.1-8b-instruct-fast/);
- assert.match(server,/cloudflareAiChat/);
+ assert.match(server,/cloudflareAiRun/);
+ assert.match(server,/@cf\/black-forest-labs\/flux-1-schnell/);
+ assert.match(server,/steps:4/);
  assert.match(server,/parsePixelGrid/);
- assert.doesNotMatch(server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")')),/flux-1-schnell/);
+ assert.doesNotMatch(server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")')),/renderShapeArt|cloudflareAiChat/);
  assert.match(server,/cloudflareAiConfigured\(\)/);
- assert.match(server,/6-20 filled drawing primitives/);
+ assert.match(server,/One enormous centered subject/);
  assert.match(server,/referenceColors/);
  assert.match(converter,/\$\('generate'\)\.onclick=async/);
  assert.match(converter,/\/api\/curtain\/generate-art/);
@@ -51,7 +51,7 @@ test('Oracle gets 40x40 prepared RGBA, palette compression and approved asset co
  assert.match(converter,/loadFactoryGallery/);
  assert.match(converter,/output\.data\[dest\+3\]=255/);
  assert.match(converter,/base64\(new Uint8Array\(prepared.data\)\)/);
- assert.match(converter,/usePreparedFrame\(r.pixels\)/);
+ assert.match(converter,/await load\(r.image\)/);
  assert.match(converter,/canvas.toDataURL\('image\/png'\)/);
  assert.match(converter,/quality:'rgbfull'/);
  assert.match(converter,/queue\('asset',payload\)/);
@@ -82,7 +82,7 @@ test('Native pixel AI returns exact 40x40 RGBA and no post-generation scaling',(
  assert.deepEqual(at(21,21),at(20,20));
  assert.deepEqual(at(20,22),[247,131,21,255]);
  assert.equal(design.outputGrid,'40x40');
- assert.match(converter,/usePreparedFrame\(r.pixels\)/);
+ assert.match(converter,/await load\(r.image\)/);
  assert.match(converter,/quality:'rgbfull'/);
  assert.match(assets,/count===1600\|\|trueColor\.length/);
  assert.throws(()=>parsePixelGrid(JSON.stringify({palette:['#000000','#FF0000'],rows:['011']})),/approximately 20/);

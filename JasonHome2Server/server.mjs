@@ -1134,49 +1134,29 @@ async function route(req,res){
   }
   if(method==="POST"&&path==="/api/curtain/generate-art"){
     const body=await input(req),idea=String(body?.prompt||"").trim();
-    if(idea.length<3||idea.length>260)throw fail(400,"Describe pixel art in 3–260 characters");
+    if(idea.length<3||idea.length>260)throw fail(400,"Describe a curtain image in 3–260 characters");
     if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured");
     const refs=Array.isArray(body.referenceColors)?body.referenceColors.slice(0,7):[];
     if(refs.some(x=>typeof x!=="string"||!/^#[0-9a-f]{6}$/i.test(x)))throw fail(400,"Invalid original-effect palette");
-    // Small geometric plans are far more reliable than asking a language model
-    // to output 400 individual pixel indices. Rendering is deterministic.
+    // Restore the original, preferred image-generation model. This endpoint
+    // only generates an image; the browser derives ONE final 40x40 LED frame,
+    // shows those exact pixels and uploads the same RGBA without recomputing.
     const prompt=[
-      "Draw this precise subject as recognizable, blocky 20x20 LED PIXEL ART: "+idea,
-      "Return ONLY one JSON object with keys palette and shapes. No markdown.",
-      "palette contains 3-10 vivid hexadecimal #RRGGBB colors. palette[0] MUST be #000000.",
-      "shapes is an ordered array of 6-20 filled drawing primitives in a 20x20 coordinate system.",
-      "Each primitive: {type:'ellipse' or 'rect' or 'line' or 'polygon', x, y, w, h, color}.",
-      "color is the numeric index into palette, 0 makes cutouts/eyes/mouth on the filled shape.",
-      "For polygon specify points:[[x,y],...] and color; line uses x,y,x2,y2,stroke,color.",
-      "Draw a LARGE CENTERED SILHOUETTE first, filling roughly 14x14 blocks, then smaller colored details.",
-      "Use basic geometric shapes with thick, solid fills; no gradients or text.",
-      "Examples: pumpkin is a big orange ellipse plus stem, black eyes, and black curved/rectangular smile.",
-      "Avoid tiny empty icons, disconnected fragments, scenery, or outlines without solid fills.",
-      refs.length?"Prefer these exact colors after black: "+refs.join(", "):"Choose bright high contrast LED colors.",
-      "Your entire answer must be parseable JSON with double quoted keys and string values."
-    ].join("\n");
-    let art,lastError="",model="";
-    const candidates=["@cf/meta/llama-3.1-8b-instruct-fast",AI_MODEL].filter((v,i,a)=>a.indexOf(v)===i);
-    for(let attempt=0;attempt<candidates.length;attempt++){
-      model=candidates[attempt];
-      let output;
-      try{
-        const result=await cloudflareAiChat({
-          model,messages:[{role:"system",content:"Return concise valid JSON containing an ordered palette and filled pixel-art shapes."},
-            {role:"user",content:prompt+(lastError?"\nCorrect previous failure: "+lastError:"")}],
-          temperature:0.3,max_completion_tokens:1100
-        },{timeout:attempt===0?18000:23000});
-        output=cloudflareAiText(result);
-        art=renderShapeArt(output);
-        if(art.activeBlocks<65)throw Error("AI artwork too sparse for curtain: "+art.activeBlocks+" filled blocks");
-        break;
-      }catch(e){lastError=String(e.message||e).slice(0,160);}
-    }
-    if(!art||art.activeBlocks<65)art=subjectBlockArt(idea);
-    if(!art)throw fail(502,"Pixel AI generation could not complete: "+lastError);
-    return send(res,200,{ok:true,pixels:art.rgba,palette:art.palette,
-      outputGrid:"40x40",logicalGrid:"20x20",model,activeBlocks:art.activeBlocks,
-      previewMatchesUpload:true,mode:art.mode||"cloudflare-geometric-ai"});
+      "Create a beautifully recognizable friendly cartoon PIXEL ART sprite of: "+idea,
+      "One enormous centered subject. Thick high-contrast outlines, simple expressive features.",
+      "Bright solid color regions, crisp pixel/block-art aesthetic, and pure black background.",
+      "Designed for visibility on a 40x40 LED matrix; avoid fine detail, tiny text, gradients,",
+      "photorealism, busy scenery, small scattered elements, reflections and watermarks.",
+      "The shape should fill 80 percent of the picture and remain immediately recognizable.",
+      refs.length?"Prefer these original SmartDawn effect colors: "+refs.join(", "):"Use 6–12 contrasting saturated RGB colors."
+    ].join(" ");
+    const result=await cloudflareAiRun("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4},{timeout:60000});
+    const image=result?.result?.image||result?.image;
+    if(typeof image!=="string"||!image.length||image.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))
+      throw fail(502,"Original FLUX model returned no usable image");
+    return send(res,200,{ok:true,image:"data:image/jpeg;base64,"+image,
+      model:"@cf/black-forest-labs/flux-1-schnell",outputGrid:"40x40",
+      mode:"original-flux",previewMatchesUpload:true});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());

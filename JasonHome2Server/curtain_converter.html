@@ -11,8 +11,8 @@ button.primary{background:#16836c;border-color:#36d2a6}button:disabled{opacity:.
 canvas{width:min(100%,300px);height:auto;background:#000;image-rendering:pixelated;border:1px solid #476372;border-radius:9px}
 #factoryGallery{display:flex;gap:9px;overflow-x:auto;padding:10px 0;scroll-snap-type:x proximity}#factoryGallery button{flex:0 0 90px;min-width:90px;padding:5px;scroll-snap-align:start}#factoryGallery button.selected{outline:2px solid #7debd7}#factoryGallery img{width:77px;height:77px;object-fit:cover;image-rendering:pixelated}details{margin:14px 0}summary{cursor:pointer;color:#80e4d3;font-weight:bold}#message,#testResult{white-space:pre-wrap;color:#8ce9ce;min-height:22px}.eyebrow{color:#7bd7cd;letter-spacing:.08em;font-size:12px;font-weight:bold}
 </style></head><body><main>
-<section><div class="eyebrow">JASON HOME 2 · 40 × 40 CURTAIN</div><h1>✨ Native 40×40 Pixel Art</h1>
-<p>AI creates big, Minecraft-style pixel shapes built for a 40×40 curtain. What you see on the LED preview is exactly what gets sent.</p>
+<section><div class="eyebrow">JASON HOME 2 · 40 × 40 CURTAIN</div><h1>✨ Original AI Cartoon Studio</h1>
+<p>Original FLUX image model · automatically prepared for your 40×40 curtain. The LED preview is the exact picture sent.</p>
 <label for="prompt">What would you like?</label><textarea id="prompt" maxlength="260" placeholder="A happy pumpkin with a big smile">A happy orange pumpkin with a big smile</textarea>
 <div class="buttons"><button id="generate" class="primary">✨ Generate block art</button><button id="sample">🎃 Sample pumpkin (no AI)</button></div>
 <p class="hint">Generate uses your existing Cloudflare AI credits. The sample does not use AI. Nothing is sent to the curtain until you choose Show on curtain.</p>
@@ -164,7 +164,7 @@ async function ack(id,timeout=60000){const start=performance.now();while(perform
  await new Promise(r=>setTimeout(r,350));
  }throw Error('Command '+id+' did not receive a Nano ACK');}
 $('generate').onclick=async()=>{const prompt=$('prompt').value.trim();if(prompt.length<3)return show('Enter a picture idea first.');
- setBusy(true);show('AI is drawing curtain-ready block art…');try{const r=await api('/api/curtain/generate-art',{prompt,referenceId:chosenFactory,referenceColors});usePreparedFrame(r.pixels);}
+ setBusy(true);show('Original FLUX AI is drawing your picture…');try{const r=await api('/api/curtain/generate-art',{prompt,referenceId:chosenFactory,referenceColors});await load(r.image);}
  catch(e){show('Generation failed: '+e.message);}finally{setBusy(false);}};
 $('sample').onclick=pumpkin;
 $('file').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>8*1024*1024)return show('Choose a picture smaller than 8 MB.');
