@@ -58,6 +58,38 @@ test('Oracle gets 40x40 prepared RGBA, palette compression and approved asset co
  assert.match(converter,/JH2CurtainLastSelection/);
  assert.match(assets,/6400 RGBA bytes/);
 });
+test('Full animation Studio preserves legacy still-image tools and composes true multi-frame assets',()=>{
+ for(const id of ['style','colors','generate','sample','send','stop','frameCount','motion','frameDelay','motionPrompt','loop',
+  'aiFrames','autoFrames','animationPreview','frameStrip','playFrames','pauseFrames','prevFrame','nextFrame',
+  'addFrame','duplicateFrame','removeFrame','clearFrames','leftFrame','rightFrame','publishAnimation']){
+  assert.ok(converter.includes('id="'+id+'"'),id);
+ }
+ assert.match(converter,/function frameMotion\(/);
+ assert.match(converter,/function frameThumbnail\(/);
+ assert.match(converter,/frameIndex/);
+ assert.match(converter,/frameCount:total/);
+ assert.match(converter,/previewTimer=setInterval/);
+ assert.match(converter,/animationFrames\.map\(f=>base64\(new Uint8Array\(f\.data\)\)\)/);
+ assert.match(converter,/delays:animationFrames\.map\(/);
+ assert.match(converter,/loop:\$\('loop'\)\.checked/);
+ assert.match(converter,/quality:'rgbfull'/);
+ assert.match(converter,/await queue\('asset',payload\)/);
+ assert.match(converter,/await ack\(id,120000\)/);
+ assert.match(assets,/frames\.length>180/);
+ assert.match(assets,/Each prepared frame must contain 6400 RGBA bytes/);
+ assert.match(assets,/Math\.max\(40,Math\.min\(60000/);
+});
+test('Cloudflare FLUX generation enforces simplified art and bounded keyframe inputs',()=>{
+ const route=server.slice(server.indexOf('if(method==="POST"&&path==="/api/curtain/generate-art")'),
+                         server.indexOf('if(method==="POST"&&path==="/api/curtain/ai-revamp")'));
+ for(const term of ['"blocky"','"simple"','"classic"','styleRules','body.colorLimit',
+  'body.frameCount','body.frameIndex','total>12','frame>=total','Frame ","No tiny details',
+  'const motion=String(body.motion||"")']){
+  assert.ok(route.includes(term),term);
+ }
+ assert.match(route,/@cf\/black-forest-labs\/flux-1-schnell/);
+ assert.doesNotMatch(route,/curtainRelay\.enqueue|curtainRelay\.upload/);
+});
 test('speed test measures actual applied acknowledgments rather than a queued response',()=>{
  assert.match(converter,/i<3/);
  assert.match(converter,/queue\('nanoInfo'\)/);
