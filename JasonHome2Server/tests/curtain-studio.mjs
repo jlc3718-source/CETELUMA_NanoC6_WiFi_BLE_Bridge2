@@ -85,3 +85,22 @@ test('Native pixel AI returns exact 40x40 RGBA and no post-generation scaling',(
  assert.match(assets,/count===1600\|\|trueColor\.length/);
  assert.throws(()=>parsePixelGrid(JSON.stringify({palette:['#000000','#FF0000'],rows:['011']})),/approximately 20/);
 });
+
+test('AI small artwork is auto-framed instead of rejecting below 45 blocks',()=>{
+ const rows=Array(20).fill('00000000000000000000');
+ for(let y=8;y<=11;y++)rows[y]='00000000011100000000';
+ const art=parsePixelGrid(JSON.stringify({palette:['#000000','#FA7C12'],rows}));
+ assert.equal(art.sourceBlocks,12);
+ assert.ok(art.activeBlocks>=45);
+ assert.equal(art.autoFramed,true);
+ const data=Buffer.from(art.rgba,'base64');
+ assert.equal(data.length,6400);
+ for(let y=0;y<40;y+=2)for(let x=0;x<40;x+=2){
+  const a=(y*40+x)*4,b=((y+1)*40+x+1)*4;
+  assert.deepEqual(data.subarray(a,a+4),data.subarray(b,b+4));
+ }
+});
+test('AI all black output is rejected without enqueuing',()=>{
+ const rows=Array(20).fill('0'.repeat(20));
+ assert.throws(()=>parsePixelGrid(JSON.stringify({palette:['#000000','#FF8800'],rows})),/no usable subject/);
+});
