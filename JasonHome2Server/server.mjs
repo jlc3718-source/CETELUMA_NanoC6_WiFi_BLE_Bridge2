@@ -1138,25 +1138,43 @@ async function route(req,res){
     if(!cloudflareAiConfigured())throw fail(409,"Cloudflare Workers AI is not configured");
     const refs=Array.isArray(body.referenceColors)?body.referenceColors.slice(0,7):[];
     if(refs.some(x=>typeof x!=="string"||!/^#[0-9a-f]{6}$/i.test(x)))throw fail(400,"Invalid original-effect palette");
-    // Restore the original, preferred image-generation model. This endpoint
-    // only generates an image; the browser derives ONE final 40x40 LED frame,
-    // shows those exact pixels and uploads the same RGBA without recomputing.
+    // Keep the preferred FLUX model. Each call creates ONE independent AI
+    // keyframe: the Studio performs deterministic 40x40 quantization, previews
+    // the exact uploaded bytes, and publishes frames as a single Oracle asset.
+    // Separate short requests avoid proxy timeouts for multi-frame generation.
+    const style=["blocky","simple","classic"].includes(body.style)?body.style:"simple";
+    const colorLimit=Number.isInteger(body.colorLimit)&&body.colorLimit>=4&&body.colorLimit<=12?body.colorLimit:6;
+    const total=body.frameCount==null?1:Number(body.frameCount);
+    const frame=body.frameIndex==null?0:Number(body.frameIndex);
+    if(!Number.isInteger(total)||total<1||total>12||!Number.isInteger(frame)||frame<0||frame>=total)
+      throw fail(400,"Animation requires 1–12 valid ordered frames");
+    const motion=String(body.motion||"").trim().slice(0,120);
+    const phase=total>1?Math.round(100*frame/total):0;
+    const styleRules={
+      blocky:"Extremely simple Minecraft-like BLOCK ART, flat squares, no curves needing fine shading, big silhouette, four to six broad color regions.",
+      simple:"Bold flat pixel cartoon, chunky shapes, thick outlines, recognizable at just 20 by 20 logical pixels. Absolutely no texture.",
+      classic:"Classic chunky cartoon pixel art with expressive large features, still restrained for a 40 by 40 LED matrix."
+    };
     const prompt=[
       "Create a beautifully recognizable friendly cartoon PIXEL ART sprite of: "+idea,
       "One enormous centered subject. Thick high-contrast outlines, simple expressive features.",
-      "Bright solid color regions, crisp pixel/block-art aesthetic, and pure black background.",
-      "Designed for visibility on a 40x40 LED matrix; avoid fine detail, tiny text, gradients,",
-      "photorealism, busy scenery, small scattered elements, reflections and watermarks.",
-      "The shape should fill 80 percent of the picture and remain immediately recognizable.",
-      refs.length?"Prefer these original SmartDawn effect colors: "+refs.join(", "):"Use 6–12 contrasting saturated RGB colors."
-    ].join(" ");
+      styleRules[style],
+      "Bright solid non-gradient color regions with hard edges, pure black (#000000) empty background.",
+      "One subject fills approximately 88 percent of the square canvas without being clipped.",
+      "Designed for a 40x40 LED display with 20x20 logical blocks. No anti-alias-looking blur.",
+      "No tiny details, thin lines, busy scenery, halftones, realistic lighting, shadows, reflections, text, watermarks or gradients.",
+      "Every important feature is at least two logical blocks thick.",
+      refs.length?"Prefer this exact original effect palette: "+refs.join(", "):"Use at most "+colorLimit+" contrasting saturated RGB colors.",
+      total>1?
+        "Frame "+(frame+1)+" of "+total+" in a looping pixel-art animation of the SAME EXACT subject. Fixed camera, centered framing, costume, proportions and palette. Motion: "+(motion||"gentle bounce")+"; this frame is motion phase "+phase+" percent. Make the pose visibly distinct from adjacent frames, while keeping the character recognizable. No labels or storyboard panels.":""
+    ].filter(Boolean).join(" ");
     const result=await cloudflareAiRun("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4},{timeout:60000});
     const image=result?.result?.image||result?.image;
     if(typeof image!=="string"||!image.length||image.length>5500000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))
       throw fail(502,"Original FLUX model returned no usable image");
     return send(res,200,{ok:true,image:"data:image/jpeg;base64,"+image,
       model:"@cf/black-forest-labs/flux-1-schnell",outputGrid:"40x40",
-      mode:"original-flux",previewMatchesUpload:true});
+      mode:"original-flux",previewMatchesUpload:true,style,colorLimit,frameIndex:frame,frameCount:total});
   }
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
