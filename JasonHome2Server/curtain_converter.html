@@ -81,7 +81,7 @@ $('send').onclick=async()=>{if(!prepared)return;setBusy(true);show('Saving the 4
  const ms=await ack(id,90000);show('ACK received after '+(ms/1000).toFixed(2)+' seconds. Look at the physical curtain to confirm the picture.');
  }catch(e){show(e.message);}finally{setBusy(false);}};
 $('stop').onclick=async()=>{try{const id=await queue('assetStop');show('Stop queued as command '+id);}catch(e){show(e.message);}};
-$('connection').onclick=async()=>{try{const x=await api('/api/curtain/status');$('testResult').textContent='Oracle '+(x.online?'CONNECTED':'OFFLINE')+' · Nano '+(x.firmware||'?')+' · Push '+(x.pushConnected?'CONNECTED':'DISCONNECTED (HTTPS fallback)')+' · Queue '+(x.queued||0);}catch(e){$('testResult').textContent=e.message;}};
+$('connection').onclick=async()=>{try{const x=await api('/api/curtain/status');$('testResult').textContent='Oracle '+(x.online?'CONNECTED':'OFFLINE')+' · Nano '+(x.firmware||'?')+' · Push '+(typeof x.pushConnected==='boolean'?(x.pushConnected?'CONNECTED':'DISCONNECTED (HTTPS fallback)'):'not reported by firmware 1.1.12')+' · Queue '+(x.queued||0);}catch(e){$('testResult').textContent=e.message;}};
 $('speed').onclick=async()=>{setBusy(true);let times=[];$('testResult').textContent='Testing Oracle → Nano…';
  try{for(let i=0;i<3;i++){const id=await queue('nanoInfo'),ms=await ack(id,45000);times.push(ms);$('testResult').textContent=(i+1)+'/3 acknowledged in '+(ms/1000).toFixed(2)+' s';}
  const avg=times.reduce((a,b)=>a+b,0)/3;$('testResult').textContent='Three ACKs: '+times.map(x=>(x/1000).toFixed(2)+'s').join(', ')+' · Average '+(avg/1000).toFixed(2)+'s. '+(avg>3000?'SLOW · Check push connectivity.':'Commands are responsive.');
