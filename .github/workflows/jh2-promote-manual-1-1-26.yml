@@ -1,0 +1,39 @@
+name: Jason Home 2 1.1.26 Publish Normal Release
+on:
+  push:
+    branches: [codex/jh2-nanoc6-large-notify-recovery-20261017]
+    paths: ['.github/workflows/jh2-promote-manual-1-1-26.yml']
+permissions: {contents: write}
+jobs:
+  correct-visibility:
+    name: Make signed 1.1.26 visible as regular release without altering OTA channel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Verify signed files exist and remove prerelease flag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+        run: |
+          set -euo pipefail
+          tag=jason-home-2-nanoc6-v1.1.26
+          gh release view "$tag" --json isDraft,isPrerelease,assets > /tmp/jh2release.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/jh2release.json'))
+          assert j['isDraft'] is False
+          names={a['name'] for a in j['assets']}
+          assert {'jh2-runtime-1.1.26.bin','Jason-Home-2-NanoC6-1.1.26-Install.zip','latest.json','SHA256SUMS'}<=names
+          print('SIGNED_RELEASE_ASSETS_PRESENT', sorted(names), flush=True)
+          PY
+          gh release edit "$tag" --prerelease=false --draft=false --latest=false
+          gh release view "$tag" --json isDraft,isPrerelease,assets > /tmp/jh2release-verified.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/jh2release-verified.json'))
+          assert j['isDraft'] is False and j['isPrerelease'] is False
+          names={a['name'] for a in j['assets']}
+          assert {'jh2-runtime-1.1.26.bin','Jason-Home-2-NanoC6-1.1.26-Install.zip','latest.json','SHA256SUMS'}<=names
+          print('NORMAL_RELEASE_VERIFIED',len(names),'assets; manual OTA channel unchanged',flush=True)
+          PY
