@@ -82,6 +82,10 @@ jobs:
                           print('QUEUE_TABLE',name,table,'total',count)
                           if 'state' in cols:
                               print('STATES',table,con.execute('select state,count(*) from "'+table+'" group by state order by 2 desc limit 12').fetchall())
+                              if table=='curtain_commands':
+                                  entries=con.execute('select id,action,source,state,created from curtain_commands where state in ("queued","downloaded") order by id limit 10').fetchall()
+                                  print('CURTAIN_PENDING_COMMANDS',[(n,a,source,state,round((time.time()*1000-created)/1000,1)) for n,a,source,state,created in entries])
+
                           if 'created' in cols and 'state' in cols:
                               arr=con.execute('select state,min(created),max(created) from "'+table+'" group by state').fetchall()
                               now=int(time.time()*1000)
