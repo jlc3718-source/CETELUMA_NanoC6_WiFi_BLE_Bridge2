@@ -62,7 +62,7 @@ test('Hardware experiment remains limited to reserved CID, rechecks inventory an
  assert.match(slot,/const after=await inventory\(t\),stored=after\.find\(e=>e\.cid===CID\)/);
  const experimental=slot.slice(slot.indexOf('async function researchUpload'),slot.indexOf('async function playResearch'));
  assert.doesNotMatch(experimental,/ddp\(t,2606/,'research upload must never auto-play unverified effects');
- assert.match(page,/!\$('allowReplace'\)\.checked/);
- assert.match(page,/!\$('allowWrite'\)\.checked/);
- assert.match(page,/value\.trim\(\)==='83928'/);
+ assert.ok(page.includes("!$('allowReplace').checked"));
+ assert.ok(page.includes("!$('allowWrite').checked"));
+ assert.ok(page.includes("value.trim()==='83928'"));
 });
