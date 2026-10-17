@@ -17,6 +17,22 @@ struct Notice{uint32_t number;String uuid,data;};
 static std::deque<Notice> notices;
 static SemaphoreHandle_t noticesLock;
 static SemaphoreHandle_t bleLock;
+static uint32_t burstPackets=0,burstErrors=0,burstFallbackPackets=0;
+static uint8_t burstSinceYield=0;
+// Manufacturer image/GIF doodle and dedicated native-file upload only.
+// Control opcodes stay on response-acknowledged GATT writes.
+static bool imageBurstWrite(NimBLERemoteCharacteristic*ch,const uint8_t*bytes,size_t n){
+ if(ch&&ch->canWriteNoResponse()){
+  // Use NimBLE write WITHOUT response; paced bursts keep the controller
+  // and ESP32 BLE host queue from overflowing during long GIF transfers.
+  bool ok=ch->writeValue(bytes,n,false);
+  if(!ok){++burstErrors;vTaskDelay(pdMS_TO_TICKS(3));ok=ch->writeValue(bytes,n,false);}
+  if(ok){++burstPackets;if(++burstSinceYield>=6){burstSinceYield=0;vTaskDelay(pdMS_TO_TICKS(3));}}
+  return ok;
+ }
+ ++burstFallbackPackets;
+ return ch&&ch->canWrite()&&ch->writeValue(bytes,n,true);
+}
 static bool connected(){return client&&client->isConnected()&&writer;}
 static void disconnect(){sequence.clear();writer=heart=upload=notify=nullptr;if(client){client->disconnect();NimBLEDevice::deleteClient(client);client=nullptr;}}
 static bool writeFrame(const SmartDawn::Frame&f){return connected()&&writer->writeValue(f.bytes,f.length,true);}
@@ -42,7 +58,7 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
   bool ok=true;String message;
   if((action=="effect"||action=="nativePlay"||action=="solid"||action=="rawWrite"||action=="power")&&state["curtainSequence"].is<JsonObject>()){state.remove("curtainSequence");saveJson("/state.json",state.as<JsonVariantConst>());}
 
-  if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
+  if(action=="status"){out["address"]=state["curtainAddress"];out["name"]="DN5E58";out["burstPackets"]=burstPackets;out["burstErrors"]=burstErrors;out["burstFallbackPackets"]=burstFallbackPackets;out["burstWithoutResponseSupported"]=heart&&heart->canWriteNoResponse();out["sequenceRunning"]=!sequence.empty();out["sequenceEffects"].to<JsonArray>();for(int id:sequence)out["sequenceEffects"].add(id);}
   else if(action=="connect")ok=connect();
   else if(action=="disconnect"){state["curtainAutoConnect"]=false;saveJson("/state.json",state.as<JsonVariantConst>());disconnect();}
   else if(action=="scan"){
@@ -65,7 +81,7 @@ static bool callUnlocked(const String&action,JsonVariantConst in,JsonDocument&ou
   }
   else if(action=="rawWrite"){
     sequence.clear();String uuid=in["uuid"]|String("");uuid.toLowerCase();auto*ch=uuid==CURT_WRITE?writer:uuid==CURT_HEART?heart:uuid==CURT_UPLOAD?upload:nullptr;auto b=from64(in["data"]|String(""));
-    if(!ch||b.empty()||b.size()>508||b.size()>client->getMTU()-3){ok=false;message="Unsupported curtain UUID or packet exceeds negotiated MTU";}else{lastRaw=millis();ok=ch->writeValue(b.data(),b.size(),ch->canWrite());}
+    if(!ch||b.empty()||b.size()>508||b.size()>client->getMTU()-3){ok=false;message="Unsupported curtain UUID or packet exceeds negotiated MTU";}else{lastRaw=millis();ok=(ch==upload||ch==heart)?imageBurstWrite(ch,b.data(),b.size()):ch->writeValue(b.data(),b.size(),true);}
   }else if(action=="subscribeRaw"){String uuid=in["uuid"]|String("");uuid.toLowerCase();ok=uuid==CURT_NOTIFY&&notify&&notify->canNotify()&&notify->subscribe(true,notification);}
   else if(action=="effect"){sequence.clear();ok=effect(in["id"]|-1);}
   else if(action=="power"){sequence.clear();SmartDawn::Frame f;ok=(in["on"].is<bool>()||in["value"].is<bool>())&&SmartDawn::commandFrame(session,(in["on"]|in["value"].as<bool>())?0x09d2:0x09d3,nullptr,0,f)&&writeFrame(f);}
@@ -106,7 +122,7 @@ bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){
  if(ok){
   const size_t mtu=client->getMTU();
   ok=mtu>=23;
-  if(ok&&n<=mtu-3)ok=ch->writeValue(bytes,n,ch->canWrite());
+  if(ok&&n<=mtu-3)ok=channel==1?imageBurstWrite(ch,bytes,n):ch->writeValue(bytes,n,true);
   else if(ok){
    // Reframe a complete DDP doodle packet only when the peer negotiated
    // a smaller MTU. The 2026-10-16 native trace used a 126-byte ATT write.
@@ -120,7 +136,7 @@ bool curtainRelayWrite(uint8_t channel,const uint8_t*bytes,size_t n){
      uint8_t frame[508];frame[0]=bytes[0];frame[1]=(uint8_t)count;
      frame[2]=(uint8_t)(count-index-1);frame[3]=bytes[3];
      memcpy(frame+4,bytes+begin,part);
-     ok=ch->writeValue(frame,part+4,ch->canWrite());
+     ok=channel==1?imageBurstWrite(ch,frame,part+4):ch->writeValue(frame,part+4,true);
     }
    }
   }
