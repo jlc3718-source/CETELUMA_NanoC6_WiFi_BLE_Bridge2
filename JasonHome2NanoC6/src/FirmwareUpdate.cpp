@@ -72,6 +72,12 @@ bool queueFirmware(JsonVariantConst d,String&error){
   if(!boot||esp_ota_set_boot_partition(boot)!=ESP_OK){error="Could not select boot updater";recordFirmwareState("failed",error);return false;}return true;
 }
 bool fetchManifest(JsonDocument&d){
+#ifndef JH2_BOOT
+  // Serialize all persistent Oracle TLS transports with the signed OTA check.
+  // The RAII guard restores normal relay/push delivery on every return path.
+  struct OtaTlsGuard{OtaTlsGuard(){relayPauseForFirmwareCheck(true);}
+      ~OtaTlsGuard(){relayPauseForFirmwareCheck(false);}} otaGuard;
+#endif
   if(!timeValid()){lastError="Waiting for Internet clock sync; retry in a few seconds";return false;}
   const String suffix="?t="+String((uint32_t)time(nullptr));
   // Reuse the same Oracle HTTPS origin that already carries working SSE and

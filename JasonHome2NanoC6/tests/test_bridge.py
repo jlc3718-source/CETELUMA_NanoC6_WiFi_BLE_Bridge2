@@ -128,6 +128,17 @@ class RelayArchitecture(unittest.TestCase):
   self.assertIn('mbedtls_pk_verify',fw)
   self.assertIn('m.url!=expected',fw)
   self.assertNotIn('setInsecure(',fw)
+ def test_firmware_tls_quiet_window(self):
+  relay=(R/'src/OracleRelay.cpp').read_text()
+  fw=(R/'src/FirmwareUpdate.cpp').read_text()
+  header=(R/'include/OracleRelay.h').read_text()
+  self.assertIn('otaTlsExclusive',relay)
+  self.assertIn('pollerHttpActive',relay)
+  self.assertIn('while((pushOnline||pollerHttpActive)',relay)
+  self.assertIn('if(otaTlsExclusive){vTaskDelay',relay)
+  self.assertIn('void relayPauseForFirmwareCheck(bool hold)',header)
+  self.assertIn('relayPauseForFirmwareCheck(true)',fw)
+  self.assertIn('relayPauseForFirmwareCheck(false)',fw)
  def test_fast_1_2_second_oracle_fallback_with_validated_push(self):
   relay=(R/'src/OracleRelay.cpp').read_text()
   self.assertIn('nextSync=millis()+1200',relay)

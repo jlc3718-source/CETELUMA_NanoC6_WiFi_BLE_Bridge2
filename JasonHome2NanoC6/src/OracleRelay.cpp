@@ -11,6 +11,8 @@ static std::deque<String> acknowledgments;
 static volatile uint32_t generation=0,revision=0,lastSync=0,nextSync=0;
 static volatile uint32_t localUntil=0;
 static volatile bool syncNow=false,streaming=false,online=false,streamFailed=false,pushOnline=false;
+static volatile bool otaTlsExclusive=false,pollerHttpActive=false;
+static uint8_t otaTlsHolds=0;
 static uint64_t lastCommand=0,seen=0;
 static uint8_t streamFailures=0;
 static volatile uint32_t liveBufferBytes=0,liveBufferTargetBytes=0,wakeSignals=0,lastWakeAt=0;
@@ -21,6 +23,7 @@ static String digest(const uint8_t*data,size_t size){uint8_t d[32];mbedtls_sha25
 static void issue(const String& error){xSemaphoreTake(lock,portMAX_DELAY);relayError=error;xSemaphoreGive(lock);}
 static bool request(const String&path,JsonDocument&out,const String*body=nullptr){
  String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);if(!base.length())return false;
+ struct BusyGuard{BusyGuard(){pollerHttpActive=true;}~BusyGuard(){pollerHttpActive=false;}} guard;
  WiFiClientSecure c;trust(c);HTTPClient h;h.setConnectTimeout(7000);h.setTimeout(path.startsWith("/api/curtain-bridge/wait")?6000:12000);
  const char*headers[]={"Transfer-Encoding"};h.collectHeaders(headers,1);
  if(!h.begin(c,base+path)){issue("Cannot open Oracle HTTPS");return false;}h.addHeader("Authorization","Bearer "+key);h.addHeader("X-JH2-Bridge-Token",key);h.addHeader("Content-Type","application/json");
@@ -34,7 +37,7 @@ static bool request(const String&path,JsonDocument&out,const String*body=nullptr
 // Header/framing data can be HTTP chunked; only "data: <revision>" lines matter.
 static void pushEvents(void*){
  for(;;){
-  if(streaming||WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
+  if(otaTlsExclusive||streaming||WiFi.status()!=WL_CONNECTED||!timeValid()||ESP.getFreeHeap()<66000){
    pushOnline=false;vTaskDelay(pdMS_TO_TICKS(2000));continue;
   }
   String base,key;xSemaphoreTake(lock,portMAX_DELAY);base=endpoint;key=token;xSemaphoreGive(lock);
@@ -50,7 +53,7 @@ static void pushEvents(void*){
   auto*source=http.getStreamPtr();uint32_t lastData=millis();
   char line[128]{};size_t used=0;
   pushOnline=true;
-  while(!streaming&&WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
+  while(!otaTlsExclusive&&!streaming&&WiFi.status()==WL_CONNECTED&&source->connected()&&millis()-lastData<32000){
    if(!source->available()){vTaskDelay(pdMS_TO_TICKS(15));continue;}
    int chr=source->read();if(chr<0)continue;lastData=millis();
    if(chr=='\r')continue;
@@ -319,6 +322,7 @@ static void playback(void*arg){
 static void poller(void*){
  uint32_t backoff=1000,lastNotice=0;String boot=randomHex(8);
  for(;;){
+  if(otaTlsExclusive){vTaskDelay(pdMS_TO_TICKS(40));continue;}
   if(WiFi.status()!=WL_CONNECTED||!timeValid()||!getEndpoint().length()){online=false;vTaskDelay(pdMS_TO_TICKS(1000));continue;}
   // Release HTTPS transport for playback and resume sync at applied ACK.
   if(streaming&&lastAck=="downloaded"){vTaskDelay(pdMS_TO_TICKS(120));continue;}
@@ -415,6 +419,20 @@ bool relayConfigure(JsonVariantConst in,String&error){
  xSemaphoreTake(lock,portMAX_DELAY);endpoint=base;token=key;bridgeId=id;xSemaphoreGive(lock);syncNow=true;return true;
 }
 void relaySyncNow(){syncNow=true;}
+// Online OTA must have enough heap for the certificate-verified HTTPS client.
+// Close the active SSE stream and drain any in-flight long-poll first.
+void relayPauseForFirmwareCheck(bool hold){
+ xSemaphoreTake(lock,portMAX_DELAY);
+ if(hold){if(otaTlsHolds<250)otaTlsHolds++;}
+ else if(otaTlsHolds)otaTlsHolds--;
+ otaTlsExclusive=otaTlsHolds!=0;
+ xSemaphoreGive(lock);
+ if(hold){
+  const uint32_t start=millis();
+  while((pushOnline||pollerHttpActive)&&millis()-start<11000)
+   vTaskDelay(pdMS_TO_TICKS(25));
+ }else syncNow=true;
+}
 void relayPrepareForUpdate(){generation++;streaming=false;syncNow=true;}
 void relayLocalOverride(bool resume){localUntil=resume?0:millis()+15*60000;generation++;streaming=false;syncNow=true;}
 void relayDescribe(JsonObject out){xSemaphoreTake(lock,portMAX_DELAY);out["configured"]=token.length()==64;out["endpoint"]=endpoint;out["online"]=online;out["error"]=relayError;out["lastCommandId"]=lastCommand;out["lastDelivery"]=lastAck;out["lastSuccessfulSyncAgoSeconds"]=lastSync?(millis()-lastSync)/1000:-1;out["nextPollSeconds"]=lastSync?(std::max<int32_t>(0,int32_t(nextSync-millis()))/1000):0;out["pollSeconds"]=1;out["pushConnected"]=pushOnline;out["commandTransport"]=pushOnline?"oracle-server-push":"https-recovery";out["streaming"]=streaming;out["assetStorage"]="Oracle";out["ramBufferBytes"]=liveBufferBytes;out["ramBufferTargetBytes"]=liveBufferTargetBytes;out["ramBufferWindows"]=liveBufferWindows;out["ramBufferLimitPercent"]=80;out["ramBufferReserveBytes"]=96*1024;out["wakeSignalCount"]=wakeSignals;out["lastWakeAgoSeconds"]=lastWakeAt?(millis()-lastWakeAt)/1000:-1;out["manualOverrideSeconds"]=localUntil?std::max<int32_t>(0,int32_t(localUntil-millis()))/1000:0;out["flashBytes"]=ESP.getFlashChipSize();out["firmwareBytes"]=ESP.getSketchSize();out["freeSketchBytes"]=ESP.getFreeSketchSpace();out["filesystemBytes"]=LittleFS.totalBytes();out["filesystemUsedBytes"]=LittleFS.usedBytes();xSemaphoreGive(lock);}
