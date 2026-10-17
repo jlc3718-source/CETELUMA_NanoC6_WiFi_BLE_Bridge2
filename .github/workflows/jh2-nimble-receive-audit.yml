@@ -1,0 +1,65 @@
+name: JH2 Native 2904 NimBLE Receive Config Audit
+on:
+  push:
+    branches: [codex/jh2-native-2904-hci-receive-20261017]
+    paths: ['.github/workflows/jh2-nimble-receive-audit.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    name: Inspect actual NimBLE ESP32C6 compiled buffer defaults without flashing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            JasonHome2NanoC6/.pio/libdeps
+          key: jh2-notify-pio-${{ hashFiles('JasonHome2NanoC6/platformio.ini') }}
+          restore-keys: jh2-notify-pio-
+      - name: Inspect installed headers, config, link and build for ESP32-C6
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install platformio==6.2.0
+          python JasonHome2NanoC6/tools/prepare.py
+          python -m platformio run -d JasonHome2NanoC6 -e runtime -j 4
+          python - <<'PY'
+          from pathlib import Path
+          import re,subprocess
+          paths=[Path.home()/'.platformio',Path('JasonHome2NanoC6/.pio')]
+          needles=['CONFIG_BT_NIMBLE_MSYS_1_BLOCK_SIZE','CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE',
+            'CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT','CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT',
+            'CONFIG_BT_NIMBLE_TRANSPORT_ACL_SIZE','CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT',
+            'CONFIG_BT_LE_ACL_BUF_SIZE','CONFIG_BT_LE_ACL_BUF_COUNT',
+            'MYNEWT_VAL_MSYS_1_BLOCK_SIZE','MYNEWT_VAL_MSYS_2_BLOCK_SIZE',
+            'MYNEWT_VAL_BLE_TRANSPORT_ACL_SIZE','MYNEWT_VAL_NIMBLE_HOST_TASK_STACK_SIZE']
+          selections=['sdkconfig.h','esp_nimble_cfg.h','nimconfig.h','syscfg.h']
+          total=0
+          for folder in paths:
+            if not folder.exists(): continue
+            for file in folder.rglob('*'):
+              if file.name not in selections: continue
+              try:content=file.read_text(errors='replace')
+              except:continue
+              matches=[line.strip() for line in content.splitlines() if any(re.search(r'\b'+re.escape(n)+r'\b',line) for n in needles)]
+              if matches:
+                print('CONFIG_FILE',str(file)[:240],flush=True)
+                for line in matches[:75]:print('CONFIG_DEF',line[:240],flush=True)
+                total+=1
+          print('CONFIG_FILES_CHECKED',total,flush=True)
+          lib=Path('JasonHome2NanoC6/.pio/libdeps/runtime/NimBLE-Arduino')
+          if lib.exists():
+            for path in lib.rglob('*.cpp'):
+              if path.name in ('NimBLEDevice.cpp','NimBLERemoteCharacteristic.cpp'):
+                print('NIMBLE_SOURCE_FILE',path,flush=True)
+                lines=path.read_text(errors='replace').splitlines()
+                for i,line in enumerate(lines):
+                  if 'NIMBLE_HOST_TASK_STACK_SIZE' in line or 'ble_gattc_notify' in line or 'BLE_GAP_EVENT_NOTIFY_RX' in line or 'ble_hs_mbuf' in line or 'getData(' in line:
+                    print('NIMBLE_SRC',i+1,line[:260],flush=True)
+          print('RUNTIME_COMPILE_SUCCESS',Path('JasonHome2NanoC6/.pio/build/runtime/firmware.bin').stat().st_size,flush=True)
+          PY
