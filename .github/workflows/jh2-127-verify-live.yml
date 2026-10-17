@@ -1,0 +1,110 @@
+name: JH2 1.1.27 Live Controller Read Verification
+on:
+  push:
+    branches: [codex/jh2-native-2904-hci-receive-20261017]
+    paths: ['.github/workflows/jh2-127-verify-live.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  inspect:
+    name: Confirm 1.1.27 and read 2904 native effect inventory
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read controller effects without erase, upload or playback
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,base64,subprocess,urllib.request
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]['Config']['Env'] if '=' in v)
+          token=env['JASON_HOME_API_TOKEN']
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+            payload=json.dumps(body).encode() if body is not None else None
+            headers={'Content-Type':'application/json'}
+            if cookie:headers['Cookie']=cookie
+            req=urllib.request.Request(host+path,data=payload,headers=headers,method='POST' if payload is not None else 'GET')
+            with urllib.request.urlopen(req,timeout=14) as response:return json.load(response),response.headers
+          _,h=api('/api/session',{'token':token});cookie=h.get('Set-Cookie','').split(';')[0]
+          def status():return api('/api/curtain/status',cookie=cookie)[0]
+          before=status();c=before.get('curtain') or {}
+          print('LIVE_STATUS',{'firmware':before.get('firmware'),'online':before.get('online'),'uptime':before.get('uptimeSeconds'),
+              'autoUpdate':before.get('autoUpdate'),'queued':before.get('queued'),'streaming':before.get('relayStreaming'),
+              'connected':c.get('connected'),'mtu':c.get('mtu'),'hostMsys2':c.get('nativeHostMsys2Bytes'),
+              'catalogPackets':c.get('nativeCatalogPackets'),'drops':c.get('nativeNoticeDrops')},flush=True)
+          assert before.get('firmware')=='1.1.27','Device is not running 1.1.27, stop without BLE commands'
+          assert c.get('nativeHostMsys2Bytes')==544,'Expanded receive setting not present, stop'
+          assert before.get('online') and c.get('connected') and int(c.get('mtu') or 0)>=399,'BLE not ready'
+          assert before.get('autoUpdate') is False and int(before.get('queued') or 0)==0 and not before.get('relayStreaming'),'Busy or auto-update changed'
+          assert int(before.get('uptimeSeconds') or 0)>=30,'Wait for boot to settle'
+          old,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max((int(n['id']) for n in old.get('notifications',[])),default=0)
+          def send(op,n):
+            ddp=bytearray(20);ddp[0]=240;ddp[1]=4;ddp[2]=n>>8;ddp[3]=n&255;ddp[6]=op>>8;ddp[7]=op&255
+            packet=bytes([n,1,0,0])+ddp
+            payload={'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(packet).decode()}
+            request,_=api('/api/curtain/call',{'action':'rawWrite','payload':payload,'idempotencyKey':'jh2-127-read-'+str(op)+'-'+str(int(time.time()))},cookie=cookie)
+            cid=request['commandId']
+            for _ in range(90):
+              reply,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              command=reply['command']
+              if command['state'] in ('applied','failed','expired','superseded'):break
+              time.sleep(.6)
+            else:raise RuntimeError('Read command timeout '+str(cid))
+            r=command.get('result') or {}
+            print('READ_ACK',op,cid,command['state'],r.get('bleTransmitted'),flush=True)
+            assert command['state']=='applied' and r.get('bleTransmitted') is True,'Read was not transmitted'
+          for i,op in enumerate((205,167,2904),61):send(op,i)
+          time.sleep(15)
+          notices=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)[0].get('notifications',[])
+          def vi(b,i):
+            n=0;shift=0
+            for _ in range(10):
+              x=b[i];i+=1;n|=(x&127)<<shift
+              if not x&128:return n,i
+              shift+=7
+            raise ValueError('varint overflow')
+          def fields(b):
+            i=0;out=[]
+            while i<len(b):
+              tag,i=vi(b,i);wire=tag&7;f=tag>>3
+              if wire==0:v,i=vi(b,i)
+              elif wire==2:
+                size,i=vi(b,i);v=b[i:i+size];i+=size
+              elif wire==1:v=b[i:i+8];i+=8
+              elif wire==5:v=b[i:i+4];i+=4
+              else:raise ValueError('unsupported protobuf')
+              out.append((f,wire,v))
+            return out
+          fragments={};reports=[];seen=set()
+          for notice in notices:
+            raw=base64.b64decode(notice['data'])
+            if len(raw)<24 or raw[3]!=0:continue
+            ident,total,remain=raw[:3]
+            if not total or remain>=total:continue
+            key=(ident,total);parts=fragments.setdefault(key,[None]*total)
+            parts[total-remain-1]=raw[4:]
+            if any(p is None for p in parts):continue
+            ddp=b''.join(fragments.pop(key))
+            if len(ddp)<20 or ddp[0] not in (240,241) or int.from_bytes(ddp[6:8],'big')!=2904:continue
+            ids=[]
+            for f,w,value in fields(ddp[20:]):
+              if f!=1 or w!=2:continue
+              entry=fields(value)
+              eid=next((v for n,t,v in entry if n==1 and t==0),None)
+              cid=next((v for n,t,v in entry if n==4 and t==0),None)
+              if eid is not None and cid is not None:
+                seen.add(eid);ids.append(eid)
+            reports.append({'response':ident,'bytes':len(ddp),'entries':len(ids),'range':[min(ids),max(ids)] if ids else []})
+          missing=sorted(set(range(88))-seen)
+          print('2904_RESPONSES',reports,flush=True)
+          print('TOTAL_EFFECTS',len(seen),'MISSING',missing,flush=True)
+          after=status();ca=after.get('curtain') or {}
+          print('FINAL_STATUS',{'firmware':after.get('firmware'),'autoUpdate':after.get('autoUpdate'),
+            'hostMsys2':ca.get('nativeHostMsys2Bytes'),'catalogPackets':ca.get('nativeCatalogPackets'),
+            'noticeDrops':ca.get('nativeNoticeDrops'),'queued':after.get('queued')},flush=True)
+          assert not missing and len(seen)==88,'Incomplete inventory; no destructive controller actions performed'
+          print('SUCCESS_FULL_88_EFFECT_INVENTORY',flush=True)
+          PY
