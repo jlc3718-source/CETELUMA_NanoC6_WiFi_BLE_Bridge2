@@ -38,7 +38,7 @@ jobs:
           with urllib.request.urlopen(request,timeout=12) as response:
               response.read()
               cookie=response.headers.get('Set-Cookie','').split(';',1)[0]
-          assert cookie.startswith('jh2_session='), 'Oracle did not issue a session cookie'
+          assert cookie.startswith('jh2='), 'Oracle did not issue a session cookie'
           for sample in range(3):
               try:
                   s,_=get('/api/curtain/status',cookie)
