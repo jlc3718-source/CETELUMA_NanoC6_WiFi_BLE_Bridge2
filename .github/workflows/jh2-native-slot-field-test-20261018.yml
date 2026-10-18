@@ -38,3 +38,4 @@ jobs:
           path: native-slot-field-test.json
           retention-days: 7
           if-no-files-found: warn
+# Post-v1.1.49 OTA acceptance test trigger; reserved CID 83928 only.
