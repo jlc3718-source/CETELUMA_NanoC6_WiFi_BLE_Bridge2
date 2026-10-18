@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
+#include "nvs.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_err.h"
@@ -74,6 +76,94 @@ static const ble_uuid128_t HEART_UUID=BLE_UUID128_INIT(
   0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x02,0x02);
 static const ble_uuid128_t UPLOAD_UUID=BLE_UUID128_INIT(
   0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x20,0x01,0x30,0x92,0x27);
+// Restore pre-rewrite BLE scan/selected-controller behavior.
+#define DISCOVERED_MAX 12
+typedef struct {ble_addr_t addr;int8_t rssi;char name[32];uint32_t seen_ms;} discovered_device;
+static discovered_device discovered[DISCOVERED_MAX];
+static size_t discovered_count=0;
+static SemaphoreHandle_t discovered_lock=NULL;
+static ble_addr_t selected_addr={0};
+static bool selected_valid=false;
+static volatile uint32_t ble_scan_requests=0;
+static void format_mac(const ble_addr_t *addr,char out[18]){
+    snprintf(out,18,"%02X:%02X:%02X:%02X:%02X:%02X",addr->val[5],addr->val[4],
+             addr->val[3],addr->val[2],addr->val[1],addr->val[0]);
+}
+static bool parse_mac(const char *mac,uint8_t out[6]){
+    if(!mac || strlen(mac)!=17)return false;
+    unsigned x[6]={0};
+    if(sscanf(mac,"%2x:%2x:%2x:%2x:%2x:%2x",&x[0],&x[1],&x[2],&x[3],&x[4],&x[5])!=6)return false;
+    for(size_t k=0;k<6;k++)out[5-k]=(uint8_t)x[k];
+    return true;
+}
+static void cache_discovery(const struct ble_gap_disc_desc *disc,const struct ble_hs_adv_fields *f){
+    if(!discovered_lock || xSemaphoreTake(discovered_lock,0)!=pdTRUE)return;
+    size_t i=0;for(;i<discovered_count;i++){
+        if(ble_addr_cmp(&discovered[i].addr,&disc->addr)==0)break;
+    }
+    if(i>=DISCOVERED_MAX)i=DISCOVERED_MAX-1;
+    if(i>=discovered_count)discovered_count=i+1;
+    discovered[i].addr=disc->addr;
+    discovered[i].rssi=disc->rssi;
+    discovered[i].seen_ms=(uint32_t)(esp_timer_get_time()/1000);
+    if(f->name && f->name_len){
+        size_t n=f->name_len<sizeof(discovered[i].name)-1?f->name_len:sizeof(discovered[i].name)-1;
+        memcpy(discovered[i].name,f->name,n);
+        discovered[i].name[n]=0;
+    }
+    xSemaphoreGive(discovered_lock);
+}
+static void load_target(void){
+    nvs_handle_t n;
+    if(nvs_open("jh2-curtain",NVS_READONLY,&n)!=ESP_OK)return;
+    size_t len=sizeof(selected_addr);
+    if(nvs_get_blob(n,"target",&selected_addr,&len)==ESP_OK && len==sizeof(selected_addr))
+        selected_valid=true;
+    nvs_close(n);
+}
+bool jh2_ble_scan_start(void){
+    ++ble_scan_requests;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE)return true;
+    begin_scan();
+    return true;
+}
+bool jh2_ble_select_target(const char *mac){
+    uint8_t desired[6]={0};
+    if(!parse_mac(mac,desired) || !discovered_lock)return false;
+    ble_addr_t addr={0};bool found=false;
+    if(xSemaphoreTake(discovered_lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
+    for(size_t i=0;i<discovered_count;i++){
+        if(memcmp(discovered[i].addr.val,desired,6)==0){
+            // Select only a device observed by our BLE scan; no guessed MAC.
+            addr=discovered[i].addr;found=true;break;
+        }
+    }
+    xSemaphoreGive(discovered_lock);
+    if(!found)return false;
+    nvs_handle_t n;
+    if(nvs_open("jh2-curtain",NVS_READWRITE,&n)!=ESP_OK)return false;
+    bool saved=nvs_set_blob(n,"target",&addr,sizeof(addr))==ESP_OK &&
+               nvs_commit(n)==ESP_OK;
+    nvs_close(n);
+    if(!saved)return false;
+    selected_addr=addr;selected_valid=true;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE)
+        ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM);
+    else{
+        ble_gap_disc_cancel();
+        begin_scan();
+    }
+    return true;
+}
+bool jh2_ble_disconnect(void){
+    if(connection==BLE_HS_CONN_HANDLE_NONE)return true;
+    return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
+}
+bool jh2_ble_target_slot_seen(uint16_t slot){
+    for(unsigned id=0;id<JH2_FACTORY_EFFECTS;id++)
+        if(catalog_seen[id] && catalog_cid[id]==83928 && catalog_slot[id]==slot)return true;
+    return false;
+}
 static const char *WRITE_UUID_TEXT="01020074-1972-1925-3022-077119514e44";
 static const char *HEART_UUID_TEXT="02020074-1972-1925-3022-077119514e44";
 static const char *UPLOAD_UUID_TEXT="27923001-2072-1925-3022-077119514e44";
@@ -134,6 +224,23 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"mtu",connection==BLE_HS_CONN_HANDLE_NONE?23:ble_att_mtu(connection));
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
     cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
+    cJSON_AddNumberToObject(out,"nativeBleScanRequests",ble_scan_requests);
+    char chosen[18]="";
+    if(selected_valid)format_mac(&selected_addr,chosen);
+    cJSON_AddStringToObject(out,"nativeSelectedControllerMac",chosen);
+    cJSON *visible=cJSON_AddArrayToObject(out,"nativeDiscoveredDevices");
+    if(discovered_lock && xSemaphoreTake(discovered_lock,pdMS_TO_TICKS(40))==pdTRUE){
+        for(size_t i=0;i<discovered_count;i++){
+            cJSON *row=cJSON_CreateObject();if(!row)break;
+            char mac[18];format_mac(&discovered[i].addr,mac);
+            cJSON_AddStringToObject(row,"mac",mac);
+            cJSON_AddStringToObject(row,"name",discovered[i].name);
+            cJSON_AddNumberToObject(row,"rssi",discovered[i].rssi);
+            cJSON_AddBoolToObject(row,"selected",selected_valid && ble_addr_cmp(&selected_addr,&discovered[i].addr)==0);
+            cJSON_AddItemToArray(visible,row);
+        }
+        xSemaphoreGive(discovered_lock);
+    }
     cJSON_AddBoolToObject(out,"nativeCatalogComplete88",catalog_unique==JH2_FACTORY_EFFECTS);
     // A single received final catalog reply identifies 83928 without reading
     // all 88 entries. Historical E87/E88 both referenced this CID, so expose
@@ -412,7 +519,11 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     case BLE_GAP_EVENT_DISC:{
         struct ble_hs_adv_fields f;
         if(ble_hs_adv_parse_fields(&f,event->disc.data,event->disc.length_data)!=0)return 0;
-        if(f.name_len!=strlen(TARGET)||memcmp(f.name,TARGET,f.name_len)!=0)return 0;
+        cache_discovery(&event->disc,&f);
+        bool selected=selected_valid && ble_addr_cmp(&event->disc.addr,&selected_addr)==0;
+        bool named=(f.name && f.name_len==strlen(TARGET)&&
+                    memcmp(f.name,TARGET,f.name_len)==0);
+        if(!selected && (selected_valid || !named))return 0;
         ESP_LOGI(TAG,"FOUND_TARGET %s",TARGET);
         if(ble_gap_disc_cancel()!=0)return 0;
         int rc=ble_gap_connect(own_addr,&event->disc.addr,30000,NULL,gap_event,NULL);
@@ -523,10 +634,12 @@ void app_main(void){
     if(!jh2_web_start()){
         ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED");
     }
+    discovered_lock=xSemaphoreCreateMutex();
+    load_target();
     notice_lock=xSemaphoreCreateMutex();
     raw_write_lock=xSemaphoreCreateMutex();
     raw_write_event=xSemaphoreCreateBinary();
-    if(!notice_lock||!raw_write_lock||!raw_write_event){
+    if(!discovered_lock||!notice_lock||!raw_write_lock||!raw_write_event){
         ESP_LOGE(TAG,"Native BLE synchronization allocation failed");
         return;
     }
