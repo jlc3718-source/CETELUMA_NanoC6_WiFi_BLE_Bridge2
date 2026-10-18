@@ -21,6 +21,27 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.status{border-l
 <label>Speed <output id="speedValue">50</output><input id="speed" type="range" min="1" max="100" value="50"></label>
 <button id="setSpeed">Apply speed</button>
 <div class="flex"><button id="resume">Return control to Oracle scheduling</button></div></section>
+
+<section class="box" id="curtainLab"><h2>Command Lab — APK → Oracle → Nano → BLE</h2>
+<p class="sub">Trace each hop. Physical output remains unverified without seeing the curtain. Use local Nano page to bypass Oracle and compare.</p>
+<div class="flex"><button data-lab="scan">Scan BLE</button><button data-lab="connect">Connect BLE</button><button data-lab="disconnect">Disconnect</button><button data-lab="status">Status</button></div>
+<label>Discovered BLE controllers <select id="controllers"><option value="">Scan to select</option></select></label>
+<button id="selectController">Select on Nano</button>
+<div class="flex"><button data-lab="read205">Handshake 205</button><button data-lab="read167">Init 167</button><button data-lab="read2904">Read stored effect slots</button></div>
+<label>CID 83928 target <select id="targetSlots"><option value="">Read controller slots first</option></select></label>
+<div class="flex"><button id="playTarget">Play verified CID 83928 slot</button><button data-lab="sequenceStop">Stop sequence</button></div>
+<label>Layout <select id="layout"><option value="0">Normal</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></label><button id="setLayout">Apply layout</button>
+<label>Solid RGB <input id="solidColor" type="color" value="#ff8800"></label><button id="setSolid">Set solid color</button>
+<label>Sequence effect IDs <input id="sequenceIds" value="0,6,10"></label>
+<label>Seconds per effect <input id="sequenceSec" type="number" min="5" max="3600" value="30"></label>
+<button id="startSequence">Play sequence</button>
+<details><summary>Native slot upload / erase / restore</summary><p class="sub">These remain blocked until CID 83928 is unambiguous and a known-good original backup has been verified.</p><div class="flex"><button data-guard="upload">Upload preflight</button><button data-guard="erase">Erase preflight</button><button data-guard="restore">Restore preflight</button></div></details>
+<pre id="trace" class="status" aria-live="polite">No commands tested.</pre><button id="copyTrace">Copy trace</button>
+</section>
+<section class="box"><h2>Image / GIF Studio · 40×40</h2>
+<p class="sub">Same hosted studio as the Curtain tab, including import, 40×40 preview, animation and Oracle delivery.</p>
+<iframe id="curtainStudio" title="Image/GIF Studio" loading="lazy" style="width:100%;min-height:670px;border:0;border-radius:12px"></iframe>
+</section>
 <section class="box"><h2>NanoC6 management</h2><div class="flex"><button id="nanoInfo">Read Nano diagnostics</button><button id="otaCheck">Check signed firmware</button><button id="otaInstall" class="warn">Install verified update and restart</button><button id="nanoReboot" class="warn">Restart NanoC6</button></div>
 <label><input type="checkbox" id="autoUpdate"> Automatically install newer signed firmware</label>
 <p class="sub">Firmware is signature and SHA-256 verified by the permanent Nano updater; remote access never exposes raw LAN port 80, bridge credentials, or arbitrary network routes. Wi-Fi setup remains local for recovery safety.</p></section>
