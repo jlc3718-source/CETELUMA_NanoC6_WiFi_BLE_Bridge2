@@ -65,6 +65,10 @@ if 'createCurtainBridge' not in live:
  a=src.index('  if(path==="/api/curtain/status"');b=src.index('  if(method==="GET"&&path==="/api/nanoc6/sync")',a);block=src[a:b]
  assert live.count('  if(method==="GET"&&path==="/api/nanoc6/sync")')==1;live=live.replace('  if(method==="GET"&&path==="/api/nanoc6/sync")',block+'  if(method==="GET"&&path==="/api/nanoc6/sync")')
  live=live.replace('"nano_sync.js"]','"nano_sync.js","curtain_remote.js"]')
+else:
+ # Update the already-isolated route blocks without touching other application code.
+ for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
+  a=src.index(start);b=src.index(end,a);x=live.index(start);y=live.index(end,x);live=live[:x]+src[a:b]+live[y:]
 # Keep the authenticated Nano diagnostic route immediately before static asset routing.
 remote_begin='  if(path==="/nano/"&&method==="GET"){' 
 remote_end='  if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);'
@@ -77,10 +81,6 @@ if remote_begin in src:
   live=live.replace(remote_end,new_nano+remote_end)
 else:raise RuntimeError('Source /nano/ handler missing')
 
-else:
- # Update the already-isolated route blocks without touching other application code.
- for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
-  a=src.index(start);b=src.index(end,a);x=live.index(start);y=live.index(end,x);live=live[:x]+src[a:b]+live[y:]
 old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
 bridge_init='const curtainRelay=createCurtainBridge({db});'
 new_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});'
