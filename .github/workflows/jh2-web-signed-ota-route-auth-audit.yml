@@ -1,0 +1,29 @@
+name: JH2 Check Signed Manifest Route Accessibility
+on:
+  push:
+    branches: [codex/jh2-native-1-1-33-web-signed-update-20261018]
+    paths: ['.github/workflows/jh2-web-signed-ota-route-auth-audit.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Verify manifest is accessible to Nano without browser cookie
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import urllib.request,urllib.error,json
+          host='http://127.0.0.1:8081'
+          for path in ['/api/curtain/firmware-manifest','/api/public-signed-manifest']:
+              for label,h in [('no-cookie',{}),('fake-bridge',{'Authorization':'Bearer invalid','X-JH2-Bridge-Token':'invalid'})]:
+                  req=urllib.request.Request(host+path,headers=h)
+                  try:
+                      with urllib.request.urlopen(req,timeout=10) as r:
+                          d=json.load(r)
+                          print('OTA_ROUTE',label,path,'HTTP',r.status,'schema',d.get('schema'),
+                               'signed',bool(d.get('signature')),flush=True)
+                  except urllib.error.HTTPError as e:
+                      print('OTA_ROUTE',label,path,'HTTP',e.code,flush=True)
+          PY
