@@ -13,6 +13,7 @@
 #include "native_ble.h"
 #include "signed_ota.h"
 #include "asset_stream.h"
+#include "native_commands.h"
 #include "esp_ota_ops.h"
 #include "mbedtls/base64.h"
 #include <ctype.h>
@@ -366,6 +367,62 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     }else if(strcmp(action->valuestring,"connect")==0||
              strcmp(action->valuestring,"subscribeRaw")==0){
         append_ack(current,"applied","Native GATT connection managed by NimBLE central",false);
+    }else if(strcmp(action->valuestring,"power")==0 ||
+             strcmp(action->valuestring,"brightness")==0 ||
+             strcmp(action->valuestring,"speed")==0 ||
+             strcmp(action->valuestring,"layout")==0 ||
+             strcmp(action->valuestring,"effect")==0 ||
+             strcmp(action->valuestring,"nativePlay")==0 ||
+             strcmp(action->valuestring,"solid")==0){
+        // An explicit visual command supersedes an old long-running animation.
+        if(jh2_asset_stream_active()){
+            jh2_asset_stream_stop();
+            for(int wait=0;wait<70&&jh2_asset_stream_active();wait++)
+                vTaskDelay(pdMS_TO_TICKS(30));
+        }
+        bool delivered=false;
+        cJSON *value=cJSON_GetObjectItemCaseSensitive(payload,"value");
+        const char *name=action->valuestring;
+        if(!jh2_asset_stream_active()){
+            if(strcmp(name,"power")==0){
+                cJSON *on=cJSON_GetObjectItemCaseSensitive(payload,"on");
+                if(cJSON_IsBool(on))delivered=jh2_native_power(cJSON_IsTrue(on));
+            }else if(strcmp(name,"brightness")==0){
+                if(cJSON_IsNumber(value))delivered=jh2_native_brightness(value->valueint);
+            }else if(strcmp(name,"speed")==0){
+                if(cJSON_IsNumber(value))delivered=jh2_native_speed(value->valueint);
+            }else if(strcmp(name,"layout")==0){
+                if(cJSON_IsNumber(value))delivered=jh2_native_layout(value->valueint);
+            }else if(strcmp(name,"effect")==0){
+                cJSON *id=cJSON_GetObjectItemCaseSensitive(payload,"id");
+                if(cJSON_IsNumber(id))delivered=jh2_native_effect(id->valueint);
+            }else if(strcmp(name,"nativePlay")==0){
+                cJSON *cid=cJSON_GetObjectItemCaseSensitive(payload,"cid");
+                cJSON *slot=cJSON_GetObjectItemCaseSensitive(payload,"slot");
+                if(cJSON_IsNumber(cid)&&cJSON_IsNumber(slot)&&cid->valuedouble>=0&&slot->valuedouble>=0)
+                    delivered=jh2_native_play((uint32_t)cid->valuedouble,(uint32_t)slot->valuedouble);
+            }else if(strcmp(name,"solid")==0){
+                cJSON *color=cJSON_GetObjectItemCaseSensitive(payload,"color");
+                cJSON *level=cJSON_GetObjectItemCaseSensitive(payload,"brightness");
+                if(cJSON_IsString(color)&&color->valuestring&&strlen(color->valuestring)==7
+                   &&color->valuestring[0]=='#'){
+                    bool valid=true;
+                    for(int i=1;i<7;i++)
+                        if(!isxdigit((unsigned char)color->valuestring[i]))valid=false;
+                    if(valid)delivered=jh2_native_solid(
+                        (uint32_t)strtoul(color->valuestring+1,NULL,16),
+                        cJSON_IsNumber(level)?level->valueint:100);
+                }
+            }
+        }
+        append_ack(current,delivered?"applied":"failed",
+          delivered?"Native SmartDawn command acknowledged by GATT; physical display unconfirmed":
+          "Native SmartDawn command rejected or GATT unavailable",delivered);
+    }else if(strcmp(action->valuestring,"sequenceStop")==0){
+        jh2_asset_stream_stop();
+        append_ack(current,"applied","Native sequence/stream stop requested",false);
+    }else if(strcmp(action->valuestring,"nanoResumeOracle")==0){
+        append_ack(current,"applied","Oracle scheduling resumed",false);
     }else if(strcmp(action->valuestring,"rawWrite")==0){
         cJSON *uuid=cJSON_GetObjectItemCaseSensitive(payload,"uuid");
         cJSON *data=cJSON_GetObjectItemCaseSensitive(payload,"data");
