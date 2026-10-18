@@ -73,23 +73,63 @@ async function refresh(){
  }catch(e){bridgeOnline=false;$('online').textContent='Oracle connection unavailable';$('online').className='bad';$('diagnostics').textContent=e.message;}
  enable();
 }
+
+let traceLines=[],lastTrace='';
+function record(stage,detail){
+ traceLines.push(new Date().toLocaleTimeString()+' | '+stage+' | '+detail);
+ lastTrace=traceLines.join('\n');
+ $('trace').textContent=lastTrace;
+ output(stage+': '+detail);
+}
 async function command(action,payload={}){
- if(!bridgeOnline||busy)return;busy=true;enable();output('Submitting '+action+' to Oracle…');
+ if(!bridgeOnline||busy)return null;
+ busy=true;enable();traceLines=[];
+ const traceId=crypto.randomUUID();
+ record('APK/UI','trace '+traceId+' action='+action);
+ let cursor=0;
  try{
-  const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
-  output('Queued command #'+queued.commandId+'; waiting for NanoC6 receipt…');
-  for(let i=0;i<110;i++){
-   await sleep(i<20?200:350);
-   const d=await api('/api/curtain/command?id='+encodeURIComponent(queued.commandId)),c=d.command;
-   if(c.state==='applied'){
-    output('NanoC6 acknowledged #'+c.id+' ('+action+').\n'+JSON.stringify(c.result||{},null,2));
-    return;
+  const prev=await api('/api/curtain/notifications?since=0');
+  cursor=Math.max(0,...(prev.notifications||[]).map(v=>Number(v.id)||0));
+  const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:traceId});
+  record('ORACLE','queued command #'+queued.commandId);
+  let lastState='queued';
+  const deadline=Date.now()+((action==='rawWrite'||action==='asset')?190000:100000);
+  while(Date.now()<deadline){
+   await sleep(650);
+   const d=await api('/api/curtain/command?id='+encodeURIComponent(queued.commandId));
+   const c=d.command;
+   if(c.state!==lastState){
+    lastState=c.state;record('RELAY','command #'+c.id+' '+lastState);
    }
-   if(['failed','expired','superseded'].includes(c.state))throw Error('NanoC6 '+c.state+': '+(c.result?.error||'no detail'));
-   if(c.state==='downloaded')output('NanoC6 received #'+c.id+'; BLE delivery in progress…');
+   if(c.state==='applied'){
+    record('NANO/BLE','ack '+JSON.stringify(c.result||{}));
+    await sleep(900);
+    const replies=await api('/api/curtain/notifications?since='+cursor);
+    record('CONTROLLER',(replies.notifications||[]).length+' returned notification(s)');
+    record('PHYSICAL','not verified by telemetry');
+    return {...c.result,ok:true,commandId:c.id,traceId};
+   }
+   if(['failed','expired','superseded'].includes(c.state))
+    throw Error('Command #'+c.id+' '+c.state+': '+(c.result?.error||c.result?.message||'no detail'));
   }
-  throw Error('NanoC6 did not confirm command before timeout. Check bridge status.');
- }catch(e){output(e.message,true)}finally{busy=false;await refresh();}
+  throw Error('No final ACK; inspect Oracle command ID before retrying. '+traceId);
+ }catch(e){
+  record('FAILED',e.message);
+  return {ok:false,error:e.message,traceId};
+ }finally{
+  busy=false;await refresh();
+ }
+}
+const READ_UUID='01020074-1972-1925-3022-077119514e44';
+function ddpRead(op){
+ const seq=Math.floor(Math.random()*150)+40;
+ const bytes=new Uint8Array(24);
+ bytes.set([seq,1,0,0,0xf0,4,0,0,0,0,(op>>8)&255,op&255]);
+ return {uuid:READ_UUID,data:btoa(String.fromCharCode(...bytes))};
+}
+async function lab(action){
+ if(action.startsWith('read'))return command('rawWrite',ddpRead(Number(action.slice(4))));
+ return command(action,{});
 }
 for(let i=0;i<88;i++)$('effect').add(new Option('E-'+i,String(i)));
 for(const id of ['brightness','speed'])$(id).oninput=()=>$(id+'Value').value=$(id).value+(id==='brightness'?'%':'');
