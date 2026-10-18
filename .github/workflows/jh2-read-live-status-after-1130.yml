@@ -1,0 +1,38 @@
+name: JH2 Read Live Status After 1.1.30
+on:
+  push:
+    branches: [codex/jh2-native-rx2-web-ap-localfix-20261017]
+    paths: ['.github/workflows/jh2-read-live-status-after-1130.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Fetch saved Nano status from local Oracle web API
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(kv.split('=',1) for kv in info['Config']['Env'] if '=' in kv)
+          api_token=env['JASON_HOME_API_TOKEN']
+          base='http://127.0.0.1:8081'
+          request=urllib.request.Request(base+'/api/session',
+              data=json.dumps({'token':api_token}).encode(),
+              headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=12) as response:
+              response.read();cookie=response.headers['Set-Cookie'].split(';',1)[0]
+          req=urllib.request.Request(base+'/api/curtain/status',headers={'Cookie':cookie})
+          with urllib.request.urlopen(req,timeout=12) as response:state=json.load(response)
+          curtain=state.get('curtain') or {}
+          fields={'online':state.get('online'),'firmware':state.get('firmware'),
+             'lastSeen':state.get('lastSeen'),'lastSync':state.get('lastSync'),
+             'wifi':state.get('wifi'),'uptimeSeconds':state.get('uptimeSeconds'),
+             'error':str(state.get('error') or '')[:100],
+             'bleConnected':curtain.get('connected'),
+             'mtu':curtain.get('mtu'),'catalogUnique':curtain.get('nativeCatalogUnique'),
+             'catalogPackets':curtain.get('nativeCatalogPackets'),'queued':state.get('queued')}
+          print('JH2_LIVE_1130_STATUS',json.dumps(fields,sort_keys=True))
+          PY
