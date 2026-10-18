@@ -40,6 +40,7 @@ extern const unsigned char jh2_native_compat_padding[];
 #error "NimBLE's actual host receive mbuf must fit a complete large native EffectList notification."
 #endif
 
+extern void jh2_hci_acl_diag(cJSON *out);
 static const char *TAG="JH2_IDF_BLE";
 static const char TARGET[]="DN5E58";
 static const ble_uuid128_t SVC_UUID=BLE_UUID128_INIT(
@@ -157,7 +158,8 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyQueryRc",phy_rc);
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx6-10-15ms-interval-expanded-hci-64");
+    jh2_hci_acl_diag(out);
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx7-hci-acl-ingress-tap");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
