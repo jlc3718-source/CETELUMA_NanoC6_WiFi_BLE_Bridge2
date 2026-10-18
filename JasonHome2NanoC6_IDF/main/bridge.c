@@ -531,7 +531,11 @@ static cJSON *sync_document(void){
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
     cJSON_AddBoolToObject(status,"autoUpdate",false);
-    cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE);
+    #if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
+    cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",true);
+#else
+    cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",false);
+#endif
     cJSON_AddBoolToObject(status,"relayStreaming",jh2_asset_stream_active());
     cJSON_AddStringToObject(status,"assetStorage","oracle");
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
