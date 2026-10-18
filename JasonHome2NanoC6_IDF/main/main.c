@@ -109,6 +109,18 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Bytes",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
 }
+bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
+    if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    if(len>(size_t)(ble_att_mtu(connection)-3))return false;
+    if(channel==0)return jh2_ble_raw_write(WRITE_UUID_TEXT,bytes,len,12000);
+    if(channel!=1 || !heart)return false;
+    // Native SmartDawn doodle/image characteristic supports no-response
+    // writes; periodically yield so the BLE controller can drain its HCI TX.
+    int rc=ble_gattc_write_no_rsp_flat(connection,heart,bytes,(uint16_t)len);
+    static unsigned since_yield=0;
+    if(rc==0 && (++since_yield%6)==0)vTaskDelay(pdMS_TO_TICKS(3));
+    return rc==0;
+}
 static int raw_write_done(uint16_t conn,const struct ble_gatt_error *err,
                           struct ble_gatt_attr *attr,void *arg){
     (void)conn;(void)attr;(void)arg;
