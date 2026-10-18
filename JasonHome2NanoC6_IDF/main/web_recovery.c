@@ -25,6 +25,7 @@
 #include "lwip/apps/sntp.h"
 #include "cJSON.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -218,6 +219,7 @@ static esp_err_t status_get(httpd_req_t *r){
 }
 // On-device manual BLE controls. Restrict target playback to a controller-
 // reported slot matching 83928; never accept arbitrary CID or an unverified slot.
+static bool form_value(const char *form,const char *field,char *out,size_t cap);
 static esp_err_t ble_control_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();if(!o)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Memory");
@@ -257,7 +259,6 @@ static esp_err_t ble_control_post(httpd_req_t *r){
 
 // The local Nano console deliberately bypasses Oracle to separate a Nano/BLE
 // defect from APK -> Oracle and Oracle -> Nano transport failures.
-static bool form_value(const char *form,const char *field,char *out,size_t cap);
 static uint32_t local_trace_serial=0;
 static esp_err_t local_probe_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
@@ -285,10 +286,9 @@ static esp_err_t local_probe_post(httpd_req_t *r){
             strcmp(action,"read2904")==0){
         const int opcode=strcmp(action,"read205")==0?205:
                          strcmp(action,"read167")==0?167:2904;
-        const uint8_t wire[]={0x0a,0x01,0,0,0xf0,0x04,0,0,0,0,
-                               (uint8_t)(opcode>>8),(uint8_t)opcode,
-                               0,0,0,0,0,0,0,0,0,0,0,0};
-        ok=jh2_ble_raw_write("01020074-1972-1925-3022-077119514e44",wire,sizeof(wire),12000);
+        // Reuse the known factory manufacturer framing and shared command counter.
+        // The previous fixed 0x0a 0x01 packet had mismatched sequence/tx fields.
+        ok=jh2_native_read((uint16_t)opcode);
         transmitted=ok;message=ok?"Read-only GATT request accepted":"GATT read request rejected";
         if(ok && opcode==2904)vTaskDelay(pdMS_TO_TICKS(700));
     }else if(strcmp(action,"powerOn")==0||strcmp(action,"powerOff")==0){
