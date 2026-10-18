@@ -65,7 +65,11 @@ static bool digest_matches(stream_source *s,const char *hex){
     }
     return different==0;
 }
-static bool stream_once(asset_job *job,bool *first_sent,bool *repeat){
+// Preflight parses the exact authenticated, content-addressed Oracle blob
+// and verifies its complete SHA-256 before *any* GATT packet is transmitted.
+// A second HTTPS pass is deliberately checked again at EOF to detect changes
+// between requests. This avoids storing artwork on the constrained Nano.
+static bool stream_once(asset_job *job,bool *first_sent,bool *repeat,bool verify_only){
     char url[370];
     if(snprintf(url,sizeof(url),"%s/api/curtain-bridge/stream/%s",job->endpoint,job->sha)
        >=(int)sizeof(url))return false;
@@ -108,17 +112,19 @@ static bool stream_once(asset_job *job,bool *first_sent,bool *repeat){
                 uint8_t channel=packet_meta[0];
                 if(channel>1||!bytes||bytes>sizeof(packet)||
                     !read_exact(&source,packet,bytes,job->generation)){fail=true;break;}
-                if(!jh2_ble_asset_packet(channel,packet,bytes)){fail=true;break;}
-                if((i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
+                if(!verify_only && !jh2_ble_asset_packet(channel,packet,bytes)){
+                    fail=true;break;
+                }
+                if(!verify_only && (i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
             }
             if(fail||!wanted(job->generation))break;
-            if(!*first_sent){
+            if(!verify_only && !*first_sent){
                 *first_sent=true;
                 job->ack(job->command_id,"applied",
                     "Native ESP-IDF transmitted the first verified-format frame; physical output unconfirmed",true);
             }
             uint32_t waited=0;
-            while(waited<hold&&wanted(job->generation)){
+            while(!verify_only && waited<hold&&wanted(job->generation)){
                 uint32_t step=(hold-waited)>20?20:hold-waited;
                 vTaskDelay(pdMS_TO_TICKS(step?step:1));
                 waited+=step;
@@ -142,7 +148,11 @@ static void run_asset(void *param){
     bool applied=false,repeat=false,failed=false;
     while(wanted(job.generation)){
         bool repeat_this=false;
-        if(!stream_once(&job,&applied,&repeat_this)){
+        // Authenticate and validate the WHOLE JHC1 stream first. Never send
+        // bytes from an unverified first download to the controller.
+        bool verified=stream_once(&job,&applied,&repeat_this,true);
+        if(!verified || !wanted(job.generation) ||
+           !stream_once(&job,&applied,&repeat_this,false)){
             failed=wanted(job.generation);
             break;
         }

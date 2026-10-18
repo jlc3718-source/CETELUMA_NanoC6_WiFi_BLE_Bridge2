@@ -23,6 +23,7 @@
 #include "freertos/task.h"
 #include "effectlist.h"
 #include "native_ble.h"
+#include "bridge.h"
 #include "freertos/semphr.h"
 #include "mbedtls/base64.h"
 
@@ -394,8 +395,15 @@ void app_main(void){
     ble_hs_cfg.reset_cb=on_reset;
     ble_hs_cfg.sync_cb=on_sync;
     ble_att_set_preferred_mtu(517);
-    ESP_LOGW(TAG,"DIAGNOSTIC_ONLY; native ESP-IDF inventory read; no Wi-Fi/Oracle/OTA");
     nimble_port_freertos_init(host_task);
+#if CONFIG_JH2_NATIVE_ENABLE_ORACLE
+    // Lab opt-in only. Default firmware remains the non-destructive BLE
+    // inventory probe; enabling this option does not authorize OTA or flashing.
+    ESP_LOGW(TAG,"NATIVE_ORACLE_LAB_OPT_IN: starting saved-credential bridge");
+    jh2_bridge_start();
+#else
+    ESP_LOGW(TAG,"DIAGNOSTIC_ONLY; native inventory read; Oracle startup disabled");
+#endif
     while(true){
         vTaskDelay(pdMS_TO_TICKS(10000));
         if(requested && !finished && started_at &&

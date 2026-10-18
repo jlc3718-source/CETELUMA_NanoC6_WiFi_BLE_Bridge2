@@ -1,0 +1,70 @@
+name: JH2 Native ESP-IDF Integration Audit (build only)
+on:
+  push:
+    branches: [codex/jh2-native-espidf-integration-audit-20261017]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-idf-native-integration-ci.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: jh2-idf-native-integration-build
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Non-destructive migration invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/effectlist.c \
+            JasonHome2NanoC6_IDF/tests/effectlist_test.c \
+            -o /tmp/jh2-native-catalog
+          /tmp/jh2-native-catalog
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("JasonHome2NanoC6_IDF")
+          main=(app/"main/main.c").read_text()
+          asset=(app/"main/asset_stream.c").read_text()
+          bridge=(app/"main/bridge.c").read_text()
+          config=(app/"main/Kconfig.projbuild").read_text()
+          assert "default n" in config and "JH2_NATIVE_ENABLE_ORACLE" in config
+          assert "#if CONFIG_JH2_NATIVE_ENABLE_ORACLE" in main
+          assert "jh2_bridge_start();" in main
+          assert asset.index("stream_once(&job,&applied,&repeat_this,true)") < asset.index("stream_once(&job,&applied,&repeat_this,false)")
+          assert "if(!verify_only && !jh2_ble_asset_packet" in asset
+          assert 'memcmp(header,"JHC1",4)' in asset
+          assert "digest_matches(&source,job->sha)" in asset
+          assert '.format_if_mount_failed=false' in bridge
+          assert 'nvs_flash_erase(' not in main+bridge
+          assert 'nanoAutoUpdate' in bridge
+          assert 'Native migration permits only read-only 205/167/2904' in bridge
+          assert "2909" not in (app/"main/native_commands.c").read_text()
+          print("JH2_NATIVE_INTEGRATION_SAFETY_CHECKS_PASS")
+          PY
+      - name: ESP-IDF 5.5.1 ESP32-C6 build, no flash / no publication
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Verify staged image only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          echo "NO_PRODUCTION_FLASH_OR_DEPLOYMENT"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: JH2-Native-ESP-IDF-Integration-Audit-BUILD-ONLY
+          path: |
+            JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+            JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
+          retention-days: 7
