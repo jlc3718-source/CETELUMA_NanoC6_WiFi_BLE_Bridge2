@@ -1,0 +1,74 @@
+name: JH2 Native 2904 Read-only Probe
+on:
+  push:
+    branches: [codex/jh2-native-espidf-browser-ota-20261017]
+    paths: ['.github/workflows/jh2-idf-probe-catalog-readonly.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  inspect:
+    name: One safe 2904 inventory request and journal verification
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read controller catalog only; no effect, upload, OTA or erase
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,base64,urllib.request,urllib.error
+          env=dict(x.split('=',1) for x in json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]['Config']['Env'] if '=' in x)
+          token=env['JASON_HOME_API_TOKEN'];host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              d=json.dumps(body).encode() if body is not None else None
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(host+path,data=d,headers=headers,method='POST' if d is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=12) as res:return json.load(res),res.headers
+          _,h=api('/api/session',{'token':token})
+          cookie=h.get('Set-Cookie','').split(';')[0]
+          if not cookie.startswith('jh2='):raise RuntimeError('No authenticated Oracle session')
+          before,_=api('/api/curtain/status',cookie=cookie)
+          c=before.get('curtain') or {}
+          print('PRE_READ',{'firmware':before.get('firmware'),'online':before.get('online'),
+            'ble':c.get('connected'),'mtu':c.get('mtu'),'unique':c.get('nativeCatalogUnique'),
+            'packets':c.get('nativeCatalogPackets'),'acceptance':before.get('nativeReadOnlyAcceptance')},flush=True)
+          assert before.get('firmware')=='1.1.28'
+          assert before.get('nativeReadOnlyAcceptance') is True
+          assert before.get('online') is True and c.get('connected') is True and int(c.get('mtu') or 0)>=399
+          notice,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max((int(n.get('id') or 0) for n in notice.get('notifications',[])),default=0)
+          n=91;op=2904;ddp=bytearray(20)
+          ddp[0]=240;ddp[1]=4;ddp[2]=0;ddp[3]=n;ddp[6]=op>>8;ddp[7]=op&255
+          pkt=bytes([n,1,0,0])+ddp
+          payload={'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(pkt).decode()}
+          request,_=api('/api/curtain/call',{'action':'rawWrite','payload':payload,
+             'idempotencyKey':'jh2-readonly-2904-'+str(int(time.time()))},cookie=cookie)
+          cid=int(request['commandId'])
+          command={}
+          for _ in range(48):
+              reply,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              command=reply['command']
+              if command['state'] in ('applied','failed','expired','superseded'):break
+              time.sleep(.6)
+          res=command.get('result') or {}
+          print('CATALOG_READ_RESULT',{'id':cid,'state':command.get('state'),
+             'bleTransmitted':res.get('bleTransmitted'),'message':res.get('message')},flush=True)
+          time.sleep(7)
+          result,_=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)
+          rows=[]
+          for note in result.get('notifications',[]):
+              b=base64.b64decode(note['data'])
+              rows.append({'id':note.get('id'),'bytes':len(b),
+                'head':list(b[:4]),'op':int.from_bytes(b[10:12],'big') if len(b)>12 else None})
+          print('NEW_NOTIFICATIONS',rows,flush=True)
+          after,_=api('/api/curtain/status',cookie=cookie)
+          c=after.get('curtain') or {}
+          print('AFTER_READ',{'online':after.get('online'),'ble':c.get('connected'),
+            'mtu':c.get('mtu'),'catalogUnique':c.get('nativeCatalogUnique'),
+            'catalogPackets':c.get('nativeCatalogPackets'),'drops':c.get('nativeNoticeDrops'),
+            'notices':c.get('nativeNotificationsSeen')},flush=True)
+          print('NO_DESTRUCTIVE_COMMANDS_EXECUTED',flush=True)
+          PY
