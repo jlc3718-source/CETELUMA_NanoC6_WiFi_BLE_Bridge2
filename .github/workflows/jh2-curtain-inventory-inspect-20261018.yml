@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inspect:
-    if: github.run_number == 1
+    if: github.run_number == 2
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 4
     steps:
@@ -17,7 +17,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n python3 - <<'PY'
+          sudo --preserve-env=RUNNER_TEMP,GITHUB_RUN_ID -n python3 - <<'PY'
           import json, subprocess, pathlib, hashlib, os
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/('jh2-curtain-inventory-'+os.environ['GITHUB_RUN_ID'])
           root.mkdir(mode=0o700)
