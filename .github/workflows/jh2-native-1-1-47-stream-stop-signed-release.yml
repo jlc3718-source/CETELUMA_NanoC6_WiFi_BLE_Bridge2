@@ -1,15 +1,15 @@
 name: JH2 1.1.47 BLE Asset Stream Stop/Restore - Signed Web Release
 on:
   push:
-    branches: [codex/jh2-native-1-1-47-targeted-928-parity-20261018]
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
     paths:
       - 'JasonHome2NanoC6_IDF/**'
-      - '.github/workflows/jh2-native-1-1-47-parity-signed-release.yml'
+      - '.github/workflows/jh2-native-1-1-47-stream-stop-signed-release.yml'
   pull_request:
     branches: [main]
     paths:
       - 'JasonHome2NanoC6_IDF/**'
-      - '.github/workflows/jh2-native-1-1-47-parity-signed-release.yml'
+      - '.github/workflows/jh2-native-1-1-47-stream-stop-signed-release.yml'
   workflow_dispatch:
 permissions: {contents: write}
 concurrency:
