@@ -10,6 +10,9 @@
  * enables functional migration without replacing the production Nano.
  */
 #include "bridge.h"
+#include "native_ble.h"
+#include "mbedtls/base64.h"
+#include "freertos/semphr.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +53,7 @@ typedef struct { uint64_t command_id; char *json; } ack_record;
 static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
+static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
 typedef struct {char *data; size_t len,cap; bool exceeded;} http_output;
@@ -212,7 +216,7 @@ static cJSON *https_json(const char *path,const char *request_text){
     free(out.data);
     return result;
 }
-static void append_ack(uint64_t command_id,const char *state,const char *message){
+static void append_ack(uint64_t command_id,const char *state,const char *message,bool ble_transmitted){
     cJSON *record=cJSON_CreateObject();
     if(!record)return;
     cJSON_AddNumberToObject(record,"id",(double)command_id);
@@ -220,6 +224,9 @@ static void append_ack(uint64_t command_id,const char *state,const char *message
     cJSON *result=cJSON_AddObjectToObject(record,"result");
     cJSON_AddBoolToObject(result,"ok",strcmp(state,"applied")==0);
     cJSON_AddStringToObject(result,"message",message);
+    cJSON_AddBoolToObject(result,"bleTransmitted",ble_transmitted);
+    cJSON_AddBoolToObject(result,"connected",ble_transmitted);
+    cJSON_AddBoolToObject(result,"physicalPlaybackConfirmed",false);
     char *json=cJSON_PrintUnformatted(record);
     cJSON_Delete(record);
     if(!json)return;
@@ -237,15 +244,50 @@ static void append_ack(uint64_t command_id,const char *state,const char *message
 static void handle_command(const cJSON *row){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
-    if(!cJSON_IsNumber(id)||!cJSON_IsString(action))return;
-    uint64_t current=(uint64_t)id->valuedouble;
+    cJSON *payload=cJSON_GetObjectItemCaseSensitive(row,"payload");
+    if(!cJSON_IsNumber(id)||!cJSON_IsString(action)||!action->valuestring)return;
+    const uint64_t current=(uint64_t)id->valuedouble;
     if(current<=last_command)return;
-    // No device command execution until the native GATT router, display
-    // relay and OTA manager are implemented and physically accepted.
     if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
-        append_ack(current,"applied","Native ESP-IDF bridge transport healthy");
+        append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
+    }else if(strcmp(action->valuestring,"nanoAutoUpdate")==0){
+        cJSON *enabled=cJSON_GetObjectItemCaseSensitive(payload,"enabled");
+        if(cJSON_IsFalse(enabled))
+            append_ack(current,"applied","Automatic updates remain disabled",false);
+        else
+            append_ack(current,"failed","No automatic updates during native firmware migration",false);
+    }else if(strcmp(action->valuestring,"connect")==0||
+             strcmp(action->valuestring,"subscribeRaw")==0){
+        append_ack(current,"applied","Native GATT connection managed by NimBLE central",false);
+    }else if(strcmp(action->valuestring,"rawWrite")==0){
+        cJSON *uuid=cJSON_GetObjectItemCaseSensitive(payload,"uuid");
+        cJSON *data=cJSON_GetObjectItemCaseSensitive(payload,"data");
+        if(!cJSON_IsString(uuid)||!cJSON_IsString(data)){
+            append_ack(current,"failed","Missing BLE UUID or data",false);
+        }else{
+            uint8_t bytes[508];size_t n=0;
+            int rc=mbedtls_base64_decode(bytes,sizeof(bytes),&n,
+                (const unsigned char*)data->valuestring,strlen(data->valuestring));
+            // During acceptance testing allow only known read-only command
+            // opcodes, on the single catalog-control characteristic.
+            bool safe=rc==0 && n>=24 && n<=508
+                && bytes[1]==1 && bytes[2]==0 && bytes[3]==0
+                && bytes[4]==0xf0 &&
+                (((uint16_t)bytes[10]<<8)|bytes[11])!=2909;
+            uint16_t op=safe?(((uint16_t)bytes[10]<<8)|bytes[11]):0;
+            safe=safe&&(op==205||op==167||op==2904)
+                && strcmp(uuid->valuestring,"01020074-1972-1925-3022-077119514e44")==0;
+            if(!safe){
+                append_ack(current,"failed","Native migration permits only read-only 205/167/2904; no erase or upload",false);
+            }else{
+                bool success=jh2_ble_raw_write(uuid->valuestring,bytes,n,12000);
+                append_ack(current,success?"applied":"failed",
+                    success?"Native GATT read packet acknowledged":"Native GATT read packet not acknowledged",
+                    success);
+            }
+        }
     }else{
-        append_ack(current,"failed","Native ESP-IDF BLE command router not enabled");
+        append_ack(current,"failed","Native migration not yet accepted for display or upload commands",false);
     }
     last_command=current;
 }
@@ -265,10 +307,9 @@ static cJSON *sync_document(void){
     cJSON_AddBoolToObject(status,"relayStreaming",false);
     cJSON_AddStringToObject(status,"assetStorage","oracle");
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
-    cJSON_AddBoolToObject(curtain,"connected",false);
-    cJSON_AddNumberToObject(curtain,"mtu",23);
-    cJSON_AddBoolToObject(curtain,"ok",true);
-    cJSON_AddArrayToObject(body,"notifications");
+    jh2_ble_status(curtain);
+    cJSON *notifications=cJSON_AddArrayToObject(body,"notifications");
+    (void)jh2_ble_collect_notices(notifications,committed_notice_cursor);
     cJSON *batch=cJSON_AddArrayToObject(body,"acks");
     xSemaphoreTake(ack_lock,portMAX_DELAY);
     for(size_t i=0;i<ack_count;i++){
@@ -302,6 +343,16 @@ static void oracle_task(void *ctx){
         cJSON *body=sync_document();
         if(!body){vTaskDelay(pdMS_TO_TICKS(1500));continue;}
         int sent=cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(body,"acks"));
+        cJSON *sent_notices=cJSON_GetObjectItemCaseSensitive(body,"notifications");
+        uint32_t final_notice=committed_notice_cursor;
+        if(cJSON_IsArray(sent_notices)){
+            int count=cJSON_GetArraySize(sent_notices);
+            if(count>0){
+                cJSON *last=cJSON_GetArrayItem(sent_notices,count-1);
+                cJSON *notice_id=cJSON_GetObjectItemCaseSensitive(last,"id");
+                if(cJSON_IsNumber(notice_id))final_notice=(uint32_t)notice_id->valuedouble;
+            }
+        }
         char *data=cJSON_PrintUnformatted(body);
         cJSON_Delete(body);
         cJSON *reply=data?https_json("/api/curtain-bridge/sync",data):NULL;
@@ -313,6 +364,7 @@ static void oracle_task(void *ctx){
         }
         retry_ms=1000;
         clear_sent_ack_batch((size_t)sent);
+        committed_notice_cursor=final_notice;
         cJSON *commands=cJSON_GetObjectItemCaseSensitive(reply,"commands");
         if(cJSON_IsArray(commands)){
             cJSON *row=NULL;
