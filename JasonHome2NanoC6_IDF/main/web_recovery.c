@@ -50,7 +50,7 @@ static const char *HOME_HTML=
 "border:1px solid #396880;border-radius:10px;color:#dbf5fc;text-decoration:none;font:inherit}"
 ".muted{color:#bdd0df}.ok{color:#73e6ba}.warning{color:#ffd89e}code{overflow-wrap:anywhere}"
 "</style></head><body><h1>Jason Home 2 NanoC6</h1>"
-"<p class='muted'>RX2 bridge &middot; firmware and recovery management</p>"
+"<p class='muted'>Curtain bridge &middot; native controls and recovery</p>"
 "<section class='panel'><h2>Controller status</h2><p id='network'>Checking Wi-Fi...</p>"
 "<p id='oracle'>Checking Oracle...</p><p id='ble'>Checking Bluetooth...</p>"
 "<p id='inventory' class='muted'></p>"
@@ -68,7 +68,7 @@ static const char *HOME_HTML=
 "set('oracle',d.oracleRunning?'Oracle bridge: connected':"
 "(d.oracleConfigured?'Oracle bridge: configured, not connected':'Oracle bridge: needs pairing'),d.oracleRunning);"
 "set('ble',c.connected?'SmartDawn Bluetooth: connected':'SmartDawn Bluetooth: disconnected',c.connected);"
-"document.getElementById('inventory').textContent='Firmware '+d.version+' · Catalog '+(c.nativeCatalogUnique==null?'?':c.nativeCatalogUnique)+'/88';"
+"document.getElementById('inventory').textContent='Firmware '+d.version+' · Target CID 83928: '+(c.nativeTarget83928Count||0)+' matching slots ('+(c.nativeTarget83928Unique?'unique':'unverified/shared')+') · Partial catalog '+(c.nativeCatalogUnique||0);"
 "}catch(e){document.getElementById('network').textContent=e.message}}"
 "refresh();setInterval(refresh,10000);</script></body></html>";
 
@@ -152,7 +152,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.44-rx14-web");
+    cJSON_AddStringToObject(o,"version","1.1.46-target928-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -160,7 +160,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.44-rx14-web");
+    cJSON_AddStringToObject(o,"version","1.1.46-target928-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
