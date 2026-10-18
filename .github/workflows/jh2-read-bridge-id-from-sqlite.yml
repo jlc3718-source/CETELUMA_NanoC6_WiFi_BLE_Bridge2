@@ -1,0 +1,30 @@
+name: JH2 Read Existing Bridge ID
+on:
+  push:
+    branches: [codex/jh2-native-rx2-web-ap-localfix-20261017]
+    paths:
+      - '.github/workflows/jh2-read-bridge-id-from-sqlite.yml'
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read nonsecret bridge identifier from local SQLite
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec jason-home node -e '
+          const {DatabaseSync} = require("node:sqlite");
+          const path = require("node:path");
+          const filename = path.join(process.env.JH2_DATA_DIR || "./data","jason-home-2.sqlite");
+          const db = new DatabaseSync(filename,{readOnly:true});
+          const row = db.prepare("SELECT value FROM curtain_meta WHERE key = ?").get("bridgeId");
+          const id = row && JSON.parse(row.value);
+          if(typeof id!=="string" || !/^[a-f0-9]{16}$/.test(id)){
+            console.log("BRIDGE_ID_NOT_FOUND");process.exitCode=2;
+          }else{
+            console.log("EXISTING_BRIDGE_ID="+id);
+          }
+          db.close();
+          '
