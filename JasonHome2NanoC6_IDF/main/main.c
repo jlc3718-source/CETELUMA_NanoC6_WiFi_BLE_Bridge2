@@ -131,6 +131,24 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
     cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
     cJSON_AddBoolToObject(out,"nativeCatalogComplete88",catalog_unique==JH2_FACTORY_EFFECTS);
+    // A single received final catalog reply identifies 83928 without reading
+    // all 88 entries. Historical E87/E88 both referenced this CID, so expose
+    // every matching (effect ID, slot, type) rather than assuming uniqueness.
+    cJSON *target=cJSON_AddArrayToObject(out,"nativeTarget83928");
+    unsigned target_matches=0;
+    for(unsigned id=0;id<JH2_FACTORY_EFFECTS;id++){
+        if(!catalog_seen[id] || catalog_cid[id]!=83928)continue;
+        ++target_matches;
+        cJSON *item=cJSON_CreateObject();
+        if(!item)continue;
+        cJSON_AddNumberToObject(item,"effectId",id);
+        cJSON_AddNumberToObject(item,"slot",catalog_slot[id]);
+        cJSON_AddNumberToObject(item,"type",catalog_type[id]);
+        cJSON_AddNumberToObject(item,"cid",83928);
+        cJSON_AddItemToArray(target,item);
+    }
+    cJSON_AddNumberToObject(out,"nativeTarget83928Count",target_matches);
+    cJSON_AddBoolToObject(out,"nativeTarget83928Unique",target_matches==1);
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeCatalogEnqueued",catalog_enqueued);
@@ -159,7 +177,7 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
     jh2_hci_acl_diag(out);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx14-mtu365-split-large-catalog");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx16-targeted-cid83928-feature-restoration");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -208,6 +226,9 @@ static uint8_t own_addr=0,request_index=0,sequence=0;
 static bool requested=false,finished=false;
 
 static uint8_t catalog_seen[JH2_FACTORY_EFFECTS]={0};
+static uint16_t catalog_slot[JH2_FACTORY_EFFECTS]={0};
+static uint8_t catalog_type[JH2_FACTORY_EFFECTS]={0};
+static uint64_t catalog_cid[JH2_FACTORY_EFFECTS]={0};
 static int64_t started_at=0;
 static const uint16_t READ_OPS[]={205,167,2904};
 
@@ -343,8 +364,13 @@ static void catalog_worker(void *unused){
             continue;
         }
         ++catalog_parsed;
-        for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++)
-            if(batch.found[i]&&!catalog_seen[i]){catalog_seen[i]=1;++catalog_unique;}
+        for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++){
+            if(!batch.found[i])continue;
+            catalog_slot[i]=batch.slot[i];
+            catalog_type[i]=batch.type[i];
+            catalog_cid[i]=batch.cid[i];
+            if(!catalog_seen[i]){catalog_seen[i]=1;++catalog_unique;}
+        }
         ESP_LOGI(TAG,"CATALOG_REPLY id=%u gatt_bytes=%u effects=%u first=%u last=%u unique=%u",
                  item.b[0],item.len,(unsigned)batch.count,batch.first,batch.last,
                  (unsigned)catalog_unique);
@@ -454,6 +480,9 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         requested=finished=false;
         request_index=0;
         memset(catalog_seen,0,sizeof(catalog_seen));
+        memset(catalog_slot,0,sizeof(catalog_slot));
+        memset(catalog_type,0,sizeof(catalog_type));
+        memset(catalog_cid,0,sizeof(catalog_cid));
         catalog_packets=catalog_unique=notification_count=0;
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
@@ -512,7 +541,7 @@ void app_main(void){
     if(rc!=ESP_OK){fail("nimble_port_init",rc);return;}
     ble_hs_cfg.reset_cb=on_reset;
     ble_hs_cfg.sync_cb=on_sync;
-    ble_att_set_preferred_mtu(365);
+    ble_att_set_preferred_mtu(517);
     nimble_port_freertos_init(host_task);
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Keep the product marker and compat segment in the actual ESP32-C6
