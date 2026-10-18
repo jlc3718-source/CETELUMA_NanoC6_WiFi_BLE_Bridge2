@@ -1,0 +1,79 @@
+name: JH2 Native ESP-IDF Signed OTA and Oracle Bridge Build
+on:
+  push:
+    branches: [codex/jh2-native-espidf-signed-ota-20261017]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-idf-native-signed-ota-ci.yml'
+permissions: {contents: read}
+concurrency:
+  group: jh2-idf-native-signed-ota-build
+  cancel-in-progress: true
+jobs:
+  build:
+    name: Compile native signed OTA + GATT router; no live update or controller commands
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protocol and security checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/effectlist.c \
+            JasonHome2NanoC6_IDF/tests/effectlist_test.c \
+            -o /tmp/jh2-native-catalog
+          /tmp/jh2-native-catalog
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path('JasonHome2NanoC6_IDF')
+          src=(app/'main/bridge.c').read_text()
+          assert '.format_if_mount_failed=false' in src
+          assert 'NVS_READONLY' in src
+          assert 'cert_pem=(const char *)tls_roots_pem_start' in src
+          assert '"Authorization"' in src and '"X-JH2-Bridge-Token"' in src
+          assert 'esp_littlefs' in src
+          assert 'nvs_flash_erase(' not in src
+          assert 'jh2_bridge_start();' not in (app/'main/main.c').read_text(), 'Native diagnostic must remain BLE-only'
+          assert (app/'main/tls_roots.pem').read_text().count("BEGIN CERTIFICATE")>=2
+          assert 'bool jh2_ble_raw_write(' in (app/'main/main.c').read_text()
+          assert 'record_notice(raw,len);' in (app/'main/main.c').read_text()
+          assert 'jh2_ble_collect_notices' in src and 'committed_notice_cursor=final_notice;' in src
+          assert '(op==205||op==167||op==2904)' in src
+          assert 'Native migration permits only read-only 205/167/2904' in src
+          ota=(app/'main/signed_ota.c').read_text()
+          bridge=(app/'main/bridge.c').read_text()
+          assert 'mbedtls_pk_verify(' in ota
+          assert 'esp_ota_set_boot_partition(updater)' in ota
+          assert 'ESP_PARTITION_SUBTYPE_APP_FACTORY' in ota
+          assert 'NVS_READWRITE' in ota
+          assert 'restart_ack_included' in bridge
+          assert 'if(!public_firmware)' in bridge
+          assert 'format_if_mount_failed=false' in bridge
+          assert (app/'main/ota_public.pem').read_text().startswith('-----BEGIN PUBLIC KEY-----')
+          print('SIGNED_MANIFEST_PERMANENT_UPDATER_AND_PRIVATE_TOKEN_GUARDS_PASS',flush=True)
+          PY
+      - name: Full ESP-IDF 5.5.1 cross-compile, no publishing or flashing
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Verify partition geometry and staged firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          grep -q 'CONFIG_PARTITION_TABLE_CUSTOM=y' JasonHome2NanoC6_IDF/build/config/sdkconfig.h || grep -q 'CONFIG_PARTITION_TABLE_CUSTOM=y' JasonHome2NanoC6_IDF/sdkconfig
+          sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          echo "NATIVE_SIGNED_OTA_COMPILES_WITHOUT_ACTIVATION"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: JH2-Native-ESP-IDF-OTA-Stage4-BUILD-ONLY
+          path: |
+            JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+            JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
+          retention-days: 7
