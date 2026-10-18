@@ -182,16 +182,11 @@ static bool accept_rotated_credentials(const cJSON *credential){
         FILE *f=fopen("/littlefs/secrets.json.tmp","wb");
         if(f){
             size_t written=fwrite(encoded,1,count,f);
-            if(written==count&&fflush(f)==0 && fsync(fileno(f))==0 &&
-               fclose(f)==0){
-                f=NULL;
-                if(rename("/littlefs/secrets.json.tmp","/littlefs/secrets.json")==0)
-                    saved=true;
-            }else{
-                // fclose only if previous condition short-circuited.
-                if(f)fclose(f);
-                f=NULL;
-            }
+            bool flushed=written==count && fflush(f)==0 && fsync(fileno(f))==0;
+            int closed=fclose(f);f=NULL;
+            if(flushed && closed==0 &&
+               rename("/littlefs/secrets.json.tmp","/littlefs/secrets.json")==0)
+                saved=true;
             if(!saved)remove("/littlefs/secrets.json.tmp");
         }
     }
