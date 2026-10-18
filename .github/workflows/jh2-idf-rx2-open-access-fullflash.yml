@@ -114,7 +114,7 @@ jobs:
               raise ValueError('not a valid 0x0 full flash image')
           fn=root/'JH2-RX2-OPEN-1.1.30-FULL-FLASH-0x0.bin'
           fn.write_bytes(full)
-          ota=root/'JH2-RX2-WEB-1.1.30-RUNTIME-OTA.bin'
+          ota=root/'JH2-RX2-OPEN-1.1.30-RUNTIME-OTA.bin'
           ota.write_bytes(app)
           manifest={
               'product':'Jason Home 2 NanoC6','version':'1.1.30-rx2-web',
@@ -139,8 +139,8 @@ jobs:
 
           EXPERIMENTAL: CI COMPILED AND PACKAGED; PHYSICAL FUNCTIONALITY NOT YET VERIFIED.
 
-          FULL INSTALL: JH2-RX2-WEB-1.1.30-FULL-FLASH-0x0.bin - exactly 4,194,304 bytes. USB-flash at 0x0.
-          RUNTIME OTA: JH2-RX2-WEB-1.1.30-RUNTIME-OTA.bin - for the local /firmware browser updater only.
+          FULL INSTALL: JH2-RX2-OPEN-1.1.30-FULL-FLASH-0x0.bin - exactly 4,194,304 bytes. USB-flash at 0x0.
+          RUNTIME OTA: JH2-RX2-OPEN-1.1.30-RUNTIME-OTA.bin - for the local /firmware browser updater only.
 
           IMPORTANT: A complete 0x0 flash overwrites NVS and LittleFS, including your current
           Wi-Fi/Oracle credentials. Back up the chip privately if you need to preserve them.
@@ -150,7 +150,7 @@ jobs:
 
           USB command example (replace COM4):
               python -m pip install --user esptool
-              python -m esptool --chip esp32c6 --port COM4 write-flash 0x0 JH2-RX2-WEB-1.1.30-FULL-FLASH-0x0.bin
+              python -m esptool --chip esp32c6 --port COM4 write-flash 0x0 JH2-RX2-OPEN-1.1.30-FULL-FLASH-0x0.bin
 
           Local firmware web:
           http://jason-home-2.local/firmware OR http://192.168.4.1/firmware on Setup AP
@@ -164,16 +164,16 @@ jobs:
           (
             cd build-output
             sha256sum -c SHA256SUMS-NEW.txt
-            test "$(stat -c %s JH2-RX2-WEB-1.1.30-FULL-FLASH-0x0.bin)" -eq 4194304
+            test "$(stat -c %s JH2-RX2-OPEN-1.1.30-FULL-FLASH-0x0.bin)" -eq 4194304
           )
           echo "NO_AUTOMATIC_FLASH_NO_ORACLE_PRODUCTION_DEPLOY"
       - name: Upload full-flash and OTA artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: JH2-RX2-WEB-1.1.30-FULL-0x0-AND-OTA
+          name: JH2-RX2-OPEN-1.1.30-FULL-0x0-AND-OTA
           path: |
-            build-output/JH2-RX2-WEB-1.1.30-FULL-FLASH-0x0.bin
-            build-output/JH2-RX2-WEB-1.1.30-RUNTIME-OTA.bin
+            build-output/JH2-RX2-OPEN-1.1.30-FULL-FLASH-0x0.bin
+            build-output/JH2-RX2-OPEN-1.1.30-RUNTIME-OTA.bin
             build-output/README-FIRST.md
             build-output/BUILD-MANIFEST.json
             build-output/SHA256SUMS-NEW.txt
