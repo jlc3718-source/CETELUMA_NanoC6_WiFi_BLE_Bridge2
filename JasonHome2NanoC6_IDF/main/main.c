@@ -159,7 +159,7 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
     jh2_hci_acl_diag(out);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx10-stable-38-no-dle-hci-tap");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx12-7p5ms-interval-hci-tap");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -410,8 +410,8 @@ static int gap_event(struct ble_gap_event *event,void *arg){
             // allowing multi-PDU bursts to drain between events. This
             // request is advisory: GATT operates normally if refused.
             struct ble_gap_upd_params pacing={0};
-            pacing.itvl_min=8;
-            pacing.itvl_max=12;
+            pacing.itvl_min=6;
+            pacing.itvl_max=6;
             pacing.latency=0;
             pacing.supervision_timeout=400;
             conn_update_request_rc=ble_gap_update_params(connection,&pacing);
