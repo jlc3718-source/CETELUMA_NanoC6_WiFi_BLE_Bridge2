@@ -1,0 +1,66 @@
+name: JH2 v1.1.46 Signed OTA Live Preflight Only
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-146-signed-ota-preflight-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Verify signed manifest, mirror, drained queue and native signed-firmware response
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,hashlib,time
+          dc=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in dc['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=20) as res:return json.load(res),res.headers
+          manifest,_=api('/api/curtain/firmware-manifest')
+          attrs=dict(line.split('=',1) for line in manifest['payload'].strip().splitlines())
+          assert manifest.get('schema')==1 and manifest.get('signature')
+          assert attrs.get('version')=='1.1.46', 'Unexpected release in live Oracle manifest'
+          assert attrs.get('sha256')=='0c413f61234474b4aae4a3e05539bafa00ff848f60ff0fe66faaf668050da475', 'Unexpected firmware digest'
+          with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.46.bin',timeout=75) as res:
+              digest=hashlib.sha256();count=0
+              while True:
+                  b=res.read(65536)
+                  if not b:break
+                  digest.update(b);count+=len(b)
+          assert count==int(attrs['bytes']) and digest.hexdigest()==attrs['sha256'], 'Oracle runtime mirror mismatch'
+          print('SIGNED_ORACLE_MIRROR_VERIFIED',count,digest.hexdigest(),flush=True)
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers.get('Set-Cookie','').split(';')[0]
+          assert cookie.startswith('jh2='), 'No authenticated session'
+          status,_=api('/api/curtain/status',cookie=cookie)
+          print('CURRENT_VERSION',{'firmware':status.get('firmware'),'online':status.get('online'),'queue':status.get('queued'),'ble':(status.get('curtain') or {}).get('connected')},flush=True)
+          if status.get('firmware')=='1.1.46':
+              print('ALREADY_UPGRADED_NO_ACTION',flush=True);raise SystemExit(0)
+          assert status.get('firmware')=='1.1.44' and status.get('online') is True, 'Unexpected physical version/offline; no command sent'
+          for i in range(65):
+              if int(status.get('queued') or 0)==0:break
+              time.sleep(1)
+              status,_=api('/api/curtain/status',cookie=cookie)
+          assert int(status.get('queued') or 0)==0, 'Oracle command backlog not drained; OTA preflight aborted'
+          obj,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},'idempotencyKey':'jh2-146-readonly-preflight-20261018-v1'},cookie=cookie)
+          cid=int(obj['commandId']);print('PREFLIGHT_COMMAND_ID',cid,flush=True)
+          for i in range(90):
+              cmd,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              c=cmd['command'];state=c.get('state')
+              if state in ('applied','failed','superseded','expired'):
+                  print('SIGNED_PREFLIGHT_RESULT',json.dumps({'commandId':cid,'state':state,'result':c.get('result')},sort_keys=True),flush=True)
+                  if state!='applied':raise RuntimeError('Native signed firmware check not accepted')
+                  print('SIGNED_146_READY_FOR_MANUAL_OTA_NOT_INSTALLED',flush=True)
+                  raise SystemExit(0)
+              time.sleep(.6)
+          raise RuntimeError('No Nano acknowledgement; no firmware update initiated')
+          PY
