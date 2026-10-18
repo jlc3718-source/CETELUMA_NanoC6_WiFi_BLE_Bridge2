@@ -251,6 +251,106 @@ static esp_err_t ble_control_post(httpd_req_t *r){
     cJSON_AddStringToObject(o,"message",message);
     return send_json(r,o);
 }
+
+// The local Nano console deliberately bypasses Oracle to separate a Nano/BLE
+// defect from APK -> Oracle and Oracle -> Nano transport failures.
+static uint32_t local_trace_serial=0;
+static esp_err_t local_probe_post(httpd_req_t *r){
+    if(!local_only(r))return denied(r);
+    if(r->content_len<=0 || r->content_len>256)
+        return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid local command size");
+    char form[257]={0};int used=0;
+    while(used<r->content_len){
+        int n=httpd_req_recv(r,form+used,r->content_len-used);
+        if(n<=0)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Request body interrupted");
+        used+=n;
+    }
+    char action[24]={0},num[24]={0},extra[24]={0};
+    if(!form_value(form,"action",action,sizeof(action)))
+        return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Missing action");
+    cJSON *before=cJSON_CreateObject();
+    jh2_ble_status(before);
+    const cJSON *was=cJSON_GetObjectItemCaseSensitive(before,"connected");
+    const bool connected=cJSON_IsTrue(was);
+    const cJSON *oldn=cJSON_GetObjectItemCaseSensitive(before,"nativeNotificationsSeen");
+    const double notice_before=cJSON_IsNumber(oldn)?oldn->valuedouble:0;
+    bool ok=false,transmitted=false;const char *message="Unsupported local action";
+    if(strcmp(action,"status")==0){ok=true;message="Nano diagnostics read";}
+    else if(!connected){message="Nano Bluetooth disconnected: no GATT command sent";}
+    else if(strcmp(action,"read205")==0 || strcmp(action,"read167")==0 ||
+            strcmp(action,"read2904")==0){
+        const int opcode=strcmp(action,"read205")==0?205:
+                         strcmp(action,"read167")==0?167:2904;
+        const uint8_t wire[]={0x0a,0x01,0,0,0xf0,0x04,0,0,0,0,
+                               (uint8_t)(opcode>>8),(uint8_t)opcode,
+                               0,0,0,0,0,0,0,0,0,0,0,0};
+        ok=jh2_ble_raw_write("01020074-1972-1925-3022-077119514e44",wire,sizeof(wire),12000);
+        transmitted=ok;message=ok?"Read-only GATT request accepted":"GATT read request rejected";
+        if(ok && opcode==2904)vTaskDelay(pdMS_TO_TICKS(700));
+    }else if(strcmp(action,"powerOn")==0||strcmp(action,"powerOff")==0){
+        ok=jh2_native_power(strcmp(action,"powerOn")==0);transmitted=ok;
+        message=ok?"Power GATT command accepted":"Power GATT command failed";
+    }else if(strcmp(action,"brightness")==0 || strcmp(action,"speed")==0 ||
+             strcmp(action,"layout")==0 || strcmp(action,"effect")==0){
+        bool parsed=form_value(form,"value",num,sizeof(num));
+        char *end=NULL;long value=parsed?strtol(num,&end,10):-1;
+        parsed=parsed&&num[0]&&end&&*end==0;
+        if(parsed && strcmp(action,"brightness")==0 && value>=0&&value<=100)
+            ok=jh2_native_brightness((int)value);
+        else if(parsed && strcmp(action,"speed")==0 && value>=0&&value<=255)
+            ok=jh2_native_speed((int)value);
+        else if(parsed && strcmp(action,"layout")==0 && (value==0||value==4||value==5||value==6))
+            ok=jh2_native_layout((int)value);
+        else if(parsed && strcmp(action,"effect")==0 && value>=0&&value<=87)
+            ok=jh2_native_effect((int)value);
+        transmitted=ok;message=ok?"Controller GATT command accepted":"Invalid value or GATT failure";
+    }else if(strcmp(action,"nativePlay")==0){
+        bool parsed=form_value(form,"slot",num,sizeof(num));
+        char *end=NULL;long slot=parsed?strtol(num,&end,10):-1;
+        if(parsed&&num[0]&&end&&*end==0&&slot>=0&&slot<=255 &&
+           jh2_ble_target_slot_seen((uint16_t)slot))
+            ok=jh2_native_play(83928,(uint32_t)slot);
+        transmitted=ok;message=ok?"Verified CID 83928 playback requested":"Slot not verified or GATT failed";
+    }else if(strcmp(action,"solid")==0){
+        bool hasColor=form_value(form,"rgb",num,sizeof(num));
+        bool hasBrightness=form_value(form,"value",extra,sizeof(extra));
+        char *end=NULL;unsigned long rgb=hasColor?strtoul(num,&end,16):0;
+        bool valid=hasColor&&num[0]&&end&&*end==0&&rgb<=0xffffff;
+        char *be=NULL;long level=hasBrightness?strtol(extra,&be,10):100;
+        valid=valid&&(!hasBrightness||(extra[0]&&be&&*be==0))&&level>=0&&level<=100;
+        if(valid)ok=jh2_native_solid((uint32_t)rgb,(int)level);
+        transmitted=ok;message=ok?"Solid GATT command accepted":"Invalid color or GATT failure";
+    }else if(strcmp(action,"sequenceStop")==0){
+        jh2_native_sequence_stop();ok=true;
+        message="Native sequence stopped locally";
+    }else if(strcmp(action,"upload")==0 || strcmp(action,"erase")==0 ||
+             strcmp(action,"restore")==0){
+        message="Blocked: CID 83928 has historical duplicate owners; require backed-up original and verified unique target before modifying";
+    }
+    cJSON *after=cJSON_CreateObject();
+    jh2_ble_status(after);
+    const cJSON *next=cJSON_GetObjectItemCaseSensitive(after,"nativeNotificationsSeen");
+    double notice_after=cJSON_IsNumber(next)?next->valuedouble:0;
+    cJSON *out=cJSON_CreateObject();
+    cJSON_AddBoolToObject(out,"ok",ok);
+    cJSON_AddStringToObject(out,"message",message);
+    char trace[48];snprintf(trace,sizeof(trace),"nano-%lu-%lu",
+        (unsigned long)(esp_timer_get_time()/1000000),(unsigned long)++local_trace_serial);
+    cJSON_AddStringToObject(out,"traceId",trace);
+    cJSON_AddStringToObject(out,"source","nano-local");
+    cJSON_AddStringToObject(out,"action",action);
+    cJSON_AddBoolToObject(out,"nanoReceived",true);
+    cJSON_AddBoolToObject(out,"bleConnected",connected);
+    cJSON_AddBoolToObject(out,"gattAccepted",transmitted);
+    cJSON_AddNumberToObject(out,"notificationBefore",notice_before);
+    cJSON_AddNumberToObject(out,"notificationAfter",notice_after);
+    cJSON_AddNumberToObject(out,"notificationDelta",notice_after-notice_before);
+    cJSON_AddStringToObject(out,"physicalPlayback","unverified");
+    cJSON_AddItemToObject(out,"curtain",after);
+    cJSON_Delete(before);
+    return send_json(r,out);
+}
+
 static esp_err_t html_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     const bool firmware=strstr(r->uri,"firmware")||strstr(r->uri,"recovery");
@@ -561,7 +661,7 @@ bool jh2_web_start(void){
     if(!start_net()){ESP_LOGE(TAG,"Wi-Fi/AP setup failed");return false;}
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();
     cfg.server_port=80;
-    cfg.max_uri_handlers=22;
+    cfg.max_uri_handlers=24;
     cfg.stack_size=7168;
     cfg.lru_purge_enable=true;
     if(httpd_start(&web_server,&cfg)!=ESP_OK)return false;
@@ -583,7 +683,8 @@ bool jh2_web_start(void){
         {.uri="/api/ble/select",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/disconnect",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/play928",.method=HTTP_POST,.handler=ble_control_post},
-        {.uri="/api/bridge/resume",.method=HTTP_POST,.handler=ble_control_post}
+        {.uri="/api/bridge/resume",.method=HTTP_POST,.handler=ble_control_post},
+        {.uri="/api/ble/local",.method=HTTP_POST,.handler=local_probe_post}
     };
     for(size_t i=0;i<sizeof(routes)/sizeof(routes[0]);i++)
         if(httpd_register_uri_handler(web_server,&routes[i])!=ESP_OK)return false;
