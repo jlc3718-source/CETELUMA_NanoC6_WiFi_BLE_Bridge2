@@ -1,0 +1,53 @@
+name: JH2 v1.1.47 Power and Brightness GATT Recovery Check
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-147-power-gatt-confirm-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-power-gatt-once
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Confirm safe Power On and brightness 100 BLE writes with Nano 1.1.47
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import subprocess,urllib.request,json,time
+          env=dict(s.split('=',1) for s in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in s)
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              r=urllib.request.Request(host+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=17) as res:return json.load(res),res.headers
+          _,head=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=head['Set-Cookie'].split(';')[0]
+          for i in range(60):
+              s,_=api('/api/curtain/status',cookie=cookie)
+              if int(s.get('queued') or 0)==0 and s.get('online') and (s.get('curtain') or {}).get('connected'):break
+              time.sleep(.7)
+          assert s.get('firmware')=='1.1.47' and s.get('online') and (s.get('curtain') or {}).get('connected') and int(s.get('queued') or 0)==0, 'Firmware or link not ready; no writes'
+          print('PRE_CONTROL',json.dumps({'firmware':s.get('firmware'),'BLE':s['curtain']['connected'],'queued':s.get('queued'),'streaming':s.get('relayStreaming')},sort_keys=True),flush=True)
+          def send(name,payload):
+              d,_=api('/api/curtain/call',{'action':name,'payload':payload,'idempotencyKey':'jh2-147-safe-'+name+'-20261018-a'},cookie=cookie)
+              cid=int(d['commandId'])
+              for i in range(95):
+                  r,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  c=r.get('command') or {}
+                  if c.get('state') in ('applied','failed','superseded','expired'):
+                      print('GATT_CONTROL_RESULT',json.dumps({'id':cid,'action':name,'state':c.get('state'),'result':c.get('result')},sort_keys=True),flush=True)
+                      return c
+                  time.sleep(.65)
+              raise RuntimeError('No command ACK '+str(cid))
+          power=send('power',{'on':True})
+          brightness=send('brightness',{'value':100}) if power.get('state')=='applied' else {}
+          d,_=api('/api/curtain/status',cookie=cookie)
+          print('AFTER_CONTROLS',json.dumps({'firmware':d.get('firmware'),'online':d.get('online'),'BLE':(d.get('curtain') or {}).get('connected'),'queued':d.get('queued'),'streaming':d.get('relayStreaming')},sort_keys=True),flush=True)
+          if not all((x.get('state')=='applied' and (x.get('result') or {}).get('bleTransmitted') is True) for x in (power,brightness)):
+              raise RuntimeError('Some GATT controls still fail on 1.1.47')
+          print('LIVE_POWER_ON_BRIGHTNESS_100_NATIVE_GATT_ACKS_PASS',flush=True)
+          PY
