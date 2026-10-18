@@ -1,0 +1,43 @@
+name: JH2 Screenshot 14751 14752 Live Command Correlation
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-14751-14752-screen-correlation-20261018.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read screenshot command IDs and current live Nano status without sending writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request
+          d=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in d['Config']['Env'] if '=' in x)
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              r=urllib.request.Request(host+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=15) as res:return json.load(res),res.headers
+          _,head=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=head['Set-Cookie'].split(';')[0]
+          assert cookie.startswith('jh2=')
+          s,_=api('/api/curtain/status',cookie=cookie)
+          c=s.get('curtain') or {}
+          print('NANO_LIVE',json.dumps({'firmware':s.get('firmware'),'online':s.get('online'),'queued':s.get('queued'),'lastSeen':s.get('lastSeen'),'streaming':s.get('relayStreaming'),'BLE':c.get('connected'),'mtu':c.get('mtu'),'catalogUnique':c.get('nativeCatalogUnique'),'rxErrors':c.get('nativeCatalogParseErrors'),'notifications':c.get('nativeNotificationsSeen'),'freeHeap':s.get('freeHeap')},sort_keys=True),flush=True)
+          for id in (14748,14749,14750,14751,14752):
+              try:
+                  d,_=api('/api/curtain/command?id='+str(id),cookie=cookie)
+                  c=d.get('command') or {}
+                  result=c.get('result') or {}
+                  p=c.get('payload') or {}
+                  fields={'id':c.get('id'),'action':c.get('action'),'state':c.get('state'),'source':c.get('source'),'created':c.get('created'),'result':{k:result.get(k) for k in ('ok','message','error','bleTransmitted','connected','physicalPlaybackConfirmed') if k in result},'payload':{k:p.get(k) for k in ('value','on','id','cid','slot','sha256') if k in p}}
+                  print('COMMAND',json.dumps(fields,sort_keys=True),flush=True)
+              except Exception as err:print('COMMAND_QUERY_ERROR',id,str(err)[:100],flush=True)
+          r,_=api('/api/curtain/retention',cookie=cookie)
+          print('RETENTION',json.dumps({k:r.get(k) for k in ('phase','lastError','physicalPlaybackConfirmed','pendingCommandId','confirmationRequired','retainedFiles')},sort_keys=True),flush=True)
+          print('READ_ONLY_NO_IMAGE_OR_BLE_CHANGE',flush=True)
+          PY
