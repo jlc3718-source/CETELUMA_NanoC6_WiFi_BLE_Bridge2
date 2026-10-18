@@ -8,7 +8,7 @@ CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
 CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
-CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=544
+CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=768
 # The original phone's 5 catalog notifications arrive in <20 ms.
 # 1.1.28 reliably received 350/364/163 but not 370/396-byte values.
 # Increase ACL host and controller buffers for the burst; do not weaken MTU.
@@ -20,8 +20,5 @@ CONFIG_BT_LE_ACL_BUF_COUNT=48
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
-# RX8: HCI trace proved the 370B/396B notifications never enter NimBLE host.
-# The ESP32-C6 controller uses a distinct MSYS2 block size (normally 320B).
-# Match its receive allocations to the existing 544B host pool.
-CONFIG_BT_LE_MSYS_2_BLOCK_SIZE=544
-CONFIG_BT_LE_ACL_BUF_SIZE=517
+# RX8: on ESP32-C6 with NimBLE, BT_LE_MSYS settings are intentionally disabled.
+# Enlarge the active NimBLE RX block to carry 396-byte notifications plus overhead.
