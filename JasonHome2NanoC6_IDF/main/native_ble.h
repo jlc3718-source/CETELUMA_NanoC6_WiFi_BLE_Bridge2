@@ -10,3 +10,6 @@ bool jh2_ble_raw_write(const char *characteristic_uuid,
                        const uint8_t *bytes,size_t len,uint32_t timeout_ms);
 void jh2_ble_status(cJSON *obj);
 uint32_t jh2_ble_collect_notices(cJSON *array,uint32_t after);
+
+// Channel 0 = SmartDawn command, channel 1 = GATT write-without-response.
+bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len);
