@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -149,6 +150,60 @@ static bool load_saved_settings(void){
         }
     }
     if(!ssid[0]){ESP_LOGE(TAG,"No stored Wi-Fi; no AP/reset triggered");return false;}
+    return true;
+}
+// Server credential rotation is a two-phase exchange. Save the new bridge
+// token atomically BEFORE using it, then connect on the following sync to
+// confirm the pending token. A failed file write keeps the old token active.
+static bool accept_rotated_credentials(const cJSON *credential){
+    if(!cJSON_IsObject(credential))return true;
+    char next_endpoint[MAX_ENDPOINT]={0},next_token[MAX_TOKEN]={0},next_id[MAX_NAME]={0};
+    if(!json_string((cJSON*)credential,"endpoint",next_endpoint,sizeof(next_endpoint))||
+       !json_string((cJSON*)credential,"token",next_token,sizeof(next_token))||
+       !json_string((cJSON*)credential,"bridgeId",next_id,sizeof(next_id))||
+       !safe_https_endpoint(next_endpoint)||!safe_hex64(next_token)){
+        ESP_LOGE(TAG,"Received invalid bridge credential rotation; preserving current token");
+        return false;
+    }
+    cJSON *secrets=load_json("/littlefs/secrets.json");
+    if(!secrets)return false;
+    cJSON_DeleteItemFromObjectCaseSensitive(secrets,"oracleEndpoint");
+    cJSON_DeleteItemFromObjectCaseSensitive(secrets,"oracleBridgeToken");
+    cJSON_DeleteItemFromObjectCaseSensitive(secrets,"oracleBridgeId");
+    cJSON_AddStringToObject(secrets,"oracleEndpoint",next_endpoint);
+    cJSON_AddStringToObject(secrets,"oracleBridgeToken",next_token);
+    cJSON_AddStringToObject(secrets,"oracleBridgeId",next_id);
+    char *encoded=cJSON_PrintUnformatted(secrets);
+    cJSON_Delete(secrets);
+    if(!encoded)return false;
+    size_t count=strlen(encoded);
+    bool saved=false;
+    if(count>0&&count<16384){
+        FILE *f=fopen("/littlefs/secrets.json.tmp","wb");
+        if(f){
+            size_t written=fwrite(encoded,1,count,f);
+            if(written==count&&fflush(f)==0 && fsync(fileno(f))==0 &&
+               fclose(f)==0){
+                f=NULL;
+                if(rename("/littlefs/secrets.json.tmp","/littlefs/secrets.json")==0)
+                    saved=true;
+            }else{
+                // fclose only if previous condition short-circuited.
+                if(f)fclose(f);
+                f=NULL;
+            }
+            if(!saved)remove("/littlefs/secrets.json.tmp");
+        }
+    }
+    free(encoded);
+    if(!saved){
+        ESP_LOGE(TAG,"Credential rotation persistence failed; old token retained");
+        return false;
+    }
+    strcpy(endpoint,next_endpoint);
+    strcpy(bridge_token,next_token);
+    strcpy(bridge_id,next_id);
+    ESP_LOGI(TAG,"Oracle rotated bridge credentials; token redacted and persisted");
     return true;
 }
 static void wifi_event(void *arg,esp_event_base_t base,int32_t event,void *data){
@@ -430,6 +485,7 @@ static void oracle_task(void *ctx){
             continue;
         }
         retry_ms=1000;
+        (void)accept_rotated_credentials(cJSON_GetObjectItemCaseSensitive(reply,"credential"));
         clear_sent_ack_batch((size_t)sent);
         committed_notice_cursor=final_notice;
         if(restart_ack_included){
