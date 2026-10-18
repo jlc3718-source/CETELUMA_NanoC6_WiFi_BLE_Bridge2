@@ -425,6 +425,11 @@ void app_main(void){
         ESP_LOGE(TAG,"NVS_INIT_FAILED rc=%d; refusing destructive recovery",rc);
         return;
     }
+    // Start web recovery immediately after NVS. Even a failed BLE mutex,
+    // catalog parser task, or Oracle transport must NEVER strand OTA again.
+    if(!jh2_web_start()){
+        ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED");
+    }
     notice_lock=xSemaphoreCreateMutex();
     raw_write_lock=xSemaphoreCreateMutex();
     raw_write_event=xSemaphoreCreateBinary();
@@ -438,11 +443,6 @@ void app_main(void){
     if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",4096,NULL,3,NULL)!=pdPASS){
         ESP_LOGE(TAG,"CATALOG_RECEIVE_WORKER_FAILED");
         return;
-    }
-    // Start the local firmware, Wi-Fi recovery and setup server BEFORE
-    // Oracle. Even if BLE or Oracle fails, /firmware stays available.
-    if(!jh2_web_start()){
-        ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED; do not replace factory updater");
     }
     rc=nimble_port_init();
     if(rc!=ESP_OK){fail("nimble_port_init",rc);return;}
