@@ -70,7 +70,7 @@ If no automated entry path exists, reduce it to the minimum manual action requir
 - The exact Husqvarna MZ54 model 967696001 deck rebuild kit with cast-iron spindles only.
 - Genuine GM/Bosch MDI 2; CRAFTSMAN/Kobalt; water filtration/plumbing; outdoor/shop equipment; SOOCAS heads; and pet free/near-free offers.
 - The established privacy/exposure and removal-reply follow-up lane, retaining all identity-matching limits, source exclusions and ignored-record suppressions. Never publish personal profile/address details in this repository. An unrecovered matching/suppression rule means incomplete coverage, not an all-clear.
-- The previously selected official New York unclaimed-funds follow-up, retained as unresolved until current search evidence exists. Do not submit claims or upload identity documents.
+- New York unclaimed-funds checks were removed from Run Daily by the user on October 18, 2026. Do not search for funds, reopen this follow-up, or report it as pending.
 - Separately paused legacy reminders retain their paused state; do not reactivate them or treat a completed one-time reminder as a new task.
 
 ## Permanent execution rules
@@ -127,8 +127,7 @@ Every Run Daily report must visibly cover:
 16. Fluke / IDEAL / apprenticeship and training opportunities
 17. Exact Silverado tonneau / MZ54 cast-iron kit / GM MDI 2 / SOOCAS standing watches
 18. Privacy/exposure and removal-reply follow-ups
-19. Retained official NY unclaimed-funds follow-up
-20. Tasks not run, incomplete checks and preserved schedule state
+19. Tasks not run, incomplete checks and preserved schedule state
 
 A report that omits any required category is incomplete.
 
