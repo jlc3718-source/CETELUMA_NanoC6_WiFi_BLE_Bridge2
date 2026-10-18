@@ -17,7 +17,9 @@ jobs:
           sudo -n docker exec jason-home node -e '
           const {DatabaseSync} = require("node:sqlite");
           const path = require("node:path");
-          const filename = path.join(process.env.JH2_DATA_DIR || "./data","jason-home-2.sqlite");
+          const fs = require("node:fs");
+          const serverCwd = fs.readlinkSync("/proc/1/cwd");
+          const filename = path.resolve(serverCwd,process.env.JH2_DATA_DIR || "./data","jason-home-2.sqlite");
           const db = new DatabaseSync(filename,{readOnly:true});
           const row = db.prepare("SELECT value FROM curtain_meta WHERE key = ?").get("bridgeId");
           const id = row && JSON.parse(row.value);
