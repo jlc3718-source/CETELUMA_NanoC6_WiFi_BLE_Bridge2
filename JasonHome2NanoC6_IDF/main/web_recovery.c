@@ -11,6 +11,7 @@
 #include "native_ble.h"
 #include "nvs.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
@@ -224,7 +225,9 @@ static bool save_config(cJSON *d){
     FILE *f=fopen("/littlefs/secrets.json.tmp","wb");
     if(!f){free(json);return false;}
     size_t n=strlen(json),written=fwrite(json,1,n,f);
-    bool ok=written==n && fflush(f)==0 && fclose(f)==0;
+    int flush_rc=fflush(f);
+    int close_rc=fclose(f);
+    bool ok=written==n && flush_rc==0 && close_rc==0;
     free(json);
     if(!ok){unlink("/littlefs/secrets.json.tmp");return false;}
     if(rename("/littlefs/secrets.json.tmp","/littlefs/secrets.json")!=0){
@@ -249,6 +252,7 @@ static esp_err_t setup_post(httpd_req_t *r){
        !form_value(form,"oracleBridgeId",bridge,sizeof(bridge)) ||
        !form_value(form,"oracleBridgeToken",token,sizeof(token)))
         return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid characters or oversized field");
+    if(strlen(pass)>63)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Wi-Fi password exceeds 63 characters");
     if(endpoint[0]&&!valid_https(endpoint))
         return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Oracle endpoint must use HTTPS");
     if(token[0]&&!valid_hex(token))
