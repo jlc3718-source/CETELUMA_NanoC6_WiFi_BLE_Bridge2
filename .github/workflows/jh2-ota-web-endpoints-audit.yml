@@ -1,0 +1,40 @@
+name: JH2 Signed Web OTA Endpoint Audit
+on:
+  push:
+    branches: [codex/jh2-native-ble-catalog-queued-rx-20261018]
+    paths: ['.github/workflows/jh2-ota-web-endpoints-audit.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Check signed updater endpoints read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,urllib.error
+          ci=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(s.split('=',1) for s in ci['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          token=env['JASON_HOME_API_TOKEN']
+          req=urllib.request.Request(base+'/api/session',
+              data=json.dumps({'token':token}).encode(),
+              headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=10) as res:
+              res.read();cookie=res.headers.get('Set-Cookie','').split(';',1)[0]
+          for p in ['/api/public-signed-manifest','/api/curtain/firmware-manifest',
+                    '/api/curtain/firmware-runtime/1.1.32.bin']:
+              req=urllib.request.Request(base+p,headers={'Cookie':cookie},method='GET')
+              try:
+                  with urllib.request.urlopen(req,timeout=10) as response:
+                      data=response.read(1024)
+                      try:
+                          d=json.loads(data)
+                          message={'schema':d.get('schema'),'hasSignature':bool(d.get('signature')),'error':d.get('error')}
+                      except Exception:message={'responseBytesFirst1024':len(data)}
+                      print('OTA_ENDPOINT',p,'code',response.status,'summary',message,flush=True)
+              except urllib.error.HTTPError as e:
+                  print('OTA_ENDPOINT',p,'code',e.code,'error',e.read(200).decode('utf8','replace')[:150],flush=True)
+          PY
