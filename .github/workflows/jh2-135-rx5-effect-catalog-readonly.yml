@@ -2,7 +2,7 @@ name: JH2 1.1.35 RX5 PHY and 88-Effect Catalog Read-only Test
 on:
   push:
     branches: [codex/jh2-native-1-1-35-ble-rx5-buffer-20261018]
-    paths: ['.github/workflows/jh2-135-ble-interval-effect-catalog-readonly.yml']
+    paths: ['.github/workflows/jh2-135-rx5-effect-catalog-readonly.yml']
 permissions: {contents: read}
 concurrency:
   group: jason-home-oracle-production
