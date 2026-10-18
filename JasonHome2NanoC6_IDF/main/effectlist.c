@@ -34,9 +34,9 @@ static int skip(const uint8_t *b,size_t n,size_t *at,unsigned wire,
     default:return -1;
     }
 }
-static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid){
+static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid,uint32_t *slot){
     size_t at=0;
-    uint64_t effect=0,controller=0;
+    uint64_t effect=0,controller=0,entry_slot=0;
     int have_id=0,have_cid=0;
     (void)0;
     while(at<n){
@@ -47,13 +47,14 @@ static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid){
         if(skip(b,n,&at,(unsigned)(key&7),&bytes,&length,&value))return -1;
         if((key>>3)==1 && (key&7)==0){effect=value;have_id=1;}
         if((key>>3)==4 && (key&7)==0){controller=value;have_cid=1;}
+        if((key>>3)==3 && (key&7)==0){entry_slot=value;}
     }
     // Protobuf 3 suppresses scalar zero fields. The first native E-0
     // EffectInfo has no field 1, which means default ID 0 (not missing data).
     // Require the controller CID to distinguish a valid catalog item.
     if(!have_cid||effect>=JH2_FACTORY_EFFECTS)return 1;
     if(!have_id)effect=0;
-    *id=(uint16_t)effect;*cid=controller;return 0;
+    *id=(uint16_t)effect;*cid=controller;*slot=(uint32_t)entry_slot;return 0;
 }
 int jh2_effectlist_parse(const uint8_t *ddp,size_t len,jh2_catalog_batch *out){
     if(!ddp||!out||len<20||len>4096)return -1;
@@ -68,10 +69,15 @@ int jh2_effectlist_parse(const uint8_t *ddp,size_t len,jh2_catalog_batch *out){
         const uint8_t *entry=NULL;size_t n=0;
         if(skip(ddp,len,&at,(unsigned)(tag&7),&entry,&n,&number))return -5;
         if((tag>>3)!=1 || (tag&7)!=2)continue;
-        uint16_t id=0;uint64_t cid=0;
-        int rc=decode_effect(entry,n,&id,&cid);
+        uint16_t id=0;uint64_t cid=0;uint32_t slot=0;
+        int rc=decode_effect(entry,n,&id,&cid,&slot);
         if(rc<0)return -6;
         if(rc>0)continue;
+        if(cid==83928){
+            out->target83928_seen=true;
+            out->target83928_slot=slot;
+            out->target83928_effect_id=id;
+        }
         if(!out->found[id]){
             out->found[id]=1;
             out->values[id]=id;
