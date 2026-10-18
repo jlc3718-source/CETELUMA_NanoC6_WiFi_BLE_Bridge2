@@ -76,10 +76,16 @@ remote_end='  if(!path.startsWith("/api/"))return authenticatedRead(req,res,path
 if remote_begin in src:
  new_nano=src[src.index(remote_begin):src.index(remote_end,src.index(remote_begin))]
  if remote_begin in live:
-  live=live[:live.index(remote_begin)]+new_nano+live[live.index(remote_end,live.index(remote_begin)):]
+  start=live.index(remote_begin)
+  # Modern Oracle has an inline Nano UI followed immediately by pairing API,
+  # not the older static file handler. Preserve all newer routes verbatim.
+  api_next='  if(path==="/api/curtain/pair"&&method==="POST")'
+  stop=live.index(api_next,start) if api_next in live[start:] else live.index(remote_end,start)
+  live=live[:start]+new_nano+live[stop:]
  else:
-  assert live.count(remote_end)==1,'Cannot find authenticated static routing boundary'
-  live=live.replace(remote_end,new_nano+remote_end)
+  anchor=remote_end if remote_end in live else '  if(path==="/api/curtain/pair"&&method==="POST")'
+  assert anchor in live,'No known authenticated Nano route insertion boundary'
+  live=live.replace(anchor,new_nano+anchor,1)
 else:raise RuntimeError('Source /nano/ handler missing')
 
 old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
