@@ -115,6 +115,9 @@ def start(name,port,data):
   for i in range(30):
    try:api('http://127.0.0.1:'+str(port),'/api/health');return
    except Exception:time.sleep(1)
+  diagnostics=subprocess.run(['docker','logs','--tail','70',name],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
+  safe=[line[:350] for line in diagnostics.splitlines() if any(k in line for k in ['Error','error','at file:','at Module','SyntaxError','ReferenceError','ERR_','/app/server.mjs'])]
+  print('STAGED_GATEWAY_STARTUP_ERROR',safe[-25:],flush=True)
   raise RuntimeError('New gateway failed health check')
  ready()
 stagename='jh2-curtain-stage-'+RUN
