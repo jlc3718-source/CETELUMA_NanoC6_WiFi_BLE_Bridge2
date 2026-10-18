@@ -4,7 +4,7 @@ on:
     branches: [codex/jh2-native-1-1-35-ble-rx5-buffer-20261018]
     paths:
       - 'JasonHome2NanoC6_IDF/**'
-      - '.github/workflows/jh2-native-1-1-35-ble-interval-signed-release.yml'
+      - '.github/workflows/jh2-native-1-1-34-ble-interval-signed-release.yml'
   pull_request:
     branches: [main]
     paths:
