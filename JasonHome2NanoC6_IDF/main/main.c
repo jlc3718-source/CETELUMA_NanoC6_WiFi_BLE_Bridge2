@@ -42,7 +42,13 @@ extern const unsigned char jh2_native_compat_padding[];
 
 extern void jh2_hci_acl_diag(cJSON *out);
 static const char *TAG="JH2_IDF_BLE";
-static const char TARGET[]="DN5E58";
+static char TARGET[24]="DN5E58";
+static char selected_ble_address[18]="";
+static volatile bool ble_auto_connect=true;
+#define BLE_SCAN_SLOTS 24
+typedef struct {char name[28];char address[18];int rssi;} ble_scan_record;
+static ble_scan_record ble_scan_results[BLE_SCAN_SLOTS];
+static volatile size_t ble_scan_count=0;
 static const ble_uuid128_t SVC_UUID=BLE_UUID128_INIT(
   0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x00,0x00);
 static const ble_uuid128_t WRITE_UUID=BLE_UUID128_INIT(
@@ -124,6 +130,20 @@ uint32_t jh2_ble_collect_notices(cJSON *array,uint32_t after){
     return cursor;
 }
 void jh2_ble_status(cJSON *out){
+    cJSON_AddStringToObject(out,"selectedBleTarget",TARGET);
+    cJSON_AddStringToObject(out,"selectedBleAddress",selected_ble_address);
+    cJSON_AddBoolToObject(out,"autoConnect",ble_auto_connect);
+    cJSON *ble_list=cJSON_AddArrayToObject(out,"devices");
+    if(ble_list){
+        for(size_t i=0;i<ble_scan_count && i<BLE_SCAN_SLOTS;i++){
+            cJSON *item=cJSON_CreateObject();
+            if(!item)break;
+            cJSON_AddStringToObject(item,"name",ble_scan_results[i].name);
+            cJSON_AddStringToObject(item,"address",ble_scan_results[i].address);
+            cJSON_AddNumberToObject(item,"rssi",ble_scan_results[i].rssi);
+            cJSON_AddItemToArray(ble_list,item);
+        }
+    }
     if(!cJSON_IsObject(out))return;
     cJSON_AddBoolToObject(out,"ok",true);
     cJSON_AddBoolToObject(out,"connected",connection!=BLE_HS_CONN_HANDLE_NONE);
@@ -217,8 +237,45 @@ static void fail(const char *stage,int rc){
     ESP_LOGE(TAG,"DIAGNOSTIC_FAILURE stage=%s rc=%d no_controller_mutation",stage,rc);
 }
 
+bool jh2_ble_connect(void){
+    ble_auto_connect=true;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE)return true;
+    begin_scan();
+    return true;
+}
+bool jh2_ble_disconnect(void){
+    ble_auto_connect=false;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE)
+        return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
+    if(ble_gap_disc_active())ble_gap_disc_cancel();
+    return true;
+}
+bool jh2_ble_scan(void){
+    ble_auto_connect=true;
+    ble_scan_count=0;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE)
+        return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
+    if(ble_gap_disc_active())ble_gap_disc_cancel();
+    begin_scan();return true;
+}
+bool jh2_ble_select_device(const char *addr){
+    if(!addr || strlen(addr)!=17)return false;
+    for(size_t i=0;i<ble_scan_count;i++){
+        if(strcmp(addr,ble_scan_results[i].address)==0 &&
+           strncmp(ble_scan_results[i].name,"DN",2)==0){
+            snprintf(TARGET,sizeof(TARGET),"%s",ble_scan_results[i].name);
+            snprintf(selected_ble_address,sizeof(selected_ble_address),"%s",addr);
+            ble_auto_connect=true;
+            if(connection!=BLE_HS_CONN_HANDLE_NONE)
+                return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
+            if(ble_gap_disc_active())ble_gap_disc_cancel();
+            begin_scan();return true;
+        }
+    }
+    return false;
+}
 static void begin_scan(void){
-    if(connection!=BLE_HS_CONN_HANDLE_NONE)return;
+    if(!ble_auto_connect || connection!=BLE_HS_CONN_HANDLE_NONE)return;
     if(ble_hs_id_infer_auto(0,&own_addr)!=0)return;
     struct ble_gap_disc_params params={0};
     params.passive=0; // active scan obtains DN5E58 name when in scan response
@@ -386,7 +443,27 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     case BLE_GAP_EVENT_DISC:{
         struct ble_hs_adv_fields f;
         if(ble_hs_adv_parse_fields(&f,event->disc.data,event->disc.length_data)!=0)return 0;
+        char address[18];
+        snprintf(address,sizeof(address),"%02X:%02X:%02X:%02X:%02X:%02X",
+            event->disc.addr.val[5],event->disc.addr.val[4],
+            event->disc.addr.val[3],event->disc.addr.val[2],
+            event->disc.addr.val[1],event->disc.addr.val[0]);
+        char name[28]="(unnamed)";
+        if(f.name && f.name_len>0){
+            size_t n=f.name_len<sizeof(name)-1?f.name_len:sizeof(name)-1;
+            memcpy(name,f.name,n);name[n]=0;
+        }
+        size_t hit=ble_scan_count;
+        for(size_t i=0;i<ble_scan_count;i++)
+            if(strcmp(address,ble_scan_results[i].address)==0){hit=i;break;}
+        if(hit==ble_scan_count && ble_scan_count<BLE_SCAN_SLOTS)ble_scan_count++;
+        if(hit<BLE_SCAN_SLOTS){
+            snprintf(ble_scan_results[hit].name,sizeof(ble_scan_results[hit].name),"%s",name);
+            snprintf(ble_scan_results[hit].address,sizeof(ble_scan_results[hit].address),"%s",address);
+            ble_scan_results[hit].rssi=event->disc.rssi;
+        }
         if(f.name_len!=strlen(TARGET)||memcmp(f.name,TARGET,f.name_len)!=0)return 0;
+        if(selected_ble_address[0] && strcmp(selected_ble_address,address)!=0)return 0;
         ESP_LOGI(TAG,"FOUND_TARGET %s",TARGET);
         if(ble_gap_disc_cancel()!=0)return 0;
         int rc=ble_gap_connect(own_addr,&event->disc.addr,30000,NULL,gap_event,NULL);
@@ -458,10 +535,10 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
         conn_updates=0;
-        begin_scan();
+        if(ble_auto_connect)begin_scan();
         return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
-        if(connection==BLE_HS_CONN_HANDLE_NONE)begin_scan();
+        if(ble_auto_connect && connection==BLE_HS_CONN_HANDLE_NONE)begin_scan();
         return 0;
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG,"NEGOTIATED_MTU %u",event->mtu.value);
