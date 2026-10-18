@@ -1,0 +1,52 @@
+name: JH2 Native 2904 Catalog Packet Inspection (read-only)
+on:
+  push:
+    branches: [codex/jh2-native-espidf-browser-ota-20261017]
+    paths: ['.github/workflows/jh2-idf-read-catalog-packets.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-catalog-read
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read notification headers only, never send any controller commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,base64,collections
+          ins=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in ins['Config']['Env'] if '=' in x)
+          token=env['JASON_HOME_API_TOKEN']
+          base='http://127.0.0.1:8081'
+          p=json.dumps({'token':token}).encode()
+          req=urllib.request.Request(base+'/api/session',data=p,
+              headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=10) as res:
+              res.read();cookie=res.headers.get('Set-Cookie','').split(';',1)[0]
+          assert cookie.startswith('jh2=')
+          def get(path):
+              req=urllib.request.Request(base+path,headers={'Cookie':cookie},method='GET')
+              with urllib.request.urlopen(req,timeout=12) as resp:return json.load(resp)
+          d=get('/api/curtain/notifications?since=0')
+          notices=d.get('notifications',[])
+          summary=[]
+          for n in notices[-80:]:
+              try:
+                  raw=base64.b64decode(n['data'])
+                  op=int.from_bytes(raw[10:12],'big') if len(raw)>=12 else None
+                  summary.append({'id':n.get('id'),'bytes':len(raw),'head':list(raw[:4]),
+                         'op':op,'frameType':raw[4] if len(raw)>4 else None})
+              except Exception as ex:
+                  summary.append({'id':n.get('id'),'parseError':type(ex).__name__})
+          print('NATIVE_PACKET_SUMMARY',json.dumps(summary,separators=(',',':')),flush=True)
+          print('NATIVE_OPCODE_COUNTS',dict(collections.Counter(str(x.get('op')) for x in summary)),flush=True)
+          s=get('/api/curtain/status');c=s.get('curtain') or {}
+          print('NATIVE_COUNTERS',json.dumps({'version':s.get('firmware'),'online':s.get('online'),
+              'connected':c.get('connected'),'mtu':c.get('mtu'),'unique':c.get('nativeCatalogUnique'),
+              'packets':c.get('nativeCatalogPackets'),'notices':c.get('nativeNotificationsSeen'),
+              'drops':c.get('nativeNoticeDrops')},sort_keys=True),flush=True)
+          PY
