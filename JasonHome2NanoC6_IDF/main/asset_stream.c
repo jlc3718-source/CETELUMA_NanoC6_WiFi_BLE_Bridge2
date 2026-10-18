@@ -166,7 +166,16 @@ static void run_asset(void *param){
         job.ack(job.command_id,"failed","Native asset stream aborted; retaining last curtain frame",false);
     if(!applied && wanted(job.generation) && !failed)
         job.ack(job.command_id,"failed","Native stream contained no displayed frame",false);
-    if(job.generation==generation)streaming=false;
+    // A Stop request increments generation. The old generation check kept
+    // streaming=true forever after cancellation, rejecting every later asset.
+    // Only one stream task can exist while streaming is true, so the task
+    // that owns the slot must ALWAYS release it on exit, including Stop.
+    if(job_lock && xSemaphoreTake(job_lock,pdMS_TO_TICKS(1000))==pdTRUE){
+        streaming=false;
+        xSemaphoreGive(job_lock);
+    }else{
+        streaming=false;
+    }
     // Do not log endpoint, token, source URLs with embedded sensitive keys,
     // or any transferred pixel data.
     ESP_LOGI(TAG,"Stream finished bytes=%u repeated=%d",
