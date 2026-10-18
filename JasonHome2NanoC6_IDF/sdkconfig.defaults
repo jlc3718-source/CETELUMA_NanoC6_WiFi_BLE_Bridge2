@@ -1,4 +1,4 @@
-# Native ESP-IDF diagnostic; explicitly no Wi-Fi, Oracle, OTA or flash writes.
+# Native ESP-IDF Jason Home 2 bridge: retain Oracle/manual OTA and restore non-destructive controls.
 CONFIG_IDF_TARGET="esp32c6"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
@@ -22,3 +22,7 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
 # RX8: on ESP32-C6 with NimBLE, BT_LE_MSYS settings are intentionally disabled.
 # Enlarge the active NimBLE RX block to carry 396-byte notifications plus overhead.
+
+# Feature parity: power/brightness/effects/streams/sequence commands active.
+# Destructive 2909 and file upload remain separately guarded.
+CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
