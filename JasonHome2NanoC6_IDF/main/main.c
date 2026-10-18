@@ -85,6 +85,7 @@ static SemaphoreHandle_t discovered_lock=NULL;
 static ble_addr_t selected_addr={0};
 static bool selected_valid=false;
 static volatile uint32_t ble_scan_requests=0;
+static volatile uint32_t local_command_seq=0,local_command_success=0,local_command_failure=0;
 static bool hold_disconnect=false;
 static void begin_scan(void);
 static void format_mac(const ble_addr_t *addr,char out[18]){
@@ -182,7 +183,6 @@ static gatt_notice notices[NOTICE_RING_SIZE];
 static QueueHandle_t catalog_queue=NULL;
 static volatile uint32_t catalog_enqueued=0,catalog_queue_drops=0;
 static volatile uint32_t catalog_parsed=0,catalog_parse_errors=0,catalog_fragments=0;
-static gatt_notice notices[NOTICE_RING_SIZE];
 static size_t notice_head=0,notice_count=0;
 static void record_notice(const uint8_t *raw,size_t len){
     if(!raw||len==0||len>sizeof(notices[0].b)){++notice_drops;return;}
@@ -229,6 +229,9 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"mtu",connection==BLE_HS_CONN_HANDLE_NONE?23:ble_att_mtu(connection));
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
     cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
+    cJSON_AddNumberToObject(out,"nativeLocalCommands",local_command_seq);
+    cJSON_AddNumberToObject(out,"nativeLocalCommandsSucceeded",local_command_success);
+    cJSON_AddNumberToObject(out,"nativeLocalCommandsFailed",local_command_failure);
     cJSON_AddNumberToObject(out,"nativeBleScanRequests",ble_scan_requests);
     char chosen[18]="";
     if(selected_valid)format_mac(&selected_addr,chosen);
@@ -603,10 +606,10 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
         conn_updates=0;
-        begin_scan();
+        if(!hold_disconnect)begin_scan();
         return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
-        if(connection==BLE_HS_CONN_HANDLE_NONE)begin_scan();
+        if(connection==BLE_HS_CONN_HANDLE_NONE && !hold_disconnect)begin_scan();
         return 0;
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG,"NEGOTIATED_MTU %u",event->mtu.value);
