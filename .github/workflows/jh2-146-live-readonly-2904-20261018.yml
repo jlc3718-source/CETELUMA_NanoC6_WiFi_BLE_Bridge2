@@ -1,0 +1,71 @@
+name: JH2 1.1.46 BLE Native 2904 Live Read-Only GATT Trace
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-146-live-readonly-2904-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-live-native-ble-readonly-2904
+  cancel-in-progress: false
+jobs:
+  trace:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Send one manufacturer inventory read, correlate Oracle ACK with BLE notifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import urllib.request,urllib.error,subprocess,json,base64,time
+          d=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in d['Config']['Env'] if '=' in x)
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(host+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=20) as res:return json.load(res),res.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers.get('Set-Cookie','').split(';')[0]
+          assert cookie.startswith('jh2=')
+          st,_=api('/api/curtain/status',cookie=cookie)
+          for i in range(40):
+              if st.get('online') and int(st.get('queued') or 0)==0:break
+              time.sleep(.75);st,_=api('/api/curtain/status',cookie=cookie)
+          c=st.get('curtain') or {}
+          before={k:c.get(k) for k in ('connected','mtu','nativeCatalogUnique','nativeCatalogPackets','nativeCatalogQueueDrops','nativeHCINotify350','nativeHCINotify364','nativeHCINotify370','nativeHCINotify396','nativeHCINotify163','nativeTarget83928Count')}
+          print('BEFORE_NATIVE_READ',json.dumps({'fw':st.get('firmware'),'online':st.get('online'),'queued':st.get('queued'),'curtain':before},sort_keys=True),flush=True)
+          assert st.get('firmware')=='1.1.46' and st.get('online') and c.get('connected'), 'Nano firmware/BLE changed; no read sent'
+          assert int(st.get('queued') or 0)==0,'Commands pending; no read sent'
+          notes,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max((int(x.get('id') or 0) for x in notes.get('notifications',[])),default=0)
+          frame=bytearray(24);serial=117;op=2904
+          frame[0]=serial;frame[1]=1;frame[2]=0;frame[3]=0;frame[4]=0xf0;frame[5]=4
+          frame[6]=0;frame[7]=serial
+          frame[10]=(op>>8)&255;frame[11]=op&255
+          payload={'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(bytes(frame)).decode()}
+          request,_=api('/api/curtain/call',{'action':'rawWrite','payload':payload,'idempotencyKey':'jh2-146-native2904-one-safe-read-20261018-a'},cookie=cookie)
+          commandId=int(request['commandId']);print('ORACLE_COMMAND_ACCEPTED',commandId,flush=True)
+          command={}
+          for i in range(75):
+              body,_=api('/api/curtain/command?id='+str(commandId),cookie=cookie)
+              command=body.get('command') or {}
+              if command.get('state') in ('applied','failed','expired','superseded'):break
+              time.sleep(.7)
+          print('NANO_GATT_ACK',json.dumps({'id':commandId,'state':command.get('state'),'result':command.get('result')},sort_keys=True),flush=True)
+          time.sleep(4)
+          notices,_=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)
+          rows=[]
+          for n in (notices.get('notifications') or []):
+              try:
+                  data=base64.b64decode(n.get('data') or '')
+                  rows.append({'id':n.get('id'),'len':len(data),'op':int.from_bytes(data[10:12],'big') if len(data)>12 else None})
+              except Exception as ex:rows.append({'id':n.get('id'),'error':str(ex)[:60]})
+          print('SMARTDAWN_NOTIFICATIONS',json.dumps(rows,sort_keys=True),flush=True)
+          after,_=api('/api/curtain/status',cookie=cookie)
+          c=after.get('curtain') or {}
+          print('AFTER_NATIVE_READ',json.dumps({'fw':after.get('firmware'),'online':after.get('online'),'queued':after.get('queued'),'curtain':{k:c.get(k) for k in ('connected','mtu','nativeCatalogUnique','nativeCatalogPackets','nativeCatalogQueueDrops','nativeHCINotify350','nativeHCINotify364','nativeHCINotify370','nativeHCINotify396','nativeHCINotify163','nativeTarget83928Count','nativeTarget83928Unique')}},sort_keys=True),flush=True)
+          print('NO_IMAGE_UPLOAD_NO_EFFECT_CHANGE_NO_ERASE_NO_OTA',flush=True)
+          if command.get('state')!='applied' or command.get('result',{}).get('bleTransmitted') is not True:
+              raise RuntimeError('A native 2904 GATT read failed or Nano never acknowledged')
+          PY
