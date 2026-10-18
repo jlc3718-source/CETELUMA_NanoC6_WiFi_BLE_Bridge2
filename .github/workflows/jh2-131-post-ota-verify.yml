@@ -1,0 +1,54 @@
+name: JH2 1.1.31 Post OTA Live Verification
+on:
+  push:
+    branches: [codex/jh2-native-rx2-web-postsetup-dashboard-20261018]
+    paths: ['.github/workflows/jh2-131-post-ota-verify.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read-only Oracle and Nano health
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(kv.split('=',1) for kv in info['Config']['Env'] if '=' in kv)
+          base='http://127.0.0.1:8081'
+          def call(path,body=None,cookie=None):
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              data=json.dumps(body).encode() if body is not None else None
+              q=urllib.request.Request(base+path,data=data,headers=h,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(q,timeout=10) as r:return json.load(r),r.headers
+          _,hdr=call('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=hdr['Set-Cookie'].split(';',1)[0]
+          assert cookie.startswith('jh2=')
+          for sample in range(2):
+              state,_=call('/api/curtain/status',cookie=cookie)
+              curtain=state.get('curtain') or {}
+              fields={'sample':sample+1,'online':state.get('online'),
+                'firmware':state.get('firmware'),
+                'uptimeSeconds':state.get('uptimeSeconds'),
+                'lastSeen':state.get('lastSeen'),
+                'lastSync':state.get('lastSync'),
+                'queued':state.get('queued'),
+                'autoUpdate':state.get('autoUpdate'),
+                'error':str(state.get('error') or '')[:150],
+                'BLE_connected':curtain.get('connected'),
+                'BLE_MTU':curtain.get('mtu'),
+                'catalog_unique':curtain.get('nativeCatalogUnique'),
+                'catalog_complete88':curtain.get('nativeCatalogComplete88'),
+                'catalog_packets':curtain.get('nativeCatalogPackets'),
+                'notifications':curtain.get('nativeNotificationsSeen'),
+                'notice_drops':curtain.get('nativeNoticeDrops'),
+                'ACL_size':curtain.get('nativeHostAclBytes'),
+                'ACL_count':curtain.get('nativeHostAclCount'),
+                'msys2_count':curtain.get('nativeHostMsys2Count')}
+              print('JH2_POST_OTA_131',json.dumps(fields,sort_keys=True),flush=True)
+              if sample==0:time.sleep(6)
+          print('READ_ONLY_NO_COMMANDS_NO_PAIRING_NO_FIRMWARE_WRITES',flush=True)
+          PY
