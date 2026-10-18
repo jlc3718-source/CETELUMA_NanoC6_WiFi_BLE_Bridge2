@@ -4,6 +4,7 @@ on:
     branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
     paths:
       - '.github/workflows/jh2-146-oracle-curtain-parity-deploy-20261018.yml'
+      - '.github/scripts/deploy-curtain-relay.py'
   workflow_dispatch:
 
 permissions:
