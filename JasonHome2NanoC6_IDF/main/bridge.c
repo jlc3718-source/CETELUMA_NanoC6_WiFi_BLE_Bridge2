@@ -14,6 +14,7 @@
 #include "signed_ota.h"
 #include "asset_stream.h"
 #include "native_commands.h"
+#include "native_sequence.h"
 #include "esp_ota_ops.h"
 #include "mbedtls/base64.h"
 #include <ctype.h>
@@ -317,10 +318,28 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     if(!cJSON_IsNumber(id)||!cJSON_IsString(action)||!action->valuestring)return;
     const uint64_t current=(uint64_t)id->valuedouble;
     if(current<=last_command)return;
-    if(strcmp(action->valuestring,"assetStop")==0){
+    if(strcmp(action->valuestring,"sequenceStart")==0){
+        cJSON *items=cJSON_GetObjectItemCaseSensitive(payload,"effects");
+        cJSON *interval=cJSON_GetObjectItemCaseSensitive(payload,"intervalSeconds");
+        uint8_t effects[88]={0};int n=cJSON_IsArray(items)?cJSON_GetArraySize(items):0;
+        bool valid=n>=2&&n<=88&&cJSON_IsNumber(interval)
+            &&interval->valueint>=5&&interval->valueint<=3600;
+        if(valid){
+            for(int i=0;i<n;i++){
+                cJSON *item=cJSON_GetArrayItem(items,i);
+                if(!cJSON_IsNumber(item)||item->valueint<0||item->valueint>87){valid=false;break;}
+                effects[i]=(uint8_t)item->valueint;
+            }
+        }
+        jh2_asset_stream_stop();
+        bool started=valid&&jh2_native_sequence_start(effects,(size_t)n,(uint32_t)interval->valueint);
+        append_ack(current,started?"applied":"failed",
+            started?"Native effect sequence started":"Invalid sequence or BLE unavailable",started);
+    }else if(strcmp(action->valuestring,"assetStop")==0){
         jh2_asset_stream_stop();
         append_ack(current,"applied","Native image stream stop requested; last frame retained",false);
     }else if(strcmp(action->valuestring,"asset")==0){
+        jh2_native_sequence_stop();
         cJSON *requested=cJSON_GetObjectItemCaseSensitive(payload,"sha256");
         const char *sha=cJSON_IsString(requested)?requested->valuestring:NULL;
         uint32_t bytes=0;
@@ -375,6 +394,7 @@ static void handle_command(const cJSON *row,const cJSON *assets){
              strcmp(action->valuestring,"nativePlay")==0 ||
              strcmp(action->valuestring,"solid")==0){
         // An explicit visual command supersedes an old long-running animation.
+        jh2_native_sequence_stop();
         if(jh2_asset_stream_active()){
             jh2_asset_stream_stop();
             for(int wait=0;wait<70&&jh2_asset_stream_active();wait++)
@@ -419,6 +439,7 @@ static void handle_command(const cJSON *row,const cJSON *assets){
           delivered?"Native SmartDawn command acknowledged by GATT; physical display unconfirmed":
           "Native SmartDawn command rejected or GATT unavailable",delivered);
     }else if(strcmp(action->valuestring,"sequenceStop")==0){
+        jh2_native_sequence_stop();
         jh2_asset_stream_stop();
         append_ack(current,"applied","Native sequence/stream stop requested",false);
     }else if(strcmp(action->valuestring,"nanoResumeOracle")==0){
@@ -472,6 +493,7 @@ static cJSON *sync_document(void){
     cJSON_AddStringToObject(status,"assetStorage","oracle");
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
     jh2_ble_status(curtain);
+    cJSON_AddBoolToObject(curtain,"sequenceRunning",jh2_native_sequence_running());
     cJSON *notifications=cJSON_AddArrayToObject(body,"notifications");
     (void)jh2_ble_collect_notices(notifications,committed_notice_cursor);
     cJSON *batch=cJSON_AddArrayToObject(body,"acks");
