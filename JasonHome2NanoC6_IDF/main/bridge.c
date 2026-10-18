@@ -421,6 +421,13 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         bool accepted=jh2_ble_disconnect();
         append_ack(current,accepted?"applied":"failed",
                    accepted?"Native Bluetooth disconnect requested":"BLE disconnect failed",false);
+    }else if(strcmp(action->valuestring,"selectController")==0){
+        cJSON *mac=cJSON_GetObjectItemCaseSensitive(payload,"mac");
+        bool accepted=cJSON_IsString(mac)&&
+                      jh2_ble_select_target(mac->valuestring);
+        append_ack(current,accepted?"applied":"failed",
+                   accepted?"Bluetooth controller selected and persisted":
+                            "Controller was not observed in Nano scan or cannot be persisted",false);
     }else if(strcmp(action->valuestring,"power")==0 ||
              strcmp(action->valuestring,"brightness")==0 ||
              strcmp(action->valuestring,"speed")==0 ||
