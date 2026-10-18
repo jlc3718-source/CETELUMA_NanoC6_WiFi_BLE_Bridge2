@@ -62,7 +62,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.46"
+#define NATIVE_FW_VERSION "1.1.47"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -315,6 +315,14 @@ static void append_ack(uint64_t command_id,const char *state,const char *message
 static void asset_report(uint64_t id,const char *state,const char *message,bool ble){
     append_ack(id,state,message,ble);
 }
+// Stop is asynchronous because the worker may be in an HTTPS read. Do not
+// acknowledge a clean Stop or accept a replacement until that worker exits.
+static bool stop_image_stream_and_wait(void){
+    jh2_asset_stream_stop();
+    for(int attempt=0;attempt<160&&jh2_asset_stream_active();attempt++)
+        vTaskDelay(pdMS_TO_TICKS(100));
+    return !jh2_asset_stream_active();
+}
 static void handle_command(const cJSON *row,const cJSON *assets){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
@@ -352,13 +360,15 @@ static void handle_command(const cJSON *row,const cJSON *assets){
                 effects[i]=(uint8_t)item->valueint;
             }
         }
-        jh2_asset_stream_stop();
-        bool started=valid&&jh2_native_sequence_start(effects,(size_t)n,(uint32_t)interval->valueint);
+        bool idle=stop_image_stream_and_wait();
+        bool started=idle&&valid&&jh2_native_sequence_start(effects,(size_t)n,(uint32_t)interval->valueint);
         append_ack(current,started?"applied":"failed",
             started?"Native effect sequence started":"Invalid sequence or BLE unavailable",started);
     }else if(strcmp(action->valuestring,"assetStop")==0){
-        jh2_asset_stream_stop();
-        append_ack(current,"applied","Native image stream stop requested; last frame retained",false);
+        bool idle=stop_image_stream_and_wait();
+        append_ack(current,idle?"applied":"failed",
+            idle?"Native image stream fully stopped; ready for next image":
+                 "Image stream stop timed out; next image not yet safe",false);
     }else if(strcmp(action->valuestring,"asset")==0){
         jh2_native_sequence_stop();
         cJSON *requested=cJSON_GetObjectItemCaseSensitive(payload,"sha256");
@@ -377,9 +387,14 @@ static void handle_command(const cJSON *row,const cJSON *assets){
                 }
             }
         }
-        bool started=bytes&&jh2_asset_stream_start(endpoint,bridge_token,sha,bytes,current,asset_report);
+        // New image replaces a previous loop atomically at the BLE worker
+        // boundary. Do not make the caller send a separate Stop first.
+        bool idle=stop_image_stream_and_wait();
+        bool started=idle&&bytes&&jh2_asset_stream_start(endpoint,bridge_token,sha,bytes,current,asset_report);
         append_ack(current,started?"downloaded":"failed",
-           started?"Authenticated Oracle image stream started":"Native image asset missing or another stream active",false);
+           started?"Authenticated Oracle image stream started":
+                    (!idle?"Previous image stream is still stopping":
+                     "Requested image digest missing from Oracle sync or BLE worker unavailable"),false);
     }else if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
         append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
     }else if(strcmp(action->valuestring,"nanoEnterRecovery")==0){
@@ -437,11 +452,7 @@ static void handle_command(const cJSON *row,const cJSON *assets){
              strcmp(action->valuestring,"solid")==0){
         // An explicit visual command supersedes an old long-running animation.
         jh2_native_sequence_stop();
-        if(jh2_asset_stream_active()){
-            jh2_asset_stream_stop();
-            for(int wait=0;wait<70&&jh2_asset_stream_active();wait++)
-                vTaskDelay(pdMS_TO_TICKS(30));
-        }
+        if(jh2_asset_stream_active())(void)stop_image_stream_and_wait();
         bool delivered=false;
         cJSON *value=cJSON_GetObjectItemCaseSensitive(payload,"value");
         const char *name=action->valuestring;
@@ -482,8 +493,10 @@ static void handle_command(const cJSON *row,const cJSON *assets){
           "Native SmartDawn command rejected or GATT unavailable",delivered);
     }else if(strcmp(action->valuestring,"sequenceStop")==0){
         jh2_native_sequence_stop();
-        jh2_asset_stream_stop();
-        append_ack(current,"applied","Native sequence/stream stop requested",false);
+        bool idle=stop_image_stream_and_wait();
+        append_ack(current,idle?"applied":"failed",
+            idle?"Native sequence and image stream fully stopped":
+                 "Native sequence stopped, but image stream is still stopping",false);
     }else if(strcmp(action->valuestring,"nanoResumeOracle")==0){
         append_ack(current,"applied","Oracle scheduling resumed",false);
     }else if(strcmp(action->valuestring,"rawWrite")==0){
