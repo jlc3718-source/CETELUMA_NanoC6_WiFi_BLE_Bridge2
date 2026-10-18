@@ -2,6 +2,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// Use the same manufacturer packet envelope and transaction sequencing as normal commands.
+// Only supported non-destructive handshake/catalog opcodes may be sent.
+bool jh2_native_read(uint16_t opcode);
 bool jh2_native_power(bool on);
 bool jh2_native_brightness(int level);
 bool jh2_native_speed(int value);
