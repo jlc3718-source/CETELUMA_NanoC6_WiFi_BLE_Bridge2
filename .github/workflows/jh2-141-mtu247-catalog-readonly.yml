@@ -1,4 +1,4 @@
-name: JH2 1.1.41 RX11 HCI Ingress and 88-Effect Read-only Retest
+name: JH2 1.1.41 MTU247 Live Read-only Effect Catalog After OTA
 on:
   push:
     branches: [codex/jh2-native-1-1-41-mtu247-catalog-20261018]
@@ -51,7 +51,7 @@ jobs:
               before,_=api('/api/curtain/status',cookie=cookie)
           if int(before.get('queued') or 0)>0:
               raise RuntimeError('Oracle queue still busy; not adding BLE read')
-          n=120;op=2904;ddp=bytearray(20)
+          n=121;op=2904;ddp=bytearray(20)
           ddp[0]=240;ddp[1]=4;ddp[2]=0;ddp[3]=n;ddp[6]=op>>8;ddp[7]=op&255
           pkt=bytes([n,1,0,0])+ddp
           payload={'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(pkt).decode()}
