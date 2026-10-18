@@ -157,7 +157,7 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyQueryRc",phy_rc);
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx5-2m-phy-expanded-hci-64");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx6-10-15ms-interval-expanded-hci-64");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -404,12 +404,12 @@ static int gap_event(struct ble_gap_event *event,void *arg){
                 conn_latency=desc.conn_latency;
             }
             // ESP32-C6 receives only 3 of the 5 rapid catalog notifications.
-            // Request a moderate 45-60ms connection interval, latency 0,
+            // Request a short 10-15ms connection interval, latency 0,
             // allowing multi-PDU bursts to drain between events. This
             // request is advisory: GATT operates normally if refused.
             struct ble_gap_upd_params pacing={0};
-            pacing.itvl_min=36;
-            pacing.itvl_max=48;
+            pacing.itvl_min=8;
+            pacing.itvl_max=12;
             pacing.latency=0;
             pacing.supervision_timeout=400;
             conn_update_request_rc=ble_gap_update_params(connection,&pacing);
@@ -418,7 +418,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
             phy_2m_request_rc=ble_gap_set_prefered_le_phy(
                 connection,BLE_GAP_LE_PHY_2M_MASK,BLE_GAP_LE_PHY_2M_MASK,0);
             ESP_LOGI(TAG,"BLE_RX5_PHY_2M_REQUEST rc=%d",phy_2m_request_rc);
-            ESP_LOGI(TAG,"BLE_CONN_PACING_REQUEST rc=%d before_interval=%u",
+            ESP_LOGI(TAG,"BLE_RX6_SHORT_INTERVAL_REQUEST rc=%d before_interval=%u",
                      conn_update_request_rc,conn_interval_units);
             int rc=ble_gattc_exchange_mtu(connection,mtu_done,NULL);
             if(rc)fail("exchange_mtu",rc);
