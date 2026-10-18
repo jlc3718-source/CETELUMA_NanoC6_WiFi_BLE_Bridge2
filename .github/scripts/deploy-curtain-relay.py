@@ -87,6 +87,20 @@ if remote_begin in src:
   assert anchor in live,'No known authenticated Nano route insertion boundary'
   live=live.replace(anchor,new_nano+anchor,1)
 else:raise RuntimeError('Source /nano/ handler missing')
+# The installed gateway routes all non-API GETs to a strict static allowlist.
+# Its legacy /nano/ handler was located AFTER that catchall and unreachable.
+# Make this single authenticated exception precede the catchall.
+if remote_end in live and remote_begin in live and live.index(remote_end)<live.index(remote_begin):
+ start=live.index(remote_begin)
+ api_next='  if(path==="/api/curtain/pair"&&method==="POST")'
+ assert api_next in live[start:],'Missing authenticated curtain API boundary'
+ stop=live.index(api_next,start)
+ nano_block=live[start:stop]
+ live=live[:start]+live[stop:]
+ assert live.count(remote_end)==1 and live.count(remote_begin)==0
+ live=live.replace(remote_end,nano_block+remote_end,1)
+assert live.index(remote_begin)<live.index(remote_end),'Nano route hidden behind static catchall'
+
 
 old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
 bridge_init='const curtainRelay=createCurtainBridge({db});'
