@@ -1,0 +1,338 @@
+/*
+ * Jason Home 2 native Oracle bridge — staging implementation.
+ *
+ * Uses the existing /storage LittleFS partition and NVS recovery credentials
+ * without erasing or formatting either partition. HTTPS is validated against
+ * the same seven CA certificates trusted by the prior Arduino runtime.
+ *
+ * This module is intentionally NOT started by app_main while the independent
+ * native BLE lab firmware is under acceptance testing. It compiles in CI and
+ * enables functional migration without replacing the production Nano.
+ */
+#include "bridge.h"
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "esp_http_client.h"
+#include "nvs.h"
+#include "esp_littlefs.h"
+#include "cJSON.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+
+extern const unsigned char tls_roots_pem_start[] asm("_binary_tls_roots_pem_start");
+
+static const char *TAG="JH2_IDF_ORACLE";
+#define WIFI_READY BIT0
+#define MAX_ORACLE_BODY 65536
+#define MAX_ACKS 16
+#define MAX_ENDPOINT 208
+#define MAX_NAME 64
+#define MAX_TOKEN 65
+
+static char endpoint[MAX_ENDPOINT]={0},bridge_token[MAX_TOKEN]={0},bridge_id[MAX_NAME]={0};
+static char ssid[33]={0},password[65]={0};
+static char boot_id[17]={0};
+static volatile bool bridge_active=false;
+static EventGroupHandle_t wifi_group;
+
+typedef struct { uint64_t command_id; char *json; } ack_record;
+static ack_record acks[MAX_ACKS]={0};
+static size_t ack_count=0;
+static uint64_t last_command=0;
+static SemaphoreHandle_t ack_lock;
+
+typedef struct {char *data; size_t len,cap; bool exceeded;} http_output;
+static esp_err_t receive_http(esp_http_client_event_t *event){
+    if(event->event_id!=HTTP_EVENT_ON_DATA || !event->user_data)return ESP_OK;
+    http_output *out=event->user_data;
+    if(event->data_len<=0)return ESP_OK;
+    size_t n=(size_t)event->data_len;
+    if(out->len+n>=MAX_ORACLE_BODY){out->exceeded=true;return ESP_FAIL;}
+    if(out->len+n+1>out->cap){
+        size_t next=out->cap?out->cap*2:2048;
+        while(next<out->len+n+1)next*=2;
+        if(next>MAX_ORACLE_BODY)next=MAX_ORACLE_BODY;
+        char *ptr=realloc(out->data,next);
+        if(!ptr){out->exceeded=true;return ESP_ERR_NO_MEM;}
+        out->data=ptr;out->cap=next;
+    }
+    memcpy(out->data+out->len,event->data,n);
+    out->len+=n;out->data[out->len]=0;
+    return ESP_OK;
+}
+static bool safe_hex64(const char *s){
+    if(!s||strlen(s)!=64)return false;
+    for(size_t i=0;i<64;i++)if(!isxdigit((unsigned char)s[i]))return false;
+    return true;
+}
+static bool safe_https_endpoint(const char *s){
+    if(!s || strncmp(s,"https://",8)!=0 || strlen(s)>MAX_ENDPOINT-50)return false;
+    for(const char *p=s;*p;p++)if((unsigned char)*p<0x21 || *p=='#'||*p=='?'||*p=='@')return false;
+    return true;
+}
+static bool json_string(cJSON *root,const char *name,char *dest,size_t cap){
+    cJSON *value=cJSON_GetObjectItemCaseSensitive(root,name);
+    if(!cJSON_IsString(value)||!value->valuestring)return false;
+    const size_t n=strlen(value->valuestring);
+    if(n>=cap)return false;
+    memcpy(dest,value->valuestring,n+1);return n>0;
+}
+static cJSON *load_json(const char *path){
+    FILE *f=fopen(path,"rb");
+    if(!f)return NULL;
+    if(fseek(f,0,SEEK_END)!=0){fclose(f);return NULL;}
+    long size=ftell(f);
+    if(size<=0||size>16384 || fseek(f,0,SEEK_SET)!=0){fclose(f);return NULL;}
+    char *b=calloc((size_t)size+1,1);
+    if(!b){fclose(f);return NULL;}
+    size_t read=fread(b,1,(size_t)size,f);
+    fclose(f);
+    if(read!=(size_t)size){free(b);return NULL;}
+    cJSON *result=cJSON_Parse(b);
+    free(b);return result;
+}
+static bool load_saved_settings(void){
+    const esp_vfs_littlefs_conf_t options={
+       .base_path="/littlefs",.partition_label="storage",
+       .format_if_mount_failed=false,.dont_mount=false,
+    };
+    esp_err_t err=esp_vfs_littlefs_register(&options);
+    if(err!=ESP_OK){
+        ESP_LOGE(TAG,"Unable to read existing LittleFS without formatting (err=%s)",esp_err_to_name(err));
+        return false;
+    }
+    cJSON *secrets=load_json("/littlefs/secrets.json");
+    if(!secrets){
+        ESP_LOGE(TAG,"Existing secrets.json not readable; refusing to reset or re-pair");
+        return false;
+    }
+    bool e=json_string(secrets,"oracleEndpoint",endpoint,sizeof(endpoint));
+    bool t=json_string(secrets,"oracleBridgeToken",bridge_token,sizeof(bridge_token));
+    bool b=json_string(secrets,"oracleBridgeId",bridge_id,sizeof(bridge_id));
+    (void)json_string(secrets,"ssid",ssid,sizeof(ssid));
+    (void)json_string(secrets,"wifiPassword",password,sizeof(password));
+    cJSON_Delete(secrets);
+    if(!e||!t||!b||!safe_https_endpoint(endpoint)||!safe_hex64(bridge_token)){
+        ESP_LOGE(TAG,"Saved Oracle credentials missing/invalid; no secrets were changed");
+        return false;
+    }
+    // Existing production firmware mirrors Wi-Fi credentials into NVS. Use
+    // the same backup when the legacy LittleFS secrets omit Wi-Fi details.
+    if(!ssid[0]){
+        nvs_handle_t handle;
+        if(nvs_open("jh2-network",NVS_READONLY,&handle)==ESP_OK){
+            size_t len=sizeof(ssid);
+            if(nvs_get_str(handle,"ssid",ssid,&len)!=ESP_OK)ssid[0]=0;
+            len=sizeof(password);
+            if(nvs_get_str(handle,"password",password,&len)!=ESP_OK)password[0]=0;
+            nvs_close(handle);
+        }
+    }
+    if(!ssid[0]){ESP_LOGE(TAG,"No stored Wi-Fi; no AP/reset triggered");return false;}
+    return true;
+}
+static void wifi_event(void *arg,esp_event_base_t base,int32_t event,void *data){
+    (void)arg;(void)data;
+    if(base==WIFI_EVENT){
+        if(event==WIFI_EVENT_STA_START || event==WIFI_EVENT_STA_DISCONNECTED){
+            xEventGroupClearBits(wifi_group,WIFI_READY);
+            esp_wifi_connect();
+        }
+    }else if(base==IP_EVENT && event==IP_EVENT_STA_GOT_IP){
+        xEventGroupSetBits(wifi_group,WIFI_READY);
+    }
+}
+static bool wifi_setup(void){
+    wifi_group=xEventGroupCreate();
+    if(!wifi_group)return false;
+    if(esp_netif_init()!=ESP_OK)return false;
+    if(esp_event_loop_create_default()!=ESP_OK)return false;
+    if(!esp_netif_create_default_wifi_sta())return false;
+    wifi_init_config_t cfg=WIFI_INIT_CONFIG_DEFAULT();
+    if(esp_wifi_init(&cfg)!=ESP_OK)return false;
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,NULL));
+    wifi_config_t connection_cfg={0};
+    memcpy(connection_cfg.sta.ssid,ssid,strlen(ssid));
+    memcpy(connection_cfg.sta.password,password,strlen(password));
+    connection_cfg.sta.threshold.authmode=WIFI_AUTH_OPEN; // allow configured home network's auth level
+    connection_cfg.sta.pmf_cfg.capable=true;
+    connection_cfg.sta.pmf_cfg.required=false;
+    if(esp_wifi_set_mode(WIFI_MODE_STA)!=ESP_OK ||
+       esp_wifi_set_config(WIFI_IF_STA,&connection_cfg)!=ESP_OK ||
+       esp_wifi_start()!=ESP_OK)return false;
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    return true;
+}
+static cJSON *https_json(const char *path,const char *request_text){
+    const size_t endpoint_len=strlen(endpoint),path_len=strlen(path);
+    if(endpoint_len+path_len+1>MAX_ENDPOINT+256)return NULL;
+    char *url=malloc(endpoint_len+path_len+1);
+    if(!url)return NULL;
+    memcpy(url,endpoint,endpoint_len);
+    memcpy(url+endpoint_len,path,path_len+1);
+    http_output out={0};
+    esp_http_client_config_t config={
+        .url=url,.cert_pem=(const char *)tls_roots_pem_start,
+        .event_handler=receive_http,.user_data=&out,
+        .timeout_ms=13000,.buffer_size=2048,.buffer_size_tx=2048,
+    };
+    esp_http_client_handle_t http=esp_http_client_init(&config);
+    free(url);
+    if(!http)return NULL;
+    char auth[75];
+    snprintf(auth,sizeof(auth),"Bearer %s",bridge_token);
+    esp_http_client_set_header(http,"Authorization",auth);
+    esp_http_client_set_header(http,"X-JH2-Bridge-Token",bridge_token);
+    esp_http_client_set_header(http,"Content-Type","application/json");
+    if(request_text){
+        esp_http_client_set_method(http,HTTP_METHOD_POST);
+        esp_http_client_set_post_field(http,request_text,(int)strlen(request_text));
+    }else esp_http_client_set_method(http,HTTP_METHOD_GET);
+    esp_err_t rc=esp_http_client_perform(http);
+    int code=esp_http_client_get_status_code(http);
+    cJSON *result=NULL;
+    if(rc==ESP_OK&&code==200&&!out.exceeded&&out.data&&out.len){
+        result=cJSON_ParseWithLength(out.data,out.len);
+    }else{
+        ESP_LOGW(TAG,"Oracle HTTPS request failed rc=%s code=%d bytes=%u",esp_err_to_name(rc),code,(unsigned)out.len);
+    }
+    esp_http_client_cleanup(http);
+    free(out.data);
+    return result;
+}
+static void append_ack(uint64_t command_id,const char *state,const char *message){
+    cJSON *record=cJSON_CreateObject();
+    if(!record)return;
+    cJSON_AddNumberToObject(record,"id",(double)command_id);
+    cJSON_AddStringToObject(record,"state",state);
+    cJSON *result=cJSON_AddObjectToObject(record,"result");
+    cJSON_AddBoolToObject(result,"ok",strcmp(state,"applied")==0);
+    cJSON_AddStringToObject(result,"message",message);
+    char *json=cJSON_PrintUnformatted(record);
+    cJSON_Delete(record);
+    if(!json)return;
+    xSemaphoreTake(ack_lock,portMAX_DELAY);
+    if(ack_count<MAX_ACKS){
+        acks[ack_count++]=(ack_record){.command_id=command_id,.json=json};
+    }else{
+        // Never falsely ACK a command. Stop buffering new commands until
+        // the Oracle sync has confirmed the prior ACK batch.
+        free(json);
+        ESP_LOGE(TAG,"ACK_BUFFER_FULL: refusing command; existing ACKs retained");
+    }
+    xSemaphoreGive(ack_lock);
+}
+static void handle_command(const cJSON *row){
+    cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
+    cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
+    if(!cJSON_IsNumber(id)||!cJSON_IsString(action))return;
+    uint64_t current=(uint64_t)id->valuedouble;
+    if(current<=last_command)return;
+    // No device command execution until the native GATT router, display
+    // relay and OTA manager are implemented and physically accepted.
+    if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
+        append_ack(current,"applied","Native ESP-IDF bridge transport healthy");
+    }else{
+        append_ack(current,"failed","Native ESP-IDF BLE command router not enabled");
+    }
+    last_command=current;
+}
+static void initial_boot_id(void){
+    uint64_t n=((uint64_t)esp_random()<<32)|esp_random();
+    snprintf(boot_id,sizeof(boot_id),"%016llx",(unsigned long long)n);
+}
+static cJSON *sync_document(void){
+    cJSON *body=cJSON_CreateObject();
+    if(!body)return NULL;
+    cJSON_AddStringToObject(body,"bridgeId",bridge_id);
+    cJSON_AddStringToObject(body,"bootId",boot_id);
+    cJSON *status=cJSON_AddObjectToObject(body,"status");
+    cJSON_AddStringToObject(status,"firmware","idf-staging");
+    cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
+    cJSON_AddBoolToObject(status,"autoUpdate",false);
+    cJSON_AddBoolToObject(status,"relayStreaming",false);
+    cJSON_AddStringToObject(status,"assetStorage","oracle");
+    cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
+    cJSON_AddBoolToObject(curtain,"connected",false);
+    cJSON_AddNumberToObject(curtain,"mtu",23);
+    cJSON_AddBoolToObject(curtain,"ok",true);
+    cJSON_AddArrayToObject(body,"notifications");
+    cJSON *batch=cJSON_AddArrayToObject(body,"acks");
+    xSemaphoreTake(ack_lock,portMAX_DELAY);
+    for(size_t i=0;i<ack_count;i++){
+        cJSON *row=cJSON_Parse(acks[i].json);
+        if(row)cJSON_AddItemToArray(batch,row);
+    }
+    xSemaphoreGive(ack_lock);
+    return body;
+}
+static void clear_sent_ack_batch(size_t sent){
+    xSemaphoreTake(ack_lock,portMAX_DELAY);
+    if(sent>ack_count)sent=ack_count;
+    for(size_t i=0;i<sent;i++)free(acks[i].json);
+    for(size_t i=sent;i<ack_count;i++)acks[i-sent]=acks[i];
+    ack_count-=sent;
+    xSemaphoreGive(ack_lock);
+}
+static void oracle_task(void *ctx){
+    (void)ctx;
+    if(!load_saved_settings() || !wifi_setup()){
+        ESP_LOGE(TAG,"Native bridge disabled; saved production settings unchanged");
+        vTaskDelete(NULL);return;
+    }
+    initial_boot_id();
+    bridge_active=true;
+    uint32_t retry_ms=1000;
+    while(true){
+        if(!(xEventGroupWaitBits(wifi_group,WIFI_READY,pdFALSE,pdTRUE,pdMS_TO_TICKS(12000))&WIFI_READY)){
+            vTaskDelay(pdMS_TO_TICKS(1200));continue;
+        }
+        cJSON *body=sync_document();
+        if(!body){vTaskDelay(pdMS_TO_TICKS(1500));continue;}
+        int sent=cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(body,"acks"));
+        char *data=cJSON_PrintUnformatted(body);
+        cJSON_Delete(body);
+        cJSON *reply=data?https_json("/api/curtain-bridge/sync",data):NULL;
+        free(data);
+        if(!reply){
+            vTaskDelay(pdMS_TO_TICKS(retry_ms));
+            if(retry_ms<8000)retry_ms*=2;
+            continue;
+        }
+        retry_ms=1000;
+        clear_sent_ack_batch((size_t)sent);
+        cJSON *commands=cJSON_GetObjectItemCaseSensitive(reply,"commands");
+        if(cJSON_IsArray(commands)){
+            cJSON *row=NULL;
+            cJSON_ArrayForEach(row,commands){
+                handle_command(row);
+                break; // Preserve sequential ACK and Oracle ordering
+            }
+        }
+        cJSON_Delete(reply);
+        vTaskDelay(pdMS_TO_TICKS(1100));
+    }
+}
+void jh2_bridge_start(void){
+    if(bridge_active)return;
+    ack_lock=xSemaphoreCreateMutex();
+    if(!ack_lock)return;
+    if(xTaskCreate(oracle_task,"jh2-idf-oracle",12288,NULL,4,NULL)!=pdPASS){
+        vSemaphoreDelete(ack_lock);
+        ack_lock=NULL;
+        ESP_LOGE(TAG,"Unable to start native Oracle task");
+    }
+}
+bool jh2_bridge_ready(void){return bridge_active;}
