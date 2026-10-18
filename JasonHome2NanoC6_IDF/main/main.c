@@ -85,6 +85,8 @@ static SemaphoreHandle_t discovered_lock=NULL;
 static ble_addr_t selected_addr={0};
 static bool selected_valid=false;
 static volatile uint32_t ble_scan_requests=0;
+static bool hold_disconnect=false;
+static void begin_scan(void);
 static void format_mac(const ble_addr_t *addr,char out[18]){
     snprintf(out,18,"%02X:%02X:%02X:%02X:%02X:%02X",addr->val[5],addr->val[4],
              addr->val[3],addr->val[2],addr->val[1],addr->val[0]);
@@ -123,6 +125,7 @@ static void load_target(void){
 }
 bool jh2_ble_scan_start(void){
     ++ble_scan_requests;
+    hold_disconnect=false;
     if(connection!=BLE_HS_CONN_HANDLE_NONE)return true;
     begin_scan();
     return true;
@@ -147,6 +150,7 @@ bool jh2_ble_select_target(const char *mac){
     nvs_close(n);
     if(!saved)return false;
     selected_addr=addr;selected_valid=true;
+    hold_disconnect=false;
     if(connection!=BLE_HS_CONN_HANDLE_NONE)
         ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM);
     else{
@@ -156,6 +160,7 @@ bool jh2_ble_select_target(const char *mac){
     return true;
 }
 bool jh2_ble_disconnect(void){
+    hold_disconnect=true;
     if(connection==BLE_HS_CONN_HANDLE_NONE)return true;
     return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
 }
@@ -346,7 +351,7 @@ static void fail(const char *stage,int rc){
 }
 
 static void begin_scan(void){
-    if(connection!=BLE_HS_CONN_HANDLE_NONE)return;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE || hold_disconnect)return;
     if(ble_hs_id_infer_auto(0,&own_addr)!=0)return;
     struct ble_gap_disc_params params={0};
     params.passive=0; // active scan obtains DN5E58 name when in scan response
