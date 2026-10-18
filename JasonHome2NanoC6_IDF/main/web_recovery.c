@@ -68,7 +68,7 @@ static const char *HOME_HTML=
 "set('oracle',d.oracleRunning?'Oracle bridge: connected':"
 "(d.oracleConfigured?'Oracle bridge: configured, not connected':'Oracle bridge: needs pairing'),d.oracleRunning);"
 "set('ble',c.connected?'SmartDawn Bluetooth: connected':'SmartDawn Bluetooth: disconnected',c.connected);"
-"document.getElementById('inventory').textContent='Firmware '+d.version+' · Catalog '+(c.nativeCatalogUnique??'?')+'/88';"
+"document.getElementById('inventory').textContent='Firmware '+d.version+' · Catalog '+(c.nativeCatalogUnique==null?'?':c.nativeCatalogUnique)+'/88';"
 "}catch(e){document.getElementById('network').textContent=e.message}}"
 "refresh();setInterval(refresh,10000);</script></body></html>";
 
