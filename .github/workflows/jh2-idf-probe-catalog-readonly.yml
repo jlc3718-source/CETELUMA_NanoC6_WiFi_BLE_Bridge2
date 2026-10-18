@@ -40,7 +40,7 @@ jobs:
           assert before.get('online') is True and c.get('connected') is True and int(c.get('mtu') or 0)>=399
           notice,_=api('/api/curtain/notifications?since=0',cookie=cookie)
           cursor=max((int(n.get('id') or 0) for n in notice.get('notifications',[])),default=0)
-          n=91;op=2904;ddp=bytearray(20)
+          n=92;op=2904;ddp=bytearray(20)
           ddp[0]=240;ddp[1]=4;ddp[2]=0;ddp[3]=n;ddp[6]=op>>8;ddp[7]=op&255
           pkt=bytes([n,1,0,0])+ddp
           payload={'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(pkt).decode()}
