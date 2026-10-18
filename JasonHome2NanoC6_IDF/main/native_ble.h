@@ -13,3 +13,10 @@ uint32_t jh2_ble_collect_notices(cJSON *array,uint32_t after);
 
 // Channel 0 = SmartDawn command, channel 1 = GATT write-without-response.
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len);
+
+// Restored local Bluetooth scan/select tools. Selected MAC is persisted in
+// its own NVS namespace; other network/Oracle settings are untouched.
+bool jh2_ble_scan_start(void);
+bool jh2_ble_select_target(const char *mac);
+bool jh2_ble_disconnect(void);
+bool jh2_ble_target_slot_seen(uint16_t slot);
