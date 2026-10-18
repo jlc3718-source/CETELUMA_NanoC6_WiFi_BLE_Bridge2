@@ -42,6 +42,10 @@ static bool command(uint16_t opcode,const uint8_t *payload,size_t len){
     if(len)memcpy(bytes+24,payload,len);
     return jh2_ble_raw_write(CTRL_UUID,bytes,len+24,12000);
 }
+bool jh2_native_read(uint16_t opcode){
+    if(opcode!=205 && opcode!=167 && opcode!=2904)return false;
+    return command(opcode,NULL,0);
+}
 static bool scalar(uint16_t opcode,uint32_t v){
     uint8_t p[6];p[0]=8;
     size_t n=uvar(v,p+1);
