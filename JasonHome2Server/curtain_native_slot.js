@@ -238,6 +238,7 @@ async function connection(){
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});
  return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),
   writeUploadBatch:parts=>rpc('nativeSlotWrite',{packets:parts.map(b64)}),
+  playNative:(cid,slot)=>rpc('nativePlay',{cid,slot}),
   close:()=>{closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);}};
 }
 async function ddp(t,op,n1,n2,body){
@@ -508,7 +509,7 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
   if(!stored||!Number.isInteger(stored.slot))throw Error('Upload was acknowledged but the controller did not list the saved test CID');
   lastInstalled={bytes:data.slice(),cloudCid,slot:stored.slot};
   progress('Native animation stored in slot '+stored.slot+'. Starting playback…',after);
-  await ddp(t,2606,CID,stored.slot);
+  if(t.playNative)await t.playNative(CID,stored.slot);else await ddp(t,2606,CID,stored.slot);
   return {cid:CID,slot:stored.slot,format:plan.format,installed:true,playCommandSent:true,
    physicalPlaybackConfirmed:false,inventoryCount:after.length,targetSectionComplete:true};
  }finally{t.close();}
@@ -527,7 +528,7 @@ async function playResearch(){
  try{
   const effects=await inventory(t,()=>{}),stored=targetState(effects);
   if(!stored||!Number.isInteger(stored.slot))throw Error('Reserved CID 83928 is absent; play command cancelled');
-  await ddp(t,2606,CID,stored.slot);
+  if(t.playNative)await t.playNative(CID,stored.slot);else await ddp(t,2606,CID,stored.slot);
   return {cid:CID,slot:stored.slot,commandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close()}
 }

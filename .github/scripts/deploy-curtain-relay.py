@@ -3,6 +3,7 @@ import json,subprocess,os,pathlib,sqlite3,urllib.request,time,hashlib,shutil,tar
 ROOT=pathlib.Path.cwd();RUN=os.environ['GITHUB_RUN_ID']+'-'+os.environ.get('GITHUB_RUN_ATTEMPT','1');SHA=os.environ['GITHUB_SHA'];BACK=pathlib.Path('/home/ubuntu')/('jh2-curtain-backup-'+RUN)
 BACK.mkdir(mode=0o700,exist_ok=False)
 NONINVASIVE=os.environ.get('JH2_NONINVASIVE_DEPLOY')=='1'
+NATIVE_SLOT=os.environ.get('JH2_NATIVE_SLOT_DEPLOY')=='1'
 def run(*a,**kw):
  kw.setdefault("check",True);return subprocess.run(a,**kw)
 def capture(*a):return subprocess.check_output(a)
@@ -56,6 +57,11 @@ before,_=api(BASE,'/api/status',token);assert before['automationOwner']=='oracle
 # Apply only the new transport integration to installed code and the two existing curtain files.
 stage=BACK/'build';shutil.copytree(BACK/'web-app',stage)
 live=(stage/'server.mjs').read_text();src=(ROOT/'JasonHome2Server/server.mjs').read_text()
+if NATIVE_SLOT:
+ expected={'curtain_bridge.mjs': 'fa6ec3cda8760ed5a56e0642da965555267b9deb903e9b12531aeaa07bf6352e', 'web/curtain.js': '2ce99bbd8cfc98284ce67d04b11aeaa37c363c24dc899bc2e53193d239b7d993', 'web/curtain_native_slot.js': '21a976e5b7373190cfc9903ad912fa5abdb1d00f653ef54c4583b5dadfb53335', 'web/curtain_native_test.html': '0c8b93ec12ab1d2322c5977ef8a6bb3eb2d2e209ebdd07accac840cc0649d6ac'}
+ for name,digest in expected.items():
+  assert hashlib.sha256((stage/name).read_bytes()).hexdigest()==digest,'Installed Curtain source changed: '+name
+
 if 'createCurtainBridge' not in live:
  live='import {createCurtainBridge} from "./curtain_bridge.mjs";\n'+live
  anchor='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});';assert live.count(anchor)==1
@@ -109,6 +115,7 @@ if old_sync in live:
  assert live.count(old_sync)==1 and live.count(bridge_init)==1
  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
+if NATIVE_SLOT:live=(BACK/'web-app/server.mjs').read_text()
 (stage/'server.mjs').write_text(live)
 assert remote_begin in live and 'nano_remote.html' in live,'Nano UI authenticated route missing' 
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
@@ -118,13 +125,19 @@ for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:
  if not (stage/name).is_file():shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
 # The Nano remote console is not a /web static file: server.mjs reads it
 # next to the server module. Omitting it produces a missing-file failure.
-shutil.copyfile(ROOT/'JasonHome2Server/nano_remote.html',stage/'nano_remote.html')
+if not NATIVE_SLOT:shutil.copyfile(ROOT/'JasonHome2Server/nano_remote.html',stage/'nano_remote.html')
 assert (stage/'nano_remote.html').is_file()
 
 # Preserve the deployed original Curtain tab and Studio while enabling /nano/.
 # This deployment adds the trace console rather than rolling back later features.
 for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:
  if not (stage/'web'/name).is_file():shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
+if NATIVE_SLOT:
+ for name in ['curtain.js','curtain_native_slot.js','curtain_native_test.html']:
+  shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
+ shutil.copyfile(ROOT/'JasonHome2Server/curtain_bridge.mjs',stage/'curtain_bridge.mjs')
+ assert (stage/'server.mjs').read_bytes()==(BACK/'web-app/server.mjs').read_bytes()
+ print('Only the three Curtain web files and native batch relay module changed; installed HTTP routes preserved.',flush=True)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1
@@ -209,7 +222,8 @@ try:
  base='http://127.0.0.1:8081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
  relay,_=api(base,'/api/curtain/status',cookie=cookie);assert relay['assetStorage']=='oracle';assert relay['pollSeconds']==5
  api(base,'/api/eufy/verification',cookie=cookie)
- reconcile,_=api(BASE,'/api/reconcile',token,body={});assert reconcile.get('ok') is True and not reconcile.get('errors')
+ if not NATIVE_SLOT:
+  reconcile,_=api(BASE,'/api/reconcile',token,body={});assert reconcile.get('ok') is True and not reconcile.get('errors')
  after,_=api(BASE,'/api/status',token);assert after['automationOwner']=='oracle';assert len(after['eufy']['readyNames'])==4;assert after['calendar']['revision']==before['calendar']['revision'];assert after['calendar']['eventCount']==212
  cpout('jason-home','/app/dist/server.js',BACK/'backend-after.js');assert hashlib.sha256((BACK/'backend-after.js').read_bytes()).hexdigest()==backend_digest
  untouched=BACK/'eufy-ui-after.js';cpout('jason-home-2-web','/app/web/android_eufy_ui.js',untouched);assert untouched.read_bytes()==(BACK/'web-app/web/android_eufy_ui.js').read_bytes()
@@ -251,7 +265,7 @@ try:
   api(base,'/api/curtain/rotate',cookie=cookie,body={})
  # Pin future gateway starts to the verified image without altering existing secrets.
  (pathlib.Path('/opt/jason-home-2')/'curtain-relay-image').write_text(image+'\n')
- manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':True,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
+ manifest={'build':SHA,'run':RUN,'image':image,'backup':str(BACK),'rollbackContainer':previous,'oracleOwner':'oracle','schedulerReenabled':scheduler_reenabled,'schedulerReconciled':not NATIVE_SLOT,'nativeSlotUpdated':NATIVE_SLOT,'eufyReady':4,'events':212,'bridgeAuthRecovered':bridge_online,'liveCommandAckVerified':live_ble,'liveBleConnected':live_ble,'credentialRotationQueued':not NONINVASIVE,'physicalBridgeVerified':False,'restartVerified':True,'snapshotRestoreVerified':True}
  (BACK/'deployment.json').write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest))
  public={k:v for k,v in manifest.items() if k not in ['backup','rollbackContainer']}
  (ROOT/'deployment-verification.json').write_text(json.dumps(public,indent=2)+'\n')

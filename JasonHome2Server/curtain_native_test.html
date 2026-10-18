@@ -66,7 +66,7 @@ $('convert').onclick=async()=>{
   }
  }catch(e){
   show('Native conversion or controller upload failed: '+e.message);
- }finally{busy=false;update()}
+ }finally{busy=false;update();resize()}
 };
 function typeLabel(type){return ({1:'Micro-app',2:'Music',3:'Animation',4:'Scrolling text'})[type]||'Type '+type;}
 function renderSlots(entries){
@@ -85,7 +85,7 @@ function renderSlots(entries){
  $('allSlots').textContent='ID     SLOT   CID        TYPE   TITLE\n'+storedSlots.map(e=>
   String(e.id??'?').padEnd(7)+String(e.slot).padEnd(7)+String(e.cid??'not reported').padEnd(11)+
   String(e.type??'?').padEnd(7)+(e.title||'')+(e.cid===83928?' [RESERVED TEST]':'')).join('\n');
- update();selectSlot();
+ update();selectSlot();resize();
 }
 function selectSlot(){
  const i=Number($('slotSelect').value),e=storedSlots[i];

@@ -1,0 +1,40 @@
+name: JH2 Native Slot UI and Relay Deployment
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-native-slot-ui-deploy-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 18
+    env:
+      JH2_NONINVASIVE_DEPLOY: '1'
+      JH2_NATIVE_SLOT_DEPLOY: '1'
+    steps:
+      - name: Fix self-hosted checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Encrypted snapshot, restore validation, staged API checks and guarded Curtain deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_SHA,JH2_NONINVASIVE_DEPLOY,JH2_NATIVE_SLOT_DEPLOY \
+            python3 .github/scripts/deploy-curtain-relay.py
+          python3 - <<'PY'
+          import json,pathlib,os
+          d=json.loads(pathlib.Path('deployment-verification.json').read_text())
+          assert d['build']==os.environ['GITHUB_SHA'] and d['nativeSlotUpdated']
+          assert d['snapshotRestoreVerified'] and d['restartVerified'] and d['bridgeAuthRecovered']
+          assert d['eufyReady']==4 and d['events']==212
+          print('NATIVE_SLOT_UI_DEPLOYMENT_VERIFIED')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-Native-Slot-Deployment-Verification
+          path: deployment-verification.json
+          retention-days: 7
+          if-no-files-found: error
