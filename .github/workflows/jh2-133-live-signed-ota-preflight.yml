@@ -43,7 +43,7 @@ jobs:
           if int(s.get('queued') or 0):
               raise RuntimeError('Existing Oracle commands still pending; signed check postponed')
           request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},
-              'idempotencyKey':'jason-home-2-133-signed-preflight'},cookie)
+              'idempotencyKey':'jason-home-2-133-signed-preflight-2'},cookie)
           cid=int(request['commandId'])
           for _ in range(45):
               c,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
