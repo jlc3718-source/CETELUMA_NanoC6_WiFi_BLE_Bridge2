@@ -89,6 +89,8 @@ static gatt_notice notices[NOTICE_RING_SIZE];
 static QueueHandle_t catalog_queue=NULL;
 static volatile uint32_t catalog_enqueued=0,catalog_queue_drops=0;
 static volatile uint32_t catalog_parsed=0,catalog_parse_errors=0,catalog_fragments=0;
+static volatile bool target83928_seen=false;
+static volatile uint32_t target83928_slot=0,target83928_effect_id=0;
 static gatt_notice notices[NOTICE_RING_SIZE];
 static size_t notice_head=0,notice_count=0;
 static void record_notice(const uint8_t *raw,size_t len){
@@ -151,6 +153,13 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
     cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
     cJSON_AddBoolToObject(out,"nativeCatalogComplete88",catalog_unique==JH2_FACTORY_EFFECTS);
+    cJSON_AddNumberToObject(out,"nativeTargetCID",83928);
+    cJSON_AddStringToObject(out,"nativeTargetState",target83928_seen?"observed-in-received-group":"not-yet-observed-never-assume-absent");
+    cJSON_AddBoolToObject(out,"nativeTargetKnown",target83928_seen);
+    if(target83928_seen){
+        cJSON_AddNumberToObject(out,"nativeTargetSlot",target83928_slot);
+        cJSON_AddNumberToObject(out,"nativeTargetEffectId",target83928_effect_id);
+    }
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeCatalogEnqueued",catalog_enqueued);
@@ -400,6 +409,11 @@ static void catalog_worker(void *unused){
             continue;
         }
         ++catalog_parsed;
+        if(batch.target83928_seen){
+            target83928_seen=true;
+            target83928_slot=batch.target83928_slot;
+            target83928_effect_id=batch.target83928_effect_id;
+        }
         for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++)
             if(batch.found[i]&&!catalog_seen[i]){catalog_seen[i]=1;++catalog_unique;}
         ESP_LOGI(TAG,"CATALOG_REPLY id=%u gatt_bytes=%u effects=%u first=%u last=%u unique=%u",
@@ -531,6 +545,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         requested=finished=false;
         request_index=0;
         memset(catalog_seen,0,sizeof(catalog_seen));
+        target83928_seen=false;
         catalog_packets=catalog_unique=notification_count=0;
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
