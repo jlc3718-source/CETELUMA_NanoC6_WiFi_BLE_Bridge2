@@ -1,7 +1,7 @@
-name: JH2 Native ESP-IDF Browser OTA Acceptance Build
+name: JH2 Native ESP-IDF BLE RX Burst Acceptance Build
 on:
   push:
-    branches: [codex/jh2-native-espidf-browser-ota-20261017]
+    branches: [codex/jh2-native-espidf-ble-rx-recovery-20261017]
     paths:
       - 'JasonHome2NanoC6_IDF/**'
       - '.github/workflows/jh2-idf-native-integration-ci.yml'
@@ -48,6 +48,11 @@ jobs:
           assert 'nativeCatalogComplete88' in main
           assert '"browser_ota_compat.c"' in (app/"main/CMakeLists.txt").read_text()
           assert "JH2_NATIVE_BROWSER_OTA_COMPAT" in config
+          assert 'CONFIG_BT_NIMBLE_TRANSPORT_ACL_SIZE=517' in (app/"sdkconfig.defaults").read_text()
+          assert 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=40' in (app/"sdkconfig.defaults").read_text()
+          assert 'CONFIG_BT_LE_ACL_BUF_COUNT=24' in (app/"sdkconfig.defaults").read_text()
+          assert 'if(!have_id)effect=0;' in (app/"main/effectlist.c").read_text()
+          assert 'append_implicit_zero()' in (app/"tests/effectlist_test.c").read_text()
           assert '"native_recovery.c"' in (app/"main/CMakeLists.txt").read_text()
           assert asset.index("stream_once(&job,&applied,&repeat_this,true)") < asset.index("stream_once(&job,&applied,&repeat_this,false)")
           assert "if(!verify_only && !jh2_ble_asset_packet" in asset
@@ -95,7 +100,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: JH2-Native-ESP-IDF-BrowserOTA-${{ matrix.bridge }}-BUILD-ONLY
+          name: JH2-Native-ESP-IDF-BLE-RX2-${{ matrix.bridge }}-BUILD-ONLY
           path: |
             JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
             JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin

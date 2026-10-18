@@ -48,7 +48,11 @@ static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid){
         if((key>>3)==1 && (key&7)==0){effect=value;have_id=1;}
         if((key>>3)==4 && (key&7)==0){controller=value;have_cid=1;}
     }
-    if(!have_id||!have_cid||effect>=JH2_FACTORY_EFFECTS)return 1;
+    // Protobuf 3 suppresses scalar zero fields. The first native E-0
+    // EffectInfo has no field 1, which means default ID 0 (not missing data).
+    // Require the controller CID to distinguish a valid catalog item.
+    if(!have_cid||effect>=JH2_FACTORY_EFFECTS)return 1;
+    if(!have_id)effect=0;
     *id=(uint16_t)effect;*cid=controller;return 0;
 }
 int jh2_effectlist_parse(const uint8_t *ddp,size_t len,jh2_catalog_batch *out){

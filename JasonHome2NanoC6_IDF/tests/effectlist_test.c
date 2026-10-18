@@ -22,6 +22,18 @@ static size_t effect_body(unsigned id,uint8_t *out){
     len=begin;
     return n;
 }
+static void append_implicit_zero(void){
+    // E-0 in the real captured catalog omits protobuf field 1 (zero).
+    uint8_t raw[32];
+    size_t start=len;
+    varint(24);varint(0);      // Slot zero is allowed.
+    varint(32);varint(15924);  // Controller CID must still exist.
+    size_t n=len-start;
+    memcpy(raw,packet+start,n);
+    len=start;
+    varint(10);varint((unsigned)n);
+    memcpy(packet+len,raw,n);len+=n;
+}
 static void begin(void){
     memset(packet,0,sizeof(packet));
     packet[0]=0xf0;
@@ -49,6 +61,10 @@ int main(void){
     begin();append(0);append(0);append(87);
     assert(jh2_effectlist_parse(packet,len,&found)==0);
     assert(found.count==2&&found.found[0]&&found.found[87]);
+    begin();append_implicit_zero();append(1);
+    assert(jh2_effectlist_parse(packet,len,&found)==0);
+    assert(found.count==2&&found.found[0]&&found.found[1]);
+    assert(found.first==0&&found.last==1);
     packet[6]=0xff;
     assert(jh2_effectlist_parse(packet,len,&found)<0);
     assert(jh2_effectlist_parse(NULL,len,&found)<0);

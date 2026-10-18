@@ -116,6 +116,10 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Bytes",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
+    cJSON_AddNumberToObject(out,"nativeHostMsys2Count",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT);
+    cJSON_AddNumberToObject(out,"nativeHostAclBytes",CONFIG_BT_NIMBLE_TRANSPORT_ACL_SIZE);
+    cJSON_AddNumberToObject(out,"nativeHostAclCount",CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT);
+    cJSON_AddStringToObject(out,"nativeRxExperiment","acl517-pools40-implicit-e0");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
