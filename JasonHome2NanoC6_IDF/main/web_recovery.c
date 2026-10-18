@@ -257,6 +257,7 @@ static esp_err_t ble_control_post(httpd_req_t *r){
 
 // The local Nano console deliberately bypasses Oracle to separate a Nano/BLE
 // defect from APK -> Oracle and Oracle -> Nano transport failures.
+static bool form_value(const char *form,const char *field,char *out,size_t cap);
 static uint32_t local_trace_serial=0;
 static esp_err_t local_probe_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
