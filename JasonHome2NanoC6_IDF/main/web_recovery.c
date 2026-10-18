@@ -41,6 +41,37 @@ static char saved_ssid[33]={0},saved_pass[65]={0};
 static int64_t wifi_down_since=0;
 static bool sntp_started=false,mdns_started=false;
 
+static const char *HOME_HTML=
+"<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+"<meta charset='UTF-8'><title>Jason Home 2 NanoC6</title>"
+"<style>body{font:16px system-ui;margin:20px auto;max-width:600px;padding:16px;background:#081321;color:#eef5ff}"
+".panel{background:#12253a;border:1px solid #31475f;border-radius:16px;padding:20px;margin:16px 0}"
+"button,a.action{display:inline-block;box-sizing:border-box;padding:13px;margin:6px 6px 6px 0;background:#173f52;"
+"border:1px solid #396880;border-radius:10px;color:#dbf5fc;text-decoration:none;font:inherit}"
+".muted{color:#bdd0df}.ok{color:#73e6ba}.warning{color:#ffd89e}code{overflow-wrap:anywhere}"
+"</style></head><body><h1>Jason Home 2 NanoC6</h1>"
+"<p class='muted'>RX2 bridge &middot; firmware and recovery management</p>"
+"<section class='panel'><h2>Controller status</h2><p id='network'>Checking Wi-Fi...</p>"
+"<p id='oracle'>Checking Oracle...</p><p id='ble'>Checking Bluetooth...</p>"
+"<p id='inventory' class='muted'></p>"
+"<button onclick='refresh()'>Refresh status</button>"
+"<a class='action' href='/api/status'>Detailed diagnostics</a></section>"
+"<section class='panel'><h2>Management</h2>"
+"<a class='action' href='/firmware'>Firmware / recovery</a>"
+"<a class='action' href='/setup?edit=1'>Edit saved settings</a>"
+"<p class='muted'>Your Wi-Fi and bridge credentials are retained on the Nano. "
+"Setup is only needed if you choose to edit them or finish an incomplete configuration.</p></section>"
+"<script>async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'});"
+"if(!r.ok)throw Error('Status unavailable');const d=await r.json(),c=d.curtain||{};"
+"const set=(id,msg,ok)=>{const el=document.getElementById(id);el.textContent=msg;el.className=ok?'ok':'warning'};"
+"set('network',d.wifi?'Home Wi-Fi: connected':'Home Wi-Fi: disconnected',d.wifi);"
+"set('oracle',d.oracleRunning?'Oracle bridge: connected':"
+"(d.oracleConfigured?'Oracle bridge: configured, not connected':'Oracle bridge: needs pairing'),d.oracleRunning);"
+"set('ble',c.connected?'SmartDawn Bluetooth: connected':'SmartDawn Bluetooth: disconnected',c.connected);"
+"document.getElementById('inventory').textContent='Firmware '+d.version+' · Catalog '+(c.nativeCatalogUnique??'?')+'/88';"
+"}catch(e){document.getElementById('network').textContent=e.message}}"
+"refresh();setInterval(refresh,10000);</script></body></html>";
+
 static const char *SETUP_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
 "<meta charset='UTF-8'><title>Jason Home 2 Setup</title>"
@@ -101,7 +132,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.30-rx2-web");
+    cJSON_AddStringToObject(o,"version","1.1.31-rx2-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -109,7 +140,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.30-rx2-web");
+    cJSON_AddStringToObject(o,"version","1.1.31-rx2-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -123,7 +154,23 @@ static esp_err_t status_get(httpd_req_t *r){
 }
 static esp_err_t html_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
-    const char *page=strstr(r->uri,"firmware")||strstr(r->uri,"recovery")?FIRMWARE_HTML:SETUP_HTML;
+    const bool firmware=strstr(r->uri,"firmware")||strstr(r->uri,"recovery");
+    const bool explicit_setup=strncmp(r->uri,"/setup",6)==0;
+    char query[80]={0},edit[8]={0};
+    const bool editing=explicit_setup &&
+        httpd_req_get_url_query_str(r,query,sizeof(query))==ESP_OK &&
+        httpd_query_key_value(query,"edit",edit,sizeof(edit))==ESP_OK &&
+        strcmp(edit,"1")==0;
+    const bool programmed=saved_ssid[0]!=0;
+    // After initial Wi-Fi configuration, / is the dashboard. Visiting the
+    // old /setup bookmark also returns home unless the user requests editing.
+    if(explicit_setup && programmed && creds_ready && !editing){
+        httpd_resp_set_status(r,"302 Found");
+        httpd_resp_set_hdr(r,"Location","/");
+        return httpd_resp_send(r,NULL,0);
+    }
+    const char *page=firmware?FIRMWARE_HTML:
+        (explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML);
     httpd_resp_set_type(r,"text/html; charset=utf-8");
     httpd_resp_set_hdr(r,"Cache-Control","no-store");
     return httpd_resp_send(r,page,HTTPD_RESP_USE_STRLEN);
