@@ -159,7 +159,7 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
     jh2_hci_acl_diag(out);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx10-stable-38-no-dle-hci-tap");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx14-mtu365-split-large-catalog");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -512,7 +512,7 @@ void app_main(void){
     if(rc!=ESP_OK){fail("nimble_port_init",rc);return;}
     ble_hs_cfg.reset_cb=on_reset;
     ble_hs_cfg.sync_cb=on_sync;
-    ble_att_set_preferred_mtu(517);
+    ble_att_set_preferred_mtu(365);
     nimble_port_freertos_init(host_task);
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Keep the product marker and compat segment in the actual ESP32-C6
