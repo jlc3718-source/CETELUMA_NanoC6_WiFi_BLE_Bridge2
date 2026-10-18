@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define JH2_FACTORY_EFFECTS 88
 typedef struct {
@@ -9,6 +10,9 @@ typedef struct {
     size_t count;
     uint16_t first;
     uint16_t last;
+    bool target83928_seen;
+    uint32_t target83928_slot;
+    uint16_t target83928_effect_id;
 } jh2_catalog_batch;
 
 // Input is a COMPLETE DDP EffectList (0xf0/0xf1, opcode 2904), without
