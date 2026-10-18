@@ -1,0 +1,69 @@
+name: JH2 Target Slot Read-Only Readiness
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-slot-readiness-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect live target records using only captured 205, 167 and 2904 requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=RUNNER_TEMP,GITHUB_RUN_ID -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time,base64,pathlib,os
+          env=dict(s.split('=',1) for s in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in s)
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=None if body is None else json.dumps(body).encode()
+              request=urllib.request.Request(host+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})})
+              with urllib.request.urlopen(request,timeout=20) as response:return json.load(response),response.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          def status():
+              data,_=api('/api/curtain/status',cookie=cookie)
+              curtain=data.get('curtain') or {}
+              return {'firmware':data.get('firmware'),'online':data.get('online'),'queued':data.get('queued'),'streaming':data.get('relayStreaming'),'curtain':{k:v for k,v in curtain.items() if k.startswith('native') or k in ('connected','mtu')}}
+          report={'before':status(),'commands':[],'frames':[]}
+          print('READINESS',json.dumps(report['before'],sort_keys=True),flush=True)
+          assert report['before']['online'] and report['before']['curtain'].get('connected') and int(report['before']['queued'] or 0)==0,'Bridge busy or unavailable; no command queued'
+          previous,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max([0]+[int(x['id']) for x in previous.get('notifications',[])])
+          for index,opcode in enumerate((205,167,2904)):
+              packet=bytearray(24);packet[:6]=bytes([140+index,1,0,0,240,4]);packet[10:12]=opcode.to_bytes(2,'big')
+              queued,_=api('/api/curtain/call',{'action':'rawWrite','payload':{'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(packet).decode()},'idempotencyKey':'jh2-target-read-'+os.environ['GITHUB_RUN_ID']+'-'+str(opcode)},cookie=cookie)
+              command_id=queued['commandId']
+              for check in range(90):
+                  result,_=api('/api/curtain/command?id='+str(command_id),cookie=cookie)
+                  command=result.get('command') or {}
+                  if command.get('state') in ('applied','failed','expired','superseded'):break
+                  time.sleep(.5)
+              item={'id':command_id,'opcode':opcode,'state':command.get('state'),'result':command.get('result')}
+              report['commands'].append(item);print('READ_ACK',json.dumps(item),flush=True)
+              assert item['state']=='applied','Read-only request was not delivered'
+          time.sleep(18)
+          notices,_=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)
+          for notice in notices.get('notifications',[]):
+              if str(notice.get('uuid','')).lower()!='01010074-1972-1925-3022-077119514e44':continue
+              raw=base64.b64decode(notice['data'])
+              if len(raw)>=24 and raw[4] in (240,241) and int.from_bytes(raw[10:12],'big')==2904:
+                  report['frames'].append({'id':notice['id'],'hex':raw.hex()})
+                  print('CATALOG_FRAME',len(raw),raw.hex(),flush=True)
+          report['after']=status()
+          print('FINAL_READINESS',json.dumps(report['after'],sort_keys=True),flush=True)
+          target=pathlib.Path(os.environ['RUNNER_TEMP'])/('jh2-target-read-'+os.environ['GITHUB_RUN_ID']+'.json')
+          target.write_text(json.dumps(report,indent=2));target.chmod(0o644)
+          print('NO_UPLOAD_OR_ERASE_REQUEST_SENT',flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-Live-Target-Catalog
+          path: ${{ runner.temp }}/jh2-target-read-${{ github.run_id }}.json
+          retention-days: 1
+          if-no-files-found: error
