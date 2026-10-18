@@ -66,9 +66,10 @@ if 'createCurtainBridge' not in live:
  assert live.count('  if(method==="GET"&&path==="/api/nanoc6/sync")')==1;live=live.replace('  if(method==="GET"&&path==="/api/nanoc6/sync")',block+'  if(method==="GET"&&path==="/api/nanoc6/sync")')
  live=live.replace('"nano_sync.js"]','"nano_sync.js","curtain_remote.js"]')
 else:
- # Update the already-isolated route blocks without touching other application code.
- for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
-  a=src.index(start);b=src.index(end,a);x=live.index(start);y=live.index(end,x);live=live[:x]+src[a:b]+live[y:]
+ # The installed Oracle server has newer Eufy master-schedule and vendor-video
+ # routes than this development branch. Preserve them byte-for-byte.
+ # Add ONLY the authenticated /nano/ trace console below.
+ pass
 # Keep the authenticated Nano diagnostic route immediately before static asset routing.
 remote_begin='  if(path==="/nano/"&&method==="GET"){' 
 remote_end='  if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);'
@@ -91,13 +92,19 @@ assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),
 (stage/'server.mjs').write_text(live)
 assert remote_begin in live and 'nano_remote.html' in live,'Nano UI authenticated route missing' 
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
-for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
+# Retain the installed compatible curtain/Eufy runtime modules; copying
+# older branch modules removes setEufyMasterEnabled and crashes Oracle.
+for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:
+ if not (stage/name).is_file():shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
 # The Nano remote console is not a /web static file: server.mjs reads it
 # next to the server module. Omitting it produces a missing-file failure.
 shutil.copyfile(ROOT/'JasonHome2Server/nano_remote.html',stage/'nano_remote.html')
 assert (stage/'nano_remote.html').is_file()
 
-for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
+# Preserve the deployed original Curtain tab and Studio while enabling /nano/.
+# This deployment adds the trace console rather than rolling back later features.
+for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:
+ if not (stage/'web'/name).is_file():shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1
