@@ -61,6 +61,10 @@ static volatile int conn_update_request_rc=-1,conn_update_status=-1;
 static volatile uint32_t conn_updates=0;
 static volatile int phy_2m_request_rc=-1;
 static volatile uint32_t phy_status_queries=0;
+static volatile int dle_request_rc=-1;
+static volatile bool dle_requested=false;
+static volatile uint32_t dle_event_count=0;
+static volatile uint16_t dle_rx_octets=0,dle_tx_octets=0,dle_rx_time=0,dle_tx_time=0;
 static uint16_t heart=0,upload=0;
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
@@ -158,8 +162,14 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyQueryRc",phy_rc);
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
+    cJSON_AddNumberToObject(out,"nativeDLERequestRc",dle_request_rc);
+    cJSON_AddNumberToObject(out,"nativeDLEEvents",dle_event_count);
+    cJSON_AddNumberToObject(out,"nativeDLERxOctets",dle_rx_octets);
+    cJSON_AddNumberToObject(out,"nativeDLETxOctets",dle_tx_octets);
+    cJSON_AddNumberToObject(out,"nativeDLERxTimeUs",dle_rx_time);
+    cJSON_AddNumberToObject(out,"nativeDLETxTimeUs",dle_tx_time);
     jh2_hci_acl_diag(out);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx8-nimble-msys-768-hci-tap");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx9-request-251-2120-dle-hci");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -441,10 +451,23 @@ static int gap_event(struct ble_gap_event *event,void *arg){
             conn_interval_units=desc.conn_itvl;
             conn_latency=desc.conn_latency;
         }
+        if(event->conn_update.status==0 && !dle_requested){
+            dle_requested=true;
+            dle_request_rc=ble_gap_set_data_len(connection,251,2120);
+            ESP_LOGI(TAG,"BLE_RX9_DLE_REQUEST rc=%d",dle_request_rc);
+        }
         ESP_LOGI(TAG,"BLE_CONN_PACING_ACTUAL rc=%d interval_units=%u latency=%u",
                  conn_update_status,conn_interval_units,conn_latency);
         return 0;
     }
+    case BLE_GAP_EVENT_DATA_LEN_CHG:
+        ++dle_event_count;
+        dle_rx_octets=event->data_len_chg.max_rx_octets;
+        dle_tx_octets=event->data_len_chg.max_tx_octets;
+        dle_rx_time=event->data_len_chg.max_rx_time;
+        dle_tx_time=event->data_len_chg.max_tx_time;
+        ESP_LOGI(TAG,"BLE_RX9_DLE_ACTUAL tx=%u rx=%u",dle_tx_octets,dle_rx_octets);
+        return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGW(TAG,"BLE_DISCONNECTED reason=%u",event->disconnect.reason);
         connection=BLE_HS_CONN_HANDLE_NONE;
@@ -457,7 +480,8 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         catalog_packets=catalog_unique=notification_count=0;
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
-        conn_updates=0;
+        conn_updates=0;dle_requested=false;dle_request_rc=-1;
+        dle_event_count=dle_rx_octets=dle_tx_octets=dle_rx_time=dle_tx_time=0;
         begin_scan();
         return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
