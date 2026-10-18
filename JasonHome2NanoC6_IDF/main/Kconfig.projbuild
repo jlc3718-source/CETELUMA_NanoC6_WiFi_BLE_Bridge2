@@ -1,0 +1,9 @@
+menu "Jason Home 2 native runtime"
+    config JH2_NATIVE_ENABLE_ORACLE
+        bool "Enable native outbound Oracle bridge (requires acceptance testing)"
+        default n
+        help
+            Do not enable on production until 88 SmartDawn catalog
+            entries, signed OTA, command ACK and image streaming have
+            been validated on physical ESP32-C6 hardware.
+endmenu
