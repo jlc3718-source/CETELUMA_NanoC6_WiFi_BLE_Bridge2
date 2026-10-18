@@ -64,10 +64,27 @@ static volatile uint32_t conn_updates=0;
 static volatile int phy_2m_request_rc=-1;
 static volatile uint32_t phy_status_queries=0;
 static uint16_t heart=0,upload=0;
-static uint8_t catalog_seen[JH2_FACTORY_EFFECTS]={0};
-static uint16_t catalog_slot[JH2_FACTORY_EFFECTS]={0};
-static uint8_t catalog_type[JH2_FACTORY_EFFECTS]={0};
-static uint64_t catalog_cid[JH2_FACTORY_EFFECTS]={0};
+static uint8_t catalog_seen[JH2_EFFECT_CAPACITY]={0};
+static uint16_t catalog_slot[JH2_EFFECT_CAPACITY]={0};
+static uint8_t catalog_type[JH2_EFFECT_CAPACITY]={0};
+static uint64_t catalog_cid[JH2_EFFECT_CAPACITY]={0};
+static volatile int64_t target_section_at=0;
+static volatile unsigned target_section_matches=0;
+static volatile uint16_t target_section_slot=0;
+void jh2_ble_target_invalidate(void){target_section_at=0;}
+void jh2_ble_catalog_begin_read(void){
+    target_section_at=0;
+    memset(catalog_seen,0,sizeof(catalog_seen));
+    memset(catalog_slot,0,sizeof(catalog_slot));
+    memset(catalog_type,0,sizeof(catalog_type));
+    memset(catalog_cid,0,sizeof(catalog_cid));
+    catalog_unique=0;
+}
+bool jh2_ble_target_section(unsigned *matches,uint16_t *slot){
+    if(!target_section_at||esp_timer_get_time()-target_section_at>120000000||
+       connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    *matches=target_section_matches;*slot=target_section_slot;return true;
+}
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
 static volatile bool raw_write_pending=false,raw_write_fault=false;
@@ -166,7 +183,7 @@ bool jh2_ble_disconnect(void){
     return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
 }
 bool jh2_ble_target_slot_seen(uint16_t slot){
-    for(unsigned id=0;id<JH2_FACTORY_EFFECTS;id++)
+    for(unsigned id=0;id<JH2_EFFECT_CAPACITY;id++)
         if(catalog_seen[id] && catalog_cid[id]==83928 && catalog_slot[id]==slot)return true;
     return false;
 }
@@ -255,7 +272,7 @@ void jh2_ble_status(cJSON *out){
     // every matching (effect ID, slot, type) rather than assuming uniqueness.
     cJSON *target=cJSON_AddArrayToObject(out,"nativeTarget83928");
     unsigned target_matches=0;
-    for(unsigned id=0;id<JH2_FACTORY_EFFECTS;id++){
+    for(unsigned id=0;id<JH2_EFFECT_CAPACITY;id++){
         if(!catalog_seen[id] || catalog_cid[id]!=83928)continue;
         ++target_matches;
         cJSON *item=cJSON_CreateObject();
@@ -266,6 +283,9 @@ void jh2_ble_status(cJSON *out){
         cJSON_AddNumberToObject(item,"cid",83928);
         cJSON_AddItemToArray(target,item);
     }
+    unsigned section_matches=0;uint16_t section_slot=0;
+    cJSON_AddBoolToObject(out,"nativeSlotTransferSupported",true);
+    cJSON_AddBoolToObject(out,"nativeTargetSectionComplete",jh2_ble_target_section(&section_matches,&section_slot));
     cJSON_AddNumberToObject(out,"nativeTarget83928Count",target_matches);
     cJSON_AddBoolToObject(out,"nativeTarget83928Unique",target_matches==1);
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
@@ -479,7 +499,20 @@ static void catalog_worker(void *unused){
             continue;
         }
         ++catalog_parsed;
-        for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++){
+        // Captured controller pages contain 20 entries. A short final page
+        // beginning at ID 80 covers every custom record (IDs 87 and later).
+        if(batch.first==80&&batch.count>=7&&batch.count<20&&
+           batch.last>=86&&batch.last<100&&batch.count==(size_t)(batch.last-79)){
+            bool contiguous=true;unsigned matches=0;uint16_t slot=0;
+            for(unsigned id=80;id<=batch.last;id++){
+                if(!batch.found[id])contiguous=false;
+                if(batch.cid[id]==83928){++matches;slot=batch.slot[id];}
+            }
+            if(contiguous){target_section_matches=matches;target_section_slot=slot;
+                target_section_at=esp_timer_get_time();}
+        }
+
+        for(size_t i=0;i<JH2_EFFECT_CAPACITY;i++){
             if(!batch.found[i])continue;
             catalog_slot[i]=batch.slot[i];
             catalog_type[i]=batch.type[i];
@@ -602,6 +635,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         memset(catalog_slot,0,sizeof(catalog_slot));
         memset(catalog_type,0,sizeof(catalog_type));
         memset(catalog_cid,0,sizeof(catalog_cid));
+        target_section_at=0;
         catalog_packets=catalog_unique=notification_count=0;
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
@@ -654,7 +688,7 @@ void app_main(void){
     // Catalog parser is deliberately lower priority than NimBLE and never
     // runs inside the notification callback. No dependency on Oracle uptime.
     catalog_queue=xQueueCreate(CATALOG_RX_QUEUE_DEPTH,sizeof(gatt_notice));
-    if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",4096,NULL,3,NULL)!=pdPASS){
+    if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",8192,NULL,3,NULL)!=pdPASS){
         ESP_LOGE(TAG,"CATALOG_RECEIVE_WORKER_FAILED");
         return;
     }

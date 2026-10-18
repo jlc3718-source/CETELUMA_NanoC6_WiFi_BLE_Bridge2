@@ -3,12 +3,13 @@
 #include <stdint.h>
 
 #define JH2_FACTORY_EFFECTS 88
+#define JH2_EFFECT_CAPACITY 256
 typedef struct {
-    uint16_t values[JH2_FACTORY_EFFECTS];
-    uint8_t found[JH2_FACTORY_EFFECTS];
-    uint8_t type[JH2_FACTORY_EFFECTS];
-    uint16_t slot[JH2_FACTORY_EFFECTS];
-    uint64_t cid[JH2_FACTORY_EFFECTS];
+    uint16_t values[JH2_EFFECT_CAPACITY];
+    uint8_t found[JH2_EFFECT_CAPACITY];
+    uint8_t type[JH2_EFFECT_CAPACITY];
+    uint16_t slot[JH2_EFFECT_CAPACITY];
+    uint64_t cid[JH2_EFFECT_CAPACITY];
     size_t count;
     uint16_t first;
     uint16_t last;

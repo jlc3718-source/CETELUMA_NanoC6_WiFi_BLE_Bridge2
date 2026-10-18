@@ -20,3 +20,9 @@ bool jh2_ble_scan_start(void);
 bool jh2_ble_select_target(const char *mac);
 bool jh2_ble_disconnect(void);
 bool jh2_ble_target_slot_seen(uint16_t slot);
+
+// A fresh terminal 80..N catalog page covers all custom test effects even
+// when unrelated 40..79 factory pages are missing from the BLE receive path.
+void jh2_ble_catalog_begin_read(void);
+void jh2_ble_target_invalidate(void);
+bool jh2_ble_target_section(unsigned *matches, uint16_t *slot);

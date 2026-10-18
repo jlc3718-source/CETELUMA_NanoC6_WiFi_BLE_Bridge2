@@ -11,6 +11,7 @@
  */
 #include "bridge.h"
 #include "native_ble.h"
+#include "native_slot_guard.h"
 #include "signed_ota.h"
 #include "asset_stream.h"
 #include "native_commands.h"
@@ -62,7 +63,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.47"
+#define NATIVE_FW_VERSION "1.1.48"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -323,6 +324,12 @@ static bool stop_image_stream_and_wait(void){
         vTaskDelay(pdMS_TO_TICKS(100));
     return !jh2_asset_stream_active();
 }
+#if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
+#define NATIVE_SLOT_READ_ONLY true
+#else
+#define NATIVE_SLOT_READ_ONLY false
+#endif
+static jh2_slot_session native_slot_session={0};
 static void handle_command(const cJSON *row,const cJSON *assets){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
@@ -502,30 +509,67 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     }else if(strcmp(action->valuestring,"rawWrite")==0){
         cJSON *uuid=cJSON_GetObjectItemCaseSensitive(payload,"uuid");
         cJSON *data=cJSON_GetObjectItemCaseSensitive(payload,"data");
-        if(!cJSON_IsString(uuid)||!cJSON_IsString(data)){
-            append_ack(current,"failed","Missing BLE UUID or data",false);
-        }else{
+        const char *error="Missing native UUID or data";
+        bool delivered=false;
+        if(cJSON_IsString(uuid)&&cJSON_IsString(data)){
             uint8_t bytes[508];size_t n=0;
-            int rc=mbedtls_base64_decode(bytes,sizeof(bytes),&n,
-                (const unsigned char*)data->valuestring,strlen(data->valuestring));
-            // During acceptance testing allow only known read-only command
-            // opcodes, on the single catalog-control characteristic.
-            bool safe=rc==0 && n>=24 && n<=508
-                && bytes[1]==1 && bytes[2]==0 && bytes[3]==0
-                && bytes[4]==0xf0 &&
-                (((uint16_t)bytes[10]<<8)|bytes[11])!=2909;
-            uint16_t op=safe?(((uint16_t)bytes[10]<<8)|bytes[11]):0;
-            safe=safe&&(op==205||op==167||op==2904)
-                && strcmp(uuid->valuestring,"01020074-1972-1925-3022-077119514e44")==0;
-            if(!safe){
-                append_ack(current,"failed","Native migration permits only read-only 205/167/2904; no erase or upload",false);
-            }else{
-                bool success=jh2_ble_raw_write(uuid->valuestring,bytes,n,12000);
-                append_ack(current,success?"applied":"failed",
-                    success?"Native GATT read packet acknowledged":"Native GATT read packet not acknowledged",
-                    success);
-            }
+            if(mbedtls_base64_decode(bytes,sizeof(bytes),&n,
+                (const unsigned char*)data->valuestring,strlen(data->valuestring))==0){
+                unsigned matches=0;uint16_t slot=0;
+                bool known=jh2_ble_target_section(&matches,&slot);
+                jh2_slot_session next=native_slot_session;
+                if(jh2_slot_validate(&next,uuid->valuestring,bytes,n,
+                    (uint32_t)(esp_timer_get_time()/1000),known,matches,slot,
+                    NATIVE_SLOT_READ_ONLY,&error)){
+                    const uint16_t op=jh2_slot_command_opcode(bytes,n);
+                    const bool upload=strcmp(uuid->valuestring,JH2_SLOT_UPLOAD_UUID)==0;
+                    if(upload){jh2_native_sequence_stop();}
+                    if(!upload||!jh2_asset_stream_active()||stop_image_stream_and_wait()){
+                        if(op==2904)jh2_ble_catalog_begin_read();
+                        delivered=jh2_ble_raw_write(uuid->valuestring,bytes,n,12000);
+                        if(delivered){native_slot_session=next;
+                            if(op==2909||(upload&&!next.active))jh2_ble_target_invalidate();
+                        }else{native_slot_session.active=false;error="Native GATT write was not acknowledged";}
+                    }else error="Previous image stream is still stopping";
+                }
+            }else error="Invalid native packet encoding";
         }
+        append_ack(current,delivered?"applied":"failed",
+            delivered?"Validated native packet acknowledged by GATT":error,delivered);
+    }else if(strcmp(action->valuestring,"nativeSlotWrite")==0){
+        cJSON *packets=cJSON_GetObjectItemCaseSensitive(payload,"packets");
+        int count=cJSON_IsArray(packets)?cJSON_GetArraySize(packets):0;
+        bool valid=count>=1&&count<=8;
+        const char *error="Native slot batch requires 1..8 packets";
+        jh2_slot_session next=native_slot_session;
+        uint8_t bytes[508];size_t n=0;
+        // Validate the entire batch before transmitting its first packet.
+        for(int i=0;valid&&i<count;i++){
+            cJSON *item=cJSON_GetArrayItem(packets,i);
+            valid=cJSON_IsString(item)&&mbedtls_base64_decode(bytes,sizeof(bytes),&n,
+                (const unsigned char*)item->valuestring,strlen(item->valuestring))==0;
+            if(!valid){error="Invalid native slot packet encoding";break;}
+            if(n<9||((unsigned)bytes[5]*256+bytes[6])==((unsigned)bytes[1]*256+bytes[2])){
+                valid=false;error="UploadRequest must be acknowledged before file-data batches";break;
+            }
+            valid=jh2_slot_validate(&next,JH2_SLOT_UPLOAD_UUID,bytes,n,
+                (uint32_t)(esp_timer_get_time()/1000),false,0,0,NATIVE_SLOT_READ_ONLY,&error);
+        }
+        int sent=0;
+        for(int i=0;valid&&i<count;i++){
+            cJSON *item=cJSON_GetArrayItem(packets,i);
+            if(mbedtls_base64_decode(bytes,sizeof(bytes),&n,(const unsigned char*)item->valuestring,
+               strlen(item->valuestring))!=0||!jh2_ble_raw_write(JH2_SLOT_UPLOAD_UUID,bytes,n,12000)){
+                valid=false;error="Native slot batch GATT write failed; do not replay the batch";break;
+            }
+            ++sent;vTaskDelay(pdMS_TO_TICKS(25));
+        }
+        if(valid){native_slot_session=next;if(!next.active)jh2_ble_target_invalidate();}
+        else if(sent)native_slot_session.active=false;
+        char message[160];
+        if(valid)snprintf(message,sizeof(message),"Native slot batch: %d GATT packets acknowledged",sent);
+        else snprintf(message,sizeof(message),"%s (%d packets transmitted)",error?error:"Native slot rejected",sent);
+        append_ack(current,valid?"applied":"failed",message,valid);
     }else{
         append_ack(current,"failed","Native migration not yet accepted for display or upload commands",false);
     }

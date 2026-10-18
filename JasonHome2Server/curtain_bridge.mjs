@@ -10,8 +10,6 @@ export function validateCommand(action,p={}){
  if(['connect','disconnect','scan','status','sequenceStop','assetStop',
       'nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle'].includes(action))return {};
  if(action==='nanoAutoUpdate'){if(typeof p.enabled!=='boolean')throw fail(400,'Auto-update must be boolean');return {enabled:p.enabled};}
- if(action==='selectController'){if(typeof p.mac!=='string'||!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(p.mac))throw fail(400,'Controller MAC must be selected from scan');return {mac:p.mac.toUpperCase()};}
- if(action==='solid'){if(typeof p.color!=='string'||!/^#[0-9a-f]{6}$/i.test(p.color)||!int(p.brightness??100,0,100))throw fail(400,'Solid RGB and brightness required');return {color:p.color.toUpperCase(),brightness:p.brightness??100};}
  if(action==='power'){const on=p.on??p.value;if(typeof on!=='boolean')throw fail(400,'Power must be boolean');return {on};}
  if(action==='brightness'||action==='speed'){if(!int(p.value,action==='brightness'?0:1,100))throw fail(400,'Value must be 0–100 (speed 1–100)');return {value:p.value};}
  if(action==='layout'){if(![0,4,5,6].includes(p.value))throw fail(400,'Unsupported layout');return {value:p.value};}
@@ -20,6 +18,17 @@ export function validateCommand(action,p={}){
  if(action==='sequenceStart'){if(!Array.isArray(p.effects)||p.effects.length<2||p.effects.length>88||!p.effects.every(x=>int(x,0,87))||!int(p.intervalSeconds,5,3600))throw fail(400,'Invalid native effect sequence');return {effects:p.effects,intervalSeconds:p.intervalSeconds};}
  if(action==='asset'){if(!/^[a-f0-9]{64}$/.test(p.sha256))throw fail(400,'Invalid asset digest');return {sha256:p.sha256};}
  if(action==='rawWrite'){const uuid=String(p.uuid).toLowerCase(),bytes=Buffer.from(String(p.data||''),'base64');if(!UUIDS.has(uuid)||bytes.length<1||bytes.length>508)throw fail(400,'Unsupported characteristic or packet size');return {uuid,data:bytes.toString('base64')};}
+ if(action==='nativeSlotWrite'){
+  if(!Array.isArray(p.packets)||p.packets.length<1||p.packets.length>8)throw fail(400,'Native slot batch requires 1–8 packets');
+  const packets=p.packets.map(value=>{
+   if(typeof value!=='string'||!/^[A-Za-z0-9+/]+={0,2}$/.test(value))throw fail(400,'Invalid native packet encoding');
+   const bytes=Buffer.from(value,'base64');
+   if(bytes.length<9||bytes.length>508||bytes[3]!==17||bytes[4]!==255||
+      bytes[5]*256+bytes[6]>=bytes[1]*256+bytes[2])throw fail(400,'Only native file-data packets are allowed in a batch');
+   return bytes.toString('base64');
+  });
+  return {packets};
+ }
  if(action==='subscribeRaw'){if(String(p.uuid).toLowerCase()!=='01010074-1972-1925-3022-077119514e44')throw fail(400,'Unsupported notification characteristic');return {uuid:p.uuid};}
  throw fail(400,'Unsupported curtain action');
 }
@@ -134,13 +143,34 @@ export function createCurtainBridge({db,now=Date.now}){
  function authorized(req){return authenticate(req)!==null;}
  function requestRotation(){if(!get('tokenHash'))throw fail(409,'Pair NanoC6 before rotating its bridge credential');put('rotateCredential',true);signal();return {ok:true,pending:true};}
  function versionAtLeast(value,wanted){const a=String(value||'').split('.').map(Number),b=wanted.split('.').map(Number);if(a.length!==3||a.some(x=>!Number.isInteger(x)||x<0))return false;for(let i=0;i<3;i++)if(a[i]!==b[i])return a[i]>b[i];return true;}
- function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:'outbound-long-poll',credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:10240,assetRetention:retained(),desired:get('desired',{}),manualUntil:get('manualUntil',0),scheduleRevision:get('scheduleRevision',0)};}
+ function status(){const s=get('status',{}),last=db.prepare('SELECT id,action,state,result,created FROM curtain_commands ORDER BY id DESC LIMIT 1').get();return {ok:true,configured:!!get('tokenHash'),bridgeId:get('bridgeId'),online:now()-(get('lastSeen',0))<90000,lastSeen:get('lastSeen'),lastSync:get('lastSync'),pollSeconds:5,lowLatency:subscribers.size>0?'sse-push':'https-fallback',pushConnected:subscribers.size>0,pushTransport:subscribers.size>0?'sse':'https-fallback',pushSubscribers:subscribers.size,credentialRotationPending:get('rotateCredential',false)===true,...s,lastCommand:last?{...last,result:last.result?JSON.parse(last.result):null}:null,queued:Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n),assetLimitBytes:4194304,assetStorage:"oracle",relayBufferBytes:10240,assetRetention:retained(),desired:get('desired',{}),manualUntil:get('manualUntil',0),eufyMasterSchedule:eufyMasterEnabled(),scheduleRevision:get('scheduleRevision',0)};}
+ function eufyMasterEnabled(){return get('eufyMasterSchedule',false)===true;}
+ function setEufyMasterEnabled(value){
+  if(typeof value!=='boolean')throw fail(400,'Eufy master mode must be boolean');
+  put('eufyMasterSchedule',value);
+  if(value){
+   // Existing independent curtain schedules remain saved but never drive power.
+   // Any waiting legacy schedule transition must not undo Eufy's next transition.
+   db.prepare("UPDATE curtain_commands SET state='superseded' WHERE source='schedule' AND state IN ('queued','downloaded')").run();
+   put('scheduleActive',null);
+  }
+  signal();return value;
+ }
+ function manualHoldActive(){const t=now();return get('localOverride',0)>t||(!eufyMasterEnabled()&&get('manualUntil',0)>t);}
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
-  const transient=['rawWrite','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
+  const transient=['rawWrite','nativeSlotWrite','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
   if(action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
-  if(action==='asset'&&![slot().active_sha,slot().pending_sha].includes(payload.sha256))throw fail(409,'Asset is no longer staged or active');
+  // Existing scheduled Oracle assets remain valid after newer user artwork
+  // replaces the current slot; GC separately retains all scheduled digests.
+  const outsideSlot=action==='asset'&&![slot().active_sha,slot().pending_sha].includes(payload.sha256);
+  if(outsideSlot){
+   const pinned=(source==='schedule'||source==='recovery')&&schedules().some(s=>s.enabled&&s.action==='asset'&&s.payload.sha256===payload.sha256);
+   if(!pinned)throw fail(409,'Asset is no longer staged or active');
+   db.prepare("UPDATE curtain_asset_slots SET pending_sha=?,pending_at=?,pending_command=NULL,phase='staged',last_error='' WHERE target=?")
+     .run(payload.sha256,now(),TARGET);
+  }
   const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
@@ -149,7 +179,7 @@ export function createCurtainBridge({db,now=Date.now}){
   if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
   if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
-  const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),transient?now()+60000:now()+86400000,idempotency,source);
+  const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),['rawWrite','nativeSlotWrite'].includes(action)?now()+240000:(action==='connect'||action==='subscribeRaw')?now()+150000:transient?now()+60000:now()+86400000,idempotency,source);
   if(action==='asset'&&slot().pending_sha===payload.sha256)db.prepare("UPDATE curtain_asset_slots SET pending_command=?,phase='queued' WHERE target=?").run(Number(r.lastInsertRowid),TARGET);
   if(['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)||(action==='power'&&payload.on===false))
    put('lastVisualCommandId',Number(r.lastInsertRowid));
@@ -158,6 +188,8 @@ export function createCurtainBridge({db,now=Date.now}){
  function view(r){return {...r,payload:JSON.parse(r.payload),result:r.result?JSON.parse(r.result):null,physicalPlaybackConfirmed:false};}
  function command(id){const r=db.prepare('SELECT * FROM curtain_commands WHERE id=?').get(id);if(!r)throw fail(404,'Command missing');return view(r);}
  function tick(){
+  // Eufy is the sole schedule authority in linked mode. Never run a second timer.
+  if(eufyMasterEnabled())return;
   if(get('manualUntil',0)>now())return;
   const all=schedules().filter(s=>s.enabled&&s.start<=now()&&s.end>now()).sort((a,b)=>b.start-a.start),active=all[0];
   const key=active?active.id+':'+active.start:'off';if(get('scheduleActive')===key)return;
@@ -171,7 +203,19 @@ export function createCurtainBridge({db,now=Date.now}){
   if(!/^[\w-]{1,80}$/.test(s.id||'')||!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.end<=s.start||s.end-s.start>31*86400000)throw fail(400,'Supply a valid start and end date');
   const payload=validateCommand(s.action,s.payload);if(!['asset','effect','nativePlay','sequenceStart','power'].includes(s.action))throw fail(400,'Unsupported scheduled action');
   if(s.action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Scheduled asset is missing');
-  const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));put('scheduleRevision',get('scheduleRevision',0)+1);put('scheduleActive','changed');tick();signal();return value;
+  const value={id:s.id,name:String(s.name||'Curtain scene').slice(0,100),enabled:s.enabled!==false,start:s.start,end:s.end,action:s.action,payload};
+  db.prepare('INSERT INTO curtain_schedules VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(s.id,JSON.stringify(value));
+  put('scheduleRevision',get('scheduleRevision',0)+1);
+  // Adding a FUTURE schedule must never suddenly turn off a manually lit curtain.
+  if(value.enabled&&value.start<=now()&&value.end>now())put('scheduleActive',null);
+  tick();garbageCollect();signal();return value;
+ }
+ function deleteSchedule(id){
+  if(typeof id!=='string'||!/^[\w-]{1,80}$/.test(id))throw fail(400,'Invalid schedule ID');
+  const result=db.prepare('DELETE FROM curtain_schedules WHERE id=?').run(id);
+  if(!result.changes)throw fail(404,'Curtain schedule not found');
+  put('scheduleRevision',get('scheduleRevision',0)+1);
+  tick();garbageCollect();signal();return {id,deleted:true};
  }
  function resume(){put('manualUntil',0);put('scheduleActive',null);tick();for(const d of Object.values(get('desired',{})))enqueue(d.action,d.payload,null,'recovery');signal();return status();}
  function sync(body,credential='current'){
@@ -183,13 +227,49 @@ export function createCurtainBridge({db,now=Date.now}){
   const endedOverride=get('localOverride',0)>0&&Number(body.localOverrideUntil||0)<=at;
   const reboot=typeof body.bootId==='string'&&body.bootId!==get('bootId');
   put('localOverride',Number(body.localOverrideUntil||0));
-  if(reboot){put('bootId',body.bootId);put('notifications',[]);}
-  if((reboot||endedOverride||bleReconnected||body.recoverDesired===true)&&get('localOverride',0)<=at){
-   const desired=get('desired',{});for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){const d=desired[key];const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));if(!pending)enqueue(d.action,d.payload,null,'recovery');}
+  if(reboot){
+   put('bootId',body.bootId);put('notifications',[]);
+   // A raw BLE write may have been delivered immediately before restart.
+   // Its previous ACK is no longer reliable. Never replay it on a new Nano
+   // boot even when its extended delivery TTL has not yet elapsed.
+   db.prepare("UPDATE curtain_commands SET state='superseded',result=? WHERE action IN ('rawWrite','nativeSlotWrite','subscribeRaw') AND state IN ('queued','downloaded')")
+     .run(JSON.stringify({ok:false,error:'NanoC6 reboot interrupted native BLE operation; command will not replay'}));
+  }
+  // Defer desired-state recovery during local/manual ownership.
+  // Otherwise old recovery commands can sit in the queue forever.
+  const hold=get('localOverride',0)>at||get('manualUntil',0)>at;
+  const wantsRecovery=reboot||endedOverride||bleReconnected||body.recoverDesired===true;
+  if(hold){
+   const stale=db.prepare("UPDATE curtain_commands SET state='superseded' WHERE source='recovery' AND state='queued'").run();
+   if(wantsRecovery||stale.changes>0){
+    put('recoveryDeferred',true);
+    if(stale.changes>0)signal();
+   }
+  }else if(wantsRecovery||get('recoveryDeferred',false)===true){
+   put('recoveryDeferred',false);
+   const desired=get('desired',{});
+   for(const key of ['visual','brightness','speed','layout','power'])if(desired[key]){
+    const d=desired[key];
+    const pending=db.prepare("SELECT id FROM curtain_commands WHERE action=? AND payload=? AND state IN ('queued','downloaded')").get(d.action,JSON.stringify(d.payload));
+    if(!pending)enqueue(d.action,d.payload,null,'recovery');
+   }
   }
 
   if(body.status&&typeof body.status==='object')put('status',JSON.parse(JSON.stringify(body.status).length<=12000?JSON.stringify(body.status):'{}'));
-  if(Array.isArray(body.notifications))put('notifications',body.notifications.slice(-48));
+  // Maintain a bounded, short-lived journal of authenticated Nano BLE notices.
+   // Replacing the array every 5-second sync drops a fragmented inventory
+   // response before the web client has fetched and reassembled it.
+   if(Array.isArray(body.notifications)){
+     const old=get('notifications',[]),received=body.notifications.slice(-64);
+     const latest=new Map();
+     for(const n of [...old,...received]){
+       if(!n||!int(n.id,1,0xffffffff)||typeof n.uuid!=='string'||!/^[A-Za-z0-9+/]*={0,2}$/.test(n.data||'')||String(n.data).length>1600)continue;
+       latest.set(n.id,{id:n.id,uuid:n.uuid,data:n.data,receivedAt:at});
+     }
+     // Keep recent 256 packets. No AVI or firmware bytes are stored here.
+     const merged=[...latest.values()].sort((a,b)=>a.id-b.id).slice(-256);
+     put('notifications',merged);
+   }
   for(const ack of (body.acks||[]).slice(0,32)){
    if(!int(ack.id,1,Number.MAX_SAFE_INTEGER)||!['downloaded','applied','failed'].includes(ack.state))continue;
    const old=db.prepare('SELECT state,action,payload FROM curtain_commands WHERE id=?').get(ack.id);
@@ -215,9 +295,16 @@ export function createCurtainBridge({db,now=Date.now}){
    }
   }
   db.prepare("UPDATE curtain_commands SET state='expired' WHERE state IN ('queued','downloaded') AND expires<?").run(at);
-  let rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 8").all();
-  // A local direct-BLE test blocks scheduled commands, but never traps an explicit remote manual command for 15 minutes.
-  if(Number(body.localOverrideUntil)>at)rows=rows.filter(row=>row.source==='manual');
+  // Prioritize live user commands over delayed schedule/recovery traffic.
+  // Filter local override BEFORE LIMIT so eight old recovery commands cannot hide a fresh action.
+  const local=Number(body.localOverrideUntil)>at;
+  // Manual Curtain changes take precedence: don't retain a stale background
+  // brightness command that would unexpectedly apply after the hold ends.
+  if(local||manualHoldActive())
+   db.prepare("UPDATE curtain_commands SET state='superseded' WHERE source='brightness-sync' AND state IN ('queued','downloaded')").run();
+  const rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded')"+
+     (local?" AND source='manual'":"")+
+     " ORDER BY CASE WHEN source='manual' THEN 0 WHEN source='schedule' THEN 1 ELSE 2 END,id LIMIT 8").all();
   const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
   const assets=[...assetIds].map(sha=>assetManifest(sha)).filter(Boolean);
   let credentialUpdate=null;
@@ -251,5 +338,5 @@ export function createCurtainBridge({db,now=Date.now}){
  }
  async function wait(after,signalObj,seconds=20){if(Number(db.prepare('SELECT coalesce(max(id),0) n FROM curtain_commands').get().n)>after)return;await new Promise(resolve=>{let timer;const finish=()=>{clearTimeout(timer);wake.delete(finish);signalObj?.removeEventListener('abort',finish);resolve();};wake.add(finish);timer=setTimeout(finish,Math.max(1,Math.min(20,seconds))*1000);signalObj?.addEventListener('abort',finish,{once:true});});}
  const timer=setInterval(()=>{try{tick();expireStaging();}catch(error){put('storageTickError',String(error.message).slice(0,180));}},1000);timer.unref();
- return {status,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
+ return {status,manualHoldActive,eufyMasterEnabled,setEufyMasterEnabled,pairing,authenticate,authorized,requestRotation,enqueue,command,sync,schedules,saveSchedule,deleteSchedule,resume,upload,retained,confirmDisplayed,assetManifest,asset:sha=>db.prepare('SELECT bytes FROM curtain_assets WHERE sha=?').get(sha)?.bytes,notifications:()=>get('notifications',[]),revision,subscribeWake,wait,close:()=>{clearInterval(timer);signal();subscribers.clear();},tick};
 }

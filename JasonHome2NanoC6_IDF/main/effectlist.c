@@ -53,7 +53,7 @@ static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid,ui
     // Protobuf 3 suppresses scalar zero fields. The first native E-0
     // EffectInfo has no field 1, which means default ID 0 (not missing data).
     // Require the controller CID to distinguish a valid catalog item.
-    if(!have_cid||effect>=JH2_FACTORY_EFFECTS)return 1;
+    if(!have_cid||effect>=JH2_EFFECT_CAPACITY)return 1;
     if(!have_id)effect=0;
     if(effect_slot>UINT16_MAX || effect_type>UINT8_MAX)return -1;
     *id=(uint16_t)effect;*cid=controller;

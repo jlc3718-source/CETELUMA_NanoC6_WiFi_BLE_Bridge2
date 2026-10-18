@@ -21,7 +21,7 @@ p{color:#bcd0d9}#status{white-space:pre-wrap;font-size:14px;line-height:1.5;colo
 <p id="status" role="status">Select Load Test AVI to prepare a small 40×40 animation. Conversion runs locally; no cloud server.</p>
 </section></main>
 <script src="curtain_native_research.js"></script>
-<script src="curtain_native_slot.js"></script>
+<script src="curtain_native_slot.js?v=target-section-1.1.48"></script>
 <script>
 (()=>{'use strict';
 const $=id=>document.getElementById(id),R=window.JH2NativeResearch,N=window.JH2NativeSlot;
@@ -80,19 +80,19 @@ function renderSlots(entries){
   const e=storedSlots[i];
   option('ID '+(e.id??'?')+' · Slot '+e.slot+' · CID '+(e.cid??'not reported')+(e.title?' · '+e.title:'')+(e.cid===83928?' · Test':''),String(i));
  }
- $('slotCount').textContent='('+storedSlots.length+' effects'+(incomplete?'; partial read':'')+')';
+ $('slotCount').textContent='('+storedSlots.length+' effects'+(incomplete?'; partial catalog':'')+(entries.targetSectionComplete?'; test section complete':'')+')';
  $('allSlots').hidden=!storedSlots.length;
- $('allSlots').textContent='ID     SLOT   CID        TYPE   TITLE\\n'+storedSlots.map(e=>
+ $('allSlots').textContent='ID     SLOT   CID        TYPE   TITLE\n'+storedSlots.map(e=>
   String(e.id??'?').padEnd(7)+String(e.slot).padEnd(7)+String(e.cid??'not reported').padEnd(11)+
-  String(e.type??'?').padEnd(7)+(e.title||'')+(e.cid===83928?' [RESERVED TEST]':'')).join('\\n');
+  String(e.type??'?').padEnd(7)+(e.title||'')+(e.cid===83928?' [RESERVED TEST]':'')).join('\n');
  update();selectSlot();
 }
 function selectSlot(){
  const i=Number($('slotSelect').value),e=storedSlots[i];
  $('slotDetails').textContent=e?
-  'Effect ID: '+(e.id??'not supplied')+'\\nController slot: '+e.slot+
-  '\\nCID: '+(e.cid??'not reported')+'\\nType: '+typeLabel(e.type)+
-  (e.title?'\\nTitle: '+e.title:'')+(e.cid===83928?'\\nReserved test CID':''):
+  'Effect ID: '+(e.id??'not supplied')+'\nController slot: '+e.slot+
+  '\nCID: '+(e.cid??'not reported')+'\nType: '+typeLabel(e.type)+
+  (e.title?'\nTitle: '+e.title:'')+(e.cid===83928?'\nReserved test CID':''):
   'Select a returned effect to inspect its IDs.';
 }
 $('slotSelect').addEventListener('change',selectSlot);
@@ -107,7 +107,7 @@ $('inspect').onclick=async()=>{
   renderSlots(all);
   show((all.partial?'Incomplete controller read — ': 'Controller read complete — ')+
    all.length+' effect entries from '+all.batches+' native response batches'+
-   (all.partial?'; expected at least '+all.expectedAtLeast+'. No uploads permitted until the list is complete.':
+   (all.partial?'; '+(all.targetSectionComplete?'test section complete. Selected test upload is available.':'final test section missing. Read again before uploading.'):
    '. IDs, slots, CIDs, types and names are displayed above.'));
  }catch(error){show('Controller slot read failed: '+error.message);}
  finally{busy=false;update();resize()}

@@ -65,6 +65,9 @@ int main(void){
     assert(jh2_effectlist_parse(packet,len,&found)==0);
     assert(found.count==2&&found.found[0]&&found.found[1]);
     assert(found.first==0&&found.last==1);
+    begin();append(87);append(88);append(89);append(255);
+    assert(jh2_effectlist_parse(packet,len,&found)==0);
+    assert(found.count==4&&found.found[88]&&found.found[89]&&found.found[255]);
     packet[6]=0xff;
     assert(jh2_effectlist_parse(packet,len,&found)<0);
     assert(jh2_effectlist_parse(NULL,len,&found)<0);

@@ -16,7 +16,8 @@ let observedNotifications=0,lastSmartDawnOp=null,lastInventoryRead=null;
 let lastSentOpcode=null,transmittedRequests=0,lastNativeRcode=null;
 // DN5E58 has 87 recovered factory effects; the controller can contain more.
 const KNOWN_FACTORY_EFFECTS=88; // HCI captures show 88 stock entries; 89-90 after experiment
-let inventoryResponseAt=0,inventoryBatchCount=0,inventoryUniqueFrames=new Set();
+let inventoryResponseAt=0,inventoryBatchCount=0,inventoryUniqueFrames=new Set(),targetSection=null;
+let lastInstalled=null;
 const initializedReadConnections=new WeakSet();
 let uploadSessionSequence=0,lastUploadSessionId=0,uploadResponses=[];
 function nextUploadSessionId(){
@@ -53,6 +54,7 @@ function newEffectList(data){
     if(k===2)item.type=t;
     if(k===3)item.slot=t;
     if(k===4)item.cid=t;
+    if(k===7)item.diy=t===1;
    }else if(k===6&&ww===2)item.title=new TextDecoder().decode(t).slice(0,120);
   }
   // This is the same acceptance criterion as October's successful reader.
@@ -117,6 +119,13 @@ function receive(view){
     if(n>=0)catalog[n]={...catalog[n],...entry};
     else catalog.push(entry);
    }
+   const ordered=entries.slice().sort((a,b)=>a.id-b.id);
+   // The captured final 80..N page includes every custom effect, beginning
+   // at ID 87. Missing middle factory pages do not hide another test CID.
+   if(ordered.length>=7&&ordered.length<20&&ordered[0].id===80&&
+      ordered.every((e,i)=>e.id===80+i)&&ordered.at(-1).id>=86){
+    targetSection=ordered.map(e=>({...e}));
+   }
    signal('inventory',true);
   }
   if(op===2931||op===2934){const result={};for(const [f,v,w]of proto(body))if(w===0)result[f]=v;signal(op===2931?'start':'end',result);}
@@ -164,7 +173,7 @@ async function connection(){
   const cmd=await service.getCharacteristic(WRITE),bin=await service.getCharacteristic(UPLOAD),notify=await service.getCharacteristic(NOTIFY);
   await notify.startNotifications();notify.addEventListener('characteristicvaluechanged',event=>receive(event.target.value));
   const write=async(ch,data)=>{if(ch.properties.writeWithoutResponse&&ch.writeValueWithoutResponse)await ch.writeValueWithoutResponse(data);else if(ch.writeValueWithResponse)await ch.writeValueWithResponse(data);else await ch.writeValue(data);};
-  return {writeCmd:data=>write(cmd,data),writeUpload:data=>write(bin,data),close:()=>{try{d.gatt.disconnect()}catch(_){}}};
+  return {writeCmd:data=>write(cmd,data),writeUpload:data=>write(bin,data),writeUploadBatch:async parts=>{for(const part of parts)await write(bin,part);return {ok:true,bleTransmitted:true,connected:true};},close:()=>{try{d.gatt.disconnect()}catch(_){}}};
  }
  if(window.parent===window)throw Error('Open Native Upload inside Jason Home 2 Curtain Studio');
  const pending=new Map();let count=0,closed=false,timer=null,cursor=0,fetching=false;
@@ -228,6 +237,7 @@ async function connection(){
  }catch(e){closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);throw e;}
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});
  return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),
+  writeUploadBatch:parts=>rpc('nativeSlotWrite',{packets:parts.map(b64)}),
   close:()=>{closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);}};
 }
 async function ddp(t,op,n1,n2,body){
@@ -248,7 +258,7 @@ async function inventory(t,progress=()=>{},{quietMs=11500,maxMs=98000,minExpecte
  // catalog on the first response or reporting a 19-entry group as complete.
  const startAt=Date.now(),before=observedNotifications;
  catalog=[];packetResponses.clear();seenInventory=false;
- inventoryResponseAt=0;inventoryBatchCount=0;inventoryUniqueFrames.clear();
+ inventoryResponseAt=0;inventoryBatchCount=0;inventoryUniqueFrames.clear();targetSection=null;
  if(!initializedReadConnections.has(t)){
   // October 15 proven connect sequence is performed ONCE per BLE session,
   // not on every inventory read during erase/verify/upload.
@@ -275,7 +285,7 @@ async function inventory(t,progress=()=>{},{quietMs=11500,maxMs=98000,minExpecte
   }
   if(previous>0&&inventoryResponseAt)inventoryResponseAt=Date.now();
   // Allow two full 5-second NanoC6 relay polls after the LAST incoming list.
-  while(inventoryResponseAt&&Date.now()-inventoryResponseAt<quietMs&&Date.now()-startAt<maxMs)
+  while(inventoryResponseAt&&Date.now()-inventoryResponseAt<(targetSection?3500:quietMs)&&Date.now()-startAt<maxMs)
    await sleep(200);
   if(Date.now()-startAt>=maxMs)break;
   // Always perform the second read, even after an apparently complete first
@@ -285,13 +295,16 @@ async function inventory(t,progress=()=>{},{quietMs=11500,maxMs=98000,minExpecte
  const result=catalog.slice().sort((a,b)=>a.id-b.id||a.slot-b.slot||a.cid-b.cid);
  result.partial=result.length<minExpected;
  result.batches=inventoryBatchCount;
+ result.targetSectionComplete=targetSection!==null;
+ result.targetMatches=targetSection?.filter(e=>e.cid===CID)||[];
  result.expectedAtLeast=minExpected;
  lastInventoryRead={at:new Date().toISOString(),count:result.length,batches:inventoryBatchCount,
   partial:result.partial,notifications:observedNotifications-before};
  progress((result.partial?'Partial':'Read')+' native catalog: '+result.length+
   ' records from '+inventoryBatchCount+' distinct controller responses'+
-  (result.partial?'; expected at least '+minExpected+' factory effects. Upload and delete blocked.':'')+
-  ' · last reply '+(lastSmartDawnOp??'none'));
+  (result.partial?'; full catalog expected '+minExpected:'')+
+  (result.targetSectionComplete?'; test section complete ('+result.targetMatches.length+' matching CID)':' ; final test section not received')+
+  ' · last reply '+(lastSmartDawnOp??'none'),result);
  return result;
 }
 async function upload(bytes,progress=()=>{}){
@@ -432,55 +445,73 @@ function planVendorEff(data,cloudCid){
  for(const p of parts)if(p[7]!==crc8(p.slice(8)))throw Error('Vendor BLE packet CRC error');
  return {request,parts,cloudCid,sourceCid,cid:CID,format:kind,bytes:fixed.length,sessionId:id};
 }
+function targetState(entries){
+ if(!entries.targetSectionComplete)throw Error('Final controller test section was not received; no upload or deletion attempted');
+ const matches=entries.targetMatches;
+ if(matches.length>1)throw Error('CID 83928 is shared by '+matches.map(e=>'E-'+e.id+' / slot '+e.slot).join(', ')+'. Selective replacement cannot be verified.');
+ return matches[0]||null;
+}
+async function sendNativeParts(t,parts,progress){
+ for(let at=0;at<parts.length;at+=8){
+  const group=parts.slice(at,at+8);
+  if(t.writeUploadBatch){
+   const ack=await t.writeUploadBatch(group);
+   if(ack?.ok===false||ack?.connected===false||ack?.bleTransmitted===false)
+    throw Error('Nano did not acknowledge native file-data batch');
+  }else for(const part of group){await t.writeUpload(part);await sleep(25);}
+  progress('BLE '+Math.min(at+8,parts.length)+'/'+parts.length+' packets acknowledged');
+ }
+}
+async function transferVendor(t,plan,progress){
+ uploadResponses=[];
+ const started=waitFor('start',65000);started.catch(()=>{});
+ try{
+  const accepted=await t.writeUpload(plan.request);
+  if(accepted?.ok===false||accepted?.connected===false||accepted?.bleTransmitted===false)
+   throw Error('Nano did not transmit native UploadRequest');
+  const response=await started;
+  if((response[1]??0)!==0||(response[5]??0)!==0)
+   throw Error('Controller rejected native upload start: '+JSON.stringify(response));
+ }catch(error){
+  if(startWait){clearTimeout(startWait.timer);startWait=null;}
+  throw Error(error.message+' ('+uploadTrace()+')');
+ }
+ const done=waitFor('end',Math.max(120000,Math.ceil(plan.parts.length/8)*12000+30000));done.catch(()=>{});
+ try{await sendNativeParts(t,plan.parts,progress);const end=await done;
+  if((end[1]??0)!==0)throw Error('Controller rejected native upload completion: '+JSON.stringify(end));
+ }catch(error){if(endWait){clearTimeout(endWait.timer);endWait=null;}throw error;}
+}
 async function vendorUpload(data,cloudCid,progress=()=>{}){
- const plan=planVendorEff(data,cloudCid); // Validate before any destructive command
+ const plan=planVendorEff(data,cloudCid);
  const t=await connection();
  try{
-  progress('Reading controller effect list…');
-  let before=await inventory(t);if(before.partial)throw Error('Incomplete controller effect list; no upload or deletion attempted');
-  const matches=before.filter(e=>e.cid===CID);
-  if(matches.length>1)throw Error('Unsafe duplicate CID 83928: '+matches.map(e=>'E-'+e.id+' / slot '+e.slot).join(', ')+'. No deletion attempted.');
-  let old=matches[0];
-  progress('Controller inventory read: '+before.length+' slot/CID entries.',before);
+  progress('Reading the controller test section…');
+  const before=await inventory(t,progress),old=targetState(before);
   if(old){
-   progress('Replacing only reserved test effect CID 83928…');
+   // Replacement is permitted only for bytes installed by this workspace,
+   // retained until the replacement is acknowledged and listed by controller.
+   if(!lastInstalled||lastInstalled.slot!==old.slot)
+    throw Error('CID 83928 is occupied. Its original native file is not available in this workspace for recovery; nothing erased.');
+   progress('Replacing the previously verified test animation in slot '+old.slot+'…',before);
    await ddp(t,2909,CID);await sleep(600);
-   for(let i=0;i<2;i++){const current=await inventory(t);if(current.some(x=>x.cid===CID))throw Error('Reserved slot could not be verified empty; no upload attempted');}
+   const emptied=await inventory(t,progress);
+   if(targetState(emptied))throw Error('Controller still lists the previous test CID; no upload attempted');
   }
-  progress('Starting SmartDawn native '+plan.format+' upload ('+plan.bytes+' bytes, session '+plan.sessionId+')…');
-  uploadResponses=[];
-  const started=waitFor('start',65000);started.catch(()=>{});
-  try{
-   const accepted=await t.writeUpload(plan.request);
-   if(accepted?.ok===false||accepted?.connected===false||accepted?.bleTransmitted===false)
-    throw Error('NanoC6 could not write UploadRequest to SmartDawn over BLE');
-  }catch(err){
-   if(startWait){clearTimeout(startWait.timer);startWait=null;}
-   throw Error('Upload start delivery failed: '+err.message+' ('+uploadTrace()+')');
+  progress('Uploading SmartDawn '+plan.format+' ('+plan.bytes+' bytes, session '+plan.sessionId+')…');
+  try{await transferVendor(t,plan,progress);}
+  catch(error){
+   // Retain the previous bytes. Do not blindly replay a partially sent file;
+   // the next read must establish whether the controller stored it.
+   error.recoverablePrevious=!!lastInstalled;throw error;
   }
-  let response;
-  try{response=await started;}
-  catch(err){
-   throw Error(err.message+' ('+uploadTrace()+'). Controller did not acknowledge type-0 native .eff upload; no animation data was transferred.');
-  }
-  if((response[1]??0)!==0||(response[5]??0)!==0)
-   throw Error('Controller rejected type-0 native .eff upload start: '+JSON.stringify(response)+' ('+uploadTrace()+')');
-  const done=waitFor('end',Math.max(120000,plan.parts.length*9000+30000));done.catch(()=>{});
-  for(let i=0;i<plan.parts.length;i++){
-   await t.writeUpload(plan.parts[i]);
-   if(i===0||(i+1)%10===0||i+1===plan.parts.length)progress('BLE '+(i+1)+'/'+plan.parts.length);
-   await sleep(25);
-  }
-  const end=await done;
-  if((end[1]??0)!==0)throw Error('Controller rejected converted effect completion: '+JSON.stringify(end));
-  progress('Verifying effect in controller inventory…');
-  await sleep(500);
-  const after=await inventory(t),newSlot=after.find(e=>e.cid===CID);
-  if(!newSlot||!Number.isInteger(newSlot.slot))throw Error('Native effect upload acknowledged, but CID 83928 was not stored; playback cancelled');
-  progress('Calling native Play for CID 83928, slot '+newSlot.slot+'…');
-  await ddp(t,2606,CID,newSlot.slot);
-  return {cid:CID,slot:newSlot.slot,format:plan.format,installed:true,playCommandSent:true,physicalPlaybackConfirmed:false};
- }finally{t.close()}
+  const after=await inventory(t,progress),stored=targetState(after);
+  if(!stored||!Number.isInteger(stored.slot))throw Error('Upload was acknowledged but the controller did not list the saved test CID');
+  lastInstalled={bytes:data.slice(),cloudCid,slot:stored.slot};
+  progress('Native animation stored in slot '+stored.slot+'. Starting playback…',after);
+  await ddp(t,2606,CID,stored.slot);
+  return {cid:CID,slot:stored.slot,format:plan.format,installed:true,playCommandSent:true,
+   physicalPlaybackConfirmed:false,inventoryCount:after.length,targetSectionComplete:true};
+ }finally{t.close();}
 }
 // SmartDawn 1.2.4's native EffectLocalMaker output: already local,
 // no manufacturer network and no AVI bytes ever sent to BLE.
@@ -494,11 +525,11 @@ async function smartDawnUpload(bytes,progress=()=>{}){
 async function playResearch(){
  const t=await connection();
  try{
-  const effects=await inventory(t),stored=effects.find(e=>e.cid===CID);
+  const effects=await inventory(t,()=>{}),stored=targetState(effects);
   if(!stored||!Number.isInteger(stored.slot))throw Error('Reserved CID 83928 is absent; play command cancelled');
   await ddp(t,2606,CID,stored.slot);
   return {cid:CID,slot:stored.slot,commandSent:true,physicalPlaybackConfirmed:false};
  }finally{t.close()}
 }
-window.JH2NativeSlot={upload,filePlan,inspect,researchUpload,aviUpload,playResearch,planVendorEff,vendorUpload,smartDawnUpload};
+window.JH2NativeSlot={targetState,decodeEffects,upload,filePlan,inspect,researchUpload,aviUpload,playResearch,planVendorEff,vendorUpload,smartDawnUpload};
 })();
