@@ -9,6 +9,7 @@
 #include "native_recovery.h"
 #include "bridge.h"
 #include "native_ble.h"
+#include "native_commands.h"
 #include "nvs.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -46,7 +47,7 @@ static const char *HOME_HTML=
 "<meta charset='UTF-8'><title>Jason Home 2 NanoC6</title>"
 "<style>body{font:16px system-ui;margin:20px auto;max-width:600px;padding:16px;background:#081321;color:#eef5ff}"
 ".panel{background:#12253a;border:1px solid #31475f;border-radius:16px;padding:20px;margin:16px 0}"
-"button,a.action{display:inline-block;box-sizing:border-box;padding:13px;margin:6px 6px 6px 0;background:#173f52;"
+"button,a.action,select{display:inline-block;box-sizing:border-box;padding:13px;margin:6px 6px 6px 0;background:#173f52;"
 "border:1px solid #396880;border-radius:10px;color:#dbf5fc;text-decoration:none;font:inherit}"
 ".muted{color:#bdd0df}.ok{color:#73e6ba}.warning{color:#ffd89e}code{overflow-wrap:anywhere}"
 "</style></head><body><h1>Jason Home 2 NanoC6</h1>"
@@ -56,9 +57,20 @@ static const char *HOME_HTML=
 "<p id='inventory' class='muted'></p>"
 "<button onclick='refresh()'>Refresh status</button>"
 "<a class='action' href='/api/status'>Detailed diagnostics</a></section>"
+"<section class='panel'><h2>Bluetooth controller</h2>"
+"<p class='muted'>Scan and select the SmartDawn controller. Selected MAC survives a restart.</p>"
+"<button onclick='scanBle()'>Scan Bluetooth</button>"
+"<select id='bleList' aria-label='Bluetooth controllers'></select>"
+"<button onclick='selectBle()'>Connect selected</button>"
+"<button onclick='doBle(\"disconnect\")'>Disconnect</button>"
+"<p id='bleResult' class='muted'></p><h3>Target CID 83928</h3>"
+"<p class='muted'>Select a matching controller slot. No full catalog required.</p>"
+"<select id='targetSlots' aria-label='Target effect slot'></select>"
+"<button onclick='playSlot()'>Play selected slot</button></section>"
 "<section class='panel'><h2>Management</h2>"
 "<a class='action' href='/firmware'>Firmware / recovery</a>"
-"<a class='action' href='/setup?edit=1'>Edit saved settings</a>"
+"<a class='action' href='/setup?edit=1'>Receive Oracle key / Wi-Fi settings</a>"
+"<button onclick='resumeCommands()'>Receive commands</button>"
 "<p class='muted'>Your Wi-Fi and bridge credentials are retained on the Nano. "
 "Setup is only needed if you choose to edit them or finish an incomplete configuration.</p></section>"
 "<script>async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'});"
@@ -69,7 +81,36 @@ static const char *HOME_HTML=
 "(d.oracleConfigured?'Oracle bridge: configured, not connected':'Oracle bridge: needs pairing'),d.oracleRunning);"
 "set('ble',c.connected?'SmartDawn Bluetooth: connected':'SmartDawn Bluetooth: disconnected',c.connected);"
 "document.getElementById('inventory').textContent='Firmware '+d.version+' · Target CID 83928: '+(c.nativeTarget83928Count||0)+' matching slots ('+(c.nativeTarget83928Unique?'unique':'unverified/shared')+') · Partial catalog '+(c.nativeCatalogUnique||0);"
+"const devices=document.getElementById('bleList'),prior=devices.value;devices.textContent='';"
+"for(const x of c.nativeDiscoveredDevices||[]){const o=document.createElement('option');"
+"o.value=x.mac;o.textContent=(x.name||'Unknown')+' · '+x.mac+' · '+x.rssi+' dBm';"
+"devices.appendChild(o)}"
+"devices.value=prior||(c.nativeSelectedControllerMac||'');"
+"const targets=document.getElementById('targetSlots'),old=targets.value;targets.textContent='';"
+"for(const x of c.nativeTarget83928||[]){const o=document.createElement('option');"
+"o.value=String(x.slot);o.textContent='E'+x.effectId+' / slot '+x.slot+' / CID 83928';"
+"targets.appendChild(o)}targets.value=old||targets.options[0]?.value||'';"
 "}catch(e){document.getElementById('network').textContent=e.message}}"
+const post=async(path,body)=>{const r=await fetch(path,{method:'POST',"
+"headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body||{})});"
+"const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Request failed');return d;};"
+"async function doBle(action){try{const d=await post('/api/ble/'+action);"
+"document.getElementById('bleResult').textContent=d.message||'Command received';await refresh();}"
+"catch(e){document.getElementById('bleResult').textContent=e.message;}}"
+"async function scanBle(){await doBle('scan');}"
+"async function selectBle(){try{const mac=document.getElementById('bleList').value;"
+"if(!mac)throw Error('Scan and select a controller first');"
+"const d=await post('/api/ble/select',{mac});"
+"document.getElementById('bleResult').textContent=d.message;await refresh();}"
+"catch(e){document.getElementById('bleResult').textContent=e.message;}}"
+"async function playSlot(){try{const slot=document.getElementById('targetSlots').value;"
+"if(!slot)throw Error('Read a target slot first');"
+"const d=await post('/api/ble/play928',{slot});"
+"document.getElementById('bleResult').textContent=d.message;}"
+"catch(e){document.getElementById('bleResult').textContent=e.message;}}"
+"async function resumeCommands(){try{const d=await post('/api/bridge/resume');"
+"document.getElementById('bleResult').textContent=d.message;await refresh();}"
+"catch(e){document.getElementById('bleResult').textContent=e.message;}}"
 "refresh();setInterval(refresh,10000);</script></body></html>";
 
 static const char *SETUP_HTML=
@@ -170,6 +211,44 @@ static esp_err_t status_get(httpd_req_t *r){
     cJSON_AddBoolToObject(o,"signedAutoUpdate",false);
     cJSON *curtain=cJSON_AddObjectToObject(o,"curtain");
     jh2_ble_status(curtain);
+    return send_json(r,o);
+}
+// On-device manual BLE controls. Restrict target playback to a controller-
+// reported slot matching 83928; never accept arbitrary CID or an unverified slot.
+static esp_err_t ble_control_post(httpd_req_t *r){
+    if(!local_only(r))return denied(r);
+    cJSON *o=cJSON_CreateObject();if(!o)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Memory");
+    bool ok=false;const char *message="Unknown command";
+    if(strcmp(r->uri,"/api/ble/scan")==0){
+        ok=jh2_ble_scan_start();message=ok?"BLE scan requested; refresh device list":"Scan unavailable";
+    }else if(strcmp(r->uri,"/api/ble/disconnect")==0){
+        ok=jh2_ble_disconnect();message=ok?"BLE disconnected; scanning paused":"Disconnect request failed";
+    }else if(strcmp(r->uri,"/api/bridge/resume")==0){
+        if(!jh2_bridge_ready())jh2_bridge_start();
+        ok=jh2_bridge_ready();message=ok?"Oracle receiver active; commands arrive by sync":"Oracle receiver unavailable; review saved key";
+    }else if(strcmp(r->uri,"/api/ble/select")==0 || strcmp(r->uri,"/api/ble/play928")==0){
+        if(r->content_len<=0 || r->content_len>100){cJSON_Delete(o);return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid request body");}
+        char form[101]={0};int used=0;
+        while(used<r->content_len){
+            int n=httpd_req_recv(r,form+used,r->content_len-used);
+            if(n<=0){cJSON_Delete(o);return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Body unavailable");}
+            used+=n;
+        }
+        if(strcmp(r->uri,"/api/ble/select")==0){
+            char mac[18]={0};
+            ok=form_value(form,"mac",mac,sizeof(mac))&&jh2_ble_select_target(mac);
+            message=ok?"Controller selected; reconnecting and retaining MAC":"MAC not found in BLE scan";
+        }else{
+            char num[8]={0};char *end=NULL;
+            bool parsed=form_value(form,"slot",num,sizeof(num))&&num[0];
+            unsigned long slot=parsed?strtoul(num,&end,10):999;
+            ok=parsed&&end&&*end==0&&slot<=255&&jh2_ble_target_slot_seen((uint16_t)slot)&&
+               jh2_native_play(83928,(uint32_t)slot);
+            message=ok?"Playback requested for observed CID 83928 slot":"Slot unverified or BLE command failed";
+        }
+    }
+    cJSON_AddBoolToObject(o,"ok",ok);
+    cJSON_AddStringToObject(o,"message",message);
     return send_json(r,o);
 }
 static esp_err_t html_get(httpd_req_t *r){
@@ -482,7 +561,7 @@ bool jh2_web_start(void){
     if(!start_net()){ESP_LOGE(TAG,"Wi-Fi/AP setup failed");return false;}
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();
     cfg.server_port=80;
-    cfg.max_uri_handlers=16;
+    cfg.max_uri_handlers=22;
     cfg.stack_size=7168;
     cfg.lru_purge_enable=true;
     if(httpd_start(&web_server,&cfg)!=ESP_OK)return false;
@@ -499,7 +578,12 @@ bool jh2_web_start(void){
         {.uri="/jason-home-2/recovery",.method=HTTP_GET,.handler=html_get},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/curtain/status",.method=HTTP_GET,.handler=status_get},
-        {.uri="/api/health",.method=HTTP_GET,.handler=health_get}
+        {.uri="/api/health",.method=HTTP_GET,.handler=health_get},
+        {.uri="/api/ble/scan",.method=HTTP_POST,.handler=ble_control_post},
+        {.uri="/api/ble/select",.method=HTTP_POST,.handler=ble_control_post},
+        {.uri="/api/ble/disconnect",.method=HTTP_POST,.handler=ble_control_post},
+        {.uri="/api/ble/play928",.method=HTTP_POST,.handler=ble_control_post},
+        {.uri="/api/bridge/resume",.method=HTTP_POST,.handler=ble_control_post}
     };
     for(size_t i=0;i<sizeof(routes)/sizeof(routes[0]);i++)
         if(httpd_register_uri_handler(web_server,&routes[i])!=ESP_OK)return false;
