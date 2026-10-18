@@ -159,7 +159,7 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
     jh2_hci_acl_diag(out);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx8-nimble-msys-768-hci-tap");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx10-stable-38-no-dle-hci-tap");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
