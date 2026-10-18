@@ -1,0 +1,79 @@
+name: JH2 1.1.47 Repair Validation Two Frame Animation Restore
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-147-live-two-frame-animation-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-live-curtain-animation-restore
+  cancel-in-progress: false
+jobs:
+  trace:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Stage two 40x40 RGBA frames, stream briefly, stop and restore retained previous image
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,base64,subprocess,urllib.request,time
+          env=dict(s.split('=',1) for s in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=25) as r:return json.load(r),r.headers
+          _,head=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=head.get('Set-Cookie','').split(';')[0]
+          st,_=api('/api/curtain/status',cookie=cookie)
+          ret,_=api('/api/curtain/retention',cookie=cookie)
+          old=(ret.get('active') or {}).get('sha256')
+          assert st.get('firmware')=='1.1.47' and st.get('online') and (st.get('curtain') or {}).get('connected') and int(st.get('queued') or 0)==0
+          assert old=='667e62c62ee93fbc9568dd7e5dcb8c523bf87f4c8491ca42dc82cb2d54cb8998','Original image no longer matches safe restore'
+          def rgba(frame):
+              img=bytearray(bytes([0,0,0,255])*1600)
+              # Two clearly distinct frames, four colors maximum, precisely 40x40.
+              x0=9 if frame==0 else 23
+              for y in range(14,26):
+                  for x in range(x0,x0+8):
+                      n=(y*40+x)*4;img[n:n+4]=bytes([255,112,0,255])
+              for y in range(16,19):
+                  for x in range(x0+2,x0+4):
+                      n=(y*40+x)*4;img[n:n+4]=bytes([255,240,100,255])
+              return base64.b64encode(img).decode()
+          asset,_=api('/api/curtain/assets',{'name':'JH2 two-frame orange test','frames':[rgba(0),rgba(1)],'quality':'pal4','delays':[650,650],'loop':True},cookie=cookie)
+          sha=asset.get('sha256')
+          print('TWO_FRAME_ANIMATION_STAGED',json.dumps({'sha':sha,'frames':asset.get('frames'),'bytes':asset.get('bytes'),'loop':asset.get('loop'),'phase':(asset.get('retention') or {}).get('phase')},sort_keys=True),flush=True)
+          assert len(sha or '')==64 and asset.get('frames')==2 and asset.get('loop') is True
+          def send(action,payload,key,maxwait=75):
+              result,_=api('/api/curtain/call',{'action':action,'payload':payload,'idempotencyKey':key},cookie=cookie)
+              cid=int(result['commandId'])
+              for i in range(int(maxwait/.65)):
+                  d,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  c=d.get('command') or {}
+                  if c.get('state') in ('applied','failed','expired','superseded'):
+                      print('COMMAND_TRACE',json.dumps({'action':action,'id':cid,'state':c.get('state'),'result':c.get('result')},sort_keys=True),flush=True)
+                      return c
+                  time.sleep(.65)
+              print('COMMAND_TIMEOUT',action,cid,flush=True)
+              return {'state':'timeout','id':cid}
+          try:
+              cmd=send('asset',{'sha256':sha},'jh2-147-2frame-test-20261018-a',95)
+              print('ANIMATION_FIRST_FRAME_TRANSMITTED',cmd.get('state')=='applied' and (cmd.get('result') or {}).get('bleTransmitted') is True,flush=True)
+              time.sleep(8)
+              st,_=api('/api/curtain/status',cookie=cookie)
+              print('ANIMATION_AFTER_EIGHT_SECONDS',json.dumps({'fw':st.get('firmware'),'online':st.get('online'),'ble':(st.get('curtain') or {}).get('connected'),'streaming':st.get('relayStreaming')},sort_keys=True),flush=True)
+          finally:
+              stop=send('assetStop',{},'jh2-147-2frame-stop-20261018-a',45)
+              print('TEST_ANIMATION_STOP',stop.get('state'),flush=True)
+              restore=send('asset',{'sha256':old},'jh2-147-restore-previous-20261018-a',100)
+              print('PREVIOUS_IMAGE_RESTORED_TO_BLE',restore.get('state')=='applied' and (restore.get('result') or {}).get('bleTransmitted') is True,flush=True)
+          retain,_=api('/api/curtain/retention',cookie=cookie)
+          print('FINAL_RETENTION',json.dumps({'active':(retain.get('active') or {}).get('sha256'),'pending':(retain.get('pending') or {}).get('sha256'),'phase':retain.get('phase'),'lastError':retain.get('lastError'),'physicalPlaybackConfirmed':retain.get('physicalPlaybackConfirmed')},sort_keys=True),flush=True)
+          print('NO_NATIVE_SLOT_ERASE_NO_STORED_CONTROLLER_SLOT_REPLACEMENT',flush=True)
+          if cmd.get('state')!='applied' or (cmd.get('result') or {}).get('bleTransmitted') is not True:
+              raise RuntimeError('Two-frame animation was not delivered over BLE')
+          if restore.get('state')!='applied' or (restore.get('result') or {}).get('bleTransmitted') is not True:
+              raise RuntimeError('Original retained image was not successfully re-transmitted')
+          PY
