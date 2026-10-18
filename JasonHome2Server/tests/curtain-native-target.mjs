@@ -39,6 +39,23 @@ test('actual 40x40 SmartDawn encoder creates correctly framed native upload',()=
  const plan=N.planVendorEff(file,83928);assert.equal(plan.parts.reduce((n,p)=>n+p.length-8,0),file.length);
  assert.equal(plan.parts[0][3],17);assert.equal(plan.parts[0][4],255);
 });
+test('native RAM upload is validated, retained in transit, and never replayed after reboot',()=>{
+ const {JH2NativeResearch:R}=load(),file=R.encodeSmartDawn(R.sampleFrames(),{timestamp:1});
+ const db=new DatabaseSync(':memory:'),bridge=createCurtainBridge({db});bridge.pairing();
+ bridge.sync({bootId:'a',status:{curtain:{connected:true}},acks:[]});
+ const asset=bridge.upload({nativeEff:Buffer.from(file).toString('base64')});
+ assert.equal(asset.native,true);assert.equal(asset.frames,4);assert.equal(asset.bytes,28672);
+ assert.throws(()=>bridge.enqueue('asset',{sha256:asset.sha256}),/native upload action/);
+ const command=bridge.enqueue('nativeSlotUpload',{sha256:asset.sha256},'native-ram-one');
+ assert.deepEqual(bridge.status().desired,{});
+ const sync=bridge.sync({bootId:'a',status:{curtain:{connected:true}},acks:[]});
+ assert.ok(sync.assets.some(a=>a.sha256===asset.sha256&&a.native));
+ assert.equal(bridge.asset(asset.sha256).length,file.length);
+ bridge.sync({bootId:'b',status:{curtain:{connected:true}},acks:[]});
+ assert.equal(bridge.command(command.id).state,'superseded');
+ file[14]^=1;assert.throws(()=>bridge.upload({nativeEff:Buffer.from(file).toString('base64')}),/CID 83928/);
+ bridge.close();db.close();
+});
 test('native test page scripts parse and show inventory before upload gates',()=>{
  const html=fs.readFileSync(new URL('../curtain_native_test.html',import.meta.url),'utf8');
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);

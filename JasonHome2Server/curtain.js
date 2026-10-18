@@ -66,7 +66,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
       node.setAttribute('aria-selected',String(active));
     }
     if(which==='studio'&&!studioFrame.getAttribute('src'))studioFrame.src='curtain_converter.html';
-    if(which==='test'&&!testFrame.getAttribute('src'))testFrame.src='curtain_native_test.html?v=target-section-1.1.48';
+    if(which==='test'&&!testFrame.getAttribute('src'))testFrame.src='curtain_native_test.html?v=ram-upload-1.1.49';
   }
   oldButton.addEventListener('click',()=>selectCurtainSubtab('controls'));
   studioButton.addEventListener('click',()=>selectCurtainSubtab('studio'));

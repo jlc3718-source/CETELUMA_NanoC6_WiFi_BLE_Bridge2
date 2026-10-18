@@ -58,7 +58,7 @@ before,_=api(BASE,'/api/status',token);assert before['automationOwner']=='oracle
 stage=BACK/'build';shutil.copytree(BACK/'web-app',stage)
 live=(stage/'server.mjs').read_text();src=(ROOT/'JasonHome2Server/server.mjs').read_text()
 if NATIVE_SLOT:
- expected={'curtain_bridge.mjs': 'fa6ec3cda8760ed5a56e0642da965555267b9deb903e9b12531aeaa07bf6352e', 'web/curtain.js': '2ce99bbd8cfc98284ce67d04b11aeaa37c363c24dc899bc2e53193d239b7d993', 'web/curtain_native_slot.js': '21a976e5b7373190cfc9903ad912fa5abdb1d00f653ef54c4583b5dadfb53335', 'web/curtain_native_test.html': '0c8b93ec12ab1d2322c5977ef8a6bb3eb2d2e209ebdd07accac840cc0649d6ac'}
+ expected={'curtain_bridge.mjs': 'd3a42bb3b55864011da2f70298f50b136a2cb0746410f9fa5e823a4c5f6e4fd4', 'web/curtain.js': '37d5fb7ebcabdbc3b2c8efc1825d589ad2ac1a9daa9e10acb3bffe64ab82b057', 'web/curtain_native_slot.js': '688ce1d8e9dddf600f4faa920ce9d127d09aec44e6de6a303a3ab4807bb677c4', 'web/curtain_native_test.html': '7353e86050bdc5e0cf06300e4ca1cc121de935643dc58b558412f175a2651b49'}
  for name,digest in expected.items():
   assert hashlib.sha256((stage/name).read_bytes()).hexdigest()==digest,'Installed Curtain source changed: '+name
 
@@ -137,7 +137,7 @@ if NATIVE_SLOT:
   shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
  shutil.copyfile(ROOT/'JasonHome2Server/curtain_bridge.mjs',stage/'curtain_bridge.mjs')
  assert (stage/'server.mjs').read_bytes()==(BACK/'web-app/server.mjs').read_bytes()
- print('Only the three Curtain web files and native batch relay module changed; installed HTTP routes preserved.',flush=True)
+ print('Only the three Curtain web files and native RAM relay module changed; installed HTTP routes preserved.',flush=True)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1

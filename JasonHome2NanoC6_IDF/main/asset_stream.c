@@ -1,5 +1,6 @@
 #include "asset_stream.h"
 #include "native_ble.h"
+#include "native_slot_upload.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -64,6 +65,32 @@ static bool digest_matches(stream_source *s,const char *hex){
         different|=(unsigned)(alphabet[actual[i]&15]!=(char)tolower((unsigned char)hex[2*i+1]));
     }
     return different==0;
+}
+bool jh2_asset_fetch_ram(const char *endpoint,const char *token,
+        const char *sha,uint32_t size,uint8_t **out){
+    *out=NULL;
+    if(!endpoint||!token||!hex64(sha)||size<8192||size>JH2_NATIVE_RAM_LIMIT)return false;
+    char url[370],authorization[75];
+    if(snprintf(url,sizeof(url),"%s/api/curtain-bridge/stream/%s",endpoint,sha)>=(int)sizeof(url))return false;
+    uint8_t *data=malloc(size);
+    if(!data)return false;
+    esp_http_client_config_t cfg={.url=url,.cert_pem=(const char*)tls_roots_pem_start,
+        .timeout_ms=12000,.buffer_size=2048,.buffer_size_tx=2048};
+    esp_http_client_handle_t h=esp_http_client_init(&cfg);
+    if(!h){free(data);return false;}
+    snprintf(authorization,sizeof(authorization),"Bearer %s",token);
+    esp_http_client_set_header(h,"Authorization",authorization);
+    esp_http_client_set_header(h,"X-JH2-Bridge-Token",token);
+    stream_source source={.h=h,.bytes=size};
+    mbedtls_sha256_init(&source.sha);
+    bool good=esp_http_client_open(h,0)==ESP_OK&&
+        esp_http_client_fetch_headers(h)==(int64_t)size&&esp_http_client_get_status_code(h)==200&&
+        mbedtls_sha256_starts(&source.sha,0)==0&&
+        read_exact(&source,data,size,generation)&&digest_matches(&source,sha);
+    mbedtls_sha256_free(&source.sha);
+    esp_http_client_close(h);esp_http_client_cleanup(h);
+    if(!good){free(data);return false;}
+    *out=data;return true;
 }
 // Preflight parses the exact authenticated, content-addressed Oracle blob
 // and verifies its complete SHA-256 before *any* GATT packet is transmitted.

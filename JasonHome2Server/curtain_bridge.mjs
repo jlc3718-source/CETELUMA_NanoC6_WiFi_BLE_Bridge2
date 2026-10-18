@@ -16,7 +16,7 @@ export function validateCommand(action,p={}){
  if(action==='nativePlay'){if(p.cid!==83928||!int(p.slot,0,255))throw fail(400,'Only the verified CID 83928 slot is supported');return {cid:p.cid,slot:p.slot};}
  if(action==='effect'){if(!int(p.id,0,87))throw fail(400,'Only captured E-0 through E-87 are supported');return {id:p.id};}
  if(action==='sequenceStart'){if(!Array.isArray(p.effects)||p.effects.length<2||p.effects.length>88||!p.effects.every(x=>int(x,0,87))||!int(p.intervalSeconds,5,3600))throw fail(400,'Invalid native effect sequence');return {effects:p.effects,intervalSeconds:p.intervalSeconds};}
- if(action==='asset'){if(!/^[a-f0-9]{64}$/.test(p.sha256))throw fail(400,'Invalid asset digest');return {sha256:p.sha256};}
+ if(action==='asset'||action==='nativeSlotUpload'){if(!/^[a-f0-9]{64}$/.test(p.sha256))throw fail(400,'Invalid asset digest');return {sha256:p.sha256};}
  if(action==='rawWrite'){const uuid=String(p.uuid).toLowerCase(),bytes=Buffer.from(String(p.data||''),'base64');if(!UUIDS.has(uuid)||bytes.length<1||bytes.length>508)throw fail(400,'Unsupported characteristic or packet size');return {uuid,data:bytes.toString('base64')};}
  if(action==='nativeSlotWrite'){
   if(!Array.isArray(p.packets)||p.packets.length<1||p.packets.length>8)throw fail(400,'Native slot batch requires 1–8 packets');
@@ -31,6 +31,16 @@ export function validateCommand(action,p={}){
  }
  if(action==='subscribeRaw'){if(String(p.uuid).toLowerCase()!=='01010074-1972-1925-3022-077119514e44')throw fail(400,'Unsupported notification characteristic');return {uuid:p.uuid};}
  throw fail(400,'Unsupported curtain action');
+}
+function compileNativeEffect(input){
+ if(typeof input.nativeEff!=='string'||!input.nativeEff.length||input.nativeEff.length>174764||!/^[A-Za-z0-9+/]+={0,2}$/.test(input.nativeEff))throw Error('Invalid native file encoding or RAM limit');
+ const bytes=Buffer.from(input.nativeEff,'base64');
+ if(bytes.length<8192||bytes.length>131072)throw Error('Native effect exceeds the 128 KB Nano RAM limit');
+ const format=bytes.subarray(0,4).toString('ascii');
+ if(!['DNMX','DNCX'].includes(format)||bytes[4]!==3||bytes[5]!==1||bytes.readUInt16LE(6)!==40||bytes.readUInt16LE(8)!==40||bytes.readUInt32LE(10)!==4800||bytes.readUInt32LE(14)!==83928)throw Error('Native effect must be SmartDawn v3 40×40 CID 83928');
+ const offset=bytes.readUInt32LE(128),frames=bytes.readUInt16LE(134);
+ if(offset<4096||offset+4096>bytes.length||frames<2||bytes.subarray(offset,offset+4).toString('ascii')!=='DNX2'||bytes[offset+4]!==3||bytes.readUInt32LE(offset+5)!==4800||bytes.readUInt32LE(offset+9)!==frames||bytes.readUInt16LE(offset+13)!==40||bytes.readUInt16LE(offset+15)!==40||offset+4096+4800*frames>bytes.length)throw Error('Native effect contains an invalid video directory');
+ return {bytes,format,frames,loop:false,native:true,sha256:hash(bytes)};
 }
 export function createCurtainBridge({db,now=Date.now}){
  db.exec(`CREATE TABLE IF NOT EXISTS curtain_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -55,7 +65,7 @@ export function createCurtainBridge({db,now=Date.now}){
   for(const schedule of db.prepare('SELECT value FROM curtain_schedules').all()){
    try{const doc=JSON.parse(schedule.value);if(doc.action==='asset'&&doc.payload?.sha256)protectedSha.add(doc.payload.sha256);}catch{}
   }
-  for(const record of db.prepare("SELECT payload FROM curtain_commands WHERE action='asset' AND state IN ('queued','downloaded')").all()){
+  for(const record of db.prepare("SELECT payload FROM curtain_commands WHERE action IN ('asset','nativeSlotUpload') AND state IN ('queued','downloaded')").all()){
    try{protectedSha.add(JSON.parse(record.payload).sha256);}catch{}
   }
   for(const record of db.prepare('SELECT sha FROM curtain_assets').all())
@@ -160,17 +170,20 @@ export function createCurtainBridge({db,now=Date.now}){
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
-  const transient=['rawWrite','nativeSlotWrite','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
-  if(action==='asset'&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
+  const transient=['rawWrite','nativeSlotWrite','nativeSlotUpload','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
+  if(['asset','nativeSlotUpload'].includes(action)&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
   // Existing scheduled Oracle assets remain valid after newer user artwork
   // replaces the current slot; GC separately retains all scheduled digests.
-  const outsideSlot=action==='asset'&&![slot().active_sha,slot().pending_sha].includes(payload.sha256);
+  const outsideSlot=['asset','nativeSlotUpload'].includes(action)&&![slot().active_sha,slot().pending_sha].includes(payload.sha256);
   if(outsideSlot){
    const pinned=(source==='schedule'||source==='recovery')&&schedules().some(s=>s.enabled&&s.action==='asset'&&s.payload.sha256===payload.sha256);
    if(!pinned)throw fail(409,'Asset is no longer staged or active');
    db.prepare("UPDATE curtain_asset_slots SET pending_sha=?,pending_at=?,pending_command=NULL,phase='staged',last_error='' WHERE target=?")
      .run(payload.sha256,now(),TARGET);
   }
+  const nativeAsset=payload.sha256?assetManifest(payload.sha256):null;
+  if(action==='nativeSlotUpload'&&nativeAsset?.native!==true)throw fail(400,'Native upload requires a validated native effect');
+  if(action==='asset'&&nativeAsset?.native===true)throw fail(400,'Native effects require the native upload action');
   const key=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)?'visual':action;
   if(!transient){
    const desired=get('desired',{});desired[key]={action,payload};put('desired',desired);
@@ -179,8 +192,8 @@ export function createCurtainBridge({db,now=Date.now}){
   if(source==='manual'&&!['status','scan','subscribeRaw','connect'].includes(action)){put('manualUntil',now()+15*60000);put('scheduleActive',null);put('overrideRevision',get('overrideRevision',0)+1);}
   db.prepare("DELETE FROM curtain_commands WHERE state NOT IN ('queued','downloaded') AND id NOT IN (SELECT id FROM curtain_commands ORDER BY id DESC LIMIT 2000)").run();
   if(Number(db.prepare("SELECT count(*) n FROM curtain_commands WHERE state IN ('queued','downloaded')").get().n)>=256)throw fail(429,'Curtain queue is full');
-  const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),['rawWrite','nativeSlotWrite'].includes(action)?now()+240000:(action==='connect'||action==='subscribeRaw')?now()+150000:transient?now()+60000:now()+86400000,idempotency,source);
-  if(action==='asset'&&slot().pending_sha===payload.sha256)db.prepare("UPDATE curtain_asset_slots SET pending_command=?,phase='queued' WHERE target=?").run(Number(r.lastInsertRowid),TARGET);
+  const r=db.prepare('INSERT INTO curtain_commands(action,payload,created,expires,idempotency,source) VALUES(?,?,?,?,?,?)').run(action,JSON.stringify(payload),now(),['rawWrite','nativeSlotWrite','nativeSlotUpload'].includes(action)?now()+240000:(action==='connect'||action==='subscribeRaw')?now()+150000:transient?now()+60000:now()+86400000,idempotency,source);
+  if(['asset','nativeSlotUpload'].includes(action)&&slot().pending_sha===payload.sha256)db.prepare("UPDATE curtain_asset_slots SET pending_command=?,phase='queued' WHERE target=?").run(Number(r.lastInsertRowid),TARGET);
   if(['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(action)||(action==='power'&&payload.on===false))
    put('lastVisualCommandId',Number(r.lastInsertRowid));
   signal();return view(db.prepare('SELECT * FROM curtain_commands WHERE id=?').get(r.lastInsertRowid));
@@ -232,7 +245,7 @@ export function createCurtainBridge({db,now=Date.now}){
    // A raw BLE write may have been delivered immediately before restart.
    // Its previous ACK is no longer reliable. Never replay it on a new Nano
    // boot even when its extended delivery TTL has not yet elapsed.
-   db.prepare("UPDATE curtain_commands SET state='superseded',result=? WHERE action IN ('rawWrite','nativeSlotWrite','subscribeRaw') AND state IN ('queued','downloaded')")
+   db.prepare("UPDATE curtain_commands SET state='superseded',result=? WHERE action IN ('rawWrite','nativeSlotWrite','nativeSlotUpload','subscribeRaw') AND state IN ('queued','downloaded')")
      .run(JSON.stringify({ok:false,error:'NanoC6 reboot interrupted native BLE operation; command will not replay'}));
   }
   // Defer desired-state recovery during local/manual ownership.
@@ -278,7 +291,7 @@ export function createCurtainBridge({db,now=Date.now}){
    db.prepare('UPDATE curtain_commands SET state=?,result=? WHERE id=?').run(ack.state,JSON.stringify(result).slice(0,12000),ack.id);
    const displaySelection=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(old.action)||
     (old.action==='power'&&JSON.parse(old.payload)?.on===false);
-   if(old.action==='asset'&&slot().pending_command===ack.id){
+   if(['asset','nativeSlotUpload'].includes(old.action)&&slot().pending_command===ack.id){
     if(ack.state==='applied'&&result.bleTransmitted===true){
      if(result.physicalPlaybackConfirmed===true)transition(JSON.parse(old.payload).sha256,ack.id,'confirmed_displayed',true);
      else transition(null,ack.id,'transferred_unconfirmed');
@@ -305,7 +318,7 @@ export function createCurtainBridge({db,now=Date.now}){
   const rows=db.prepare("SELECT * FROM curtain_commands WHERE state IN ('queued','downloaded')"+
      (local?" AND source='manual'":"")+
      " ORDER BY CASE WHEN source='manual' THEN 0 WHEN source='schedule' THEN 1 ELSE 2 END,id LIMIT 8").all();
-  const desired=get('desired',{}),assetIds=new Set([desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
+  const desired=get('desired',{}),assetIds=new Set([...rows.filter(r=>r.action==='nativeSlotUpload').map(r=>JSON.parse(r.payload).sha256),desired.visual?.payload?.sha256,...schedules().map(s=>s.payload?.sha256)].filter(Boolean));
   const assets=[...assetIds].map(sha=>assetManifest(sha)).filter(Boolean);
   let credentialUpdate=null;
   if(credential==='current'&&get('rotateCredential',false)===true&&versionAtLeast(body.status?.firmware,'1.1.2')){
@@ -315,9 +328,9 @@ export function createCurtainBridge({db,now=Date.now}){
  }
 
  function upload(input){
-  let a;try{a=compileAsset(input);}catch(e){throw fail(413,e.message);}
+  let a;try{a=input?.nativeEff!==undefined?compileNativeEffect(input):compileAsset(input);}catch(e){throw fail(413,e.message);}
   if(input?.target&&input.target!==TARGET)throw fail(400,'Unknown curtain target');
-  const metadata={format:a.format,frames:a.frames,loop:a.loop,name:String(input.name||'Curtain asset').slice(0,100)};
+  const metadata={format:a.format,frames:a.frames,loop:a.loop,...(a.native?{native:true,cid:83928}:{}),name:String(input.name||'Curtain asset').slice(0,100)};
   return transaction(()=>{
    const r=slot(),sameActive=r.active_sha===a.sha256,samePending=r.pending_sha===a.sha256;
    if(!sameActive&&!samePending&&r.pending_sha){

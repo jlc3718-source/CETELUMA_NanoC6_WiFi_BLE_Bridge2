@@ -10,3 +10,7 @@ bool jh2_asset_stream_start(const char *oracle_endpoint,const char *bridge_token
                             jh2_asset_ack_fn callback);
 void jh2_asset_stream_stop(void);
 bool jh2_asset_stream_active(void);
+// Download and verify a bounded native file entirely in volatile RAM.
+// Caller owns *out and frees it after the continuous local BLE transfer.
+bool jh2_asset_fetch_ram(const char *endpoint,const char *token,
+                        const char *sha,uint32_t size,uint8_t **out);

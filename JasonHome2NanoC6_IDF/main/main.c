@@ -204,7 +204,12 @@ static size_t notice_head=0,notice_count=0;
 static void record_notice(const uint8_t *raw,size_t len){
     if(!raw||len==0||len>sizeof(notices[0].b)){++notice_drops;return;}
     if(len>=24 && raw[1]==1 && raw[2]==0 && raw[3]==0
-       && (((uint16_t)raw[10]<<8)|raw[11])==2630)return;
+       && (((uint16_t)raw[10]<<8)|raw[11])==2630){
+        static int64_t last_progress=0;
+        int64_t now=esp_timer_get_time();
+        if(now-last_progress<2000000)return;
+        last_progress=now;
+    }
     if(!notice_lock || xSemaphoreTake(notice_lock,0)!=pdTRUE){++notice_drops;return;}
     size_t idx=(notice_head+notice_count)%NOTICE_RING_SIZE;
     if(notice_count==NOTICE_RING_SIZE){notice_head=(notice_head+1)%NOTICE_RING_SIZE;++notice_drops;}
@@ -238,6 +243,64 @@ uint32_t jh2_ble_collect_notices(cJSON *array,uint32_t after){
         cursor=item.id;
     }
     return cursor;
+}
+uint32_t jh2_ble_notice_cursor(void){
+    if(!notice_lock)return 0;
+    xSemaphoreTake(notice_lock,portMAX_DELAY);
+    uint32_t cursor=notice_number;
+    xSemaphoreGive(notice_lock);return cursor;
+}
+static bool reply_varint(const uint8_t *b,size_t n,size_t *p,uint32_t *value){
+    uint32_t v=0;
+    for(unsigned shift=0;shift<35;shift+=7){
+        if(*p>=n)return false;
+        uint8_t c=b[(*p)++];
+        if(shift==28&&(c&240))return false;
+        v|=(uint32_t)(c&127)<<shift;
+        if(!(c&128)){*value=v;return true;}
+    }
+    return false;
+}
+bool jh2_ble_upload_reply(uint32_t *cursor,uint16_t opcode,uint8_t session,
+        uint32_t parts,uint32_t timeout_ms,const char **error){
+    *error="Controller native upload response timed out";
+    int64_t end=esp_timer_get_time()+(int64_t)timeout_ms*1000;
+    while(esp_timer_get_time()<end&&connection!=BLE_HS_CONN_HANDLE_NONE){
+        gatt_notice item={0};bool found=false;
+        xSemaphoreTake(notice_lock,portMAX_DELAY);
+        for(size_t i=0;i<notice_count;i++){
+            const gatt_notice *p=&notices[(notice_head+i)%NOTICE_RING_SIZE];
+            if(p->id>*cursor){item=*p;found=true;break;}
+        }
+        xSemaphoreGive(notice_lock);
+        if(!found){vTaskDelay(pdMS_TO_TICKS(10));continue;}
+        *cursor=item.id;
+        const uint8_t *b=item.b;size_t n=item.len;
+        if(n<24||b[1]!=1||b[2]||b[3]||b[5]!=1||
+           (((uint16_t)b[10]<<8)|b[11])!=opcode)continue;
+        uint32_t values[7]={0};size_t pos=24;bool valid=true;
+        while(pos<n){
+            uint32_t tag=0,v=0;
+            if(!reply_varint(b,n,&pos,&tag)||!tag){valid=false;break;}
+            if((tag&7)==0){
+                if(!reply_varint(b,n,&pos,&v)){valid=false;break;}
+                if((tag>>3)<7)values[tag>>3]=v;
+            }else if((tag&7)==2){
+                if(!reply_varint(b,n,&pos,&v)||v>n-pos){valid=false;break;}
+                pos+=v;
+            }else{valid=false;break;}
+        }
+        if(!valid){*error="Malformed controller native upload response";return false;}
+        if(opcode==2931&&values[2]!=session)continue;
+        ESP_LOGI(TAG,"Native upload reply op=%u rcode=%u result=%lu count=%lu",
+            opcode,b[18],(unsigned long)values[1],(unsigned long)values[2]);
+        if(b[18]||values[1]||(opcode==2931&&values[5])){
+            *error="Controller rejected native upload (inspect response code)";return false;
+        }
+        if(opcode==2934&&values[2]!=parts){*error="Controller final packet count differs from file";return false;}
+        *error=NULL;return true;
+    }
+    return false;
 }
 void jh2_ble_status(cJSON *out){
     if(!cJSON_IsObject(out))return;

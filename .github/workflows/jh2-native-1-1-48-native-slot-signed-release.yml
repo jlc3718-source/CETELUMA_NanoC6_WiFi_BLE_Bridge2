@@ -3,12 +3,10 @@ on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
     paths:
-      - 'JasonHome2NanoC6_IDF/**'
       - '.github/workflows/jh2-native-1-1-48-native-slot-signed-release.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'JasonHome2NanoC6_IDF/**'
       - '.github/workflows/jh2-native-1-1-48-native-slot-signed-release.yml'
   workflow_dispatch:
 permissions: {contents: write}

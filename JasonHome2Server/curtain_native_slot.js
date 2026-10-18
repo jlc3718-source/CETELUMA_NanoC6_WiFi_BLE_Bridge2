@@ -238,6 +238,11 @@ async function connection(){
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});
  return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),
   writeUploadBatch:parts=>rpc('nativeSlotWrite',{packets:parts.map(b64)}),
+  uploadNative:async data=>{
+   if(data.length>131072)throw Error('Native effect exceeds the 128 KB Nano RAM limit');
+   const asset=await oracleApi('/api/curtain/assets',{nativeEff:b64(data),name:'JH2 native test'});
+   return rpc('nativeSlotUpload',{sha256:asset.sha256});
+  },
   playNative:(cid,slot)=>rpc('nativePlay',{cid,slot}),
   close:()=>{closed=true;if(timer!==null)clearInterval(timer);window.removeEventListener('message',listener);}};
 }
@@ -444,7 +449,7 @@ function planVendorEff(data,cloudCid){
  const request=wrap(requestBody,id,chunks,chunks,true);
  const parts=Array.from({length:chunks},(_,i)=>wrap(fixed.subarray(i*500,(i+1)*500),id,chunks,chunks-i-1));
  for(const p of parts)if(p[7]!==crc8(p.slice(8)))throw Error('Vendor BLE packet CRC error');
- return {request,parts,cloudCid,sourceCid,cid:CID,format:kind,bytes:fixed.length,sessionId:id};
+ return {data:fixed,request,parts,cloudCid,sourceCid,cid:CID,format:kind,bytes:fixed.length,sessionId:id};
 }
 function targetState(entries){
  if(!entries.targetSectionComplete)throw Error('Final controller test section was not received; no upload or deletion attempted');
@@ -464,6 +469,12 @@ async function sendNativeParts(t,parts,progress){
  }
 }
 async function transferVendor(t,plan,progress){
+ if(t.uploadNative){
+  progress('Verifying the complete native file in Nano RAM, then transmitting continuously…');
+  const ack=await t.uploadNative(plan.data);
+  if(ack?.ok!==true||ack?.bleTransmitted!==true)throw Error(ack?.message||'Nano did not complete the native RAM upload');
+  return;
+ }
  uploadResponses=[];
  const started=waitFor('start',65000);started.catch(()=>{});
  try{
