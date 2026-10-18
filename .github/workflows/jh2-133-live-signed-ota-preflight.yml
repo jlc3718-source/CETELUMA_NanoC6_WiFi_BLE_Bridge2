@@ -1,0 +1,54 @@
+name: JH2 Verify 1.1.33 Signed OTA Is Available To Installed Nano
+on:
+  push:
+    branches: [codex/jh2-native-1-1-33-web-signed-update-20261018]
+    paths: ['.github/workflows/jh2-133-live-signed-ota-preflight.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read only signed update availability and live Nano state
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          ci=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in ci['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              raw=json.dumps(body).encode() if body is not None else None
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=raw,headers=h,method='POST' if raw is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=12) as res:return json.load(res),res.headers
+          signed,_=api('/api/curtain/firmware-manifest')
+          f=dict(x.split('=',1) for x in signed['payload'].strip().splitlines())
+          assert signed['schema']==1 and bool(signed['signature'])
+          assert f['product']=='jason-home-2-nanoc6' and f['version']=='1.1.33'
+          print('ORACLE_SIGNED_RELEASE',f['version'],f['bytes'],f['sha256'][:12],flush=True)
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';',1)[0]
+          s,_=api('/api/curtain/status',cookie=cookie)
+          print('CURRENT_NANO',{'online':s.get('online'),'firmware':s.get('firmware'),
+               'queued':s.get('queued'),'ble':(s.get('curtain') or {}).get('connected')},flush=True)
+          if not s.get('online') or s.get('firmware')!='1.1.31' or s.get('queued'):
+              raise RuntimeError('Nano not in expected idle 1.1.31 state')
+          request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},
+              'idempotencyKey':'jason-home-2-133-signed-preflight'},cookie)
+          cid=int(request['commandId'])
+          for _ in range(45):
+              c,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              cmd=c['command']
+              if cmd['state'] in ('applied','failed','expired','superseded'):
+                  r=cmd.get('result') or {}
+                  print('NANO_SIGNED_PREFLIGHT',{'state':cmd['state'],
+                      'message':str(r.get('message') or r.get('error') or '')[:180]},flush=True)
+                  if cmd['state']!='applied':raise RuntimeError('Existing firmware cannot check new signed release')
+                  break
+              time.sleep(.6)
+          else:raise RuntimeError('Firmware availability check timed out')
+          print('NO_INSTALL_NO_REBOOT_NO_FLASH',flush=True)
+          PY
