@@ -19,7 +19,10 @@ jobs:
           const path = require("node:path");
           const fs = require("node:fs");
           const serverCwd = fs.readlinkSync("/proc/1/cwd");
-          const filename = path.resolve(serverCwd,process.env.JH2_DATA_DIR || "./data","jason-home-2.sqlite");
+          const {execFileSync} = require("node:child_process");
+          const located = execFileSync("sh",["-c","find / -type f -name jason-home-2.sqlite 2>/dev/null | head -n 1"],{encoding:"utf8"}).trim();
+          const filename = located || path.resolve(serverCwd,process.env.JH2_DATA_DIR || "./data","jason-home-2.sqlite");
+          if(!fs.existsSync(filename)){console.log("SQLITE_FILE_NOT_FOUND");process.exit(3);}
           const db = new DatabaseSync(filename,{readOnly:true});
           const row = db.prepare("SELECT value FROM curtain_meta WHERE key = ?").get("bridgeId");
           const id = row && JSON.parse(row.value);
