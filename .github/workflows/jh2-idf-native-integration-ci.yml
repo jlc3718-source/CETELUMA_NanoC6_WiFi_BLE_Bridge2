@@ -12,6 +12,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    strategy:
+      fail-fast: false
+      matrix:
+        bridge: [disabled, enabled]
+    name: Native ESP32-C6 - Oracle ${{ matrix.bridge }} (no flash)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -35,6 +40,7 @@ jobs:
           assert "default n" in config and "JH2_NATIVE_ENABLE_ORACLE" in config
           assert "#if CONFIG_JH2_NATIVE_ENABLE_ORACLE" in main
           assert "jh2_bridge_start();" in main
+          assert '"native_recovery.c"' in (app/"main/CMakeLists.txt").read_text()
           assert asset.index("stream_once(&job,&applied,&repeat_this,true)") < asset.index("stream_once(&job,&applied,&repeat_this,false)")
           assert "if(!verify_only && !jh2_ble_asset_packet" in asset
           assert 'memcmp(header,"JHC1",4)' in asset
@@ -46,6 +52,11 @@ jobs:
           assert "2909" not in (app/"main/native_commands.c").read_text()
           print("JH2_NATIVE_INTEGRATION_SAFETY_CHECKS_PASS")
           PY
+      - name: Opt in to native Oracle bridge for isolated build only
+        if: matrix.bridge == 'enabled'
+        shell: bash
+        run: |
+          echo 'CONFIG_JH2_NATIVE_ENABLE_ORACLE=y' >> JasonHome2NanoC6_IDF/sdkconfig.defaults
       - name: ESP-IDF 5.5.1 ESP32-C6 build, no flash / no publication
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -63,7 +74,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: JH2-Native-ESP-IDF-Integration-Audit-BUILD-ONLY
+          name: JH2-Native-ESP-IDF-Integration-${{ matrix.bridge }}-BUILD-ONLY
           path: |
             JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
             JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
