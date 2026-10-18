@@ -11,6 +11,8 @@
  */
 #include "bridge.h"
 #include "native_ble.h"
+#include "signed_ota.h"
+#include "esp_ota_ops.h"
 #include "mbedtls/base64.h"
 #include "freertos/semphr.h"
 #include <ctype.h>
@@ -53,6 +55,8 @@ typedef struct { uint64_t command_id; char *json; } ack_record;
 static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
+static uint64_t restart_after_ack=0;
+#define NATIVE_FW_VERSION "1.1.28"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -184,8 +188,15 @@ static cJSON *https_json(const char *path,const char *request_text){
     if(endpoint_len+path_len+1>MAX_ENDPOINT+256)return NULL;
     char *url=malloc(endpoint_len+path_len+1);
     if(!url)return NULL;
-    memcpy(url,endpoint,endpoint_len);
-    memcpy(url+endpoint_len,path,path_len+1);
+    const bool public_firmware=strcmp(path,"/api/public-signed-manifest")==0;
+    static const char FIRMWARE_URL[]=
+        "https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json";
+    if(public_firmware){
+        free(url);url=strdup(FIRMWARE_URL);if(!url)return NULL;
+    }else{
+        memcpy(url,endpoint,endpoint_len);
+        memcpy(url+endpoint_len,path,path_len+1);
+    }
     http_output out={0};
     esp_http_client_config_t config={
         .url=url,.cert_pem=(const char *)tls_roots_pem_start,
@@ -197,8 +208,11 @@ static cJSON *https_json(const char *path,const char *request_text){
     if(!http)return NULL;
     char auth[75];
     snprintf(auth,sizeof(auth),"Bearer %s",bridge_token);
-    esp_http_client_set_header(http,"Authorization",auth);
-    esp_http_client_set_header(http,"X-JH2-Bridge-Token",bridge_token);
+    // Never send a private Oracle bridge credential to the public release channel.
+    if(!public_firmware){
+        esp_http_client_set_header(http,"Authorization",auth);
+        esp_http_client_set_header(http,"X-JH2-Bridge-Token",bridge_token);
+    }
     esp_http_client_set_header(http,"Content-Type","application/json");
     if(request_text){
         esp_http_client_set_method(http,HTTP_METHOD_POST);
@@ -256,6 +270,22 @@ static void handle_command(const cJSON *row){
             append_ack(current,"applied","Automatic updates remain disabled",false);
         else
             append_ack(current,"failed","No automatic updates during native firmware migration",false);
+    }else if(strcmp(action->valuestring,"nanoFirmwareCheck")==0){
+        cJSON *m=https_json("/api/public-signed-manifest",NULL);
+        char version[32]={0},error[150]={0};
+        bool valid=m&&jh2_validate_signed_manifest(m,NATIVE_FW_VERSION,version,sizeof(version),error,sizeof(error));
+        append_ack(current,valid?"applied":"failed",valid?"New signed update available":
+            (m?error:"Signed firmware manifest download unavailable"),false);
+        cJSON_Delete(m);
+    }else if(strcmp(action->valuestring,"nanoInstallUpdate")==0){
+        cJSON *m=https_json("/api/public-signed-manifest",NULL);
+        char error[150]={0};
+        bool installed=m&&jh2_queue_signed_update(m,NATIVE_FW_VERSION,error,sizeof(error));
+        append_ack(current,installed?"applied":"failed",
+          installed?"Verified signed update queued in permanent updater":
+          (m?error:"Signed firmware manifest download unavailable"),false);
+        if(installed)restart_after_ack=current;
+        cJSON_Delete(m);
     }else if(strcmp(action->valuestring,"connect")==0||
              strcmp(action->valuestring,"subscribeRaw")==0){
         append_ack(current,"applied","Native GATT connection managed by NimBLE central",false);
@@ -301,7 +331,7 @@ static cJSON *sync_document(void){
     cJSON_AddStringToObject(body,"bridgeId",bridge_id);
     cJSON_AddStringToObject(body,"bootId",boot_id);
     cJSON *status=cJSON_AddObjectToObject(body,"status");
-    cJSON_AddStringToObject(status,"firmware","idf-staging");
+    cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
     cJSON_AddBoolToObject(status,"autoUpdate",false);
     cJSON_AddBoolToObject(status,"relayStreaming",false);
@@ -353,6 +383,16 @@ static void oracle_task(void *ctx){
                 if(cJSON_IsNumber(notice_id))final_notice=(uint32_t)notice_id->valuedouble;
             }
         }
+        bool restart_ack_included=false;
+        if(restart_after_ack){
+            cJSON *row=NULL;
+            cJSON_ArrayForEach(row,cJSON_GetObjectItemCaseSensitive(body,"acks")){
+                cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
+                if(cJSON_IsNumber(id) && (uint64_t)id->valuedouble==restart_after_ack){
+                    restart_ack_included=true;break;
+                }
+            }
+        }
         char *data=cJSON_PrintUnformatted(body);
         cJSON_Delete(body);
         cJSON *reply=data?https_json("/api/curtain-bridge/sync",data):NULL;
@@ -365,6 +405,11 @@ static void oracle_task(void *ctx){
         retry_ms=1000;
         clear_sent_ack_batch((size_t)sent);
         committed_notice_cursor=final_notice;
+        if(restart_ack_included){
+            ESP_LOGW(TAG,"Signed OTA acknowledged by Oracle; selecting permanent boot updater");
+            vTaskDelay(pdMS_TO_TICKS(400));
+            esp_restart();
+        }
         cJSON *commands=cJSON_GetObjectItemCaseSensitive(reply,"commands");
         if(cJSON_IsArray(commands)){
             cJSON *row=NULL;
