@@ -19,3 +19,9 @@ CONFIG_BT_LE_MSYS_2_BLOCK_COUNT=64
 CONFIG_BT_LE_ACL_BUF_COUNT=48
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# RX8: HCI trace proved the 370B/396B notifications never enter NimBLE host.
+# The ESP32-C6 controller uses a distinct MSYS2 block size (normally 320B).
+# Match its receive allocations to the existing 544B host pool.
+CONFIG_BT_LE_MSYS_2_BLOCK_SIZE=544
+CONFIG_BT_LE_ACL_BUF_SIZE=517
