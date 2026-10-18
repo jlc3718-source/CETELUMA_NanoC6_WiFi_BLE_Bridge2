@@ -93,7 +93,7 @@ static const char *HOME_HTML=
 "o.value=String(x.slot);o.textContent='E'+x.effectId+' / slot '+x.slot+' / CID 83928';"
 "targets.appendChild(o)}targets.value=old||targets.options[0]?.value||'';"
 "}catch(e){document.getElementById('network').textContent=e.message}}"
-const post=async(path,body)=>{const r=await fetch(path,{method:'POST',"
+"const post=async(path,body)=>{const r=await fetch(path,{method:'POST',"
 "headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body||{})});"
 "const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Request failed');return d;};"
 "async function doBle(action){try{const d=await post('/api/ble/'+action);"
