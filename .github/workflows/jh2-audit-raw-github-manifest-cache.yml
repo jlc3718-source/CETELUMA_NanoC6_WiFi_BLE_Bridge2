@@ -1,0 +1,26 @@
+name: JH2 Inspect Public Signed Update Channel Cache
+on:
+  push:
+    branches: [codex/jh2-native-1-1-33-web-signed-update-20261018]
+    paths: ['.github/workflows/jh2-audit-raw-github-manifest-cache.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Check exact cached URL used by installed 1.1.31 without commands
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,json,time
+          url='https://raw.githubusercontent.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/jh2-nanoc6-ota/latest.json'
+          for label,target in [('exact',url),('cachebuster',url+'?now='+str(int(time.time())))]:
+              req=urllib.request.Request(target,headers={'User-Agent':'JH2FirmwareReadOnlyProbe/1.0'})
+              with urllib.request.urlopen(req,timeout=12) as r:
+                  j=json.load(r)
+                  fields=dict(x.split('=',1) for x in j['payload'].splitlines())
+                  print('RAW_GITHUB_CHANNEL',label,'version',fields['version'],'status',r.status,
+                      'age',r.headers.get('Age'),'cache',r.headers.get('Cache-Control'),
+                      'expires',r.headers.get('Expires'),flush=True)
+          PY
