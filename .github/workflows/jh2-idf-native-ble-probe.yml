@@ -49,6 +49,23 @@ jobs:
           test -s JasonHome2NanoC6_IDF/build/bootloader/bootloader.bin
           test -s JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
           grep -q 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=544' JasonHome2NanoC6_IDF/sdkconfig.defaults
+          python3 - <<'PY'
+          import pathlib,struct
+          p=pathlib.Path('JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin').read_bytes()
+          found=[]
+          for at in range(0,len(p),32):
+            if p[at:at+2]!=b'\\xaaP':break
+            _,typ,sub,offset,size,name,_=struct.unpack_from('<HBBII16sI',p,at)
+            found.append((name.split(b'\\0')[0].decode(),typ,sub,offset,size))
+          expected=[
+            ('nvs',1,2,0x9000,0x5000),
+            ('otadata',1,0,0xE000,0x2000),
+            ('boot',0,0,0x10000,0x120000),
+            ('runtime',0,16,0x130000,0x290000),
+            ('storage',1,130,0x3C0000,0x40000)]
+          assert found==expected,(found,expected)
+          print('EXACT_JASON_HOME_2_FLASH_LAYOUT_VERIFIED',found)
+          PY
           sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
           wc -c JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
           echo "NATIVE_ESP_IDF_C6_BLE_PROBE_BUILT_NO_DEPLOY"
