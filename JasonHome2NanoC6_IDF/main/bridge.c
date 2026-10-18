@@ -62,7 +62,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.34"
+#define NATIVE_FW_VERSION "1.1.35"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
