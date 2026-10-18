@@ -10,6 +10,8 @@ export function validateCommand(action,p={}){
  if(['connect','disconnect','scan','status','sequenceStop','assetStop',
       'nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle'].includes(action))return {};
  if(action==='nanoAutoUpdate'){if(typeof p.enabled!=='boolean')throw fail(400,'Auto-update must be boolean');return {enabled:p.enabled};}
+ if(action==='selectController'){if(typeof p.mac!=='string'||!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(p.mac))throw fail(400,'Controller MAC must be selected from scan');return {mac:p.mac.toUpperCase()};}
+ if(action==='solid'){if(typeof p.color!=='string'||!/^#[0-9a-f]{6}$/i.test(p.color)||!int(p.brightness??100,0,100))throw fail(400,'Solid RGB and brightness required');return {color:p.color.toUpperCase(),brightness:p.brightness??100};}
  if(action==='power'){const on=p.on??p.value;if(typeof on!=='boolean')throw fail(400,'Power must be boolean');return {on};}
  if(action==='brightness'||action==='speed'){if(!int(p.value,action==='brightness'?0:1,100))throw fail(400,'Value must be 0–100 (speed 1–100)');return {value:p.value};}
  if(action==='layout'){if(![0,4,5,6].includes(p.value))throw fail(400,'Unsupported layout');return {value:p.value};}
