@@ -5,6 +5,11 @@ on:
     paths:
       - 'JasonHome2NanoC6_IDF/**'
       - '.github/workflows/jh2-native-1-1-35-ble-interval-signed-release.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-native-1-1-34-ble-interval-signed-release.yml'
   workflow_dispatch:
 permissions: {contents: write}
 concurrency:
@@ -210,6 +215,7 @@ jobs:
           if-no-files-found: error
 
   publish-manual-signed:
+    if: github.event_name == 'push'
     name: Sign v1.1.35, publish release and manual channel (no remote flashing)
     needs: build-and-package
     runs-on: ubuntu-24.04
