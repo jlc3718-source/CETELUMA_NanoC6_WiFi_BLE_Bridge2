@@ -62,7 +62,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.32"
+#define NATIVE_FW_VERSION "1.1.33"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -262,6 +262,31 @@ static cJSON *https_json(const char *path,const char *request_text){
     free(out.data);
     return result;
 }
+bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
+                                char *error,size_t error_size){
+    if(error && error_size)error[0]=0;
+    if(version && version_size)version[0]=0;
+    if(!jh2_bridge_ready()){
+        if(error && error_size)snprintf(error,error_size,"Oracle bridge not connected");
+        return false;
+    }
+    // Use the same trusted Oracle origin as the working encrypted bridge.
+    // The existing public signed manifest endpoint on Oracle also serves
+    // the factory updater; the browser never accepts arbitrary URLs.
+    cJSON *manifest=https_json("/api/curtain/firmware-manifest",NULL);
+    if(!manifest){
+        if(error && error_size)snprintf(error,error_size,"Oracle signed manifest unavailable");
+        return false;
+    }
+    char fetched[32]={0};
+    bool ok=jh2_validate_signed_manifest(manifest,NATIVE_FW_VERSION,
+        fetched,sizeof(fetched),error,error_size);
+    if(ok&&install)
+        ok=jh2_queue_signed_update(manifest,NATIVE_FW_VERSION,error,error_size);
+    if(ok&&version&&version_size)snprintf(version,version_size,"%s",fetched);
+    cJSON_Delete(manifest);
+    return ok;
+}
 static void append_ack(uint64_t command_id,const char *state,const char *message,bool ble_transmitted){
     cJSON *record=cJSON_CreateObject();
     if(!record)return;
@@ -370,14 +395,14 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         else
             append_ack(current,"failed","No automatic updates during native firmware migration",false);
     }else if(strcmp(action->valuestring,"nanoFirmwareCheck")==0){
-        cJSON *m=https_json("/api/public-signed-manifest",NULL);
+        cJSON *m=https_json("/api/curtain/firmware-manifest",NULL);
         char version[32]={0},error[150]={0};
         bool valid=m&&jh2_validate_signed_manifest(m,NATIVE_FW_VERSION,version,sizeof(version),error,sizeof(error));
         append_ack(current,valid?"applied":"failed",valid?"New signed update available":
             (m?error:"Signed firmware manifest download unavailable"),false);
         cJSON_Delete(m);
     }else if(strcmp(action->valuestring,"nanoInstallUpdate")==0){
-        cJSON *m=https_json("/api/public-signed-manifest",NULL);
+        cJSON *m=https_json("/api/curtain/firmware-manifest",NULL);
         char error[150]={0};
         bool installed=m&&jh2_queue_signed_update(m,NATIVE_FW_VERSION,error,sizeof(error));
         append_ack(current,installed?"applied":"failed",

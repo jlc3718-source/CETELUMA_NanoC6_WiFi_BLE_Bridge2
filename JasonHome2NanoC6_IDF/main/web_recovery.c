@@ -100,15 +100,35 @@ static const char *FIRMWARE_HTML=
 "a{color:#71ded2}small{color:#c1d5e5}</style></head><body><h1>Firmware recovery</h1>"
 "<p>The original permanent updater is preserved in the factory partition. "
 "The updater verifies the product identity, image, and runtime size before installing.</p>"
+"<p>Update online directly from Oracle. No BIN download or file upload required.</p>"
+"<button onclick='checkUpdate()'>Check for updates</button>"
+"<button id='install' onclick='installUpdate()' disabled>Install verified update and restart</button>"
+"<p id='result' role='status'>Automatic updates are disabled. Install only when you choose.</p>"
+"<details><summary>Manual recovery (backup method)</summary>"
 "<p><b>Use the runtime-only BIN, not a 4 MB full-flash image.</b></p>"
-"<button onclick='go()'>Open firmware upload mode</button>"
-"<p id='state'></p><p><a href='/setup'>Wi-Fi / Oracle settings</a> &nbsp; <a href='/api/status'>Status</a></p>"
+"<button onclick='go()'>Open manual firmware upload mode</button></details>"
+"<p id='state'></p><p><a href='/'>Dashboard</a> &nbsp; <a href='/setup?edit=1'>Edit settings</a></p>"
 "<small>The Nano reboots into its original updater. If your home connection drops, "
 "join Jason-Home-2-Setup Wi-Fi and open http://192.168.4.1/firmware .</small>"
 "<script>async function go(){const s=document.getElementById('state');s.textContent='Selecting factory updater...';"
 "try{const r=await fetch('/firmware/recovery',{method:'POST'});if(!r.ok)throw Error(await r.text());"
 "s.textContent='Restarting to factory upload mode. Reconnect to http://192.168.4.1/firmware or use the home IP /firmware.';"
-"}catch(e){s.textContent=e.message}}</script></body></html>";
+"}catch(e){s.textContent=e.message}}"
+"const result=document.getElementById('result'),btn=document.getElementById('install');"
+"async function checkUpdate(){btn.disabled=true;result.textContent='Checking signed firmware via Oracle...';"
+"try{const r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();"
+"if(!r.ok||!d.available)throw Error(d.message||'No newer signed update is available');"
+"btn.disabled=false;btn.textContent='Install '+d.version+' and restart';"
+"result.textContent='Verified signed update '+d.version+' is available. No files needed.';"
+"}catch(e){result.textContent=e.message;}}"
+"async function installUpdate(){if(btn.disabled)return;"
+"if(!confirm('Install newer signed firmware from Oracle and restart the Nano now?'))return;"
+"btn.disabled=true;result.textContent='Checking signature and scheduling permanent updater...';"
+"try{const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();"
+"if(!r.ok||!d.ok)throw Error(d.message||'Installation could not be scheduled');"
+"result.textContent='Verified update '+d.version+' queued. The Nano will download, verify SHA-256, and reboot; reconnect here after restart.';"
+"}catch(e){result.textContent=e.message;}}"
+"checkUpdate();</script></body></html>";
 
 // User-requested local-controller access policy: no client IP, subnet,
 // LAN-origin, or host restrictions. The Setup AP still has its WPA2 password.
@@ -132,7 +152,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.32-rx3-web");
+    cJSON_AddStringToObject(o,"version","1.1.33-rx3-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -140,7 +160,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.32-rx3-web");
+    cJSON_AddStringToObject(o,"version","1.1.33-rx3-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -332,6 +352,47 @@ static esp_err_t recovery_post(httpd_req_t *r){
     if(!jh2_enter_local_recovery())ESP_LOGE(TAG,"Cannot select factory updater");
     return ESP_OK;
 }
+// Deliberately manual signed OTA. Oracle hosts the signed manifest and
+// permanent factory updater does the actual download + SHA-256 verification.
+static esp_err_t firmware_check(httpd_req_t *req){
+    char version[32]={0},error[170]={0};
+    bool available=jh2_bridge_signed_firmware(false,version,sizeof(version),error,sizeof(error));
+    cJSON *j=cJSON_CreateObject();
+    cJSON_AddBoolToObject(j,"ok",true);
+    cJSON_AddBoolToObject(j,"available",available);
+    if(available)cJSON_AddStringToObject(j,"version",version);
+    else cJSON_AddStringToObject(j,"message",error[0]?error:"No update available");
+    return send_json(req,j);
+}
+static void update_reboot(void *unused){
+    (void)unused;
+    vTaskDelay(pdMS_TO_TICKS(1400));
+    esp_restart();
+    vTaskDelete(NULL);
+}
+static esp_err_t firmware_install(httpd_req_t *req){
+    char version[32]={0},error[170]={0};
+    const bool ready=jh2_bridge_signed_firmware(true,version,sizeof(version),error,sizeof(error));
+    if(!ready){
+        cJSON *j=cJSON_CreateObject();
+        cJSON_AddBoolToObject(j,"ok",false);
+        cJSON_AddStringToObject(j,"message",error[0]?error:"Signed update unavailable");
+        return send_json(req,j);
+    }
+    if(xTaskCreate(update_reboot,"jh2-signed-ota-boot",3072,NULL,3,NULL)!=pdPASS){
+        // NVS already has pending signed update, and factory is selected.
+        // Return an explicit failure rather than claiming a restart.
+        cJSON *j=cJSON_CreateObject();
+        cJSON_AddBoolToObject(j,"ok",false);
+        cJSON_AddStringToObject(j,"message","Signed update queued; restart the Nano to install");
+        return send_json(req,j);
+    }
+    cJSON *j=cJSON_CreateObject();
+    cJSON_AddBoolToObject(j,"ok",true);
+    cJSON_AddStringToObject(j,"version",version);
+    cJSON_AddStringToObject(j,"message","Factory updater selected; rebooting to install");
+    return send_json(req,j);
+}
 static void update_time(void){
     if(sntp_started)return;
     sntp_started=true;
@@ -421,7 +482,7 @@ bool jh2_web_start(void){
     if(!start_net()){ESP_LOGE(TAG,"Wi-Fi/AP setup failed");return false;}
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();
     cfg.server_port=80;
-    cfg.max_uri_handlers=14;
+    cfg.max_uri_handlers=16;
     cfg.stack_size=7168;
     cfg.lru_purge_enable=true;
     if(httpd_start(&web_server,&cfg)!=ESP_OK)return false;
@@ -432,6 +493,8 @@ bool jh2_web_start(void){
         {.uri="/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/recovery",.method=HTTP_GET,.handler=html_get},
         {.uri="/firmware/recovery",.method=HTTP_POST,.handler=recovery_post},
+        {.uri="/api/firmware/check",.method=HTTP_GET,.handler=firmware_check},
+        {.uri="/api/firmware/install",.method=HTTP_POST,.handler=firmware_install},
         {.uri="/jason-home-2/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/jason-home-2/recovery",.method=HTTP_GET,.handler=html_get},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},
