@@ -70,6 +70,17 @@ async function refresh(){
   'Last sync: '+(d.lastSync?new Date(d.lastSync).toLocaleTimeString():'never')+' · Commands queued: '+d.queued+'\n'+
   'Latest command: '+(last.id||'none')+' '+(last.state||'')+'\n'+(d.error||'');
   $('autoUpdate').checked=d.autoUpdate!==false;
+  const previousMac=$('controllers').value;
+  $('controllers').replaceChildren(new Option('Select Nano-scanned controller',''));
+  for(const dev of s.nativeDiscoveredDevices||[])
+   $('controllers').add(new Option((dev.name||'BLE')+' '+dev.mac+' · '+dev.rssi+' dBm',dev.mac));
+  $('controllers').value=previousMac||s.nativeSelectedControllerMac||'';
+  const previousSlot=$('targetSlots').value;
+  $('targetSlots').replaceChildren(new Option('Select CID 83928 slot',''));
+  for(const t of s.nativeTarget83928||[])
+   $('targetSlots').add(new Option('Effect '+t.effectId+' · slot '+t.slot+' · CID 83928',String(t.slot)));
+  $('targetSlots').value=previousSlot||'';
+
  }catch(e){bridgeOnline=false;$('online').textContent='Oracle connection unavailable';$('online').className='bad';$('diagnostics').textContent=e.message;}
  enable();
 }
@@ -144,5 +155,46 @@ $('otaCheck').onclick=()=>command('nanoFirmwareCheck');
 $('otaInstall').onclick=()=>{if(confirm('Install only a newer signed firmware and restart the NanoC6?'))command('nanoInstallUpdate')};
 $('nanoReboot').onclick=()=>{if(confirm('Restart the NanoC6 now? Curtain output may pause briefly.'))command('nanoReboot')};
 $('autoUpdate').onchange=()=>command('nanoAutoUpdate',{enabled:$('autoUpdate').checked});
-$('refresh').onclick=refresh;refresh();setInterval(()=>{if(!busy)refresh()},10000);
+
+$('refresh').onclick=refresh;
+document.querySelectorAll('[data-lab]').forEach(btn=>btn.addEventListener('click',()=>lab(btn.dataset.lab)));
+document.querySelectorAll('[data-guard]').forEach(btn=>btn.addEventListener('click',()=>{
+ traceLines=[];record('SAFEGUARD',btn.dataset.guard+' blocked: CID 83928 ownership is shared/unverified. No controller mutation.');
+}));
+$('setLayout').onclick=()=>command('layout',{value:Number($('layout').value)});
+$('setSolid').onclick=()=>command('solid',{color:$('solidColor').value,brightness:Number($('brightness').value)});
+$('playTarget').onclick=()=>{
+ if(!$('targetSlots').value){record('SAFEGUARD','Select a verified target slot first');return;}
+ command('nativePlay',{cid:83928,slot:Number($('targetSlots').value)});
+};
+$('selectController').onclick=()=>{
+ if(!$('controllers').value){record('SCAN','Select a scanned BLE MAC first');return;}
+ command('selectController',{mac:$('controllers').value});
+};
+$('startSequence').onclick=()=>{
+ const effects=$('sequenceIds').value.split(',').map(v=>Number(v.trim()));
+ const intervalSeconds=Number($('sequenceSec').value);
+ if(effects.length<2||effects.some(n=>!Number.isInteger(n)||n<0||n>87)||
+    !Number.isInteger(intervalSeconds)||intervalSeconds<5||intervalSeconds>3600){
+  record('VALIDATION','Requires 2–88 effect IDs and 5–3600 seconds');
+  return;
+ }
+ command('sequenceStart',{effects,intervalSeconds});
+};
+$('copyTrace').onclick=()=>navigator.clipboard?.writeText(lastTrace);
+window.JH2_ORACLE_CURTAIN=true;
+window.addEventListener('message',async event=>{
+ if(event.origin!==location.origin||event.source!==$('curtainStudio').contentWindow)return;
+ const data=event.data||{};
+ if(data.kind==='jh2-curtain-height'&&Number(data.height)>500&&Number(data.height)<50000)
+  $('curtainStudio').style.height=Math.ceil(Number(data.height)+16)+'px';
+ if(data.kind!=='jh2-curtain-request'||!/^cv[0-9]{1,8}$/.test(String(data.id||'')))return;
+ const result=await command(data.action,data.payload||{});
+ event.source.postMessage({kind:'jh2-curtain-response',id:data.id,ok:!!result?.ok,
+  result,error:result?.error},location.origin);
+});
+$('curtainStudio').src='/jason-home-2/curtain_converter.html';
+refresh();
+setInterval(()=>{if(!busy)refresh()},10000);
+
 </script></body></html>
