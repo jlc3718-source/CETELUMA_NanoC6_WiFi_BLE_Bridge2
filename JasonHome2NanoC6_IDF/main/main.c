@@ -107,6 +107,9 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"connected",connection!=BLE_HS_CONN_HANDLE_NONE);
     cJSON_AddNumberToObject(out,"mtu",connection==BLE_HS_CONN_HANDLE_NONE?23:ble_att_mtu(connection));
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
+    cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
+    cJSON_AddBoolToObject(out,"nativeCatalogComplete88",catalog_unique==JH2_FACTORY_EFFECTS);
+    cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Bytes",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
 }

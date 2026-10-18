@@ -318,6 +318,20 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     if(!cJSON_IsNumber(id)||!cJSON_IsString(action)||!action->valuestring)return;
     const uint64_t current=(uint64_t)id->valuedouble;
     if(current<=last_command)return;
+#if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
+    // Stage-1 field acceptance: Oracle provides diagnostics and read-only
+    // 205/167/2904 ONLY. Queued old visual, OTA, upload, or schedule actions
+    // must not mutate the curtain during inventory recovery.
+    if(strcmp(action->valuestring,"rawWrite")!=0 &&
+       strcmp(action->valuestring,"status")!=0 &&
+       strcmp(action->valuestring,"nanoInfo")!=0 &&
+       strcmp(action->valuestring,"connect")!=0 &&
+       strcmp(action->valuestring,"subscribeRaw")!=0){
+        append_ack(current,"failed","Native read-only acceptance: display writes and OTA disabled",false);
+        last_command=current;
+        return;
+    }
+#endif
     if(strcmp(action->valuestring,"sequenceStart")==0){
         cJSON *items=cJSON_GetObjectItemCaseSensitive(payload,"effects");
         cJSON *interval=cJSON_GetObjectItemCaseSensitive(payload,"intervalSeconds");
@@ -489,6 +503,7 @@ static cJSON *sync_document(void){
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
     cJSON_AddBoolToObject(status,"autoUpdate",false);
+    cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE);
     cJSON_AddBoolToObject(status,"relayStreaming",jh2_asset_stream_active());
     cJSON_AddStringToObject(status,"assetStorage","oracle");
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");

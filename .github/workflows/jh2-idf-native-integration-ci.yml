@@ -40,6 +40,12 @@ jobs:
           assert "default n" in config and "JH2_NATIVE_ENABLE_ORACLE" in config
           assert "#if CONFIG_JH2_NATIVE_ENABLE_ORACLE" in main
           assert "jh2_bridge_start();" in main
+          assert "JH2_NATIVE_READONLY_ACCEPTANCE" in config
+          assert "default y" in config
+          assert "#if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE" in bridge
+          assert 'Native read-only acceptance: display writes and OTA disabled' in bridge
+          assert 'nativeCatalogUnique' in main
+          assert 'nativeCatalogComplete88' in main
           assert '"native_recovery.c"' in (app/"main/CMakeLists.txt").read_text()
           assert asset.index("stream_once(&job,&applied,&repeat_this,true)") < asset.index("stream_once(&job,&applied,&repeat_this,false)")
           assert "if(!verify_only && !jh2_ble_asset_packet" in asset

@@ -6,4 +6,12 @@ menu "Jason Home 2 native runtime"
             Do not enable on production until 88 SmartDawn catalog
             entries, signed OTA, command ACK and image streaming have
             been validated on physical ESP32-C6 hardware.
+    config JH2_NATIVE_READONLY_ACCEPTANCE
+        bool "Restrict native Oracle commands to inventory diagnostics"
+        default y
+        help
+            Preserve factory curtain data during physical acceptance.
+            Allow only BLE catalog/status/connect and read-only rawWrite
+            205/167/2904. Reject display writes, asset playback and OTA.
+            Disabling this gate requires a separate verified production build.
 endmenu
