@@ -15,6 +15,8 @@
 #include "asset_stream.h"
 #include "native_commands.h"
 #include "native_sequence.h"
+#include "web_recovery.h"
+#include "native_recovery.h"
 #include "esp_ota_ops.h"
 #include "mbedtls/base64.h"
 #include <ctype.h>
@@ -120,7 +122,7 @@ static bool load_saved_settings(void){
        .format_if_mount_failed=false,.dont_mount=false,
     };
     esp_err_t err=esp_vfs_littlefs_register(&options);
-    if(err!=ESP_OK){
+    if(err!=ESP_OK && err!=ESP_ERR_INVALID_STATE){
         ESP_LOGE(TAG,"Unable to read existing LittleFS without formatting (err=%s)",esp_err_to_name(err));
         return false;
     }
@@ -203,37 +205,14 @@ static bool accept_rotated_credentials(const cJSON *credential){
     ESP_LOGI(TAG,"Oracle rotated bridge credentials; token redacted and persisted");
     return true;
 }
-static void wifi_event(void *arg,esp_event_base_t base,int32_t event,void *data){
-    (void)arg;(void)data;
-    if(base==WIFI_EVENT){
-        if(event==WIFI_EVENT_STA_START || event==WIFI_EVENT_STA_DISCONNECTED){
-            xEventGroupClearBits(wifi_group,WIFI_READY);
-            esp_wifi_connect();
-        }
-    }else if(base==IP_EVENT && event==IP_EVENT_STA_GOT_IP){
-        xEventGroupSetBits(wifi_group,WIFI_READY);
-    }
-}
+// Native web/recovery service OWNS Wi-Fi, AP fallback, mDNS and DHCP.
+// The Oracle transport shares its connection; never initialize Wi-Fi twice.
 static bool wifi_setup(void){
-    wifi_group=xEventGroupCreate();
-    if(!wifi_group)return false;
-    if(esp_netif_init()!=ESP_OK)return false;
-    if(esp_event_loop_create_default()!=ESP_OK)return false;
-    if(!esp_netif_create_default_wifi_sta())return false;
-    wifi_init_config_t cfg=WIFI_INIT_CONFIG_DEFAULT();
-    if(esp_wifi_init(&cfg)!=ESP_OK)return false;
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,NULL));
-    wifi_config_t connection_cfg={0};
-    memcpy(connection_cfg.sta.ssid,ssid,strlen(ssid));
-    memcpy(connection_cfg.sta.password,password,strlen(password));
-    connection_cfg.sta.threshold.authmode=WIFI_AUTH_OPEN; // allow configured home network's auth level
-    connection_cfg.sta.pmf_cfg.capable=true;
-    connection_cfg.sta.pmf_cfg.required=false;
-    if(esp_wifi_set_mode(WIFI_MODE_STA)!=ESP_OK ||
-       esp_wifi_set_config(WIFI_IF_STA,&connection_cfg)!=ESP_OK ||
-       esp_wifi_start()!=ESP_OK)return false;
-    esp_wifi_set_ps(WIFI_PS_NONE);
+    wifi_group=jh2_web_wifi_group();
+    if(!wifi_group){
+        ESP_LOGE(TAG,"Native Wi-Fi service unavailable; Oracle bridge not started");
+        return false;
+    }
     return true;
 }
 static cJSON *https_json(const char *path,const char *request_text){
@@ -326,7 +305,10 @@ static void handle_command(const cJSON *row,const cJSON *assets){
        strcmp(action->valuestring,"status")!=0 &&
        strcmp(action->valuestring,"nanoInfo")!=0 &&
        strcmp(action->valuestring,"connect")!=0 &&
-       strcmp(action->valuestring,"subscribeRaw")!=0){
+       strcmp(action->valuestring,"subscribeRaw")!=0 &&
+       strcmp(action->valuestring,"nanoFirmwareCheck")!=0 &&
+       strcmp(action->valuestring,"nanoInstallUpdate")!=0 &&
+       strcmp(action->valuestring,"nanoEnterRecovery")!=0){
         append_ack(current,"failed","Native read-only acceptance: display writes and OTA disabled",false);
         last_command=current;
         return;
@@ -375,6 +357,12 @@ static void handle_command(const cJSON *row,const cJSON *assets){
            started?"Authenticated Oracle image stream started":"Native image asset missing or another stream active",false);
     }else if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
         append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
+    }else if(strcmp(action->valuestring,"nanoEnterRecovery")==0){
+        // This command switches only to the trusted, existing factory
+        // browser updater. It does not erase the display or flash partitions.
+        append_ack(current,"applied","Entering local browser recovery updater",false);
+        jh2_web_request_recovery();
+        restart_after_ack=current;
     }else if(strcmp(action->valuestring,"nanoAutoUpdate")==0){
         cJSON *enabled=cJSON_GetObjectItemCaseSensitive(payload,"enabled");
         if(cJSON_IsFalse(enabled))
@@ -578,8 +566,13 @@ static void oracle_task(void *ctx){
         clear_sent_ack_batch((size_t)sent);
         committed_notice_cursor=final_notice;
         if(restart_ack_included){
-            ESP_LOGW(TAG,"Signed OTA acknowledged by Oracle; selecting permanent boot updater");
-            vTaskDelay(pdMS_TO_TICKS(400));
+            ESP_LOGW(TAG,"Firmware maintenance acknowledged by Oracle");
+            vTaskDelay(pdMS_TO_TICKS(300));
+            // Signed update queue already selected factory. An explicit
+            // nanoEnterRecovery action must select factory NOW.
+            if(jh2_web_recovery_requested()){
+                jh2_enter_local_recovery();
+            }
             esp_restart();
         }
         cJSON *commands=cJSON_GetObjectItemCaseSensitive(reply,"commands");
