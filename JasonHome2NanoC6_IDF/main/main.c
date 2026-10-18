@@ -62,6 +62,10 @@ static volatile uint32_t conn_updates=0;
 static volatile int phy_2m_request_rc=-1;
 static volatile uint32_t phy_status_queries=0;
 static uint16_t heart=0,upload=0;
+static uint8_t catalog_seen[JH2_FACTORY_EFFECTS]={0};
+static uint16_t catalog_slot[JH2_FACTORY_EFFECTS]={0};
+static uint8_t catalog_type[JH2_FACTORY_EFFECTS]={0};
+static uint64_t catalog_cid[JH2_FACTORY_EFFECTS]={0};
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
 static volatile bool raw_write_pending=false,raw_write_fault=false;
@@ -225,10 +229,6 @@ bool jh2_ble_raw_write(const char *uuid,const uint8_t *bytes,size_t len,uint32_t
 static uint8_t own_addr=0,request_index=0,sequence=0;
 static bool requested=false,finished=false;
 
-static uint8_t catalog_seen[JH2_FACTORY_EFFECTS]={0};
-static uint16_t catalog_slot[JH2_FACTORY_EFFECTS]={0};
-static uint8_t catalog_type[JH2_FACTORY_EFFECTS]={0};
-static uint64_t catalog_cid[JH2_FACTORY_EFFECTS]={0};
 static int64_t started_at=0;
 static const uint16_t READ_OPS[]={205,167,2904};
 
