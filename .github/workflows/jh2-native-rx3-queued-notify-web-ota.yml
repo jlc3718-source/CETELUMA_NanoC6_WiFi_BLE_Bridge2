@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 permissions: {contents: read}
 concurrency:
-  group: jh2-rx2-web-full-flash
+  group: jh2-rx3-queued-web-full-flash
   cancel-in-progress: true
 jobs:
   build-and-package:
@@ -114,7 +114,7 @@ jobs:
               raise ValueError('runtime is not a valid ESP32-C6 image')
           if b'jason-home-2-nanoc6-runtime-v1' not in app:
               raise ValueError('missing factory-accepted runtime identity')
-          if b'1.1.32-rx2-web' not in app or b'/firmware/recovery' not in app:
+          if b'1.1.32-rx3-web' not in app or b'/firmware/recovery' not in app:
               raise ValueError('native firmware browser OTA service missing')
           full=bytearray(old)
           full[0x130000:0x3c0000]=b'\xff'*0x290000
@@ -130,7 +130,7 @@ jobs:
           ota=root/'JH2-RX3-QUEUED-RX-1.1.32-RUNTIME-OTA.bin'
           ota.write_bytes(app)
           manifest={
-              'product':'Jason Home 2 NanoC6','version':'1.1.32-rx2-web',
+              'product':'Jason Home 2 NanoC6','version':'1.1.32-rx3-web',
               'commit':os.environ.get('GITHUB_SHA'),'esp_idf':'5.5.1','target':'esp32c6',
               'flash_bytes':len(full),'runtime_offset_hex':'0x130000',
               'factory_offset_hex':'0x10000','storage_offset_hex':'0x3c0000',
@@ -148,7 +148,7 @@ jobs:
           print('FULL_IMAGE_VERIFIED',json.dumps(manifest,indent=2))
           PY
           cat > build-output/README-FIRST.md <<'EOF'
-          # Jason Home 2 NanoC6 RX2 Web + OTA Recovery v1.1.32 (ESP-IDF)
+          # Jason Home 2 NanoC6 RX3 Deferred BLE Catalog + OTA Recovery v1.1.32 (ESP-IDF)
 
           EXPERIMENTAL: CI COMPILED AND PACKAGED; PHYSICAL FUNCTIONALITY NOT YET VERIFIED.
 
