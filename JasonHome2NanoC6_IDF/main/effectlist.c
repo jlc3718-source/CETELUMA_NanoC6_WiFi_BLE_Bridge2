@@ -34,9 +34,9 @@ static int skip(const uint8_t *b,size_t n,size_t *at,unsigned wire,
     default:return -1;
     }
 }
-static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid){
+static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid,uint16_t *slot,uint8_t *type){
     size_t at=0;
-    uint64_t effect=0,controller=0;
+    uint64_t effect=0,controller=0,effect_slot=0,effect_type=0;
     int have_id=0,have_cid=0;
     (void)0;
     while(at<n){
@@ -46,6 +46,8 @@ static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid){
         const uint8_t *bytes=NULL;size_t length=0;
         if(skip(b,n,&at,(unsigned)(key&7),&bytes,&length,&value))return -1;
         if((key>>3)==1 && (key&7)==0){effect=value;have_id=1;}
+        if((key>>3)==2 && (key&7)==0)effect_type=value;
+        if((key>>3)==3 && (key&7)==0)effect_slot=value;
         if((key>>3)==4 && (key&7)==0){controller=value;have_cid=1;}
     }
     // Protobuf 3 suppresses scalar zero fields. The first native E-0
@@ -53,7 +55,9 @@ static int decode_effect(const uint8_t *b,size_t n,uint16_t *id,uint64_t *cid){
     // Require the controller CID to distinguish a valid catalog item.
     if(!have_cid||effect>=JH2_FACTORY_EFFECTS)return 1;
     if(!have_id)effect=0;
-    *id=(uint16_t)effect;*cid=controller;return 0;
+    if(effect_slot>UINT16_MAX || effect_type>UINT8_MAX)return -1;
+    *id=(uint16_t)effect;*cid=controller;
+    *slot=(uint16_t)effect_slot;*type=(uint8_t)effect_type;return 0;
 }
 int jh2_effectlist_parse(const uint8_t *ddp,size_t len,jh2_catalog_batch *out){
     if(!ddp||!out||len<20||len>4096)return -1;
@@ -68,13 +72,16 @@ int jh2_effectlist_parse(const uint8_t *ddp,size_t len,jh2_catalog_batch *out){
         const uint8_t *entry=NULL;size_t n=0;
         if(skip(ddp,len,&at,(unsigned)(tag&7),&entry,&n,&number))return -5;
         if((tag>>3)!=1 || (tag&7)!=2)continue;
-        uint16_t id=0;uint64_t cid=0;
-        int rc=decode_effect(entry,n,&id,&cid);
+        uint16_t id=0,slot=0;uint64_t cid=0;uint8_t type=0;
+        int rc=decode_effect(entry,n,&id,&cid,&slot,&type);
         if(rc<0)return -6;
         if(rc>0)continue;
         if(!out->found[id]){
             out->found[id]=1;
             out->values[id]=id;
+            out->cid[id]=cid;
+            out->slot[id]=slot;
+            out->type[id]=type;
             ++out->count;
             if(id<out->first)out->first=id;
             if(id>out->last)out->last=id;
