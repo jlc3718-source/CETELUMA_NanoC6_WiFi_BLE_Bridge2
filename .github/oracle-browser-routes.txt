@@ -1,2 +1,4 @@
 GET /health
+GET /login/status
+GET /jobs/:id
 POST /run
