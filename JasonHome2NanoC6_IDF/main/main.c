@@ -32,6 +32,7 @@ extern const unsigned char jh2_native_compat_padding[];
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "mbedtls/base64.h"
+#include "esp_coexist.h"
 
 #if !CONFIG_BT_NIMBLE_ENABLED
 #error "The ESP-IDF NimBLE host must be enabled."
@@ -61,6 +62,8 @@ static volatile int conn_update_request_rc=-1,conn_update_status=-1;
 static volatile uint32_t conn_updates=0;
 static volatile int phy_2m_request_rc=-1;
 static volatile uint32_t phy_status_queries=0;
+static volatile int coex_bt_request_rc=-1,coex_restore_rc=-1;
+static volatile uint32_t coex_catalog_switches=0;
 static uint16_t heart=0,upload=0;
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
@@ -159,7 +162,10 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
     cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
     jh2_hci_acl_diag(out);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx10-stable-38-no-dle-hci-tap");
+    cJSON_AddNumberToObject(out,"nativeCoexBTRequestRc",coex_bt_request_rc);
+    cJSON_AddNumberToObject(out,"nativeCoexRestoreRc",coex_restore_rc);
+    cJSON_AddNumberToObject(out,"nativeCoexCatalogSwitches",coex_catalog_switches);
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx13-bt-priority-during-2904");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -192,6 +198,13 @@ bool jh2_ble_raw_write(const char *uuid,const uint8_t *bytes,size_t len,uint32_t
     else if(strcmp(uuid,UPLOAD_UUID_TEXT)==0)attr=upload;
     if(!attr||len>(size_t)(ble_att_mtu(connection)-3))return false;
     if(xSemaphoreTake(raw_write_lock,pdMS_TO_TICKS(timeout_ms))!=pdTRUE)return false;
+    const bool catalog_read=(strcmp(uuid,WRITE_UUID_TEXT)==0 && len>=12 &&
+                             bytes[10]==0x0b && bytes[11]==0x58);
+    if(catalog_read){
+        ++coex_catalog_switches;
+        coex_bt_request_rc=esp_coex_preference_set(ESP_COEX_PREFER_BT);
+        ESP_LOGI(TAG,"RX13_COEX_BT_PRIORITY rc=%d",coex_bt_request_rc);
+    }
     while(xSemaphoreTake(raw_write_event,0)==pdTRUE){}
     raw_write_pending=true;last_write_status=-1;
     int rc=ble_gattc_write_flat(connection,attr,bytes,(uint16_t)len,raw_write_done,NULL);
@@ -201,6 +214,13 @@ bool jh2_ble_raw_write(const char *uuid,const uint8_t *bytes,size_t len,uint32_t
             ok=last_write_status==0;
         else raw_write_fault=true; // late ACK cannot be misapplied to next write
     }else raw_write_pending=false;
+    if(catalog_read){
+        // Keep BLE's RF time-slice preference until the five response groups
+        // have cleared; this never disconnects Wi-Fi or changes curtain data.
+        vTaskDelay(pdMS_TO_TICKS(800));
+        coex_restore_rc=esp_coex_preference_set(ESP_COEX_PREFER_BALANCE);
+        ESP_LOGI(TAG,"RX13_COEX_RESTORE rc=%d",coex_restore_rc);
+    }
     xSemaphoreGive(raw_write_lock);
     return ok;
 }
