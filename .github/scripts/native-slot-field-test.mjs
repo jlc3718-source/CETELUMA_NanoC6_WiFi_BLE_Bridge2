@@ -15,8 +15,8 @@ async function api(path,body){
 }
 await api('/api/session',{token:process.env.JH2_TEST_TOKEN});
 const initial=await api('/api/curtain/status');
-if(initial.firmware!=='1.1.48'||!initial.online||!initial.curtain?.connected||initial.queued||initial.relayStreaming)
- throw Error('Live bridge is not idle, connected Nano 1.1.48; no storage operation queued');
+if(initial.firmware!=='1.1.49'||!initial.online||!initial.curtain?.connected||initial.queued||initial.relayStreaming)
+ throw Error('Live bridge is not idle, connected Nano 1.1.49; no storage operation queued');
 print('PRECHECK',{firmware:initial.firmware,mtu:initial.curtain.mtu});
 const origin=host,listeners=new Set(),parent={JH2_ORACLE_CURTAIN:true,JH2CurtainApi:api};
 const dispatch=data=>{for(const callback of [...listeners])callback({origin,source:parent,data});};

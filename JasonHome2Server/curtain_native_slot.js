@@ -238,6 +238,7 @@ async function connection(){
  const put=(uuid,data)=>rpc('rawWrite',{uuid,data:b64(data)});
  return {writeCmd:data=>put(WRITE,data),writeUpload:data=>put(UPLOAD,data),
   writeUploadBatch:parts=>rpc('nativeSlotWrite',{packets:parts.map(b64)}),
+  nativeUploadLimit:131072,
   uploadNative:async data=>{
    if(data.length>131072)throw Error('Native effect exceeds the 128 KB Nano RAM limit');
    const asset=await oracleApi('/api/curtain/assets',{nativeEff:b64(data),name:'JH2 native test'});
@@ -497,6 +498,8 @@ async function vendorUpload(data,cloudCid,progress=()=>{}){
  const plan=planVendorEff(data,cloudCid);
  const t=await connection();
  try{
+  if(t.nativeUploadLimit&&plan.bytes>t.nativeUploadLimit)
+   throw Error('Native effect exceeds the 128 KB Nano RAM limit; existing animation retained');
   progress('Reading the controller test section…');
   const before=await inventory(t,progress),old=targetState(before);
   if(old){

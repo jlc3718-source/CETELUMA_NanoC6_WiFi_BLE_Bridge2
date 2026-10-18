@@ -205,6 +205,20 @@ try:
  assert waiting['pending'] is not None and waiting['confirmationRequired']
  confirmed,_=api(base,'/api/curtain/confirm-display',cookie=cookie,body={'commandId':stage_id,'observed':True})
  assert confirmed['active']['sha256']==asset['sha256'] and confirmed['retainedFiles']>=1
+ if NATIVE_SLOT:
+  native=bytearray(28672);native[:4]=b'DNMX';native[4:10]=bytes([3,1,40,0,40,0])
+  def u32(offset,value):native[offset:offset+4]=value.to_bytes(4,'little')
+  u32(10,4800);u32(14,83928);u32(128,4096);native[134]=4
+  native[4096:4101]=b'DNX2\x03';u32(4101,4800);u32(4105,4);native[4109]=native[4111]=40
+  staged_native,_=api(base,'/api/curtain/assets',cookie=cookie,body={'nativeEff':base64.b64encode(native).decode()})
+  assert staged_native['native'] and staged_native['bytes']==28672
+  native_command,_=api(base,'/api/curtain/call',cookie=cookie,body={'action':'nativeSlotUpload','payload':{'sha256':staged_native['sha256']},'idempotencyKey':'staged-native-ram-check'})
+  received_native,_=api(base,'/api/curtain-bridge/sync',rotated,body={'status':{'firmware':'1.1.49'},'bootId':'stage-emulator'},bridge_header=True)
+  assert any(a['sha256']==staged_native['sha256'] and a.get('native') for a in received_native['assets'])
+  request=urllib.request.Request(base+'/api/curtain-bridge/stream/'+staged_native['sha256'],headers={'X-JH2-Bridge-Token':rotated})
+  with urllib.request.urlopen(request,timeout=10) as response:assert response.read()==native
+  assert received_native['desired']['visual']['action']=='asset'
+  print('Staged native RAM upload: exact full-file HTTP stream and transient command manifest verified.')
  assert not checked['command']['physicalPlaybackConfirmed']
  print('Staged actual HTTP API: both bridge auth headers, credential rotation, command/ACK, Oracle conversion and 4 KB digest-checked relay PASS. ACK used a simulator; physical BLE is not claimed.')
 finally:run('docker','rm','-f',stagename,stdout=subprocess.DEVNULL)
