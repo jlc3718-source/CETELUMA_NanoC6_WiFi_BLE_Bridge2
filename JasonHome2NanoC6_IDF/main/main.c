@@ -30,6 +30,7 @@ extern const char jh2_native_runtime_marker[];
 extern const unsigned char jh2_native_compat_padding[];
 #endif
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "mbedtls/base64.h"
 
 #if !CONFIG_BT_NIMBLE_ENABLED
@@ -65,7 +66,15 @@ static const char *WRITE_UUID_TEXT="01020074-1972-1925-3022-077119514e44";
 static const char *HEART_UUID_TEXT="02020074-1972-1925-3022-077119514e44";
 static const char *UPLOAD_UUID_TEXT="27923001-2072-1925-3022-077119514e44";
 #define NOTICE_RING_SIZE 48
+#define CATALOG_RX_QUEUE_DEPTH 24
 typedef struct{uint32_t id;uint16_t len;uint8_t b[520];} gatt_notice;
+static gatt_notice notices[NOTICE_RING_SIZE];
+// The NimBLE GAP callback must never parse protobuf or log a 400-byte
+// catalog frame. The phone sends five responses in ~14 ms, often before
+// the previous callback can finish. Copy into a bounded queue and return.
+static QueueHandle_t catalog_queue=NULL;
+static volatile uint32_t catalog_enqueued=0,catalog_queue_drops=0;
+static volatile uint32_t catalog_parsed=0,catalog_parse_errors=0,catalog_fragments=0;
 static gatt_notice notices[NOTICE_RING_SIZE];
 static size_t notice_head=0,notice_count=0;
 static void record_notice(const uint8_t *raw,size_t len){
@@ -116,11 +125,18 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"nativeCatalogComplete88",catalog_unique==JH2_FACTORY_EFFECTS);
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
+    cJSON_AddNumberToObject(out,"nativeCatalogEnqueued",catalog_enqueued);
+    cJSON_AddNumberToObject(out,"nativeCatalogParsed",catalog_parsed);
+    cJSON_AddNumberToObject(out,"nativeCatalogParseErrors",catalog_parse_errors);
+    cJSON_AddNumberToObject(out,"nativeCatalogQueueDrops",catalog_queue_drops);
+    cJSON_AddNumberToObject(out,"nativeCatalogFragments",catalog_fragments);
+    cJSON_AddNumberToObject(out,"nativeCatalogQueueDepth",catalog_queue?uxQueueMessagesWaiting(catalog_queue):0);
+    cJSON_AddNumberToObject(out,"nativeCatalogQueueCapacity",CATALOG_RX_QUEUE_DEPTH);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Bytes",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Count",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT);
     cJSON_AddNumberToObject(out,"nativeHostAclBytes",CONFIG_BT_NIMBLE_TRANSPORT_ACL_SIZE);
     cJSON_AddNumberToObject(out,"nativeHostAclCount",CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","acl517-pools40-implicit-e0");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","deferred-notify-parser-rx3");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -287,45 +303,59 @@ static int mtu_done(uint16_t conn,const struct ble_gatt_error *error,uint16_t mt
     if(rc)fail("service_start",rc);
     return 0;
 }
-static void on_notification(struct os_mbuf *om){
-    uint16_t len=OS_MBUF_PKTLEN(om);
-    ++notification_count;
-    if(len<24 || len>520){
-        ESP_LOGW(TAG,"NOTIFICATION_UNEXPECTED_SIZE size=%u",len);
-        return;
+static void catalog_worker(void *unused){
+    (void)unused;
+    gatt_notice item;
+    while(true){
+        if(xQueueReceive(catalog_queue,&item,portMAX_DELAY)!=pdTRUE)continue;
+        if(connection==BLE_HS_CONN_HANDLE_NONE)continue;
+        const uint8_t *ddp=item.b+4;
+        ++catalog_packets;
+        jh2_catalog_batch batch;
+        const int rc=jh2_effectlist_parse(ddp,item.len-4,&batch);
+        if(rc){
+            ++catalog_parse_errors;
+            ESP_LOGW(TAG,"CATALOG_PARSE_FAIL message_id=%u gatt_size=%u rc=%d",
+                     item.b[0],item.len,rc);
+            continue;
+        }
+        ++catalog_parsed;
+        for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++)
+            if(batch.found[i]&&!catalog_seen[i]){catalog_seen[i]=1;++catalog_unique;}
+        ESP_LOGI(TAG,"CATALOG_REPLY id=%u gatt_bytes=%u effects=%u first=%u last=%u unique=%u",
+                 item.b[0],item.len,(unsigned)batch.count,batch.first,batch.last,
+                 (unsigned)catalog_unique);
+        if(!finished && catalog_unique==JH2_FACTORY_EFFECTS){
+            finished=true;
+            ESP_LOGI(TAG,"SUCCESS_NATIVE_CATALOG_88_OF_88 reply_packets=%u notifications=%u",
+                     (unsigned)catalog_packets,(unsigned)notification_count);
+        }
     }
+}
+// NimBLE host GAP callback: no protocol parsing, allocation, or logging.
+// A complete 396-byte phone inventory notification needs only a bounded
+// OS mbuf -> RAM copy before returning to the BLE host.
+static void on_notification(struct os_mbuf *om){
+    ++notification_count;
+    uint16_t len=OS_MBUF_PKTLEN(om);
+    if(len<4 || len>520){++notice_drops;return;}
     uint8_t raw[520];
-    if(os_mbuf_copydata(om,0,len,raw))return;
+    if(os_mbuf_copydata(om,0,len,raw)!=0){++notice_drops;return;}
     record_notice(raw,len);
-    if(raw[1]!=1||raw[2]!=0||raw[3]!=0){
-        ESP_LOGW(TAG,"FRAGMENTED_NOTICE id=%u count=%u remain=%u length=%u",
-                 raw[0],raw[1],raw[2],len);
+    if(len<24)return;
+    if(raw[1]!=1 || raw[2]!=0 || raw[3]!=0){
+        ++catalog_fragments;
         return;
     }
     const uint8_t *ddp=raw+4;
     if(ddp[0]!=0xf0 && ddp[0]!=0xf1)return;
-    uint16_t opcode=((uint16_t)ddp[6]<<8)|ddp[7];
-    if(opcode==2630)return; // playback progress
-    if(opcode!=2904){
-        ESP_LOGI(TAG,"OTHER_NOTICE opcode=%u total_bytes=%u",opcode,len);
-        return;
-    }
-    ++catalog_packets;
-    jh2_catalog_batch batch;
-    int rc=jh2_effectlist_parse(ddp,len-4,&batch);
-    if(rc){
-        ESP_LOGW(TAG,"CATALOG_PARSE_FAIL message_id=%u gatt_size=%u rc=%d",raw[0],len,rc);
-        return;
-    }
-    for(size_t i=0;i<JH2_FACTORY_EFFECTS;i++)
-        if(batch.found[i]&&!catalog_seen[i]){catalog_seen[i]=1;++catalog_unique;}
-    ESP_LOGI(TAG,"CATALOG_REPLY message_id=%u gatt_bytes=%u effects=%u first=%u last=%u unique=%u",
-             raw[0],len,(unsigned)batch.count,batch.first,batch.last,(unsigned)catalog_unique);
-    if(!finished && catalog_unique==JH2_FACTORY_EFFECTS){
-        finished=true;
-        ESP_LOGI(TAG,"SUCCESS_NATIVE_CATALOG_88_OF_88 reply_packets=%u notifications=%u",
-                 (unsigned)catalog_packets,(unsigned)notification_count);
-    }
+    const uint16_t opcode=((uint16_t)ddp[6]<<8)|ddp[7];
+    if(opcode!=2904)return;
+    if(!catalog_queue){++catalog_queue_drops;return;}
+    gatt_notice packet={.len=len};
+    memcpy(packet.b,raw,len);
+    if(xQueueSend(catalog_queue,&packet,0)==pdTRUE)++catalog_enqueued;
+    else ++catalog_queue_drops;
 }
 static int gap_event(struct ble_gap_event *event,void *arg){
     (void)arg;
@@ -400,6 +430,13 @@ void app_main(void){
     raw_write_event=xSemaphoreCreateBinary();
     if(!notice_lock||!raw_write_lock||!raw_write_event){
         ESP_LOGE(TAG,"Native BLE synchronization allocation failed");
+        return;
+    }
+    // Catalog parser is deliberately lower priority than NimBLE and never
+    // runs inside the notification callback. No dependency on Oracle uptime.
+    catalog_queue=xQueueCreate(CATALOG_RX_QUEUE_DEPTH,sizeof(gatt_notice));
+    if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",4096,NULL,3,NULL)!=pdPASS){
+        ESP_LOGE(TAG,"CATALOG_RECEIVE_WORKER_FAILED");
         return;
     }
     // Start the local firmware, Wi-Fi recovery and setup server BEFORE
