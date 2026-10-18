@@ -22,3 +22,6 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
 # RX8: on ESP32-C6 with NimBLE, BT_LE_MSYS settings are intentionally disabled.
 # Enlarge the active NimBLE RX block to carry 396-byte notifications plus overhead.
+
+# RX13: preserve automatic SW coexist arbitration; allow temporary BT priority for inventory.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
