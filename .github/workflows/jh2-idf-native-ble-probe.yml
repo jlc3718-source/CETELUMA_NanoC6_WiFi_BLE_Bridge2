@@ -54,9 +54,9 @@ jobs:
           p=pathlib.Path('JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin').read_bytes()
           found=[]
           for at in range(0,len(p),32):
-            if p[at:at+2]!=b'\\xaaP':break
+            if p[at:at+2]!=b'\xaaP':break
             _,typ,sub,offset,size,name,_=struct.unpack_from('<HBBII16sI',p,at)
-            found.append((name.split(b'\\0')[0].decode(),typ,sub,offset,size))
+            found.append((name.split(b'\0')[0].decode(),typ,sub,offset,size))
           expected=[
             ('nvs',1,2,0x9000,0x5000),
             ('otadata',1,0,0xE000,0x2000),
