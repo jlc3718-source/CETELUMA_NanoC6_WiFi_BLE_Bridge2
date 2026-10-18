@@ -79,50 +79,12 @@ static const char *FIRMWARE_HTML=
 "s.textContent='Restarting to factory upload mode. Reconnect to http://192.168.4.1/firmware or use the home IP /firmware.';"
 "}catch(e){s.textContent=e.message}}</script></body></html>";
 
-static bool same_subnet(uint32_t peer,esp_netif_t *netif){
-    if(!netif)return false;
-    esp_netif_ip_info_t ip={0};
-    if(esp_netif_get_ip_info(netif,&ip)!=ESP_OK || !ip.ip.addr || !ip.netmask.addr)return false;
-    return (peer&ip.netmask.addr)==(ip.ip.addr&ip.netmask.addr);
-}
-// Verify the ACTUAL accepted socket's local destination (not the
-// uninitialized AP netif IP), then the peer. The factory-restore AP is
-// 192.168.4.1/24; fallback must work even before esp-netif reports an IP.
-// Source-only checks are unsafe behind port forwarding, hence destination
-// equality is mandatory.
-static bool setup_ap_socket(uint32_t peer_network,uint32_t local_network){
-    if(!ap_enabled)return false;
-    uint32_t src=ntohl(peer_network);
-    uint32_t dst=ntohl(local_network);
-    return dst==0xc0a80401u && (src&0xffffff00u)==0xc0a80400u &&
-           (src&0xffu)>0u && (src&0xffu)<255u;
-}
+// User-requested local-controller access policy: no client IP, subnet,
+// LAN-origin, or host restrictions. The Setup AP still has its WPA2 password.
+// NOTE: keep this controller's port 80 off public WAN port forwards.
 static bool local_only(httpd_req_t *r){
-    const int fd=httpd_req_to_sockfd(r);
-    if(fd<0)return false;
-    struct sockaddr_storage peeraddr={0},localaddr={0};
-    socklen_t plen=sizeof(peeraddr),llen=sizeof(localaddr);
-    if(getpeername(fd,(struct sockaddr*)&peeraddr,&plen)!=0 ||
-       getsockname(fd,(struct sockaddr*)&localaddr,&llen)!=0)return false;
-    if(peeraddr.ss_family!=AF_INET || localaddr.ss_family!=AF_INET)return false;
-    const uint32_t peer=((struct sockaddr_in*)&peeraddr)->sin_addr.s_addr;
-    const uint32_t dest=((struct sockaddr_in*)&localaddr)->sin_addr.s_addr;
-    if(setup_ap_socket(peer,dest))return true;
-    // LAN: client must be on the STA interface's subnet AND the server
-    // connection must have been established to the STA interface's IP.
-    esp_netif_ip_info_t info={0};
-    if(sta_netif && esp_netif_get_ip_info(sta_netif,&info)==ESP_OK &&
-       info.ip.addr && info.netmask.addr && dest==info.ip.addr &&
-       (peer&info.netmask.addr)==(info.ip.addr&info.netmask.addr))
-        return true;
-    // AP interface with valid esp-netif state remains a fallback when a
-    // nondefault 192.168.4.1 AP configuration is recovered.
-    if(ap_enabled && ap_netif && 
-       esp_netif_get_ip_info(ap_netif,&info)==ESP_OK &&
-       info.ip.addr && info.netmask.addr && dest==info.ip.addr &&
-       (peer&info.netmask.addr)==(info.ip.addr&info.netmask.addr))
-        return true;
-    return false;
+    (void)r;
+    return true;
 }
 static esp_err_t send_json(httpd_req_t *r,cJSON *o){
     if(!o)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"No memory");
@@ -139,7 +101,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.29-rx2-web");
+    cJSON_AddStringToObject(o,"version","1.1.30-rx2-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -147,7 +109,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.29-rx2-web");
+    cJSON_AddStringToObject(o,"version","1.1.30-rx2-web");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
