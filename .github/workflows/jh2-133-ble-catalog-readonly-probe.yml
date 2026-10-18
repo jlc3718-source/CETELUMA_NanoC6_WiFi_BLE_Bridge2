@@ -40,8 +40,12 @@ jobs:
           assert before.get('online') is True and c.get('connected') is True and int(c.get('mtu') or 0)>=399
           notice,_=api('/api/curtain/notifications?since=0',cookie=cookie)
           cursor=max((int(n.get('id') or 0) for n in notice.get('notifications',[])),default=0)
+          for attempt in range(40):
+              if int(before.get('queued') or 0)==0:break
+              time.sleep(.7)
+              before,_=api('/api/curtain/status',cookie=cookie)
           if int(before.get('queued') or 0)>0:
-              raise RuntimeError('Oracle already has commands queued; not adding BLE read')
+              raise RuntimeError('Oracle queue still busy; not adding BLE read')
           n=94;op=2904;ddp=bytearray(20)
           ddp[0]=240;ddp[1]=4;ddp[2]=0;ddp[3]=n;ddp[6]=op>>8;ddp[7]=op&255
           pkt=bytes([n,1,0,0])+ddp
