@@ -1,0 +1,60 @@
+name: JH2 Verify 1.1.35 After Signed Web OTA
+on:
+  push:
+    branches: [codex/jh2-native-1-1-35-ble-rx5-buffer-20261018]
+    paths: ['.github/workflows/jh2-135-rx5-passive-status.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Verify OTA online, Bluetooth reconnect, RX3 counters and stable queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(s.split('=',1) for s in info['Config']['Env'] if '=' in s)
+          host='http://127.0.0.1:8081'
+          req=urllib.request.Request(host+'/api/session',
+              data=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode(),
+              headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=10) as r:
+              r.read();cookie=r.headers['Set-Cookie'].split(';',1)[0]
+          for i in range(4):
+              req=urllib.request.Request(host+'/api/curtain/status',headers={'Cookie':cookie})
+              with urllib.request.urlopen(req,timeout=10) as r:d=json.load(r)
+              c=d.get('curtain') or {}
+              out={'sample':i+1,'online':d.get('online'),'firmware':d.get('firmware'),
+                   'uptimeSeconds':d.get('uptimeSeconds'),'BLE_connected':c.get('connected'),
+                   'BLE_MTU':c.get('mtu'),'catalogUnique':c.get('nativeCatalogUnique'),
+                   'catalogPackets':c.get('nativeCatalogPackets'),
+                   'catalogParsed':c.get('nativeCatalogParsed'),
+                   'catalogEnqueued':c.get('nativeCatalogEnqueued'),
+                   'queueDrops':c.get('nativeCatalogQueueDrops'),
+                   'parseErrors':c.get('nativeCatalogParseErrors'),
+                   'fragments':c.get('nativeCatalogFragments'),
+
+                   'noticeDrops':c.get('nativeNoticeDrops'),
+                   'connIntervalUnits':c.get('nativeBLEConnInterval1250us'),
+                   'connLatency':c.get('nativeBLEConnLatency'),
+                   'connRequestRc':c.get('nativeBLEConnUpdateRequestRc'),
+                   'connStatus':c.get('nativeBLEConnUpdateStatus'),
+                   'connUpdateEvents':c.get('nativeBLEConnUpdateEvents'),
+                   
+                   'actualRxPHY':c.get('nativeBLEPhyRX'),
+                   'actualTxPHY':c.get('nativeBLEPhyTX'),
+                   'phyRequestRc':c.get('nativeBLEPhyRequestRc'),
+                   'phyQueryRc':c.get('nativeBLEPhyQueryRc'),
+                   'aclCount':c.get('nativeHostAclCount'),
+                   'msys2Count':c.get('nativeHostMsys2Count'),
+                   'unexpectedNotifications':c.get('nativeUnexpectedNotifyCount'),
+                   'queuedCommands':d.get('queued'),
+                   'lastSync':d.get('lastSync')}
+              print('POST_OTA_1135_STATUS',json.dumps(out,sort_keys=True),flush=True)
+              if i<3:time.sleep(7)
+          assert d.get('online') and d.get('firmware')=='1.1.35','Expected firmware not online'
+          print('SIGNED_WEB_OTA_STABLE_NO_COMMANDS',flush=True)
+          PY
