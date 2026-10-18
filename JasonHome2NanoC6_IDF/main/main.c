@@ -22,6 +22,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "effectlist.h"
+#include "native_ble.h"
+#include "freertos/semphr.h"
+#include "mbedtls/base64.h"
 
 #if !CONFIG_BT_NIMBLE_ENABLED
 #error "The ESP-IDF NimBLE host must be enabled."
@@ -42,6 +45,100 @@ static const ble_uuid128_t NOTIFY_UUID=BLE_UUID128_INIT(
 static uint16_t connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t service_start=0,service_end=0,writer=0,notifier=0,cccd=0;
 static uint16_t next_def_after_notify=UINT16_MAX;
+static uint16_t heart=0,upload=0;
+static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
+static volatile int last_write_status=-1;
+static volatile bool raw_write_pending=false,raw_write_fault=false;
+static uint32_t notice_number=0,notice_drops=0;
+static const ble_uuid128_t HEART_UUID=BLE_UUID128_INIT(
+  0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x02,0x02);
+static const ble_uuid128_t UPLOAD_UUID=BLE_UUID128_INIT(
+  0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x20,0x01,0x30,0x92,0x27);
+static const char *WRITE_UUID_TEXT="01020074-1972-1925-3022-077119514e44";
+static const char *HEART_UUID_TEXT="02020074-1972-1925-3022-077119514e44";
+static const char *UPLOAD_UUID_TEXT="27923001-2072-1925-3022-077119514e44";
+#define NOTICE_RING_SIZE 48
+typedef struct{uint32_t id;uint16_t len;uint8_t b[520];} gatt_notice;
+static gatt_notice notices[NOTICE_RING_SIZE];
+static size_t notice_head=0,notice_count=0;
+static void record_notice(const uint8_t *raw,size_t len){
+    if(!raw||len==0||len>sizeof(notices[0].b)){++notice_drops;return;}
+    if(len>=24 && raw[1]==1 && raw[2]==0 && raw[3]==0
+       && (((uint16_t)raw[10]<<8)|raw[11])==2630)return;
+    if(!notice_lock || xSemaphoreTake(notice_lock,0)!=pdTRUE){++notice_drops;return;}
+    size_t idx=(notice_head+notice_count)%NOTICE_RING_SIZE;
+    if(notice_count==NOTICE_RING_SIZE){notice_head=(notice_head+1)%NOTICE_RING_SIZE;++notice_drops;}
+    else ++notice_count;
+    notices[idx].id=++notice_number;
+    notices[idx].len=(uint16_t)len;
+    memcpy(notices[idx].b,raw,len);
+    xSemaphoreGive(notice_lock);
+}
+uint32_t jh2_ble_collect_notices(cJSON *array,uint32_t after){
+    if(!cJSON_IsArray(array)||!notice_lock)return after;
+    uint32_t cursor=after;
+    for(size_t n=0;n<NOTICE_RING_SIZE;n++){
+        gatt_notice item={0};bool found=false;
+        xSemaphoreTake(notice_lock,portMAX_DELAY);
+        for(size_t i=0;i<notice_count;i++){
+            const gatt_notice *p=&notices[(notice_head+i)%NOTICE_RING_SIZE];
+            if(p->id>cursor){item=*p;found=true;break;}
+        }
+        xSemaphoreGive(notice_lock);
+        if(!found)break;
+        uint8_t encoded[728];size_t encoded_len=0;
+        if(mbedtls_base64_encode(encoded,sizeof(encoded)-1,&encoded_len,item.b,item.len)!=0)break;
+        encoded[encoded_len]=0;
+        cJSON *row=cJSON_CreateObject();
+        if(!row)break;
+        cJSON_AddNumberToObject(row,"id",item.id);
+        cJSON_AddStringToObject(row,"uuid","01010074-1972-1925-3022-077119514e44");
+        cJSON_AddStringToObject(row,"data",(const char*)encoded);
+        cJSON_AddItemToArray(array,row);
+        cursor=item.id;
+    }
+    return cursor;
+}
+void jh2_ble_status(cJSON *out){
+    if(!cJSON_IsObject(out))return;
+    cJSON_AddBoolToObject(out,"ok",true);
+    cJSON_AddBoolToObject(out,"connected",connection!=BLE_HS_CONN_HANDLE_NONE);
+    cJSON_AddNumberToObject(out,"mtu",connection==BLE_HS_CONN_HANDLE_NONE?23:ble_att_mtu(connection));
+    cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
+    cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
+    cJSON_AddNumberToObject(out,"nativeHostMsys2Bytes",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
+}
+static int raw_write_done(uint16_t conn,const struct ble_gatt_error *err,
+                          struct ble_gatt_attr *attr,void *arg){
+    (void)conn;(void)attr;(void)arg;
+    if(raw_write_pending){
+        last_write_status=err->status;
+        raw_write_pending=false;
+        xSemaphoreGive(raw_write_event);
+    }
+    return 0;
+}
+bool jh2_ble_raw_write(const char *uuid,const uint8_t *bytes,size_t len,uint32_t timeout_ms){
+    if(!uuid||!bytes||!len||len>508||!raw_write_lock || raw_write_fault)return false;
+    if(connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    uint16_t attr=0;
+    if(strcmp(uuid,WRITE_UUID_TEXT)==0)attr=writer;
+    else if(strcmp(uuid,HEART_UUID_TEXT)==0)attr=heart;
+    else if(strcmp(uuid,UPLOAD_UUID_TEXT)==0)attr=upload;
+    if(!attr||len>(size_t)(ble_att_mtu(connection)-3))return false;
+    if(xSemaphoreTake(raw_write_lock,pdMS_TO_TICKS(timeout_ms))!=pdTRUE)return false;
+    while(xSemaphoreTake(raw_write_event,0)==pdTRUE){}
+    raw_write_pending=true;last_write_status=-1;
+    int rc=ble_gattc_write_flat(connection,attr,bytes,(uint16_t)len,raw_write_done,NULL);
+    bool ok=false;
+    if(rc==0){
+        if(xSemaphoreTake(raw_write_event,pdMS_TO_TICKS(timeout_ms))==pdTRUE)
+            ok=last_write_status==0;
+        else raw_write_fault=true; // late ACK cannot be misapplied to next write
+    }else raw_write_pending=false;
+    xSemaphoreGive(raw_write_lock);
+    return ok;
+}
 static uint8_t own_addr=0,request_index=0,sequence=0;
 static bool requested=false,finished=false;
 static uint32_t notification_count=0,catalog_packets=0,catalog_unique=0;
@@ -123,6 +220,8 @@ static int characteristic_found(uint16_t conn,const struct ble_gatt_error *error
     (void)conn;(void)arg;
     if(error->status==0){
         if(ble_uuid_cmp(&chr->uuid.u,&WRITE_UUID.u)==0)writer=chr->val_handle;
+        if(ble_uuid_cmp(&chr->uuid.u,&HEART_UUID.u)==0)heart=chr->val_handle;
+        if(ble_uuid_cmp(&chr->uuid.u,&UPLOAD_UUID.u)==0)upload=chr->val_handle;
         if(ble_uuid_cmp(&chr->uuid.u,&NOTIFY_UUID.u)==0)notifier=chr->val_handle;
         if(chr->def_handle>notifier && notifier && chr->def_handle<next_def_after_notify)
             next_def_after_notify=chr->def_handle;
@@ -171,6 +270,7 @@ static void on_notification(struct os_mbuf *om){
     }
     uint8_t raw[520];
     if(os_mbuf_copydata(om,0,len,raw))return;
+    record_notice(raw,len);
     if(raw[1]!=1||raw[2]!=0||raw[3]!=0){
         ESP_LOGW(TAG,"FRAGMENTED_NOTICE id=%u count=%u remain=%u length=%u",
                  raw[0],raw[1],raw[2],len);
@@ -231,7 +331,8 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGW(TAG,"BLE_DISCONNECTED reason=%u",event->disconnect.reason);
         connection=BLE_HS_CONN_HANDLE_NONE;
-        service_start=service_end=writer=notifier=cccd=0;
+        service_start=service_end=writer=notifier=cccd=heart=upload=0;
+        raw_write_fault=false;raw_write_pending=false;
         next_def_after_notify=UINT16_MAX;
         requested=finished=false;
         request_index=0;
@@ -266,6 +367,13 @@ void app_main(void){
     esp_err_t rc=nvs_flash_init();
     if(rc!=ESP_OK){
         ESP_LOGE(TAG,"NVS_INIT_FAILED rc=%d; refusing destructive recovery",rc);
+        return;
+    }
+    notice_lock=xSemaphoreCreateMutex();
+    raw_write_lock=xSemaphoreCreateMutex();
+    raw_write_event=xSemaphoreCreateBinary();
+    if(!notice_lock||!raw_write_lock||!raw_write_event){
+        ESP_LOGE(TAG,"Native BLE synchronization allocation failed");
         return;
     }
     rc=nimble_port_init();
