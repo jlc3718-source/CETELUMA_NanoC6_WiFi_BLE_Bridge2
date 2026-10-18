@@ -1,0 +1,115 @@
+name: JH2 One-Time Signed Web Upgrade To 1.1.36 With BLE Connection Diagnostics
+on:
+  push:
+    branches: [codex/jh2-native-1-1-36-short-interval-rx6-20261018]
+    paths: ['.github/workflows/jh2-one-time-install-signed-136-via-oracle.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  install:
+    name: Validate signed release, send one install and verify live Nano
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: One-time signed 1.1.36 install via existing Oracle bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request,hashlib
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(s.split('=',1) for s in info['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              d=json.dumps(body).encode() if body is not None else None
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=d,headers=h,method='POST' if d is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=15) as r:return json.load(r),r.headers
+          signed,_=api('/api/curtain/firmware-manifest')
+          manifest=dict(x.split('=',1) for x in signed['payload'].strip().splitlines())
+          if signed.get('schema')!=1 or not signed.get('signature') or manifest.get('version')!='1.1.36':
+              raise RuntimeError('Signed production release is not the expected 1.1.36')
+          with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.36.bin',timeout=75) as res:
+              digest=hashlib.sha256();length=0
+              while True:
+                  b=res.read(65536)
+                  if not b:break
+                  digest.update(b);length+=len(b)
+          if length!=int(manifest['bytes']) or digest.hexdigest()!=manifest['sha256']:
+              raise RuntimeError('Oracle runtime does not match signed firmware manifest')
+          print('SIGNED_FACTORY_MIRROR_VERIFIED',length,digest.hexdigest()[:18],flush=True)
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';',1)[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          print('PRE_INSTALL',{'version':status.get('firmware'),'online':status.get('online'),
+             'queued':status.get('queued'),'ble':(status.get('curtain') or {}).get('connected')},flush=True)
+          if status.get('firmware')=='1.1.36':
+              print('ALREADY_INSTALLED_NO_COMMAND',flush=True);raise SystemExit(0)
+          if status.get('firmware')!='1.1.35' or not status.get('online'):
+              raise RuntimeError('Nano version or connection changed; no installation authorized')
+          for i in range(50):
+              if int(status.get('queued') or 0)==0:break
+              time.sleep(1)
+              status,_=api('/api/curtain/status',cookie=cookie)
+          if int(status.get('queued') or 0)!=0:
+              raise RuntimeError('Oracle has pending curtain commands; installation skipped')
+          # Prove the CURRENT Nano itself validates the new signed manifest.
+          available,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},
+              'idempotencyKey':'jh2-136-rx5-preflight-20261018-a'},cookie)
+          checkid=int(available['commandId'])
+          checked=False
+          for i in range(50):
+              r,_=api('/api/curtain/command?id='+str(checkid),cookie=cookie)
+              c=r['command']
+              if c['state'] in ('applied','failed','expired','superseded'):
+                  detail=c.get('result') or {}
+                  print('SIGNED_OTA_136_PREFLIGHT',{'state':c['state'],
+                      'message':str(detail.get('message') or detail.get('error') or '')[:160]},flush=True)
+                  if c['state']!='applied':raise RuntimeError('Current Nano cannot see signed 1.1.36; no installation')
+                  checked=True
+                  break
+              time.sleep(.5)
+          if not checked:raise RuntimeError('Signed manifest preflight timed out')
+          queued,_=api('/api/curtain/call',{'action':'nanoInstallUpdate','payload':{},
+              'idempotencyKey':'jh2-signed-136-rx5-one-time-20261018-a'},cookie)
+          cid=int(queued['commandId'])
+          print('SIGNED_OTA_COMMAND_SUBMITTED',cid,flush=True)
+          completed=False
+          for i in range(130):
+              r,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              cmd=r['command']
+              if cmd['state'] in ('applied','failed','expired','superseded'):
+                  c=cmd.get('result') or {}
+                  print('SIGNED_OTA_COMMAND_RESULT',{'id':cid,'state':cmd['state'],
+                    'message':str(c.get('message') or c.get('error') or '')[:170]},flush=True)
+                  if cmd['state']!='applied':raise RuntimeError('Nano failed signed installation command')
+                  completed=True
+                  break
+              time.sleep(.6)
+          if not completed:raise RuntimeError('Nano did not acknowledge signed installation command')
+          # Factory updater downloads public signed manifest and image over
+          # its existing Oracle mirror. Do not send any other commands here.
+          for i in range(90):
+              time.sleep(3)
+              s,_=api('/api/curtain/status',cookie=cookie)
+              if s.get('firmware')=='1.1.36' and s.get('online'):
+                  c=s.get('curtain') or {}
+                  print('SIGNED_WEB_OTA_1136_INSTALLED',json.dumps({
+                     'online':s.get('online'),'firmware':s.get('firmware'),
+                     'uptimeSeconds':s.get('uptimeSeconds'),'BLE':c.get('connected'),
+                     'catalogUnique':c.get('nativeCatalogUnique'),
+                     'catalogPackets':c.get('nativeCatalogPackets'),
+                     'queueDrops':c.get('nativeCatalogQueueDrops'),
+                     'BLEinterval':c.get('nativeBLEConnInterval1250us'),
+                     'BLEupdateStatus':c.get('nativeBLEConnUpdateStatus'),
+                     'BLErequestRc':c.get('nativeBLEConnUpdateRequestRc'),
+                     'UnexpectedNotify':c.get('nativeUnexpectedNotifyCount')}),flush=True)
+                  raise SystemExit(0)
+              if i%10==0:
+                  print('SIGNED_OTA_STATUS',{'online':s.get('online'),'version':s.get('firmware'),
+                    'uptime':s.get('uptimeSeconds')},flush=True)
+          raise RuntimeError('Signed updater acknowledged but 1.1.36 has not returned online; check factory status before any repeat')
+          PY
