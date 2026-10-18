@@ -1,0 +1,33 @@
+name: JH2 1.1.46 Existing Staged Curtain Image Readiness
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-146-live-asset-readiness-20261018.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read saved assets and live bridge status (no upload, overwrite, or BLE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request
+          env=dict(s.split('=',1) for s in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def req(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              r=urllib.request.Request(base+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=12) as s:return json.load(s),s.headers
+          _,h=req('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h.get('Set-Cookie','').split(';')[0]
+          status,_=req('/api/curtain/status',cookie=cookie)
+          retention,_=req('/api/curtain/retention',cookie=cookie)
+          def asset(a):
+              if not isinstance(a,dict):return None
+              return {'sha256':a.get('sha256'),'bytes':a.get('bytes'),'name':a.get('name'),'frames':a.get('frames')}
+          print('ASSET_READINESS',json.dumps({'online':status.get('online'),'firmware':status.get('firmware'),'bleConnected':(status.get('curtain') or {}).get('connected'),'queued':status.get('queued'),'active':asset(retention.get('active')),'pending':asset(retention.get('pending')),'phase':retention.get('phase'),'retainedFiles':retention.get('retainedFiles'),'retainedBytes':retention.get('retainedBytes'),'physicalPlaybackConfirmed':retention.get('physicalPlaybackConfirmed'),'lastError':retention.get('lastError'),'lastCommand':{k:(status.get('lastCommand') or {}).get(k) for k in ('id','action','state')}},sort_keys=True),flush=True)
+          print('READ_ONLY_NO_COMMAND_SENT',flush=True)
+          PY
