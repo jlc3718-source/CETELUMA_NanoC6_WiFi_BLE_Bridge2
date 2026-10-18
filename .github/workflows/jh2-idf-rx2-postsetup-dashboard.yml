@@ -1,0 +1,185 @@
+name: JH2 RX2 Post-Setup Dashboard and OTA (build-only)
+on:
+  push:
+    branches: [codex/jh2-native-rx2-web-postsetup-dashboard-20261018]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-idf-rx2-postsetup-dashboard.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: jh2-rx2-web-full-flash
+  cancel-in-progress: true
+jobs:
+  build-and-package:
+    name: Full 0x0 image with original factory recovery (no flashing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source safeguards and 88-effect parser tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/effectlist.c \
+            JasonHome2NanoC6_IDF/tests/effectlist_test.c \
+            -o /tmp/jh2-effectlist
+          /tmp/jh2-effectlist
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('JasonHome2NanoC6_IDF/main')
+          main=(a/'main.c').read_text()
+          web=(a/'web_recovery.c').read_text()
+          bridge=(a/'bridge.c').read_text()
+          cmake=(a/'CMakeLists.txt').read_text()
+          assert 'jh2_web_start()' in main
+          assert 'static bool local_only(httpd_req_t *r)' in web
+          assert '(void)r;\n    return true;' in web
+          assert 'static const char *HOME_HTML=' in web
+          assert 'httpd_resp_set_hdr(r,"Location","/")' in web
+          assert '/setup?edit=1' in web
+          assert '(explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML)' in web
+          assert 'getpeername(' not in web and 'same_subnet(' not in web
+          assert 'jh2_enter_local_recovery()' in web
+          assert 'jh2_web_request_recovery();' in bridge
+          assert 'jh2_enter_local_recovery()' in bridge
+          assert 'HTTP_POST,.handler=recovery_post' in web
+          assert 'httpd_start(&web_server,&cfg)' in web
+          assert 'start_setup_ap' in web
+          assert '192.168.4.1/firmware' in web
+          assert 'mdns_hostname_set("jason-home-2")' in web
+          assert '"web_recovery.c"' in cmake
+          assert 'esp_http_server' in cmake
+          assert 'nanoInstallUpdate' in bridge
+          assert 'No automatic updates during native firmware migration' in bridge
+          assert 'format_if_mount_failed=false' in web
+          assert 'format_if_mount_failed=false' in bridge
+          assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE' in bridge
+          assert 'NATIVE_FW_VERSION "1.1.31"' in bridge
+          assert '1.1.31-rx2-web' in web
+          assert 'nvs_flash_erase(' not in web+bridge+main
+          print('RX2_WEB_RECOVERY_STATIC_CHECKS_PASSED')
+          PY
+      - name: Enable Oracle, browser compatibility and safe catalog acceptance
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=y
+          EOF
+      - name: Compile ESP-IDF 5.5.1 ESP32-C6 for 4MB, no flash
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Assemble and checksum complete 0x0 flash image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build-output
+          gh release download jason-home-2-nanoc6-v1.1.27 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'jh2-full-install-1.1.27.bin' \
+            --pattern 'SHA256SUMS' --dir build-output --clobber
+          (
+            cd build-output
+            grep -F 'jh2-full-install-1.1.27.bin' SHA256SUMS | sha256sum -c -
+          )
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('build-output')
+          old=(root/'jh2-full-install-1.1.27.bin').read_bytes()
+          app=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin').read_bytes()
+          if len(old)!=0x400000:raise ValueError('base factory bundle must be exactly 4 MB')
+          if not 0x120000<len(app)<=0x290000:raise ValueError('app violates factory OTA accepted size')
+          if old[0]!=0xe9 or old[0x10000]!=0xe9:
+              raise ValueError('factory updater or bootloader invalid')
+          if app[0]!=0xe9 or app[12]!=13 or app[13]!=0:
+              raise ValueError('runtime is not a valid ESP32-C6 image')
+          if b'jason-home-2-nanoc6-runtime-v1' not in app:
+              raise ValueError('missing factory-accepted runtime identity')
+          if b'1.1.31-rx2-web' not in app or b'/firmware/recovery' not in app:
+              raise ValueError('native firmware browser OTA service missing')
+          full=bytearray(old)
+          full[0x130000:0x3c0000]=b'\xff'*0x290000
+          full[0x130000:0x130000+len(app)]=app
+          if full[:0x130000]!=old[:0x130000]:
+              raise ValueError('factory updater/bootloader/NVS or partition changed')
+          if full[0x3c0000:]!=old[0x3c0000:]:
+              raise ValueError('recovery LittleFS template modified')
+          if len(full)!=0x400000 or full[0x130000]!=0xe9:
+              raise ValueError('not a valid 0x0 full flash image')
+          fn=root/'JH2-RX2-DASHBOARD-1.1.31-FULL-FLASH-0x0.bin'
+          fn.write_bytes(full)
+          ota=root/'JH2-RX2-DASHBOARD-1.1.31-RUNTIME-OTA.bin'
+          ota.write_bytes(app)
+          manifest={
+              'product':'Jason Home 2 NanoC6','version':'1.1.31-rx2-web',
+              'commit':os.environ.get('GITHUB_SHA'),'esp_idf':'5.5.1','target':'esp32c6',
+              'flash_bytes':len(full),'runtime_offset_hex':'0x130000',
+              'factory_offset_hex':'0x10000','storage_offset_hex':'0x3c0000',
+              'runtime_bytes':len(app),
+              'sha256_full':hashlib.sha256(full).hexdigest(),
+              'sha256_ota':hashlib.sha256(app).hexdigest(),
+              'factory_preserved':True,'local_firmware_web':True,
+              'setup_ap':True,'oracle_enabled':True,'auto_ota':False,
+              'physical_validation':'NOT TESTED: initial full-flash only'
+          }
+          (root/'BUILD-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          (root/'SHA256SUMS-NEW.txt').write_text(
+              manifest['sha256_full']+'  '+fn.name+'\n'+
+              manifest['sha256_ota']+'  '+ota.name+'\n')
+          print('FULL_IMAGE_VERIFIED',json.dumps(manifest,indent=2))
+          PY
+          cat > build-output/README-FIRST.md <<'EOF'
+          # Jason Home 2 NanoC6 RX2 Web + OTA Recovery v1.1.31 (ESP-IDF)
+
+          EXPERIMENTAL: CI COMPILED AND PACKAGED; PHYSICAL FUNCTIONALITY NOT YET VERIFIED.
+
+          FULL INSTALL: JH2-RX2-DASHBOARD-1.1.31-FULL-FLASH-0x0.bin - exactly 4,194,304 bytes. USB-flash at 0x0.
+          RUNTIME OTA: JH2-RX2-DASHBOARD-1.1.31-RUNTIME-OTA.bin - for the local /firmware browser updater only.
+
+          IMPORTANT: A complete 0x0 flash overwrites NVS and LittleFS, including your current
+          Wi-Fi/Oracle credentials. Back up the chip privately if you need to preserve them.
+          For first-time setup, connect to Wi-Fi SSID Jason-Home-2-Setup, password JasonHome2,
+          then visit http://192.168.4.1/setup and enter your Wi-Fi, Oracle endpoint, bridge ID
+          and bridge token if the original image contains no valid credentials.
+
+          USB command example (replace COM4):
+              python -m pip install --user esptool
+              python -m esptool --chip esp32c6 --port COM4 write-flash 0x0 JH2-RX2-DASHBOARD-1.1.31-FULL-FLASH-0x0.bin
+
+          Local firmware web:
+          http://jason-home-2.local/firmware OR http://192.168.4.1/firmware on Setup AP
+          POST /firmware/recovery requests the existing 1.1.27 factory browser updater.
+          Always use the runtime OTA BIN in the browser, NOT the 4MB full-flash BIN.
+
+          Original updater at 0x10000, runtime OTA0 at 0x130000.
+          Native read-only curtain acceptance remains enabled. Local web pages do not enforce IP restrictions; do not forward Nano port 80 to the public internet. Controller effects and slots cannot
+          be erased in this diagnostic. Automatic signed OTA disabled.
+          EOF
+          (
+            cd build-output
+            sha256sum -c SHA256SUMS-NEW.txt
+            test "$(stat -c %s JH2-RX2-DASHBOARD-1.1.31-FULL-FLASH-0x0.bin)" -eq 4194304
+          )
+          echo "NO_AUTOMATIC_FLASH_NO_ORACLE_PRODUCTION_DEPLOY"
+      - name: Upload full-flash and OTA artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-RX2-DASHBOARD-1.1.31-FULL-0x0-AND-OTA
+          path: |
+            build-output/JH2-RX2-DASHBOARD-1.1.31-FULL-FLASH-0x0.bin
+            build-output/JH2-RX2-DASHBOARD-1.1.31-RUNTIME-OTA.bin
+            build-output/README-FIRST.md
+            build-output/BUILD-MANIFEST.json
+            build-output/SHA256SUMS-NEW.txt
+          retention-days: 21
+          if-no-files-found: error
