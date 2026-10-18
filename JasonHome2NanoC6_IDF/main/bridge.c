@@ -12,7 +12,6 @@
 #include "bridge.h"
 #include "native_ble.h"
 #include "mbedtls/base64.h"
-#include "freertos/semphr.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +29,7 @@
 #include "cJSON.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
