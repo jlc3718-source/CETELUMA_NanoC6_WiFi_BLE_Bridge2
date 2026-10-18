@@ -65,6 +65,18 @@ if 'createCurtainBridge' not in live:
  a=src.index('  if(path==="/api/curtain/status"');b=src.index('  if(method==="GET"&&path==="/api/nanoc6/sync")',a);block=src[a:b]
  assert live.count('  if(method==="GET"&&path==="/api/nanoc6/sync")')==1;live=live.replace('  if(method==="GET"&&path==="/api/nanoc6/sync")',block+'  if(method==="GET"&&path==="/api/nanoc6/sync")')
  live=live.replace('"nano_sync.js"]','"nano_sync.js","curtain_remote.js"]')
+# Keep the authenticated Nano diagnostic route immediately before static asset routing.
+remote_begin='  if(path==="/nano/"&&method==="GET"){' 
+remote_end='  if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);'
+if remote_begin in src:
+ new_nano=src[src.index(remote_begin):src.index(remote_end,src.index(remote_begin))]
+ if remote_begin in live:
+  live=live[:live.index(remote_begin)]+new_nano+live[live.index(remote_end,live.index(remote_begin)):]
+ else:
+  assert live.count(remote_end)==1,'Cannot find authenticated static routing boundary'
+  live=live.replace(remote_end,new_nano+remote_end)
+else:raise RuntimeError('Source /nano/ handler missing')
+
 else:
  # Update the already-isolated route blocks without touching other application code.
  for start,end in [('  if(path.startsWith("/api/curtain-bridge/"))','  if(!isSession(req)){'),('  if(path==="/api/curtain/status"','  if(method==="GET"&&path==="/api/nanoc6/sync")')]:
@@ -77,8 +89,14 @@ if old_sync in live:
  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
 assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
 (stage/'server.mjs').write_text(live)
+assert remote_begin in live and 'nano_remote.html' in live,'Nano UI authenticated route missing' 
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
 for name in ['curtain_bridge.mjs','curtain_asset.mjs','nanoc6_sync.mjs']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/name)
+# The Nano remote console is not a /web static file: server.mjs reads it
+# next to the server module. Omitting it produces a missing-file failure.
+shutil.copyfile(ROOT/'JasonHome2Server/nano_remote.html',stage/'nano_remote.html')
+assert (stage/'nano_remote.html').is_file()
+
 for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
@@ -103,6 +121,15 @@ stagename='jh2-curtain-stage-'+RUN
 try:
  start(stagename,18081,stagedata)
  base='http://127.0.0.1:18081';_,headers=api(base,'/api/session',body={'token':token});cookie=headers['Set-Cookie'].split(';')[0]
+ nanoPage=urllib.request.Request(base+'/nano/',headers={'Cookie':cookie})
+ with urllib.request.urlopen(nanoPage,timeout=15) as response:
+  html=response.read().decode('utf-8')
+  assert 'NanoC6 Remote' in html and 'curtain_converter.html' in html and 'traceId' in html,'Hosted diagnostic console missing'
+ studioPage=urllib.request.Request(base+'/curtain_converter.html',headers={'Cookie':cookie})
+ with urllib.request.urlopen(studioPage,timeout=15) as response:
+  studio=response.read().decode('utf-8')
+  assert 'JH2_ORACLE_CURTAIN' in studio or 'curtain' in studio,'Hosted Studio missing'
+ print('Staging Nano trace console and 40x40 Studio authenticated HTML both served',flush=True)
  nano,_=api(base,'/api/nanoc6/sync',cookie=cookie)
  assert nano['configured'] is True,'NanoC6 brightness checkbox must be enabled by Oracle bridge'
  enabled,_=api(base,'/api/nanoc6/sync',cookie=cookie,body={'enabled':True})
