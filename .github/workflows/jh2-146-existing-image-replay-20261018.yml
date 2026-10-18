@@ -1,0 +1,51 @@
+name: JH2 1.1.46 Existing Curtain Image Replay Traced
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-146-existing-image-replay-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-live-existing-curtain-asset-replay
+  cancel-in-progress: false
+jobs:
+  replay:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Replay only currently retained picture, correlate ACK with Nano and retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          env=dict(s.split('=',1) for s in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,data=data,headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=15) as response:return json.load(response),response.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers.get('Set-Cookie','').split(';')[0]
+          s,_=api('/api/curtain/status',cookie=cookie)
+          a,_=api('/api/curtain/retention',cookie=cookie)
+          active=a.get('active') or {};digest=active.get('sha256')
+          print('BEFORE_ASSET_REPLAY',{'fw':s.get('firmware'),'online':s.get('online'),'BLE':(s.get('curtain') or {}).get('connected'),'queued':s.get('queued'),'sha':digest,'bytes':active.get('bytes'),'frames':active.get('frames')},flush=True)
+          assert s.get('firmware')=='1.1.46' and s.get('online') and (s.get('curtain') or {}).get('connected'), 'Firmware/BLE not ready'
+          assert int(s.get('queued') or 0)==0 and active.get('frames')==1 and active.get('bytes')==5826 and digest=='667e62c62ee93fbc9568dd7e5dcb8c523bf87f4c8491ca42dc82cb2d54cb8998', 'Asset changed or queue not drained'
+          b,_=api('/api/curtain/call',{'action':'asset','payload':{'sha256':digest},'idempotencyKey':'jh2-146-existing-png-replay-20261018-a'},cookie=cookie)
+          cid=int(b['commandId']);print('ASSET_ORACLE_QUEUED',cid,flush=True)
+          result={}
+          for i in range(140):
+              d,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              result=d.get('command') or {}
+              if result.get('state') in ('applied','failed','expired','superseded'):break
+              time.sleep(.65)
+          print('ASSET_NANO_ACK',json.dumps({'id':cid,'state':result.get('state'),'result':result.get('result')},sort_keys=True),flush=True)
+          time.sleep(6)
+          d,_=api('/api/curtain/status',cookie=cookie)
+          a,_=api('/api/curtain/retention',cookie=cookie)
+          print('AFTER_ASSET_REPLAY',json.dumps({'fw':d.get('firmware'),'online':d.get('online'),'BLE':(d.get('curtain') or {}).get('connected'),'streaming':d.get('relayStreaming'),'queue':d.get('queued'),'phase':a.get('phase'),'pending':a.get('pending') is not None,'activeRetained':a.get('active') is not None,'lastError':a.get('lastError')},sort_keys=True),flush=True)
+          print('NO_ERASE_NO_NATIVE_SLOT_WRITE_NO_FLASH_NO_NEW_FILE',flush=True)
+          if result.get('state')!='applied' or not (result.get('result') or {}).get('bleTransmitted'):
+              raise RuntimeError('Existing asset not transmitted to BLE; investigate Oracle download versus Nano stream format')
+          PY
