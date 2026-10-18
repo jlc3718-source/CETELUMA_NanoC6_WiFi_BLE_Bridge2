@@ -44,7 +44,7 @@ jobs:
           assert 'xQueueSend(catalog_queue,&packet,0)' in main
           assert 'catalog_worker(void *unused)' in main
           assert 'nativeCatalogQueueDrops' in main
-          assert 'rx8-controller-msys-544-hci-tap' in main
+          assert 'rx8-nimble-msys-768-hci-tap' in main
           assert 'ble_gap_update_params(connection,&pacing)' in main
           assert 'ble_gap_set_prefered_le_phy(' in main
           assert 'pacing.itvl_min=8;' in main
@@ -53,8 +53,8 @@ jobs:
           assert '__wrap_ble_hs_hci_evt_acl_process' in diag
           assert '__real_ble_hs_hci_evt_acl_process' in diag
           assert 'nativeHCINotify396' in diag
-          assert 'nativeControllerMsys2Bytes' in main
-          assert 'CONFIG_BT_LE_MSYS_2_BLOCK_SIZE=544' in Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
+          assert 'nativeHostMsys2Bytes' in main
+          assert 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=768' in Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
           assert 'jh2_hci_acl_diag(out);' in main
           assert '"hci_rx_diag.c"' in cmake
           assert '--wrap=ble_hs_hci_evt_acl_process' in cmake
@@ -121,10 +121,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -x 'CONFIG_BT_LE_MSYS_2_BLOCK_SIZE=544' JasonHome2NanoC6_IDF/sdkconfig
-          grep -x 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=544' JasonHome2NanoC6_IDF/sdkconfig
-          grep -x 'CONFIG_BT_LE_ACL_BUF_SIZE=517' JasonHome2NanoC6_IDF/sdkconfig
-          echo 'RX8_CONTROLLER_AND_HOST_544_CONFIRMED'
+          grep -x 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=768' JasonHome2NanoC6_IDF/sdkconfig
+          echo 'RX8_ACTIVE_NIMBLE_MSYS2_768_CONFIRMED'
       - name: Assemble and checksum complete 0x0 flash image
         shell: bash
         env:
