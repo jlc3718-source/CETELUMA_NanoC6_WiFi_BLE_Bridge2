@@ -45,6 +45,7 @@ static const ble_uuid128_t NOTIFY_UUID=BLE_UUID128_INIT(
 static uint16_t connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t service_start=0,service_end=0,writer=0,notifier=0,cccd=0;
 static uint16_t next_def_after_notify=UINT16_MAX;
+static uint32_t notification_count=0,catalog_packets=0,catalog_unique=0;
 static uint16_t heart=0,upload=0;
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
@@ -141,7 +142,7 @@ bool jh2_ble_raw_write(const char *uuid,const uint8_t *bytes,size_t len,uint32_t
 }
 static uint8_t own_addr=0,request_index=0,sequence=0;
 static bool requested=false,finished=false;
-static uint32_t notification_count=0,catalog_packets=0,catalog_unique=0;
+
 static uint8_t catalog_seen[JH2_FACTORY_EFFECTS]={0};
 static int64_t started_at=0;
 static const uint16_t READ_OPS[]={205,167,2904};
