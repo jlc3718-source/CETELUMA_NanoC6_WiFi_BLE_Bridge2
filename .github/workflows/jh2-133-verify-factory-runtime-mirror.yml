@@ -1,0 +1,36 @@
+name: JH2 Verify Exact Signed Factory Runtime Mirror
+on:
+  push:
+    branches: [codex/jh2-native-1-1-33-web-signed-update-20261018]
+    paths: ['.github/workflows/jh2-133-verify-factory-runtime-mirror.yml']
+permissions: {contents: read}
+jobs:
+  validate:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Verify 1.1.33 Oracle runtime bytes match signed manifest before Nano update
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,urllib.request,hashlib
+          host='http://127.0.0.1:8081'
+          with urllib.request.urlopen(host+'/api/curtain/firmware-manifest',timeout=15) as r:
+              j=json.load(r)
+          d=dict(line.split('=',1) for line in j['payload'].strip().splitlines())
+          if j['schema']!=1 or d['version']!='1.1.33' or not j['signature']:
+              raise RuntimeError('Signed manifest is not 1.1.33')
+          url=host+'/api/curtain/firmware-runtime/1.1.33.bin'
+          h=hashlib.sha256()
+          total=0
+          with urllib.request.urlopen(url,timeout=75) as resp:
+              if resp.status!=200:raise RuntimeError('Signed runtime not hosted')
+              while True:
+                  part=resp.read(65536)
+                  if not part:break
+                  h.update(part);total+=len(part)
+          assert total==int(d['bytes']) and h.hexdigest()==d['sha256'], 'Oracle runtime checksum mismatch'
+          print('ORACLE_SIGNED_RUNTIME_EXACT_VERIFIED',total,h.hexdigest(),flush=True)
+          print('NO_DEVICE_COMMANDS',flush=True)
+          PY
