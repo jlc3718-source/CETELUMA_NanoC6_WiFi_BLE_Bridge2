@@ -62,62 +62,62 @@ if NATIVE_SLOT:
  for name,digest in expected.items():
   assert hashlib.sha256((stage/name).read_bytes()).hexdigest()==digest,'Installed Curtain source changed: '+name
 
-if 'createCurtainBridge' not in live:
- live='import {createCurtainBridge} from "./curtain_bridge.mjs";\n'+live
- anchor='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});';assert live.count(anchor)==1
- live=live.replace(anchor,anchor+'\nconst curtainRelay=createCurtainBridge({db});')
- a=src.index('  if(path.startsWith("/api/curtain-bridge/"))');b=src.index('  if(!isSession(req)){',a);block=src[a:b]
- assert live.count('  if(!isSession(req)){')==1;live=live.replace('  if(!isSession(req)){',block+'  if(!isSession(req)){')
- a=src.index('  if(path==="/api/curtain/status"');b=src.index('  if(method==="GET"&&path==="/api/nanoc6/sync")',a);block=src[a:b]
- assert live.count('  if(method==="GET"&&path==="/api/nanoc6/sync")')==1;live=live.replace('  if(method==="GET"&&path==="/api/nanoc6/sync")',block+'  if(method==="GET"&&path==="/api/nanoc6/sync")')
- live=live.replace('"nano_sync.js"]','"nano_sync.js","curtain_remote.js"]')
-else:
- # The installed Oracle server has newer Eufy master-schedule and vendor-video
- # routes than this development branch. Preserve them byte-for-byte.
- # Add ONLY the authenticated /nano/ trace console below.
- pass
-# Keep the authenticated Nano diagnostic route immediately before static asset routing.
-remote_begin='  if(path==="/nano/"&&method==="GET"){' 
-remote_end='  if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);'
-if remote_begin in src:
- new_nano=src[src.index(remote_begin):src.index(remote_end,src.index(remote_begin))]
- if remote_begin in live:
-  start=live.index(remote_begin)
-  # Modern Oracle has an inline Nano UI followed immediately by pairing API,
-  # not the older static file handler. Preserve all newer routes verbatim.
-  api_next='  if(path==="/api/curtain/pair"&&method==="POST")'
-  stop=live.index(api_next,start) if api_next in live[start:] else live.index(remote_end,start)
-  live=live[:start]+new_nano+live[stop:]
+if not NATIVE_SLOT:
+ if 'createCurtainBridge' not in live:
+  live='import {createCurtainBridge} from "./curtain_bridge.mjs";\n'+live
+  anchor='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});';assert live.count(anchor)==1
+  live=live.replace(anchor,anchor+'\nconst curtainRelay=createCurtainBridge({db});')
+  a=src.index('  if(path.startsWith("/api/curtain-bridge/"))');b=src.index('  if(!isSession(req)){',a);block=src[a:b]
+  assert live.count('  if(!isSession(req)){')==1;live=live.replace('  if(!isSession(req)){',block+'  if(!isSession(req)){')
+  a=src.index('  if(path==="/api/curtain/status"');b=src.index('  if(method==="GET"&&path==="/api/nanoc6/sync")',a);block=src[a:b]
+  assert live.count('  if(method==="GET"&&path==="/api/nanoc6/sync")')==1;live=live.replace('  if(method==="GET"&&path==="/api/nanoc6/sync")',block+'  if(method==="GET"&&path==="/api/nanoc6/sync")')
+  live=live.replace('"nano_sync.js"]','"nano_sync.js","curtain_remote.js"]')
  else:
-  anchor=remote_end if remote_end in live else '  if(path==="/api/curtain/pair"&&method==="POST")'
-  assert anchor in live,'No known authenticated Nano route insertion boundary'
-  live=live.replace(anchor,new_nano+anchor,1)
-else:raise RuntimeError('Source /nano/ handler missing')
-# The installed gateway routes all non-API GETs to a strict static allowlist.
-# Its legacy /nano/ handler was located AFTER that catchall and unreachable.
-# Make this single authenticated exception precede the catchall.
-if remote_end in live and remote_begin in live and live.index(remote_end)<live.index(remote_begin):
- start=live.index(remote_begin)
- api_next='  if(path==="/api/curtain/pair"&&method==="POST")'
- assert api_next in live[start:],'Missing authenticated curtain API boundary'
- stop=live.index(api_next,start)
- nano_block=live[start:stop]
- live=live[:start]+live[stop:]
- assert live.count(remote_end)==1 and live.count(remote_begin)==0
- live=live.replace(remote_end,nano_block+remote_end,1)
-assert live.index(remote_begin)<live.index(remote_end),'Nano route hidden behind static catchall'
-
-
-old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
-bridge_init='const curtainRelay=createCurtainBridge({db});'
-new_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});'
-if old_sync in live:
- assert live.count(old_sync)==1 and live.count(bridge_init)==1
- live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
-assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
-if NATIVE_SLOT:live=(BACK/'web-app/server.mjs').read_text()
+  # The installed Oracle server has newer Eufy master-schedule and vendor-video
+  # routes than this development branch. Preserve them byte-for-byte.
+  # Add ONLY the authenticated /nano/ trace console below.
+  pass
+ # Keep the authenticated Nano diagnostic route immediately before static asset routing.
+ remote_begin='  if(path==="/nano/"&&method==="GET"){' 
+ remote_end='  if(!path.startsWith("/api/"))return authenticatedRead(req,res,path);'
+ if remote_begin in src:
+  new_nano=src[src.index(remote_begin):src.index(remote_end,src.index(remote_begin))]
+  if remote_begin in live:
+   start=live.index(remote_begin)
+   # Modern Oracle has an inline Nano UI followed immediately by pairing API,
+   # not the older static file handler. Preserve all newer routes verbatim.
+   api_next='  if(path==="/api/curtain/pair"&&method==="POST")'
+   stop=live.index(api_next,start) if api_next in live[start:] else live.index(remote_end,start)
+   live=live[:start]+new_nano+live[stop:]
+  else:
+   anchor=remote_end if remote_end in live else '  if(path==="/api/curtain/pair"&&method==="POST")'
+   assert anchor in live,'No known authenticated Nano route insertion boundary'
+   live=live.replace(anchor,new_nano+anchor,1)
+ else:raise RuntimeError('Source /nano/ handler missing')
+ # The installed gateway routes all non-API GETs to a strict static allowlist.
+ # Its legacy /nano/ handler was located AFTER that catchall and unreachable.
+ # Make this single authenticated exception precede the catchall.
+ if remote_end in live and remote_begin in live and live.index(remote_end)<live.index(remote_begin):
+  start=live.index(remote_begin)
+  api_next='  if(path==="/api/curtain/pair"&&method==="POST")'
+  assert api_next in live[start:],'Missing authenticated curtain API boundary'
+  stop=live.index(api_next,start)
+  nano_block=live[start:stop]
+  live=live[:start]+live[stop:]
+  assert live.count(remote_end)==1 and live.count(remote_begin)==0
+  live=live.replace(remote_end,nano_block+remote_end,1)
+ assert live.index(remote_begin)<live.index(remote_end),'Nano route hidden behind static catchall'
+ 
+ 
+ old_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream});'
+ bridge_init='const curtainRelay=createCurtainBridge({db});'
+ new_sync='const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});'
+ if old_sync in live:
+  assert live.count(old_sync)==1 and live.count(bridge_init)==1
+  live=live.replace(old_sync+'\n'+bridge_init,bridge_init+'\n'+new_sync)
+ assert live.count(new_sync)==1 and live.index(bridge_init)<live.index(new_sync),'Brightness follower must initialize after Oracle bridge'
 (stage/'server.mjs').write_text(live)
-assert remote_begin in live and 'nano_remote.html' in live,'Nano UI authenticated route missing' 
+if not NATIVE_SLOT:assert remote_begin in live and 'nano_remote.html' in live,'Nano UI authenticated route missing' 
 assert '/api/eufy/verification' in live,'Preserve the working Eufy verification route'
 # Retain the installed compatible curtain/Eufy runtime modules; copying
 # older branch modules removes setEufyMasterEnabled and crashes Oracle.

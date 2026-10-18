@@ -1,4 +1,5 @@
 name: JH2 Native Slot UI and Relay Deployment
+# Preserve installed HTTP routes byte-for-byte; change only the four approved Curtain files.
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
