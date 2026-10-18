@@ -1,0 +1,40 @@
+name: JH2 Real Native Slot Read Write Rewrite Test
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-native-slot-field-test-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 18
+    steps:
+      - name: Fix self-hosted checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Execute deployed installer against the real reserved controller CID
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=GITHUB_WORKSPACE -n python3 - <<'PY'
+          import json,subprocess,os,pathlib
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          settings=dict(s.split('=',1) for s in info['Config']['Env'] if '=' in s)
+          child=dict(os.environ,JH2_TEST_TOKEN=settings['JASON_HOME_API_TOKEN'])
+          result=subprocess.run(['docker','exec','-i','-e','JH2_TEST_TOKEN','jason-home-2-web','node','--input-type=module'],input=(root/'.github/scripts/native-slot-field-test.mjs').read_text(),text=True,env=child)
+          subprocess.run(['docker','cp','jason-home-2-web:/tmp/jh2-native-slot-field-test.json',str(root/'native-slot-field-test.json')],check=False)
+          target=root/'native-slot-field-test.json'
+          if target.exists():target.chmod(0o644)
+          raise SystemExit(result.returncode)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: JH2-Native-Slot-Field-Test
+          path: native-slot-field-test.json
+          retention-days: 7
+          if-no-files-found: warn
