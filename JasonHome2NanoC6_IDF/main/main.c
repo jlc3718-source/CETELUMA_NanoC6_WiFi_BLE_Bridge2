@@ -58,6 +58,8 @@ static volatile uint16_t last_unexpected_notify_handle=0;
 static volatile uint16_t conn_interval_units=0,conn_latency=0;
 static volatile int conn_update_request_rc=-1,conn_update_status=-1;
 static volatile uint32_t conn_updates=0;
+static volatile int phy_2m_request_rc=-1;
+static volatile uint32_t phy_status_queries=0;
 static uint16_t heart=0,upload=0;
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
@@ -148,7 +150,14 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeHostMsys2Count",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT);
     cJSON_AddNumberToObject(out,"nativeHostAclBytes",CONFIG_BT_NIMBLE_TRANSPORT_ACL_SIZE);
     cJSON_AddNumberToObject(out,"nativeHostAclCount",CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","rx4-connection-paced-45-60ms");
+    uint8_t phy_tx=0,phy_rx=0;
+    int phy_rc=connection==BLE_HS_CONN_HANDLE_NONE?-1:ble_gap_read_le_phy(connection,&phy_tx,&phy_rx);
+    ++phy_status_queries;
+    cJSON_AddNumberToObject(out,"nativeBLEPhyRequestRc",phy_2m_request_rc);
+    cJSON_AddNumberToObject(out,"nativeBLEPhyQueryRc",phy_rc);
+    cJSON_AddNumberToObject(out,"nativeBLEPhyTX",phy_tx);
+    cJSON_AddNumberToObject(out,"nativeBLEPhyRX",phy_rx);
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx5-2m-phy-expanded-hci-64");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -404,6 +413,11 @@ static int gap_event(struct ble_gap_event *event,void *arg){
             pacing.latency=0;
             pacing.supervision_timeout=400;
             conn_update_request_rc=ble_gap_update_params(connection,&pacing);
+            // Prefer 2M PHY for the controller's five 2904 inventory notifications
+            // sent in a ~14ms burst. Controller may decline; 1M is still valid.
+            phy_2m_request_rc=ble_gap_set_prefered_le_phy(
+                connection,BLE_GAP_LE_PHY_2M_MASK,BLE_GAP_LE_PHY_2M_MASK,0);
+            ESP_LOGI(TAG,"BLE_RX5_PHY_2M_REQUEST rc=%d",phy_2m_request_rc);
             ESP_LOGI(TAG,"BLE_CONN_PACING_REQUEST rc=%d before_interval=%u",
                      conn_update_request_rc,conn_interval_units);
             int rc=ble_gattc_exchange_mtu(connection,mtu_done,NULL);
@@ -440,7 +454,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         memset(catalog_seen,0,sizeof(catalog_seen));
         catalog_packets=catalog_unique=notification_count=0;
         conn_interval_units=conn_latency=0;
-        conn_update_request_rc=conn_update_status=-1;
+        conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
         conn_updates=0;
         begin_scan();
         return 0;
