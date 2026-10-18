@@ -1,0 +1,47 @@
+name: JH2 Validate Existing Signed Update Check Without Install
+on:
+  push:
+    branches: [codex/jh2-native-1-1-33-web-signed-update-20261018]
+    paths: ['.github/workflows/jh2-test-native-signed-check-before-upgrade.yml']
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Ask current 1.1.31 for signed update status only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          c=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(s.split('=',1) for s in c['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              d=json.dumps(body).encode() if body is not None else None
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=d,headers=h,method='POST' if d is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=12) as r:return json.load(r),r.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';',1)[0]
+          before,_=api('/api/curtain/status',cookie=cookie)
+          print('BEFORE',{'firmware':before.get('firmware'),'online':before.get('online'),'queued':before.get('queued')})
+          if before.get('firmware')!='1.1.31' or not before.get('online') or int(before.get('queued') or 0):
+              print('SKIPPED_EXISTING_COMMANDS_OR_DIFFERENT_FIRMWARE');raise SystemExit(0)
+          p={'action':'nanoFirmwareCheck','payload':{},
+             'idempotencyKey':'read-only-signed-manifest-check-20261018'}
+          result,_=api('/api/curtain/call',p,cookie)
+          cid=int(result['commandId'])
+          for i in range(40):
+              ret,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              cmd=ret['command']
+              if cmd['state'] in ('applied','failed','expired','superseded'):
+                  result=cmd.get('result') or {}
+                  print('SIGNED_CHECK_RESULT',{'id':cid,'state':cmd['state'],
+                      'message':str(result.get('message') or result.get('error') or '')[:230]},flush=True)
+                  break
+              time.sleep(.5)
+          print('NO_INSTALL_NO_REBOOT',flush=True)
+          PY
