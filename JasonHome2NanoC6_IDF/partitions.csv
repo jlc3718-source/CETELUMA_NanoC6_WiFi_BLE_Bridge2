@@ -1,0 +1,8 @@
+# Match the existing Jason Home 2 NanoC6 4 MB flash layout EXACTLY.
+# Build-only diagnostic: never flash all partitions on production hardware.
+# Name, Type, SubType, Offset, Size
+nvs, data, nvs, 0x9000, 0x5000
+otadata, data, ota, 0xE000, 0x2000
+boot, app, factory, 0x10000, 0x120000
+runtime, app, ota_0, 0x130000, 0x290000
+storage, data, spiffs, 0x3C0000, 0x40000
