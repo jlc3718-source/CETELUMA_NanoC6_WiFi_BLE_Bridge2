@@ -402,17 +402,17 @@ void app_main(void){
         ESP_LOGE(TAG,"Native BLE synchronization allocation failed");
         return;
     }
+    // Start the local firmware, Wi-Fi recovery and setup server BEFORE
+    // Oracle. Even if BLE or Oracle fails, /firmware stays available.
+    if(!jh2_web_start()){
+        ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED; do not replace factory updater");
+    }
     rc=nimble_port_init();
     if(rc!=ESP_OK){fail("nimble_port_init",rc);return;}
     ble_hs_cfg.reset_cb=on_reset;
     ble_hs_cfg.sync_cb=on_sync;
     ble_att_set_preferred_mtu(517);
     nimble_port_freertos_init(host_task);
-    // Start the local firmware, Wi-Fi recovery and setup server BEFORE
-    // Oracle. Even if BLE or Oracle fails, /firmware stays available.
-    if(!jh2_web_start()){
-        ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED; do not replace factory updater");
-    }
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Keep the product marker and compat segment in the actual ESP32-C6
     // app image (not appended after its checksum). Required by the
