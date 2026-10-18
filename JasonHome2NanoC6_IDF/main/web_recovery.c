@@ -292,7 +292,8 @@ static esp_err_t recovery_post(httpd_req_t *r){
     return ESP_OK;
 }
 static void update_time(void){
-    if(sntp_started)return;sntp_started=true;
+    if(sntp_started)return;
+    sntp_started=true;
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
     sntp_setservername(0,"pool.ntp.org");
     sntp_init();
