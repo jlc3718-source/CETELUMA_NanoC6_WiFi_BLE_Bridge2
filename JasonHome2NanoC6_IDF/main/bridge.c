@@ -12,6 +12,7 @@
 #include "bridge.h"
 #include "native_ble.h"
 #include "signed_ota.h"
+#include "asset_stream.h"
 #include "esp_ota_ops.h"
 #include "mbedtls/base64.h"
 #include "freertos/semphr.h"
@@ -236,7 +237,7 @@ static void append_ack(uint64_t command_id,const char *state,const char *message
     cJSON_AddNumberToObject(record,"id",(double)command_id);
     cJSON_AddStringToObject(record,"state",state);
     cJSON *result=cJSON_AddObjectToObject(record,"result");
-    cJSON_AddBoolToObject(result,"ok",strcmp(state,"applied")==0);
+    cJSON_AddBoolToObject(result,"ok",strcmp(state,"failed")!=0);
     cJSON_AddStringToObject(result,"message",message);
     cJSON_AddBoolToObject(result,"bleTransmitted",ble_transmitted);
     cJSON_AddBoolToObject(result,"connected",ble_transmitted);
@@ -255,14 +256,40 @@ static void append_ack(uint64_t command_id,const char *state,const char *message
     }
     xSemaphoreGive(ack_lock);
 }
-static void handle_command(const cJSON *row){
+static void asset_report(uint64_t id,const char *state,const char *message,bool ble){
+    append_ack(id,state,message,ble);
+}
+static void handle_command(const cJSON *row,const cJSON *assets){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
     cJSON *payload=cJSON_GetObjectItemCaseSensitive(row,"payload");
     if(!cJSON_IsNumber(id)||!cJSON_IsString(action)||!action->valuestring)return;
     const uint64_t current=(uint64_t)id->valuedouble;
     if(current<=last_command)return;
-    if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
+    if(strcmp(action->valuestring,"assetStop")==0){
+        jh2_asset_stream_stop();
+        append_ack(current,"applied","Native image stream stop requested; last frame retained",false);
+    }else if(strcmp(action->valuestring,"asset")==0){
+        cJSON *requested=cJSON_GetObjectItemCaseSensitive(payload,"sha256");
+        const char *sha=cJSON_IsString(requested)?requested->valuestring:NULL;
+        uint32_t bytes=0;
+        cJSON *entry=NULL;
+        if(sha&&strlen(sha)==64){
+            cJSON_ArrayForEach(entry,assets){
+                cJSON *digest=cJSON_GetObjectItemCaseSensitive(entry,"sha256");
+                cJSON *count=cJSON_GetObjectItemCaseSensitive(entry,"bytes");
+                if(cJSON_IsString(digest)&&cJSON_IsNumber(count) &&
+                   strcmp(digest->valuestring,sha)==0&&count->valuedouble>0 &&
+                   count->valuedouble<=4194304){
+                    bytes=(uint32_t)count->valuedouble;
+                    break;
+                }
+            }
+        }
+        bool started=bytes&&jh2_asset_stream_start(endpoint,bridge_token,sha,bytes,current,asset_report);
+        append_ack(current,started?"downloaded":"failed",
+           started?"Authenticated Oracle image stream started":"Native image asset missing or another stream active",false);
+    }else if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
         append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
     }else if(strcmp(action->valuestring,"nanoAutoUpdate")==0){
         cJSON *enabled=cJSON_GetObjectItemCaseSensitive(payload,"enabled");
@@ -334,7 +361,7 @@ static cJSON *sync_document(void){
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
     cJSON_AddBoolToObject(status,"autoUpdate",false);
-    cJSON_AddBoolToObject(status,"relayStreaming",false);
+    cJSON_AddBoolToObject(status,"relayStreaming",jh2_asset_stream_active());
     cJSON_AddStringToObject(status,"assetStorage","oracle");
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
     jh2_ble_status(curtain);
@@ -414,7 +441,7 @@ static void oracle_task(void *ctx){
         if(cJSON_IsArray(commands)){
             cJSON *row=NULL;
             cJSON_ArrayForEach(row,commands){
-                handle_command(row);
+                handle_command(row,cJSON_GetObjectItemCaseSensitive(reply,"assets"));
                 break; // Preserve sequential ACK and Oracle ordering
             }
         }
