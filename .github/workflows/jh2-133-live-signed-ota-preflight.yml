@@ -34,8 +34,14 @@ jobs:
           s,_=api('/api/curtain/status',cookie=cookie)
           print('CURRENT_NANO',{'online':s.get('online'),'firmware':s.get('firmware'),
                'queued':s.get('queued'),'ble':(s.get('curtain') or {}).get('connected')},flush=True)
-          if not s.get('online') or s.get('firmware')!='1.1.31' or s.get('queued'):
-              raise RuntimeError('Nano not in expected idle 1.1.31 state')
+          if not s.get('online') or s.get('firmware')!='1.1.31':
+              raise RuntimeError('Nano not in expected 1.1.31 state')
+          for _ in range(28):
+              if int(s.get('queued') or 0)==0:break
+              time.sleep(1)
+              s,_=api('/api/curtain/status',cookie=cookie)
+          if int(s.get('queued') or 0):
+              raise RuntimeError('Existing Oracle commands still pending; signed check postponed')
           request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},
               'idempotencyKey':'jason-home-2-133-signed-preflight'},cookie)
           cid=int(request['commandId'])
