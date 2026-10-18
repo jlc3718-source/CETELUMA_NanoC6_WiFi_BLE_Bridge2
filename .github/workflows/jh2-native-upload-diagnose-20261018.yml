@@ -1,0 +1,36 @@
+name: JH2 Native Upload Controller Response Diagnosis
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-native-upload-diagnose-20261018.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read existing upload acknowledgments and catalog without controller commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,base64
+          env=dict(s.split('=',1) for s in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              req=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers={'content-type':'application/json',**({'Cookie':cookie} if cookie else {})})
+              with urllib.request.urlopen(req,timeout=20) as res:return json.load(res),res.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']});cookie=headers['Set-Cookie'].split(';')[0]
+          notices,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          for notice in notices.get('notifications',[]):
+              raw=base64.b64decode(notice['data'])
+              if len(raw)>=24 and raw[4] in (240,241):
+                  op=int.from_bytes(raw[10:12],'big')
+                  if 2931<=op<=2934 or op==2904:print('CONTROLLER_REPLY',notice['id'],op,'rcode',raw[18],'hex',raw.hex(),flush=True)
+          for cid in [14787,14788,14795,14796,14797]:
+              result,_=api('/api/curtain/command?id='+str(cid),cookie=cookie);command=result.get('command') or {}
+              print('UPLOAD_COMMAND',json.dumps({k:command.get(k) for k in ('id','action','state','result')},sort_keys=True),flush=True)
+              if cid==14787:print('UPLOAD_REQUEST',json.dumps(command.get('payload')),flush=True)
+          status,_=api('/api/curtain/status',cookie=cookie)
+          print('LIVE',json.dumps({'fw':status.get('firmware'),'online':status.get('online'),'queued':status.get('queued'),'curtain':status.get('curtain')},sort_keys=True),flush=True)
+          PY
