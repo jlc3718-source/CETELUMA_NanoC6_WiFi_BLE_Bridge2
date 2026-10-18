@@ -413,6 +413,14 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     }else if(strcmp(action->valuestring,"connect")==0||
              strcmp(action->valuestring,"subscribeRaw")==0){
         append_ack(current,"applied","Native GATT connection managed by NimBLE central",false);
+    }else if(strcmp(action->valuestring,"scan")==0){
+        bool accepted=jh2_ble_scan_start();
+        append_ack(current,accepted?"applied":"failed",
+                   accepted?"Native scan requested":"Native scan failed",false);
+    }else if(strcmp(action->valuestring,"disconnect")==0){
+        bool accepted=jh2_ble_disconnect();
+        append_ack(current,accepted?"applied":"failed",
+                   accepted?"Native Bluetooth disconnect requested":"BLE disconnect failed",false);
     }else if(strcmp(action->valuestring,"power")==0 ||
              strcmp(action->valuestring,"brightness")==0 ||
              strcmp(action->valuestring,"speed")==0 ||
