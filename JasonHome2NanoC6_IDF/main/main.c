@@ -53,6 +53,11 @@ static uint16_t connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t service_start=0,service_end=0,writer=0,notifier=0,cccd=0;
 static uint16_t next_def_after_notify=UINT16_MAX;
 static uint32_t notification_count=0,catalog_packets=0,catalog_unique=0;
+static volatile uint32_t unexpected_notify_count=0;
+static volatile uint16_t last_unexpected_notify_handle=0;
+static volatile uint16_t conn_interval_units=0,conn_latency=0;
+static volatile int conn_update_request_rc=-1,conn_update_status=-1;
+static volatile uint32_t conn_updates=0;
 static uint16_t heart=0,upload=0;
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
@@ -132,11 +137,18 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeCatalogFragments",catalog_fragments);
     cJSON_AddNumberToObject(out,"nativeCatalogQueueDepth",catalog_queue?uxQueueMessagesWaiting(catalog_queue):0);
     cJSON_AddNumberToObject(out,"nativeCatalogQueueCapacity",CATALOG_RX_QUEUE_DEPTH);
+    cJSON_AddNumberToObject(out,"nativeBLEConnInterval1250us",conn_interval_units);
+    cJSON_AddNumberToObject(out,"nativeBLEConnLatency",conn_latency);
+    cJSON_AddNumberToObject(out,"nativeBLEConnUpdateRequestRc",conn_update_request_rc);
+    cJSON_AddNumberToObject(out,"nativeBLEConnUpdateStatus",conn_update_status);
+    cJSON_AddNumberToObject(out,"nativeBLEConnUpdateEvents",conn_updates);
+    cJSON_AddNumberToObject(out,"nativeUnexpectedNotifyCount",unexpected_notify_count);
+    cJSON_AddNumberToObject(out,"nativeLastUnexpectedNotifyHandle",last_unexpected_notify_handle);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Bytes",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
     cJSON_AddNumberToObject(out,"nativeHostMsys2Count",CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT);
     cJSON_AddNumberToObject(out,"nativeHostAclBytes",CONFIG_BT_NIMBLE_TRANSPORT_ACL_SIZE);
     cJSON_AddNumberToObject(out,"nativeHostAclCount",CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT);
-    cJSON_AddStringToObject(out,"nativeRxExperiment","deferred-notify-parser-rx3");
+    cJSON_AddStringToObject(out,"nativeRxExperiment","rx4-connection-paced-45-60ms");
 }
 bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len){
     if(!bytes||!len||len>508||connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -377,13 +389,46 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         connection=event->connect.conn_handle;
         ESP_LOGI(TAG,"SMARTDAWN_CONNECTED conn=%u",connection);
         {
+            struct ble_gap_conn_desc desc={0};
+            if(ble_gap_conn_find(connection,&desc)==0){
+                conn_interval_units=desc.conn_itvl;
+                conn_latency=desc.conn_latency;
+            }
+            // ESP32-C6 receives only 3 of the 5 rapid catalog notifications.
+            // Request a moderate 45-60ms connection interval, latency 0,
+            // allowing multi-PDU bursts to drain between events. This
+            // request is advisory: GATT operates normally if refused.
+            struct ble_gap_upd_params pacing={0};
+            pacing.itvl_min=36;
+            pacing.itvl_max=48;
+            pacing.latency=0;
+            pacing.supervision_timeout=400;
+            conn_update_request_rc=ble_gap_update_params(connection,&pacing);
+            ESP_LOGI(TAG,"BLE_CONN_PACING_REQUEST rc=%d before_interval=%u",
+                     conn_update_request_rc,conn_interval_units);
             int rc=ble_gattc_exchange_mtu(connection,mtu_done,NULL);
             if(rc)fail("exchange_mtu",rc);
         }
         return 0;
     case BLE_GAP_EVENT_NOTIFY_RX:
         if(event->notify_rx.attr_handle==notifier)on_notification(event->notify_rx.om);
+        else{
+            ++unexpected_notify_count;
+            last_unexpected_notify_handle=event->notify_rx.attr_handle;
+        }
         return 0;
+    case BLE_GAP_EVENT_CONN_UPDATE:{
+        conn_update_status=event->conn_update.status;
+        ++conn_updates;
+        struct ble_gap_conn_desc desc={0};
+        if(ble_gap_conn_find(event->conn_update.conn_handle,&desc)==0){
+            conn_interval_units=desc.conn_itvl;
+            conn_latency=desc.conn_latency;
+        }
+        ESP_LOGI(TAG,"BLE_CONN_PACING_ACTUAL rc=%d interval_units=%u latency=%u",
+                 conn_update_status,conn_interval_units,conn_latency);
+        return 0;
+    }
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGW(TAG,"BLE_DISCONNECTED reason=%u",event->disconnect.reason);
         connection=BLE_HS_CONN_HANDLE_NONE;
@@ -394,6 +439,9 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         request_index=0;
         memset(catalog_seen,0,sizeof(catalog_seen));
         catalog_packets=catalog_unique=notification_count=0;
+        conn_interval_units=conn_latency=0;
+        conn_update_request_rc=conn_update_status=-1;
+        conn_updates=0;
         begin_scan();
         return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
