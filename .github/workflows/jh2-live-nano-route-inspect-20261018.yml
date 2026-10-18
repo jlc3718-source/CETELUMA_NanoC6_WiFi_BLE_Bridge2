@@ -1,0 +1,19 @@
+name: JH2 Live Nano Route Read-Only Code Compatibility
+on:
+  push:
+    branches: [codex/jh2-native-1-1-46-targeted-928-parity-20261018]
+    paths: ['.github/workflows/jh2-live-nano-route-inspect-20261018.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    steps:
+      - name: Read installed authenticated Nano route only
+        run: |
+          sudo -n docker exec jason-home-2-web node -e '
+          const fs=require("fs");
+          const s=fs.readFileSync("/app/server.mjs","utf8").split("\n");
+          const i=s.findIndex(x=>x.includes("if(path===\"/nano/\""));
+          console.log("ROUTE_LINE",i+1);
+          for(let j=Math.max(0,i-4);j<Math.min(s.length,i+35);j++)console.log(j+1,s[j].slice(0,260));
+          '
