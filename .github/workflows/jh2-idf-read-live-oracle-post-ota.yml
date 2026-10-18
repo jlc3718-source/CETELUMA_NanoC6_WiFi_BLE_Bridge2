@@ -1,0 +1,72 @@
+name: JH2 Native ESP-IDF Post-OTA Oracle Status (read-only)
+on:
+  push:
+    branches: [codex/jh2-native-espidf-browser-ota-20261017]
+    paths:
+      - '.github/workflows/jh2-idf-read-live-oracle-post-ota.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-post-ota-status
+  cancel-in-progress: true
+jobs:
+  check:
+    name: Read live Nano firmware and 88-effect inventory only
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect local Oracle status without commands or secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request,urllib.error
+          ins=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in ins['Config']['Env'] if '=' in x)
+          token=env.get('JASON_HOME_API_TOKEN','')
+          if not token: raise RuntimeError('Oracle API token unavailable in existing service')
+          base='http://127.0.0.1:8081'
+          def get(path,cookie=''):
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              request=urllib.request.Request(base+path,headers=h,method='GET')
+              with urllib.request.urlopen(request,timeout=12) as response:
+                  return json.load(response),response.headers
+          payload=json.dumps({'token':token}).encode()
+          request=urllib.request.Request(base+'/api/session',data=payload,
+              headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=12) as response:
+              response.read()
+              cookie=response.headers.get('Set-Cookie','').split(';',1)[0]
+          assert cookie.startswith('jh2_session='), 'Oracle did not issue a session cookie'
+          for sample in range(3):
+              try:
+                  s,_=get('/api/curtain/status',cookie)
+                  c=s.get('curtain') or {}
+                  report={
+                    'sample':sample+1,
+                    'firmware':s.get('firmware'),
+                    'online':s.get('online'),
+                    'uptimeSeconds':s.get('uptimeSeconds'),
+                    'lastSync':s.get('lastSync'),
+                    'lastSeen':s.get('lastSeen'),
+                    'queued':s.get('queued'),
+                    'autoUpdate':s.get('autoUpdate'),
+                    'nativeReadOnlyAcceptance':s.get('nativeReadOnlyAcceptance'),
+                    'bleConnected':c.get('connected'),
+                    'bleMtu':c.get('mtu'),
+                    'nativeCatalogPackets':c.get('nativeCatalogPackets'),
+                    'nativeCatalogUnique':c.get('nativeCatalogUnique'),
+                    'nativeCatalogComplete88':c.get('nativeCatalogComplete88'),
+                    'nativeNotificationsSeen':c.get('nativeNotificationsSeen'),
+                    'nativeNoticeDrops':c.get('nativeNoticeDrops'),
+                    'nativeHostMsys2Bytes':c.get('nativeHostMsys2Bytes'),
+                    'lastCommandId':(s.get('lastCommand') or {}).get('id'),
+                    'lastCommandState':(s.get('lastCommand') or {}).get('state')
+                  }
+                  print('JH2_LIVE_READ_ONLY_STATUS',json.dumps(report,sort_keys=True),flush=True)
+              except Exception as ex:
+                  print('JH2_LIVE_READ_ERROR',type(ex).__name__,str(ex)[:150],flush=True)
+              if sample<2:time.sleep(7)
+          print('READ_ONLY_DIAGNOSTIC_COMPLETE_NO_DEVICE_COMMANDS',flush=True)
+          PY
