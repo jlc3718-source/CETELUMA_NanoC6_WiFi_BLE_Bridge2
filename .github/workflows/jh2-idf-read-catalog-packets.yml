@@ -42,6 +42,48 @@ jobs:
                          'op':op,'frameType':raw[4] if len(raw)>4 else None})
               except Exception as ex:
                   summary.append({'id':n.get('id'),'parseError':type(ex).__name__})
+          # Parse only the non-sensitive effect index values from the catalog.
+          # This is read-only; no new BLE request or state mutation.
+          def vi(b,i):
+              n=0;shift=0
+              for _ in range(10):
+                  if i>=len(b):raise ValueError('truncated varint')
+                  x=b[i];i+=1;n|=(x&127)<<shift
+                  if not x&128:return n,i
+                  shift+=7
+              raise ValueError('varint overflow')
+          def fields(b):
+              out=[];i=0
+              while i<len(b):
+                  key,i=vi(b,i);wire=key&7;num=key>>3
+                  if wire==0:v,i=vi(b,i)
+                  elif wire==2:
+                      n,i=vi(b,i);v=b[i:i+n];i+=n
+                  elif wire==1:v=b[i:i+8];i+=8
+                  elif wire==5:v=b[i:i+4];i+=4
+                  else:raise ValueError('bad protobuf wire')
+                  out.append((num,wire,v))
+              return out
+          all_effects=set()
+          for n in notices[-80:]:
+              try:
+                  raw=base64.b64decode(n['data'])
+                  if len(raw)<24 or int.from_bytes(raw[10:12],'big')!=2904:continue
+                  effect_ids=[]
+                  for field,wire,payload in fields(raw[24:]):
+                      if field!=1 or wire!=2:continue
+                      detail=fields(payload)
+                      effect_id=next((val for key,kind,val in detail if key==1 and kind==0),None)
+                      cid=next((val for key,kind,val in detail if key==4 and kind==0),None)
+                      if effect_id is not None and cid is not None:
+                          effect_ids.append(effect_id)
+                          if 0<=effect_id<88:all_effects.add(effect_id)
+                  print('NATIVE_EFFECT_REPLY',json.dumps({'noticeId':n.get('id'),
+                       'entries':len(effect_ids),'range':[min(effect_ids),max(effect_ids)] if effect_ids else [],
+                       'effectIds':effect_ids}),flush=True)
+              except Exception as ex:
+                  print('NATIVE_EFFECT_REPLY_PARSE_ERROR',n.get('id'),type(ex).__name__,flush=True)
+          print('NATIVE_EFFECT_MISSING',sorted(set(range(88))-all_effects),flush=True)
           print('NATIVE_PACKET_SUMMARY',json.dumps(summary,separators=(',',':')),flush=True)
           print('NATIVE_OPCODE_COUNTS',dict(collections.Counter(str(x.get('op')) for x in summary)),flush=True)
           s=get('/api/curtain/status');c=s.get('curtain') or {}
