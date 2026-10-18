@@ -62,7 +62,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.40"
+#define NATIVE_FW_VERSION "1.1.46"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -410,9 +410,25 @@ static void handle_command(const cJSON *row,const cJSON *assets){
           (m?error:"Signed firmware manifest download unavailable"),false);
         if(installed)restart_after_ack=current;
         cJSON_Delete(m);
-    }else if(strcmp(action->valuestring,"connect")==0||
-             strcmp(action->valuestring,"subscribeRaw")==0){
-        append_ack(current,"applied","Native GATT connection managed by NimBLE central",false);
+    }else if(strcmp(action->valuestring,"connect")==0){
+        cJSON *address=cJSON_GetObjectItemCaseSensitive(payload,"address");
+        bool ok=cJSON_IsString(address)&&address->valuestring&&address->valuestring[0]?
+            jh2_ble_select_device(address->valuestring):jh2_ble_connect();
+        append_ack(current,ok?"applied":"failed",
+            ok?"BLE connect/selection requested (check live scan status)":"Select a scanned DN controller by address",false);
+    }else if(strcmp(action->valuestring,"scan")==0){
+        bool ok=jh2_ble_scan();
+        append_ack(current,ok?"applied":"failed",
+            ok?"BLE scan started; read devices from curtain status":"BLE scan could not start",false);
+    }else if(strcmp(action->valuestring,"disconnect")==0){
+        bool ok=jh2_ble_disconnect();
+        append_ack(current,ok?"applied":"failed",
+            ok?"BLE disconnected; automatic reconnection paused":"BLE disconnect failed",false);
+    }else if(strcmp(action->valuestring,"nanoReboot")==0){
+        append_ack(current,"applied","Nano reboot requested; restarting after Oracle ACK",false);
+        restart_after_ack=current;
+    }else if(strcmp(action->valuestring,"subscribeRaw")==0){
+        append_ack(current,"applied","Native GATT notifications already subscribed",false);
     }else if(strcmp(action->valuestring,"power")==0 ||
              strcmp(action->valuestring,"brightness")==0 ||
              strcmp(action->valuestring,"speed")==0 ||
@@ -480,21 +496,30 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             uint8_t bytes[508];size_t n=0;
             int rc=mbedtls_base64_decode(bytes,sizeof(bytes),&n,
                 (const unsigned char*)data->valuestring,strlen(data->valuestring));
-            // During acceptance testing allow only known read-only command
-            // opcodes, on the single catalog-control characteristic.
+            // Manual command creator: safe pre-rewrite control codes only.
+            // Target erase 2909 and upload characteristic remain disabled
+            // until a verified original 83928 native-file backup exists.
             bool safe=rc==0 && n>=24 && n<=508
                 && bytes[1]==1 && bytes[2]==0 && bytes[3]==0
                 && bytes[4]==0xf0 &&
                 (((uint16_t)bytes[10]<<8)|bytes[11])!=2909;
             uint16_t op=safe?(((uint16_t)bytes[10]<<8)|bytes[11]):0;
-            safe=safe&&(op==205||op==167||op==2904)
+            bool read=(op==205||op==167||op==2904);
+#if !CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
+            bool visual=(op==2514||op==2701||op==2713||op==2515||
+                         op==0x09d2||op==0x09d3||op==0x09cd||op==0x09db||
+                         op==0x096a||op==0x0a2e);
+#else
+            bool visual=false;
+#endif
+            safe=safe&&(read||visual)
                 && strcmp(uuid->valuestring,"01020074-1972-1925-3022-077119514e44")==0;
             if(!safe){
-                append_ack(current,"failed","Native migration permits only read-only 205/167/2904; no erase or upload",false);
+                append_ack(current,"failed","Unsupported manual opcode or characteristic; slot erase and upload remain locked until 83928 backup",false);
             }else{
                 bool success=jh2_ble_raw_write(uuid->valuestring,bytes,n,12000);
                 append_ack(current,success?"applied":"failed",
-                    success?"Native GATT read packet acknowledged":"Native GATT read packet not acknowledged",
+                    success?"Validated SmartDawn GATT command acknowledged; physical result unconfirmed":"Validated SmartDawn GATT command failed",
                     success);
             }
         }
