@@ -1,0 +1,82 @@
+name: JH2 RX10 Six Read-only Catalog Bursts - Missing Messages
+on:
+  push:
+    branches: [codex/jh2-native-1-1-40-recover-no-dle-20261018]
+    paths: ['.github/workflows/jh2-140-repeated-catalog-readonly-burst-analysis.yml']
+permissions: {contents: read}
+concurrency:
+  group: jason-home-oracle-production
+  cancel-in-progress: false
+jobs:
+  sample:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 7
+    steps:
+      - name: Six independent opcode 2904 reads with HCI ingress counts, no writes to effects
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,base64,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home']))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          host='http://127.0.0.1:8081'
+          def api(path,data=None,cookie=None):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              q=urllib.request.Request(host+path,data=json.dumps(data).encode() if data is not None else None,headers=headers,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(q,timeout=15) as res:return json.load(res),res.headers
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          def state():
+              s,_=api('/api/curtain/status',cookie=cookie)
+              c=s.get('curtain') or {}
+              return s,c
+          s,c=state()
+          assert s.get('firmware')=='1.1.40' and s.get('nativeReadOnlyAcceptance') is True and s.get('online') and c.get('connected') and c.get('mtu',0)>=399
+          assert not s.get('queued'),'Queue already busy'
+          n,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          cursor=max((int(x.get('id') or 0) for x in n.get('notifications',[])),default=0)
+          keys=['nativeCatalogUnique','nativeNotificationsSeen','nativeHCINotify350','nativeHCINotify364','nativeHCINotify370','nativeHCINotify396','nativeHCINotify163','nativeHCIAclPackets','nativeHCIAclContinuations','nativeCatalogParseErrors','nativeCatalogQueueDrops']
+          def getcounts():
+              _,c=state()
+              return {k:int(c.get(k) or 0) for k in keys}
+          prev=getcounts()
+          for i,serial in enumerate([110,111,112,113,114,115],1):
+              pre,_=state()
+              assert pre.get('firmware')=='1.1.40' and pre.get('online') and (pre.get('curtain') or {}).get('connected') and pre.get('nativeReadOnlyAcceptance') is True
+              for attempt in range(20):
+                  pre,_=state()
+                  if int(pre.get('queued') or 0)==0:break
+                  time.sleep(1)
+              else:raise RuntimeError('Queue busy; stop without more reads')
+              op=2904; ddp=bytearray(20)
+              ddp[0]=240;ddp[1]=4;ddp[3]=serial;ddp[6]=op>>8;ddp[7]=op&255
+              pkt=bytes([serial,1,0,0])+ddp
+              payload={'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(pkt).decode()}
+              a,_=api('/api/curtain/call',{'action':'rawWrite','payload':payload,'idempotencyKey':'jh2-six-readonly-'+str(serial)+'-'+str(int(time.time()))},cookie=cookie)
+              cid=int(a['commandId'])
+              cmd=None
+              for _ in range(60):
+                  answer,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  cmd=answer['command']
+                  if cmd['state'] in ('applied','failed','expired','superseded'):break
+                  time.sleep(.7)
+              if cmd['state']!='applied':raise RuntimeError('Read command failed: '+json.dumps({'id':cid,'state':cmd['state']}))
+              time.sleep(5)
+              notices,_=api('/api/curtain/notifications?since='+str(cursor),cookie=cookie)
+              new=notices.get('notifications',[])
+              if new:cursor=max(cursor,*[int(x.get('id') or 0) for x in new])
+              packets=[]
+              for v in new:
+                  raw=base64.b64decode(v['data'])
+                  if len(raw)>12 and int.from_bytes(raw[10:12],'big')==2904:
+                      packets.append({'size':len(raw),'msgid':raw[0]})
+              after=getcounts()
+              delta={k:after[k]-prev[k] for k in keys if k!='nativeCatalogUnique'}
+              print('SIX_READ_SAMPLE',json.dumps({'attempt':i,'cid':cid,'packets':packets,'catalogUnique':after['nativeCatalogUnique'],'delta':delta},sort_keys=True),flush=True)
+              if after['nativeCatalogUnique']>=88 or after['nativeHCINotify370']>0 or after['nativeHCINotify396']>0:
+                  print('MISSING_GROUP_DETECTED_EARLY_STOP',flush=True);break
+              prev=after
+          print('SIX_READ_ONLY_NO_EFFECT_MUTATIONS',flush=True)
+          PY
