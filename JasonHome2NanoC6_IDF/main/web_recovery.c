@@ -10,6 +10,7 @@
 #include "bridge.h"
 #include "native_ble.h"
 #include "native_commands.h"
+#include "native_sequence.h"
 #include "nvs.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -67,6 +68,7 @@ static const char *HOME_HTML=
 "<p class='muted'>Select a matching controller slot. No full catalog required.</p>"
 "<select id='targetSlots' aria-label='Target effect slot'></select>"
 "<button onclick='playSlot()'>Play selected slot</button></section>"
+"<section class='panel'><h2>Direct Nano command lab</h2><p class='muted'>These commands go directly Nano → BLE. They do NOT pass through APK or Oracle. Compare trace IDs with the APK/Oracle trace below.</p><button onclick=\"local('status')\">Nano status</button><button onclick=\"local('read205')\">Handshake 205</button><button onclick=\"local('read167')\">Init 167</button><button onclick=\"local('read2904')\">Read target / 2904</button><p class='muted'>Live control and playback</p><button onclick=\"local('powerOn')\">On</button><button onclick=\"local('powerOff')\">Off</button><button onclick=\"local('sequenceStop')\">Stop sequence</button><p><label>Value / effect ID <input id='localValue' type='number' value='50' min='0' max='255'></label><button onclick=\"local('brightness')\">Brightness</button><button onclick=\"local('speed')\">Speed</button><button onclick=\"local('effect')\">Effect ID</button><button onclick=\"local('layout')\">Layout</button></p><p><label>Solid RGB (hex) <input id='localRgb' value='FF8800' maxlength='6'></label><button onclick=\"local('solid')\">Solid color</button></p><button onclick=\"local('nativePlay')\">Play selected CID 83928 slot</button><p><strong>Slot modification checks</strong></p><button onclick=\"local('upload')\">Upload check</button><button onclick=\"local('erase')\">Erase check</button><button onclick=\"local('restore')\">Restore check</button><p class='muted'>Destructive steps remain blocked until an unambiguous target and exact original backup are verified.</p><pre id='localTrace' class='muted' style='white-space:pre-wrap;word-break:break-word'>Ready for Nano direct test.</pre></section>"
 "<section class='panel'><h2>Management</h2>"
 "<a class='action' href='/firmware'>Firmware / recovery</a>"
 "<a class='action' href='/setup?edit=1'>Receive Oracle key / Wi-Fi settings</a>"
@@ -111,6 +113,7 @@ const post=async(path,body)=>{const r=await fetch(path,{method:'POST',"
 "async function resumeCommands(){try{const d=await post('/api/bridge/resume');"
 "document.getElementById('bleResult').textContent=d.message;await refresh();}"
 "catch(e){document.getElementById('bleResult').textContent=e.message;}}"
+"async function local(action){const pre=document.getElementById('localTrace');pre.textContent='Nano direct '+action+'…';try{const body=new URLSearchParams({action,value:document.getElementById('localValue').value,rgb:document.getElementById('localRgb').value,slot:document.getElementById('targetSlots').value});const response=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});const d=await response.json();pre.textContent='TRACE '+d.traceId+'\\nDirect Nano received: '+d.nanoReceived+'\\nBLE connected: '+d.bleConnected+'\\nGATT accepted: '+d.gattAccepted+'\\nController notices: '+d.notificationDelta+'\\nPhysical output: unverified\\nResult: '+d.message+'\\n'+JSON.stringify(d.curtain||{},null,2);await refresh();}catch(e){pre.textContent='Nano request failed before trace: '+e.message;}}"
 "refresh();setInterval(refresh,10000);</script></body></html>";
 
 static const char *SETUP_HTML=
