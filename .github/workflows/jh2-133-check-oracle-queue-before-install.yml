@@ -1,0 +1,22 @@
+name: JH2 Inspect Queue Before Signed OTA
+on:
+  push:
+    branches: [codex/jh2-native-1-1-33-web-signed-update-20261018]
+    paths: ['.github/workflows/jh2-133-check-oracle-queue-before-install.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 2
+    steps:
+      - name: Read current queued command metadata, not payload or tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec jason-home-2-web node -e '
+            const {DatabaseSync}=require("node:sqlite");
+            const db=new DatabaseSync("/data/jason-home-2.sqlite",{readOnly:true});
+            const q=db.prepare("SELECT id,action,state,created,expires FROM curtain_commands WHERE state IN (\x27queued\x27,\x27downloaded\x27) ORDER BY id LIMIT 15").all();
+            console.log("QUEUED_COMMAND_HEADERS",JSON.stringify(q));
+            db.close();
+          '
