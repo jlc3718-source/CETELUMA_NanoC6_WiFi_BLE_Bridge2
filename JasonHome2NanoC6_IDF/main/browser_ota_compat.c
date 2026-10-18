@@ -5,6 +5,7 @@
  * The factory recovery partition and original uploader are unchanged.
  */
 #include <stdint.h>
+#include "sdkconfig.h"
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
 __attribute__((used)) const char jh2_native_runtime_marker[] =
     "jason-home-2-nanoc6-runtime-v1";
