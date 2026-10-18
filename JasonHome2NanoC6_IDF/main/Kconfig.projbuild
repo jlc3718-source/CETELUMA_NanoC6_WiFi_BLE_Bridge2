@@ -14,4 +14,11 @@ menu "Jason Home 2 native runtime"
             Allow only BLE catalog/status/connect and read-only rawWrite
             205/167/2904. Reject display writes, asset playback and OTA.
             Disabling this gate requires a separate verified production build.
+    config JH2_NATIVE_BROWSER_OTA_COMPAT
+        bool "Embed original Jason Home 2 browser OTA identity and sizing"
+        default n
+        help
+            Compatibility for the existing factory browser's local
+            runtime upload. No remote signing key is used. Build-only
+            until acceptance on physical hardware.
 endmenu

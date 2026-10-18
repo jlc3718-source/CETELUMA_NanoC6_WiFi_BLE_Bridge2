@@ -1,7 +1,7 @@
-name: JH2 Native ESP-IDF Integration Audit (build only)
+name: JH2 Native ESP-IDF Browser OTA Acceptance Build
 on:
   push:
-    branches: [codex/jh2-native-espidf-integration-audit-20261017]
+    branches: [codex/jh2-native-espidf-browser-ota-20261017]
     paths:
       - 'JasonHome2NanoC6_IDF/**'
       - '.github/workflows/jh2-idf-native-integration-ci.yml'
@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         bridge: [disabled, enabled]
-    name: Native ESP32-C6 - Oracle ${{ matrix.bridge }} (no flash)
+    name: Native ESP32-C6 browser OTA - Oracle ${{ matrix.bridge }} (no flash)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -46,6 +46,8 @@ jobs:
           assert 'Native read-only acceptance: display writes and OTA disabled' in bridge
           assert 'nativeCatalogUnique' in main
           assert 'nativeCatalogComplete88' in main
+          assert '"browser_ota_compat.c"' in (app/"main/CMakeLists.txt").read_text()
+          assert "JH2_NATIVE_BROWSER_OTA_COMPAT" in config
           assert '"native_recovery.c"' in (app/"main/CMakeLists.txt").read_text()
           assert asset.index("stream_once(&job,&applied,&repeat_this,true)") < asset.index("stream_once(&job,&applied,&repeat_this,false)")
           assert "if(!verify_only && !jh2_ble_asset_packet" in asset
@@ -63,6 +65,7 @@ jobs:
         shell: bash
         run: |
           echo 'CONFIG_JH2_NATIVE_ENABLE_ORACLE=y' >> JasonHome2NanoC6_IDF/sdkconfig.defaults
+          echo 'CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y' >> JasonHome2NanoC6_IDF/sdkconfig.defaults
       - name: ESP-IDF 5.5.1 ESP32-C6 build, no flash / no publication
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -76,11 +79,23 @@ jobs:
           set -euo pipefail
           test -s JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
           sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          if [ "${{ matrix.bridge }}" = enabled ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          b=Path("JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin").read_bytes()
+          marker=b"jason-home-2-nanoc6-runtime-v1"
+          assert 0x120000 < len(b) <= 0x290000, (len(b),"Original factory runtime upload length gate")
+          assert b[0]==0xe9 and 1<=b[1]<=16, "Invalid Espressif image magic/segment count"
+          assert b[12]==13 and b[13]==0, "Factory uploader expects ESP32-C6 chip ID and zero revision"
+          assert marker in b, "Missing required Jason Home 2 runtime identity"
+          print("JH2_NATIVE_BROWSER_OTA_FACTORY_PREDICATES_PASS",len(b))
+          PY
+          fi
           echo "NO_PRODUCTION_FLASH_OR_DEPLOYMENT"
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: JH2-Native-ESP-IDF-Integration-${{ matrix.bridge }}-BUILD-ONLY
+          name: JH2-Native-ESP-IDF-BrowserOTA-${{ matrix.bridge }}-BUILD-ONLY
           path: |
             JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
             JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
