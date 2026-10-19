@@ -1,0 +1,69 @@
+name: Jason Home 2 fixed read-only image host audit
+on:
+  push:
+    branches: [codex/jh2-image-host-audit-20261019]
+    paths: ['.github/workflows/jh2-image-host-audit-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Fixed hardware and headroom measurements; no writes or device calls
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib,platform,shutil,subprocess,time
+          def run(args):
+              try:
+                  r=subprocess.run(args,capture_output=True,text=True,timeout=15)
+                  return r.stdout.strip() if r.returncode==0 else None
+              except (OSError,subprocess.TimeoutExpired):return None
+          def read(path):
+              try:return pathlib.Path(path).read_text().strip()
+              except OSError:return None
+          def limits(pid):
+              group=read('/proc/'+str(pid)+'/cgroup') or ''
+              cg=next((line.split(':',2)[2] for line in group.splitlines() if line.startswith('0::')),None)
+              if cg is None:return {'cgroupVersion':1}
+              root=pathlib.Path('/sys/fs/cgroup')/cg.lstrip('/')
+              names=['cpu.max','cpuset.cpus.effective','memory.max','memory.current','memory.peak','memory.swap.max','memory.swap.current']
+              return {'cgroupVersion':2,**{key:read(root/key) for key in names}}
+          def mem():
+              keys={'MemTotal','MemAvailable','SwapTotal','SwapFree'}
+              return {k.strip():v.strip() for k,v in (line.split(':',1) for line in (read('/proc/meminfo') or '').splitlines()) if k in keys}
+          def cpu():
+              line=(read('/proc/stat') or '').splitlines()[0].split()[1:]
+              values=[int(n) for n in line[:8]]
+              return sum(values),values[3]+values[4]
+          result={'purpose':'Jason Home 2 image-model hardware audit','readOnly':True,'architecture':platform.machine(),'kernel':platform.release(),'osRelease':read('/etc/os-release'),'logicalCpus':os.cpu_count(),'affinityCpus':len(os.sched_getaffinity(0)),'memory':mem(),'runnerLimits':limits(os.getpid()),'privileges':{'runnerUid':os.geteuid(),'sudoDocker':run(['sudo','-n','docker','version','--format','{{.Server.Version}}'])},'loadAverage':list(os.getloadavg())}
+          selected={'Architecture:','CPU(s):','On-line CPU(s) list:','Model name:','CPU max MHz:','Thread(s) per core:','Core(s) per socket:','Socket(s):','Flags:','Features:'}
+          lc=run(['lscpu','-J'])
+          result['cpuDetails']=[x for x in json.loads(lc).get('lscpu',[]) if x.get('field') in selected] if lc else None
+          disks={}
+          for path in ['/','/opt','/home/ubuntu']:
+              try:
+                  d=shutil.disk_usage(path);disks[path]={'totalBytes':d.total,'usedBytes':d.used,'freeBytes':d.free}
+              except OSError:pass
+          result['disk']=disks
+          result['gpu']=run(['nvidia-smi','--query-gpu=name,memory.total','--format=csv,noheader'])
+          pci=run(['lspci'])
+          result['displayDevices']=[s for s in (pci or '').splitlines() if any(x in s.lower() for x in ['vga','3d controller','display controller'])]
+          result['services']={}
+          for name in ['jason-home-2-web','jh2-ai-llm']:
+              fmt='{"running":{{json .State.Running}},"pid":{{.State.Pid}},"memoryLimit":{{.HostConfig.Memory}},"memorySwapLimit":{{.HostConfig.MemorySwap}},"nanoCpus":{{.HostConfig.NanoCpus}},"cpuQuota":{{.HostConfig.CpuQuota}},"cpuPeriod":{{.HostConfig.CpuPeriod}}}'
+              info=run(['sudo','-n','docker','inspect',name,'--format',fmt])
+              if not info:
+                  result['services'][name]={'readable':False};continue
+              state=json.loads(info);state['cgroup']=limits(state.pop('pid'))
+              stats=run(['sudo','-n','docker','stats','--no-stream','--format','{{json .}}',name])
+              if stats:
+                  s=json.loads(stats);state['stats']={k:s.get(k) for k in ['CPUPerc','MemUsage','MemPerc','PIDs','BlockIO']}
+              result['services'][name]=state
+          a=cpu();time.sleep(1);b=cpu()
+          result['sampleCpuBusyPercent']=round(100*(1-(b[1]-a[1])/max(1,b[0]-a[0])),2)
+          result['python']=platform.python_version()
+          result['availableTools']={n:bool(shutil.which(n)) for n in ['python3','pip3','cmake','ninja','g++','git','curl','docker']}
+          print(json.dumps(result,indent=2))
+          PY
