@@ -82,7 +82,11 @@ async function send(){
   const d=$('original').checked?delays:frames.map(()=>ms);
   report('Encoding '+frames.length+' frames for Nano cache…');
   const asset=await api('/api/curtain/assets',{name,frames:frames.map(b64),delays:d,quality,loop:$('loop').checked});
-  if(asset.bytes>163840)throw Error('Encoded local file is '+Math.ceil(asset.bytes/1024)+' KiB; reduce frames or quality to stay within Nano local cache limit.');
+  const available=Number(s.nanoLocalCacheAvailableBytes);
+  if(!Number.isInteger(available)||available<=0)
+    throw Error('Nano has not reported usable storage. No animation sent.');
+  if(asset.bytes>available)
+    throw Error('Animation requires '+(asset.bytes/1024).toFixed(1)+' KiB; Nano has '+(available/1024).toFixed(1)+' KiB available after replacing the old local animation. Reduce frame count or quality.');
   report('Prepared '+asset.bytes+' bytes. Sending one authenticated copy to Nano…');
   const command=await api('/api/curtain/call',{action:'asset',payload:{sha256:asset.sha256},idempotencyKey:crypto.randomUUID()});
   if(!command.commandId)throw Error('No Nano transfer command ID');
@@ -104,7 +108,7 @@ async function send(){
 }
 $('send').onclick=send;
 $('stop').onclick=async()=>{try{const d=await api('/api/curtain/call',{action:'assetStop',payload:{},idempotencyKey:crypto.randomUUID()});report('Stop queued on Nano · command '+d.commandId);}catch(e){report(e.message)}};
-$('refresh').onclick=async()=>{try{const s=await api('/api/curtain/status'),c=s.curtain||{};$('connected').textContent='Firmware '+(s.firmware||'?')+' · Bluetooth '+(c.connected?'connected':'offline')+' · Nano local cache '+(c.nanoLocalCacheSupported?'supported':'not yet installed');report('Local cache '+(c.nanoLocalCacheSupported?'ready':'not installed')+'.');}catch(e){report(e.message)}};
+$('refresh').onclick=async()=>{try{const s=await api('/api/curtain/status'),c=s.curtain||{};$('connected').textContent='Firmware '+(s.firmware||'?')+' · Bluetooth '+(c.connected?'connected':'offline')+' · Nano local cache '+(c.nanoLocalCacheSupported?'supported':'not yet installed');report('Nano local cache '+(c.nanoLocalCacheSupported?'ready — '+((Number(c.nanoLocalCacheAvailableBytes)||0)/1024).toFixed(1)+' KiB usable for the next animation':'not installed')+'.');}catch(e){report(e.message)}};
 window.addEventListener('load',()=>{parent.postMessage({kind:'jh2-local-test-ready'},origin);resize()});
 new ResizeObserver(resize).observe(document.body);
 </script></body></html>
