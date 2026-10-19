@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix="jh2-signed-stage-") as temporary:
     source=tmp/"server.original.mjs"
     run(["docker","cp","jason-home-2-web:/app/server.mjs",str(source)])
     original=source.read_text()
-    anchor='// JH2_SIGNED_LOCAL_153_BEGIN'
+    anchor='// JH2_SIGNED_LOCAL_152_BEGIN'
     assert original.count(anchor)==1,"Cannot isolate exact server firmware endpoint"
     marker="// JH2_SIGNED_LOCAL_153_BEGIN"
     assert marker not in original,"Local OTA handler already installed"
@@ -95,7 +95,7 @@ if(method==="GET"&&path==="/api/curtain/firmware-runtime/1.1.53.bin"&&existsSync
     # Ensure Node syntax and route scope are correct before changing live source.
     run(["docker","cp",str(patch),"jason-home-2-web:/tmp/jh2-152-server-patched.mjs"])
     run(["docker","exec","jason-home-2-web","node","--check","/tmp/jh2-152-server-patched.mjs"])
-    backup=dest/"server.before-152.mjs";shutil.copy2(source,backup)
+    backup=dest/"server.before-153.mjs";shutil.copy2(source,backup)
     changed=False
     try:
         run(["docker","cp",str(patch),"jason-home-2-web:/app/server.mjs"])
