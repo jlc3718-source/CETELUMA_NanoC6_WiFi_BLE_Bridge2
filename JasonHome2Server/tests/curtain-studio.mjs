@@ -115,3 +115,18 @@ test('AI revamp honors the user-selected subject and manual framing',()=>{
   assert.match(converter,/Object\.assign\(fields,\{framing:\$\('framing'\)\.value/);
   assert.match(converter,/userSubjectLocked=true/);
 });
+
+test('Nano Local Test tab is adjacent to Native Test and uses protected separate iframe',()=>{
+  assert.match(curtain,/subnav\.append\(oldButton,studioButton,testButton,localButton\)/);
+  assert.match(curtain,/id='jh2CurtainLocalTestTab'/);
+  assert.match(curtain,/jh2-local-test-frames/);
+  assert.match(converter,/id="sendLocalTest"/);
+  const local=read('JasonHome2Server/curtain_local_test.html');
+  const js=[...local.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
+  assert.equal(js.length,1);
+  new Script(js[0][1],{filename:'curtain_local_test.js'});
+  assert.match(local,/nanoLocalCacheSupported/);
+  assert.match(local,/Send to Nano/);
+  assert.match(server,/curtain_local_test\.html/);
+  assert.match(generator,/curtain_local_test\.html/);
+});
