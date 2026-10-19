@@ -57,3 +57,5 @@ jobs:
 # Retry preflight with idle-state diagnostics; no write without safe target catalog.
 # One-time explicit BLE reconnect and guarded 4KB test on v1.1.50.
 # Post-authorized erase: CID 83928 verified vacant, test reference 4096-byte control transfer.
+
+# v1.1.51 on-device manufacturer 4KB BLE upload reference comparison after signed OTA.
