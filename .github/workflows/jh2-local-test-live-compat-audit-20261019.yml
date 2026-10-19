@@ -1,4 +1,4 @@
-name: JH2 Local Test Live Compatibility Audit Read Only
+name: JH2 Local Test Acknowledgment Read Only Audit
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -7,37 +7,31 @@ permissions: {contents: read}
 jobs:
   audit:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 6
+    timeout-minutes: 5
     steps:
-      - name: Inspect installed UI and Oracle bridge anchors without modifying code
+      - name: Read recent test acknowledgments and acknowledgment guards without changing service or lights
         shell: bash
         run: |
           set -euo pipefail
-          sudo python3 - <<'PY'
-          import subprocess,pathlib,tempfile,json,hashlib
-          with tempfile.TemporaryDirectory() as t:
-              report={}
-              for name in ['curtain_bridge.mjs','server.mjs','web/curtain.js','web/curtain_converter.html']:
-                  dest=pathlib.Path(t)/name.replace('/','-')
-                  subprocess.run(['docker','cp','jason-home-2-web:/app/'+name,str(dest)],check=True,stdout=subprocess.DEVNULL)
-                  text=dest.read_text()
-                  candidates={
-                      'bridgeCompiler':"function compileNativeEffect(input)" in text,
-                      'bridgeRetention':"function garbageCollect()" in text,
-                      'bridgeAck':"for(const ack of (body.acks||[]).slice(0,32))" in text,
-                      'bridgeAsset':"function assetManifest(sha)" in text,
-                      'bridgeTransferStatus':"if(['asset','nativeSlotUpload'].includes(old.action)" in text,
-                      'webAllowed':"const allowed=new Set(" in text,
-                      'webStaticCsp':"frame-ancestors " in text,
-                      'webRoute':"function authenticatedRead(req,res,path)" in text,
-                      'uiSubnav':"subnav.append(oldButton,studioButton,testButton)" in text,
-                      'uiHandler':"function selectCurtainSubtab(which)" in text,
-                      'uiStudioButton':"id=\"sendLive\"" in text,
-                      'uiLocalExists':"jh2CurtainLocalTestTab" in text,
-                      'studioSender':"async function drawLive()" in text,
-                      'curtainQuality':"curtain_quality.js" in text,
-                  }
-                  report[name]={'size':len(text),'sha256':hashlib.sha256(dest.read_bytes()).hexdigest(),
-                                'markers':{k:v for k,v in candidates.items() if v}}
-              print('LIVE_CURTAIN_COMPATIBILITY',json.dumps(report,sort_keys=True),flush=True)
-          PY
+          sudo docker exec -i jason-home-2-web node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const base='http://127.0.0.1:8081';
+          const response=await fetch(base+'/api/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:process.env.JH2_UPSTREAM_TOKEN})});
+          if(!response.ok)throw Error('Existing service authentication failed');
+          const cookie=response.headers.get('set-cookie').split(';')[0];
+          const get=async path=>{const r=await fetch(base+path,{headers:{cookie}});return {http:r.status,data:await r.json()}};
+          const {data:status}=await get('/api/curtain/status');
+          console.log('CURRENT_BRIDGE',JSON.stringify({firmware:status.firmware,online:status.online,queued:status.queued,connected:status.curtain?.connected,streaming:status.relayStreaming,retainedBytes:status.assetRetention?.retainedBytes}));
+          const end=Number(status.lastCommand?.id)||0;
+          for(let id=Math.max(1,end-10);id<=end;id++){
+           const {http,data}=await get('/api/curtain/command?id='+id),c=data.command||{},r=c.result||{};
+           console.log('RECENT_COMMAND',JSON.stringify({id,http,topLevelOk:data.ok,action:c.action,state:c.state,message:r.message,error:r.error,ok:r.ok,bleTransmitted:r.bleTransmitted}));
+          }
+          const source=fs.readFileSync('/app/curtain_bridge.mjs','utf8');
+          const start=source.indexOf('for(const ack of');
+          const section=source.slice(start,start+9000);
+          for(const line of section.split('\n')){
+           if(/token|authorization|credential/i.test(line))continue;
+           if(/ack\.state|bleTransmitted|UPDATE curtain_commands SET state|const result|old\.action|SELECT state,action,payload/.test(line))console.log('ACK_GUARD',line.trim().slice(0,500));
+          }
+          JS
