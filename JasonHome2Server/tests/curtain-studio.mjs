@@ -134,7 +134,7 @@ test('Nano Local Test tab is adjacent to Native Test and uses protected separate
 
 test('Native Test has three standalone pumpkin stages and no destructive native slot uploader',()=>{
  const html=read('JasonHome2Server/curtain_native_test.html');
- const scripts=[...html.matchAll(/<script[^>]*>([\\s\\S]*?)<\\/script>/g)];
+ const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
  assert.equal(scripts.length,1,'one self-contained Native Test script');
  new Script(scripts[0][1],{filename:'curtain_native_test.js'});
  for(const id of ['preview1','preview2','preview3','send1','send2','send3'])assert.ok(html.includes('id="'+id+'"'),id);
@@ -145,7 +145,7 @@ test('Native Test has three standalone pumpkin stages and no destructive native 
 });
 test('Direct local image/GIF picker decodes WebCodecs animated frames with source delays',()=>{
  const html=read('JasonHome2Server/curtain_local_test.html');
- const scripts=[...html.matchAll(/<script[^>]*>([\\s\\S]*?)<\\/script>/g)];
+ const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
  assert.equal(scripts.length,1);
  new Script(scripts[0][1],{filename:'curtain_local_test.js'});
  assert.match(html,/id="localFile"/);
