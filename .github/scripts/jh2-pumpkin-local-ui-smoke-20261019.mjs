@@ -21,10 +21,17 @@ if(live){
  assert.ok(process.env.JH2_UPSTREAM_TOKEN,'Existing web upstream credential missing');
  const {response}=await request('/api/session',{token:process.env.JH2_UPSTREAM_TOKEN});
  cookie=response.headers.get('set-cookie')?.split(';')[0];assert.ok(cookie);
- const {data}=await request('/api/curtain/status');
- assert.ok(data.online&&data.curtain?.connected&&data.curtain.nanoLocalCacheSupported,
-  'Nano or Bluetooth is not ready for requested tab verification');
- assert.equal(Number(data.queued||0),0,'Existing command pending; verification must not interrupt it');
+ let ready=false,last;
+ for(let attempt=0;attempt<60;attempt++){
+  const {data}=await request('/api/curtain/status');last=data;
+  if(data.online&&data.curtain?.connected&&data.curtain.nanoLocalCacheSupported&&Number(data.queued||0)===0){ready=true;break}
+  if(attempt%10===0)console.log('WAITING_FOR_EXISTING_NANO_COMMANDS',JSON.stringify({
+   queued:data.queued,online:data.online,connected:data.curtain?.connected,
+   lastCommandId:data.lastCommand?.id,lastCommandState:data.lastCommand?.state}));
+  await new Promise(resolve=>setTimeout(resolve,2000));
+ }
+ assert.ok(ready,'Nano did not become ready and idle: '+JSON.stringify({queued:last?.queued,
+  online:last?.online,ble:last?.curtain?.connected}));
 }
 async function api(path,body){
  calls.push({path,body});

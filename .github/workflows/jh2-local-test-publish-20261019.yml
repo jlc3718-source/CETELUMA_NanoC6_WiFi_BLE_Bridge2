@@ -13,7 +13,7 @@ jobs:
       - name: Restore working checkout ownership
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Add pumpkin deltas to installed encoder, publish test tabs and verify Nano acknowledgments
+      - name: Publish test tabs, wait for bridge recovery and verify Nano acknowledgments
         shell: bash
         run: |
           set -euo pipefail
