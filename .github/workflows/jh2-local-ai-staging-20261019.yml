@@ -23,17 +23,12 @@ jobs:
       - name: Restore Oracle runner checkout ownership
         run: sudo -n chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Private internal network, without touching app deployment
+      - name: Determine existing shared host network and inspect access safely
         run: |
           set -euo pipefail
-          sudo -n docker inspect jh2-ai-llm >/dev/null
-          sudo -n docker network inspect jh2-local-ai-net >/dev/null 2>&1 || sudo -n docker network create jh2-local-ai-net >/dev/null
-          for container in jason-home-2-web jh2-ai-llm; do
-            if ! sudo -n docker inspect --format '{{json .NetworkSettings.Networks}}' "$container" | grep -q '"jh2-local-ai-net"'; then
-              sudo -n docker network connect jh2-local-ai-net "$container"
-            fi
-          done
-          sudo -n docker exec jason-home-2-web node -e "fetch('http://jh2-ai-llm:11434/api/tags').then(r=>r.json()).then(j=>{if(!j.models.some(m=>m.name==='qwen2.5:1.5b-instruct'))process.exit(1);console.log('ORACLE_GATEWAY_CAN_REACH_LOCAL_MODEL')})"
+          mode=$(sudo -n docker inspect -f '{{.HostConfig.NetworkMode}}' jason-home-2-web)
+          echo "GATEWAY_NETWORK_MODE=$mode"
+          sudo -n docker exec jason-home-2-web node -e "fetch('http://127.0.0.1:11434/api/tags').then(r=>r.json()).then(j=>{if(!j.models.some(m=>m.name==='qwen2.5:1.5b-instruct'))process.exit(1);console.log('ORACLE_GATEWAY_CAN_REACH_LOCAL_MODEL')})"
       - name: Exercise actual Oracle model as a pixel artist without restarting Jason Home 2
         shell: bash
         run: |
@@ -41,7 +36,7 @@ jobs:
           sudo -n docker cp JasonHome2Server/local_ai.mjs jason-home-2-web:/tmp/jh2-local-ai-stage.mjs
           sudo -n docker exec jason-home-2-web node --input-type=module -e "
             import {createLocalAI} from '/tmp/jh2-local-ai-stage.mjs';
-            const ai=createLocalAI();
+            const ai=createLocalAI({url:'http://127.0.0.1:11434'});
             if(!(await ai.status()).ok)throw Error('model unavailable');
             const started=Date.now();
             const art=await ai.art({prompt:'A bright orange jack-o-lantern, two carved triangular eyes, green stem, friendly smile, solid black background'});
