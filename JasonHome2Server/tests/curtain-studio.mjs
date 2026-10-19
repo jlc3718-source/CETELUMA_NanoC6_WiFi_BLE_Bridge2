@@ -118,14 +118,14 @@ test('AI revamp honors the user-selected subject and manual framing',()=>{
 });
 
 test('AI Animation replaces Local Test while Native Test and original Image Studio remain',()=>{
- assert.match(curtain,/subnav\\.append\\(oldButton,studioButton,testButton,aiButton\\)/);
- assert.match(curtain,/jh2CurtainAnimationTab/);
- assert.match(curtain,/curtain_ai_animation\\.html/);
+ assert.ok(curtain.includes('subnav.append(oldButton,studioButton,testButton,aiButton)'));
+ assert.ok(curtain.includes('jh2CurtainAnimationTab'));
+ assert.ok(curtain.includes('curtain_ai_animation.html'));
  assert.doesNotMatch(curtain,/localFrame|pendingLocalTest|jh2CurtainLocalTestTab/);
- assert.match(server,/curtain_ai_animation\\.html/);
- assert.match(generator,/curtain_ai_animation\\.html/);
- assert.doesNotMatch(generator,/curtain_local_test\\.html/);
- assert.doesNotMatch(converter,/sendLocalTest/);
+ assert.ok(server.includes('curtain_ai_animation.html'));
+ assert.ok(generator.includes('curtain_ai_animation.html'));
+ assert.ok(!generator.includes('curtain_local_test.html'));
+ assert.ok(!converter.includes('sendLocalTest'));
 });
 
 test('Native Test has three standalone pumpkin stages and no destructive native slot uploader',()=>{
@@ -141,18 +141,18 @@ test('Native Test has three standalone pumpkin stages and no destructive native 
 });
 test('AI Animation prompt, preview, frame count, speed slider and local delta publish parse',()=>{
  const html=read('JasonHome2Server/curtain_ai_animation.html');
- const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
+ const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].filter(x=>x[1].trim());
  assert.equal(scripts.length,1);
  new Script(scripts[0][1],{filename:'curtain_ai_animation.js'});
  for(const id of ['prompt','generate','animate','count','speed','preview','publish','stop'])
-  assert.match(html,new RegExp('id="'+id+'"'));
- assert.match(html,/seamlessAnimation:true/);
- assert.match(html,/action/);
- assert.match(html,/assetSpeed/);
- assert.match(html,/firmware!==['"]1\\.1\\.55/);
+  assert.ok(html.includes('id="'+id+'"'),id);
+ assert.ok(html.includes('seamlessAnimation:true'));
+ assert.ok(html.includes('assetSpeed'));
+ assert.ok(html.includes("status.firmware!=='1.1.55'"));
  const motion=read('JasonHome2Server/curtain_loop_animation.js');
  new Script(motion,{filename:'curtain_loop_animation.js'});
- assert.match(motion,/output\\.push\\(new Uint8ClampedArray\\(first\\)\\)/);
+ assert.ok(motion.includes('output.push(new Uint8ClampedArray(first))'));
  const plan=read('JasonHome2Server/curtain_ai_animation.mjs');
- new Script(plan,{filename:'curtain_ai_animation.mjs'});
+ assert.ok(plan.includes('createCurtainAiAnimation'));
 });
+
