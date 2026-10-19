@@ -1,0 +1,24 @@
+name: JH2 Publish Nano Local Test Beside Native Test
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-local-test-publish-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - name: Restore working checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Patch only current Curtain UI, enable local Nano playback & preserve every unrelated feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-deploy-local-test-safely-20261019.py
+          sudo -n python3 .github/scripts/jh2-deploy-local-test-safely-20261019.py
+          sudo -n docker exec jason-home-2-web grep -q jh2CurtainLocalTestTab /app/web/curtain.js
+          sudo -n docker exec jason-home-2-web grep -q 'nanoLocalCacheSupported' /app/web/curtain_local_test.html
+          echo LOCAL_TEST_UI_PUBLISHED_NO_DEVICE_WRITE
