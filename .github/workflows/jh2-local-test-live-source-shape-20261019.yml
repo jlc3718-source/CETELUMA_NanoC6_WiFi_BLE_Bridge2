@@ -1,0 +1,33 @@
+name: JH2 Local Test Live Patch Boundary Inspect
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-local-test-live-source-shape-20261019.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect only the Curtain UI and bridge patch boundaries
+        shell: bash
+        run: |
+          sudo python3 - <<'PY'
+          import tempfile,subprocess,pathlib
+          with tempfile.TemporaryDirectory() as d:
+            for path,terms in [
+              ('server.mjs',['const allowed=new Set(','frame-ancestors ','function authenticatedRead(req,res,path)']),
+              ('curtain_bridge.mjs',['function assetManifest(sha)','for(const ack of (body.acks||[]).slice(0,32))','db.prepare(\'UPDATE curtain_commands SET state=?,result=?']),
+              ('web/curtain.js',['const testButton=','subnav.append(','function selectCurtainSubtab(','const sender=','for(const frame of']),
+              ('web/curtain_converter.html',['id="sendLive"','async function drawLive()','let binWriter=','const images=','async function drawLive','sendLive\').onclick','jh2-native-test-open'])
+            ]:
+              dest=pathlib.Path(d)/path.replace('/','-')
+              subprocess.run(['docker','cp','jason-home-2-web:/app/'+path,str(dest)],check=True)
+              txt=dest.read_text().splitlines()
+              print('FILE',path,'LINES',len(txt),flush=True)
+              for term in terms:
+                matches=[(i,line) for i,line in enumerate(txt) if term in line]
+                print('MARKER',term,'COUNT',len(matches),flush=True)
+                for i,line in matches[:2]:
+                  print('LINE',i+1,line[:480].replace('token','TOKEN'),flush=True)
+          PY
