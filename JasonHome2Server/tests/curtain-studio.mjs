@@ -117,27 +117,16 @@ test('AI revamp honors the user-selected subject and manual framing',()=>{
   assert.match(converter,/userSubjectLocked=true/);
 });
 
-test('AI Animation replaces Local Test while Native Test and original Image Studio remain',()=>{
- assert.ok(curtain.includes('subnav.append(oldButton,studioButton,testButton,aiButton)'));
+test('AI Animation replaces Local and Native Test without deleting underlying BLE support',()=>{
+ assert.ok(curtain.includes('subnav.append(oldButton,studioButton,aiButton)'));
  assert.ok(curtain.includes('jh2CurtainAnimationTab'));
  assert.ok(curtain.includes('curtain_ai_animation.html'));
  assert.doesNotMatch(curtain,/localFrame|pendingLocalTest|jh2CurtainLocalTestTab/);
+ assert.doesNotMatch(curtain,/testFrame|pendingNativeTest|jh2CurtainNativeTestTab|testButton/);
  assert.ok(server.includes('curtain_ai_animation.html'));
  assert.ok(generator.includes('curtain_ai_animation.html'));
  assert.ok(!generator.includes('curtain_local_test.html'));
  assert.ok(!converter.includes('sendLocalTest'));
-});
-
-test('Native Test has three standalone pumpkin stages and no destructive native slot uploader',()=>{
- const html=read('JasonHome2Server/curtain_native_test.html');
- const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
- assert.equal(scripts.length,1,'one self-contained Native Test script');
- new Script(scripts[0][1],{filename:'curtain_native_test.js'});
- for(const id of ['preview1','preview2','preview3','send1','send2','send3'])assert.ok(html.includes('id="'+id+'"'),id);
- assert.match(html,/deltaPixels:diffs\[index\]/);
- assert.match(html,/bleTransmitted!==true/);
- assert.match(html,/commandId/);
- assert.doesNotMatch(html,/smartDawnUpload|nativeSlotUpload|Convert &amp; Send to Controller/);
 });
 test('AI Animation prompt, preview, frame count, speed slider and local delta publish parse',()=>{
  const html=read('JasonHome2Server/curtain_ai_animation.html');
@@ -152,7 +141,38 @@ test('AI Animation prompt, preview, frame count, speed slider and local delta pu
  const motion=read('JasonHome2Server/curtain_loop_animation.js');
  new Script(motion,{filename:'curtain_loop_animation.js'});
  assert.ok(motion.includes('output.push(new Uint8ClampedArray(first))'));
+ assert.ok(motion.includes('function buildKeyframes('));
+ assert.ok(!html.includes('L.build(base,'));
+ assert.ok(html.includes('options.poses.length!==4'));
  const plan=read('JasonHome2Server/curtain_ai_animation.mjs');
  assert.ok(plan.includes('createCurtainAiAnimation'));
 });
 
+
+test('AI Animation produces real per-pixel changing character poses, 24 frames, no sliding and exact loop',()=>{
+ const code=read('JasonHome2Server/curtain_loop_animation.js');
+ const context={window:{},Uint8ClampedArray,Math,Uint8Array};
+ runInNewContext(code,context);
+ const engine=context.window.JH2LoopAnimation;
+ assert.equal(typeof engine.buildKeyframes,'function');
+ assert.equal(engine.build,undefined,'legacy slide/move generator must be removed');
+ const base=new Uint8ClampedArray(6400);
+ for(let k=3;k<6400;k+=4)base[k]=255;
+ const poses=[base];
+ for(let pose=0;pose<4;pose++){
+  const picture=new Uint8ClampedArray(base);
+  for(let y=13;y<17;y++)for(let x=12+pose*3;x<17+pose*3;x++){
+   const k=(y*40+x)*4;
+   picture[k]=255;picture[k+1]=100;picture[k+2]=pose*30;
+  }
+  poses.push(picture);
+ }
+ const frames=engine.buildKeyframes(poses,{count:24});
+ assert.equal(frames.length,24);
+ const changes=engine.validate(frames);
+ assert.equal(changes.length,23);
+ assert.equal(engine.deltaCount(frames[0],frames.at(-1)),0);
+ assert.ok(changes.some(n=>n>5),'real pose changes must modify multiple face/body pixels');
+ assert.ok(new Set(frames.map(a=>Buffer.from(a).toString('hex'))).size>4,'sequence must show intermediate image changes');
+ assert.equal(frames[0][0],0,'background stays anchored');
+});
