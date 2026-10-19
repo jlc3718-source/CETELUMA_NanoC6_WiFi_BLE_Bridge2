@@ -69,7 +69,7 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
                 if(!varint(b,n,&p,&v))return false;
                 values[field]=v;
             }else if(field==8&&(tag&7)==2){
-                if(!varint(b,n,&p,&v)||v!=9||p+v>n||memcmp(b+p,"83929.eff",9))return false;
+                if(!varint(b,n,&p,&v)||v!=9||p+v>n||memcmp(b+p,"83928.eff",9))return false;
                 p+=v;path=true;
             }else return false;
         }
