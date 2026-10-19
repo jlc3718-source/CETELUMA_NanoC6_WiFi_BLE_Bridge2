@@ -45,31 +45,39 @@ static int64_t wifi_down_since=0;
 static bool sntp_started=false,mdns_started=false;
 
 static const char *HOME_HTML=
-"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Jason Home 2 Nano</title>\n<style>\n:root{colo"
-"r-scheme:dark}*{box-sizing:border-box}\nbody{font:16px system-ui,-apple-system,sans-serif;max-width:500px;margin:28px auto;padding:0 16px;background:#091624;color:#eef6ff}\nh1{font-s"
-"ize:1.65rem;margin-bottom:4px}h2{font-size:1.12rem;margin:0 0 15px}\np{line-height:1.45}.muted{color:#b9cbdc}.panel{background:#14273b;border:1px solid #35506a;border-radius:16px;pa"
-"dding:20px;margin:16px 0}\n.status{display:flex;justify-content:space-between;gap:12px;margin:12px 0}.status strong{text-align:right}\n.good{color:#7be4b6}.bad{color:#ffbaac}\n.action"
-"s{display:grid;grid-template-columns:1fr 1fr;gap:10px}\nbutton,a.action{border:1px solid #48718a;border-radius:12px;padding:14px 10px;background:#1d4d65;color:white;font:inherit;tex"
-"t-align:center;text-decoration:none;cursor:pointer}\nbutton:disabled{opacity:.45;cursor:not-allowed}\nbutton.primary{background:#0d756b;border-color:#0c8d80}\na.action{display:block;m"
-"argin-top:10px}#result,#updateResult{min-height:23px;font-size:.91rem}\n</style></head><body>\n<h1>Jason Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<section class=\""
-"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">Checking...</strong></div>\n<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Check"
-"ing...</strong></div>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" onclick=\"power('powerOn')\" disabled>ON</button>\n"
-"<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<p id=\"result\" class=\"muted\" role=\"status\"></p></section>\n<section class=\"panel\"><h2>Firmware updates</h2>\n"
-"<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"primary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div"
-">\n<a class=\"action\" href=\"/firmware\">Manual / web firmware update</a>\n<p id=\"updateResult\" class=\"muted\" role=\"status\">Automatic updates are off.</p></section>\n<script>\nconst $=id="
-">document.getElementById(id);\nasync function refresh(){\n  try{\n    const r=await fetch('/api/status',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');"
-"\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    $('version').textContent=d.version||'Unknown';\n    $('ble').textContent=connected?'Connected':'Disconnected"
-"';\n    $('ble').className=connected?'good':'bad';\n    $('on').disabled=$('off').disabled=!connected;\n  }catch(e){\n    $('version').textContent='Unavailable';\n    $('ble').textConte"
-"nt='Disconnected';\n    $('ble').className='bad';\n    $('on').disabled=$('off').disabled=true;\n  }\n}\nasync function power(action){\n  $('on').disabled=$('off').disabled=true;\n  $('re"
-"sult').textContent='Sending command...';\n  try{\n    const r=await fetch('/api/ble/local',{method:'POST',\n      headers:{'Content-Type':'application/x-www-form-urlencoded'},\n      b"
-"ody:new URLSearchParams({action})});\n    const d=await r.json();\n    if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Controller did not accept command');\n    $('result').t"
-"extContent=action==='powerOn'?'ON command accepted':'OFF command accepted';\n  }catch(e){$('result').textContent=e.message}\n  await refresh();\n}\nasync function checkUpdate(){\n  $('i"
-"nstall').disabled=true;$('updateResult').textContent='Checking signed OTA...';\n  try{\n    const r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();\n    if(!r."
-"ok||!d.available)throw Error(d.message||'No update available');\n    $('install').disabled=false;\n    $('install').textContent='Install '+d.version;\n    $('updateResult').textConten"
-"t='Signed update '+d.version+' available.';\n  }catch(e){$('updateResult').textContent=e.message}\n}\nasync function installUpdate(){\n  if($('install').disabled||!confirm('Install ver"
-"ified firmware and restart Nano now?'))return;\n  $('install').disabled=true;$('updateResult').textContent='Starting verified OTA...';\n  try{\n    const r=await fetch('/api/firmware/"
-"install',{method:'POST'}),d=await r.json();\n    if(!r.ok||!d.ok)throw Error(d.message||'OTA request failed');\n    $('updateResult').textContent='Update queued. Nano will restart in"
-"to verified updater.';\n  }catch(e){$('updateResult').textContent=e.message}\n}\nrefresh();setInterval(refresh,10000);\n</script></body></html>\n";
+"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Jason Home 2 Nano</title>\n<style>\n"
+":root{color-scheme:dark}*{box-sizing:border-box}\nbody{font:16px system-ui,-apple-system,sans-serif;max-width:500px;margin:28px auto;padding:0 16px;background:#091624;colo"
+"r:#eef6ff}\nh1{font-size:1.65rem;margin-bottom:4px}h2{font-size:1.12rem;margin:0 0 15px}\np{line-height:1.45}.muted{color:#b9cbdc}.panel{background:#14273b;border:1px solid"
+" #35506a;border-radius:16px;padding:20px;margin:16px 0}\n.status{display:flex;justify-content:space-between;gap:12px;margin:12px 0}.status strong{text-align:right}\n.good{c"
+"olor:#7be4b6}.bad{color:#ffbaac}\n.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}\nbutton,a.action{border:1px solid #48718a;border-radius:12px;padding:14px 10"
+"px;background:#1d4d65;color:white;font:inherit;text-align:center;text-decoration:none;cursor:pointer}\nbutton:disabled{opacity:.45;cursor:not-allowed}\nbutton.primary{backg"
+"round:#0d756b;border-color:#0c8d80}\na.action{display:block;margin-top:10px}#bleResult,#result,#updateResult{min-height:23px;font-size:.91rem}\n</style></head><body>\n<h1>Ja"
+"son Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<section class=\"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">"
+"Checking...</strong></div>\n<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Checking...</strong></div>\n<div class=\"actions\"><button id=\"bleConnect\" class=\"prima"
+"ry\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button>"
+"</div>\n<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" on"
+"click=\"power('powerOn')\" disabled>ON</button>\n<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<p id=\"result\" class=\"muted\" role=\"status\"></p></se"
+"ction>\n<section class=\"panel\"><h2>Firmware updates</h2>\n<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"pri"
+"mary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n<a class=\"action\" href=\"/firmware\">Manual / web firmware update</a>\n<p id=\"updateResult\" class=\"muted\""
+" role=\"status\">Automatic updates are off.</p></section>\n<script>\nconst $=id=>document.getElementById(id);\nasync function refresh(){\n  try{\n    const r=await fetch('/api/s"
+"tatus',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    $('version'"
+").textContent=d.version||'Unknown';\n    const paused=c.nativeReconnectPaused===true;\n    $('ble').textContent=connected?'Connected':paused?'Disconnected (paused)':'Discon"
+"nected / searching';\n    $('ble').className=connected?'good':'bad';\n    $('bleConnect').disabled=connected;\n    $('bleDisconnect').disabled=paused;\n    $('on').disabled=$"
+"('off').disabled=!connected;\n  }catch(e){\n    $('version').textContent='Unavailable';\n    $('ble').textContent='Disconnected';\n    $('ble').className='bad';\n    $('bleCon"
+"nect').disabled=$('bleDisconnect').disabled=true;\n    $('on').disabled=$('off').disabled=true;\n  }\n}\nasync function bluetooth(action){\n  $('bleConnect').disabled=$('bleDi"
+"sconnect').disabled=true;\n  $('bleResult').textContent=action==='connect'?'Looking for saved SmartDawn controller...':'Disconnecting Bluetooth...';\n  try{\n    const r=awa"
+"it fetch('/api/ble/'+action,{method:'POST'});\n    const d=await r.json();\n    if(!r.ok||!d.ok)throw Error(d.message||'Bluetooth request rejected');\n    $('bleResult').tex"
+"tContent=d.message||'Request accepted; checking Bluetooth status';\n  }catch(e){$('bleResult').textContent=e.message;}\n  await refresh();\n}\nasync function power(action){\n "
+" $('on').disabled=$('off').disabled=true;\n  $('result').textContent='Sending command...';\n  try{\n    const r=await fetch('/api/ble/local',{method:'POST',\n      headers:{'"
+"Content-Type':'application/x-www-form-urlencoded'},\n      body:new URLSearchParams({action})});\n    const d=await r.json();\n    if(!r.ok||!d.ok||!d.gattAccepted)throw Err"
+"or(d.message||'Controller did not accept command');\n    $('result').textContent=action==='powerOn'?'ON command accepted':'OFF command accepted';\n  }catch(e){$('result').t"
+"extContent=e.message}\n  await refresh();\n}\nasync function checkUpdate(){\n  $('install').disabled=true;$('updateResult').textContent='Checking signed OTA...';\n  try{\n    c"
+"onst r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();\n    if(!r.ok||!d.available)throw Error(d.message||'No update available');\n    $('install')."
+"disabled=false;\n    $('install').textContent='Install '+d.version;\n    $('updateResult').textContent='Signed update '+d.version+' available.';\n  }catch(e){$('updateResult"
+"').textContent=e.message}\n}\nasync function installUpdate(){\n  if($('install').disabled||!confirm('Install verified firmware and restart Nano now?'))return;\n  $('install')"
+".disabled=true;$('updateResult').textContent='Starting verified OTA...';\n  try{\n    const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();\n    if("
+"!r.ok||!d.ok)throw Error(d.message||'OTA request failed');\n    $('updateResult').textContent='Update queued. Nano will restart into verified updater.';\n  }catch(e){$('upd"
+"ateResult').textContent=e.message}\n}\nrefresh();setInterval(refresh,10000);\n</script></body></html>\n";
 
 static const char *SETUP_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -178,7 +186,10 @@ static esp_err_t ble_control_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();if(!o)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Memory");
     bool ok=false;const char *message="Unknown command";
-    if(strcmp(r->uri,"/api/ble/scan")==0){
+    if(strcmp(r->uri,"/api/ble/connect")==0){
+        ok=jh2_ble_scan_start();
+        message=ok?"BLE connection requested; scanning for previously selected SmartDawn controller":"BLE reconnect unavailable";
+    }else if(strcmp(r->uri,"/api/ble/scan")==0){
         ok=jh2_ble_scan_start();message=ok?"BLE scan requested; refresh device list":"Scan unavailable";
     }else if(strcmp(r->uri,"/api/ble/disconnect")==0){
         ok=jh2_ble_disconnect();message=ok?"BLE disconnected; scanning paused":"Disconnect request failed";
@@ -637,6 +648,7 @@ bool jh2_web_start(void){
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/curtain/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/health",.method=HTTP_GET,.handler=health_get},
+        {.uri="/api/ble/connect",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/scan",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/select",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/disconnect",.method=HTTP_POST,.handler=ble_control_post},
