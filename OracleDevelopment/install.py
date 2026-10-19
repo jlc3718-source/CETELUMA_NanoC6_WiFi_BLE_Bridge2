@@ -7,7 +7,10 @@ HOST='oracle-home-dev.150.136.245.51.sslip.io'
 SRC=pathlib.Path(__file__).parent
 SITE=pathlib.Path('/etc/nginx/sites-available/oracle-home-development')
 LINK=pathlib.Path('/etc/nginx/sites-enabled/oracle-home-development')
-def run(*a,timeout=180):return subprocess.run(a,check=True,capture_output=True,text=True,timeout=timeout).stdout
+def run(*a,timeout=180):
+ p=subprocess.run(a,capture_output=True,text=True,timeout=timeout)
+ if p.returncode:raise RuntimeError('Installation step failed: '+a[0]+' '+(p.stderr+'\n'+p.stdout)[-3500:])
+ return p.stdout
 def put(p,text,mode=0o600):p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text);p.chmod(mode)
 def nginx_reload():run('nginx','-t');run('systemctl','reload','nginx')
 def health():
@@ -20,7 +23,12 @@ def main():
  for name in ('oracle_dev.py','test_oracle_dev.py'):shutil.copyfile(SRC/name,ROOT/name);(ROOT/name).chmod(0o600)
  shutil.copyfile(SRC.parent/'JasonHome2Server/tests/curtain-simple-animation.mjs',ROOT/'curtain-simple-animation.mjs');(ROOT/'curtain-simple-animation.mjs').chmod(0o600)
  # Python dependencies are isolated from existing applications.
- if not (ROOT/'venv/bin/python').exists():run('python3','-m','venv',str(ROOT/'venv'))
+ if not (ROOT/'venv/bin/pip').exists():
+  probe=subprocess.run(['python3','-m','venv',str(ROOT/'venv')],capture_output=True,text=True)
+  if probe.returncode:
+   run('apt-get','update',timeout=180)
+   run('apt-get','install','-y','--no-install-recommends','python3-venv',timeout=180)
+   run('python3','-m','venv',str(ROOT/'venv'))
  py=str(ROOT/'venv/bin/python');run(py,'-m','pip','install','--disable-pip-version-check','tinycss2==1.4.0','certbot==5.8.0',timeout=300)
  run(py,'-m','unittest','discover','-s',str(ROOT),'-p','test_*.py',timeout=40)
  info=json.loads(run('docker','inspect','jason-home-2-web'))[0]
@@ -56,7 +64,13 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 WantedBy=multi-user.target
 ''',0o644)
  run('systemctl','daemon-reload');run('systemctl','enable','--now','oracle-home-development.service')
- with urllib.request.urlopen('http://127.0.0.1:8186/health',timeout=10) as r:assert json.load(r)['ok']
+ for attempt in range(20):
+  try:
+   with urllib.request.urlopen('http://127.0.0.1:8186/health',timeout=3) as r:assert json.load(r)['ok']
+   break
+  except Exception:
+   if attempt==19:raise
+   time.sleep(.25)
  # Use a hostname certificate because clients in this environment reject raw IP TLS.
  # The existing IP certificate, vhost and all application addresses are preserved.
  webroot=ROOT/'acme-webroot';webroot.mkdir(exist_ok=True,mode=0o755);ROOT.chmod(0o755)

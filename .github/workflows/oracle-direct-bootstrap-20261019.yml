@@ -1,4 +1,4 @@
-name: Install restricted Oracle Home Development MCP and verify automatic rollback
+name: Install Oracle Home Development prerequisites and verify scoped MCP rollback
 on:
   push:
     branches: [codex/oracle-direct-bootstrap-20261019]
