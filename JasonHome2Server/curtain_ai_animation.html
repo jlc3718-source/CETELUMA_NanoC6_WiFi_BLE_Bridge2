@@ -55,6 +55,17 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
  <button id="stop">Stop Nano animation</button>
  <p id="status" role="status">Enter a description to begin.</p>
 </section>
+<details class="card" id="animationTuning">
+ <summary style="cursor:pointer;font-weight:700">AI tuning · saved on Oracle</summary>
+ <p class="small">Adjust how AI draws and animates characters without changing code or redeploying from GitHub. Changes apply the next time you tap Generate or Animate.</p>
+ <label for="styleGuide">Artwork style guidance</label>
+ <textarea id="styleGuide" maxlength="500" rows="2" placeholder="Example: Bold chunky Minecraft-like pixel art, oversized expressive eyes"></textarea>
+ <label for="motionGuide">Frame-by-frame action guidance</label>
+ <textarea id="motionGuide" maxlength="700" rows="3" placeholder="Example: Each pose must visibly change the eyes, mouth and arms; never slide the entire character"></textarea>
+ <button id="saveGuides" class="primary">Save AI tuning on Oracle</button>
+ <button id="resetGuides">Restore default AI tuning</button>
+ <p id="guideStatus" class="small" role="status">AI tuning loads when this tab opens.</p>
+</details>
 </main>
 <script src="curtain_loop_animation.js"></script>
 <script>
@@ -203,10 +214,29 @@ $('speed').onchange=async()=>{updateSpeedLabel();if(!published)return;try{
  const result=await command('assetSpeed',{percent:speed()},30000);
  if(result.state==='applied')say('Nano playback speed updated to '+speed()+'% without retransmitting any image.');
  }catch(e){say('Speed change failed: '+e.message);}};
+async function loadGuides(){
+ const result=await api('/api/curtain/ai-animation/settings');
+ $('styleGuide').value=result.guides?.styleGuide||'';
+ $('motionGuide').value=result.guides?.motionGuide||'';
+ $('guideStatus').textContent='Saved settings loaded from Oracle.';
+}
+async function saveGuides(){
+ const button=$('saveGuides');button.disabled=true;
+ try{
+  const result=await api('/api/curtain/ai-animation/settings',{
+   styleGuide:$('styleGuide').value.trim(),motionGuide:$('motionGuide').value.trim()
+  });
+  $('guideStatus').textContent=result.ok?
+   'Saved on Oracle. New generations use this guidance immediately.':'Save failed';
+ }catch(e){$('guideStatus').textContent='Settings were not saved: '+e.message;}
+ finally{button.disabled=false;}
+}
+$('saveGuides').onclick=saveGuides;
+$('resetGuides').onclick=()=>{$('styleGuide').value='';$('motionGuide').value='';saveGuides();};
 $('generate').onclick=generate;$('animate').onclick=animate;
 $('play').onclick=play;$('pause').onclick=pause;$('publish').onclick=publish;
 $('stop').onclick=async()=>{try{await command('assetStop',{},30000);published=false;say('Nano animation stopped.');}catch(e){say('Stop failed: '+e.message);}};
-window.addEventListener('load',()=>{refresh();resize();});new ResizeObserver(resize).observe(document.body);
+window.addEventListener('load',()=>{refresh();resize();loadGuides().catch(e=>{$('guideStatus').textContent='AI tuning unavailable: '+e.message;});});new ResizeObserver(resize).observe(document.body);
 updateSpeedLabel();refresh();
 })();
 </script></body></html>
