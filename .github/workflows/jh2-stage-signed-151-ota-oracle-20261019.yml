@@ -1,0 +1,30 @@
+name: JH2 Stage Signed 1.1.51 OTA Mirror For Guarded Install
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-stage-signed-151-ota-oracle-20261019.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  mirror:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 9
+    steps:
+      - name: Fix source checkout permissions
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-1.1.51-SIGNED-MANUAL-OTA
+          run-id: 39183970227
+          github-token: ${{ github.token }}
+          path: signed-package
+      - name: Verify vendor trusted ECDSA signature, stage only OTA API routes, and check rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-151-on-oracle.py
