@@ -28,7 +28,10 @@ jobs:
           from pathlib import Path
           root=Path('JasonHome2NanoC6_IDF/main')
           src=(root/'asset_stream.c').read_text()
-          assert '#define MAX_ASSET (160U*1024U)' in src
+          assert '#define MAX_ASSET (256U*1024U)' in src
+          assert 'jh2_asset_local_available_bytes()' in src
+          assert 'CACHE_RESERVED_BYTES' in src
+          assert 'esp_littlefs_info("storage"' in src
           assert 'cache_asset_once(&job)' in src
           assert 'stream_local_once(&job' in src
           assert 'esp_littlefs_info("storage"' in src
