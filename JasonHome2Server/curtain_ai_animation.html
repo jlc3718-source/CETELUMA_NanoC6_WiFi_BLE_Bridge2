@@ -22,7 +22,7 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
 </style></head>
 <body><main>
 <h1>✨ AI Animation</h1>
-<p>Describe a simple 40×40 LED animation. Preview it first, then publish once to the Nano. The Nano stores the complete sequence and controls every frame locally.</p>
+<p>Describe a 40×40 animated character. AI will redraw its expression and body into distinct frames. Preview it first, then publish once to the Nano. The Nano stores the complete sequence and controls every frame locally.</p>
 <section class="card">
  <h2>1 · Describe and generate</h2>
  <textarea id="prompt" maxlength="400" placeholder="A smiling orange pumpkin that gently sways and winks. Solid black background, bold colors."></textarea>
@@ -38,7 +38,7 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
  <input id="count" type="range" min="4" max="24" step="1" value="24"></div>
  <div class="range"><label for="speed">Playback speed</label><output id="speedValue">100% · 160 ms/frame</output>
  <input id="speed" type="range" min="50" max="300" step="10" value="100"></div>
- <button id="animate" disabled>Animate the artwork</button>
+ <button id="animate" disabled>Animate with AI · draw 4 poses</button>
  <div class="preview">
   <canvas id="preview" width="40" height="40" aria-label="Looping animation preview"></canvas>
   <div class="side">
@@ -98,43 +98,76 @@ async function command(action,payload,timeout=60000){
  }
  throw Error('Nano command '+id+' timed out');
 }
+// Decode each independently drawn AI key pose into the same stable pixel grid.
+async function decodePose(dataUrl){
+ if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/'))
+  throw Error('AI pose did not include a picture');
+ const image=new Image();image.src=dataUrl;await image.decode();
+ const work=document.createElement('canvas');work.width=40;work.height=40;
+ const c=work.getContext('2d',{willReadFrequently:true});c.imageSmoothingEnabled=false;
+ c.fillStyle='#000';c.fillRect(0,0,40,40);
+ const size=Math.max(1,Math.min(image.width,image.height));
+ c.drawImage(image,(image.width-size)/2,(image.height-size)/2,size,size,0,0,40,40);
+ return L.quantize(c.getImageData(0,0,40,40).data,8);
+}
 async function generate(){
  if(busy)return;
  const prompt=$('prompt').value.trim();
  if(prompt.length<3){say('Describe what to draw first.');return;}
- busy=true;pause();base=null;frames=[];published=false;refresh();say('Generating pixel artwork with Cloudflare AI…');
+ busy=true;pause();base=null;frames=[];published=false;refresh();say('AI is drawing your 40×40 character…');
  try{
   const response=await api('/api/curtain/ai-animation/generate',{prompt});
-  const image=new Image();
-  image.src=response.image;
-  await image.decode();
-  const work=document.createElement('canvas');work.width=40;work.height=40;
-  const c=work.getContext('2d',{willReadFrequently:true});c.imageSmoothingEnabled=false;
-  c.fillStyle='#000';c.fillRect(0,0,40,40);
-  const size=Math.max(1,Math.min(image.width,image.height));
-  const x=(image.width-size)/2,y=(image.height-size)/2;
-  c.drawImage(image,x,y,size,size,0,0,40,40);
-  base=L.quantize(c.getImageData(0,0,40,40).data,12);
+  base=await decodePose(response.image);
   description=prompt;paint('artwork',base);paint('preview',base);
-  $('artInfo').textContent='Generated 40×40 LED pixel art. Ready to animate.';
-  $('motionInfo').textContent='Tap Animate to create your motion loop.';
-  say('Art generated. Tap Animate when the image looks good.');
+  $('artInfo').textContent='Character ready at 40×40. Animate generates NEW action poses, not sliding copies.';
+  $('motionInfo').textContent='Tap Animate to draw four different character action poses.';
+  say('Character generated. Tap Animate for actual GIF-style frames.');
  }catch(e){say('Artwork generation failed: '+e.message);}
  finally{busy=false;refresh();resize();}
 }
 async function animate(){
  if(busy||!base)return;
- busy=true;pause();frames=[];refresh();say('AI is planning a simple seamless motion…');
+ busy=true;pause();frames=[];published=false;refresh();
+ say('Asking AI to storyboard four distinct character action poses…');
  try{
   const options=await api('/api/curtain/ai-animation/motion',{prompt:description});
-  const motion=L.motions.includes(options.motion)?options.motion:L.motionForPrompt(description);
-  plan={motion,amplitude:Math.max(1,Math.min(3,Number(options.amplitude)||2))};
-  frames=L.build(base,{...plan,count:Number($('count').value)});
+  if(!Array.isArray(options.poses)||options.poses.length!==4)
+   throw Error('AI did not return four action poses');
+  // Limit concurrent Cloudflare image generations to two: avoid unnecessary
+  // rate-limit bursts while still allowing prompt-specific, independent art.
+  const poses=new Array(4);
+  let completed=0;
+  async function drawPose(index){
+   let lastError;
+   for(let attempt=0;attempt<2;attempt++){
+    try{
+     const details=options.poses[index]+(attempt?' Show an exaggerated distinct expression and silhouette.':'');
+     const generated=await api('/api/curtain/ai-animation/generate',{prompt:description,pose:details});
+     const drawn=await decodePose(generated.image);
+     if(L.deltaCount(base,drawn)<12)
+      throw Error('AI returned nearly identical pose');
+     poses[index]=drawn;
+     completed++;
+     say('Drawing GIF-style key poses: '+completed+' / 4 complete…');
+     return;
+    }catch(e){lastError=e;}
+   }
+   throw Error('AI pose '+(index+1)+' failed: '+lastError.message);
+  }
+  await Promise.all([
+   (async()=>{await drawPose(0);await drawPose(2);})(),
+   (async()=>{await drawPose(1);await drawPose(3);})()
+  ]);
+  const keyframes=[base,...poses];
+  frames=L.buildKeyframes(keyframes,{count:Number($('count').value)});
   const changes=L.validate(frames),total=changes.reduce((a,v)=>a+v,0);
-  $('motionInfo').textContent=motion+' · '+frames.length+' frames · '+total+' changed pixels across the loop';
-  say('Animation ready. Preview the motion, adjust speed, then publish.');
+  if(total<50)throw Error('Animation contains too little motion; try a more specific action description');
+  plan={poses:options.poses,method:'AI-drawn-keyframes'};
+  $('motionInfo').textContent='Four newly drawn action poses · '+frames.length+
+   ' GIF-style frames · '+total+' changed pixels · first and last identical';
+  say('Real animated frames are ready. Preview, adjust speed, and Publish.');
   play();
- }catch(e){say('Animation failed: '+e.message);}
+ }catch(e){frames=[];say('Animation generation failed: '+e.message);}
  finally{busy=false;refresh();}
 }
 async function publish(){
