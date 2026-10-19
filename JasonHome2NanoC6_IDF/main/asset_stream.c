@@ -232,7 +232,7 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
         uint16_t frames=(uint16_t)(header[4]|header[5]<<8);
         if(!frames||frames>180||header[7]>1)break;
         const bool seamless=header[7]==1;
-        if(seamless&&(!*repeat&&continued_loop || frames>24 || !header[6]))break;
+        if(seamless&&(frames>24||!header[6]))break;
         *repeat=header[6]!=0;
         bool failed=false;
         for(uint16_t f=0;f<frames&&wanted(job->generation);f++){
@@ -254,6 +254,9 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
                 if(!verify_only&&(i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
             }
             if(failed||!wanted(job->generation))break;
+            // The preceding final frame is identical to frame zero. On repeat,
+            // skip both first-frame redraw and dwell: no visible seam or pause.
+            if(!verify_only&&seamless&&continued_loop&&f==0)continue;
             if(!verify_only&&!*first_sent){
                 *first_sent=true;
                 job->ack(job->command_id,"applied",
@@ -279,6 +282,11 @@ static void run_asset(void *param){
     // The entire asset is saved to the Nano once, verified, then preflight parsed.
     bool cached=cache_asset_once(&job);
     bool verified=cached&&stream_local_once(&job,&applied,&repeat,true,false);
+    bool seamless_loop=false;
+    if(verified){
+        FILE *info=fopen(CACHE_PATH,"rb");
+        if(info){uint8_t h[8];seamless_loop=fread(h,1,8,info)==8&&h[7]==1;fclose(info);}
+    }
     if(!verified){
         failed=wanted(job.generation);
     }else{
@@ -291,7 +299,7 @@ static void run_asset(void *param){
             repeat=current_repeat;
             if(!repeat)break;
             cycle++;
-            for(int i=0;i<30&&wanted(job.generation);i++)
+            if(!seamless_loop)for(int i=0;i<30&&wanted(job.generation);i++)
                 vTaskDelay(pdMS_TO_TICKS(20));
         }
     }
