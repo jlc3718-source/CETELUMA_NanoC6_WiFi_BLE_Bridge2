@@ -1,0 +1,15 @@
+name: JH2 APK WebView Native Curtain Upload Verification
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-apk-native-transport-verification-20261019.yml']
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Run APK WebView to Oracle native upload transport tests (no physical writes)
+        run: node --test JasonHome2Server/tests/curtain-apk-native-transport.mjs
