@@ -1,4 +1,4 @@
-name: JH2 Publish Nano Local Test Beside Native Test
+name: JH2 Publish Pumpkin Native Test and Local GIF Test
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -13,12 +13,12 @@ jobs:
       - name: Restore working checkout ownership
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Patch only current Curtain UI, enable local Nano playback & preserve every unrelated feature
+      - name: Publish only pumpkin test assets, preserve existing features and verify both tabs with Nano
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/jh2-deploy-local-test-safely-20261019.py
-          sudo -n python3 .github/scripts/jh2-deploy-local-test-safely-20261019.py
+          python3 -m py_compile .github/scripts/jh2-publish-pumpkin-ui-manually-20261019.py
+          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-publish-pumpkin-ui-manually-20261019.py
           sudo -n docker exec jason-home-2-web grep -q jh2CurtainLocalTestTab /app/web/curtain.js
           sudo -n docker exec jason-home-2-web grep -q 'nanoLocalCacheSupported' /app/web/curtain_local_test.html
-          echo LOCAL_TEST_UI_PUBLISHED_NO_DEVICE_WRITE
+          echo PUMPKIN_NATIVE_AND_LOCAL_TEST_TABS_DEPLOYED_AND_VERIFIED

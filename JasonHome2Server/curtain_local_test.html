@@ -79,7 +79,7 @@ $('localFile').addEventListener('change',async event=>{
   return new Uint8Array(ctx.getImageData(0,0,40,40).data);
  };
  try{
-  const isGif=file.type==='image/gif'||/\\.gif$/i.test(file.name);
+  const isGif=file.type==='image/gif'||/\.gif$/i.test(file.name);
   if(isGif&&typeof ImageDecoder==='function'&&await ImageDecoder.isTypeSupported('image/gif')){
    const decoder=new ImageDecoder({data:new Uint8Array(await file.arrayBuffer()),type:'image/gif',preferAnimation:true});
    try{
