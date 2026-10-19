@@ -144,7 +144,8 @@ async function send(){
     report('Nano cached '+asset.bytes+' bytes locally and started playback. Physical display still requires visual confirmation.');
     return;
    }
-   if(['failed','expired','superseded'].includes(stage))throw Error(current.result?.message||'Transfer '+stage);
+   if(stage==='superseded')throw Error('Replaced by a newer curtain selection. Wait for that selection before sending again.');
+   if(['failed','expired'].includes(stage))throw Error(current.result?.message||'Transfer '+stage);
   }
   throw Error('Nano transfer did not finish within 120 seconds. Check status before retrying.');
  }catch(e){report('Local Test: '+e.message)}

@@ -89,7 +89,8 @@ async function send(index){
     status('Frame '+number+' sent: '+(index?diffs[index].length+' changed pixels':'full 40×40 image')+'. BLE write acknowledged; check curtain visually before sending the next frame.');
     return;
    }
-   if(['failed','expired','superseded'].includes(state))
+   if(state==='superseded')throw Error('Replaced by a newer curtain selection. Wait for that selection before sending again.');
+   if(['failed','expired'].includes(state))
     throw Error(cmd.result?.message||'Transfer '+state);
   }
   throw Error('No Nano confirmation within 120 seconds');

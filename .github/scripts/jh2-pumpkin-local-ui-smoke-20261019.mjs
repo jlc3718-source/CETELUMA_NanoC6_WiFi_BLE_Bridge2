@@ -9,6 +9,7 @@ import {webcrypto} from 'node:crypto';
 const live=process.argv.includes('--live'), calls=[];
 const base='http://127.0.0.1:8081';
 let cookie='',command=0;
+const commandStates=new Map();
 async function request(path,body){
  const response=await fetch(base+path,{method:body===undefined?'GET':'POST',
   headers:{'content-type':'application/json',...(cookie?{cookie}:{})},
@@ -35,7 +36,18 @@ if(live){
 }
 async function api(path,body){
  calls.push({path,body});
- if(live)return (await request(path,body)).data;
+ if(live){
+  const {data}=await request(path,body);
+  if(path==='/api/curtain/call')console.log('TAB_COMMAND_QUEUED',data.commandId);
+  if(path.startsWith('/api/curtain/command?')&&data.command){
+   const c=data.command;
+   if(commandStates.get(c.id)!==c.state){
+    commandStates.set(c.id,c.state);
+    console.log('TAB_COMMAND_STATE',JSON.stringify({id:c.id,state:c.state,bleTransmitted:c.result?.bleTransmitted,message:c.result?.message}));
+   }
+  }
+  return data;
+ }
  if(path==='/api/curtain/status')return {online:true,firmware:'1.1.54',curtain:{connected:true,nanoLocalCacheSupported:true,nanoLocalCacheAvailableBytes:256000}};
  if(path==='/api/curtain/assets')return {sha256:'a'.repeat(64),bytes:body.deltaPixels?48:2000};
  if(path==='/api/curtain/call')return {commandId:++command};
@@ -77,7 +89,7 @@ function mount(html,gifFrames=[]){
  const context={window,parent,document,location:{origin:base},ImageDecoder:Decoder,
   ResizeObserver:class{observe(){}},Uint8Array,Uint8ClampedArray,
   crypto:webcrypto,btoa:s=>Buffer.from(s,'binary').toString('base64'),
-  setTimeout:fn=>setTimeout(fn,live?100:0),console};
+  setTimeout:(fn,ms)=>setTimeout(fn,live?ms:0),console};
  const scripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
  assert.equal(scripts.length,1);vm.runInNewContext(scripts[0][1],context);
  return {node:id=>nodes.get(id),events};

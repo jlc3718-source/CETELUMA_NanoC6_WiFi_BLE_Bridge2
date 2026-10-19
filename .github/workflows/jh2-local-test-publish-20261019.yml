@@ -13,7 +13,7 @@ jobs:
       - name: Restore working checkout ownership
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Publish test tabs, wait for bridge recovery and verify Nano acknowledgments
+      - name: Publish pumpkin and GIF tabs, then verify each command through its real BLE acknowledgment
         shell: bash
         run: |
           set -euo pipefail
