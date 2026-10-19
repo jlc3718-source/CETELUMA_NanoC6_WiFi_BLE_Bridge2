@@ -1,0 +1,42 @@
+name: JH2 Nano Local GIF Cache and Local Test Regression
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths:
+      - 'JasonHome2Server/**'
+      - 'JasonHome2NanoC6_IDF/main/asset_stream.c'
+      - '.github/workflows/jh2-local-test-regression-20261019.yml'
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check Nano-local animated file rules and compile JS tests
+        run: |
+          set -euo pipefail
+          node --check JasonHome2Server/curtain.js
+          node --check JasonHome2Server/curtain_bridge.mjs
+          node --check JasonHome2Server/curtain_asset.mjs
+          node --check JasonHome2Server/server.mjs
+          node --test JasonHome2Server/tests/curtain-relay.mjs JasonHome2Server/tests/curtain-studio.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('JasonHome2NanoC6_IDF/main')
+          src=(root/'asset_stream.c').read_text()
+          assert '#define MAX_ASSET (160U*1024U)' in src
+          assert 'cache_asset_once(&job)' in src
+          assert 'stream_local_once(&job' in src
+          assert 'esp_littlefs_info("storage"' in src
+          assert 'mbedtls_sha256_finish' in src
+          assert 'unlink(CACHE_PATH)' in src and 'DIGEST_PATH' in src
+          assert 'jh2_ble_asset_packet(channel,packet,bytes)' in src
+          assert 'stream_once(&job' not in src
+          web=Path('JasonHome2Server/curtain_local_test.html').read_text()
+          assert 'nanoLocalCacheSupported' in web and 'jh2-local-test-frames' in web
+          print('NANO_LOCAL_CACHE_AND_STUDIO_SOURCE_GUARDS_OK')
+          PY
