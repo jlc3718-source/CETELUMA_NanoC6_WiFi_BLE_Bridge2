@@ -1,0 +1,79 @@
+name: JH2 Restarted SmartDawn No-Erase Read and Playback Smoke Test
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-20261019-restart-controller-smoke.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Read effect catalog and play existing reserved test CID once without upload or deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,uuid,time,base64
+          environment=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          origin='http://127.0.0.1:8081'
+          cookie=''
+          def api(path,body=None):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              data=None if body is None else json.dumps(body).encode()
+              req=urllib.request.Request(origin+path,headers=headers,data=data)
+              with urllib.request.urlopen(req,timeout=25) as response:return json.load(response),response.headers
+          _,h=api('/api/session',{'token':environment['JASON_HOME_API_TOKEN']});cookie=h['Set-Cookie'].split(';')[0]
+          def status():
+              d,_=api('/api/curtain/status')
+              c=d.get('curtain') or {}
+              targets=c.get('nativeTarget83928') or []
+              short={'fw':d.get('firmware'),'online':d.get('online'),'connected':c.get('connected'),'mtu':c.get('mtu'),'queued':d.get('queued'),'streaming':d.get('relayStreaming'),'effects':c.get('nativeCatalogUnique'),'sectionComplete':c.get('nativeTargetSectionComplete'),'targets':targets}
+              return d,c,short
+          def run(action,payload,timeout=45):
+              q,_=api('/api/curtain/call',{'action':action,'payload':payload,'idempotencyKey':'resume-guard-'+uuid.uuid4().hex})
+              command_id=q['commandId']
+              limit=time.monotonic()+timeout
+              while time.monotonic()<limit:
+                  result,_=api('/api/curtain/command?id='+str(command_id))
+                  row=result.get('command') or {}
+                  if row.get('state') in ('applied','failed','superseded','expired'):
+                      rs=row.get('result') or {}
+                      print('COMMAND',json.dumps({'id':command_id,'action':action,'state':row.get('state'),'sent':rs.get('bleTransmitted'),'message':rs.get('message')}),flush=True)
+                      if row.get('state')!='applied' or rs.get('bleTransmitted') is not True:
+                          raise RuntimeError('Controller command rejected or interrupted: '+action+' #'+str(command_id))
+                      return command_id
+                  time.sleep(1)
+              raise TimeoutError('No controller ACK: '+action+' #'+str(command_id))
+          d,c,initial=status();print('PREFLIGHT',json.dumps(initial),flush=True)
+          if initial['fw']!='1.1.50' or not initial['online'] or not initial['connected'] or initial['queued'] or initial['streaming'] or (initial['mtu'] or 0)<500:
+              raise RuntimeError('Bridge not ready: no mutation, no playback attempted')
+          # Non-destructive SmartDawn commands, original protocol: 205 -> 167 -> 2904.
+          command_uuid='01020074-1972-1925-3022-077119514e44'
+          for seq,op in enumerate((205,167,2904),start=17):
+              frame=bytearray(24);frame[0]=seq;frame[1]=1;frame[4]=240;frame[5]=4;frame[7]=seq;frame[10]=op>>8;frame[11]=op&255
+              run('rawWrite',{'uuid':command_uuid,'data':base64.b64encode(frame).decode()})
+          verified=False
+          for idx in range(12):
+              d,c,after=status()
+              if idx==0 or idx%3==0:print('INVENTORY_READ',json.dumps(after),flush=True)
+              targets=after['targets']
+              verified=after['fw']=='1.1.50' and after['online'] and after['connected'] and after['sectionComplete'] and after['effects']>=88 and len(targets)==1 and c.get('nativeTarget83928Count')==1 and targets[0].get('cid')==83928 and targets[0].get('effectId')==88 and targets[0].get('slot')==33 and not after['streaming']
+              if verified:break
+              if idx<11:time.sleep(2.5)
+          if not verified:
+              raise RuntimeError('Cannot verify sole saved CID 83928 slot 33; no upload, erase or playback attempted')
+          print('SAFE_READ_PASSED reserved CID83928 unique slot33',flush=True)
+          # One playback command only. Do not send file bytes or erase controller content.
+          played=run('nativePlay',{'cid':83928,'slot':33},timeout=60)
+          time.sleep(2)
+          d,c,end=status()
+          print('AFTER_PLAY',json.dumps(end),flush=True)
+          if not end['online'] or not end['connected']:
+              raise RuntimeError('Controller connection dropped after playback #'+str(played))
+          print('BLE_PLAYBACK_COMMAND_PASSED visual_confirmation_required',flush=True)
+          PY
