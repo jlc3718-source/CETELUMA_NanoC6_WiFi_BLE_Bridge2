@@ -9,6 +9,9 @@
 #include <ctype.h>
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_littlefs.h"
+#include <unistd.h>
+#include <sys/stat.h>
 #include "mbedtls/sha256.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,7 +19,12 @@
 
 extern const unsigned char tls_roots_pem_start[] asm("_binary_tls_roots_pem_start");
 static const char *TAG="JH2_IDF_STREAM";
-#define MAX_ASSET (4U*1024U*1024U)
+// One local persistent asset, in the existing 256KiB LittleFS partition.
+// Never touch /littlefs/secrets.json or OTA partitions.
+#define MAX_ASSET (160U*1024U)
+#define CACHE_PATH "/littlefs/curtain-local.jhc1"
+#define STAGE_PATH "/littlefs/curtain-local.tmp"
+#define DIGEST_PATH "/littlefs/curtain-local.sha"
 typedef struct {
     char endpoint[208],token[65],sha[65];
     uint32_t size,generation;
@@ -92,121 +100,177 @@ bool jh2_asset_fetch_ram(const char *endpoint,const char *token,
     if(!good){free(data);return false;}
     *out=data;return true;
 }
-// Preflight parses the exact authenticated, content-addressed Oracle blob
-// and verifies its complete SHA-256 before *any* GATT packet is transmitted.
-// A second HTTPS pass is deliberately checked again at EOF to detect changes
-// between requests. This avoids storing artwork on the constrained Nano.
-static bool stream_once(asset_job *job,bool *first_sent,bool *repeat,bool verify_only){
-    char url[370];
-    if(snprintf(url,sizeof(url),"%s/api/curtain-bridge/stream/%s",job->endpoint,job->sha)
-       >=(int)sizeof(url))return false;
-    esp_http_client_config_t cfg={
-        .url=url,.cert_pem=(const char *)tls_roots_pem_start,
-        .timeout_ms=12000,.buffer_size=2048,.buffer_size_tx=2048
-    };
+// All frames are downloaded ONCE to Nano LittleFS and verified by SHA-256.
+// Subsequent loops read only local flash. Oracle is not consulted during replay.
+static bool file_digest_ok(const char *path,const char *sha,uint32_t expected){
+    struct stat st={0};
+    if(stat(path,&st)!=0||st.st_size!=(off_t)expected)return false;
+    FILE *f=fopen(path,"rb");if(!f)return false;
+    mbedtls_sha256_context ctx;mbedtls_sha256_init(&ctx);
+    bool ok=mbedtls_sha256_starts(&ctx,0)==0;
+    uint8_t block[1024];uint32_t count=0;
+    while(ok&&count<expected){
+        size_t want=expected-count;if(want>sizeof(block))want=sizeof(block);
+        size_t n=fread(block,1,want,f);
+        if(n!=want||mbedtls_sha256_update(&ctx,block,n)!=0){ok=false;break;}
+        count+=(uint32_t)n;
+    }
+    if(ok){
+        stream_source stream={0};stream.sha=ctx;
+        ok=digest_matches(&stream,sha);
+        // digest_matches finalizes a copy; ctx is still freed below.
+    }
+    mbedtls_sha256_free(&ctx);
+    fclose(f);return ok&&count==expected;
+}
+static bool cache_asset_once(asset_job *job){
+    if(!job||job->size<8||job->size>MAX_ASSET)return false;
+    // Only a known verified on-device digest may bypass the one-time download.
+    FILE *meta=fopen(DIGEST_PATH,"rb");
+    if(meta){
+        char cached[65]={0};
+        bool same=fread(cached,1,64,meta)==64&&memcmp(cached,job->sha,64)==0;
+        fclose(meta);
+        if(same&&file_digest_ok(CACHE_PATH,job->sha,job->size)){
+            ESP_LOGI(TAG,"Reusing locally verified curtain animation (%u bytes)",(unsigned)job->size);
+            return true;
+        }
+    }
+    // One file only. Remove the old animation, never settings or other files.
+    unlink(STAGE_PATH);
+    unlink(CACHE_PATH);
+    unlink(DIGEST_PATH);
+    size_t total=0,used=0;
+    if(esp_littlefs_info("storage",&total,&used)!=ESP_OK||
+       total<used||total-used<(size_t)job->size+8192){
+        ESP_LOGE(TAG,"Insufficient free Nano LittleFS space for animation");
+        return false;
+    }
+    FILE *f=fopen(STAGE_PATH,"wb");if(!f)return false;
+    char url[370],authorization[75];bool ok=false;
+    if(snprintf(url,sizeof(url),"%s/api/curtain-bridge/stream/%s",job->endpoint,job->sha)>=(int)sizeof(url)){
+        fclose(f);unlink(STAGE_PATH);return false;
+    }
+    esp_http_client_config_t cfg={.url=url,.cert_pem=(const char*)tls_roots_pem_start,
+        .timeout_ms=12000,.buffer_size=2048,.buffer_size_tx=2048};
     esp_http_client_handle_t h=esp_http_client_init(&cfg);
-    if(!h)return false;
-    char authorization[75];
+    if(!h){fclose(f);unlink(STAGE_PATH);return false;}
     snprintf(authorization,sizeof(authorization),"Bearer %s",job->token);
     esp_http_client_set_header(h,"Authorization",authorization);
     esp_http_client_set_header(h,"X-JH2-Bridge-Token",job->token);
-    bool good=false;
-    stream_source source={.h=h,.position=0,.bytes=job->size};
-    mbedtls_sha256_init(&source.sha);
+    mbedtls_sha256_context sha;mbedtls_sha256_init(&sha);
     do{
         if(esp_http_client_open(h,0)!=ESP_OK)break;
-        int64_t n=esp_http_client_fetch_headers(h);
-        if(esp_http_client_get_status_code(h)!=200 || n!=(int64_t)job->size)break;
-        if(mbedtls_sha256_starts(&source.sha,0)!=0)break;
+        if(esp_http_client_fetch_headers(h)!=(int64_t)job->size||
+           esp_http_client_get_status_code(h)!=200)break;
+        if(mbedtls_sha256_starts(&sha,0)!=0)break;
+        uint8_t block[2048];uint32_t count=0;
+        while(count<job->size&&wanted(job->generation)){
+            size_t take=job->size-count;if(take>sizeof(block))take=sizeof(block);
+            int n=esp_http_client_read(h,(char*)block,(int)take);
+            if(n<=0||fwrite(block,1,(size_t)n,f)!=(size_t)n||
+                mbedtls_sha256_update(&sha,block,(size_t)n)!=0)break;
+            count+=(uint32_t)n;
+        }
+        if(count!=job->size||!wanted(job->generation))break;
+        stream_source stream={0};stream.sha=sha;
+        if(!digest_matches(&stream,job->sha))break;
+        if(fflush(f)!=0)break;
+        ok=true;
+    }while(0);
+    mbedtls_sha256_free(&sha);esp_http_client_close(h);esp_http_client_cleanup(h);
+    if(fclose(f)!=0)ok=false;
+    if(ok&&rename(STAGE_PATH,CACHE_PATH)!=0)ok=false;
+    if(ok){
+        FILE *digest=fopen(DIGEST_PATH,"wb");
+        if(!digest)ok=false;
+        else {
+            if(fwrite(job->sha,1,64,digest)!=64||fflush(digest)!=0)ok=false;
+            if(fclose(digest)!=0)ok=false;
+        }
+    }
+    if(!ok){unlink(STAGE_PATH);unlink(CACHE_PATH);unlink(DIGEST_PATH);}
+    return ok;
+}
+static bool local_exact(FILE *f,uint8_t *b,size_t len,uint32_t *position,uint32_t size){
+    if(!f||!b||!len||len>size-*position)return false;
+    if(fread(b,1,len,f)!=len)return false;
+    *position+=(uint32_t)len;return true;
+}
+static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool verify_only){
+    FILE *file=fopen(CACHE_PATH,"rb");if(!file)return false;
+    uint32_t position=0;bool ok=false;
+    do{
         uint8_t header[8];
-        if(!read_exact(&source,header,sizeof(header),job->generation))break;
-        if(memcmp(header,"JHC1",4)!=0)break;
+        if(!local_exact(file,header,8,&position,job->size)||memcmp(header,"JHC1",4))break;
         uint16_t frames=(uint16_t)(header[4]|header[5]<<8);
-        if(!frames||frames>180)break;
+        if(!frames||frames>180||header[7]!=0)break;
         *repeat=header[6]!=0;
-        bool fail=false;
-        for(uint16_t f=0;f<frames && wanted(job->generation);f++){
+        bool failed=false;
+        for(uint16_t f=0;f<frames&&wanted(job->generation);f++){
             uint8_t fh[6];
-            if(!read_exact(&source,fh,sizeof(fh),job->generation)){fail=true;break;}
+            if(!local_exact(file,fh,6,&position,job->size)){failed=true;break;}
             uint32_t hold=(uint32_t)fh[0]|(uint32_t)fh[1]<<8|
                 (uint32_t)fh[2]<<16|(uint32_t)fh[3]<<24;
             uint16_t packets=(uint16_t)fh[4]|((uint16_t)fh[5]<<8);
-            if(packets>5000||hold>60000){fail=true;break;}
-            for(uint16_t i=0;i<packets && wanted(job->generation);i++){
-                uint8_t packet_meta[3],packet[508];
-                if(!read_exact(&source,packet_meta,3,job->generation)){fail=true;break;}
-                uint16_t bytes=(uint16_t)packet_meta[1]|((uint16_t)packet_meta[2]<<8);
-                uint8_t channel=packet_meta[0];
+            if(packets>5000||hold<40||hold>60000){failed=true;break;}
+            for(uint16_t i=0;i<packets&&wanted(job->generation);i++){
+                uint8_t meta[3],packet[508];
+                if(!local_exact(file,meta,3,&position,job->size)){failed=true;break;}
+                uint16_t bytes=(uint16_t)meta[1]|(uint16_t)meta[2]<<8;
+                uint8_t channel=meta[0];
                 if(channel>1||!bytes||bytes>sizeof(packet)||
-                    !read_exact(&source,packet,bytes,job->generation)){fail=true;break;}
-                if(!verify_only && !jh2_ble_asset_packet(channel,packet,bytes)){
-                    fail=true;break;
-                }
-                if(!verify_only && (i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
+                   !local_exact(file,packet,bytes,&position,job->size)){failed=true;break;}
+                if(!verify_only&&!jh2_ble_asset_packet(channel,packet,bytes)){failed=true;break;}
+                if(!verify_only&&(i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
             }
-            if(fail||!wanted(job->generation))break;
-            if(!verify_only && !*first_sent){
+            if(failed||!wanted(job->generation))break;
+            if(!verify_only&&!*first_sent){
                 *first_sent=true;
                 job->ack(job->command_id,"applied",
-                    "Native ESP-IDF transmitted the first verified-format frame; physical output unconfirmed",true);
+                    "Verified animation cached on Nano; first frame sent over BLE; visual output unconfirmed",true);
             }
-            uint32_t waited=0;
-            while(!verify_only && waited<hold&&wanted(job->generation)){
-                uint32_t step=(hold-waited)>20?20:hold-waited;
-                vTaskDelay(pdMS_TO_TICKS(step?step:1));
-                waited+=step;
+            uint32_t elapsed=0;
+            while(!verify_only&&elapsed<hold&&wanted(job->generation)){
+                uint32_t step=hold-elapsed>20?20:hold-elapsed;
+                vTaskDelay(pdMS_TO_TICKS(step));elapsed+=step;
             }
         }
-        if(fail||!wanted(job->generation)||source.position!=source.bytes)break;
-        if(!digest_matches(&source,job->sha)){
-            ESP_LOGE(TAG,"Asset SHA-256 mismatch; stream rejected");
-            break;
-        }
-        good=true;
+        ok=!failed&&wanted(job->generation)&&position==job->size;
     }while(0);
-    mbedtls_sha256_free(&source.sha);
-    esp_http_client_close(h);
-    esp_http_client_cleanup(h);
-    return good;
+    fclose(file);return ok;
 }
 static void run_asset(void *param){
-    asset_job job=*(asset_job *)param;
-    free(param);
+    asset_job job=*(asset_job*)param;free(param);
     bool applied=false,repeat=false,failed=false;
-    while(wanted(job.generation)){
-        bool repeat_this=false;
-        // Authenticate and validate the WHOLE JHC1 stream first. Never send
-        // bytes from an unverified first download to the controller.
-        bool verified=stream_once(&job,&applied,&repeat_this,true);
-        if(!verified || !wanted(job.generation) ||
-           !stream_once(&job,&applied,&repeat_this,false)){
-            failed=wanted(job.generation);
-            break;
+    // The entire asset is saved to the Nano once, verified, then preflight parsed.
+    bool cached=cache_asset_once(&job);
+    bool verified=cached&&stream_local_once(&job,&applied,&repeat,true);
+    if(!verified){
+        failed=wanted(job.generation);
+    }else{
+        while(wanted(job.generation)){
+            bool current_repeat=false;
+            if(!stream_local_once(&job,&applied,&current_repeat,false)){
+                failed=wanted(job.generation);break;
+            }
+            repeat=current_repeat;
+            if(!repeat)break;
+            for(int i=0;i<30&&wanted(job.generation);i++)
+                vTaskDelay(pdMS_TO_TICKS(20));
         }
-        repeat=repeat_this;
-        if(!repeat)break;
-        // The Oracle command poller is a separate bounded task. Give it a
-        // service window at the end of every animation loop.
-        for(int i=0;i<30&&wanted(job.generation);i++)vTaskDelay(pdMS_TO_TICKS(20));
     }
     if(failed)
-        job.ack(job.command_id,"failed","Native asset stream aborted; retaining last curtain frame",false);
-    if(!applied && wanted(job.generation) && !failed)
-        job.ack(job.command_id,"failed","Native stream contained no displayed frame",false);
-    // A Stop request increments generation. The old generation check kept
-    // streaming=true forever after cancellation, rejecting every later asset.
-    // Only one stream task can exist while streaming is true, so the task
-    // that owns the slot must ALWAYS release it on exit, including Stop.
-    if(job_lock && xSemaphoreTake(job_lock,pdMS_TO_TICKS(1000))==pdTRUE){
-        streaming=false;
-        xSemaphoreGive(job_lock);
-    }else{
-        streaming=false;
-    }
-    // Do not log endpoint, token, source URLs with embedded sensitive keys,
-    // or any transferred pixel data.
-    ESP_LOGI(TAG,"Stream finished bytes=%u repeated=%d",
-             (unsigned)job.size,repeat);
+        job.ack(job.command_id,"failed",
+            cached?"Local Nano BLE playback failed; cached animation retained":
+                   "Nano local storage/download verification failed; no frame sent",false);
+    if(!applied&&!failed&&wanted(job.generation))
+        job.ack(job.command_id,"failed","Cached animation had no displayed frames",false);
+    if(job_lock&&xSemaphoreTake(job_lock,pdMS_TO_TICKS(1000))==pdTRUE){
+        streaming=false;xSemaphoreGive(job_lock);
+    }else streaming=false;
+    ESP_LOGI(TAG,"Nano local animation finished bytes=%u repeated=%d",
+        (unsigned)job.size,repeat);
     vTaskDelete(NULL);
 }
 bool jh2_asset_stream_start(const char *endpoint,const char *token,const char *sha,
