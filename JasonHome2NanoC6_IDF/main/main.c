@@ -307,6 +307,8 @@ void jh2_ble_status(cJSON *out){
     if(!cJSON_IsObject(out))return;
     cJSON_AddBoolToObject(out,"ok",true);
     cJSON_AddBoolToObject(out,"connected",connection!=BLE_HS_CONN_HANDLE_NONE);
+    cJSON_AddBoolToObject(out,"nanoLocalCacheSupported",true);
+    cJSON_AddNumberToObject(out,"nanoLocalCacheMaxBytes",160*1024);
     cJSON_AddNumberToObject(out,"mtu",connection==BLE_HS_CONN_HANDLE_NONE?23:ble_att_mtu(connection));
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
     cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
