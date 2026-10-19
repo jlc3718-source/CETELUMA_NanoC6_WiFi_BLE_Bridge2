@@ -9,6 +9,7 @@ export function validateCommand(action,p={}){
  if(!p||typeof p!=='object'||Array.isArray(p))throw fail(400,'Invalid command payload');
  if(['connect','disconnect','scan','status','sequenceStop','assetStop',
       'nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle'].includes(action))return {};
+ if(action==='assetSpeed'){if(!int(p.percent,25,300))throw fail(400,'Nano animation speed must be 25–300 percent');return {percent:p.percent};}
  if(action==='nanoAutoUpdate'){if(typeof p.enabled!=='boolean')throw fail(400,'Auto-update must be boolean');return {enabled:p.enabled};}
  if(action==='power'){const on=p.on??p.value;if(typeof on!=='boolean')throw fail(400,'Power must be boolean');return {on};}
  if(action==='brightness'||action==='speed'){if(!int(p.value,action==='brightness'?0:1,100))throw fail(400,'Value must be 0–100 (speed 1–100)');return {value:p.value};}
@@ -183,7 +184,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function enqueue(action,payload={},idempotency=null,source='manual'){
   payload=validateCommand(action,payload);if(idempotency&&!/^[\w:.-]{1,100}$/.test(idempotency))throw fail(400,'Invalid idempotency key');
   if(idempotency){const r=db.prepare('SELECT * FROM curtain_commands WHERE idempotency=?').get(idempotency);if(r)return view(r);}
-  const transient=['rawWrite','nativeSlotWrite','nativeSlotUpload','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate'].includes(action);
+  const transient=['rawWrite','nativeSlotWrite','nativeSlotUpload','subscribeRaw','scan','connect','disconnect','status','nanoInfo','nanoFirmwareCheck','nanoInstallUpdate','nanoReboot','nanoResumeOracle','nanoAutoUpdate','assetSpeed'].includes(action);
   if(['asset','nativeSlotUpload'].includes(action)&&!db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(payload.sha256))throw fail(404,'Asset is missing');
   // Existing scheduled Oracle assets remain valid after newer user artwork
   // replaces the current slot; GC separately retains all scheduled digests.
@@ -360,7 +361,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function upload(input){
   let a;try{a=input?.nativeEff!==undefined?compileNativeEffect(input):compileAsset(input);}catch(e){throw fail(413,e.message);}
   if(input?.target&&input.target!==TARGET)throw fail(400,'Unknown curtain target');
-  const metadata={format:a.format,frames:a.frames,loop:a.loop,originalBytes:a.bytes.length,nanoCached:false,...(a.native?{native:true,cid:83928}:{}),name:String(input.name||'Curtain asset').slice(0,100)};
+  const metadata={format:a.format,frames:a.frames,loop:a.loop,originalBytes:a.bytes.length,nanoCached:false,...(a.format==='jh2-nano-seamless-delta-v1'?{seamless:true,changedPixels:a.changedPixels,packetCount:a.packetCount}:{}),...(a.native?{native:true,cid:83928}:{}),name:String(input.name||'Curtain asset').slice(0,100)};
   return transaction(()=>{
    const r=slot(),sameActive=r.active_sha===a.sha256,samePending=r.pending_sha===a.sha256;
    if(!sameActive&&!samePending&&r.pending_sha){
