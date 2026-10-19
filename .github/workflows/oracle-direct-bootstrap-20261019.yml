@@ -1,4 +1,4 @@
-name: Install Oracle Home Development prerequisites and verify scoped MCP rollback
+name: Verify atomic scoped Oracle file writes and automatic deployment rollback
 on:
   push:
     branches: [codex/oracle-direct-bootstrap-20261019]

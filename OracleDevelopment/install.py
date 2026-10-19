@@ -63,7 +63,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 [Install]
 WantedBy=multi-user.target
 ''',0o644)
- run('systemctl','daemon-reload');run('systemctl','enable','--now','oracle-home-development.service')
+ run('systemctl','daemon-reload');run('systemctl','enable','oracle-home-development.service');run('systemctl','restart','oracle-home-development.service')
  for attempt in range(20):
   try:
    with urllib.request.urlopen('http://127.0.0.1:8186/health',timeout=3) as r:assert json.load(r)['ok']

@@ -47,7 +47,7 @@ class DockerProject:
     def write(self,path,data):
         # Atomic replacement within the existing container filesystem, not a shell.
         script="const fs=require('fs');const p=process.argv[1];if(fs.lstatSync(p).isSymbolicLink())throw Error('symlink');const t=p+'.oracle-dev-tmp';const s=fs.statSync(p);fs.writeFileSync(t,fs.readFileSync(0),{mode:s.mode&511});fs.chownSync(t,s.uid,s.gid);fs.renameSync(t,p);"
-        run('docker','exec','-i',self.config['container'],'node','-e',script,'/app/'+path,data=data)
+        run('docker','exec','--user','0','-i',self.config['container'],'node','-e',script,'/app/'+path,data=data)
     def restart(self):run('docker','restart',self.config['container'],timeout=70)
     def check_script(self,source,module=False):
         # Syntax checking does not execute staged JavaScript.
@@ -204,7 +204,9 @@ class Development:
         _,b=self.project(m['project'])
         for e in m['files']:
             data=(folder/'before'/e['path']).read_bytes();require(digest(data)==e['before'],'Invalid rollback backup')
-            b.write(e['path'],data)
+            current=digest(b.read(e['path']))
+            require(current in (e['before'],e['after']),'Independent production changes prevent automatic restoration')
+            if current!=e['before']:b.write(e['path'],data)
         if m['restart']:b.restart()
         self.verify(m['project'],[{**e,'after':e['before']} for e in m['files']])
         m['state']='rolled_back';m['rollbackVerified']=True;m['finished']=time.time();self.manifest(folder,m)
@@ -249,7 +251,7 @@ class Development:
         with self.locked():
             for p in (self.root/'releases').glob('*/manifest.json'):
                 m=json.loads(p.read_text())
-                if m['state'] in ('prepared','deploying'):self.restore(p.parent,m)
+                if m['state'] in ('prepared','deploying','rollback_failed'):self.restore(p.parent,m)
     def self_test(self,owner):
         path='web/curtain_loop_animation.js';_,b=self.project('jason-home-2');base=b.read(path)
         reason='Authorized harmless comment deployment and automatic rollback test'
