@@ -1,4 +1,4 @@
-name: JH2 Publish Pumpkin Native Test and Local GIF Test
+name: JH2 Publish Nano AI Animation Tab
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -6,19 +6,37 @@ on:
 permissions: {contents: read}
 concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Verify sparse frame protocol, safe web patcher, AI tab and original curtain controls
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-publish-pumpkin-ui-manually-20261019.py
+          node --check JasonHome2Server/server.mjs
+          node --check JasonHome2Server/curtain_asset.mjs
+          node --check JasonHome2Server/curtain_ai_animation.mjs
+          node --check JasonHome2Server/curtain_loop_animation.js
+          node --test JasonHome2Server/tests/curtain-relay.mjs JasonHome2Server/tests/curtain-studio.mjs
+          test ! -e JasonHome2Server/curtain_local_test.html
   publish:
+    needs: validate
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - name: Restore working checkout ownership
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Publish pumpkin and GIF tabs, then verify each command through its real BLE acknowledgment
+      - name: Deploy only AI animation changes onto installed app with verified rollback
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/jh2-publish-pumpkin-ui-manually-20261019.py
           sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-publish-pumpkin-ui-manually-20261019.py
-          sudo -n docker exec jason-home-2-web grep -q jh2CurtainLocalTestTab /app/web/curtain.js
-          sudo -n docker exec jason-home-2-web grep -q 'nanoLocalCacheSupported' /app/web/curtain_local_test.html
-          echo PUMPKIN_NATIVE_AND_LOCAL_TEST_TABS_DEPLOYED_AND_VERIFIED
+          sudo -n docker exec jason-home-2-web grep -q jh2CurtainAnimationTab /app/web/curtain.js
+          sudo -n docker exec jason-home-2-web grep -q 'seamlessAnimation:true' /app/web/curtain_ai_animation.html
+          sudo -n docker exec jason-home-2-web grep -q assetSpeed /app/curtain_bridge.mjs
+          echo AI_ANIMATION_ORACLE_UI_PUBLISHED_NO_FIRMWARE_CHANGE
