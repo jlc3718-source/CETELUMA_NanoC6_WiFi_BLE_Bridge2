@@ -58,9 +58,13 @@ before,_=api(BASE,'/api/status',token);assert before['automationOwner']=='oracle
 stage=BACK/'build';shutil.copytree(BACK/'web-app',stage)
 live=(stage/'server.mjs').read_text();src=(ROOT/'JasonHome2Server/server.mjs').read_text()
 if NATIVE_SLOT:
- expected={'curtain_bridge.mjs': 'd3a42bb3b55864011da2f70298f50b136a2cb0746410f9fa5e823a4c5f6e4fd4', 'web/curtain.js': '37d5fb7ebcabdbc3b2c8efc1825d589ad2ac1a9daa9e10acb3bffe64ab82b057', 'web/curtain_native_slot.js': '688ce1d8e9dddf600f4faa920ce9d127d09aec44e6de6a303a3ab4807bb677c4', 'web/curtain_native_test.html': '7353e86050bdc5e0cf06300e4ca1cc121de935643dc58b558412f175a2651b49'}
- for name,digest in expected.items():
-  assert hashlib.sha256((stage/name).read_bytes()).hexdigest()==digest,'Installed Curtain source changed: '+name
+ # Preserve all installed web modules and unrelated controller runtime routes.
+ # Validate patchability before taking down the production gateway.
+ current=(stage/'curtain_bridge.mjs').read_text()
+ anchor=" const bytes=Buffer.from(input.nativeEff,'base64');"
+ assert current.count(anchor)==1,'Installed compiler differs; refuse non-atomic replacement'
+ assert 'function compileNativeEffect(input)' in current,'Installed native conversion guard absent'
+ assert not (stage/'curtain_bridge.mjs').is_symlink(),'Unsupported live native module layout'
 
 if not NATIVE_SLOT:
  if 'createCurtainBridge' not in live:
@@ -133,11 +137,21 @@ assert (stage/'nano_remote.html').is_file()
 for name in ['curtain.js','curtain_converter.html','curtain_remote.js','nano_sync.js']:
  if not (stage/'web'/name).is_file():shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
 if NATIVE_SLOT:
- for name in ['curtain.js','curtain_native_slot.js','curtain_native_test.html']:
-  shutil.copyfile(ROOT/'JasonHome2Server'/name,stage/'web'/name)
- shutil.copyfile(ROOT/'JasonHome2Server/curtain_bridge.mjs',stage/'curtain_bridge.mjs')
+ # Apply ONLY the DN1FE reference recognition to the installed native compiler.
+ # No branch-source replacement: preserve every newer feature and route.
+ module=stage/'curtain_bridge.mjs';original=module.read_text()
+ anchor=" const bytes=Buffer.from(input.nativeEff,'base64');"
+ addition="""\n if(bytes.length===4096){
+  if(bytes.subarray(0,4).toString('hex')!=='444e01fe'||bytes.readUInt32LE(4)!==83928)
+   throw Error('Only original 4 KB SmartDawn DN1FE CID 83928 may use the reference upload');
+  return {bytes,format:'DN1FE',frames:1,loop:false,native:true,sha256:hash(bytes)};
+ }"""
+ assert original.count(anchor)==1,'Cannot safely patch deployed SmartDawn compiler'
+ patched=original.replace(anchor,anchor+addition,1)
+ assert len(patched)>len(original) and patched.replace(anchor+addition,anchor,1)==original
+ module.write_text(patched)
  assert (stage/'server.mjs').read_bytes()==(BACK/'web-app/server.mjs').read_bytes()
- print('Only the three Curtain web files and native RAM relay module changed; installed HTTP routes preserved.',flush=True)
+ print('Patched only original 4KB native asset validation; kept deployed Curtain UI, runtime and Eufy routes.',flush=True)
 html=stage/'web/anderson_home.html';text=html.read_text()
 if 'src="curtain_remote.js"' not in text:
  assert text.count('<script src="curtain.js"></script>')==1
@@ -218,6 +232,9 @@ try:
   request=urllib.request.Request(base+'/api/curtain-bridge/stream/'+staged_native['sha256'],headers={'X-JH2-Bridge-Token':rotated})
   with urllib.request.urlopen(request,timeout=10) as response:assert response.read()==native
   assert received_native['desired']['visual']['action']=='asset'
+  original_reference=bytearray(4096);original_reference[:4]=b'DN\\x01\\xfe';original_reference[4:8]=(83928).to_bytes(4,'little')
+  control,_=api(base,'/api/curtain/assets',cookie=cookie,body={'nativeEff':base64.b64encode(original_reference).decode()})
+  assert control['native'] and control['bytes']==4096,'Native original 4KB reference upload rejected in staging'
   print('Staged native RAM upload: exact full-file HTTP stream and transient command manifest verified.')
  assert not checked['command']['physicalPlaybackConfirmed']
  print('Staged actual HTTP API: both bridge auth headers, credential rotation, command/ACK, Oracle conversion and 4 KB digest-checked relay PASS. ACK used a simulator; physical BLE is not claimed.')
