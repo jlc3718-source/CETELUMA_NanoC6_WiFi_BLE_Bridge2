@@ -1,0 +1,58 @@
+name: JH2 Staged CPU-only Local AI Install
+on:
+  push:
+    branches: [codex/jh2-selfhosted-ai-oracle-20261019]
+    paths: ['.github/workflows/jh2-local-ai-install-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-local-ai-install-only, cancel-in-progress: false}
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 25
+    steps:
+      - name: Install isolated, limited local chat model; leave live applications untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo LOCAL_AI_STAGE_BEGIN
+          if [ "$(uname -m)" != aarch64 ]; then echo UNSUPPORTED_ARCH; exit 1; fi
+          avail_kb=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
+          disk_mb=$(df -Pm /home/ubuntu | awk 'NR==2 {print $4}')
+          if [ "$avail_kb" -lt 2600000 ] || [ "$disk_mb" -lt 11000 ]; then echo INSUFFICIENT_SAFE_CAPACITY; exit 1; fi
+          if sudo -n docker inspect jh2-ai-llm >/dev/null 2>&1; then
+            echo ALREADY_PRESENT_NO_REPLACEMENT
+          else
+            echo PULLING_OFFICIAL_OLLAMA_ARM64_CONTAINER
+            sudo -n docker pull ollama/ollama:latest
+            sudo -n docker run -d --name jh2-ai-llm --cpus=0.65 --memory=2400m --memory-swap=2400m --pids-limit=128 \
+              --security-opt=no-new-privileges --cap-drop=ALL \
+              --publish 127.0.0.1:11434:11434 --volume jh2-local-ai-models:/root/.ollama \
+              --env OLLAMA_NUM_PARALLEL=1 --env OLLAMA_MAX_LOADED_MODELS=1 \
+              --env OLLAMA_KEEP_ALIVE=0 --restart no ollama/ollama:latest
+          fi
+          for count in $(seq 1 45); do
+            if curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          if ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
+            sudo -n docker stop jh2-ai-llm || true
+            echo MODEL_SERVER_START_FAILED
+            exit 1
+          fi
+          echo PULLING_APACHE_LICENSED_QWEN25_15B
+          sudo -n docker exec jh2-ai-llm ollama pull qwen2.5:1.5b-instruct
+          echo LOCAL_MODEL_READY
+          # This does not contact Cloudflare or any paid AI service.
+          response=$(curl --silent --show-error --fail --max-time 210 \
+            http://127.0.0.1:11434/api/chat -H 'Content-Type: application/json' \
+            -d '{"model":"qwen2.5:1.5b-instruct","stream":false,"keep_alive":0,"options":{"num_predict":18,"num_ctx":512,"temperature":0},"messages":[{"role":"user","content":"Reply exactly with the word READY."}]}' \
+            ) || { sudo -n docker stop jh2-ai-llm || true; echo MODEL_GENERATION_FAILED_HALTED; exit 1; }
+          if ! printf '%s' "$response" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert isinstance(x["message"]["content"],str) and x["message"]["content"].strip()'; then
+            sudo -n docker stop jh2-ai-llm || true
+            echo MODEL_INVALID_RESPONSE_HALTED
+            exit 1
+          fi
+          echo LOCAL_GENERATION_VERIFIED
+          sudo -n docker update --restart unless-stopped jh2-ai-llm >/dev/null
+          echo LOCAL_AI_INSTALLED_WITH_CAPPED_CPU_AND_MEMORY
+          echo LIVE_CONTROLLER_AND_GATEWAY_UNMODIFIED
