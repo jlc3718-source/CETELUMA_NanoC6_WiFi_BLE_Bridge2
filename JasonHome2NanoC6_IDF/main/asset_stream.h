@@ -17,3 +17,7 @@ bool jh2_asset_fetch_ram(const char *endpoint,const char *token,
 
 // Usable bytes for the next replacement animation (measured from LittleFS).
 uint32_t jh2_asset_local_available_bytes(void);
+
+// Live runtime-only multiplier; 100 keeps stored frame delays unchanged.
+bool jh2_asset_stream_set_speed(uint16_t percent);
+uint16_t jh2_asset_stream_get_speed(void);
