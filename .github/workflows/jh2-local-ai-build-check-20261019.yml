@@ -1,0 +1,40 @@
+name: JH2 Oracle Local AI Full Build Validation
+on:
+  push:
+    branches: [codex/jh2-selfhosted-ai-oracle-20261019]
+    paths: ['.github/workflows/jh2-local-ai-build-check-20261019.yml']
+permissions: {contents: read}
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Build JH2 web assets with local provider
+        run: |
+          set -euo pipefail
+          python3 JasonHome2Server/generate_catalog.py
+          python3 JasonHome2Server/generate_web.py
+          node --check JasonHome2Server/local_ai.mjs
+          node --check JasonHome2Server/server.mjs
+          node --check JasonHome2Server/curtain_loop_animation.js
+          node --test JasonHome2Server/tests/local-ai.mjs JasonHome2Server/tests/curtain-simple-animation.mjs JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-animation-model.mjs
+      - name: Verify full HTML and generated app JS syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,subprocess
+          source=Path('JasonHome2Server/web/curtain_ai_animation.html').read_text()
+          assert 'Quick Create' in source and 'AI Chat' in source
+          assert '/api/local-ai/chat' in source
+          generated=Path('JasonHome2Server/web/anderson_home.html').read_text()
+          assert 'Oracle Self-Hosted AI' in generated
+          assert 'No daily credit limits' in generated
+          for target in (source,generated):
+            blocks=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',target,re.S|re.I)
+            for script in blocks:
+              if script.strip(): subprocess.run(['node','--check','-'],input=script,check=True,text=True)
+          print('JH2_LOCAL_AI_ALL_HTML_AND_JS_PARSE_PASS')
+          PY
