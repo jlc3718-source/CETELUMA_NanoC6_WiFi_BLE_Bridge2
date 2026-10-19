@@ -65,3 +65,5 @@ jobs:
             signed-package/SHA256SUMS-NEW.txt
           retention-days: 30
           if-no-files-found: error
+
+# Repackage after validated v1.1.52 compiled artifact appeared.
