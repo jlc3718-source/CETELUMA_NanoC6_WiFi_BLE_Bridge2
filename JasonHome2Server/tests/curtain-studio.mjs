@@ -141,7 +141,7 @@ test('Native Test has three standalone pumpkin stages and no destructive native 
 });
 test('AI Animation prompt, preview, frame count, speed slider and local delta publish parse',()=>{
  const html=read('JasonHome2Server/curtain_ai_animation.html');
- const scripts=[...html.matchAll(/<script[^>]*>([\\s\\S]*?)<\\/script>/g)];
+ const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
  assert.equal(scripts.length,1);
  new Script(scripts[0][1],{filename:'curtain_ai_animation.js'});
  for(const id of ['prompt','generate','animate','count','speed','preview','publish','stop'])
