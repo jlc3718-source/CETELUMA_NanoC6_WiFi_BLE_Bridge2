@@ -40,5 +40,5 @@ jobs:
           set -euo pipefail
           sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-publish-5x5-wink-20261019.py
           sudo -n docker exec jason-home-2-web grep -q "buildSimpleAnimation" /app/web/curtain_loop_animation.js
-          sudo -n docker exec jason-home-2-web grep -q "at most 25" /app/web/curtain_ai_animation.html
+          sudo -n docker exec jason-home-2-web grep -Fq 'if(max>25)' /app/web/curtain_ai_animation.html
           echo SIMPLE_WINK_WEB_RELEASE_VERIFIED
