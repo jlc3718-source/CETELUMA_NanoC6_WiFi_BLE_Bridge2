@@ -73,9 +73,15 @@ async function inventoryStatus(){
     entries:s.curtain?.nativeCatalogUnique};
 }
 async function readTarget(){
-  const first=await inventoryStatus();
+  let first;
+  for(let i=0;i<6;i++){
+    first=await inventoryStatus();
+    note('PREFLIGHT_STATUS',first);
+    if(first.firmware==='1.1.50'&&first.online&&first.connected&&!first.queued&&!first.streaming)break;
+    if(i<5)await sleep(2500);
+  }
   if(first.firmware!=='1.1.50'||!first.online||!first.connected||first.queued||first.streaming)
-    throw Error('Bridge no longer idle, online or running verified 1.1.50');
+    throw Error('Bridge not idle or not on confirmed v1.1.50: '+JSON.stringify(first));
   for(const [i,op] of [205,167,2904].entries())await raw(controlUuid,commandPacket(op,91+i));
   await sleep(7000);
   let s=await inventoryStatus();
