@@ -27,7 +27,7 @@ jobs:
               if len(raw)>=24 and raw[4] in (240,241):
                   op=int.from_bytes(raw[10:12],'big')
                   if 2931<=op<=2934:print('CONTROLLER_REPLY',notice['id'],op,'rcode',raw[18],'first_bytes',raw[:40].hex(),flush=True)
-          for cid in range(14834,14866):
+          for cid in range(14870,14910):
               try:result,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
               except Exception:continue
               command=result.get('command') or {}
@@ -36,4 +36,5 @@ jobs:
           print('LIVE',json.dumps({'fw':status.get('firmware'),'online':status.get('online'),'queued':status.get('queued'),'curtain':status.get('curtain')},sort_keys=True),flush=True)
           PY
 # Read-only inspection of repeat controller rejection #14834.
-# Post-install check of test CID 83928 and recent upload attempts; read-only.
+# Restarted read-only readiness verification before any controller mutations.
+
