@@ -41,6 +41,26 @@ def validate_js(path, temporary):
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
+def patch_encoder(installed, source):
+    # Production has encoder improvements absent from the branch. Insert only
+    # the new delta function and dispatch; retain every existing encoding byte.
+    start = source.index("// Sparse SmartDawn doodle update:")
+    end = source.index("export const MAX_ASSET_BYTES", start)
+    delta = source[start:end]
+    anchor = "export function compileAsset(input){\n"
+    dispatch = " if(input?.deltaPixels!==undefined)return compileSparseDelta(input);\n"
+    assert installed.count(anchor) == 1, "Unrecognized installed asset compiler"
+    for symbol in ("function maskRuns(", "const record=", "export const MAX_ASSET_BYTES", "createHash"):
+        assert symbol in installed, "Installed encoder lacks required symbol: " + symbol
+    if "function compileSparseDelta(" in installed:
+        assert delta in installed and anchor + dispatch in installed, "Different delta compiler already installed"
+        return installed
+    assert installed.count("export const MAX_ASSET_BYTES") == 1
+    result = installed.replace("export const MAX_ASSET_BYTES", delta + "export const MAX_ASSET_BYTES", 1)
+    result = result.replace(anchor, anchor + dispatch, 1)
+    assert result.replace(delta, "", 1).replace(dispatch, "", 1) == installed
+    return result
+
 def api(path, token):
     req = urllib.request.Request("http://127.0.0.1:8080" + path,
                                  headers={"Authorization": "Bearer " + token})
@@ -83,6 +103,7 @@ def main():
             p = ROOT / source
             assert p.is_file(), source
             validate_js(p, t)
+        prepared = {destination: ROOT / source for source, destination in FILES.items()}
         # Backup every original before writing any production byte.
         backups = {}
         for destination in (*FILES.values(), ROUTE):
@@ -90,14 +111,12 @@ def main():
             target = release / ("backup_" + safe)
             run("docker", "cp", f"{CONTAINER}:/app/{destination}", str(target))
             backups[destination] = target
-        # Refuse to overwrite encoder changes absent from this reviewed update.
+        # Preserve all installed encoder features absent from the branch.
         encoder = (ROOT / "JasonHome2Server/curtain_asset.mjs").read_text()
-        old_encoder = re.sub(r"// Sparse SmartDawn doodle update:.*?(?=export const MAX_ASSET_BYTES)",
-                             "", encoder, count=1, flags=re.S)
-        old_encoder = old_encoder.replace(
-            " if(input?.deltaPixels!==undefined)return compileSparseDelta(input);\n", "", 1)
-        assert backups["curtain_asset.mjs"].read_text() in (encoder, old_encoder), \
-            "Installed encoder has unrelated changes: refusing to overwrite"
+        staged_encoder = t / "curtain_asset.mjs"
+        staged_encoder.write_text(patch_encoder(backups["curtain_asset.mjs"].read_text(), encoder))
+        validate_js(staged_encoder, t)
+        prepared["curtain_asset.mjs"] = staged_encoder
         untouched = ["server.mjs", "curtain_bridge.mjs", "web/curtain_converter.html",
                      "web/anderson_home.html", "web/curtain_remote.js"]
         unchanged = {}
@@ -120,8 +139,8 @@ def main():
         routefile.write_text(updated)
         validate_js(routefile, t)
         try:
-            for source, destination in FILES.items():
-                run("docker", "cp", str(ROOT / source), f"{CONTAINER}:/app/{destination}")
+            for destination, source in prepared.items():
+                run("docker", "cp", str(source), f"{CONTAINER}:/app/{destination}")
             if updated != route:
                 run("docker", "cp", str(routefile), f"{CONTAINER}:/app/{ROUTE}")
             run("docker", "restart", CONTAINER)
@@ -140,10 +159,10 @@ def main():
             for destination, marker in checks:
                 current = run("docker", "exec", CONTAINER, "cat", "/app/" + destination).stdout
                 assert marker in current, f"Production verification failed: {destination}"
-            for source, destination in FILES.items():
+            for destination, source in prepared.items():
                 current = t / ("verify_" + destination.replace("/", "__"))
                 run("docker", "cp", f"{CONTAINER}:/app/{destination}", str(current))
-                assert digest(current) == digest(ROOT / source), "Deployed source digest differs"
+                assert digest(current) == digest(source), "Deployed source digest differs"
             for name, original in unchanged.items():
                 assert run("docker", "exec", CONTAINER, "sha256sum", "/app/" + name).stdout == original, \
                     "Unrelated source changed: " + name
@@ -162,7 +181,7 @@ def main():
             (release / "verified.json").write_text(json.dumps({
                 "source": revision, "healthy": True, "unrelatedFeaturesPreserved": True,
                 "rollbackFiles": {key: digest(value) for key, value in backups.items()},
-                "files": {key: digest(ROOT / key) for key in FILES},
+                "files": {key: digest(value) for key, value in prepared.items()},
             }, indent=2) + "\n")
             verified = sorted((p for p in releases.iterdir() if (p / "verified.json").is_file()), reverse=True)
             for obsolete in verified[2:]:
