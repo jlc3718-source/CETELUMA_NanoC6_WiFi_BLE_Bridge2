@@ -35,6 +35,13 @@ export function validateCommand(action,p={}){
 function compileNativeEffect(input){
  if(typeof input.nativeEff!=='string'||!input.nativeEff.length||input.nativeEff.length>174764||!/^[A-Za-z0-9+/]+={0,2}$/.test(input.nativeEff))throw Error('Invalid native file encoding or RAM limit');
  const bytes=Buffer.from(input.nativeEff,'base64');
+ // Dedicated reference-control path: the original SmartDawn 4096-byte DN1FE
+ // file is accepted only for reserved CID 83928, never for a factory CID.
+ if(bytes.length===4096){
+  if(bytes.subarray(0,4).toString('hex')!=='444e01fe'||bytes.readUInt32LE(4)!==83928)
+   throw Error('Only original 4 KB SmartDawn DN1FE CID 83928 may use the reference upload');
+  return {bytes,format:'DN1FE',frames:1,loop:false,native:true,sha256:hash(bytes)};
+ }
  if(bytes.length<8192||bytes.length>131072)throw Error('Native effect exceeds the 128 KB Nano RAM limit');
  const format=bytes.subarray(0,4).toString('ascii');
  if(!['DNMX','DNCX'].includes(format)||bytes[4]!==3||bytes[5]!==1||bytes.readUInt16LE(6)!==40||bytes.readUInt16LE(8)!==40||bytes.readUInt32LE(10)!==4800||bytes.readUInt32LE(14)!==83928)throw Error('Native effect must be SmartDawn v3 40×40 CID 83928');
