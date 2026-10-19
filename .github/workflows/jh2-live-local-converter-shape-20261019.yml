@@ -1,0 +1,31 @@
+name: JH2 Live Studio Local Test Converter Shape
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-live-local-converter-shape-20261019.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read-only inspect existing Studio and iframe sections
+        run: |
+          sudo python3 - <<'PY'
+          import subprocess,tempfile,pathlib
+          with tempfile.TemporaryDirectory() as d:
+           for path,sections in [
+            ('web/curtain_converter.html',[(1,100),(400,558)]),
+            ('web/curtain.js',[(30,118)]),
+            ('server.mjs',[(937,953)])]:
+            q=pathlib.Path(d)/path.replace('/','-')
+            subprocess.run(['docker','cp','jason-home-2-web:/app/'+path,str(q)],check=True,stdout=subprocess.DEVNULL)
+            lines=q.read_text().splitlines()
+            print('====',path,'====',flush=True)
+            for a,b in sections:
+             print('BLOCK',a,b,flush=True)
+             for i in range(a-1,min(b,len(lines))):
+              row=lines[i]
+              if 'Bearer ' in row or 'JASON_HOME_API_TOKEN' in row:continue
+              print(i+1,row[:450],flush=True)
+          PY
