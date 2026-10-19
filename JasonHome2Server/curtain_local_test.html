@@ -15,6 +15,7 @@ button,input{touch-action:manipulation}canvas{width:160px;height:160px;image-ren
 </style></head><body><main>
 <h1>Local Test</h1>
 <p class="sub">Transfer your 40×40 animation once through Oracle to the Nano. The Nano caches it locally and sends each frame to SmartDawn; no controller slot is overwritten.</p>
+<section class="card"><h2>Load image or GIF</h2><label>Choose image or animated GIF<input id="localFile" type="file" accept="image/*,.gif"></label><p class="sub" id="loadStatus">Select a file here, or send prepared frames from Image / GIF Studio.</p></section>
 <section class="card"><h2>Prepared animation</h2>
 <div class="row"><canvas id="preview" width="40" height="40" aria-label="40 by 40 prepared animation preview"></canvas>
 <div><strong id="title">No animation selected</strong><p class="sub" id="details">In Image / GIF Studio, choose an image or GIF and select Send to Local Test.</p></div></div>
@@ -64,6 +65,24 @@ function receive(event){
  report('Prepared '+frames.length+' frame(s). Ready to transfer once to Nano.');resize();
 }
 window.addEventListener('message',receive);
+$('localFile').addEventListener('change',async event=>{
+ const file=event.target.files?.[0];if(!file)return;
+ const status=$('loadStatus');status.textContent='Decoding '+file.name+'…';
+ try{
+  const bitmap=await createImageBitmap(file);
+  const canvas=document.createElement('canvas');canvas.width=40;canvas.height=40;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.clearRect(0,0,40,40);
+  const scale=Math.min(40/bitmap.width,40/bitmap.height);
+  const w=Math.max(1,Math.round(bitmap.width*scale)),h=Math.max(1,Math.round(bitmap.height*scale));
+  ctx.drawImage(bitmap,(40-w)/2,(40-h)/2,w,h);bitmap.close();
+  const rgba=new Uint8Array(ctx.getImageData(0,0,40,40).data);
+  receive({origin,source:parent,data:{kind:'jh2-local-test-frames',frames:[rgba],delays:[120],quality:'pal8',name:file.name}});
+  status.textContent='Image loaded. Press Send to Nano & play.';
+  if(file.type==='image/gif'||/\.gif$/i.test(file.name))
+   status.textContent='GIF first frame loaded. For full animated GIF frames, use Image / GIF Studio → Local Test.';
+ }catch(e){status.textContent='Cannot decode image: '+e.message;}
+});
 async function api(path,body){
  if(typeof parent.JH2CurtainApi!=='function')throw Error('Open Local Test from Jason Home 2.');
  return parent.JH2CurtainApi(path,body);
