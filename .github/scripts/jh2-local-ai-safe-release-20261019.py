@@ -109,7 +109,7 @@ def main():
   for name,source in originals.items():(release/name).write_text(source)
   module_path="/app/local_ai.mjs"
   old_module=d/"old_local_ai.mjs"
-  module_existed=command("docker","exec",CONTAINER,"test","-e",module_path).returncode==0
+  module_existed=subprocess.run(["docker","exec",CONTAINER,"test","-e",module_path],capture_output=True).returncode==0
   if module_existed:cp_out(module_path,old_module);shutil.copy(old_module,release/"local_ai.mjs")
   changed=False
   try:
