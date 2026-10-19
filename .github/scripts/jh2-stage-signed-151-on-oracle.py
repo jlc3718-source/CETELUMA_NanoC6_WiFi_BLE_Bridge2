@@ -6,8 +6,10 @@ import base64, hashlib, json, os, pathlib, shutil, subprocess, tempfile, time, u
 
 def run(cmd,**kw):
     return subprocess.run(cmd,check=True,text=True,**kw)
-def get_json(url):
-    with urllib.request.urlopen(url,timeout=18) as reply:return json.load(reply)
+def get_json(url,cookie=""):
+    headers={"Cookie":cookie} if cookie else {}
+    request=urllib.request.Request(url,headers=headers)
+    with urllib.request.urlopen(request,timeout=18) as reply:return json.load(reply)
 version="1.1.51"
 package=pathlib.Path(os.environ["GITHUB_WORKSPACE"],"signed-package")
 binary=package/f"jh2-runtime-{version}.bin"
@@ -30,7 +32,16 @@ with tempfile.TemporaryDirectory(prefix="jh2-signed-stage-") as temporary:
          str(pathlib.Path(os.environ["GITHUB_WORKSPACE"],"remote-update/anderson_ota_signing_public.pem")),
          "-signature",str(tmp/"signature"),str(tmp/"payload")])
     # Confirm production resources and empty queue before any server staging.
-    state=get_json("http://127.0.0.1:8081/api/curtain/status")
+    bridge=json.loads(subprocess.check_output(["docker","inspect","jason-home"],text=True))[0]
+    environment=dict(x.split("=",1) for x in bridge["Config"]["Env"] if "=" in x)
+    credentials=json.dumps({"token":environment["JASON_HOME_API_TOKEN"]}).encode()
+    request=urllib.request.Request("http://127.0.0.1:8081/api/session",data=credentials,
+      headers={"content-type":"application/json"},method="POST")
+    with urllib.request.urlopen(request,timeout=18) as response:
+        response.read()
+        cookie=response.headers["Set-Cookie"].split(";")[0]
+    assert cookie.startswith("jh2=")
+    state=get_json("http://127.0.0.1:8081/api/curtain/status",cookie)
     assert state.get("firmware") in ("1.1.50","1.1.51")
     assert state.get("online") is True and int(state.get("queued",0) or 0)==0
     if state["firmware"]=="1.1.51":
