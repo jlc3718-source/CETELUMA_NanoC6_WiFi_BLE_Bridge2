@@ -1,4 +1,4 @@
-name: JH2 Publish Real AI GIF Animation
+name: JH2 Fix AI Animation Cloudflare Input
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -8,38 +8,33 @@ concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Check four AI-drawn key poses and secure production publisher
+      - name: Verify FLUX supported input and animation model
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/jh2-publish-gif-keyposes-20261019.py
-          node --check JasonHome2Server/curtain.js
+          python3 -m py_compile .github/scripts/jh2-deploy-animation-flux-schema-fix-20261019.py
           node --check JasonHome2Server/curtain_ai_animation.mjs
-          node --check JasonHome2Server/curtain_loop_animation.js
-          node --check JasonHome2Server/curtain_asset.mjs
+          node --test JasonHome2Server/tests/curtain-animation-model.mjs
           node --test JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
-          test ! -e JasonHome2Server/curtain_native_test.html
   publish:
     needs: validate
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - name: Restore working checkout ownership
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Install only AI animation web code and remove obsolete Native UI
+      - name: Patch only existing Cloudflare AI module and verify service
         shell: bash
         run: |
           set -euo pipefail
-          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-publish-gif-keyposes-20261019.py
-          sudo -n docker exec jason-home-2-web grep -q buildKeyframes /app/web/curtain_ai_animation.html
-          sudo -n docker exec jason-home-2-web grep -q 'poses.length!==4' /app/web/curtain_ai_animation.html
-          sudo -n docker exec jason-home-2-web grep -q 'jh2CurtainAnimationTab' /app/web/curtain.js
-          if sudo -n docker exec jason-home-2-web grep -q 'jh2CurtainNativeTestTab' /app/web/curtain.js; then
-            echo "NATIVE_UI_STILL_PRESENT"; exit 1
+          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-deploy-animation-flux-schema-fix-20261019.py
+          sudo -n docker exec jason-home-2-web grep -q 'AI-drawn-keyframes' /app/curtain_ai_animation.mjs
+          if sudo -n docker exec jason-home-2-web grep -q 'seed:' /app/curtain_ai_animation.mjs; then
+            echo "UNSUPPORTED_SEED_STILL_PRESENT"; exit 1
           fi
-          echo REAL_AI_CHARACTER_GIF_ANIMATION_PUBLISHED
+          echo AI_ANIMATION_GENERATION_HOTFIX_VERIFIED
