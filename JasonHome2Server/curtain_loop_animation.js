@@ -31,37 +31,104 @@ function quantize(source,colors=12){
  }
  return result;
 }
-// Four Cloudflare-drawn key poses create a real animated character. No whole
-// image slide, pan, bounce, or affine transform is used to fake animation.
-// Bayer-order transitions change only the pixels that differ between poses.
-function buildKeyframes(keyframes,{count=24}={}){
- if(!Array.isArray(keyframes)||keyframes.length<3||keyframes.length>8)
-  throw Error('AI needs at least three different key poses');
- if(!Number.isInteger(count)||count<4||count>24)
-  throw Error('Frame count must be 4–24');
- for(const pose of keyframes)
-  if(!pose||pose.length!==COUNT*4)throw Error('Key pose must contain 40x40 RGBA pixels');
- const first=new Uint8ClampedArray(keyframes[0]);
- const poses=[...keyframes,first],output=[];
- // Ordered transition threshold is spatially distributed to avoid ghosting
- // and avoid expensive full-frame RGB blending on the Nano/controller.
- const bayer=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
- for(let frameIndex=0;frameIndex<count-1;frameIndex++){
-  if(frameIndex===0){output.push(new Uint8ClampedArray(first));continue;}
-  const cycle=frameIndex/(count-1)*(poses.length-1);
-  const index=Math.min(poses.length-2,Math.floor(cycle));
-  const t=cycle-index,from=poses[index],to=poses[index+1];
-  const result=new Uint8ClampedArray(COUNT*4);
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-   const p=y*W+x,k=p*4;
-   const noise=bayer[(y&3)*4+(x&3)]/16;
-   const chosen=t>noise?to:from;
-   result[k]=chosen[k];result[k+1]=chosen[k+1];result[k+2]=chosen[k+2];result[k+3]=255;
-  }
-  output.push(result);
+// Proven three-frame wink pattern: original image -> tiny pixel edit -> original.
+// A 40x40 base image is never AI-regenerated to create animation. Changed
+// patches are at most 5x5 pixels, so every Nano delta is at most 25 RGB pixels.
+function subjectBox(base){
+ let minX=W,minY=H,maxX=-1,maxY=-1,n=0;
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  const i=(y*W+x)*4;
+  if(Math.max(base[i],base[i+1],base[i+2])<38)continue;
+  minX=Math.min(minX,x);minY=Math.min(minY,y);
+  maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);n++;
  }
- output.push(new Uint8ClampedArray(first));
- return output;
+ if(n<25)throw Error('Artwork has too few visible pixels to animate');
+ return {x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1};
+}
+function bodyColor(base,box){
+ // Reuse the most common original bright subject color, never invent a new
+ // palette or repaint the character or its background.
+ const histogram=new Map();
+ for(let y=box.y;y<box.y+box.h;y++)for(let x=box.x;x<box.x+box.w;x++){
+  const i=(y*W+x)*4,r=base[i],g=base[i+1],b=base[i+2];
+  if(Math.max(r,g,b)<65)continue;
+  const key=(r>>4)<<8|(g>>4)<<4|(b>>4);
+  const e=histogram.get(key)||{n:0,r:0,g:0,b:0};
+  e.n++;e.r+=r;e.g+=g;e.b+=b;histogram.set(key,e);
+ }
+ const dominant=[...histogram.values()].sort((a,b)=>b.n-a.n)[0];
+ if(!dominant)throw Error('Cannot find a visible color to restore');
+ return [Math.round(dominant.r/dominant.n),
+         Math.round(dominant.g/dominant.n),
+         Math.round(dominant.b/dominant.n)];
+}
+function patchRect(box,which){
+ const cx=Math.round(box.x+box.w*(which==='mouth'?.50:.68));
+ const cy=Math.round(box.y+box.h*(which==='mouth'?.67:.38));
+ const x=clamp(cx-2,Math.max(box.x,0),Math.min(W-5,box.x+Math.max(0,box.w-5)));
+ const y=clamp(cy-2,Math.max(box.y,0),Math.min(H-5,box.y+Math.max(0,box.h-5)));
+ return {x:Math.round(x),y:Math.round(y)};
+}
+function editedPatch(base,box,which,color){
+ const out=new Uint8ClampedArray(base);
+ const {x,y}=patchRect(box,which);
+ // Exactly one 5x5 area may change. This is the same method used in the
+ // verified blink test; the only full frame is the original initial picture.
+ let changed=0;
+ for(let dy=0;dy<5;dy++)for(let dx=0;dx<5;dx++){
+  const px=x+dx,py=y+dy,k=(py*W+px)*4;
+  // Do not modify any pixel outside the original subject bounding box.
+  if(px<box.x||px>=box.x+box.w||py<box.y||py>=box.y+box.h)continue;
+  const light=Math.max(base[k],base[k+1],base[k+2]);
+  // Removing an eye / mouth restores the original nearby body color.
+  // Keep bright pixels as-is; focus on the dark cut-out or light contrast.
+  if(light<110){
+   out[k]=color[0];out[k+1]=color[1];out[k+2]=color[2];
+  }
+ }
+ for(let i=0;i<COUNT*4;i+=4)
+  if(out[i]!==base[i]||out[i+1]!==base[i+1]||out[i+2]!==base[i+2])changed++;
+ if(changed<3){
+  // If the art has no detectable carved hole, draw a 5-pixel eyelid or
+  // smile line in the SAME 5x5 patch. Never shift the whole image.
+  out.set(base);changed=0;
+  for(let dx=0;dx<5;dx++){
+   const dy=which==='mouth'?(dx===0||dx===4?1:3):2;
+   const px=x+dx,py=y+dy,k=(py*W+px)*4;
+   if(px>=box.x&&px<box.x+box.w&&py>=box.y&&py<box.y+box.h){
+    out[k]=0;out[k+1]=0;out[k+2]=0;
+   }
+  }
+ }
+ return out;
+}
+function buildSimpleAnimation(base,{prompt='',count=24}={}){
+ if(!base||base.length!==COUNT*4)throw Error('Generate a 40x40 image first');
+ if(!Number.isInteger(count)||count<4||count>24)
+  throw Error('Use 4–24 animation frames');
+ const box=subjectBox(base),color=bodyColor(base,box);
+ const text=String(prompt||'').toLowerCase();
+ const wantsEye=/(wink|blink|eye|eyelid|pumpkin|ghost|face)/.test(text);
+ const wantsMouth=/(smil|grin|mouth|laugh|talk|teeth|pumpkin)/.test(text);
+ // If no feature is specified, default to the original successful wink.
+ const wink=editedPatch(base,box,'eye',color);
+ const mouth=wantsMouth?editedPatch(base,box,'mouth',color):null;
+ const frames=[];
+ for(let i=0;i<count;i++){
+  const t=i/(count-1);
+  // Longer holds need no packets. The two visible movements are brief,
+  // localized and always followed by an EXACT original-pixel restoration.
+  let active=base;
+  if(t>=.20&&t<.36)active=wink;
+  else if(mouth&&t>=.59&&t<.77)active=mouth;
+  else if(!mouth&&!wantsEye&&t>=.59&&t<.77)active=wink;
+  frames.push(new Uint8ClampedArray(active));
+ }
+ frames[0]=new Uint8ClampedArray(base);
+ frames[count-1]=new Uint8ClampedArray(base);
+ const changes=validate(frames);
+ if(changes.some(n=>n>25))throw Error('Animation must change at most 25 pixels per frame');
+ return frames;
 }
 function deltaCount(a,b){
  if(!a||!b||a.length!==COUNT*4||b.length!==COUNT*4)throw Error('Invalid frames');
@@ -76,5 +143,5 @@ function validate(frames){
  if(deltaCount(frames[0],frames.at(-1))!==0)throw Error('Last frame must match first exactly');
  return frames.slice(1).map((f,i)=>deltaCount(frames[i],f));
 }
-global.JH2LoopAnimation={quantize,buildKeyframes,validate,deltaCount};
+global.JH2LoopAnimation={quantize,buildSimpleAnimation,validate,deltaCount};
 })(typeof window!=='undefined'?window:globalThis);
