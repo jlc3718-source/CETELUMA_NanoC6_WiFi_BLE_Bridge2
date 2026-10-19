@@ -1,4 +1,4 @@
-name: JH2 Nano Local GIF Cache and Local Test Regression
+name: JH2 Nano AI Animation and Sparse Loop Regression
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -39,7 +39,11 @@ jobs:
           assert 'unlink(CACHE_PATH)' in src and 'DIGEST_PATH' in src
           assert 'jh2_ble_asset_packet(channel,packet,bytes)' in src
           assert 'stream_once(&job' not in src
-          web=Path('JasonHome2Server/curtain_local_test.html').read_text()
-          assert 'nanoLocalCacheSupported' in web and 'jh2-local-test-frames' in web
-          print('NANO_LOCAL_CACHE_AND_STUDIO_SOURCE_GUARDS_OK')
+          web=Path('JasonHome2Server/curtain_ai_animation.html').read_text()
+          assert 'seamlessAnimation:true' in web and 'assetSpeed' in web
+          assert 'jh2CurtainAnimationTab' in Path('JasonHome2Server/curtain.js').read_text()
+          assert not Path('JasonHome2Server/curtain_local_test.html').exists()
+          assert 'jh2-nano-seamless-delta-v1' in Path('JasonHome2Server/curtain_asset.mjs').read_text()
+          assert 'continued_loop' in src and 'seamless_loop' in src
+          print('NANO_AI_ANIMATION_AND_SPARSE_LOOP_SOURCE_GUARDS_OK')
           PY
