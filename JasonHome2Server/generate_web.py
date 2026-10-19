@@ -95,7 +95,7 @@ print("Jason Home 2 hosted UI ready")
 
 
 # The curtain controls are independent of the AI/Factory and scheduled event interfaces.
-for asset in ("curtain.js", "curtain.css", "curtain_converter.html", "curtain_quality.js", "curtain_image_headers.js", "nano_sync.js"):
+for asset in ("curtain.js", "curtain.css", "curtain_converter.html", "curtain_local_test.html", "curtain_quality.js", "curtain_image_headers.js", "nano_sync.js"):
     shutil.copyfile(Path(__file__).resolve().parent / asset, target / asset)
 # User-provided SmartDawn screenshot tiles are split into lazy-loaded, per-page shards.
 # Never load these on Home/AI/Schedules: preserve interface responsiveness.
