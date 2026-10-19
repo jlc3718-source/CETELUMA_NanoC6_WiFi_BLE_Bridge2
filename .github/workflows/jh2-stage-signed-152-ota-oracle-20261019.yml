@@ -20,7 +20,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: JH2-1.1.52-SIGNED-MANUAL-OTA
-          run-id: 39185830302
+          run-id: 39186062233
           github-token: ${{ github.token }}
           path: signed-package
       - name: Verify vendor trusted ECDSA signature, stage only OTA API routes, and check rollback
