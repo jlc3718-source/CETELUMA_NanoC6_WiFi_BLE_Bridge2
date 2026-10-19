@@ -112,7 +112,9 @@ function buildSimpleAnimation(base,{prompt='',count=24}={}){
  const wantsMouth=/(smil|grin|mouth|laugh|talk|teeth|pumpkin)/.test(text);
  // If no feature is specified, default to the original successful wink.
  const wink=editedPatch(base,box,'eye',color);
- const mouth=wantsMouth?editedPatch(base,box,'mouth',color):null;
+ // Four-frame loops use the exact original three-stage wink/restore sequence.
+ // Extra mouth actions are enabled only when there is room for a reset frame.
+ const mouth=wantsMouth&&count>=5?editedPatch(base,box,'mouth',color):null;
  const frames=[];
  for(let i=0;i<count;i++){
   const t=i/(count-1);
