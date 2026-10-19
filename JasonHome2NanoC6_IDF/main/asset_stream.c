@@ -21,7 +21,10 @@ extern const unsigned char tls_roots_pem_start[] asm("_binary_tls_roots_pem_star
 static const char *TAG="JH2_IDF_STREAM";
 // One local persistent asset, in the existing 256KiB LittleFS partition.
 // Never touch /littlefs/secrets.json or OTA partitions.
-#define MAX_ASSET (160U*1024U)
+// Physical storage partition is 256 KiB. The only size ceiling is its
+// capacity; actual admission is checked against measured free LittleFS space.
+#define MAX_ASSET (256U*1024U)
+#define CACHE_RESERVED_BYTES (8U*1024U)
 #define CACHE_PATH "/littlefs/curtain-local.jhc1"
 #define STAGE_PATH "/littlefs/curtain-local.tmp"
 #define DIGEST_PATH "/littlefs/curtain-local.sha"
@@ -123,6 +126,21 @@ static bool file_digest_ok(const char *path,const char *sha,uint32_t expected){
     mbedtls_sha256_free(&ctx);
     fclose(f);return ok&&count==expected;
 }
+// Available capacity after replacing the prior single animation.
+// Keep 8 KiB of free blocks for LittleFS metadata and internal housekeeping.
+uint32_t jh2_asset_local_available_bytes(void){
+    size_t total=0,used=0;
+    if(esp_littlefs_info("storage",&total,&used)!=ESP_OK||used>total)return 0;
+    uint64_t available=total-used;
+    struct stat cached={0},digest={0};
+    if(stat(CACHE_PATH,&cached)==0&&cached.st_size>0)
+        available+=(uint64_t)cached.st_size;
+    if(stat(DIGEST_PATH,&digest)==0&&digest.st_size>0)
+        available+=(uint64_t)digest.st_size;
+    if(available<=CACHE_RESERVED_BYTES)return 0;
+    available-=CACHE_RESERVED_BYTES;
+    return (uint32_t)(available>MAX_ASSET?MAX_ASSET:available);
+}
 static bool cache_asset_once(asset_job *job){
     if(!job||job->size<8||job->size>MAX_ASSET)return false;
     // Only a known verified on-device digest may bypass the one-time download.
@@ -136,14 +154,21 @@ static bool cache_asset_once(asset_job *job){
             return true;
         }
     }
-    // One file only. Remove the old animation, never settings or other files.
+    // Check usable capacity BEFORE removing the old animation.
+    // No 160 KiB policy cap: only actual free capacity after replacement.
+    if(job->size>jh2_asset_local_available_bytes()){
+        ESP_LOGE(TAG,"Not enough usable Nano local flash for %u bytes",
+            (unsigned)job->size);
+        return false;
+    }
+    // Only replace the one cached animation, not other LittleFS data.
     unlink(STAGE_PATH);
     unlink(CACHE_PATH);
     unlink(DIGEST_PATH);
     size_t total=0,used=0;
     if(esp_littlefs_info("storage",&total,&used)!=ESP_OK||
-       total<used||total-used<(size_t)job->size+8192){
-        ESP_LOGE(TAG,"Insufficient free Nano LittleFS space for animation");
+       total<used||total-used<(size_t)job->size+CACHE_RESERVED_BYTES){
+        ESP_LOGE(TAG,"LittleFS available capacity changed before transfer");
         return false;
     }
     FILE *f=fopen(STAGE_PATH,"wb");if(!f)return false;
