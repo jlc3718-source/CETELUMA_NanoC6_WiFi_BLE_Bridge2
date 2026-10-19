@@ -337,7 +337,7 @@ static bool slot_write_ram(void *context,const uint8_t *packet,size_t len){
 static bool slot_reply_ram(void *context,uint16_t opcode,uint8_t id,uint32_t parts,const char **error){
     return jh2_ble_upload_reply((uint32_t*)context,opcode,id,parts,12000,error);
 }
-static void slot_pace_ram(void *context){(void)context;vTaskDelay(pdMS_TO_TICKS(5));}
+static void slot_pace_ram(void *context){(void)context;vTaskDelay(pdMS_TO_TICKS(25));}
 static void handle_command(const cJSON *row,const cJSON *assets){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
