@@ -37,7 +37,7 @@ jobs:
           assert b'1.1.50-native-slot-web' in a and b'/api/firmware/install' in a
           assert hashlib.sha256(a).hexdigest()==manifest['sha256_ota']
           release={'product':'jason-home-2-nanoc6','version':'1.1.50','commit':manifest['commit'],'files':{'jh2-runtime-1.1.50.bin':{'bytes':len(a),'sha256':hashlib.sha256(a).hexdigest()}}}
-          (root/'release.json').write_text(json.dumps(release,indent=2)+'\\n')
+          (root/'release.json').write_text(json.dumps(release,indent=2)+chr(10))
           print('COMPILED_1_1_50_VERIFIED',len(a))
           PY
           key="$RUNNER_TEMP/jh2-ota-signing.pem"
@@ -48,7 +48,7 @@ jobs:
           python3 - <<'PY'
           import base64,json,pathlib,subprocess,tempfile
           root=pathlib.Path('signed-package');m=json.loads((root/'latest.json').read_text())
-          assert m['schema']==1 and 'version=1.1.50\\n' in m['payload']
+          assert m['schema']==1 and ('version=1.1.50'+chr(10)) in m['payload']
           with tempfile.TemporaryDirectory() as d:
               p=pathlib.Path(d);(p/'payload').write_text(m['payload'])
               (p/'sig').write_bytes(base64.b64decode(m['signature'],validate=True))
