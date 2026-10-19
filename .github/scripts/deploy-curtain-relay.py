@@ -232,7 +232,7 @@ try:
   request=urllib.request.Request(base+'/api/curtain-bridge/stream/'+staged_native['sha256'],headers={'X-JH2-Bridge-Token':rotated})
   with urllib.request.urlopen(request,timeout=10) as response:assert response.read()==native
   assert received_native['desired']['visual']['action']=='asset'
-  original_reference=bytearray(4096);original_reference[:4]=b'DN\\x01\\xfe';original_reference[4:8]=(83928).to_bytes(4,'little')
+  original_reference=bytearray(4096);original_reference[:4]=bytes((68,78,1,254));original_reference[4:8]=(83928).to_bytes(4,'little')
   control,_=api(base,'/api/curtain/assets',cookie=cookie,body={'nativeEff':base64.b64encode(original_reference).decode()})
   assert control['native'] and control['bytes']==4096,'Native original 4KB reference upload rejected in staging'
   print('Staged native RAM upload: exact full-file HTTP stream and transient command manifest verified.')
