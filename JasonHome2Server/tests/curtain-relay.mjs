@@ -310,7 +310,7 @@ test('Nano seamless animation: first full frame, next 23 sparse deltas, exact lo
  }
  const blink=Buffer.from(pumpkin);
  for(let y=15;y<19;y++)for(let x=23;x<27;x++){
-  const i=(y*40+x)*4;blink[i]=255;blink[i+1]=112;blink[i+2]=0;
+  const i=(y*40+x)*4;blink[i]=0;blink[i+1]=0;blink[i+2]=0;
  }
  const frames=Array.from({length:24},(_,i)=>i%2?blink:pumpkin);
  frames[23]=frames[0]; // close the loop pixel-for-pixel
