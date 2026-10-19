@@ -99,11 +99,61 @@ function optimizedRGBPackets(image,requestedColors,limit=40){
  }
  return candidate;
 }
+// Sparse SmartDawn doodle update: no DDP clear, no full-frame upload.
+// Pixel indices use the manufacturer column-major 40x40 mapping.
+// In particular, black is a valid replacement colour and MUST be transmitted.
+function compileSparseDelta(input){
+ const pixels=input?.deltaPixels;
+ if(!Array.isArray(pixels)||pixels.length<1||pixels.length>1600)
+  throw Error('Delta frame requires 1–1600 changed pixels');
+ const seen=new Set(),groups=new Map();
+ for(const p of pixels){
+  if(!p||![p.x,p.y,p.r,p.g,p.b].every(Number.isInteger)||
+    p.x<0||p.x>=W||p.y<0||p.y>=H||
+    p.r<0||p.r>255||p.g<0||p.g>255||p.b<0||p.b>255)
+   throw Error('Invalid changed pixel coordinates or RGB');
+  const id=p.x*H+p.y;
+  if(seen.has(id))throw Error('Delta frame contains duplicate pixel');
+  seen.add(id);
+  const rgb=(p.r<<16)|(p.g<<8)|p.b;
+  if(!groups.has(rgb))groups.set(rgb,[]);
+  groups.get(rgb).push(id);
+ }
+ const records=[],limit=200;
+ let packetId=0;
+ for(const [rgb,ids] of groups){
+  ids.sort((a,b)=>a-b);
+  let segment=[];
+  const append=()=>{
+   if(!segment.length)return;
+   const part=Uint8Array.from([1,(rgb>>16)&255,(rgb>>8)&255,rgb&255,...maskRuns(segment)]);
+   if(part.length>limit)throw Error('Sparse frame exceeds verified BLE payload');
+   // Channel 1 is the SmartDawn doodle characteristic; flag 1 means RGB mask.
+   const data=Buffer.from([++packetId&255,1,0,1,...part]);
+   records.push(record(1,data));segment=[];
+  };
+  for(const id of ids){
+   const next=[...segment,id];
+   if(4+maskRuns(next).length>limit){append();segment=[id];}
+   else segment=next;
+  }
+  append();
+ }
+ if(!records.length)throw Error('No delta packets produced');
+ const hold=Math.max(40,Math.min(60000,Number(input.delay)||800));
+ const head=Buffer.from([74,72,67,49,1,0,0,0]);
+ const fh=Buffer.alloc(6);fh.writeUInt32LE(hold,0);fh.writeUInt16LE(records.length,4);
+ const bytes=Buffer.concat([head,fh,...records]);
+ if(bytes.length>MAX_ASSET_BYTES)throw Error('Sparse frame exceeds relay limit');
+ return {bytes,sha256:createHash('sha256').update(bytes).digest('hex'),
+  frames:1,loop:false,format:'jh2-smartdawn-sparse-delta-v1',changedPixels:seen.size};
+}
 export const MAX_ASSET_BYTES=4*1024*1024;
 const vi=n=>{const a=[];do{let v=n&127;n>>>=7;a.push(v|(n?128:0));}while(n);return a;};
 function ddp(op,params=[],seq=1){const b=Buffer.alloc(24+params.length);b.set([seq&255,1,0,0,240,4,0,seq&255],0);b.writeUInt16BE(op,10);b.set(params,24);return b;}
 const record=(channel,b)=>{const h=Buffer.alloc(3);h[0]=channel;h.writeUInt16LE(b.length,1);return Buffer.concat([h,b]);};
 export function compileAsset(input){
+ if(input?.deltaPixels!==undefined)return compileSparseDelta(input);
  const images=input?.frames;if(!Array.isArray(images)||!images.length||images.length>180)throw Error('Supply 1–180 prepared 40×40 RGBA frames');
  const frames=images.map(x=>{if(typeof x!=='string'||x.length>8600)throw Error('Invalid frame');const b=Buffer.from(x,'base64');if(b.length!==6400)throw Error('Each prepared frame must contain 6400 RGBA bytes');return b;});
  const rgb=String(input.quality||'pal16').startsWith('rgb');
