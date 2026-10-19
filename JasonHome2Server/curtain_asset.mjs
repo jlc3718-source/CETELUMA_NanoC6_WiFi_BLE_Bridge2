@@ -148,11 +148,64 @@ function compileSparseDelta(input){
  return {bytes,sha256:createHash('sha256').update(bytes).digest('hex'),
   frames:1,loop:false,format:'jh2-smartdawn-sparse-delta-v1',changedPixels:seen.size};
 }
+// 40×40 AI animation package for self-timed Nano playback.
+// Frame 0 is a complete image. Every subsequent frame uses ONLY changed
+// RGB pixels, including black erasures. The closing frame equals frame 0.
+// JHC1 header flag=1 instructs Nano to omit the full first-frame repaint
+// on every subsequent loop while still preserving the first-frame dwell time.
+export function compileSeamlessAnimation(input){
+ const encoded=input?.frames;
+ if(!Array.isArray(encoded)||encoded.length<2||encoded.length>24)
+  throw Error('AI animation needs 2–24 frames');
+ const frames=encoded.map(s=>{
+  if(typeof s!=='string'||s.length>8600||!/^[A-Za-z0-9+/]+={0,2}$/.test(s))
+   throw Error('Invalid 40x40 animation frame');
+  const bytes=Buffer.from(s,'base64');
+  if(bytes.length!==6400)throw Error('Every animation frame must contain exactly 40x40 RGBA pixels');
+  return bytes;
+ });
+ if(!frames[0].equals(frames.at(-1)))
+  throw Error('Loop boundary must match exactly: last frame must equal first frame');
+ const delays=input.delays;
+ if(!Array.isArray(delays)||delays.length!==frames.length||
+    delays.some(ms=>!Number.isInteger(ms)||ms<40||ms>60000))
+  throw Error('Each frame requires a 40–60000 ms duration');
+ const hdr=Buffer.from([74,72,67,49,frames.length,0,1,1]);
+ // Reuse the vetted full-frame encoder for initial baseline, with controller
+ // clear only ONCE at the beginning of the animation lifecycle.
+ const first=compileAsset({frames:[encoded[0]],quality:'rgbfull',delays:[delays[0]],loop:false});
+ const out=[hdr,first.bytes.subarray(8)];
+ let touched=1600,records=first.bytes.readUInt16LE(12);
+ for(let i=1;i<frames.length;i++){
+  const before=frames[i-1],after=frames[i],pixels=[];
+  for(let y=0;y<40;y++)for(let x=0;x<40;x++){
+   const k=(y*40+x)*4;
+   if(before[k]!==after[k]||before[k+1]!==after[k+1]||before[k+2]!==after[k+2])
+    pixels.push({x,y,r:after[k],g:after[k+1],b:after[k+2]});
+  }
+  touched+=pixels.length;
+  if(pixels.length){
+   const delta=compileSparseDelta({deltaPixels:pixels,delay:delays[i]});
+   out.push(delta.bytes.subarray(8));
+   records+=delta.bytes.readUInt16LE(12);
+  }else{
+   const frame=Buffer.alloc(6);frame.writeUInt32LE(delays[i],0);
+   out.push(frame);
+  }
+  if(out.reduce((n,v)=>n+v.length,0)>MAX_ASSET_BYTES)
+   throw Error('Animation is too large for Nano; simplify movement or reduce frame count');
+ }
+ const bytes=Buffer.concat(out);
+ return {bytes,sha256:createHash('sha256').update(bytes).digest('hex'),
+  frames:frames.length,loop:true,format:'jh2-nano-seamless-delta-v1',
+  changedPixels:touched,packetCount:records};
+}
 export const MAX_ASSET_BYTES=4*1024*1024;
 const vi=n=>{const a=[];do{let v=n&127;n>>>=7;a.push(v|(n?128:0));}while(n);return a;};
 function ddp(op,params=[],seq=1){const b=Buffer.alloc(24+params.length);b.set([seq&255,1,0,0,240,4,0,seq&255],0);b.writeUInt16BE(op,10);b.set(params,24);return b;}
 const record=(channel,b)=>{const h=Buffer.alloc(3);h[0]=channel;h.writeUInt16LE(b.length,1);return Buffer.concat([h,b]);};
 export function compileAsset(input){
+ if(input?.seamlessAnimation===true)return compileSeamlessAnimation(input);
  if(input?.deltaPixels!==undefined)return compileSparseDelta(input);
  const images=input?.frames;if(!Array.isArray(images)||!images.length||images.length>180)throw Error('Supply 1–180 prepared 40×40 RGBA frames');
  const frames=images.map(x=>{if(typeof x!=='string'||x.length>8600)throw Error('Invalid frame');const b=Buffer.from(x,'base64');if(b.length!==6400)throw Error('Each prepared frame must contain 6400 RGBA bytes');return b;});
