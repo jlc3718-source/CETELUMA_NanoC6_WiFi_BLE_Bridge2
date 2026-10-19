@@ -39,16 +39,6 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   studioFrame.id='jh2CurtainStudioFrame';studioFrame.title='SmartDawn image and GIF quality converter';
   studioFrame.loading='lazy';studioFrame.setAttribute('referrerpolicy','same-origin');
   studio.appendChild(studioFrame);
-  // Native Animation Test is an isolated research workspace. Never replace the
-  // stable Studio iframe or its verified DN1FE installer.
-  const testButton=create('button','btn jh2-curtain-subtab','🧪 Native test');
-  testButton.type='button';testButton.id='jh2CurtainNativeTestTab';testButton.setAttribute('role','tab');
-  const testPanel=create('div','jh2-curtain-subpanel jh2-curtain-converter-panel');
-  testPanel.id='jh2CurtainNativeTestPanel';testPanel.hidden=true;
-  const testFrame=document.createElement('iframe');
-  testFrame.id='jh2CurtainNativeTestFrame';testFrame.title='SmartDawn experimental DNMX native animation testing';
-  testFrame.loading='lazy';testFrame.setAttribute('referrerpolicy','same-origin');
-  testPanel.appendChild(testFrame);
   // New AI Animation tab: one publish, then Nano owns all frame timing.
   const aiButton=create('button','btn jh2-curtain-subtab','✨ AI Animation');
   aiButton.type='button';aiButton.id='jh2CurtainAnimationTab';aiButton.setAttribute('role','tab');
@@ -58,54 +48,34 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   aiFrame.id='jh2CurtainAnimationFrame';aiFrame.title='40x40 AI animation creator and Nano local playback';
   aiFrame.loading='lazy';aiFrame.setAttribute('referrerpolicy','same-origin');
   aiPanel.appendChild(aiFrame);
-  subnav.append(oldButton,studioButton,testButton,aiButton);
-  page.append(subnav,controls,studio,testPanel,aiPanel);
-  let pendingNativeTest=null;
-  function deliverNativeTest(){
-    if(pendingNativeTest&&testFrame.contentWindow&&testFrame.getAttribute('src'))
-      testFrame.contentWindow.postMessage({kind:'jh2-native-test-frames',frames:pendingNativeTest.frames,delay:pendingNativeTest.delay},location.origin);
-  }
+  subnav.append(oldButton,studioButton,aiButton);
+  page.append(subnav,controls,studio,aiPanel);
   function selectCurtainSubtab(which){
-    controls.hidden=which!=='controls';studio.hidden=which!=='studio';testPanel.hidden=which!=='test';aiPanel.hidden=which!=='ai';
+    controls.hidden=which!=='controls';studio.hidden=which!=='studio';aiPanel.hidden=which!=='ai';
     controls.style.display=which==='controls'?'':'none';
     studio.style.display=which==='studio'?'':'none';
-    testPanel.style.display=which==='test'?'':'none';
     aiPanel.style.display=which==='ai'?'':'none';
-    for(const [node,active] of [[oldButton,which==='controls'],[studioButton,which==='studio'],[testButton,which==='test'],[aiButton,which==='ai']]){
+    for(const [node,active] of [[oldButton,which==='controls'],[studioButton,which==='studio'],[aiButton,which==='ai']]){
       node.classList.toggle('active',active);
       node.setAttribute('aria-selected',String(active));
     }
     if(which==='studio'&&!studioFrame.getAttribute('src'))studioFrame.src='curtain_converter.html';
-    if(which==='test'&&!testFrame.getAttribute('src'))testFrame.src='curtain_native_test.html?v=ram-upload-1.1.49';
     if(which==='ai'&&!aiFrame.getAttribute('src'))aiFrame.src='curtain_ai_animation.html?v=nano-loop-155';
   }
   oldButton.addEventListener('click',()=>selectCurtainSubtab('controls'));
   studioButton.addEventListener('click',()=>selectCurtainSubtab('studio'));
-  testButton.addEventListener('click',()=>selectCurtainSubtab('test'));
   aiButton.addEventListener('click',()=>selectCurtainSubtab('ai'));
   // The two iframes share only the authenticated, allowlisted BLE transport.
   // All messages must originate from our exact same-origin child frames.
   window.addEventListener('message',async event=>{
     if(event.origin!==location.origin)return;
-    const sender=event.source===studioFrame.contentWindow?studioFrame:event.source===testFrame.contentWindow?testFrame:event.source===aiFrame.contentWindow?aiFrame:null;
+    const sender=event.source===studioFrame.contentWindow?studioFrame:event.source===aiFrame.contentWindow?aiFrame:null;
     if(!sender)return;
     const data=event.data||{};
     if(data.kind==='jh2-curtain-height'){
       const height=Number(data.height);
       if(Number.isFinite(height)&&height>=500&&height<=50000)sender.style.height=Math.ceil(height+16)+'px';
       return;
-    }
-    if(sender===studioFrame&&data.kind==='jh2-native-test-open'){
-      const frames=data.frames,delay=Number(data.delay);
-      if(!Array.isArray(frames)||frames.length<2||frames.length>24||frames.some(f=>!(f instanceof Uint8Array||f instanceof Uint8ClampedArray||Array.isArray(f))||f.length!==6400))return;
-      pendingNativeTest={frames:frames.map(f=>new Uint8ClampedArray(f)),delay:Number.isFinite(delay)?delay:400};
-      selectCurtainSubtab('test');
-      // Frame transfer is completed by test iframe's ready handshake.
-      if(testFrame.dataset.ready==='true')deliverNativeTest();
-      return;
-    }
-    if(sender===testFrame&&data.kind==='jh2-native-test-ready'){
-      testFrame.dataset.ready='true';deliverNativeTest();return;
     }
     if(data.kind!=='jh2-curtain-request')return;
     const id=String(data.id||'');
@@ -118,7 +88,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     }
   });
   window.__jh2CurtainRawNotify=(uuid,data)=>{
-    for(const frame of [studioFrame,testFrame,aiFrame]){
+    for(const frame of [studioFrame,aiFrame]){
       if(frame.contentWindow&&frame.getAttribute('src'))frame.contentWindow.postMessage({kind:'jh2-curtain-notify',uuid,data},location.origin);
     }
   };
