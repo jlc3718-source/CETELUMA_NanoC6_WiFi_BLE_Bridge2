@@ -21,11 +21,11 @@ jobs:
           const cookie=response.headers.get('set-cookie').split(';')[0];
           const get=async path=>{const r=await fetch(base+path,{headers:{cookie}});return {http:r.status,data:await r.json()}};
           const {data:status}=await get('/api/curtain/status');
-          console.log('CURRENT_BRIDGE',JSON.stringify({firmware:status.firmware,online:status.online,queued:status.queued,connected:status.curtain?.connected,streaming:status.relayStreaming,retainedBytes:status.assetRetention?.retainedBytes}));
+          console.log('CURRENT_BRIDGE',JSON.stringify({firmware:status.firmware,online:status.online,queued:status.queued,connected:status.curtain?.connected,streaming:status.relayStreaming,retainedBytes:status.assetRetention?.retainedBytes,manualUntil:status.manualUntil,eufyMasterSchedule:status.eufyMasterSchedule}));
           const end=Number(status.lastCommand?.id)||0;
           for(let id=Math.max(1,end-10);id<=end;id++){
            const {http,data}=await get('/api/curtain/command?id='+id),c=data.command||{},r=c.result||{};
-           console.log('RECENT_COMMAND',JSON.stringify({id,http,topLevelOk:data.ok,action:c.action,state:c.state,message:r.message,error:r.error,ok:r.ok,bleTransmitted:r.bleTransmitted}));
+           console.log('RECENT_COMMAND',JSON.stringify({id,http,topLevelOk:data.ok,action:c.action,state:c.state,source:c.source,created:c.created,sha256:c.payload?.sha256,message:r.message,error:r.error,ok:r.ok,bleTransmitted:r.bleTransmitted}));
           }
           const source=fs.readFileSync('/app/curtain_bridge.mjs','utf8');
           const start=source.indexOf('for(const ack of');
