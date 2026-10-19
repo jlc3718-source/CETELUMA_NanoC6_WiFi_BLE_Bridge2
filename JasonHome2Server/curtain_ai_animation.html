@@ -22,10 +22,10 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
 </style></head>
 <body><main>
 <h1>✨ AI Animation</h1>
-<p>Describe a 40×40 animated character. AI will redraw its expression and body into distinct frames. Preview it first, then publish once to the Nano. The Nano stores the complete sequence and controls every frame locally.</p>
+<p>Generate one 40×40 picture. Animate changes only a tiny eye or mouth patch, then restores the original pixels—just like the working three-frame wink test. The Nano loops the changes locally.</p>
 <section class="card">
  <h2>1 · Describe and generate</h2>
- <textarea id="prompt" maxlength="400" placeholder="A smiling orange pumpkin that gently sways and winks. Solid black background, bold colors."></textarea>
+ <textarea id="prompt" maxlength="400" placeholder="A smiling orange pumpkin that winks one eye. Solid black background, bold colors."></textarea>
  <button id="generate" class="primary">Generate 40×40 artwork</button>
  <div class="preview">
   <canvas id="artwork" width="40" height="40" aria-label="Generated 40 by 40 LED artwork"></canvas>
@@ -38,7 +38,7 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
  <input id="count" type="range" min="4" max="24" step="1" value="24"></div>
  <div class="range"><label for="speed">Playback speed</label><output id="speedValue">100% · 160 ms/frame</output>
  <input id="speed" type="range" min="50" max="300" step="10" value="100"></div>
- <button id="animate" disabled>Animate with AI · draw 4 poses</button>
+ <button id="animate" disabled>Animate small pixel changes</button>
  <div class="preview">
   <canvas id="preview" width="40" height="40" aria-label="Looping animation preview"></canvas>
   <div class="side">
@@ -57,11 +57,11 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
 </section>
 <details class="card" id="animationTuning">
  <summary style="cursor:pointer;font-weight:700">AI tuning · saved on Oracle</summary>
- <p class="small">Adjust how AI draws and animates characters without changing code or redeploying from GitHub. Changes apply the next time you tap Generate or Animate.</p>
+ <p class="small">Adjust how AI draws the original picture and choose which tiny features animate. No separate AI redraws or GitHub deployment. Changes apply the next time you tap Generate or Animate.</p>
  <label for="styleGuide">Artwork style guidance</label>
  <textarea id="styleGuide" maxlength="500" rows="2" placeholder="Example: Bold chunky Minecraft-like pixel art, oversized expressive eyes"></textarea>
  <label for="motionGuide">Frame-by-frame action guidance</label>
- <textarea id="motionGuide" maxlength="700" rows="3" placeholder="Example: Each pose must visibly change the eyes, mouth and arms; never slide the entire character"></textarea>
+ <textarea id="motionGuide" maxlength="700" rows="3" placeholder="Example: Wink one eye, then smile; change no more than a 5x5 patch"></textarea>
  <button id="saveGuides" class="primary">Save AI tuning on Oracle</button>
  <button id="resetGuides">Restore default AI tuning</button>
  <p id="guideStatus" class="small" role="status">AI tuning loads when this tab opens.</p>
@@ -71,7 +71,7 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
 <script>
 (()=>{'use strict';
 const $=id=>document.getElementById(id),L=window.JH2LoopAnimation;
-let base=null,frames=[],plan=null,description='',busy=false,published=false,previewTimer=null,previewIndex=0;
+let base=null,frames=[],description='',busy=false,published=false,previewTimer=null,previewIndex=0;
 const ctx=id=>$(id).getContext('2d',{willReadFrequently:true});
 function paint(id,pixels){if(!pixels)return;const c=ctx(id),image=c.createImageData(40,40);image.data.set(pixels);c.putImageData(image,0,0);}
 function refresh(){const hasArt=!!base,hasFrames=frames.length>1;
@@ -109,7 +109,7 @@ async function command(action,payload,timeout=60000){
  }
  throw Error('Nano command '+id+' timed out');
 }
-// Decode each independently drawn AI key pose into the same stable pixel grid.
+// Decode the original picture ONCE. Every animation frame copies that exact art.
 async function decodePose(dataUrl){
  if(typeof dataUrl!=='string'||!dataUrl.startsWith('data:image/'))
   throw Error('AI pose did not include a picture');
@@ -130,55 +130,29 @@ async function generate(){
   const response=await api('/api/curtain/ai-animation/generate',{prompt});
   base=await decodePose(response.image);
   description=prompt;paint('artwork',base);paint('preview',base);
-  $('artInfo').textContent='Character ready at 40×40. Animate generates NEW action poses, not sliding copies.';
-  $('motionInfo').textContent='Tap Animate to draw four different character action poses.';
-  say('Character generated. Tap Animate for actual GIF-style frames.');
+  $('artInfo').textContent='Original 40×40 picture saved. It will never be redrawn for animation.';
+  $('motionInfo').textContent='Tap Animate to change up to 25 eye or mouth pixels, then restore them.';
+  say('Picture ready. Tap Animate for the same small-pixel wink method that worked before.');
  }catch(e){say('Artwork generation failed: '+e.message);}
  finally{busy=false;refresh();resize();}
 }
 async function animate(){
  if(busy||!base)return;
  busy=true;pause();frames=[];published=false;refresh();
- say('Asking AI to storyboard four distinct character action poses…');
  try{
-  const options=await api('/api/curtain/ai-animation/motion',{prompt:description});
-  if(!Array.isArray(options.poses)||options.poses.length!==4)
-   throw Error('AI did not return four action poses');
-  // Limit concurrent Cloudflare image generations to two: avoid unnecessary
-  // rate-limit bursts while still allowing prompt-specific, independent art.
-  const poses=new Array(4);
-  let completed=0;
-  async function drawPose(index){
-   let lastError;
-   for(let attempt=0;attempt<2;attempt++){
-    try{
-     const details=options.poses[index]+(attempt?' Show an exaggerated distinct expression and silhouette.':'');
-     const generated=await api('/api/curtain/ai-animation/generate',{prompt:description,pose:details});
-     const drawn=await decodePose(generated.image);
-     if(L.deltaCount(base,drawn)<12)
-      throw Error('AI returned nearly identical pose');
-     poses[index]=drawn;
-     completed++;
-     say('Drawing GIF-style key poses: '+completed+' / 4 complete…');
-     return;
-    }catch(e){lastError=e;}
-   }
-   throw Error('AI pose '+(index+1)+' failed: '+lastError.message);
-  }
-  await Promise.all([
-   (async()=>{await drawPose(0);await drawPose(2);})(),
-   (async()=>{await drawPose(1);await drawPose(3);})()
-  ]);
-  const keyframes=[base,...poses];
-  frames=L.buildKeyframes(keyframes,{count:Number($('count').value)});
-  const changes=L.validate(frames),total=changes.reduce((a,v)=>a+v,0);
-  if(total<50)throw Error('Animation contains too little motion; try a more specific action description');
-  plan={poses:options.poses,method:'AI-drawn-keyframes'};
-  $('motionInfo').textContent='Four newly drawn action poses · '+frames.length+
-   ' GIF-style frames · '+total+' changed pixels · first and last identical';
-  say('Real animated frames are ready. Preview, adjust speed, and Publish.');
+  // NEVER call AI again for animation. Preserve the original 40x40 artwork,
+  // change ONLY the 5x5 eye/mouth region, and restore exact original pixels.
+  const instructions=description+' '+$('motionGuide').value;
+  frames=L.buildSimpleAnimation(base,{prompt:instructions,count:Number($('count').value)});
+  const changes=L.validate(frames);
+  const max=Math.max(...changes),total=changes.reduce((a,n)=>a+n,0);
+  if(max>25)throw Error('Changed pixel count exceeded the 25-pixel limit');
+  $('motionInfo').textContent=frames.length+' frames · at most '+max+
+    ' changed pixels per frame · '+total+' changes total · first and last identical';
+  $('artInfo').textContent='Original image preserved unchanged.';
+  say('Ready. Only small eye or mouth pixels change. Preview, then Publish to Nano.');
   play();
- }catch(e){frames=[];say('Animation generation failed: '+e.message);}
+ }catch(e){frames=[];say('Pixel animation failed: '+e.message);}
  finally{busy=false;refresh();}
 }
 async function publish(){
