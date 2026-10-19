@@ -20,7 +20,7 @@ test('Curtain has two sub-tabs and preserves original control IDs',()=>{
   for(const term of ['jh2CurtainStudioTab','jh2CurtainControlsTab','jh2CurtainOriginalControls','jh2CurtainStudioPanel','jh2CurtainBrightness','jh2CurtainSequenceStart','jh2CurtainEffects'])
     assert.ok(curtain.includes(term),term);
   assert.match(curtain,/event\.origin!==location\.origin/);
-  assert.match(curtain,/event\.source!==studioFrame\.contentWindow/);
+  assert.match(curtain,/event\.source===studioFrame\.contentWindow/);
 });
 test('v25 converter is complete and JavaScript parses',()=>{
   const scripts=[...converter.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
@@ -48,9 +48,10 @@ test('host serves isolated studio asset with same-origin framing',()=>{
   const deployed=join(home,'web/curtain_converter.html');
   if(existsSync(join(home,'web')))assert.ok(existsSync(deployed),'generated converter absent');
 });
-test('Android bridges native BLE notifications, MTU and photo chooser',()=>{
-  for(const term of ['"rawWrite"','"subscribeRaw"','requestMtu(517)','onCharacteristicChanged','forwardRawNotify','RAW_UPLOAD'])
+test('Android retains Oracle-only curtain transport and photo chooser',()=>{
+  for(const term of ['requireOracleOrigin','JH2OracleCurtainCall','saveRawFile','localController'])
     assert.ok(bridge.includes(term),term);
+  assert.doesNotMatch(bridge,/BluetoothGatt|requestMtu\(517\)/);
   for(const term of ['onShowFileChooser','REQUEST_CURTAIN_IMAGE','onActivityResult'])
     assert.ok(activity.includes(term),term);
 });
