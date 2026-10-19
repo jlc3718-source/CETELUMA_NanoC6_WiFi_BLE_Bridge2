@@ -24,7 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "effectlist.h"
-#include "native_ble.h"
+#include "native_ble.h"\n#include "asset_stream.h"
 #include "native_slot_guard.h"
 #include "bridge.h"
 #include "web_recovery.h"
@@ -308,7 +308,8 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"ok",true);
     cJSON_AddBoolToObject(out,"connected",connection!=BLE_HS_CONN_HANDLE_NONE);
     cJSON_AddBoolToObject(out,"nanoLocalCacheSupported",true);
-    cJSON_AddNumberToObject(out,"nanoLocalCacheMaxBytes",160*1024);
+    cJSON_AddNumberToObject(out,"nanoLocalCacheMaxBytes",jh2_asset_local_available_bytes());
+    cJSON_AddNumberToObject(out,"nanoLocalCacheAvailableBytes",jh2_asset_local_available_bytes());
     cJSON_AddNumberToObject(out,"mtu",connection==BLE_HS_CONN_HANDLE_NONE?23:ble_att_mtu(connection));
     cJSON_AddNumberToObject(out,"nativeCatalogPackets",catalog_packets);
     cJSON_AddNumberToObject(out,"nativeCatalogUnique",catalog_unique);
