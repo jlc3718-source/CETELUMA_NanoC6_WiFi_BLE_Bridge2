@@ -69,7 +69,7 @@ static bool digest_matches(stream_source *s,const char *hex){
 bool jh2_asset_fetch_ram(const char *endpoint,const char *token,
         const char *sha,uint32_t size,uint8_t **out){
     *out=NULL;
-    if(!endpoint||!token||!hex64(sha)||size<8192||size>JH2_NATIVE_RAM_LIMIT)return false;
+    if(!endpoint||!token||!hex64(sha)||size<4096||size>JH2_NATIVE_RAM_LIMIT)return false;
     char url[370],authorization[75];
     if(snprintf(url,sizeof(url),"%s/api/curtain-bridge/stream/%s",endpoint,sha)>=(int)sizeof(url))return false;
     uint8_t *data=malloc(size);
