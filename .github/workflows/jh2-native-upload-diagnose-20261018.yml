@@ -34,3 +34,4 @@ jobs:
           print('LIVE',json.dumps({'fw':status.get('firmware'),'online':status.get('online'),'queued':status.get('queued'),'curtain':status.get('curtain')},sort_keys=True),flush=True)
           PY
 # Read-only inspection of repeat controller rejection #14834.
+# Post-install read-only NanoC6 1.1.50 confirmation.
