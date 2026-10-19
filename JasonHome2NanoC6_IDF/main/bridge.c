@@ -64,7 +64,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.54"
+#define NATIVE_FW_VERSION "1.1.55"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -379,6 +379,14 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         bool started=idle&&valid&&jh2_native_sequence_start(effects,(size_t)n,(uint32_t)interval->valueint);
         append_ack(current,started?"applied":"failed",
             started?"Native effect sequence started":"Invalid sequence or BLE unavailable",started);
+    }else if(strcmp(action->valuestring,"assetSpeed")==0){
+        cJSON *percent=cJSON_GetObjectItemCaseSensitive(payload,"percent");
+        const bool valid=cJSON_IsNumber(percent)&&percent->valuedouble==(double)percent->valueint &&
+                         percent->valueint>=25&&percent->valueint<=300;
+        const bool accepted=valid&&jh2_asset_stream_set_speed((uint16_t)percent->valueint);
+        append_ack(current,accepted?"applied":"failed",
+            accepted?"Nano animation speed adjusted locally without stopping playback":
+                     "Invalid speed; use 25 to 300 percent",false);
     }else if(strcmp(action->valuestring,"assetStop")==0){
         bool idle=stop_image_stream_and_wait();
         append_ack(current,idle?"applied":"failed",
@@ -633,6 +641,7 @@ static cJSON *sync_document(void){
 #endif
     cJSON_AddBoolToObject(status,"relayStreaming",jh2_asset_stream_active());
     cJSON_AddStringToObject(status,"assetStorage","nano-local");
+    cJSON_AddNumberToObject(status,"nanoAnimationSpeedPercent",jh2_asset_stream_get_speed());
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
     jh2_ble_status(curtain);
     cJSON_AddBoolToObject(curtain,"sequenceRunning",jh2_native_sequence_running());
