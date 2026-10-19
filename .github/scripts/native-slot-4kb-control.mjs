@@ -74,8 +74,8 @@ async function inventoryStatus(){
 }
 async function readTarget(){
   const first=await inventoryStatus();
-  if(first.firmware!=='1.1.49'||!first.online||!first.connected||first.queued||first.streaming)
-    throw Error('Bridge no longer idle, online or running verified 1.1.49');
+  if(first.firmware!=='1.1.50'||!first.online||!first.connected||first.queued||first.streaming)
+    throw Error('Bridge no longer idle, online or running verified 1.1.50');
   for(const [i,op] of [205,167,2904].entries())await raw(controlUuid,commandPacket(op,91+i));
   await sleep(7000);
   let s=await inventoryStatus();
@@ -101,21 +101,15 @@ try{
   if(plan.parts.length!==9)throw Error('Legacy verified native upload must have 9 chunks');
   note('BACKUP_VERIFIED',{bytes:backup.length,cid:83928,sha256:crypto.createHash('sha256').update(backup).digest('hex')});
   await readTarget();
-  const previous=await api('/api/curtain/notifications?since=0');
-  cursor=Math.max(0,...(previous.notifications||[]).map(x=>Number(x.id)||0));
-  // No delete. Only write to verified-empty reserved CID 83928.
-  await raw(uploadUuid,plan.request);
-  report.controllerWrites++;
-  await waitNotice(2931);
-  for(let at=0;at<plan.parts.length;at+=8){
-    await send('nativeSlotWrite',{packets:plan.parts.slice(at,at+8).map(x=>Buffer.from(x).toString('base64'))});
-    report.controllerWrites+=Math.min(8,plan.parts.length-at);
-    for(const n of await noticePoll()){
-      note('CONTROLLER_REPLY',n);
-      if(n.rcode!==0)throw Error('Controller error '+n.rcode+' during native 4 KB data transfer');
-    }
-  }
-  await waitNotice(2934,45000);
+  // Stage the unchanged original bytes in Oracle; Nano pulls the complete
+  // verified file into RAM and transmits all 9 data packets without another
+  // Oracle/API transaction between frames.
+  const staged=await api('/api/curtain/assets',{nativeEff:backup.toString('base64')});
+  if(!staged.native||staged.bytes!==4096)throw Error('Oracle did not accept the authentic DN1FE control file');
+  note('CONTROL_FILE_STAGED',{bytes:staged.bytes,sha256:staged.sha256});
+  const reply=await send('nativeSlotUpload',{sha256:staged.sha256});
+  note('NATIVE_CONTIGUOUS_UPLOAD_ACK',{state:reply.state,result:reply.result});
+  report.controllerWrites=10;
   await sleep(1400);
   await raw(controlUuid,commandPacket(2904,96));
   await sleep(8000);
