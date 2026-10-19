@@ -67,7 +67,9 @@ def diff_server(live):
  marker='if(method==="POST"&&path==="/api/curtain/ai-revamp")'
  extra='if(method==="POST"&&path==="/api/curtain/ai-animation/generate")return send(res,200,await curtainAnimationAi.generate(await input(req)));\n  if(method==="POST"&&path==="/api/curtain/ai-animation/motion")return send(res,200,await curtainAnimationAi.motion(await input(req)));\n  '
  live=must_replace(live,marker,extra+marker,"AI generate and motion routes")
- live=must_replace(live,'"curtain_local_test.html"','"curtain_ai_animation.html","curtain_loop_animation.js"',"static allowlist")
+ if live.count('"curtain_local_test.html"')<2:
+  raise RuntimeError("Unexpected live Local Test allowlist/CSP")
+ live=live.replace('"curtain_local_test.html"','"curtain_ai_animation.html","curtain_loop_animation.js"',1)
  live=must_replace(live,'name==="curtain_local_test.html"','name==="curtain_ai_animation.html"',"AI iframe CSP")
  return live
 def diff_parent(live):
