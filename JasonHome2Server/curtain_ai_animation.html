@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jason Home 2 · AI Animation</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;background:#071321;color:#eff9ff;font:15px/1.45 system-ui,-apple-system,sans-serif}
+main{max-width:650px;margin:0 auto;padding:15px}
+h1{font-size:24px;margin:6px 0}h2{font-size:17px;margin:0 0 10px}
+p{margin:7px 0;color:#bbd4e3}.card{background:#14283d;border:1px solid #345571;border-radius:17px;margin:14px 0;padding:15px}
+textarea{resize:vertical;width:100%;min-height:92px;border:1px solid #49748c;border-radius:10px;background:#091a2b;color:white;padding:12px;font:inherit}
+button{background:#145377;color:#fff;border:1px solid #387d96;border-radius:11px;padding:13px;font:inherit;font-weight:700;width:100%;margin-top:9px}
+button.primary{background:#087d69;border-color:#23b69c;color:white}button:disabled{opacity:.38}
+.preview{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;background:black;border:1px solid #55758a;border-radius:11px}
+.side{flex:1;min-width:155px;font-size:13px;color:#bbd4e3}
+.range{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin:9px 0}
+.range input{grid-column:1 / -1;width:100%;accent-color:#37ceb5;height:25px}
+.range output{font-variant-numeric:tabular-nums;color:#8fece0;font-weight:750}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.controls button{margin-top:3px}
+#status{padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0b2430;color:#c1f5df;border:1px solid #376373;border-radius:12px;min-height:45px}
+.small{font-size:12px;color:#98b6c8}.hide{display:none}
+</style></head>
+<body><main>
+<h1>✨ AI Animation</h1>
+<p>Describe a simple 40×40 LED animation. Preview it first, then publish once to the Nano. The Nano stores the complete sequence and controls every frame locally.</p>
+<section class="card">
+ <h2>1 · Describe and generate</h2>
+ <textarea id="prompt" maxlength="400" placeholder="A smiling orange pumpkin that gently sways and winks. Solid black background, bold colors."></textarea>
+ <button id="generate" class="primary">Generate 40×40 artwork</button>
+ <div class="preview">
+  <canvas id="artwork" width="40" height="40" aria-label="Generated 40 by 40 LED artwork"></canvas>
+  <div class="side" id="artInfo">Artwork appears here after generation.</div>
+ </div>
+</section>
+<section class="card">
+ <h2>2 · Animate and preview</h2>
+ <div class="range"><label for="count">Frames</label><output id="countValue">24</output>
+ <input id="count" type="range" min="4" max="24" step="1" value="24"></div>
+ <div class="range"><label for="speed">Playback speed</label><output id="speedValue">100% · 160 ms/frame</output>
+ <input id="speed" type="range" min="50" max="300" step="10" value="100"></div>
+ <button id="animate" disabled>Animate the artwork</button>
+ <div class="preview">
+  <canvas id="preview" width="40" height="40" aria-label="Looping animation preview"></canvas>
+  <div class="side">
+   <div id="motionInfo">Generate artwork to unlock animation.</div>
+   <div id="frameInfo" class="small"></div>
+  </div>
+ </div>
+ <div class="controls"><button id="play" disabled>▶ Preview</button><button id="pause" disabled>Ⅱ Pause</button></div>
+</section>
+<section class="card">
+ <h2>3 · Publish to Nano</h2>
+ <p class="small">First frame sends the full image; every subsequent frame sends only changed pixels. Last frame exactly equals the first. Oracle is used only for the initial upload—not for timing or ongoing playback.</p>
+ <button id="publish" class="primary" disabled>Publish 24 frames to Nano</button>
+ <button id="stop">Stop Nano animation</button>
+ <p id="status" role="status">Enter a description to begin.</p>
+</section>
+</main>
+<script src="curtain_loop_animation.js"></script>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),L=window.JH2LoopAnimation;
+let base=null,frames=[],plan=null,description='',busy=false,published=false,previewTimer=null,previewIndex=0;
+const ctx=id=>$(id).getContext('2d',{willReadFrequently:true});
+function paint(id,pixels){if(!pixels)return;const c=ctx(id),image=c.createImageData(40,40);image.data.set(pixels);c.putImageData(image,0,0);}
+function refresh(){const hasArt=!!base,hasFrames=frames.length>1;
+ $('generate').disabled=busy;$('animate').disabled=busy||!hasArt;
+ $('publish').disabled=busy||!hasFrames;$('play').disabled=busy||!hasFrames;
+ $('pause').disabled=!previewTimer;$('count').disabled=busy;$('speed').disabled=busy;
+ $('publish').textContent='Publish '+(frames.length||Number($('count').value))+' frames to Nano';
+}
+function resize(){if(window.parent!==window)window.parent.postMessage({kind:'jh2-curtain-height',height:Math.max(520,document.documentElement.scrollHeight)},location.origin);}
+function say(s){$('status').textContent=s;resize();}
+async function api(path,body){if(typeof parent.JH2CurtainApi!=='function')throw Error('Open AI Animation inside Jason Home 2');return parent.JH2CurtainApi(path,body);}
+function speed(){return Number($('speed').value);}
+function delay(){return Math.max(40,Math.round(160*100/speed()));}
+function updateSpeedLabel(){$('speedValue').textContent=speed()+'% · '+delay()+' ms/frame';}
+function b64(bytes){let str='';for(let i=0;i<bytes.length;i+=2048)str+=String.fromCharCode(...bytes.subarray(i,i+2048));return btoa(str);}
+function pause(){if(previewTimer){clearTimeout(previewTimer);previewTimer=null;}refresh();}
+function previewTick(){
+ if(!frames.length)return;
+ paint('preview',frames[previewIndex]);
+ $('frameInfo').textContent='Frame '+(previewIndex+1)+' / '+frames.length+' · seamless loop';
+ previewIndex=(previewIndex+1)%frames.length;
+ previewTimer=setTimeout(previewTick,delay());
+ refresh();
+}
+function play(){pause();if(!frames.length)return;previewIndex=0;previewTimer=setTimeout(previewTick,0);refresh();}
+async function command(action,payload,timeout=60000){
+ const call=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
+ const id=call.commandId;if(!id)throw Error('No Nano command ID');
+ const started=Date.now();
+ while(Date.now()-started<timeout){
+  await new Promise(r=>setTimeout(r,850));
+  const response=await api('/api/curtain/command?id='+id),c=response.command||{};
+  if(c.state==='applied')return c;
+  if(['failed','expired','superseded'].includes(c.state))throw Error(c.result?.message||'Nano command '+c.state);
+ }
+ throw Error('Nano command '+id+' timed out');
+}
+async function generate(){
+ if(busy)return;
+ const prompt=$('prompt').value.trim();
+ if(prompt.length<3){say('Describe what to draw first.');return;}
+ busy=true;pause();base=null;frames=[];published=false;refresh();say('Generating pixel artwork with Cloudflare AI…');
+ try{
+  const response=await api('/api/curtain/ai-animation/generate',{prompt});
+  const image=new Image();
+  image.src=response.image;
+  await image.decode();
+  const work=document.createElement('canvas');work.width=40;work.height=40;
+  const c=work.getContext('2d',{willReadFrequently:true});c.imageSmoothingEnabled=false;
+  c.fillStyle='#000';c.fillRect(0,0,40,40);
+  const size=Math.max(1,Math.min(image.width,image.height));
+  const x=(image.width-size)/2,y=(image.height-size)/2;
+  c.drawImage(image,x,y,size,size,0,0,40,40);
+  base=L.quantize(c.getImageData(0,0,40,40).data,12);
+  description=prompt;paint('artwork',base);paint('preview',base);
+  $('artInfo').textContent='Generated 40×40 LED pixel art. Ready to animate.';
+  $('motionInfo').textContent='Tap Animate to create your motion loop.';
+  say('Art generated. Tap Animate when the image looks good.');
+ }catch(e){say('Artwork generation failed: '+e.message);}
+ finally{busy=false;refresh();resize();}
+}
+async function animate(){
+ if(busy||!base)return;
+ busy=true;pause();frames=[];refresh();say('AI is planning a simple seamless motion…');
+ try{
+  const options=await api('/api/curtain/ai-animation/motion',{prompt:description});
+  const motion=L.motions.includes(options.motion)?options.motion:L.motionForPrompt(description);
+  plan={motion,amplitude:Math.max(1,Math.min(3,Number(options.amplitude)||2))};
+  frames=L.build(base,{...plan,count:Number($('count').value)});
+  const changes=L.validate(frames),total=changes.reduce((a,v)=>a+v,0);
+  $('motionInfo').textContent=motion+' · '+frames.length+' frames · '+total+' changed pixels across the loop';
+  say('Animation ready. Preview the motion, adjust speed, then publish.');
+  play();
+ }catch(e){say('Animation failed: '+e.message);}
+ finally{busy=false;refresh();}
+}
+async function publish(){
+ if(busy||frames.length<2)return;
+ try{L.validate(frames);}catch(e){say(e.message);return;}
+ busy=true;pause();refresh();
+ try{
+  const status=await api('/api/curtain/status'),c=status.curtain||{};
+  if(!status.online||!c.connected||!c.nanoLocalCacheSupported)
+   throw Error('Nano or SmartDawn Bluetooth is offline, or Nano local storage is unavailable');
+  if(status.firmware!=='1.1.55')
+   throw Error('Nano firmware 1.1.55 is required before publishing changed-pixel loops. Current: '+(status.firmware||'unknown'));
+  say('Saving playback speed to Nano…');
+  await command('assetSpeed',{percent:speed()},30000);
+  say('Encoding '+frames.length+' frames as sparse pixel changes…');
+  const asset=await api('/api/curtain/assets',{
+   name:description.slice(0,80),seamlessAnimation:true,
+   frames:frames.map(b64),delays:frames.map(()=>160),loop:true
+  });
+  const available=Number(c.nanoLocalCacheAvailableBytes);
+  if(!Number.isFinite(available)||available<=0)throw Error('Nano has not reported free animation storage');
+  if(asset.bytes>available)throw Error('Animation requires '+Math.ceil(asset.bytes/1024)+' KiB; Nano has '+Math.floor(available/1024)+' KiB. Reduce motion amplitude/frame count.');
+  say('Uploading '+Math.ceil(asset.bytes/1024)+' KiB once to Nano…');
+  const result=await command('asset',{sha256:asset.sha256},120000);
+  if(result.result?.bleTransmitted!==true)throw Error('Nano did not confirm its first Bluetooth frame');
+  published=true;play();say('Published: '+frames.length+' frames cached on Nano. Speed '+speed()+'%. Nano independently plays and loops the animation; verify visible motion on the curtain.');
+ }catch(e){say('Publish failed: '+e.message);}
+ finally{busy=false;refresh();}
+}
+$('count').oninput=()=>{$('countValue').textContent=$('count').value;if(frames.length){frames=[];published=false;pause();$('motionInfo').textContent='Frame count changed. Tap Animate again.';}refresh();};
+$('speed').oninput=updateSpeedLabel;
+$('speed').onchange=async()=>{updateSpeedLabel();if(!published)return;try{
+ const result=await command('assetSpeed',{percent:speed()},30000);
+ if(result.state==='applied')say('Nano playback speed updated to '+speed()+'% without retransmitting any image.');
+ }catch(e){say('Speed change failed: '+e.message);}};
+$('generate').onclick=generate;$('animate').onclick=animate;
+$('play').onclick=play;$('pause').onclick=pause;$('publish').onclick=publish;
+$('stop').onclick=async()=>{try{await command('assetStop',{},30000);published=false;say('Nano animation stopped.');}catch(e){say('Stop failed: '+e.message);}};
+window.addEventListener('load',()=>{refresh();resize();});new ResizeObserver(resize).observe(document.body);
+updateSpeedLabel();refresh();
+})();
+</script></body></html>
