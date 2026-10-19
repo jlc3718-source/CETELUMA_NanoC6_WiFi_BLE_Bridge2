@@ -51,7 +51,7 @@ bool jh2_slot_transfer(const uint8_t *file,size_t size,uint8_t id,
     n+=field(header+n,4,0);n+=field(header+n,5,parts);n+=field(header+n,6,500);
     n+=field(header+n,7,0);
     if(!original_4k){header[n++]=66;header[n++]=9;
-        memcpy(header+n,"83929.eff",9);n+=9;}
+        memcpy(header+n,"83928.eff",9);n+=9;}
     n+=field(header+n,9,JH2_TEST_CID);
     header[7]=crc8(header,n);
     jh2_slot_session session={0};
