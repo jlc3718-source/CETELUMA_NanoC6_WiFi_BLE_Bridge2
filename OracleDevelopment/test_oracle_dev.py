@@ -1,4 +1,5 @@
-import base64,hashlib,http.client,json,pathlib,re,sys,tempfile,threading,types,unittest,urllib.parse
+import base64,hashlib,http.client,json,os,pathlib,re,sys,tempfile,threading,types,unittest,urllib.parse
+from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
 from oracle_dev import Development,Authorization,CALLBACK,Server,digest
 
@@ -53,6 +54,24 @@ class DeploymentTests(unittest.TestCase):
         s=self.stage();self.d.validate(s['id'],'owner')
         with self.assertRaises(ValueError):self.d.deploy(s['id'],'different')
     def test_self_test_restores_exact_bytes(self):self.assertTrue(self.d.self_test('owner')['finalSourceUnchanged'])
+    def test_private_service_umask_keeps_isolated_tests_readable(self):
+        trusted=pathlib.Path(self.tmp.name)/'trusted-test.mjs';trusted.write_text('// trusted component test')
+        self.d.config['animation_test']=str(trusted);self.d.config['projects']['jason-home-2']['image']='trusted-node-image'
+        self.b.files.update({'web/curtain_ai_animation.html':b'<!doctype html><main>test</main>','curtain_asset.mjs':b'export const test=1;'})
+        staged=self.stage();seen=[]
+        def isolated(*args,**kwargs):
+            self.assertEqual(args[:2],('docker','run'));self.assertIn('--read-only',args);self.assertIn('65534:65534',args)
+            self.assertEqual(args[args.index('--network')+1],'none')
+            mount=args[args.index('--mount')+1];work=pathlib.Path(mount.split('src=',1)[1].split(',dst=',1)[0]);self.assertTrue(mount.endswith(',readonly'))
+            self.assertEqual((work/'tests').stat().st_mode&0o005,0o005)
+            self.assertEqual((work/'tests/curtain-simple-animation.mjs').stat().st_mode&0o004,0o004)
+            self.assertEqual((work/'tests/curtain-simple-animation.mjs').read_text(),trusted.read_text());seen.append(True)
+            return b''
+        previous=os.umask(0o077)
+        try:
+            with patch('oracle_dev.run',side_effect=isolated):self.assertTrue(self.d.validate(staged['id'],'owner')['ok'])
+        finally:os.umask(previous)
+        self.assertEqual(seen,[True])
 
 class OAuthTests(unittest.TestCase):
     def setUp(self):

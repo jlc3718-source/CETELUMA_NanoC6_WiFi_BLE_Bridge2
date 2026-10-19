@@ -8,7 +8,7 @@ import base64,contextlib,fcntl,hashlib,hmac,html,http.cookies,http.server,json,o
 from html.parser import HTMLParser
 
 NAME='Jason Home 2 Oracle Development'
-VERSION='1.0.3'
+VERSION='1.0.4'
 SCOPES={'oracle.read','oracle.deploy','oracle.device'}
 CALLBACK='https://chatgpt.com/connector_platform_oauth_redirect'
 MAX_BODY=2_000_000
@@ -178,7 +178,7 @@ class Development:
             c,b=self.project(m['project'])
             (self.root/'sandbox').mkdir(exist_ok=True,mode=0o700)
             with tempfile.TemporaryDirectory(prefix='oracle-component-',dir=self.root/'sandbox') as tmp:
-                work=pathlib.Path(tmp);work.chmod(0o755);(work/'tests').mkdir(mode=0o755)
+                work=pathlib.Path(tmp);work.chmod(0o755);(work/'tests').mkdir(mode=0o755);(work/'tests').chmod(0o755)
                 for path in ('curtain_loop_animation.js','curtain_ai_animation.html','curtain_asset.mjs'):
                     live_path=path if path.endswith('.mjs') else 'web/'+path
                     changed=next((e for e in m['files'] if e['path']==live_path),None)
