@@ -258,3 +258,45 @@ test('Older streaming Nano firmware never drops Oracle animation bytes',()=>{
   assert.ok(b.asset(source.sha256)?.length>0);
  }finally{b.close();db.close();}
 });
+
+test('pumpkin eye edits compile to exact sparse SmartDawn RGB pixel masks without clear or full repaint',()=>{
+ const pixel=(x,y,r,g,b)=>({x,y,r,g,b});
+ const positions=[];
+ for(let y=17;y<=21;y++)for(let x=24;x<=28;x++)positions.push([x,y]);
+ const remove=positions.map(([x,y])=>pixel(x,y,255,112,0));
+ const restore=positions.map(([x,y])=>pixel(x,y,20,10,5));
+ const decode=asset=>{
+  const buf=asset.bytes;
+  assert.equal(buf.subarray(0,4).toString(),'JHC1');
+  assert.equal(buf.readUInt16LE(4),1);
+  assert.equal(buf[6],0,'delta is a single non-looping frame');
+  const writes=buf.readUInt16LE(12);
+  let off=14;const updated=[];
+  for(let k=0;k<writes;k++){
+   const channel=buf[off],len=buf.readUInt16LE(off+1);off+=3;
+   assert.equal(channel,1,'no 2713 clear or other control packet');
+   assert.ok(len>=9&&len<=204,'doodle payload fits verified BLE size');
+   const packet=buf.subarray(off,off+len);off+=len;
+   assert.equal(packet[1],1);assert.equal(packet[2],0);
+   assert.equal(packet[3],1,'exact RGB mask mode');
+   assert.equal(packet[4],1,'TUTU_DOODLE');
+   const rgb=[packet[5],packet[6],packet[7]];
+   let position=0;
+   for(const mask of packet.subarray(8)){
+    if(mask&128){for(let j=0;j<(mask&127);j++)updated.push({x:Math.floor((position+j)/40),y:(position+j)%40,r:rgb[0],g:rgb[1],b:rgb[2]});position+=mask&127;}
+    else position+=mask;
+   }
+  }
+  assert.equal(off,buf.length,'no unparsed bytes');
+  return updated.sort((a,b)=>a.y-b.y||a.x-b.x);
+ };
+ for(const requested of [remove,restore]){
+  const encoded=compileAsset({deltaPixels:requested,delay:800});
+  assert.equal(encoded.changedPixels,25);
+  assert.equal(encoded.format,'jh2-smartdawn-sparse-delta-v1');
+  assert.ok(encoded.bytes.length<100,'eye delta must be far smaller than full frame');
+  assert.deepEqual(decode(encoded),requested.slice().sort((a,b)=>a.y-b.y||a.x-b.x));
+ }
+ assert.throws(()=>compileAsset({deltaPixels:[pixel(40,0,1,2,3)]}),/Invalid changed pixel/);
+ assert.throws(()=>compileAsset({deltaPixels:[pixel(1,1,0,0,0),pixel(1,1,1,1,1)]}),/duplicate pixel/);
+});
