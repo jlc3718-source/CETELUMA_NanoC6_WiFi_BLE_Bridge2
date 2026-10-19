@@ -3,13 +3,13 @@ on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
     paths:
-      - 'legacy/release-1.1.50-locked/**'
-      - '.github/workflows/jh2-native-1-1-50-native-slot-signed-release.yml'
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-native-1-1-50-contiguous-control-signed-release.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'legacy/release-1.1.50-locked/**'
-      - '.github/workflows/jh2-native-1-1-50-native-slot-signed-release.yml'
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-native-1-1-50-contiguous-control-signed-release.yml'
   workflow_dispatch:
 permissions: {contents: write}
 concurrency:
