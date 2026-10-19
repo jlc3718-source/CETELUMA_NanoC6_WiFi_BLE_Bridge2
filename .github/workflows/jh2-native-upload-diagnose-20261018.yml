@@ -22,12 +22,15 @@ jobs:
               with urllib.request.urlopen(req,timeout=20) as res:return json.load(res),res.headers
           _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']});cookie=headers['Set-Cookie'].split(';')[0]
           notices,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          print('NOTIFICATION_COUNT',len(notices.get('notifications',[])),flush=True)
           for notice in notices.get('notifications',[]):
+              raw=base64.b64decode(notice['data'])
+              if notice['id']>=0: print('NOTICE_HEX',notice['id'],len(raw),raw[:40].hex(),flush=True)
               raw=base64.b64decode(notice['data'])
               if len(raw)>=24 and raw[4] in (240,241):
                   op=int.from_bytes(raw[10:12],'big')
                   if 2931<=op<=2934:print('CONTROLLER_REPLY',notice['id'],op,'rcode',raw[18],'first_bytes',raw[:40].hex(),flush=True)
-          for cid in range(14920,14942):
+          for cid in range(14947,14955):
               try:result,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
               except Exception:continue
               command=result.get('command') or {}
@@ -41,3 +44,4 @@ jobs:
 
 # Live v1.1.51 native 20KB type0 response diagnostic; read-only.
 # Read-only heartbeat after signed v1.1.52 install #14924 did not confirm.
+# Read-only latest 1.1.52 native type3 upload reply diagnosis for command #14954.
