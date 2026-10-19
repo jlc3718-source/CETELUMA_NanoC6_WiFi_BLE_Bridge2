@@ -79,10 +79,10 @@ try{
  // SmartDawn native encoder; do not trust a generic image/GIF byte stream.
  const w={};vm.runInNewContext(fs.readFileSync('/app/web/curtain_native_research.js','utf8'),
   {window:w,Uint8Array,Uint8ClampedArray,DataView,TextEncoder,console});
- const frames=w.JH2NativeResearch.sampleFrames();
+ const frames=w.JH2NativeResearch.sampleFrames().slice(0,2);
  const native=w.JH2NativeResearch.encodeSmartDawn(frames,{cid:83928,timestamp:4,name:'JH2 NEW PUMPKIN TEST'});
  const bytes=Buffer.from(native);
- if(bytes.length!==28672||bytes.subarray(0,4).toString()!=='DNMX'||bytes.readUInt32LE(14)!==83928)
+ if(bytes.length!==20480||bytes.subarray(0,4).toString()!=='DNMX'||bytes.readUInt32LE(14)!==83928)
    throw Error('Generated native SmartDawn file failed local checks');
  const digest=crypto.createHash('sha256').update(bytes).digest('hex');
  log('NEW_ANIMATION_PREPARED',{bytes:bytes.length,frames:frames.length,sha256:digest});
