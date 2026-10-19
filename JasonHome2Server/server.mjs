@@ -6,7 +6,7 @@ import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { lightingNightDate, resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene } from "./night_resolver.mjs";
 import { createNanoC6BrightnessSync } from "./nanoc6_sync.mjs";
-import { createCurtainAiAnimation } from "./curtain_ai_animation.mjs";
+import { createCurtainAiAnimation, normalizeCurtainAiGuides, CURTAIN_AI_DEFAULT_GUIDES } from "./curtain_ai_animation.mjs";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -143,7 +143,7 @@ db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NUL
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
 const curtainRelay=createCurtainBridge({db});
-const curtainAnimationAi=createCurtainAiAnimation({run:cloudflareAiRun,chat:cloudflareAiChat,text:cloudflareAiText,configured:cloudflareAiConfigured,model:AI_MODEL});
+const curtainAnimationAi=createCurtainAiAnimation({run:cloudflareAiRun,chat:cloudflareAiChat,text:cloudflareAiText,configured:cloudflareAiConfigured,model:AI_MODEL,guides:()=>meta("curtain_ai_animation_guides",CURTAIN_AI_DEFAULT_GUIDES)});
 const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 if(!meta("speed_scale_10")){
@@ -1076,6 +1076,16 @@ async function route(req,res){
     // The browser already applies manual changes optimistically. Do not block
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
+  }
+  // Authenticated Oracle-persistent prompt tuning. No arbitrary source upload or shell.
+  if(path==="/api/curtain/ai-animation/settings"){
+    if(method==="GET")return send(res,200,{ok:true,guides:meta("curtain_ai_animation_guides",CURTAIN_AI_DEFAULT_GUIDES),storage:"oracle"});
+    if(method==="POST"){
+      const config=normalizeCurtainAiGuides(await input(req));
+      put("curtain_ai_animation_guides",config);
+      return send(res,200,{ok:true,guides:config,storage:"oracle"});
+    }
+    throw fail(405,"Unsupported settings operation");
   }
   if(method==="POST"&&path==="/api/curtain/ai-animation/generate")return send(res,200,await curtainAnimationAi.generate(await input(req)));
   if(method==="POST"&&path==="/api/curtain/ai-animation/motion")return send(res,200,await curtainAnimationAi.motion(await input(req)));
