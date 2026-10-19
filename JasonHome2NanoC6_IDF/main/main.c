@@ -429,6 +429,21 @@ bool jh2_ble_raw_write(const char *uuid,const uint8_t *bytes,size_t len,uint32_t
     else if(strcmp(uuid,UPLOAD_UUID_TEXT)==0)attr=upload;
     if(!attr||len>(size_t)(ble_att_mtu(connection)-3))return false;
     if(xSemaphoreTake(raw_write_lock,pdMS_TO_TICKS(timeout_ms))!=pdTRUE)return false;
+    if(attr==upload){
+        // The original Android SmartDawn native file characteristic uses
+        // Write Without Response for its upload frames, unlike DDP commands.
+        // A controller 2931/2934 notification, NOT this transport result,
+        // is the authoritative acceptance of the file and packet count.
+        bool queued=false;
+        for(unsigned attempt=0;attempt<20;attempt++){
+            if(connection==BLE_HS_CONN_HANDLE_NONE)break;
+            int rc=ble_gattc_write_no_rsp_flat(connection,attr,bytes,(uint16_t)len);
+            if(rc==0){queued=true;break;}
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        xSemaphoreGive(raw_write_lock);
+        return queued;
+    }
     while(xSemaphoreTake(raw_write_event,0)==pdTRUE){}
     raw_write_pending=true;last_write_status=-1;
     int rc=ble_gattc_write_flat(connection,attr,bytes,(uint16_t)len,raw_write_done,NULL);
