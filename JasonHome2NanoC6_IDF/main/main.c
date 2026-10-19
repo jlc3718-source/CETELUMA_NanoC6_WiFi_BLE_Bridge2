@@ -25,6 +25,7 @@
 #include "freertos/task.h"
 #include "effectlist.h"
 #include "native_ble.h"
+#include "native_slot_guard.h"
 #include "bridge.h"
 #include "web_recovery.h"
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
