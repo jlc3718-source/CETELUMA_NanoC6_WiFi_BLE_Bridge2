@@ -40,3 +40,4 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 # DN1FE native reference relay rollout with original Android tab preserved.
+# Compiler-only DN1FE safe patch retry; preserve current deployed UI.
