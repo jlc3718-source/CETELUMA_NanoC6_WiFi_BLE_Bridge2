@@ -82,7 +82,7 @@ async function send(){
   const d=$('original').checked?delays:frames.map(()=>ms);
   report('Encoding '+frames.length+' frames for Nano cache…');
   const asset=await api('/api/curtain/assets',{name,frames:frames.map(b64),delays:d,quality,loop:$('loop').checked});
-  if(asset.bytes>196608)throw Error('Encoded local file is '+Math.ceil(asset.bytes/1024)+' KiB; reduce frames or quality to stay within Nano local cache limit.');
+  if(asset.bytes>163840)throw Error('Encoded local file is '+Math.ceil(asset.bytes/1024)+' KiB; reduce frames or quality to stay within Nano local cache limit.');
   report('Prepared '+asset.bytes+' bytes. Sending one authenticated copy to Nano…');
   const command=await api('/api/curtain/call',{action:'asset',payload:{sha256:asset.sha256},idempotencyKey:crypto.randomUUID()});
   if(!command.commandId)throw Error('No Nano transfer command ID');
