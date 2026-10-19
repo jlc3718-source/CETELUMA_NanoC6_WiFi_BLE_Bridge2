@@ -1,0 +1,105 @@
+name: JH2 Native Reserved Effect Preservation Audit
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-curtain-native-slot-prewrite-audit-20261019.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read-only saved asset inventory and latest controller catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import os,base64,json,sqlite3,hashlib,subprocess,urllib.request,collections
+          def inspect(name):return json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
+          back=inspect('jason-home');web=inspect('jason-home-2-web')
+          env=dict(v.split('=',1) for v in back['Config']['Env'] if '=' in v)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=None):
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers=h)
+              with urllib.request.urlopen(req,timeout=20) as result:return json.load(result),result.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          c=status.get('curtain') or {}
+          print('SAFE_STATUS',json.dumps({'firmware':status.get('firmware'),'online':status.get('online'),'connected':c.get('connected'),'catalogRecords':c.get('nativeCatalogUnique'),'target':c.get('nativeTarget83928'),'sectionComplete':c.get('nativeTargetSectionComplete'),'queued':status.get('queued')}),flush=True)
+          mount=next((m for m in web['Mounts'] if m['Destination']=='/data'),None)
+          if not mount:raise RuntimeError('No persistent Oracle asset database mount')
+          dbpath=os.path.join(mount['Source'],'jason-home-2.sqlite')
+          db=sqlite3.connect('file:'+dbpath+'?mode=ro',uri=True)
+          assets=[]
+          table_names={row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          if 'curtain_assets' in table_names:
+              for sha,blob,metadata in db.execute('SELECT sha,bytes,metadata FROM curtain_assets'):
+                  try:m=json.loads(metadata)
+                  except Exception:continue
+                  if not m.get('native'):continue
+                  raw=bytes(blob)
+                  cid=int.from_bytes(raw[4:8],'little') if raw[:4]==b'DN\x01\xfe' else int.from_bytes(raw[14:18],'little') if raw[:4] in (b'DNMX',b'DNCX') else 0
+                  assets.append({'cid':cid,'sha256':hashlib.sha256(raw).hexdigest(),'size':len(raw),'format':raw[:4].hex(),'name':str(m.get('name',''))[:50]})
+          print('ORACLE_NATIVE_ASSET_BACKUPS',json.dumps(assets),flush=True)
+          # Read-only event notifications, no BLE commands. The persistent
+          # Oracle feed contains recent 2904 EffectList responses when available.
+          response,_=api('/api/curtain/notifications?since=0',cookie=cookie)
+          notices=response.get('notifications') or []
+          def varint(b,i):
+              n=0;s=0
+              while i<len(b) and s<=63:
+                  c=b[i];i+=1;n|=(c&127)<<s
+                  if c<128:return n,i
+                  s+=7
+              raise ValueError('invalid varint')
+          def fields(b):
+              i=0
+              while i<len(b):
+                  tag,i=varint(b,i);k=tag>>3;w=tag&7
+                  if w==0:v,i=varint(b,i)
+                  elif w==2:
+                      count,i=varint(b,i)
+                      if i+count>len(b):raise ValueError('invalid length')
+                      v=b[i:i+count];i+=count
+                  elif w==5:v=b[i:i+4];i+=4
+                  elif w==1:v=b[i:i+8];i+=8
+                  else:raise ValueError('unsupported')
+                  yield k,v,w
+          packets={}
+          all_effects={}
+          for n in notices:
+              data=base64.b64decode(n.get('data',''))
+              if len(data)<25 or data[3]!=0:continue
+              ident,count,left=data[:3]
+              if count<1 or count>100 or left>=count:continue
+              index=count-left-1
+              old=packets.get(ident)
+              if not old or len(old)!=count:old=[None]*count;packets[ident]=old
+              old[index]=data[4:]
+              if any(p is None for p in old):continue
+              full=b''.join(old);packets.pop(ident,None)
+              if len(full)<20 or full[0] not in (240,241) or full[1]!=1:continue
+              op=full[6]*256+full[7]
+              if op!=2904:continue
+              try:
+                  for field,value,w in fields(full[20:]):
+                      if field!=1 or w!=2:continue
+                      effect={'id':0,'cid':0,'slot':0,'type':0}
+                      for field2,value2,w2 in fields(value):
+                          if field2==1 and w2==0:effect['id']=value2
+                          if field2==2 and w2==0:effect['type']=value2
+                          if field2==3 and w2==0:effect['slot']=value2
+                          if field2==4 and w2==0:effect['cid']=value2
+                      all_effects[effect['id']]=effect
+              except Exception:continue
+          candidates=[e for e in all_effects.values() if e['id']>=80 or e['cid'] in (83928,83929,83930,83931)]
+          print('CUSTOM_EFFECTS_READ_ONLY',json.dumps(sorted(candidates,key=lambda x:x['id'])),flush=True)
+          occupied={e['cid'] for e in all_effects.values()}
+          print('SPARE_CID_SURVEY',json.dumps({'recordsDecoded':len(all_effects),'83928':83928 in occupied,'83929':83929 in occupied,'83930':83930 in occupied,'83931':83931 in occupied,'sufficientForEmptyProof':len(all_effects)>=88}),flush=True)
+          PY
