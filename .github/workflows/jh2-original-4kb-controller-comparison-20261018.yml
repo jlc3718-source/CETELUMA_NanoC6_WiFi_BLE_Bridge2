@@ -1,0 +1,54 @@
+name: JH2 Original 4KB Reserved Slot Controller Comparison
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-original-4kb-controller-comparison-20261018.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - name: Fix self-hosted source checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Retrieve archived original 4KB controller backup from own repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin feat/jh2-curtain-offline-workspace-20261015
+          git show FETCH_HEAD:JasonHome2Server/curtain_converter.html > "$RUNNER_TEMP/jh2-legacy-converter.html"
+          grep -q 'const BACKUP=Uint8Array.from(atob(' "$RUNNER_TEMP/jh2-legacy-converter.html"
+      - name: Safely compare real reserved CID 83928 with original 4KB native file
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE,RUNNER_TEMP python3 - <<'PY'
+          import os,re,base64,json,subprocess,pathlib
+          legacy=pathlib.Path(os.environ['RUNNER_TEMP'],'jh2-legacy-converter.html').read_text()
+          match=re.search(r"const BACKUP=Uint8Array\.from\(atob\('([A-Za-z0-9+/=]+)'\)",legacy)
+          assert match,'Original BLE TEST backup was not available; abort'
+          data=base64.b64decode(match[1],validate=True)
+          assert len(data)==4096 and data[:4]==b'DN\x01\xfe' and int.from_bytes(data[4:8],'little')==83928,'Original backup is invalid'
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          child=dict(os.environ,JH2_TEST_TOKEN=env['JASON_HOME_API_TOKEN'],JH2_TEST_BACKUP_B64=match[1])
+          command=['docker','exec','-i','-e','JH2_TEST_TOKEN','-e','JH2_TEST_BACKUP_B64','jason-home-2-web','node','--input-type=module']
+          result=subprocess.run(command,input=(root/'.github/scripts/native-slot-4kb-control.mjs').read_text(),text=True,env=child)
+          subprocess.run(['docker','cp','jason-home-2-web:/tmp/jh2-native-4kb-control.json',str(root/'native-slot-4kb-control.json')],check=False)
+          if (root/'native-slot-4kb-control.json').exists():
+              (root/'native-slot-4kb-control.json').chmod(0o644)
+          raise SystemExit(result.returncode)
+          PY
+      - name: Save detailed outcome without secret material
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-Original-4KB-Controller-Comparison
+          path: native-slot-4kb-control.json
+          retention-days: 7
+          if-no-files-found: warn
