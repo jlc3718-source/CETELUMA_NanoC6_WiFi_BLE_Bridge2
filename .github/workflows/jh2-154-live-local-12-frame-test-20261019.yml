@@ -1,0 +1,95 @@
+name: JH2 v1.1.54 Twelve Frame Nano Local Cache Live Test
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-154-live-local-12-frame-test-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-local-animation-live-test, cancel-in-progress: false}
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Verify live Local Test UI and send 12-frame Nano-local playback without native slot writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 - <<'PY'
+          import subprocess,urllib.request,urllib.error,json,time,base64,hashlib
+          backend=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in backend['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              raw=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,data=raw,headers=headers,method='POST' if raw is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=28) as response:
+                  return json.load(response),response.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers.get('Set-Cookie','').split(';')[0]
+          assert cookie.startswith('jh2=')
+          state,_=api('/api/curtain/status',cookie=cookie)
+          c=state.get('curtain') or {}
+          safe={'fw':state.get('firmware'),'online':state.get('online'),'ble':c.get('connected'),
+                'cache':c.get('nanoLocalCacheSupported'),'available':c.get('nanoLocalCacheAvailableBytes'),
+                'queue':state.get('queued')}
+          print('BEFORE_LOCAL_TEST',json.dumps(safe),flush=True)
+          assert state.get('firmware')=='1.1.54', 'Firmware not at local cache + Bluetooth release'
+          assert state.get('online') is True and c.get('connected') is True
+          assert c.get('nanoLocalCacheSupported') is True
+          assert int(state.get('queued') or 0)==0, 'Existing command pending: do not interrupt'
+          # Create a tiny deterministic 12-frame 40x40 RGB-on-black travelling orange/purple
+          # checker. No controller-slot action, no native effect catalog changes.
+          frames=[]
+          for k in range(12):
+              frame=bytearray(40*40*4)
+              for y in range(40):
+                  for x in range(40):
+                      i=(40*y+x)*4
+                      on=(abs(x-(k*3)%40)<=2 and (y%5)<3) or (abs(y-(k*3)%40)<=1 and (x%6)<4)
+                      rgb=(255,93,0) if k%2==0 else (119,24,204)
+                      frame[i:i+3]=bytes(rgb if on else (0,0,0))
+                      frame[i+3]=255
+              frames.append(base64.b64encode(frame).decode())
+          print('TEST_FRAME_COUNT',len(frames),flush=True)
+          uploaded,_=api('/api/curtain/assets',{'name':'Local Test 12-frame moving stripe',
+                       'frames':frames,'quality':'pal8','delays':[180]*12,'loop':False},cookie=cookie)
+          sha=uploaded['sha256'];size=int(uploaded['bytes'])
+          print('STAGED_ANIMATION',{'bytes':size,'frames':12,'fits':size<=int(c.get('nanoLocalCacheAvailableBytes') or 0)},flush=True)
+          assert size<=int(c.get('nanoLocalCacheAvailableBytes') or 0),'Not enough physical LittleFS space; no command sent'
+          queued,_=api('/api/curtain/call',{'action':'asset','payload':{'sha256':sha},
+                           'idempotencyKey':'jh2-154-local-12frame-20261019-once'},cookie=cookie)
+          command_id=queued['commandId']
+          print('LOCAL_TEST_COMMAND_ID',command_id,flush=True)
+          terminal=None
+          for i in range(150):
+              data,_=api('/api/curtain/command?id='+str(command_id),cookie=cookie)
+              cmd=data.get('command') or {}
+              state_id=cmd.get('state')
+              if state_id in ('applied','failed','expired','superseded'):
+                  terminal=cmd
+                  break
+              if i%10==0:print('LOCAL_TEST_WAIT',state_id,'seconds',int(i*1.2),flush=True)
+              time.sleep(1.2)
+          assert terminal is not None,'Nano local test command never reached terminal state'
+          result=terminal.get('result') or {}
+          print('LOCAL_TEST_FINAL',json.dumps({'commandId':command_id,'state':terminal.get('state'),
+                 'message':result.get('message'),'bleTransmitted':result.get('bleTransmitted'),
+                 'physicalPlaybackConfirmed':result.get('physicalPlaybackConfirmed')},sort_keys=True),flush=True)
+          assert terminal['state']=='applied','Nano failed to accept cached animation'
+          assert result.get('bleTransmitted') is True,'No first-frame BLE transmission'
+          assert 'cached on Nano' in result.get('message',''),'Firmware did not confirm local flash cache'
+          # Allow rest of 12 frames to play. Read status but do not assume actual
+          # visible motion without user confirmation.
+          time.sleep(6)
+          after,_=api('/api/curtain/status',cookie=cookie)
+          a=after.get('curtain') or {}
+          print('POST_LOCAL_TEST',json.dumps({'firmware':after.get('firmware'),
+                'online':after.get('online'),'bleConnected':a.get('connected'),
+                'localAvailable':a.get('nanoLocalCacheAvailableBytes'),
+                'relayStreaming':after.get('relayStreaming'),
+                'retention':after.get('assetRetention')},sort_keys=True,default=str)[:2000],flush=True)
+          manifest,_=api('/api/curtain/assets/'+sha,cookie=cookie) if False else ({},None)
+          print('LOCAL_12_FRAME_NANO_CACHE_TEST_SUCCEEDED_FIRST_FRAME_ONLY',flush=True)
+          PY
