@@ -140,39 +140,43 @@ test('AI Animation prompt, preview, frame count, speed slider and local delta pu
  assert.ok(html.includes("status.firmware!=='1.1.55'"));
  const motion=read('JasonHome2Server/curtain_loop_animation.js');
  new Script(motion,{filename:'curtain_loop_animation.js'});
- assert.ok(motion.includes('output.push(new Uint8ClampedArray(first))'));
- assert.ok(motion.includes('function buildKeyframes('));
- assert.ok(!html.includes('L.build(base,'));
- assert.ok(html.includes('options.poses.length!==4'));
+ assert.ok(motion.includes('function buildSimpleAnimation('));
+ assert.ok(!motion.includes('function buildKeyframes('));
+ assert.ok(html.includes('L.buildSimpleAnimation(base,'));
+ assert.ok(!html.includes("api('/api/curtain/ai-animation/motion'"));
+ assert.ok(!html.includes("api('/api/curtain/ai-animation/generate',{prompt:description,pose:"));
+ assert.ok(html.includes('max>25'));
  const plan=read('JasonHome2Server/curtain_ai_animation.mjs');
  assert.ok(plan.includes('createCurtainAiAnimation'));
 });
 
 
-test('AI Animation produces real per-pixel changing character poses, 24 frames, no sliding and exact loop',()=>{
+test('Animation is a simple 5x5 eye patch edit then exact restore, not multiple full AI poses',()=>{
  const code=read('JasonHome2Server/curtain_loop_animation.js');
  const context={window:{},Uint8ClampedArray,Math,Uint8Array};
  runInNewContext(code,context);
  const engine=context.window.JH2LoopAnimation;
- assert.equal(typeof engine.buildKeyframes,'function');
- assert.equal(engine.build,undefined,'legacy slide/move generator must be removed');
+ assert.equal(typeof engine.buildSimpleAnimation,'function');
+ assert.equal(engine.buildKeyframes,undefined,'no extra pose redraws');
  const base=new Uint8ClampedArray(6400);
- for(let k=3;k<6400;k+=4)base[k]=255;
- const poses=[base];
- for(let pose=0;pose<4;pose++){
-  const picture=new Uint8ClampedArray(base);
-  for(let y=13;y<17;y++)for(let x=12+pose*3;x<17+pose*3;x++){
-   const k=(y*40+x)*4;
-   picture[k]=255;picture[k+1]=100;picture[k+2]=pose*30;
-  }
-  poses.push(picture);
+ for(let y=8;y<=32;y++)for(let x=8;x<=32;x++){
+  const i=(y*40+x)*4;base.set([255,106,0,255],i);
  }
- const frames=engine.buildKeyframes(poses,{count:24});
+ // Carved right eye is a BLACK 5x5 hole surrounded by orange.
+ for(let y=16;y<=20;y++)for(let x=22;x<=26;x++){
+  const i=(y*40+x)*4;base.set([0,0,0,255],i);
+ }
+ const original=Buffer.from(base);
+ const frames=engine.buildSimpleAnimation(base,{prompt:'orange pumpkin with a right-eye wink',count:24});
  assert.equal(frames.length,24);
- const changes=engine.validate(frames);
- assert.equal(changes.length,23);
+ const changed=engine.validate(frames);
+ assert.equal(changed.length,23);
+ assert.ok(changed.some(n=>n>=5),'wink must visibly alter eye pixels');
+ assert.ok(changed.some(n=>n===0),'held frames must not send any delta pixels');
+ assert.ok(changed.every(n=>n<=25),'each BLE frame must change at most 5x5 pixels');
  assert.equal(engine.deltaCount(frames[0],frames.at(-1)),0);
- assert.ok(changes.some(n=>n>5),'real pose changes must modify multiple face/body pixels');
- assert.ok(new Set(frames.map(a=>Buffer.from(a).toString('hex'))).size>4,'sequence must show intermediate image changes');
- assert.equal(frames[0][0],0,'background stays anchored');
+ assert.deepEqual(Buffer.from(base),original,'original image must remain untouched');
+ assert.ok(frames.some(frame=>frame[(18*40+24)*4]>128),'black wink eye must temporarily return to pumpkin color');
+ assert.ok(frames.every(frame=>frame[(10*40+10)*4]===255),'the other body pixels never change');
+ assert.ok(frames.every(frame=>frame[(6*40+6)*4]===0),'the background never changes');
 });
