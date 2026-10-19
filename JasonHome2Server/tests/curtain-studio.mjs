@@ -117,19 +117,15 @@ test('AI revamp honors the user-selected subject and manual framing',()=>{
   assert.match(converter,/userSubjectLocked=true/);
 });
 
-test('Nano Local Test tab is adjacent to Native Test and uses protected separate iframe',()=>{
-  assert.match(curtain,/subnav\.append\(oldButton,studioButton,testButton,localButton\)/);
-  assert.match(curtain,/id='jh2CurtainLocalTestTab'/);
-  assert.match(curtain,/jh2-local-test-frames/);
-  assert.match(converter,/id="sendLocalTest"/);
-  const local=read('JasonHome2Server/curtain_local_test.html');
-  const js=[...local.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(js.length,1);
-  new Script(js[0][1],{filename:'curtain_local_test.js'});
-  assert.match(local,/nanoLocalCacheSupported/);
-  assert.match(local,/Send to Nano/);
-  assert.match(server,/curtain_local_test\.html/);
-  assert.match(generator,/curtain_local_test\.html/);
+test('AI Animation replaces Local Test while Native Test and original Image Studio remain',()=>{
+ assert.match(curtain,/subnav\\.append\\(oldButton,studioButton,testButton,aiButton\\)/);
+ assert.match(curtain,/jh2CurtainAnimationTab/);
+ assert.match(curtain,/curtain_ai_animation\\.html/);
+ assert.doesNotMatch(curtain,/localFrame|pendingLocalTest|jh2CurtainLocalTestTab/);
+ assert.match(server,/curtain_ai_animation\\.html/);
+ assert.match(generator,/curtain_ai_animation\\.html/);
+ assert.doesNotMatch(generator,/curtain_local_test\\.html/);
+ assert.doesNotMatch(converter,/sendLocalTest/);
 });
 
 test('Native Test has three standalone pumpkin stages and no destructive native slot uploader',()=>{
@@ -143,14 +139,20 @@ test('Native Test has three standalone pumpkin stages and no destructive native 
  assert.match(html,/commandId/);
  assert.doesNotMatch(html,/smartDawnUpload|nativeSlotUpload|Convert &amp; Send to Controller/);
 });
-test('Direct local image/GIF picker decodes WebCodecs animated frames with source delays',()=>{
- const html=read('JasonHome2Server/curtain_local_test.html');
- const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
+test('AI Animation prompt, preview, frame count, speed slider and local delta publish parse',()=>{
+ const html=read('JasonHome2Server/curtain_ai_animation.html');
+ const scripts=[...html.matchAll(/<script[^>]*>([\\s\\S]*?)<\\/script>/g)];
  assert.equal(scripts.length,1);
- new Script(scripts[0][1],{filename:'curtain_local_test.js'});
- assert.match(html,/id="localFile"/);
- assert.match(html,/new ImageDecoder/);
- assert.match(html,/decoder\.decode\(\{frameIndex:index,completeFramesOnly:true\}\)/);
- assert.match(html,/timings\.push/);
- assert.match(html,/jh2-local-test-frames/);
+ new Script(scripts[0][1],{filename:'curtain_ai_animation.js'});
+ for(const id of ['prompt','generate','animate','count','speed','preview','publish','stop'])
+  assert.match(html,new RegExp('id="'+id+'"'));
+ assert.match(html,/seamlessAnimation:true/);
+ assert.match(html,/action/);
+ assert.match(html,/assetSpeed/);
+ assert.match(html,/firmware!==['"]1\\.1\\.55/);
+ const motion=read('JasonHome2Server/curtain_loop_animation.js');
+ new Script(motion,{filename:'curtain_loop_animation.js'});
+ assert.match(motion,/output\\.push\\(new Uint8ClampedArray\\(first\\)\\)/);
+ const plan=read('JasonHome2Server/curtain_ai_animation.mjs');
+ new Script(plan,{filename:'curtain_ai_animation.mjs'});
 });
