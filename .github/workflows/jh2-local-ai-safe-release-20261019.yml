@@ -34,4 +34,13 @@ jobs:
           sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-local-ai-safe-release-20261019.py \
             --baseline-server "$RUNNER_TEMP/jh2-base-server.mjs" \
             --baseline-ui "$RUNNER_TEMP/jh2-base-ui.html"
-          echo SAFE_RELEASE_STILL_NOT_APPLIED
+          echo SAFE_RELEASE_MERGE_VALIDATED
+      - name: Back up and publish Jason Home 2 AI files only, then live-verify and automatically roll back on error
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-local-ai-safe-release-20261019.py \
+            --baseline-server "$RUNNER_TEMP/jh2-base-server.mjs" \
+            --baseline-ui "$RUNNER_TEMP/jh2-base-ui.html" \
+            --apply
+          echo ORACLE_SELF_HOSTED_AI_PUBLISHED_AND_VERIFIED
