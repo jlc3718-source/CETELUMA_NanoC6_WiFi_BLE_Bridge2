@@ -47,7 +47,7 @@ jobs:
           modelinfo={'repository':MODEL_REPO,'revision':revision,'file':MODEL_NAME,'sha256':expected,'bytes':size,'license':meta.get('cardData',{}).get('license'),'runtimeSource':'https://github.com/leejet/stable-diffusion.cpp','runtimeRevision':PIN,'baseModel':'Lykon/dreamshaper-7','adapter':'latent-consistency/lcm-lora-sdv1-5','productionIntegration':False}
           (ROOT/'model_manifest.json').write_text(json.dumps(modelinfo,indent=2))
           download('https://huggingface.co/'+MODEL_REPO+'/resolve/'+revision+'/README.md',ROOT/'MODEL_README.md')
-          download('https://huggingface.co/spaces/CompVis/stable-diffusion-license/resolve/main/LICENSE',ROOT/'MODEL_BASE_LICENSE.txt')
+          download('https://raw.githubusercontent.com/CompVis/stable-diffusion/main/LICENSE',ROOT/'MODEL_BASE_LICENSE.txt')
           modelinfo['downloadSeconds']=download('https://huggingface.co/'+MODEL_REPO+'/resolve/'+revision+'/'+MODEL_NAME,ROOT/'models'/MODEL_NAME,expected)
           (ROOT/'model_manifest.json').write_text(json.dumps(modelinfo,indent=2))
           print('MODEL_DOWNLOADED '+json.dumps(modelinfo),flush=True)
