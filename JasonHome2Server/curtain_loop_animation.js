@@ -109,7 +109,7 @@ function buildSimpleAnimation(base,{prompt='',count=24}={}){
  const box=subjectBox(base),color=bodyColor(base,box);
  const text=String(prompt||'').toLowerCase();
  const wantsEye=/(wink|blink|eye|eyelid|pumpkin|ghost|face)/.test(text);
- const wantsMouth=/(smil|grin|mouth|laugh|talk|teeth|pumpkin)/.test(text);
+ const wantsMouth=/(smil|grin|mouth|laugh|talk|teeth)/.test(text);
  // If no feature is specified, default to the original successful wink.
  const wink=editedPatch(base,box,'eye',color);
  // Four-frame loops use the exact original three-stage wink/restore sequence.
