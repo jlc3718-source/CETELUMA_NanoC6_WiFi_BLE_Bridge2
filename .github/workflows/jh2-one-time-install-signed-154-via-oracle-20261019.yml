@@ -1,8 +1,8 @@
-name: JH2 One-Time Signed v1.1.54 Web OTA With Post-Reboot Verification
+name: JH2 One-Time Signed v1.1.55 Web OTA With Post-Reboot Verification
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
-    paths: ['.github/workflows/jh2-one-time-install-signed-154-via-oracle-20261019.yml']
+    paths: ['.github/workflows/jh2-one-time-install-signed-155-via-oracle-20261019.yml']
 permissions: {contents: read}
 concurrency:
   group: jh2-production-signed-ota-singleton
@@ -10,9 +10,9 @@ concurrency:
 jobs:
   install:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 9
+    timeout-minutes: 18
     steps:
-      - name: Validate signed 1.1.54, install once via Oracle, check hardware heartbeat
+      - name: Validate signed 1.1.55, install once via Oracle, check hardware heartbeat
         shell: bash
         run: |
           set -euo pipefail
@@ -27,15 +27,17 @@ jobs:
               if cookie:headers['Cookie']=cookie
               req=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
               with urllib.request.urlopen(req,timeout=20) as res:return json.load(res),res.headers
+          # OTA is only permitted when the exact signed v1.1.55 channel is staged.
+          # An installation already at 1.1.55 exits without changing the Nano.
           for waiting in range(60):
               signed,_=api('/api/curtain/firmware-manifest')
-              if 'version=1.1.54\n' in signed.get('payload',''):break
-              if waiting%6==0:print('WAITING_FOR_VERIFIED_SIGNED_153_BUILD',flush=True)
+              if 'version=1.1.55\n' in signed.get('payload',''):break
+              if waiting%6==0:print('WAITING_FOR_VERIFIED_SIGNED_154_BUILD',flush=True)
               time.sleep(5)
           assert signed.get('schema')==1 and signed.get('signature')
           manifest=dict(x.split('=',1) for x in signed['payload'].strip().splitlines())
-          assert manifest.get('version')=='1.1.54' and manifest.get('commit')=='e605212c4cac296bf82c6de4b8ec2b2e90eaa623', 'Signed version changed; no OTA'
-          with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.54.bin',timeout=90) as res:
+          assert manifest.get('version')=='1.1.55' and manifest.get('commit')=='0fa4a70666bc7e594bb633d01640ee08073b98f3', 'Signed version changed; no OTA'
+          with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.55.bin',timeout=90) as res:
               digest=hashlib.sha256();total=0
               while True:
                   d=res.read(65536)
@@ -48,15 +50,15 @@ jobs:
           assert cookie.startswith('jh2=')
           s,_=api('/api/curtain/status',cookie=cookie)
           print('PRE_INSTALL',{'fw':s.get('firmware'),'online':s.get('online'),'queue':s.get('queued'),'ble':(s.get('curtain') or {}).get('connected')},flush=True)
-          if s.get('firmware')=='1.1.54':
+          if s.get('firmware')=='1.1.55':
               print('ALREADY_INSTALLED_NO_REPEAT',flush=True);raise SystemExit(0)
-          assert s.get('firmware')=='1.1.53' and s.get('online') is True, 'Physical preconditions have changed; abort OTA'
+          assert s.get('firmware')=='1.1.54' and s.get('online') is True, 'Physical preconditions have changed; abort OTA'
           for _ in range(60):
               if int(s.get('queued') or 0)==0:break
               time.sleep(1)
               s,_=api('/api/curtain/status',cookie=cookie)
           assert int(s.get('queued') or 0)==0, 'Queued operations never drained; no OTA'
-          request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},'idempotencyKey':'jh2-154-preinstall-verify-20261019-ble-connect'},cookie=cookie)
+          request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},'idempotencyKey':'jh2-155-preinstall-verify-20261019-ble-connect'},cookie=cookie)
           cid=int(request['commandId']);accepted=False
           for _ in range(100):
               r,_=api('/api/curtain/command?id='+str(cid),cookie=cookie);c=r['command']
@@ -66,7 +68,7 @@ jobs:
                   break
               time.sleep(.6)
           assert accepted, 'Nano declined signed image; no OTA'
-          request,_=api('/api/curtain/call',{'action':'nanoInstallUpdate','payload':{},'idempotencyKey':'jh2-one-time-signed-154-20261019-ble-connect'},cookie=cookie)
+          request,_=api('/api/curtain/call',{'action':'nanoInstallUpdate','payload':{},'idempotencyKey':'jh2-one-time-signed-155-20261019-ble-connect'},cookie=cookie)
           cid=int(request['commandId']);print('OTA_INSTALL_COMMAND',cid,flush=True)
           accepted=False
           for _ in range(150):
@@ -80,10 +82,10 @@ jobs:
           for i in range(110):
               time.sleep(3)
               s,_=api('/api/curtain/status',cookie=cookie)
-              if s.get('firmware')=='1.1.54' and s.get('online') is True:
+              if s.get('firmware')=='1.1.55' and s.get('online') is True:
                   c=s.get('curtain') or {}
-                  print('OTA_1_1_54_PHYSICAL_HEARTBEAT',json.dumps({'firmware':s.get('firmware'),'online':s.get('online'),'uptime':s.get('uptimeSeconds'),'bleConnected':c.get('connected'),'mtu':c.get('mtu'),'catalogUnique':c.get('nativeCatalogUnique'),'nativeTarget83928Count':c.get('nativeTarget83928Count'),'nativeDiscoveredDevicesCount':len(c.get('nativeDiscoveredDevices') or [])},sort_keys=True),flush=True)
+                  print('OTA_1_1_55_PHYSICAL_HEARTBEAT',json.dumps({'firmware':s.get('firmware'),'online':s.get('online'),'uptime':s.get('uptimeSeconds'),'bleConnected':c.get('connected'),'mtu':c.get('mtu'),'catalogUnique':c.get('nativeCatalogUnique'),'nativeTarget83928Count':c.get('nativeTarget83928Count'),'nativeDiscoveredDevicesCount':len(c.get('nativeDiscoveredDevices') or [])},sort_keys=True),flush=True)
                   raise SystemExit(0)
               if i%10==0:print('OTA_WAITING',{'fw':s.get('firmware'),'online':s.get('online'),'elapsedSeconds':i*3},flush=True)
-          raise RuntimeError('OTA accepted but Nano v1.1.54 heartbeat not confirmed; manual recovery required before any repeat')
+          raise RuntimeError('OTA accepted but Nano v1.1.55 heartbeat not confirmed; manual recovery required before any repeat')
           PY
