@@ -1,0 +1,67 @@
+name: JH2 1.1.52 Verified Signed Firmware Download
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-1-1-52-signed-ota-package.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  signed-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-RX16-2M-PHY-1.1.52-FULL-0x0-AND-OTA
+          run-id: 39185772094
+          github-token: ${{ github.token }}
+          path: signed-package
+      - name: Verify compiled 1.1.52 image and sign with existing trusted OTA key
+        shell: bash
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$OTA_SIGNING_KEY_B64"
+          cp signed-package/JH2-RX16-2M-PHY-1.1.52-RUNTIME-OTA.bin signed-package/jh2-runtime-1.1.52.bin
+          python3 - <<'PY'
+          import pathlib,hashlib,json
+          root=pathlib.Path('signed-package')
+          manifest=json.loads((root/'BUILD-MANIFEST.json').read_text())
+          assert manifest['version']=='1.1.52-native-slot-web'
+          assert manifest['commit']=='1f575b6c9eb1d216eaff051b96381d39b43e285f'
+          a=(root/'jh2-runtime-1.1.52.bin').read_bytes()
+          assert 0x120000<len(a)<=0x290000 and a[0]==0xe9 and a[12]==13 and a[13]==0
+          assert b'1.1.52-native-slot-web' in a and b'/api/firmware/install' in a
+          assert hashlib.sha256(a).hexdigest()==manifest['sha256_ota']
+          release={'product':'jason-home-2-nanoc6','version':'1.1.52','commit':manifest['commit'],'files':{'jh2-runtime-1.1.52.bin':{'bytes':len(a),'sha256':hashlib.sha256(a).hexdigest()}}}
+          (root/'release.json').write_text(json.dumps(release,indent=2)+chr(10))
+          print('COMPILED_1_1_52_VERIFIED',len(a))
+          PY
+          key="$RUNNER_TEMP/jh2-ota-signing.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 -d > "$key"
+          chmod 600 "$key"
+          python3 JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release signed-package/release.json --output signed-package/latest.json
+          python3 - <<'PY'
+          import base64,json,pathlib,subprocess,tempfile
+          root=pathlib.Path('signed-package');m=json.loads((root/'latest.json').read_text())
+          assert m['schema']==1 and ('version=1.1.52'+chr(10)) in m['payload']
+          with tempfile.TemporaryDirectory() as d:
+              p=pathlib.Path(d);(p/'payload').write_text(m['payload'])
+              (p/'sig').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem','-signature',str(p/'sig'),str(p/'payload')],check=True)
+          print('SIGNATURE_VERIFIED_READY_FOR_MANUAL_NANO_WEB_UPDATE')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-1.1.52-SIGNED-MANUAL-OTA
+          path: |
+            signed-package/jh2-runtime-1.1.52.bin
+            signed-package/latest.json
+            signed-package/release.json
+            signed-package/SHA256SUMS-NEW.txt
+          retention-days: 30
+          if-no-files-found: error
