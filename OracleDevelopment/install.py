@@ -20,7 +20,7 @@ def main():
  nginx_before=pathlib.Path('/etc/nginx/sites-available/jason-home').read_bytes()
  ROOT.mkdir(mode=0o700,exist_ok=True);STATE.mkdir(mode=0o700,exist_ok=True)
  ROOT.chmod(0o700);STATE.chmod(0o700)
- for name in ('oracle_dev.py','test_oracle_dev.py'):shutil.copyfile(SRC/name,ROOT/name);(ROOT/name).chmod(0o600)
+ for name in ('oracle_dev.py','test_oracle_dev.py','local_ai_smoke.mjs'):shutil.copyfile(SRC/name,ROOT/name);(ROOT/name).chmod(0o600)
  shutil.copyfile(SRC.parent/'JasonHome2Server/tests/curtain-simple-animation.mjs',ROOT/'curtain-simple-animation.mjs');(ROOT/'curtain-simple-animation.mjs').chmod(0o600)
  # Python dependencies are isolated from existing applications.
  if not (ROOT/'venv/bin/pip').exists():
@@ -37,10 +37,10 @@ def main():
  files=[]
  for p in candidates:
   rel=p.removeprefix('/app/')
-  if rel=='nano_remote.html' or re.fullmatch(r'[A-Za-z0-9_]+\.mjs',rel) or re.fullmatch(r'web/[A-Za-z0-9_]+\.(?:html|js|css)',rel):files.append(rel)
+  if rel!='local_ai.mjs' and (rel=='nano_remote.html' or re.fullmatch(r'[A-Za-z0-9_]+\.mjs',rel) or re.fullmatch(r'web/[A-Za-z0-9_]+\.(?:html|js|css)',rel)):files.append(rel)
  assert 'web/curtain_loop_animation.js' in files and 'server.mjs' in files
  config={'origin':'https://'+HOST,'hosts':[HOST,HOST+':443','127.0.0.1:8186'],'state':str(STATE),'animation_test':str(ROOT/'curtain-simple-animation.mjs'),'projects':{
-  'jason-home-2':{'enabled':True,'container':'jason-home-2-web','image':info['Config']['Image'],'files':sorted(files),'health':'http://127.0.0.1:8081/api/health','origin':'http://127.0.0.1:8081'}}}
+  'jason-home-2':{'enabled':True,'container':'jason-home-2-web','image':info['Config']['Image'],'files':sorted(files),'read_only_files':['local_ai.mjs'],'health':'http://127.0.0.1:8081/api/health','origin':'http://127.0.0.1:8081'}}}
  put(ROOT/'config.json',json.dumps(config,indent=2))
  put(pathlib.Path('/etc/systemd/system/oracle-home-development.service'),f'''[Unit]
 Description=Restricted Oracle Home Development MCP

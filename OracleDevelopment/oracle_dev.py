@@ -4,11 +4,11 @@
 The HTTP service only accepts named operations and exact allowlisted files.
 Secrets, database files, firmware and original Jason Home are excluded.
 """
-import base64,contextlib,fcntl,hashlib,hmac,html,http.cookies,http.server,json,os,pathlib,re,secrets,sqlite3,subprocess,tempfile,threading,time,urllib.parse,urllib.request,uuid
+import base64,contextlib,fcntl,hashlib,hmac,html,http.cookies,http.server,json,os,pathlib,re,secrets,sqlite3,subprocess,tempfile,threading,time,urllib.parse,urllib.request,uuid,zlib
 from html.parser import HTMLParser
 
 NAME='Jason Home 2 Oracle Development'
-VERSION='1.0.4'
+VERSION='1.0.5'
 SCOPES={'oracle.read','oracle.deploy','oracle.device'}
 CALLBACK='https://chatgpt.com/connector_platform_oauth_redirect'
 MAX_BODY=2_000_000
@@ -18,6 +18,39 @@ def require(ok,message):
     if not ok:raise ValueError(message)
 def digest(b):return hashlib.sha256(b if isinstance(b,bytes) else b.encode()).hexdigest()
 def canonical(v):return json.dumps(v,sort_keys=True,separators=(',',':')).encode()
+def png_metadata(image):
+    require(isinstance(image,str) and len(image)<=1_000_000,'Missing or oversized test image')
+    prefix='data:image/png;base64,'
+    require(image.startswith(prefix),'Existing artwork generator did not return a PNG data URI')
+    data=base64.b64decode(image[len(prefix):],validate=True)
+    require(data.startswith(b'\x89PNG\r\n\x1a\n'),'Invalid PNG signature')
+    pos=8;header=None;compressed=[];ended=False;idat_ended=False
+    while pos<len(data):
+        require(pos+12<=len(data),'Truncated PNG chunk')
+        size=int.from_bytes(data[pos:pos+4],'big');kind=data[pos+4:pos+8];end=pos+12+size
+        require(end<=len(data),'Truncated PNG payload')
+        payload=data[pos+8:pos+8+size]
+        require(zlib.crc32(kind+payload)&0xffffffff==int.from_bytes(data[end-4:end],'big'),'PNG checksum mismatch')
+        require(header is not None or kind==b'IHDR','PNG header must be first')
+        if kind==b'IHDR':
+            require(header is None and size==13,'Invalid PNG header')
+            header=payload;width=int.from_bytes(payload[:4],'big');height=int.from_bytes(payload[4:8],'big')
+            require(1<=width<=512 and 1<=height<=512,'PNG dimensions exceed the bounded test')
+            require(payload[8:]==bytes([8,6,0,0,0]),'Expected noninterlaced 8-bit RGBA PNG')
+        elif kind==b'IDAT':
+            require(not idat_ended,'Noncontiguous PNG image chunks');compressed.append(payload)
+        elif kind==b'IEND':
+            require(size==0 and compressed and end==len(data),'Invalid PNG end chunk');ended=True;pos=end;break
+        else:
+            require(kind[0]&32,'Unsupported critical PNG chunk')
+            if compressed:idat_ended=True
+        pos=end
+    require(ended and pos==len(data),'Incomplete PNG')
+    stride=width*4+1;expected=stride*height;decoder=zlib.decompressobj()
+    rows=decoder.decompress(b''.join(compressed),expected+1)
+    require(len(rows)==expected and decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail,'Invalid PNG compressed pixel data')
+    require(all(rows[y*stride]<=4 for y in range(height)),'Invalid PNG scanline filter')
+    return {'width':width,'height':height,'format':'PNG','mimeType':'image/png','bytes':len(data),'sha256':digest(data)}
 def safe_id(v):
     require(isinstance(v,str) and re.fullmatch(r'[a-f0-9]{32}',v),'Invalid operation identifier')
     return v
@@ -44,6 +77,12 @@ class DockerProject:
     def read(self,path):
         # The path has already been selected from the root-owned allowlist.
         return run('docker','exec',self.config['container'],'cat','/app/'+path)
+    def local_ai_smoke_test(self):
+        # Root-owned, fixed connection helper; no caller-supplied code or arguments.
+        script=pathlib.Path(__file__).with_name('local_ai_smoke.mjs').read_bytes()
+        raw=run('docker','exec','-i',self.config['container'],'node','--input-type=module','-',data=script,timeout=165)
+        require(len(raw)<=1_000_000,'Oversized local AI test result')
+        return json.loads(raw)
     def write(self,path,data):
         # Atomic replacement within the existing container filesystem, not a shell.
         script="const fs=require('fs');const p=process.argv[1];if(fs.lstatSync(p).isSymbolicLink())throw Error('symlink');const t=p+'.oracle-dev-tmp';const s=fs.statSync(p);fs.writeFileSync(t,fs.readFileSync(0),{mode:s.mode&511});fs.chownSync(t,s.uid,s.gid);fs.renameSync(t,p);"
@@ -76,15 +115,46 @@ class Development:
     def __init__(self,config,state,backend_factory=DockerProject):
         self.config=config;self.root=pathlib.Path(state);self.root.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.backends={p:backend_factory(c) for p,c in config['projects'].items() if c.get('enabled')}
-        self.mutex=threading.RLock();self.session=''
+        self.mutex=threading.RLock();self.ai_mutex=threading.Lock();self.session=''
     def project(self,name):
         require(name in self.backends,'Project has no verified editable Oracle application; inspect connection_status')
         return self.config['projects'][name],self.backends[name]
-    def allowed(self,name,path):
+    def allowed(self,name,path,read_only=False):
         c,_=self.project(name)
-        require(isinstance(path,str) and path in c['files'],'File is outside the authorized project allowlist')
+        paths=c['files']+(c.get('read_only_files',[]) if read_only else [])
+        require(isinstance(path,str) and path in paths,'File is outside the authorized project allowlist')
         require(not any(p in path.split('/') for p in ('.','..','')) and not path.startswith('/'),'Invalid file path')
         return path
+    def local_ai_smoke_test(self,name):
+        require(name=='jason-home-2','Local AI test is limited to Jason Home 2')
+        _,b=self.project(name)
+        require(self.ai_mutex.acquire(blocking=False),'A local AI smoke test is already running')
+        try:
+            try:raw=b.local_ai_smoke_test()
+            except Exception as e:raw={'error':redacted(str(e))[:300]}
+            out={'project':name,'model':raw.get('model'),'availability':{'ok':False},'text':{'ok':False},'artwork':{'ok':False},'errors':[]}
+            for key in ('availability','text','artwork'):
+                result=raw.get(key) or {}
+                if key=='artwork':
+                    try:
+                        metadata=png_metadata(result.get('image'))
+                        out[key].update(metadata,dataValid=True,sourceKind=result.get('sourceKind'),sourceModel=result.get('sourceModel'))
+                        out[key]['ok']=result.get('ok') is True and metadata['width']==40 and metadata['height']==40 and result.get('sourceKind')=='model'
+                        if not out[key]['ok']:out[key]['error']='Existing generator used fallback artwork or returned unexpected dimensions'
+                    except Exception as e:out[key].update(dataValid=False,error=redacted(str(e))[:300])
+                else:
+                    out[key]['ok']=result.get('ok') is True
+                    if key=='text':
+                        reply=result.get('reply')
+                        out[key]['reply']=redacted(reply)[:160] if isinstance(reply,str) else ''
+                        out[key]['ok']=out[key]['ok'] and bool(out[key]['reply'].strip())
+                if result.get('error'):out[key]['error']=redacted(result['error'])[:300]
+                if not out[key]['ok']:
+                    out[key].setdefault('error',raw.get('error') or 'Local AI '+key+' test failed')
+                    out['errors'].append({'test':key,'error':redacted(out[key]['error'])[:300]})
+            out['ok']=all(out[k]['ok'] for k in ('availability','text','artwork'))
+            return out
+        finally:self.ai_mutex.release()
     def app(self,path,body=None):
         # Only fixed /api paths chosen by the implementation may reach the app.
         require(path.startswith('/api/'),'Invalid internal API path')
@@ -372,6 +442,7 @@ TOOLS=[
  tool('project_status','Read the live Oracle application health, version and Nano 1.1.55 status.',{'project':P},['project'],'oracle.read'),
  tool('list_files','List exact authorized application source paths and live SHA-256 hashes. No credentials or databases.',{'project':P},['project'],'oracle.read'),
  tool('read_file','Read a current authorized project file before modifying it; return source and SHA-256.',{'project':P,'path':S},['project','path'],'oracle.read'),
+ tool('local_ai_smoke_test','Run only fixed Oracle-local model availability, short text and disposable 40x40 artwork tests. Return validated image metadata; no saved image, conversation or device actions.',{'project':P},['project'],'oracle.read'),
  tool('read_logs','Read redacted recent application diagnostics.',{'project':P,'lines':{'type':'integer','minimum':1,'maximum':200}},['project'],'oracle.read'),
  tool('stage_changes','Stage specifically user-authorized source edits away from production, with exact live base hashes.',{'project':P,'reason':S,'changes':{'type':'array','minItems':1,'maxItems':12,'items':{'type':'object','properties':{'path':S,'base_sha256':S,'content':S},'required':['path','base_sha256','content'],'additionalProperties':False}}},['project','reason','changes'],'oracle.deploy',False),
  tool('validate_stage','Validate the exact staged HTML, JavaScript, CSS or server code before deployment.',{'stage_id':S},['stage_id'],'oracle.deploy',False),
@@ -473,14 +544,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.response(200,{'jsonrpc':'2.0','id':id,'result':result})
     def call(self,name,v,owner):
         d=self.server.dev
-        if name=='connection_status':return {'name':NAME,'version':VERSION,'projects':{p:{'enabled':c.get('enabled',False),'reason':c.get('reason'),'files':len(c.get('files',[]))} for p,c in d.config['projects'].items()},'shellExposed':False,'githubRequiredForRoutineChanges':False}
+        if name=='connection_status':return {'name':NAME,'version':VERSION,'projects':{p:{'enabled':c.get('enabled',False),'reason':c.get('reason'),'files':len(c.get('files',[])),'readOnlyFiles':c.get('read_only_files',[])} for p,c in d.config['projects'].items()},'shellExposed':False,'githubRequiredForRoutineChanges':False}
         if name=='project_status':return d.status(v['project'])
         if name=='list_files':
-            c,b=d.project(v['project']);return {'files':[{'path':p,'sha256':digest(b.read(p))} for p in c['files']]}
+            c,b=d.project(v['project']);return {'files':[{'path':p,'sha256':digest(b.read(p))} for p in sorted(set(c['files']+c.get('read_only_files',[])))]}
         if name=='read_file':
-            p=d.allowed(v['project'],v['path']);_,b=d.project(v['project']);content=b.read(p)
+            p=d.allowed(v['project'],v['path'],read_only=True);_,b=d.project(v['project']);content=b.read(p)
             require(b.scrub(content.decode())==content.decode(),'This source contains a runtime credential and cannot be exported')
             return {'path':p,'sha256':digest(content),'content':content.decode()}
+        if name=='local_ai_smoke_test':return d.local_ai_smoke_test(v['project'])
         if name=='read_logs':
             _,b=d.project(v['project']);n=v.get('lines',80);require(type(n)==int and 1<=n<=200,'Invalid line count');return {'logs':b.scrub(b.logs(n))}
         if name=='stage_changes':return d.stage(v['project'],v['changes'],v['reason'],owner)
@@ -509,3 +581,4 @@ def main():
         print(json.dumps(a.approve_from_admin(args.approve_request)));return
     Server(('127.0.0.1',8186),d,a).serve_forever()
 if __name__=='__main__':main()
+
