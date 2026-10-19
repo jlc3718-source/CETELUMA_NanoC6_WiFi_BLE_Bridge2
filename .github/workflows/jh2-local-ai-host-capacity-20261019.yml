@@ -1,0 +1,35 @@
+name: JH2 Local AI Host Capacity Audit
+on:
+  push:
+    branches: [codex/jh2-selfhosted-ai-oracle-20261019]
+    paths: ['.github/workflows/jh2-local-ai-host-capacity-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-local-ai-capacity-only, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read-only Oracle machine capacity and local model tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== SYSTEM ==='
+          uname -m
+          echo "Cores: $(nproc)"
+          awk '/MemTotal:|MemAvailable:|SwapTotal:/ {print $1,$2,$3}' /proc/meminfo
+          df -Pm / /home/ubuntu | awk 'NR==1||NR>1 {print $1,$4"MB available"}'
+          echo '=== MODEL RUNNERS ==='
+          for exe in python3 pip3 cmake g++ make curl ollama llama-server llama-cli ffmpeg convert; do if command -v "$exe" >/dev/null 2>&1; then echo "$exe: available"; else echo "$exe: absent"; fi; done
+          echo '=== SERVICES ==='
+          sudo -n docker ps --format '{{.Names}}|{{.Status}}' | grep -E '^(jason-home|jh2|oracle)' || true
+          for p in 8081 11434 8000 8188; do
+            if curl -sS -m 2 -o /dev/null http://127.0.0.1:"$p"/api/health; then echo "$p: HTTP responding"; else echo "$p: no known health"; fi
+          done
+          echo '=== NETWORK ==='
+          for url in https://huggingface.co https://github.com https://ollama.com; do
+            if curl -IsSL --max-time 7 "$url" >/dev/null 2>&1; then echo "$url: reachable"; else echo "$url: unreachable"; fi
+          done
+          echo '=== LIMITS ==='
+          if [ -r /sys/fs/cgroup/memory.max ]; then cat /sys/fs/cgroup/memory.max | sed 's/^/Cgroup memory max: /'; fi
+          echo 'READ_ONLY_CAPACITY_AUDIT_COMPLETE'
