@@ -100,14 +100,17 @@ def diff_parent(live):
  assert "jh2CurtainAnimationTab" in live and "pendingLocalTest" not in live
  return live
 def diff_studio(live):
+ # The installed Image Studio may have an older or newer hidden Local Test
+ # handoff than this branch. Retain photo tooling, remove only obsolete links.
  button='<button id="sendLocalTest" type="button">Local Test → Nano</button>'
- if live.count(button)!=1:raise RuntimeError("Studio Local Test export source drift")
  live=live.replace(button,"",1)
  anchor="$('sendLocalTest').onclick=()=>{"
  end="$('stopSend').onclick="
  a=live.find(anchor);z=live.find(end,a)
- if a<0 or z<0:raise RuntimeError("Studio Local Test callback source drift")
- return live[:a]+live[z:]
+ if a>=0 and z>a:live=live[:a]+live[z:]
+ if "#testLocalFrames" not in live:
+  live=live.replace("</style>","#sendLocalTest,#testLocalFrames{display:none!important}</style>",1)
+ return live
 def make_stage(original):
  patches={
   "curtain_asset.mjs":diff_encoder,
