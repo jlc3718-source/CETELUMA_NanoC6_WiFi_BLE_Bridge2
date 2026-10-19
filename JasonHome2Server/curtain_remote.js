@@ -16,13 +16,22 @@
   const queued=await api('/api/curtain/call',{action,payload,idempotencyKey:crypto.randomUUID()});
   if(!queued.commandId)return queued;
   const status=document.getElementById('jh2CurtainStatus');if(status)status.textContent='Oracle accepted command '+queued.commandId+' · waiting for NanoC6';
-  for(let i=0;i<150;i++){
+  // The child Studio waits up to 190 seconds for a full native file upload.
+  // Keep parent APK/WebView Oracle polling alive for the same period, rather
+  // than reporting a false 55-second timeout during a legitimate BLE transfer.
+  const started=Date.now();
+  for(let i=0;Date.now()-started<190000;i++){
    await delay(i<20?150:400);const {command:c}=await api('/api/curtain/command?id='+queued.commandId);
    if(status&&c.state==='downloaded')status.textContent='NanoC6 received command '+c.id+' · sending over BLE';
-   if(c.state==='applied')return {ok:true,...c.result,commandId:c.id,state:c.state,message:c.result?.message||'NanoC6 transmitted over BLE. Check the curtain for physical confirmation.'};
-   if(['failed','expired','superseded'].includes(c.state))throw Error(c.result?.error||'Command '+c.state);
+   if(c.state==='applied'){
+    if(c.result?.ok===false||(action==='nativeSlotUpload'&&c.result?.bleTransmitted!==true))
+     throw Error(c.result?.error||c.result?.message||'Native upload not confirmed by the controller');
+    return {ok:true,...c.result,commandId:c.id,state:c.state,message:c.result?.message||'NanoC6 transmitted over BLE. Check the curtain for physical confirmation.'};
+   }
+   if(['failed','expired','superseded'].includes(c.state))
+    throw Error(c.result?.error||c.result?.message||'Command '+c.id+' '+c.state);
   }
-  throw Error('Oracle queued the command; NanoC6 has not confirmed BLE delivery. Check Bridge Settings.');
+  throw Error('Oracle command '+queued.commandId+' still has no BLE completion after 190 seconds. Inspect its status before retrying.');
  };
  let since=0,working=false;setInterval(async()=>{if(working||!document.getElementById('jh2CurtainStudioFrame')?.getAttribute('src'))return;working=true;try{const d=await api('/api/curtain/notifications?since='+since);for(const n of d.notifications){since=Math.max(since,n.id);window.__jh2CurtainRawNotify?.(n.uuid,n.data);}}catch{}finally{working=false;}},250);
  function init(){
