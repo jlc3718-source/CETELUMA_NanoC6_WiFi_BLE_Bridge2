@@ -1,0 +1,43 @@
+name: JH2 Local Test Live Compatibility Audit Read Only
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-local-test-live-compat-audit-20261019.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Inspect installed UI and Oracle bridge anchors without modifying code
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 - <<'PY'
+          import subprocess,pathlib,tempfile,json,hashlib
+          with tempfile.TemporaryDirectory() as t:
+              report={}
+              for name in ['curtain_bridge.mjs','server.mjs','web/curtain.js','web/curtain_converter.html']:
+                  dest=pathlib.Path(t)/name.replace('/','-')
+                  subprocess.run(['docker','cp','jason-home-2-web:/app/'+name,str(dest)],check=True,stdout=subprocess.DEVNULL)
+                  text=dest.read_text()
+                  candidates={
+                      'bridgeCompiler':"function compileNativeEffect(input)" in text,
+                      'bridgeRetention':"function garbageCollect()" in text,
+                      'bridgeAck':"for(const ack of (body.acks||[]).slice(0,32))" in text,
+                      'bridgeAsset':"function assetManifest(sha)" in text,
+                      'bridgeTransferStatus':"if(['asset','nativeSlotUpload'].includes(old.action)" in text,
+                      'webAllowed':"const allowed=new Set(" in text,
+                      'webStaticCsp':"frame-ancestors " in text,
+                      'webRoute':"function authenticatedRead(req,res,path)" in text,
+                      'uiSubnav':"subnav.append(oldButton,studioButton,testButton)" in text,
+                      'uiHandler':"function selectCurtainSubtab(which)" in text,
+                      'uiStudioButton':"id=\"sendLive\"" in text,
+                      'uiLocalExists':"jh2CurtainLocalTestTab" in text,
+                      'studioSender':"async function drawLive()" in text,
+                      'curtainQuality':"curtain_quality.js" in text,
+                  }
+                  report[name]={'size':len(text),'sha256':hashlib.sha256(dest.read_bytes()).hexdigest(),
+                                'markers':{k:v for k,v in candidates.items() if v}}
+              print('LIVE_CURTAIN_COMPATIBILITY',json.dumps(report,sort_keys=True),flush=True)
+          PY
