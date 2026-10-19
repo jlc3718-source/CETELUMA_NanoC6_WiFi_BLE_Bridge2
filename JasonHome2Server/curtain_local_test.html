@@ -68,20 +68,45 @@ window.addEventListener('message',receive);
 $('localFile').addEventListener('change',async event=>{
  const file=event.target.files?.[0];if(!file)return;
  const status=$('loadStatus');status.textContent='Decoding '+file.name+'…';
- try{
-  const bitmap=await createImageBitmap(file);
-  const canvas=document.createElement('canvas');canvas.width=40;canvas.height=40;
-  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+ if(file.size>25*1024*1024){status.textContent='File is larger than 25 MB; use a smaller GIF.';return;}
+ const canvas=document.createElement('canvas');canvas.width=40;canvas.height=40;
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=false;
+ const scaled=image=>{
   ctx.clearRect(0,0,40,40);
-  const scale=Math.min(40/bitmap.width,40/bitmap.height);
-  const w=Math.max(1,Math.round(bitmap.width*scale)),h=Math.max(1,Math.round(bitmap.height*scale));
-  ctx.drawImage(bitmap,(40-w)/2,(40-h)/2,w,h);bitmap.close();
-  const rgba=new Uint8Array(ctx.getImageData(0,0,40,40).data);
-  receive({origin,source:parent,data:{kind:'jh2-local-test-frames',frames:[rgba],delays:[120],quality:'pal8',name:file.name}});
-  status.textContent='Image loaded. Press Send to Nano & play.';
-  if(file.type==='image/gif'||/\.gif$/i.test(file.name))
-   status.textContent='GIF first frame loaded. For full animated GIF frames, use Image / GIF Studio → Local Test.';
- }catch(e){status.textContent='Cannot decode image: '+e.message;}
+  const w0=image.displayWidth||image.width,h0=image.displayHeight||image.height;
+  const scale=Math.min(40/w0,40/h0),w=Math.max(1,Math.round(w0*scale)),h=Math.max(1,Math.round(h0*scale));
+  ctx.drawImage(image,(40-w)/2,(40-h)/2,w,h);
+  return new Uint8Array(ctx.getImageData(0,0,40,40).data);
+ };
+ try{
+  const isGif=file.type==='image/gif'||/\\.gif$/i.test(file.name);
+  if(isGif&&typeof ImageDecoder==='function'&&await ImageDecoder.isTypeSupported('image/gif')){
+   const decoder=new ImageDecoder({data:new Uint8Array(await file.arrayBuffer()),type:'image/gif',preferAnimation:true});
+   try{
+    await decoder.tracks.ready;
+    const selected=decoder.tracks.selectedTrack;
+    const count=Math.min(180,Math.max(1,Number(selected?.frameCount)||1));
+    const decoded=[],timings=[];
+    for(let index=0;index<count;index++){
+     const {image}=await decoder.decode({frameIndex:index,completeFramesOnly:true});
+     decoded.push(scaled(image));
+     const ms=Math.round((Number(image.duration)||120000)/1000);
+     timings.push(Math.max(40,Math.min(60000,ms)));
+     image.close();
+     if(index%20===0)status.textContent='Decoded '+(index+1)+' / '+count+' GIF frames…';
+    }
+    receive({origin,source:parent,data:{kind:'jh2-local-test-frames',frames:decoded,delays:timings,quality:'pal8',name:file.name}});
+    status.textContent='Loaded '+decoded.length+' GIF frames. Press Send to Nano & play.';
+   }finally{decoder.close();}
+  }else{
+   const bitmap=await createImageBitmap(file);
+   try{
+    const rgba=scaled(bitmap);
+    receive({origin,source:parent,data:{kind:'jh2-local-test-frames',frames:[rgba],delays:[120],quality:'pal8',name:file.name}});
+    status.textContent=isGif?'This browser cannot decode animated GIFs directly; first frame loaded. Use Image / GIF Studio for the full animation.':'Image loaded. Press Send to Nano & play.';
+   }finally{bitmap.close();}
+  }
+ }catch(e){status.textContent='Cannot decode animation: '+e.message;}
 });
 async function api(path,body){
  if(typeof parent.JH2CurtainApi!=='function')throw Error('Open Local Test from Jason Home 2.');
