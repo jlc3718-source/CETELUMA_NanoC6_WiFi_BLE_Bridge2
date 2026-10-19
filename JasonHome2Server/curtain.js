@@ -49,49 +49,45 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
   testFrame.id='jh2CurtainNativeTestFrame';testFrame.title='SmartDawn experimental DNMX native animation testing';
   testFrame.loading='lazy';testFrame.setAttribute('referrerpolicy','same-origin');
   testPanel.appendChild(testFrame);
-  // Nano-local animation cache test (separate from controller native-slot writes).
-  const localButton=create('button','btn jh2-curtain-subtab','Local Test');
-  localButton.type='button';localButton.id='jh2CurtainLocalTestTab';localButton.setAttribute('role','tab');
-  const localPanel=create('div','jh2-curtain-subpanel jh2-curtain-converter-panel');
-  localPanel.id='jh2CurtainLocalTestPanel';localPanel.hidden=true;
-  const localFrame=document.createElement('iframe');
-  localFrame.id='jh2CurtainLocalTestFrame';localFrame.title='Nano-local cached image and GIF animation playback';
-  localFrame.loading='lazy';localFrame.setAttribute('referrerpolicy','same-origin');
-  localPanel.appendChild(localFrame);
-  subnav.append(oldButton,studioButton,testButton,localButton);
-  page.append(subnav,controls,studio,testPanel,localPanel);
-  let pendingNativeTest=null,pendingLocalTest=null;
-  function deliverLocalTest(){
-    if(pendingLocalTest&&localFrame.contentWindow&&localFrame.getAttribute('src'))
-      localFrame.contentWindow.postMessage({kind:'jh2-local-test-frames',...pendingLocalTest},location.origin);
-  }
+  // New AI Animation tab: one publish, then Nano owns all frame timing.
+  const aiButton=create('button','btn jh2-curtain-subtab','✨ AI Animation');
+  aiButton.type='button';aiButton.id='jh2CurtainAnimationTab';aiButton.setAttribute('role','tab');
+  const aiPanel=create('div','jh2-curtain-subpanel jh2-curtain-converter-panel');
+  aiPanel.id='jh2CurtainAnimationPanel';aiPanel.hidden=true;
+  const aiFrame=document.createElement('iframe');
+  aiFrame.id='jh2CurtainAnimationFrame';aiFrame.title='40x40 AI animation creator and Nano local playback';
+  aiFrame.loading='lazy';aiFrame.setAttribute('referrerpolicy','same-origin');
+  aiPanel.appendChild(aiFrame);
+  subnav.append(oldButton,studioButton,testButton,aiButton);
+  page.append(subnav,controls,studio,testPanel,aiPanel);
+  let pendingNativeTest=null;
   function deliverNativeTest(){
     if(pendingNativeTest&&testFrame.contentWindow&&testFrame.getAttribute('src'))
       testFrame.contentWindow.postMessage({kind:'jh2-native-test-frames',frames:pendingNativeTest.frames,delay:pendingNativeTest.delay},location.origin);
   }
   function selectCurtainSubtab(which){
-    controls.hidden=which!=='controls';studio.hidden=which!=='studio';testPanel.hidden=which!=='test';localPanel.hidden=which!=='local';
+    controls.hidden=which!=='controls';studio.hidden=which!=='studio';testPanel.hidden=which!=='test';aiPanel.hidden=which!=='ai';
     controls.style.display=which==='controls'?'':'none';
     studio.style.display=which==='studio'?'':'none';
     testPanel.style.display=which==='test'?'':'none';
-    localPanel.style.display=which==='local'?'':'none';
-    for(const [node,active] of [[oldButton,which==='controls'],[studioButton,which==='studio'],[testButton,which==='test'],[localButton,which==='local']]){
+    aiPanel.style.display=which==='ai'?'':'none';
+    for(const [node,active] of [[oldButton,which==='controls'],[studioButton,which==='studio'],[testButton,which==='test'],[aiButton,which==='ai']]){
       node.classList.toggle('active',active);
       node.setAttribute('aria-selected',String(active));
     }
     if(which==='studio'&&!studioFrame.getAttribute('src'))studioFrame.src='curtain_converter.html';
     if(which==='test'&&!testFrame.getAttribute('src'))testFrame.src='curtain_native_test.html?v=ram-upload-1.1.49';
-    if(which==='local'&&!localFrame.getAttribute('src'))localFrame.src='curtain_local_test.html?v=1';
+    if(which==='ai'&&!aiFrame.getAttribute('src'))aiFrame.src='curtain_ai_animation.html?v=nano-loop-155';
   }
   oldButton.addEventListener('click',()=>selectCurtainSubtab('controls'));
   studioButton.addEventListener('click',()=>selectCurtainSubtab('studio'));
   testButton.addEventListener('click',()=>selectCurtainSubtab('test'));
-  localButton.addEventListener('click',()=>selectCurtainSubtab('local'));
+  aiButton.addEventListener('click',()=>selectCurtainSubtab('ai'));
   // The two iframes share only the authenticated, allowlisted BLE transport.
   // All messages must originate from our exact same-origin child frames.
   window.addEventListener('message',async event=>{
     if(event.origin!==location.origin)return;
-    const sender=event.source===studioFrame.contentWindow?studioFrame:event.source===testFrame.contentWindow?testFrame:event.source===localFrame.contentWindow?localFrame:null;
+    const sender=event.source===studioFrame.contentWindow?studioFrame:event.source===testFrame.contentWindow?testFrame:event.source===aiFrame.contentWindow?aiFrame:null;
     if(!sender)return;
     const data=event.data||{};
     if(data.kind==='jh2-curtain-height'){
@@ -108,21 +104,6 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
       if(testFrame.dataset.ready==='true')deliverNativeTest();
       return;
     }
-    if(sender===studioFrame&&data.kind==='jh2-local-test-open'){
-      const frames=data.frames,delays=data.delays;
-      if(!Array.isArray(frames)||frames.length<1||frames.length>180||
-        frames.some(f=>!(f instanceof Uint8Array||f instanceof Uint8ClampedArray||Array.isArray(f))||f.length!==6400))return;
-      if(!Array.isArray(delays)||delays.length!==frames.length||
-        delays.some(d=>!Number.isFinite(Number(d))||Number(d)<40||Number(d)>60000))return;
-      pendingLocalTest={frames:frames.map(f=>new Uint8ClampedArray(f)),
-        delays:delays.map(Number),quality:String(data.quality||'pal8'),name:String(data.name||'Local test').slice(0,100)};
-      selectCurtainSubtab('local');
-      if(localFrame.dataset.ready==='true')deliverLocalTest();
-      return;
-    }
-    if(sender===localFrame&&data.kind==='jh2-local-test-ready'){
-      localFrame.dataset.ready='true';deliverLocalTest();return;
-    }
     if(sender===testFrame&&data.kind==='jh2-native-test-ready'){
       testFrame.dataset.ready='true';deliverNativeTest();return;
     }
@@ -137,7 +118,7 @@ function init(){if($('jh2CurtainTab'))return;const nav=document.querySelector('.
     }
   });
   window.__jh2CurtainRawNotify=(uuid,data)=>{
-    for(const frame of [studioFrame,testFrame,localFrame]){
+    for(const frame of [studioFrame,testFrame,aiFrame]){
       if(frame.contentWindow&&frame.getAttribute('src'))frame.contentWindow.postMessage({kind:'jh2-curtain-notify',uuid,data},location.origin);
     }
   };
