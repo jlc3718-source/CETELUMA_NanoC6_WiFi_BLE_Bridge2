@@ -1,4 +1,4 @@
-name: JH2 1.1.54 Stage Verified Nano Local GIF OTA
+name: JH2 1.1.55 Stage Verified Nano Local GIF OTA
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -13,6 +13,18 @@ jobs:
       - name: Fix source checkout owner
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
+      - name: Require prior AI Animation Oracle UI deploy verified
+        shell: bash
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            state="$(gh run view 39199201379 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "")')"
+            if [[ "$state" == "completed success" ]]; then exit 0; fi
+            if [[ "$state" == "completed "* ]]; then echo "AI_UI_DEPLOY_FAILED"; exit 1; fi
+            sleep 7
+          done
+          echo "AI_UI_DEPLOY_NOT_READY"; exit 1
       - name: Wait for independently verified OTA ECDSA signature
         shell: bash
         env: {GH_TOKEN: '${{ github.token }}'}
@@ -20,7 +32,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import json,os,time,urllib.request
-          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/39191696690'
+          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/39198843268'
           headers={'Accept':'application/vnd.github+json','Authorization':'Bearer '+os.environ['GH_TOKEN']}
           for _ in range(120):
               request=urllib.request.Request(url,headers=headers)
@@ -33,13 +45,13 @@ jobs:
           PY
       - uses: actions/download-artifact@v4
         with:
-          name: JH2-1.1.54-SIGNED-NANO-LOCAL-CACHE-OTA
-          run-id: 39191696690
+          name: JH2-1.1.55-SIGNED-NANO-LOCAL-CACHE-OTA
+          run-id: 39198843268
           github-token: '${{ github.token }}'
           path: signed-package
       - name: Validate signed firmware and atomically stage Oracle routes
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/jh2-stage-signed-154-on-oracle.py
-          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-154-on-oracle.py
+          python3 -m py_compile .github/scripts/jh2-stage-signed-155-on-oracle.py
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-155-on-oracle.py
