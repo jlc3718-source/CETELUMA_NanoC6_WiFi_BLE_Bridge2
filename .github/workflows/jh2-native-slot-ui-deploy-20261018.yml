@@ -39,3 +39,4 @@ jobs:
           path: deployment-verification.json
           retention-days: 7
           if-no-files-found: error
+# DN1FE native reference relay rollout with original Android tab preserved.
