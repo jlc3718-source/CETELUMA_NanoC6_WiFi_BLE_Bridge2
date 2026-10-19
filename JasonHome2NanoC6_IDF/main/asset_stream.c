@@ -36,6 +36,7 @@ typedef struct {
 } asset_job;
 static volatile uint32_t generation=0;
 static volatile bool streaming=false;
+static volatile uint16_t speed_percent=100; // 100%=stored timing; 200%=twice as fast
 static SemaphoreHandle_t job_lock=NULL;
 
 static bool hex64(const char *v){
@@ -222,14 +223,16 @@ static bool local_exact(FILE *f,uint8_t *b,size_t len,uint32_t *position,uint32_
     if(fread(b,1,len,f)!=len)return false;
     *position+=(uint32_t)len;return true;
 }
-static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool verify_only){
+static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool verify_only,bool continued_loop){
     FILE *file=fopen(CACHE_PATH,"rb");if(!file)return false;
     uint32_t position=0;bool ok=false;
     do{
         uint8_t header[8];
         if(!local_exact(file,header,8,&position,job->size)||memcmp(header,"JHC1",4))break;
         uint16_t frames=(uint16_t)(header[4]|header[5]<<8);
-        if(!frames||frames>180||header[7]!=0)break;
+        if(!frames||frames>180||header[7]>1)break;
+        const bool seamless=header[7]==1;
+        if(seamless&&(!*repeat&&continued_loop || frames>24 || !header[6]))break;
         *repeat=header[6]!=0;
         bool failed=false;
         for(uint16_t f=0;f<frames&&wanted(job->generation);f++){
@@ -246,7 +249,8 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
                 uint8_t channel=meta[0];
                 if(channel>1||!bytes||bytes>sizeof(packet)||
                    !local_exact(file,packet,bytes,&position,job->size)){failed=true;break;}
-                if(!verify_only&&!jh2_ble_asset_packet(channel,packet,bytes)){failed=true;break;}
+                if(!verify_only&&!(seamless&&continued_loop&&f==0)&&
+                   !jh2_ble_asset_packet(channel,packet,bytes)){failed=true;break;}
                 if(!verify_only&&(i&7)==7)vTaskDelay(pdMS_TO_TICKS(1));
             }
             if(failed||!wanted(job->generation))break;
@@ -256,8 +260,12 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
                     "Verified animation cached on Nano; first frame sent over BLE; visual output unconfirmed",true);
             }
             uint32_t elapsed=0;
-            while(!verify_only&&elapsed<hold&&wanted(job->generation)){
-                uint32_t step=hold-elapsed>20?20:hold-elapsed;
+            uint16_t rate=speed_percent;
+            if(rate<25||rate>300)rate=100;
+            uint32_t adjusted=(uint32_t)(((uint64_t)hold*100U+rate/2)/rate);
+            if(adjusted<20)adjusted=20;
+            while(!verify_only&&elapsed<adjusted&&wanted(job->generation)){
+                uint32_t step=adjusted-elapsed>20?20:adjusted-elapsed;
                 vTaskDelay(pdMS_TO_TICKS(step));elapsed+=step;
             }
         }
@@ -270,17 +278,19 @@ static void run_asset(void *param){
     bool applied=false,repeat=false,failed=false;
     // The entire asset is saved to the Nano once, verified, then preflight parsed.
     bool cached=cache_asset_once(&job);
-    bool verified=cached&&stream_local_once(&job,&applied,&repeat,true);
+    bool verified=cached&&stream_local_once(&job,&applied,&repeat,true,false);
     if(!verified){
         failed=wanted(job.generation);
     }else{
+        unsigned cycle=0;
         while(wanted(job.generation)){
             bool current_repeat=false;
-            if(!stream_local_once(&job,&applied,&current_repeat,false)){
+            if(!stream_local_once(&job,&applied,&current_repeat,false,cycle>0)){
                 failed=wanted(job.generation);break;
             }
             repeat=current_repeat;
             if(!repeat)break;
+            cycle++;
             for(int i=0;i<30&&wanted(job.generation);i++)
                 vTaskDelay(pdMS_TO_TICKS(20));
         }
@@ -322,5 +332,11 @@ bool jh2_asset_stream_start(const char *endpoint,const char *token,const char *s
     xSemaphoreGive(job_lock);
     return true;
 }
+bool jh2_asset_stream_set_speed(uint16_t percent){
+    if(percent<25||percent>300)return false;
+    speed_percent=percent;
+    return true;
+}
+uint16_t jh2_asset_stream_get_speed(void){return speed_percent;}
 void jh2_asset_stream_stop(void){++generation;}
 bool jh2_asset_stream_active(void){return streaming;}
