@@ -1,0 +1,53 @@
+name: JH2 Nano Local 12-Frame Completion and Flash Check
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-154-local-loop-completion-check-20261019.yml']
+permissions: {contents: read}
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read-only verify completed Nano local animation and cloud cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 - <<'PY'
+          import subprocess,urllib.request,json,time
+          details=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in details['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              data=json.dumps(body).encode() if body is not None else None
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              r=urllib.request.Request(base+path,headers=headers,data=data,
+                                      method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=18) as response:return json.load(response),response.headers
+          _,head=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=head['Set-Cookie'].split(';')[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          asset=status.get('assetRetention') or {}
+          cur=status.get('curtain') or {}
+          print('COMPLETION_STATUS',json.dumps({
+            'fw':status.get('firmware'),'online':status.get('online'),
+            'ble':cur.get('connected'),'localCacheSupported':cur.get('nanoLocalCacheSupported'),
+            'flashAvailableBytes':cur.get('nanoLocalCacheAvailableBytes'),
+            'streaming':status.get('relayStreaming'),'queue':status.get('queued'),
+            'phase':asset.get('phase'),'oracleRetainedBytes':asset.get('retainedBytes'),
+            'pendingCommandId':asset.get('pendingCommandId'),
+            'confirmationRequired':asset.get('confirmationRequired')
+          },sort_keys=True),flush=True)
+          assert status.get('firmware')=='1.1.54' and status.get('online') is True
+          assert cur.get('connected') is True
+          assert asset.get('retainedBytes')==0,'Oracle failed to release transferred animation bytes'
+          cmd,_=api('/api/curtain/command?id=14980',cookie=cookie)
+          c=cmd['command'];r=c.get('result') or {}
+          print('FRAME_COMMAND',{'id':c['id'],'state':c['state'],
+                 'acknowledgment':r.get('message'),'bluetooth':r.get('bleTransmitted')},flush=True)
+          assert c['state']=='applied' and r.get('bleTransmitted') is True
+          if status.get('relayStreaming') is True:
+              print('WARNING_LOCAL_STREAM_STILL_ACTIVE_AFTER_ONE_SHOT',flush=True)
+          else:print('NANO_ONE_SHOT_ANIMATION_COMPLETED',flush=True)
+          PY
