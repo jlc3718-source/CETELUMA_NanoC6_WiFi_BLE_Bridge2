@@ -1,4 +1,4 @@
-name: One-time Oracle development connection bootstrap
+name: Install restricted Oracle Home Development MCP and verify automatic rollback
 on:
   push:
     branches: [codex/oracle-direct-bootstrap-20261019]
@@ -8,9 +8,11 @@ concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
 jobs:
   bootstrap:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
-      - name: Inspect existing TLS, project services and live version without exposing credentials
-        run: sudo -n python3 .github/scripts/oracle-dev-bootstrap-inspect.py
+      - name: Validate restricted tools and OAuth before installation
+        run: python3 -m unittest discover -s OracleDevelopment -p 'test_*.py'
+      - name: One-time installation with isolated HTTPS vhost and live rollback verification
+        run: sudo -n python3 OracleDevelopment/install.py
