@@ -74,11 +74,20 @@ async function inventoryStatus(){
 }
 async function readTarget(){
   let first;
-  for(let i=0;i<6;i++){
+  const initial=await inventoryStatus();
+  note('INITIAL_STATUS',initial);
+  if(initial.firmware!=='1.1.50'||!initial.online||initial.queued||initial.streaming)
+    throw Error('Nano firmware not ready for BLE reconnect: '+JSON.stringify(initial));
+  if(!initial.connected){
+    const connected=await send('connect',{});
+    note('BLE_RECONNECT',{state:connected.state,result:connected.result});
+    await sleep(1600);
+  }
+  for(let i=0;i<16;i++){
     first=await inventoryStatus();
     note('PREFLIGHT_STATUS',first);
     if(first.firmware==='1.1.50'&&first.online&&first.connected&&!first.queued&&!first.streaming)break;
-    if(i<5)await sleep(2500);
+    if(i<15)await sleep(2500);
   }
   if(first.firmware!=='1.1.50'||!first.online||!first.connected||first.queued||first.streaming)
     throw Error('Bridge not idle or not on confirmed v1.1.50: '+JSON.stringify(first));
