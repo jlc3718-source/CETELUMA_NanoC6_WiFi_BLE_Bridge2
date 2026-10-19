@@ -1,6 +1,6 @@
-import base64,hashlib,json,pathlib,sys,tempfile,unittest,urllib.parse
+import base64,hashlib,http.client,json,pathlib,re,sys,tempfile,threading,types,unittest,urllib.parse
 sys.path.insert(0,str(pathlib.Path(__file__).parent))
-from oracle_dev import Development,Authorization,CALLBACK,digest
+from oracle_dev import Development,Authorization,CALLBACK,Server,digest
 
 class Fake:
     def __init__(self,c):self.files={'web/curtain_loop_animation.js':b'/* exact original */\n','server.mjs':b'const x=1;'};self.restarts=0;self.fail_write=False
@@ -101,5 +101,43 @@ class OAuthTests(unittest.TestCase):
     def test_owner_approval_expires(self):
         id=self.pending();q=self.a.get('pending',id);q['ownerApprovedAt']=1;self.a.put('pending',id,q,600)
         with self.assertRaises(ValueError):self.a.finish_owner_approval(id)
+
+class BrowserPairingHTTPTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.a=Authorization(str(pathlib.Path(self.tmp.name)/'auth.sqlite'),'https://test.example','https://test.example/mcp')
+        self.client=self.a.register({'redirect_uris':[CALLBACK]})['client_id']
+        self.server=Server(('127.0.0.1',0),types.SimpleNamespace(config={'hosts':['test.example']}),self.a)
+        self.thread=threading.Thread(target=lambda:self.server.serve_forever(poll_interval=.01),daemon=True);self.thread.start()
+        self.addCleanup(self.stop)
+    def stop(self):
+        self.server.shutdown();self.server.server_close();self.thread.join(2)
+    def request(self,method,path,body=None,headers=None):
+        c=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3)
+        c.request(method,path,body,{'Host':'test.example','Connection':'close',**(headers or {})})
+        r=c.getresponse();out=(r.status,dict(r.getheaders()),r.read());c.close();return out
+    def form(self):
+        q={'client_id':self.client,'redirect_uri':CALLBACK,'response_type':'code','code_challenge_method':'S256','code_challenge':'v'*43,'scope':'oracle.read oracle.deploy','resource':self.a.resource,'state':'browser-pairing'}
+        status,headers,body=self.request('GET','/authorize?'+urllib.parse.urlencode(q));self.assertEqual(status,200)
+        fields=dict(re.findall(r'name="(pending|csrf)" value="([^"]+)"',body.decode()))
+        self.assertEqual(set(fields),{'pending','csrf'});return headers,fields
+    def test_form_keeps_same_origin_without_cross_origin_referrer(self):
+        headers,_=self.form();self.assertEqual(headers['referrer-policy'],'same-origin')
+        status,headers,_=self.request('GET','/health');self.assertEqual(status,200);self.assertEqual(headers['referrer-policy'],'no-referrer')
+    def test_null_and_foreign_origins_remain_rejected(self):
+        for origin in ('null','https://evil.example'):
+            with self.subTest(origin=origin):self.assertEqual(self.request('POST','/approve','pending=x',{'Origin':origin})[0],400)
+    def test_owner_approval_still_requires_csrf_cookie(self):
+        _,fields=self.form();fp=self.a.request_fingerprint(self.a.get('pending',fields['pending']));self.a.approve_from_admin(fp)
+        status,_,body=self.request('POST','/approve',urllib.parse.urlencode(fields),{'Origin':self.a.origin})
+        self.assertEqual(status,400);self.assertIn(b'Invalid CSRF token',body)
+    def test_browser_form_completes_only_exact_approved_request_once(self):
+        headers,fields=self.form();self.a.approve_from_admin(self.a.request_fingerprint(self.a.get('pending',fields['pending'])))
+        request_headers={'Origin':self.a.origin,'Cookie':headers['set-cookie'].split(';')[0],'Content-Type':'application/x-www-form-urlencoded'}
+        status,response,_=self.request('POST','/approve',urllib.parse.urlencode(fields),request_headers)
+        self.assertEqual(status,303);q=urllib.parse.parse_qs(urllib.parse.urlsplit(response['location']).query)
+        self.assertEqual(q['iss'],[self.a.origin]);self.assertEqual(q['state'],['browser-pairing']);self.assertTrue(q['code'])
+        self.assertEqual(response['referrer-policy'],'no-referrer')
+        self.assertEqual(self.request('POST','/approve',urllib.parse.urlencode(fields),request_headers)[0],400)
 
 if __name__=='__main__':unittest.main()

@@ -3,7 +3,7 @@
 import hashlib,json,os,pathlib,shutil,subprocess,time,urllib.request,uuid
 ROOT=pathlib.Path('/opt/oracle-home-development');STATE=pathlib.Path('/var/lib/oracle-home-development')
 SRC=pathlib.Path(__file__).parent
-EXPECTED='d029c51609dcbf96bb29eb560d7a81b93ff0ec20cccdd42fa32b767839a5f664'
+EXPECTED='a82daf64ee19da1258ba582d5415dea6bfa72fcc527545650d1e5fed845920b4'
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def run(*a,timeout=45):
  p=subprocess.run(a,capture_output=True,text=True,timeout=timeout)
@@ -35,7 +35,7 @@ def main():
   run('systemctl','restart','oracle-home-development.service')
   for i in range(20):
    try:
-    h=health('http://127.0.0.1:8186/health');assert h['ok'] and h['version']=='1.0.1';break
+    h=health('http://127.0.0.1:8186/health');assert h['ok'] and h['version']=='1.0.2';break
    except Exception:
     if i==19:raise
     time.sleep(.25)
