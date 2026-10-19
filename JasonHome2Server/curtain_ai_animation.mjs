@@ -1,6 +1,5 @@
 // Cloudflare AI draws actual DIFFERENT 40x40 sprite poses, never shifts a still
 // image to masquerade as animation. Nano executes encoded deltas independently.
-import {createHash} from 'node:crypto';
 export function createCurtainAiAnimation({run,chat,text,configured,model}){
  const err=(status,message)=>Object.assign(new Error(message),{status});
  const clean=body=>{
@@ -9,7 +8,6 @@ export function createCurtainAiAnimation({run,chat,text,configured,model}){
   if(!configured())throw err(409,'Connect Cloudflare Workers AI in the AI tab first');
   return description;
  };
- const seedFor=s=>createHash('sha256').update(s).digest().readUInt32BE(0);
  const basePrompt=description=>
   'Pixel-art character sprite for a 40x40 LED matrix: '+description+'. '+
   'Create ONE large centered cartoon character, full body within canvas, '+
@@ -24,9 +22,9 @@ export function createCurtainAiAnimation({run,chat,text,configured,model}){
     'THIS FRAME MUST DEPICT A VISIBLY DIFFERENT ACTION POSE, NOT A TRANSLATED IMAGE: '+pose+
     '. Keep the subject centered in the same spot but CHANGE its face, limbs or silhouette to perform that action.':
     'Initial resting pose: expression calm and limbs at rest, neutral animation cycle starting position.');
-   // A shared seed helps pose identity remain consistent between requests.
+   // Cloudflare FLUX.1 Schnell rejects seed. Keep character identity through prompt only.
    const result=await run('@cf/black-forest-labs/flux-1-schnell',
-    {prompt,steps:4,seed:seedFor(description)},{timeout:90000});
+    {prompt,steps:4},{timeout:90000});
    const image=result?.result?.image??result?.image;
    if(typeof image!=='string'||image.length>5000000||!/^[A-Za-z0-9+/]+={0,2}$/.test(image))
     throw err(502,'AI did not return valid pixel artwork');
