@@ -308,6 +308,7 @@ void jh2_ble_status(cJSON *out){
     if(!cJSON_IsObject(out))return;
     cJSON_AddBoolToObject(out,"ok",true);
     cJSON_AddBoolToObject(out,"connected",connection!=BLE_HS_CONN_HANDLE_NONE);
+    cJSON_AddBoolToObject(out,"nativeReconnectPaused",hold_disconnect);
     cJSON_AddBoolToObject(out,"nanoLocalCacheSupported",true);
     cJSON_AddNumberToObject(out,"nanoLocalCacheMaxBytes",jh2_asset_local_available_bytes());
     cJSON_AddNumberToObject(out,"nanoLocalCacheAvailableBytes",jh2_asset_local_available_bytes());
