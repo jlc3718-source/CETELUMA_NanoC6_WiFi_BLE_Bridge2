@@ -70,6 +70,15 @@ test('Wink: original art, tiny 5x5 edit, exact restoration, no full-body redraw'
   }
  }
 });
+test('Both eye and mouth changes preserve the 25-pixel bound for all frame counts',()=>{
+ const original=pumpkin();
+ for(let count=4;count<=24;count++){
+  const frames=L.buildSimpleAnimation(original,{count,prompt:'Pumpkin blinking and smiling'});
+  const touched=L.validate(frames);
+  assert.ok(touched.every(n=>n<=25),'frame count '+count+' has full-scene edit');
+  assert.equal(L.deltaCount(frames[0],frames.at(-1)),0);
+ }
+});
 test('The Nano asset contains a single initial full frame, then only tiny sparse writes',()=>{
  const base=pumpkin(),frames=L.buildSimpleAnimation(base,{count:24,prompt:'Pumpkin winks one eye and smiles'});
  const changes=L.validate(frames);
