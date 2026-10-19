@@ -1,0 +1,7 @@
+# PROPOSED ONLY: requires full USB flash and firmware build validation.
+# Single app + 1.25 MiB animation storage. Existing OTA factory rollback removed.
+# Name, Type, SubType, Offset, Size
+nvs, data, nvs, 0x9000, 0x5000
+otadata, data, ota, 0xE000, 0x2000
+runtime, app, ota_0, 0x10000, 0x2A0000
+storage, data, spiffs, 0x2B0000, 0x140000
