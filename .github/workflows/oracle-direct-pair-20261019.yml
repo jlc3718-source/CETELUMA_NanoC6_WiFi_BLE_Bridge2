@@ -1,4 +1,4 @@
-name: Correct Jason Home 2 owner-pairing form policy
+name: Complete exact Jason Home 2 ChatGPT pairing
 on:
   push:
     branches: [codex/oracle-direct-bootstrap-20261019]
@@ -6,13 +6,9 @@ on:
 permissions: {contents: read}
 concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
 jobs:
-  connection-maintenance:
+  pair-exact-request:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 3
+    timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - name: Verify OAuth, browser form, origin and CSRF protections
-        run: python3 -m unittest discover -s OracleDevelopment -p 'test_*.py'
-      - name: Update only connection service with exact source guard and rollback
-        run: sudo -n python3 OracleDevelopment/complete_setup.py
+      - name: Approve only the owner-authorized PKCE-bound ChatGPT request
+        run: sudo -n /opt/oracle-home-development/venv/bin/python /opt/oracle-home-development/oracle_dev.py --config /opt/oracle-home-development/config.json --approve-request c59fd90ca1ab145d85b74bfc
