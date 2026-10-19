@@ -1091,7 +1091,16 @@ async function route(req,res){
     throw fail(405,"Unsupported settings operation");
   }
   if(method==="GET"&&path==="/api/local-ai/status")return send(res,200,await localAI.status());
-  if(method==="POST"&&path==="/api/local-ai/chat")return send(res,200,await localAI.chat(await input(req)));
+  if(method==="GET"&&path==="/api/local-ai/chat")return send(res,200,{ok:true,thread:meta("local_art_chat_thread",[]).slice(-20)});
+  if(method==="POST"&&path==="/api/local-ai/chat"){
+    const body=await input(req);
+    if(body?.clear){put("local_art_chat_thread",[]);return send(res,200,{ok:true,thread:[]});}
+    const thread=meta("local_art_chat_thread",[]).slice(-14);
+    const result=await localAI.chat({message:body?.message,history:thread});
+    const updated=[...thread,{role:"user",content:String(body?.message||"").slice(0,900)},{role:"assistant",content:result.reply}].slice(-20);
+    put("local_art_chat_thread",updated);
+    return send(res,200,{...result,thread:updated});
+  }
   if(method==="POST"&&path==="/api/local-ai/art")return send(res,200,await localAI.art(await input(req)));
   if(method==="POST"&&path==="/api/curtain/ai-animation/generate")return send(res,200,await localAI.art(await input(req)));
   if(method==="POST"&&path==="/api/curtain/ai-animation/motion")return send(res,200,await curtainAnimationAi.motion(await input(req)));
