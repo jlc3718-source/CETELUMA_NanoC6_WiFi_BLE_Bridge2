@@ -55,3 +55,4 @@ jobs:
 
 # Authorized post-upgrade v1.1.50 guarded original 4 KB run, no erase.
 # Retry preflight with idle-state diagnostics; no write without safe target catalog.
+# One-time explicit BLE reconnect and guarded 4KB test on v1.1.50.
