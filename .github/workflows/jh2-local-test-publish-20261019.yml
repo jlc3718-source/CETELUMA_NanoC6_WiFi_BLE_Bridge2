@@ -1,4 +1,4 @@
-name: JH2 Publish Nano AI Animation Tab (Verified)
+name: JH2 Publish Nano AI Animation Tab
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
