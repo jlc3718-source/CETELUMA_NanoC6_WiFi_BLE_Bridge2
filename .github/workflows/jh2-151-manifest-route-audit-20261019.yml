@@ -31,5 +31,9 @@ jobs:
           for line in code.stdout.splitlines():
               # Not logging line contents; log filename/line only.
               print('MATCH_FILE_LINE',line.split(':',2)[:2],flush=True)
+          code=subprocess.run(['docker','exec','jason-home-2-web','sh','-c',"sed -n '940,1010p' /app/server.mjs"],text=True,capture_output=True,timeout=20)
+          for line in code.stdout.splitlines():
+              if any(word in line for word in ('firmware','latest.json','readFile','release','manifest','RUNTIME','ota','firmware-manifest','firmware-runtime','function get','async function','return','path.join','statSync','existsSync','replyJson','sendJSON')):
+                  print('ROUTE_CONTEXT',line[:220].strip(),flush=True)
           print('READ_ONLY_ROUTE_AUDIT_FINISHED',flush=True)
           PY
