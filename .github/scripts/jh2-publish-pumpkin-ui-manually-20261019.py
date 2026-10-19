@@ -157,7 +157,7 @@ def main():
   if run("docker","exec",CONTAINER,"sha256sum","/app/web/curtain_native_test.html").stdout!=before:
    raise RuntimeError("Working Native Test was unexpectedly modified")
   # The obsolete local page is removed only after a fully verified new release.
-  run("docker","exec",CONTAINER,"rm","-f","/app/"+REMOVED)
+  run("docker","exec","--user","root",CONTAINER,"rm","-f","/app/"+REMOVED)
   run("docker","restart",CONTAINER)
   for _ in range(30):
    if health():break
@@ -173,7 +173,7 @@ def main():
   for name,file in originals.items():
    run("docker","cp",str(file),f"{CONTAINER}:/app/{name}")
   for name,exists in present.items():
-   if not exists:run("docker","exec",CONTAINER,"rm","-f","/app/"+name)
+   if not exists:run("docker","exec","--user","root",CONTAINER,"rm","-f","/app/"+name)
   run("docker","restart",CONTAINER)
   print("JH2_AI_ANIMATION_ROLLED_BACK")
   raise
