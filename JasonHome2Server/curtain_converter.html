@@ -103,7 +103,7 @@ details.diagnostics{margin:13px 2px;color:#8296af;font-size:12px}pre{white-space
   <div class="connectionTop"><strong>Curtain connection (optional for Oracle)</strong><span id="inventory">Not connected</span></div>
   <div class="row"><button class="main" id="connect">Connect curtain</button><button id="refresh" disabled>Refresh</button></div>
  </div>
- <div class="sendGrid"><button class="main" id="sendLive" disabled>Show on curtain</button><button id="stopSend" disabled>Stop animation</button><button id="sendLocalTest" type="button">Local Test → Nano</button></div>
+ <div class="sendGrid"><button class="main" id="sendLive" disabled>Show on curtain</button><button id="stopSend" disabled>Stop animation</button></div>
  <details class="controlGroup"><summary>Saved project and native tools</summary><div class="detailBody">
   <div class="row"><button id="saveDraft" type="button">Save project</button><button id="clearDraft" type="button">Clear saved copy</button></div>
   <div class="row"><button id="build">Build saved scroll</button><button id="install" disabled>Install at 83928</button></div>
@@ -888,18 +888,6 @@ $('fileInput').onchange=()=>{$('cleanup').value='none';const chosen=$('fileInput
 $('butterfly').onclick=()=>{const data=Uint8Array.from(atob(BUTTERFLY_GIF_B64),s=>s.charCodeAt(0));importFile(new File([data],'Butterfly_demo.gif',{type:'image/gif'}));};
 $('previewMotion').onclick=()=>{if(previewTimer!==null){stopPreview();renderImage(sourceImage);say('Preview stopped.');}else if(frames.length===1){renderImage(sourceImage);say('Static image preview.');}else{previewFrames();say('Previewing '+frames.length+' actual GIF frames.');}ui();};
 $('stop').onclick=()=>{stopLive=true;stopPreview();renderImage(sourceImage);say('Stop requested.');ui();};
-$('sendLocalTest').onclick=()=>{
- if(!oracleStudio()){say('Open Image / GIF Studio through Jason Home 2 first.');return;}
- const motion=$('motion').value;
- if(!sourceImage){say('Import an image or GIF first.');return;}
- const images=motion==='gif'?frames:motion==='scroll'?makeOracleScrollFrames(sourceImage):[sourceImage];
- const delays=motion==='gif'?frameDelays:images.map(()=>100);
- window.parent.postMessage({kind:'jh2-local-test-open',name:importedName,
-   frames:images.map(frame=>new Uint8ClampedArray(frame)),
-   delays:delays.map(ms=>Math.max(40,Math.min(60000,Math.round(Number(ms)||100)))),
-   quality:$('quality').value},location.origin);
- say('Opened Local Test with '+images.length+' prepared frames. No SmartDawn storage slot was touched.');
-};
 $('stopSend').onclick=()=>{if(oracleStudio()){window.parent.JH2CurtainApi('/api/curtain/call',{action:'assetStop',payload:{},idempotencyKey:crypto.randomUUID()}).then(()=>{oracleStreamRequested=false;ui();say('Stop queued on Oracle.');}).catch(e=>say(e.message));return;}stopLive=true;say('Stopping curtain playback at the next packet…');};
 $('motion').onchange=()=>{projectGeneration++;invalidatePreparation();refreshGifPalette();scheduleDraftSave();ui();if(sourceImage){renderImage(sourceImage);redrawThreeCandidates();}const mode=$('motion').value;if(mode==='static')say('Static selected: draws one frame and holds it, without scrolling.');else if(mode==='gif')say('GIF selected: send to Oracle without pairing with the curtain.');else say('Scroll selected: Oracle streams it; native slot installation remains in advanced tools.');};
 $('quality').onchange=()=>{if(sourceImage){refreshGifPalette();renderImage(sourceImage);redrawThreeCandidates();projectGeneration++;invalidatePreparation();scheduleDraftSave();ui();}const mode=getEncoding();say(mode.kind==='palette'?mode.colors+'-color indexed palette selected.':'Direct RGB888 selected: '+(mode.colors>=1600?'all distinct colors':mode.colors+' colors')+'. More packets can make transfers slower.');};
