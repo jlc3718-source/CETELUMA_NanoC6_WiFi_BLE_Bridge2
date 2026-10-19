@@ -31,55 +31,35 @@ function quantize(source,colors=12){
  }
  return result;
 }
-const motions=['sway','bounce','orbit','pulse','twinkle','blink'];
-function motionForPrompt(prompt){
- const text=String(prompt||'').toLowerCase();
- if(/blink|wink|eye/.test(text))return 'blink';
- if(/sparkle|star|snow|twinkle|glitter/.test(text))return 'twinkle';
- if(/pulse|breath|glow|heart/.test(text))return 'pulse';
- if(/spin|circle|orbit|around/.test(text))return 'orbit';
- if(/jump|bounce|hop|up and down/.test(text))return 'bounce';
- return 'sway';
-}
-function build(base,{motion='sway',amplitude=2,count=24}={}){
- if(!base||base.length!==COUNT*4)throw Error('Generate a 40x40 image first');
- if(!Number.isInteger(count)||count<2||count>24)throw Error('Frame count must be 2–24');
- motion=motions.includes(motion)?motion:'sway';
- amplitude=clamp(Math.round(Number(amplitude)||2),1,3);
- const output=[],first=new Uint8ClampedArray(base);
- function draw(t){
-  const angle=Math.PI*2*t,dx=motion==='sway'?Math.round(amplitude*Math.sin(angle)):
-   motion==='orbit'?Math.round(amplitude*(Math.cos(angle)-1)):0;
-  const dy=motion==='bounce'?Math.round(amplitude*Math.sin(angle)):
-   motion==='orbit'?Math.round(amplitude*Math.sin(angle)):0;
-  const frame=new Uint8ClampedArray(COUNT*4);
+// Four Cloudflare-drawn key poses create a real animated character. No whole
+// image slide, pan, bounce, or affine transform is used to fake animation.
+// Bayer-order transitions change only the pixels that differ between poses.
+function buildKeyframes(keyframes,{count=24}={}){
+ if(!Array.isArray(keyframes)||keyframes.length<3||keyframes.length>8)
+  throw Error('AI needs at least three different key poses');
+ if(!Number.isInteger(count)||count<4||count>24)
+  throw Error('Frame count must be 4–24');
+ for(const pose of keyframes)
+  if(!pose||pose.length!==COUNT*4)throw Error('Key pose must contain 40x40 RGBA pixels');
+ const first=new Uint8ClampedArray(keyframes[0]);
+ const poses=[...keyframes,first],output=[];
+ // Ordered transition threshold is spatially distributed to avoid ghosting
+ // and avoid expensive full-frame RGB blending on the Nano/controller.
+ const bayer=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+ for(let frameIndex=0;frameIndex<count-1;frameIndex++){
+  if(frameIndex===0){output.push(new Uint8ClampedArray(first));continue;}
+  const cycle=frameIndex/(count-1)*(poses.length-1);
+  const index=Math.min(poses.length-2,Math.floor(cycle));
+  const t=cycle-index,from=poses[index],to=poses[index+1];
+  const result=new Uint8ClampedArray(COUNT*4);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-   const dest=(y*W+x)*4,xx=x-dx,yy=y-dy;
-   frame[dest+3]=255;
-   if(xx<0||xx>=W||yy<0||yy>=H)continue;
-   const src=(yy*W+xx)*4;
-   let r=base[src],g=base[src+1],b=base[src+2];
-   if(motion==='pulse'&&r+g+b>0){
-    const factor=1-.35*(1-Math.cos(angle))/2;
-    r=Math.round(r*factor);g=Math.round(g*factor);b=Math.round(b*factor);
-   }
-   if(motion==='twinkle'&&r+g+b>40){
-    const pattern=((xx*73+yy*137)%17);
-    if(pattern<3){
-     const factor=.52+.48*Math.cos(angle+pattern*2*Math.PI/3);
-     r=Math.round(r*factor);g=Math.round(g*factor);b=Math.round(b*factor);
-    }
-   }
-   if(motion==='blink'&&r+g+b<130&&yy>9&&yy<23&&xx>8&&xx<32){
-    const intensity=Math.max(0,Math.sin(angle));
-    const fill=intensity>.45?0:1;
-    if(fill===0){r=255;g=112;b=0;}
-   }
-   frame[dest]=r;frame[dest+1]=g;frame[dest+2]=b;
+   const p=y*W+x,k=p*4;
+   const noise=bayer[(y&3)*4+(x&3)]/16;
+   const chosen=t>noise?to:from;
+   result[k]=chosen[k];result[k+1]=chosen[k+1];result[k+2]=chosen[k+2];result[k+3]=255;
   }
-  return frame;
+  output.push(result);
  }
- for(let i=0;i<count-1;i++)output.push(i===0?first:draw(i/(count-1)));
  output.push(new Uint8ClampedArray(first));
  return output;
 }
@@ -96,5 +76,5 @@ function validate(frames){
  if(deltaCount(frames[0],frames.at(-1))!==0)throw Error('Last frame must match first exactly');
  return frames.slice(1).map((f,i)=>deltaCount(frames[i],f));
 }
-global.JH2LoopAnimation={quantize,build,validate,deltaCount,motionForPrompt,motions};
+global.JH2LoopAnimation={quantize,buildKeyframes,validate,deltaCount};
 })(typeof window!=='undefined'?window:globalThis);
