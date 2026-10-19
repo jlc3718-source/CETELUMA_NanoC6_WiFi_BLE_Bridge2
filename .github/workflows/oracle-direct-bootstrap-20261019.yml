@@ -1,0 +1,16 @@
+name: One-time Oracle development connection bootstrap
+on:
+  push:
+    branches: [codex/oracle-direct-bootstrap-20261019]
+    paths: ['.github/workflows/oracle-direct-bootstrap-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Inspect existing TLS, project services and live version without exposing credentials
+        run: sudo -n python3 .github/scripts/oracle-dev-bootstrap-inspect.py
