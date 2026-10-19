@@ -1,0 +1,75 @@
+name: Jason Home 2 isolated current CPU runtime build
+on:
+  push:
+    branches: [codex/jh2-image-model-benchmark-20261019]
+    paths: ['.github/workflows/jh2-current-runtime-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  current-runtime:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 35
+    steps:
+      - name: Build pinned native ARM CPU runtime under isolated resource limits
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          """Build a second pinned CPU runtime without replacing the working benchmark binary."""
+          import hashlib,json,pathlib,subprocess,time
+          ROOT=pathlib.Path('/opt/jh2-image-benchmark-20261019')
+          PIN='b13a48219d5cdf408edcb93da6cd69b612ed03d3'
+          AREA=ROOT/'runtime-current';AREA.mkdir(exist_ok=True)
+          assert not AREA.is_symlink()
+          (AREA/'bin').mkdir(exist_ok=True)
+          def docker(*args):return subprocess.run(['sudo','-n','docker',*args],capture_output=True,text=True,timeout=45)
+          name='jh2-image-current-build-20261019'
+          assert docker('inspect',name).returncode!=0,'Existing task build must be reconciled'
+          build=r'''set -eu
+          if ! test -d /work/runtime-current/source/.git; then
+            git init /work/runtime-current/source
+            git -C /work/runtime-current/source remote add origin https://github.com/leejet/stable-diffusion.cpp
+          fi
+          git -C /work/runtime-current/source fetch --depth 1 origin b13a48219d5cdf408edcb93da6cd69b612ed03d3
+          git -C /work/runtime-current/source checkout --detach b13a48219d5cdf408edcb93da6cd69b612ed03d3
+          test "$(git -C /work/runtime-current/source rev-parse HEAD)" = b13a48219d5cdf408edcb93da6cd69b612ed03d3
+          git -C /work/runtime-current/source submodule update --init --depth 1 ggml
+          cmake -S /work/runtime-current/source -B /work/runtime-current/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE='-O2 -DNDEBUG' -DSD_WEBP=OFF -DSD_WEBM=OFF -DSD_BUILD_SHARED_LIBS=OFF -DSD_BUILD_SHARED_GGML_LIB=OFF -DGGML_NATIVE=ON
+          cmake --build /work/runtime-current/build --target sd-cli -j1
+          cp /work/runtime-current/build/bin/sd-cli /work/runtime-current/bin/sd-cli
+          /work/runtime-current/bin/sd-cli --help
+          '''
+          args=['sudo','-n','docker','run','--name',name,'--cpus=0.55','--cpu-shares=128','--memory=1792m','--memory-swap=1792m',
+                '--pids-limit=256','--security-opt','no-new-privileges','--mount','type=bind,source='+str(ROOT)+',target=/work',
+                'jh2-image-benchmark-toolchain:20261019','bash','-lc',build]
+          start=time.monotonic();reason=None;minimum=2**64
+          with (AREA/'build.log').open('w') as log:
+              process=subprocess.Popen(args,stdout=log,stderr=subprocess.STDOUT)
+              while process.poll() is None:
+                  available=int(next(x.split()[1] for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:')))*1024
+                  minimum=min(minimum,available)
+                  if available<700*1024**2:reason='host_headroom_guard'
+                  elif time.monotonic()-start>1800:reason='build_time_limit'
+                  if reason:docker('stop','--time','5',name);process.wait(timeout=30);break
+                  time.sleep(.5)
+              code=process.wait()
+          state=json.loads(docker('inspect',name,'--format','{{json .State}}').stdout)
+          result={'runtimeRevision':PIN,'returnCode':code,'wallSeconds':time.monotonic()-start,'oomKilled':state['OOMKilled'],
+                  'stopReason':reason,'minHostAvailableBytes':minimum,'memoryLimitBytes':1792*1024**2,'cpuLimit':.55,
+                  'swapBytes':0,'image':'jh2-image-benchmark-runtime:20261019','existingBinaryReplaced':False,'productionIntegrated':False}
+          if code==0:result['binarySha256']=hashlib.file_digest((AREA/'bin'/'sd-cli').open('rb'),'sha256').hexdigest()
+          (AREA/'runtime_current_result.json').write_text(json.dumps(result,indent=2))
+          print('CURRENT_RUNTIME_BUILD '+json.dumps(result),flush=True)
+          print('\n'.join((AREA/'build.log').read_text(errors='replace').splitlines()[-65:]),flush=True)
+          assert docker('rm',name).returncode==0
+          assert code==0,'Second isolated runtime build failed; original benchmark runtime preserved'
+          PYTHON
+      - name: Retain isolated build measurements and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jh2-current-runtime-build-20261019
+          path: |
+            /opt/jh2-image-benchmark-20261019/runtime-current/runtime_current_result.json
+            /opt/jh2-image-benchmark-20261019/runtime-current/build.log
+          retention-days: 3
+          if-no-files-found: warn
