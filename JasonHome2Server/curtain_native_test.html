@@ -1,29 +1,103 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Jason Home 2 · Native Curtain Test</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{background:#08131d;color:#edf8ff;font:15px system-ui;margin:0}main{max-width:640px;margin:auto;padding:17px}
-h1{font-size:21px}section{padding:20px;background:#152635;border:1px solid #385466;border-radius:16px}
-.buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:14px 0}
-button{background:#19866c;border:1px solid #50cfb5;color:white;border-radius:10px;padding:17px 13px;font:inherit;font-weight:700;cursor:pointer}
-button:disabled{opacity:.45}canvas{width:200px;max-width:100%;image-rendering:pixelated;background:#000;border:1px solid #506a7c;border-radius:8px}
-select{width:100%;font:inherit;background:#08131d;color:#edf8ff;border:1px solid #507185;border-radius:9px;padding:11px;margin:8px 0}#slotDetails{padding:10px 0;white-space:pre-wrap;font-size:14px}#allSlots{font:12px/1.5 ui-monospace,monospace;white-space:pre;overflow:auto;max-height:260px;color:#aed7e8;background:#08131d;border:1px solid #354b5d;border-radius:8px;padding:10px}#inspect{background:#28639a}
-p{color:#bcd0d9}#status{white-space:pre-wrap;font-size:14px;line-height:1.5;color:#a5f1d3;min-height:58px}
-</style></head><body><main><section><h1>🎞️ Native Curtain Test</h1>
-<canvas id="preview" width="40" height="40" aria-label="40×40 test animation preview"></canvas>
-<p>Three independent pumpkin frames. Frame 1 sends a full image; frames 2 and 3 show only the pixels changed from the preceding frame. No controller slots are written.</p><div class="buttons"><button id="send1">1. Send full pumpkin</button><button id="send2">2. Remove eye · changed pixels</button><button id="send3">3. Restore eye · changed pixels</button></div><p id="deltaStats"></p><p id="status" role="status">Ready.</p></section></main>
-<script>
-(()=>{'use strict';const $=id=>document.getElementById(id),ctx=$('preview').getContext('2d');
-const make=(eye)=>{const a=new Uint8Array(6400);const dot=(x,y,r,g,b)=>{if(x<0||x>=40||y<0||y>=40)return;const k=(y*40+x)*4;a[k]=r;a[k+1]=g;a[k+2]=b;a[k+3]=255;};
-for(let y=0;y<40;y++)for(let x=0;x<40;x++){const dx=(x-19.5)/15.5,dy=(y-20)/14.5;if(dx*dx+dy*dy<=1)dot(x,y,255,112,0);else dot(x,y,0,0,0);if(y>=4&&y<=8&&x>=18&&x<=21)dot(x,y,30,175,45);if(y>=17&&y<=21&&x>=11&&x<=15)dot(x,y,20,10,5);if(eye&&y>=17&&y<=21&&x>=24&&x<=28)dot(x,y,20,10,5);if(y>=26&&y<=29&&x>=13&&x<=27)dot(x,y,20,10,5);}return a;};
-const frames=[make(true),make(false),make(true)];
-const delta=(a,b)=>{const out=[];for(let i=0;i<1600;i++){let k=i*4;if(a[k]!==b[k]||a[k+1]!==b[k+1]||a[k+2]!==b[k+2])out.push({x:i%40,y:Math.floor(i/40),r:b[k],g:b[k+1],b:b[k+2]});}return out;};
-const d2=delta(frames[0],frames[1]),d3=delta(frames[1],frames[2]);
-$('deltaStats').textContent='Frame 1: 1600 pixels · Frame 2: '+d2.length+' changed · Frame 3: '+d3.length+' changed';
-const show=i=>{const im=ctx.createImageData(40,40);im.data.set(frames[i]);ctx.putImageData(im,0,0);};
-const status=t=>$('status').textContent=t;show(0);
-async function api(path,body){if(typeof parent.JH2CurtainApi!=='function')throw Error('Open from Jason Home 2');return parent.JH2CurtainApi(path,body);}
-$('send1').onclick=async()=>{show(0);try{status('Sending full frame…');const b=frames[0];let binary='';for(let i=0;i<b.length;i+=4096)binary+=String.fromCharCode(...b.subarray(i,i+4096));const asset=await api('/api/curtain/assets',{name:'Pumpkin full frame',frames:[btoa(binary)],delays:[1000],quality:'pal8',loop:false});const cmd=await api('/api/curtain/call',{action:'asset',payload:{sha256:asset.sha256},idempotencyKey:crypto.randomUUID()});status('Full frame queued: command '+cmd.commandId+' (visual confirmation required).');}catch(e){status('Frame 1 failed: '+e.message)}};
-$('send2').onclick=()=>{show(1);status('Frame 2 delta: '+d2.length+' pixels. Controller partial-pixel BLE opcode not verified; no packet transmitted.');};
-$('send3').onclick=()=>{show(2);status('Frame 3 delta: '+d3.length+' pixels. Controller partial-pixel BLE opcode not verified; no packet transmitted.');};
-window.addEventListener('load',()=>parent.postMessage({kind:'jh2-curtain-height',height:document.documentElement.scrollHeight},location.origin));
+<title>Jason Home 2 - Native Pixel Delta Test</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;padding:14px;background:#091727;color:#ecf7ff;font:15px system-ui,sans-serif}
+main{max-width:680px;margin:auto}h1{font-size:21px;margin:8px 0}p{color:#bbd1df;line-height:1.45}
+.frame{background:#162b40;border:1px solid #385970;border-radius:14px;padding:14px;margin:14px 0}
+.framehead{display:flex;gap:15px;align-items:center;flex-wrap:wrap}h2{margin:0 0 8px;font-size:17px}
+canvas{width:135px;height:135px;background:#000;border:1px solid #536c80;image-rendering:pixelated;border-radius:7px}
+.info{flex:1;min-width:160px}.muted{font-size:13px;color:#acc3d4}
+button{display:block;background:#0b806c;border:1px solid #13a78b;color:white;font:inherit;font-weight:700;border-radius:10px;padding:13px;margin-top:10px;width:100%}
+button:disabled{opacity:.45}#status{white-space:pre-wrap;border:1px solid #41596e;border-radius:12px;padding:12px;background:#0f2233;min-height:58px}
+</style></head><body><main><h1>🎃 Native Test · Changed Pixels</h1>
+<p>Send the three frames <strong>individually</strong> to test whether SmartDawn accepts partial image updates. The controller's stored effects are not touched.</p>
+<div class="frame"><div class="framehead"><canvas id="preview1" width="40" height="40"></canvas><div class="info"><h2>Frame 1 · Full pumpkin</h2><div class="muted">Establishes the complete 40×40 starting image. Both eyes visible.</div></div></div><button id="send1">1. Send full frame</button></div>
+<div class="frame"><div class="framehead"><canvas id="preview2" width="40" height="40"></canvas><div class="info"><h2>Frame 2 · Remove right eye</h2><div id="count2" class="muted"></div></div></div><button id="send2" disabled>2. Send changed pixels only</button></div>
+<div class="frame"><div class="framehead"><canvas id="preview3" width="40" height="40"></canvas><div class="info"><h2>Frame 3 · Restore right eye</h2><div id="count3" class="muted"></div></div></div><button id="send3" disabled>3. Send changed pixels only</button></div>
+<div id="status" role="status">Ready to send frame 1.</div>
+</main><script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),W=40,H=40;
+function pumpkin(rightEye){
+ const a=new Uint8Array(W*H*4);
+ const dot=(x,y,r,g,b)=>{const k=(y*W+x)*4;a[k]=r;a[k+1]=g;a[k+2]=b;a[k+3]=255;};
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  const dx=(x-19.5)/15.5,dy=(y-20)/14.5;
+  let color=dx*dx+dy*dy<=1?[255,112,0]:[0,0,0];
+  if(y>=4&&y<=8&&x>=18&&x<=21)color=[30,175,45];
+  if(y>=17&&y<=21&&x>=11&&x<=15)color=[20,10,5];
+  if(rightEye&&y>=17&&y<=21&&x>=24&&x<=28)color=[20,10,5];
+  if(y>=26&&y<=29&&x>=13&&x<=27)color=[20,10,5];
+  dot(x,y,...color);
+ }
+ return a;
+}
+const frames=[pumpkin(true),pumpkin(false),pumpkin(true)];
+function changed(a,b){
+ const out=[];
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  const k=(y*W+x)*4;
+  if(a[k]!==b[k]||a[k+1]!==b[k+1]||a[k+2]!==b[k+2])
+   out.push({x,y,r:b[k],g:b[k+1],b:b[k+2]});
+ }
+ return out;
+}
+const diffs=[null,changed(frames[0],frames[1]),changed(frames[1],frames[2])];
+function draw(i){const c=$('preview'+(i+1)).getContext('2d'),d=c.createImageData(W,H);d.data.set(frames[i]);c.putImageData(d,0,0);}
+frames.forEach((_,i)=>draw(i));
+$('count2').textContent=diffs[1].length+' changed pixels; the other '+(1600-diffs[1].length)+' pixels are not resent.';
+$('count3').textContent=diffs[2].length+' changed pixels; the other '+(1600-diffs[2].length)+' pixels are not resent.';
+let busy=false,completed=0;
+const status=s=>{$('status').textContent=s;resize();};
+const update=()=>{
+ for(let i=1;i<=3;i++)$('send'+i).disabled=busy||(i>completed+1);
+};
+function resize(){if(window.parent!==window)window.parent.postMessage({kind:'jh2-curtain-height',height:document.documentElement.scrollHeight},location.origin);}
+function b64(data){let s='';for(let i=0;i<data.length;i+=4096)s+=String.fromCharCode(...data.subarray(i,i+4096));return btoa(s);}
+async function api(path,body){
+ if(typeof parent.JH2CurtainApi!=='function')throw Error('Open Native Test in Jason Home 2');
+ return parent.JH2CurtainApi(path,body);
+}
+async function send(index){
+ if(busy||index>completed)return;
+ busy=true;update();const number=index+1;
+ try{
+  status('Frame '+number+': checking Nano and SmartDawn Bluetooth…');
+  const st=await api('/api/curtain/status'),c=st.curtain||{};
+  if(!st.online||!c.connected||!c.nanoLocalCacheSupported)
+   throw Error('Nano local cache or SmartDawn Bluetooth is not ready');
+  const input=index===0?
+   {name:'Pumpkin full baseline',frames:[b64(frames[0])],delays:[800],quality:'rgbfull',loop:false}:
+   {name:'Pumpkin eye delta '+number,deltaPixels:diffs[index],delay:800};
+  const asset=await api('/api/curtain/assets',input);
+  if(!asset.sha256||!Number.isInteger(asset.bytes))throw Error('No encoded asset returned');
+  const free=Number(c.nanoLocalCacheAvailableBytes);
+  if(Number.isFinite(free)&&free>0&&asset.bytes>free)
+   throw Error('Nano storage cannot hold frame ('+asset.bytes+' bytes)');
+  status('Frame '+number+': '+asset.bytes+' encoded bytes; '+(index?diffs[index].length+' changed pixels only':'full 40×40 image')+'. Sending…');
+  const req=await api('/api/curtain/call',{action:'asset',payload:{sha256:asset.sha256},idempotencyKey:crypto.randomUUID()});
+  if(!req.commandId)throw Error('No command ID returned by Oracle');
+  const began=Date.now();let last='';
+  while(Date.now()-began<120000){
+   await new Promise(resolve=>setTimeout(resolve,800));
+   const reply=await api('/api/curtain/command?id='+req.commandId);
+   const cmd=reply.command||{},state=cmd.state||'queued';
+   if(state!==last){last=state;status('Frame '+number+' command '+req.commandId+': '+state);}
+   if(state==='applied'){
+    if(cmd.result?.bleTransmitted!==true)
+     throw Error('Nano did not confirm BLE write');
+    completed=Math.max(completed,number);
+    status('Frame '+number+' sent: '+(index?diffs[index].length+' changed pixels':'full 40×40 image')+'. BLE write acknowledged; check curtain visually before sending the next frame.');
+    return;
+   }
+   if(['failed','expired','superseded'].includes(state))
+    throw Error(cmd.result?.message||'Transfer '+state);
+  }
+  throw Error('No Nano confirmation within 120 seconds');
+ }catch(e){status('Frame '+number+' failed: '+e.message);}
+ finally{busy=false;update();}
+}
+$('send1').onclick=()=>send(0);$('send2').onclick=()=>send(1);$('send3').onclick=()=>send(2);
+window.addEventListener('load',resize);
+update();
 })();
 </script></body></html>
