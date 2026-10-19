@@ -1,0 +1,36 @@
+name: Include existing Jason Home 2 Native Test page in scoped source inventory
+on:
+  push:
+    branches: [codex/oracle-direct-bootstrap-20261019]
+    paths: ['.github/workflows/oracle-direct-pair-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  add-exact-source:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 2
+    steps:
+      - name: Add only existing Native Test source path; no application source writes
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,pathlib,shutil,subprocess,urllib.request,uuid
+          config=pathlib.Path('/opt/oracle-home-development/config.json')
+          current=json.loads(config.read_text())
+          assert set(current['projects'])=={'jason-home-2'}
+          project=current['projects']['jason-home-2']
+          assert project['container']=='jason-home-2-web'
+          subprocess.run(['docker','exec','jason-home-2-web','node','-e',"const f=require('fs');const s=f.lstatSync('/app/nano_remote.html');if(!s.isFile()||s.isSymbolicLink()||s.size>500000)process.exit(1)"],check=True,capture_output=True)
+          before=json.loads(config.read_text())
+          backup=pathlib.Path('/var/lib/oracle-home-development')/('native-test-source-config-'+uuid.uuid4().hex+'.json')
+          shutil.copy2(config,backup)
+          temporary=config.with_suffix('.json.setup-new')
+          try:
+              project['files']=sorted(set(project['files'])|{'nano_remote.html'})
+              temporary.write_text(json.dumps(current,indent=2));temporary.chmod(0o600);temporary.replace(config)
+              subprocess.run(['systemctl','restart','oracle-home-development.service'],check=True,capture_output=True)
+          except BaseException:
+              shutil.copy2(backup,config)
+              subprocess.run(['systemctl','restart','oracle-home-development.service'],check=True,capture_output=True)
+              raise
+          print(json.dumps({'ok':True,'authorizedProjects':['jason-home-2'],'addedSourcePath':'nano_remote.html','applicationSourceChanged':False,'keysExported':False}))
+          PY
