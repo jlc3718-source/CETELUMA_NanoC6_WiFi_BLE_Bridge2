@@ -54,3 +54,4 @@ jobs:
           if-no-files-found: warn
 
 # Authorized post-upgrade v1.1.50 guarded original 4 KB run, no erase.
+# Retry preflight with idle-state diagnostics; no write without safe target catalog.
