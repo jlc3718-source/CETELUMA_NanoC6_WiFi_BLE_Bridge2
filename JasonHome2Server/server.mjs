@@ -6,6 +6,7 @@ import { extname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { lightingNightDate, resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene } from "./night_resolver.mjs";
 import { createNanoC6BrightnessSync } from "./nanoc6_sync.mjs";
+import { createCurtainAiAnimation } from "./curtain_ai_animation.mjs";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -142,6 +143,7 @@ db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NUL
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
 const curtainRelay=createCurtainBridge({db});
+const curtainAnimationAi=createCurtainAiAnimation({run:cloudflareAiRun,chat:cloudflareAiChat,text:cloudflareAiText,configured:cloudflareAiConfigured,model:AI_MODEL});
 const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 if(!meta("speed_scale_10")){
@@ -913,13 +915,13 @@ async function state(){
 }
 function authenticatedRead(req,res,path){
   const name=path==="/"?"anderson_home.html":path.slice(1);
-  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_local_test.html","curtain_quality.js","curtain_image_headers.js","nano_sync.js","curtain_remote.js"]);
+  const allowed=new Set(["anderson_home.html","v3_mockup.css","v3_mockup.js","night_calendar.js","event_categories.css","event_categories.js","android_eufy_ui.css","android_eufy_ui.js","curtain.css","curtain.js","curtain_converter.html","curtain_ai_animation.html","curtain_loop_animation.js","curtain_quality.js","curtain_image_headers.js","nano_sync.js","curtain_remote.js"]);
   if(!allowed.has(name)&&!/^curtain_real_(?:0[0-9]|10)\.js$/.test(name))return send(res,404,{ok:false,error:"Not found"});
   const file=join(root,name);
   if(!existsSync(file))return send(res,404,{ok:false,error:"Missing web asset"});
   const type=extname(file)===".js"?"text/javascript":extname(file)===".css"?"text/css":"text/html";
   const data=readFileSync(file);res.writeHead(200,{"content-type":type+"; charset=utf-8","content-length":data.length,
-    "cache-control":"no-store","content-security-policy":"default-src 'self' 'unsafe-inline' data:; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors "+((name==="curtain_converter.html"||name==="curtain_local_test.html")?"'self'":"'none'")+"",
+    "cache-control":"no-store","content-security-policy":"default-src 'self' 'unsafe-inline' data:; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'self'; frame-ancestors "+((name==="curtain_converter.html"||name==="curtain_ai_animation.html")?"'self'":"'none'")+"",
     "x-content-type-options":"nosniff"});res.end(data);
 }
 const loginPage=`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jason Home 2</title>
@@ -1075,6 +1077,8 @@ async function route(req,res){
     // the button press on a second full Oracle status/calendar calculation.
     return send(res,accepted?.queued?202:200,{ok:true,...accepted,target});
   }
+  if(method==="POST"&&path==="/api/curtain/ai-animation/generate")return send(res,200,await curtainAnimationAi.generate(await input(req)));
+  if(method==="POST"&&path==="/api/curtain/ai-animation/motion")return send(res,200,await curtainAnimationAi.motion(await input(req)));
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
   if(method==="POST"&&path==="/api/ai/key"){
