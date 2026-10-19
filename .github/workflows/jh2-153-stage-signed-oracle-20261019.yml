@@ -1,0 +1,39 @@
+name: JH2 1.1.53 Stage Verified Nano Local GIF OTA
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-153-stage-signed-oracle-20261019.yml']
+permissions: {contents: read, actions: read}
+concurrency: {group: jh2-production-signed-ota-singleton, cancel-in-progress: false}
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - name: Fix source checkout owner
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Wait for independently verified OTA ECDSA signature
+        shell: bash
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          for i in {1..120};do
+            state="$(gh run view 39190916164 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "")')"
+            if [[ "$state" == "completed success" ]];then echo "SIGNED_PACKAGE_AVAILABLE";exit 0;fi
+            if [[ "$state" == "completed "* ]];then echo "SIGNING_FAILED $state";exit 1;fi
+            sleep 7
+          done
+          echo "SIGNING_NOT_READY";exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-1.1.53-SIGNED-NANO-LOCAL-CACHE-OTA
+          run-id: 39190916164
+          github-token: '${{ github.token }}'
+          path: signed-package
+      - name: Validate signed firmware and atomically stage Oracle routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-stage-signed-153-on-oracle.py
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-153-on-oracle.py
