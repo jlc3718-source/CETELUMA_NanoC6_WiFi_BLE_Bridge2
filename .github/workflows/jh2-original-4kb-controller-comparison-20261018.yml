@@ -52,3 +52,5 @@ jobs:
           path: native-slot-4kb-control.json
           retention-days: 7
           if-no-files-found: warn
+
+# Authorized post-upgrade v1.1.50 guarded original 4 KB run, no erase.
