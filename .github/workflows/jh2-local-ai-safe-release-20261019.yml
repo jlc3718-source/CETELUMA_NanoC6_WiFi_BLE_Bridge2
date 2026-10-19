@@ -1,0 +1,37 @@
+name: JH2 Oracle Self-Hosted AI Safe Release
+on:
+  push:
+    branches: [codex/jh2-selfhosted-ai-oracle-20261019]
+    paths: ['.github/workflows/jh2-local-ai-safe-release-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - name: Restore runner checkout ownership
+        run: sudo -n chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 1}
+      - name: Prepare original and new Jason Home 2 generated UI for an exact AI-only merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin codex/jh2-slot-inventory-fix-20261018
+          git show FETCH_HEAD:JasonHome2Server/server.mjs > "$RUNNER_TEMP/jh2-base-server.mjs"
+          git show FETCH_HEAD:JasonHome2Server/generate_web.py > JasonHome2Server/.jh2-original-generator.py
+          python3 JasonHome2Server/generate_catalog.py
+          python3 JasonHome2Server/.jh2-original-generator.py
+          cp JasonHome2Server/web/anderson_home.html "$RUNNER_TEMP/jh2-base-ui.html"
+          python3 JasonHome2Server/generate_web.py
+          python3 -m py_compile .github/scripts/jh2-local-ai-safe-release-20261019.py
+          sudo -n docker exec -i jason-home-2-web node --input-type=module --check < JasonHome2Server/local_ai.mjs
+      - name: Read-only three-way merge and inline JavaScript validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-local-ai-safe-release-20261019.py \
+            --baseline-server "$RUNNER_TEMP/jh2-base-server.mjs" \
+            --baseline-ui "$RUNNER_TEMP/jh2-base-ui.html"
+          echo SAFE_RELEASE_STILL_NOT_APPLIED
