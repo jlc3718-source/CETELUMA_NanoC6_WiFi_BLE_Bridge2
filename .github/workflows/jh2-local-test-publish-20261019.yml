@@ -1,4 +1,4 @@
-name: JH2 Publish Simple 5x5 Wink Animation
+name: JH2 Final 5x5 Wink Oracle Publish
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Verify original picture and 25-pixel wink edits
+      - name: Final verification of 25-pixel wink and exact frame restoration
         shell: bash
         run: |
           set -euo pipefail
