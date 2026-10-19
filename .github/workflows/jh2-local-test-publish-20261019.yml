@@ -1,4 +1,4 @@
-name: JH2 Oracle-Local AI Animation Tuning
+name: JH2 Publish Simple 5x5 Wink Animation
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -13,34 +13,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Check secure Oracle configuration rollout and incomplete-pose recovery
+      - name: Verify original picture and 25-pixel wink edits
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/jh2-deploy-oracle-ai-tuning-20261019.py
-          node --check JasonHome2Server/server.mjs
-          node --check JasonHome2Server/curtain_ai_animation.mjs
+          python3 -m py_compile .github/scripts/jh2-publish-5x5-wink-20261019.py
           node --check JasonHome2Server/curtain_loop_animation.js
-          node --test JasonHome2Server/tests/curtain-animation-model.mjs JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
-          grep -q 'normalizeCurtainAiGuides' JasonHome2Server/server.mjs
-          grep -q 'curtain_ai_animation_guides' JasonHome2Server/server.mjs
-          grep -q 'animationTuning' JasonHome2Server/curtain_ai_animation.html
-          grep -q 'fallbackPoses' JasonHome2Server/curtain_ai_animation.mjs
-          test ! -e JasonHome2Server/curtain_native_test.html
+          node --check JasonHome2Server/curtain_ai_animation.mjs
+          node --check JasonHome2Server/server.mjs
+          node --test JasonHome2Server/tests/curtain-simple-animation.mjs JasonHome2Server/tests/curtain-animation-model.mjs JasonHome2Server/tests/curtain-studio.mjs JasonHome2Server/tests/curtain-relay.mjs
+          grep -q "buildSimpleAnimation" JasonHome2Server/curtain_ai_animation.html
+          if grep -q "buildKeyframes" JasonHome2Server/curtain_loop_animation.js; then
+            echo "FULL_POSE_REDRAW_STILL_PRESENT"; exit 1
+          fi
   publish:
     needs: validate
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 14
+    timeout-minutes: 10
     steps:
-      - name: Restore runner checkout ownership
+      - name: Restore Oracle runner checkout ownership
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v4
-      - name: Install Oracle-resident editable AI settings without Nano updates
+      - name: Replace animation web files only; no Nano changes or web restart
         shell: bash
         run: |
           set -euo pipefail
-          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-deploy-oracle-ai-tuning-20261019.py
-          sudo -n docker exec jason-home-2-web grep -q normalizeCurtainAiGuides /app/server.mjs
-          sudo -n docker exec jason-home-2-web grep -q animationTuning /app/web/curtain_ai_animation.html
-          sudo -n docker exec jason-home-2-web grep -q fallbackPoses /app/curtain_ai_animation.mjs
-          echo JH2_ORACLE_AI_TUNING_READY
+          sudo --preserve-env=GITHUB_SHA -n python3 .github/scripts/jh2-publish-5x5-wink-20261019.py
+          sudo -n docker exec jason-home-2-web grep -q "buildSimpleAnimation" /app/web/curtain_loop_animation.js
+          sudo -n docker exec jason-home-2-web grep -q "at most 25" /app/web/curtain_ai_animation.html
+          echo SIMPLE_WINK_WEB_RELEASE_VERIFIED
