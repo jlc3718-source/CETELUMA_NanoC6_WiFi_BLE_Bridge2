@@ -64,7 +64,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.53"
+#define NATIVE_FW_VERSION "1.1.54"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -632,7 +632,7 @@ static cJSON *sync_document(void){
     cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",false);
 #endif
     cJSON_AddBoolToObject(status,"relayStreaming",jh2_asset_stream_active());
-    cJSON_AddStringToObject(status,"assetStorage","oracle");
+    cJSON_AddStringToObject(status,"assetStorage","nano-local");
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
     jh2_ble_status(curtain);
     cJSON_AddBoolToObject(curtain,"sequenceRunning",jh2_native_sequence_running());
