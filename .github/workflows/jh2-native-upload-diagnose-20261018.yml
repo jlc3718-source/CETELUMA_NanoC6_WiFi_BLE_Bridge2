@@ -40,3 +40,4 @@ jobs:
 
 
 # Live v1.1.51 native 20KB type0 response diagnostic; read-only.
+# Read-only heartbeat after signed v1.1.52 install #14924 did not confirm.
