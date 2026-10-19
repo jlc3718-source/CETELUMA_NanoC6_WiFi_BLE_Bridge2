@@ -64,7 +64,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.49"
+#define NATIVE_FW_VERSION "1.1.50"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -337,7 +337,7 @@ static bool slot_write_ram(void *context,const uint8_t *packet,size_t len){
 static bool slot_reply_ram(void *context,uint16_t opcode,uint8_t id,uint32_t parts,const char **error){
     return jh2_ble_upload_reply((uint32_t*)context,opcode,id,parts,12000,error);
 }
-static void slot_pace_ram(void *context){(void)context;vTaskDelay(pdMS_TO_TICKS(20));}
+static void slot_pace_ram(void *context){(void)context;vTaskDelay(pdMS_TO_TICKS(5));}
 static void handle_command(const cJSON *row,const cJSON *assets){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
@@ -419,7 +419,7 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             cJSON *count=cJSON_GetObjectItemCaseSensitive(entry,"bytes");
             if(sha&&cJSON_IsString(digest)&&!strcmp(sha,digest->valuestring)&&
                cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry,"native"))&&
-               cJSON_IsNumber(count)&&count->valuedouble>=8192&&count->valuedouble<=JH2_NATIVE_RAM_LIMIT){
+               cJSON_IsNumber(count)&&count->valuedouble>=4096&&count->valuedouble<=JH2_NATIVE_RAM_LIMIT){
                 bytes=(uint32_t)count->valuedouble;break;
             }
         }
