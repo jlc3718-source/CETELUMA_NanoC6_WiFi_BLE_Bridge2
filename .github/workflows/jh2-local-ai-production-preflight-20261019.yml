@@ -1,0 +1,46 @@
+name: JH2 Oracle Local AI Production Preflight
+on:
+  push:
+    branches: [codex/jh2-selfhosted-ai-oracle-20261019]
+    paths: ['.github/workflows/jh2-local-ai-production-preflight-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-ai-production-check, cancel-in-progress: false}
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - name: Restore runner checkout ownership
+        run: sudo -n chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Check live code identity, web assets, and service health without changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp=$(mktemp -d)
+          trap 'rm -rf "$temp"' EXIT
+          sudo -n docker cp jason-home-2-web:/app/server.mjs "$temp/server.mjs"
+          sudo -n docker cp jason-home-2-web:/app/web/curtain_ai_animation.html "$temp/curtain_ai_animation.html"
+          sudo -n docker cp jason-home-2-web:/app/web/anderson_home.html "$temp/anderson_home.html"
+          echo "LIVE_GATEWAY_GIT_BLOB=$(git hash-object "$temp/server.mjs")"
+          echo "EXPECTED_GATEWAY_GIT_BLOB=d61d65b4fb3a1f9a7f4432800296d11c6291b78c"
+          echo "LIVE_CURTAIN_AI_PAGE_BLOB=$(git hash-object "$temp/curtain_ai_animation.html")"
+          echo "EXPECTED_CURTAIN_AI_PAGE_BLOB=ce0c560669c4a72fcd01a5393bd86d2c693fb5e6"
+          echo "LIVE_PARENT_UI_BYTES=$(wc -c < "$temp/anderson_home.html")"
+          if grep -q 'Cloudflare Workers AI' "$temp/anderson_home.html"; then echo LIVE_PARENT_AI_LABEL=cloudflare; else echo LIVE_PARENT_AI_LABEL=other; fi
+          curl -fsS --max-time 6 http://127.0.0.1:8081/api/health >/dev/null
+          echo GATEWAY_HEALTH_PASS
+      - name: Test real Oracle structured lighting AI answer without touching live events
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker cp JasonHome2Server/local_ai.mjs jason-home-2-web:/tmp/jh2-local-ai-stage.mjs
+          sudo -n docker exec jason-home-2-web node --input-type=module -e "
+            import {createLocalAI} from '/tmp/jh2-local-ai-stage.mjs';
+            const ai=createLocalAI({url:'http://127.0.0.1:11434'});
+            const schema={type:'object',properties:{reply:{type:'string'},draft:{type:'null'}},required:['reply','draft']};
+            const response=await ai.completion({messages:[{role:'system',content:'Return JSON only with reply and draft null. No lighting commands.'},{role:'user',content:'Explain that no lights were changed.'}],max_completion_tokens:80,response_format:{type:'json_schema',json_schema:{schema}}});
+            const parsed=JSON.parse(response.choices[0].message.content);
+            if(typeof parsed.reply!=='string'||parsed.draft!==null)throw Error('Lighting model malformed JSON');
+            console.log('LOCAL_LIGHTING_AI_JSON_VERIFIED');
+          "
