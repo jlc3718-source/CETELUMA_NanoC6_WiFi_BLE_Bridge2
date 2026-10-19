@@ -10,7 +10,7 @@ export function normalizeCurtainAiGuides(value){
  const guides={};
  for(const [name,max] of [['styleGuide',500],['motionGuide',700]]){
   const content=value[name]??'';
-  if(typeof content!=='string'||content.length>max||/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/.test(content))
+  if(typeof content!=='string'||content.length>max||/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(content))
    throw Error('Animation '+name+' must be text under '+max+' characters');
   guides[name]=content.trim();
  }
@@ -76,12 +76,12 @@ function parsePosePlan(raw){
  let poses=Array.isArray(object?.poses)?object.poses:Array.isArray(object?.frames)?object.frames:[];
  poses=poses.map(p=>typeof p==='string'?p:typeof p?.description==='string'?p.description:typeof p?.pose==='string'?p.pose:'');
  if(!poses.length){
-  poses=value.split(/\\n/).map(line=>line.replace(/^\\s*(?:[-*]|(?:pose\\s*)?[1-9][.):-])\\s*/i,'').trim())
+  poses=value.split(/\n/).map(line=>line.replace(/^\s*(?:[-*]|(?:pose\s*)?[1-9][.):-])\s*/i,'').trim())
    .filter(line=>line.length>=12&&!/[{}\\[\\]]/.test(line)).slice(0,4);
  }
  const unique=[],seen=new Set();
  for(const text of poses){
-  const trimmed=String(text||'').replace(/\\s+/g,' ').trim().slice(0,240);
+  const trimmed=String(text||'').replace(/\s+/g,' ').trim().slice(0,240);
   const key=trimmed.toLowerCase();
   if(trimmed.length>=8&&!seen.has(key)){unique.push(trimmed);seen.add(key);}
  }
