@@ -1,0 +1,54 @@
+name: JH2 Self-Hosted AI Staging and Art Test
+on:
+  push:
+    branches: [codex/jh2-selfhosted-ai-oracle-20261019]
+    paths: ['.github/workflows/jh2-local-ai-staging-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-local-ai-staging, cancel-in-progress: false}
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: node --check JasonHome2Server/local_ai.mjs
+      - run: node --test JasonHome2Server/tests/local-ai.mjs JasonHome2Server/tests/curtain-simple-animation.mjs
+  actual-model:
+    needs: unit
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 17
+    steps:
+      - name: Restore Oracle runner checkout ownership
+        run: sudo -n chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Private internal network, without touching app deployment
+        run: |
+          set -euo pipefail
+          sudo -n docker inspect jh2-ai-llm >/dev/null
+          sudo -n docker network inspect jh2-local-ai-net >/dev/null 2>&1 || sudo -n docker network create jh2-local-ai-net >/dev/null
+          for container in jason-home-2-web jh2-ai-llm; do
+            if ! sudo -n docker inspect --format '{{json .NetworkSettings.Networks}}' "$container" | grep -q '"jh2-local-ai-net"'; then
+              sudo -n docker network connect jh2-local-ai-net "$container"
+            fi
+          done
+          sudo -n docker exec jason-home-2-web node -e "fetch('http://jh2-ai-llm:11434/api/tags').then(r=>r.json()).then(j=>{if(!j.models.some(m=>m.name==='qwen2.5:1.5b-instruct'))process.exit(1);console.log('ORACLE_GATEWAY_CAN_REACH_LOCAL_MODEL')})"
+      - name: Exercise actual Oracle model as a pixel artist without restarting Jason Home 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker cp JasonHome2Server/local_ai.mjs jason-home-2-web:/tmp/jh2-local-ai-stage.mjs
+          sudo -n docker exec jason-home-2-web node --input-type=module -e "
+            import {createLocalAI} from '/tmp/jh2-local-ai-stage.mjs';
+            const ai=createLocalAI();
+            if(!(await ai.status()).ok)throw Error('model unavailable');
+            const started=Date.now();
+            const art=await ai.art({prompt:'A bright orange jack-o-lantern, two carved triangular eyes, green stem, friendly smile, solid black background'});
+            if(art.width!==40||art.height!==40||!art.image.startsWith('data:image/png;base64,'))throw Error('Artwork incorrect');
+            console.log('SELF_HOSTED_ORACLE_ART_40x40_VERIFIED');
+            console.log('ART_SOURCE='+art.sourceKind);
+            console.log('ART_SHAPES='+art.scene.shapes.length);
+            console.log('ART_SECONDS='+Math.round((Date.now()-started)/1000));
+          "
+          echo EXISTING_APPS_AND_FIRMWARE_UNCHANGED
