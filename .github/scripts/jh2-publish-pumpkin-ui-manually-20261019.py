@@ -80,7 +80,7 @@ def diff_parent(live):
   if a<0 or b<0:raise RuntimeError("Missing "+label)
   return a,b
  # Patch only Curtain navigation and iframe messaging, not Eufy or settings.
- start="  // Nano-local animation cache test"
+ start="  const localButton=create("
  end="  function deliverNativeTest()"
  a,z=region(live,start,end,"obsolete Local Test")
  q,w=region(source,"  // New AI Animation tab",end,"new AI Animation")
