@@ -1,0 +1,18 @@
+name: Complete Jason Home 2-only Oracle connection setup
+on:
+  push:
+    branches: [codex/oracle-direct-bootstrap-20261019]
+    paths: ['.github/workflows/oracle-direct-bootstrap-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  complete-connection:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Verify secure exact-request owner approval
+        run: python3 -m unittest discover -s OracleDevelopment -p 'test_*.py'
+      - name: Update only the connection; leave all hosted application source unchanged
+        run: sudo -n python3 OracleDevelopment/complete_setup.py

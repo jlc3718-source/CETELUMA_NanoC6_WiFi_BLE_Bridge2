@@ -40,8 +40,7 @@ def main():
   if re.fullmatch(r'[A-Za-z0-9_]+\.mjs',rel) or re.fullmatch(r'web/[A-Za-z0-9_]+\.(?:html|js|css)',rel):files.append(rel)
  assert 'web/curtain_loop_animation.js' in files and 'server.mjs' in files
  config={'origin':'https://'+HOST,'hosts':[HOST,HOST+':443','127.0.0.1:8186'],'state':str(STATE),'animation_test':str(ROOT/'curtain-simple-animation.mjs'),'projects':{
-  'jason-home-2':{'enabled':True,'container':'jason-home-2-web','image':info['Config']['Image'],'files':sorted(files),'health':'http://127.0.0.1:8081/api/health','origin':'http://127.0.0.1:8081'},
-  'anderson-home':{'enabled':False,'files':[],'reason':'No separate editable Anderson Oracle application was found among running services. Anderson firmware and original Jason Home remain excluded.'}}}
+  'jason-home-2':{'enabled':True,'container':'jason-home-2-web','image':info['Config']['Image'],'files':sorted(files),'health':'http://127.0.0.1:8081/api/health','origin':'http://127.0.0.1:8081'}}}
  put(ROOT/'config.json',json.dumps(config,indent=2))
  put(pathlib.Path('/etc/systemd/system/oracle-home-development.service'),f'''[Unit]
 Description=Restricted Oracle Home Development MCP

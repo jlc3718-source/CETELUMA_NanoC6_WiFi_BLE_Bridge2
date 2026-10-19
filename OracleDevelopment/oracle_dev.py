@@ -7,8 +7,8 @@ Secrets, database files, firmware and original Jason Home are excluded.
 import base64,contextlib,fcntl,hashlib,hmac,html,http.cookies,http.server,json,os,pathlib,re,secrets,sqlite3,subprocess,tempfile,threading,time,urllib.parse,urllib.request,uuid
 from html.parser import HTMLParser
 
-NAME='Oracle Home Development'
-VERSION='1.0.0'
+NAME='Jason Home 2 Oracle Development'
+VERSION='1.0.1'
 SCOPES={'oracle.read','oracle.deploy','oracle.device'}
 CALLBACK='https://chatgpt.com/connector_platform_oauth_redirect'
 MAX_BODY=2_000_000
@@ -318,7 +318,27 @@ class Authorization:
         require(q.get('code_challenge_method')=='S256' and re.fullmatch(r'[A-Za-z0-9_-]{43}',q.get('code_challenge','')),'PKCE S256 is required')
         require(q.get('resource')==self.resource,'Incorrect token audience')
         requested=set(q.get('scope','').split());require(requested and requested<=SCOPES,'Invalid requested scopes')
-        id=secrets.token_urlsafe(32);self.put('pending',id,{**q,'scope':' '.join(sorted(requested))},600);return id
+        # Never copy user-supplied owner-approval flags into server-owned state.
+        clean={k:q[k] for k in ('client_id','redirect_uri','response_type','code_challenge_method','code_challenge','resource','state') if k in q}
+        clean['scope']=' '.join(sorted(requested))
+        clean['requestNonce']=secrets.token_hex(16)
+        id=secrets.token_urlsafe(32);self.put('pending',id,clean,600);return id
+    def request_fingerprint(self,q):
+        # Public comparison identifier. It is not a bearer token or OAuth code.
+        return digest(canonical({k:q.get(k,'') for k in ('client_id','code_challenge','resource','state','scope','requestNonce')}))[:24]
+    def approve_from_admin(self,fingerprint):
+        require(isinstance(fingerprint,str) and re.fullmatch(r'[a-f0-9]{24}',fingerprint),'Invalid request fingerprint')
+        with self.db() as db:
+            candidates=[(id,json.loads(data),expires) for id,data,expires in db.execute("SELECT id,data,expires FROM records WHERE kind='pending' AND expires>?",(time.time(),)).fetchall()]
+            matches=[(id,q,expires) for id,q,expires in candidates if hmac.compare_digest(self.request_fingerprint(q),fingerprint)]
+            require(len(matches)==1,'No unique active connection request matches this fingerprint')
+            id,q,expires=matches[0];q['ownerApprovedAt']=time.time()
+            db.execute("UPDATE records SET data=? WHERE kind='pending' AND id=?",(json.dumps(q),id))
+        return {'ok':True,'requestFingerprint':fingerprint,'approvalLifetimeSeconds':300}
+    def finish_owner_approval(self,id):
+        q=self.get('pending',id);stamp=q.get('ownerApprovedAt')
+        require(type(stamp) in (int,float) and 0<=time.time()-stamp<=300,'This exact request still needs approval from the authenticated Oracle administrator')
+        return self.approve(id)
     def approve(self,id):
         q=self.get('pending',id,True);code=secrets.token_urlsafe(48)
         self.put('code',digest(code),{**q,'owner':uuid.uuid4().hex},120)
@@ -346,7 +366,7 @@ class Authorization:
 
 def tool(name,description,properties,required,scope,readonly=True):
     return {'name':name,'description':description,'inputSchema':{'type':'object','properties':properties,'required':required,'additionalProperties':False},'annotations':{'readOnlyHint':readonly,'destructiveHint':not readonly,'openWorldHint':False},'securitySchemes':[{'type':'oauth2','scopes':[scope]}]}
-S={'type':'string'};P={'type':'string','enum':['jason-home-2','anderson-home']}
+S={'type':'string'};P={'type':'string','enum':['jason-home-2']}
 TOOLS=[
  tool('connection_status','Inspect Oracle Home Development connection, project coverage and deployment restrictions.',{},[],'oracle.read'),
  tool('project_status','Read the live Oracle application health, version and Nano 1.1.55 status.',{'project':P},['project'],'oracle.read'),
@@ -396,7 +416,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception:self.response(400,{'error':'Invalid or expired request'})
     def get(self):
         self.check_origin();a=self.server.auth;p=urllib.parse.urlsplit(self.path);q={k:v[0] for k,v in urllib.parse.parse_qs(p.query).items()}
-        if p.path in ('/.well-known/oauth-authorization-server','/.well-known/openid-configuration'):
+        if p.path=='/.well-known/oauth-authorization-server':
             return self.response(200,{'issuer':a.origin,'authorization_endpoint':a.origin+'/authorize','token_endpoint':a.origin+'/token','registration_endpoint':a.origin+'/register','revocation_endpoint':a.origin+'/revoke','response_types_supported':['code'],'grant_types_supported':['authorization_code','refresh_token'],'token_endpoint_auth_methods_supported':['none'],'code_challenge_methods_supported':['S256'],'scopes_supported':sorted(SCOPES),'authorization_response_iss_parameter_supported':True})
         if p.path in ('/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp'):
             return self.response(200,{'resource':a.resource,'authorization_servers':[a.origin],'scopes_supported':sorted(SCOPES),'bearer_methods_supported':['header'],'resource_name':NAME})
@@ -404,8 +424,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if p.path=='/authorize':
             self.limit('authorize',20);pending=a.pending(q);csrf=secrets.token_urlsafe(32)
             a.put('csrf',digest(csrf),{'pending':pending},600)
-            # The existing strong Oracle app key is checked only server-side.
-            page='<!doctype html><html><meta name="viewport" content="width=device-width"><title>Authorize Oracle Home Development</title><style>body{font:17px system-ui;background:#101827;color:#eef4ff;max-width:620px;margin:10vh auto;padding:24px}input,button{padding:14px;width:100%;box-sizing:border-box;margin:10px 0}</style><h1>Oracle Home Development</h1><p>Authorize your ChatGPT connection to inspect and deploy approved Jason Home 2 application changes. Firmware, database records, credentials and original Jason Home are excluded.</p><p>Anderson Home remains unavailable until an editable Oracle application is verified.</p><form method="post" action="/approve"><input type="hidden" name="pending" value="'+html.escape(pending)+'"><input type="hidden" name="csrf" value="'+html.escape(csrf)+'"><label for="key">Existing Oracle API key</label><input type="password" name="key" id="key" autocomplete="off" required><button type="submit">Authorize ChatGPT connection</button></form><p>Disconnect this plugin in ChatGPT to stop using the connection. Reconnect with the existing Oracle key if authorization expires.</p></html>'
+            fingerprint=a.request_fingerprint(a.get('pending',pending))
+            page='<!doctype html><html><meta name="viewport" content="width=device-width"><title>Connect Jason Home 2 Oracle Development</title><style>body{font:17px system-ui;background:#101827;color:#eef4ff;max-width:620px;margin:10vh auto;padding:24px}button{padding:14px;width:100%;box-sizing:border-box;margin:16px 0;background:#58b9ff;border:0;border-radius:10px;font:inherit}code{display:block;padding:16px;background:#21324a;font-size:20px}</style><h1>Jason Home 2 Oracle Development</h1><p>Connect ChatGPT to the authorized Jason Home 2 development tools.</p><p>This exact request must be approved through the existing authenticated Oracle administration channel. Credentials remain on Oracle; no API key needs to be entered here.</p><p>Connection request:</p><code id="request-fingerprint">'+fingerprint+'</code><form method="post" action="/approve"><input type="hidden" name="pending" value="'+html.escape(pending)+'"><input type="hidden" name="csrf" value="'+html.escape(csrf)+'"><button type="submit">Complete approved connection</button></form><p>Administrator approval expires after five minutes and applies only to this request. Disconnect the plugin in ChatGPT to stop using the connection.</p></html>'
             return self.response(200,page.encode(),{'set-cookie':'oracle_dev_csrf='+csrf+'; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax'},'text/html; charset=utf-8')
         if p.path=='/mcp':return self.response(405,{'error':'Use Streamable HTTP POST'},{'Allow':'POST'})
         self.response(404,{'error':'Not found'})
@@ -428,10 +448,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             cookie=http.cookies.SimpleCookie(self.headers.get('cookie',''));cv=cookie.get('oracle_dev_csrf')
             require(cv and hmac.compare_digest(cv.value,data.get('csrf','')),'Invalid CSRF token')
             saved=a.get('csrf',digest(cv.value),True);require(saved['pending']==data.get('pending'),'Authorization session mismatch')
-            # Compare to the existing backend key without displaying or retaining input.
-            info=json.loads(run('docker','inspect','jason-home'))[0];env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
-            require(hmac.compare_digest(data.get('key',''),env['JASON_HOME_API_TOKEN']),'Invalid Oracle key')
-            location=a.approve(data['pending']);return self.response(303,None,{'location':location,'set-cookie':'oracle_dev_csrf=; Path=/; Max-Age=0; Secure; HttpOnly'})
+            location=a.finish_owner_approval(data['pending']);return self.response(303,None,{'location':location,'set-cookie':'oracle_dev_csrf=; Path=/; Max-Age=0; Secure; HttpOnly'})
         if p=='/register':self.limit('register',10);return self.response(201,a.register(json.loads(self.body())))
         if p!='/mcp':return self.response(404,{'error':'Not found'})
         try:grant=a.bearer(self.headers.get('authorization',''),'oracle.read')
@@ -481,9 +498,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 def main():
     import argparse
-    p=argparse.ArgumentParser();p.add_argument('--config',required=True);p.add_argument('--self-test',action='store_true');args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--config',required=True);p.add_argument('--self-test',action='store_true');p.add_argument('--approve-request');args=p.parse_args()
     config=json.loads(pathlib.Path(args.config).read_text());d=Development(config,config['state']);d.recover()
     if args.self_test:print(json.dumps(d.self_test('installation-self-test')));return
     a=Authorization(str(pathlib.Path(config['state'])/'authorization.sqlite'),config['origin'],config['origin']+'/mcp')
+    if args.approve_request:
+        require(os.geteuid()==0,'Owner approval requires the authenticated root administration channel')
+        print(json.dumps(a.approve_from_admin(args.approve_request)));return
     Server(('127.0.0.1',8186),d,a).serve_forever()
 if __name__=='__main__':main()

@@ -81,5 +81,25 @@ class OAuthTests(unittest.TestCase):
     def test_verifier_is_required(self):
         code=self.flow()
         with self.assertRaises(ValueError):self.a.tokens({'grant_type':'authorization_code','code':code,'client_id':self.client,'resource':self.a.resource,'redirect_uri':CALLBACK})
+    def pending(self,**extra):
+        ch=base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode()).digest()).decode().rstrip('=')
+        return self.a.pending({'client_id':self.client,'redirect_uri':CALLBACK,'response_type':'code','code_challenge_method':'S256','code_challenge':ch,'scope':'oracle.read oracle.deploy','resource':self.a.resource,'state':'owner-test',**extra})
+    def test_exact_owner_approved_pairing_with_no_key(self):
+        id=self.pending();q=self.a.get('pending',id);fp=self.a.request_fingerprint(q)
+        with self.assertRaises(ValueError):self.a.finish_owner_approval(id)
+        self.assertTrue(self.a.approve_from_admin(fp)['ok']);url=self.a.finish_owner_approval(id)
+        code=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['code'][0]
+        self.assertTrue(self.exchange(code)['access_token'])
+        with self.assertRaises(ValueError):self.a.finish_owner_approval(id)
+    def test_owner_approval_flags_cannot_be_supplied_by_browser(self):
+        id=self.pending(ownerApprovedAt=10**20,admin=True)
+        self.assertNotIn('ownerApprovedAt',self.a.get('pending',id))
+        with self.assertRaises(ValueError):self.a.finish_owner_approval(id)
+    def test_wrong_request_cannot_be_owner_approved(self):
+        self.pending()
+        with self.assertRaises(ValueError):self.a.approve_from_admin('0'*24)
+    def test_owner_approval_expires(self):
+        id=self.pending();q=self.a.get('pending',id);q['ownerApprovedAt']=1;self.a.put('pending',id,q,600)
+        with self.assertRaises(ValueError):self.a.finish_owner_approval(id)
 
 if __name__=='__main__':unittest.main()
