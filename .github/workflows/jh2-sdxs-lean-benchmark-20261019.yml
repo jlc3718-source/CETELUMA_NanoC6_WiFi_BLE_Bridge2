@@ -1,0 +1,146 @@
+name: Jason Home 2 isolated SDXS one step image benchmark
+on:
+  push:
+    branches: [codex/jh2-image-model-benchmark-20261019]
+    paths: ['.github/workflows/jh2-sdxs-lean-benchmark-20261019.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  benchmark:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 30
+    steps:
+      - name: Generate actual isolated model images with CPU, memory and headroom guards
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          """Finite, no-network inference tests. Only new benchmark containers/files are touched."""
+          import hashlib,json,os,pathlib,struct,subprocess,time,urllib.request
+          ROOT=pathlib.Path('/opt/jh2-image-benchmark-20261019')
+          setup=json.loads((ROOT/'runtime-lean'/'runtime_current_result.json').read_text())
+          assert setup['returnCode']==0
+          # Resolve and verify the documented SDXS conversion, preserving the earlier model.
+          repo='concedo/sdxs-512-tinySDdistilled-GGUF'
+          with urllib.request.urlopen('https://huggingface.co/api/models/'+repo+'?blobs=true',timeout=45) as r: meta=json.load(r)
+          revision=meta['sha'];assert len(revision)==40 and all(c in '0123456789abcdef' for c in revision)
+          assert meta.get('cardData',{}).get('license')=='openrail++'
+          entries=[x for x in meta['siblings'] if x['rfilename'].endswith('.gguf')]
+          assert len(entries)==1, 'Model-file selection must be unambiguous'
+          entry=entries[0];filename=entry['rfilename'];assert pathlib.PurePosixPath(filename).name==filename
+          expected=entry['lfs']['sha256'];size=entry['lfs']['size'];assert 500_000_000<size<900_000_000
+          with urllib.request.urlopen('https://huggingface.co/api/models/IDKiro/sdxs-512-dreamshaper',timeout=45) as r: upstream=json.load(r)
+          assert upstream.get('cardData',{}).get('license')=='openrail++'
+          with urllib.request.urlopen('https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/LICENSE.md',timeout=45) as r: license_text=r.read()
+          assert b'Open RAIL++-M' in license_text and b'no-charge' in license_text
+          MODEL_DIR=ROOT/'models'/'sdxs';MODEL_DIR.mkdir(exist_ok=True)
+          (MODEL_DIR/'OPENRAIL++-LICENSE.md').write_bytes(license_text)
+          path=MODEL_DIR/filename;download_begin=time.monotonic()
+          def file_sha(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for chunk in iter(lambda:f.read(1024**2),b''):h.update(chunk)
+              return h.hexdigest()
+          if not path.exists() or file_sha(path)!=expected:
+              partial=path.with_suffix('.partial')
+              with urllib.request.urlopen('https://huggingface.co/'+repo+'/resolve/'+revision+'/'+filename,timeout=90) as r,partial.open('wb') as f:
+                  total=0
+                  while True:
+                      chunk=r.read(1024**2)
+                      if not chunk:break
+                      total+=len(chunk);assert total<=size
+                      f.write(chunk)
+              assert file_sha(partial)==expected
+              partial.replace(path)
+          assert path.stat().st_size==size
+          model={'repository':repo,'revision':revision,'file':filename,'bytes':size,'sha256':expected,'license':'openrail++',
+                 'sourceConversion':'akleine/sdxs-512','upstream':'IDKiro/sdxs-512-dreamshaper','upstreamRevision':upstream['sha'],
+                 'downloadAndVerificationSeconds':time.monotonic()-download_begin,'runtimeRevision':setup['runtimeRevision']}
+          OUTPUT=ROOT/'output'/'sdxs';OUTPUT.mkdir(exist_ok=True)
+          (OUTPUT/'model_manifest.json').write_text(json.dumps(model,indent=2))
+          print('SDXS_MODEL_MANIFEST '+json.dumps(model),flush=True)
+          
+          def docker(*args,**kw):return subprocess.run(['sudo','-n','docker',*args],capture_output=True,text=True,timeout=30,**kw)
+          def memory_available():
+              return int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))*1024
+          def cgroup(pid):
+              lines=pathlib.Path('/proc/'+str(pid)+'/cgroup').read_text().splitlines()
+              cg=next(l.split(':',2)[2] for l in lines if l.startswith('0::'))
+              return pathlib.Path('/sys/fs/cgroup')/cg.lstrip('/')
+          tests=[
+            ('ghost_sdxs_512',512,'a friendly smiling blue sheet ghost with two black oval eyes',1,360),
+            ('novel_armadillo_sdxs_512',512,'a green armadillo wearing a red scarf',1,360),
+            ('novel_platypus_sdxs_512',512,'a purple platypus wearing a yellow rain hat',1,360)
+          ]
+          report={'model':model,'runtime':{k:setup[k] for k in ['runtimeRevision','binarySha256','image']},'tests':[],
+                  'productionIntegrated':False,'physicalCommandsSent':0,'templatesUsed':False}
+          for label,res,subject,steps,timeout in tests:
+              if memory_available()<2600*1024**2:
+                  report['tests'].append({'label':label,'status':'not_run','reason':'Insufficient headroom while preserving running applications'});break
+              name='jh2-image-sdxs-'+label.replace('_','-')
+              assert docker('inspect',name).returncode!=0,'Existing test container must not be overwritten'
+              prompt='(pure black background:1.3), pixel art sprite of '+subject+', full body, centered with wide black margin, 2D, flat solid colors, no text'
+              args=['create','--name',name,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
+                    '--user',str(os.getuid())+':'+str(os.getgid()),'--cpus=0.85','--cpu-shares=128','--memory=2048m','--memory-swap=2048m',
+                    '--pids-limit=64','--mount','type=bind,source='+str(ROOT/'runtime-lean'/'bin')+',target=/inference-bin,readonly',
+                    '--mount','type=bind,source='+str(MODEL_DIR)+',target=/models,readonly',
+                    '--mount','type=bind,source='+str(OUTPUT)+',target=/output',
+                    '--entrypoint','/inference-bin/sd-cli',setup['image'],'-m','/models/'+model['file'],
+                    '-p',prompt,'--sampling-method','euler','--cfg-scale','1','--steps',str(steps),'-t','1',
+                    '-W',str(res),'-H',str(res),'--seed','42','-o','/output/'+label+'.png']
+              assert not (OUTPUT/(label+'.png')).exists(), 'Existing benchmark output must not be reused'
+              created=docker(*args);assert created.returncode==0,created.stderr
+              started=time.monotonic();assert docker('start',name).returncode==0
+              peak=0;cpu=0;minimum=memory_available();cg=None;stopped=None;health_samples=[];next_health=started
+              while True:
+                  s=docker('inspect',name,'--format','{{json .State}}');state=json.loads(s.stdout)
+                  if not state['Running']:break
+                  try:
+                      if cg is None and state.get('Pid'):cg=cgroup(state['Pid'])
+                      if cg:
+                          peak=max(peak,int((cg/'memory.peak').read_text()))
+                          stats=dict(l.split() for l in (cg/'cpu.stat').read_text().splitlines());cpu=int(stats['usage_usec'])
+                  except (OSError,ValueError):pass
+                  if time.monotonic()>=next_health:
+                      health_begin=time.monotonic()
+                      try:
+                          with urllib.request.urlopen('http://127.0.0.1:8081/api/health',timeout=3) as r: health=json.load(r)
+                          health_samples.append({'seconds':time.monotonic()-started,'latencySeconds':time.monotonic()-health_begin,'ok':health.get('ok') is True})
+                          if health.get('ok') is not True:stopped='application_health_guard'
+                      except Exception as error:
+                          stopped='application_health_guard';health_samples.append({'seconds':time.monotonic()-started,'ok':False,'error':type(error).__name__})
+                      next_health=time.monotonic()+20
+                  available=memory_available();minimum=min(minimum,available)
+                  if available<750*1024**2:stopped='host_headroom_guard'
+                  elif time.monotonic()-started>timeout:stopped='inference_time_limit'
+                  if stopped:docker('stop','--time','5',name)
+                  time.sleep(.3)
+              elapsed=time.monotonic()-started
+              log=docker('logs',name);(OUTPUT/(label+'.log')).write_text(log.stdout+log.stderr)
+              row={'label':label,'prompt':prompt,'resolution':res,'steps':steps,'wallSeconds':round(elapsed,3),
+                   'cpuSeconds':round(cpu/1e6,3),'sampledPeakMemoryBytes':peak,'minHostAvailableBytes':minimum,
+                   'exitCode':state['ExitCode'],'oomKilled':state['OOMKilled'],'stopReason':stopped,
+                   'applicationHealthSamples':health_samples,'cpuLimit':.85,'memoryLimitBytes':2147483648,'swapBytes':0,'templateFallback':False,'decoder':'bundled SDXS tiny autoencoder'}
+              path=OUTPUT/(label+'.png')
+              if path.exists():
+                  b=path.read_bytes();assert b[:8]==b'\x89PNG\r\n\x1a\n';width,height=struct.unpack('>II',b[16:24]);assert (width,height)==(res,res)
+                  row.update(status='generated_requires_visual_review',file=path.name,bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+              else:
+                  row['status']='failed';row['errorTail']=(log.stdout+log.stderr).splitlines()[-12:]
+              report['tests'].append(row);print('IMAGE_BENCHMARK '+json.dumps(row),flush=True)
+              (OUTPUT/'image_benchmark_results.json').write_text(json.dumps(report,indent=2))
+              assert docker('rm',name).returncode==0
+              if row['status']=='failed':break
+          try:
+              with urllib.request.urlopen('http://127.0.0.1:8081/api/health',timeout=8) as response:report['applicationHealth']=json.load(response)
+          except Exception as e:report['applicationHealth']={'ok':False,'error':type(e).__name__}
+          (OUTPUT/'image_benchmark_results.json').write_text(json.dumps(report,indent=2))
+          print('BENCHMARK_SUMMARY '+json.dumps({'cases':len(report['tests']),'applicationHealth':report['applicationHealth'],'productionIntegrated':False}),flush=True)
+          PYTHON
+      - name: Retain actual source image and measured quality benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jh2-sdxs-lean-benchmark-20261019
+          path: /opt/jh2-image-benchmark-20261019/output/sdxs/*
+          retention-days: 3
+          if-no-files-found: warn
