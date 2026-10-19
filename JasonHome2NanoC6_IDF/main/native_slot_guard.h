@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JH2_TEST_CID 83929U
+#define JH2_TEST_CID 83928U
 #define JH2_SLOT_COMMAND_UUID "01020074-1972-1925-3022-077119514e44"
 #define JH2_SLOT_UPLOAD_UUID "27923001-2072-1925-3022-077119514e44"
 typedef struct {
