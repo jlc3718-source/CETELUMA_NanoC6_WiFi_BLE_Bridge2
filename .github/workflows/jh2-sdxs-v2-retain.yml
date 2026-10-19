@@ -1,0 +1,17 @@
+name: Jason Home 2 retain SDXS prompt test outputs
+on:
+  push:
+    branches: [codex/jh2-image-model-benchmark-20261019]
+    paths: ['.github/workflows/jh2-sdxs-v2-retain.yml']
+permissions: {contents: read}
+concurrency: {group: jason-home-oracle-production, cancel-in-progress: false}
+jobs:
+  retain:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    steps:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jh2-sdxs-v2-actual
+          path: /opt/jh2-image-benchmark-20261019/output/sdxs-v2/*
+          retention-days: 3
+          if-no-files-found: error
