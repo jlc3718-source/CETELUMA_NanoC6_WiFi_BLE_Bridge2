@@ -28,23 +28,31 @@ bool jh2_slot_transfer(const uint8_t *file,size_t size,uint8_t id,
         uint32_t now,bool known,unsigned matches,uint16_t slot,
         const jh2_slot_io *io,const char **error){
     *error="Invalid native RAM file";
-    if(!file||size<8192||size>JH2_NATIVE_RAM_LIMIT||!io||!io->write||!io->reply||!io->pace)return false;
-    if(memcmp(file,"DNMX",4)&&memcmp(file,"DNCX",4))return false;
-    uint32_t offset=le32(file+128),stride=le32(file+10);
-    unsigned frames=(unsigned)file[134]|(unsigned)file[135]<<8;
-    if(file[4]!=3||file[5]!=1||file[6]!=40||file[7]||file[8]!=40||file[9]||
-       le32(file+14)!=JH2_TEST_CID||offset<4096||offset>size-4096||stride!=4800||
-       frames<2||memcmp(file+offset,"DNX2",4)||file[offset+4]!=3||
-       le32(file+offset+5)!=stride||le32(file+offset+9)!=frames||
-       file[offset+13]!=40||file[offset+14]||file[offset+15]!=40||file[offset+16]||
-       (uint64_t)offset+4096+(uint64_t)stride*frames>size)return false;
+    if(!file||size<4096||size>JH2_NATIVE_RAM_LIMIT||!io||!io->write||!io->reply||!io->pace)return false;
+    // Baseline control: original, exactly 4096-byte SmartDawn DN1FE format.
+    // No erase, no other CID, no Oracle latency once this RAM transfer begins.
+    const bool original_4k=size==4096 && memcmp(file,"DN\x01\xfe",4)==0 &&
+                           le32(file+4)==JH2_TEST_CID;
+    if(!original_4k){
+        if(size<8192 || (memcmp(file,"DNMX",4)&&memcmp(file,"DNCX",4)))return false;
+        uint32_t offset=le32(file+128),stride=le32(file+10);
+        unsigned frames=(unsigned)file[134]|(unsigned)file[135]<<8;
+        if(file[4]!=3||file[5]!=1||file[6]!=40||file[7]||file[8]!=40||file[9]||
+           le32(file+14)!=JH2_TEST_CID||offset<4096||offset>size-4096||stride!=4800||
+           frames<2||memcmp(file+offset,"DNX2",4)||file[offset+4]!=3||
+           le32(file+offset+5)!=stride||le32(file+offset+9)!=frames||
+           file[offset+13]!=40||file[offset+14]||file[offset+15]!=40||file[offset+16]||
+           (uint64_t)offset+4096+(uint64_t)stride*frames>size)return false;
+    }
     uint32_t parts=(uint32_t)((size+499)/500);
     uint8_t header[80],packet[508];size_t n=8;
     envelope(header,id,parts,parts);
-    n+=field(header+n,1,id);n+=field(header+n,2,0);n+=field(header+n,3,(uint32_t)size);
+    n+=field(header+n,1,id);n+=field(header+n,2,original_4k?3:0);n+=field(header+n,3,(uint32_t)size);
     n+=field(header+n,4,0);n+=field(header+n,5,parts);n+=field(header+n,6,500);
-    n+=field(header+n,7,0);header[n++]=66;header[n++]=9;
-    memcpy(header+n,"83928.eff",9);n+=9;n+=field(header+n,9,JH2_TEST_CID);
+    n+=field(header+n,7,0);
+    if(!original_4k){header[n++]=66;header[n++]=9;
+        memcpy(header+n,"83928.eff",9);n+=9;}
+    n+=field(header+n,9,JH2_TEST_CID);
     header[7]=crc8(header,n);
     jh2_slot_session session={0};
     if(!jh2_slot_validate(&session,JH2_SLOT_UPLOAD_UUID,header,n,now,known,matches,slot,false,error))return false;
