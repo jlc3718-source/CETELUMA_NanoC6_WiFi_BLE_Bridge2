@@ -1,4 +1,4 @@
-name: JH2 Publish Nano AI Animation Production
+name: JH2 Publish Nano AI Animation Ready
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
