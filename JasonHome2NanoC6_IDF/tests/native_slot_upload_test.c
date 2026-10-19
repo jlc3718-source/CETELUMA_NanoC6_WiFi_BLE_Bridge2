@@ -12,7 +12,7 @@ static bool write_packet(void *ctx,const uint8_t *bytes,size_t len){
 static bool reply(void *ctx,uint16_t op,uint8_t id,uint32_t parts,const char **error){
     fixture *f=ctx;assert(id==123&&parts==f->expected_parts);++f->replies;
     if(op==2931){assert(f->writes==1);if(f->reject_start){*error="start rejected";return false;}}
-    else {assert(op==2934&&f->writes==59&&f->pauses==58);if(f->reject_end){*error="end rejected";return false;}}
+    else {assert(op==2934&&f->writes==f->expected_parts+1&&f->pauses==f->expected_parts);if(f->reject_end){*error="end rejected";return false;}}
     return true;
 }
 static void pace(void *ctx){++((fixture*)ctx)->pauses;}
