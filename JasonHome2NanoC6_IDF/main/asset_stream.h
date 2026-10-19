@@ -14,3 +14,6 @@ bool jh2_asset_stream_active(void);
 // Caller owns *out and frees it after the continuous local BLE transfer.
 bool jh2_asset_fetch_ram(const char *endpoint,const char *token,
                         const char *sha,uint32_t size,uint8_t **out);
+
+// Usable bytes for the next replacement animation (measured from LittleFS).
+uint32_t jh2_asset_local_available_bytes(void);
