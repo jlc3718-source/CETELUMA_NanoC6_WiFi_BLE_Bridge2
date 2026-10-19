@@ -24,7 +24,7 @@ static bool transfer(uint8_t *data,fixture *f,bool known,unsigned matches){
 int main(void){
     uint8_t *file=calloc(1,28672);assert(file);
     memcpy(file,"DNMX",4);file[4]=3;file[5]=1;file[6]=file[8]=40;
-    le32(file+10,4800);le32(file+14,83928);le32(file+128,4096);file[134]=4;
+    le32(file+10,4800);le32(file+14,83929);le32(file+128,4096);file[134]=4;
     memcpy(file+4096,"DNX2",4);file[4100]=3;le32(file+4101,4800);le32(file+4105,4);file[4109]=file[4111]=40;
     fixture f={.expected_parts=58};assert(transfer(file,&f,true,0));assert(f.writes==59&&f.replies==2);
     f=(fixture){.expected_parts=58};assert(!transfer(file,&f,false,0)&&f.writes==0);
@@ -38,7 +38,7 @@ int main(void){
     // contiguous native-RAM transaction, no host-to-Oracle round trips.
     uint8_t original[4096]={0};
     original[0]='D';original[1]='N';original[2]=1;original[3]=0xfe;
-    le32(original+4,83928);
+    le32(original+4,83929);
     const char *control_error=NULL;
     fixture legacy={.expected_parts=9};
     jh2_slot_io legacy_io={&legacy,write_packet,reply,pace};
