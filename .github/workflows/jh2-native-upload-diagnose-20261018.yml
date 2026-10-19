@@ -28,7 +28,9 @@ jobs:
                   op=int.from_bytes(raw[10:12],'big')
                   if 2931<=op<=2934:print('CONTROLLER_REPLY',notice['id'],op,'rcode',raw[18],'first_bytes',raw[:40].hex(),flush=True)
           for cid in range(14834,14866):
-              try:result,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)\n              except Exception:continue\n              command=result.get('command') or {}
+              try:result,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              except Exception:continue
+              command=result.get('command') or {}
               print('UPLOAD_COMMAND',json.dumps({k:command.get(k) for k in ('id','action','state','result')},sort_keys=True),flush=True)
           status,_=api('/api/curtain/status',cookie=cookie)
           print('LIVE',json.dumps({'fw':status.get('firmware'),'online':status.get('online'),'queued':status.get('queued'),'curtain':status.get('curtain')},sort_keys=True),flush=True)
