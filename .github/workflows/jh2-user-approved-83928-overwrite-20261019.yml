@@ -1,0 +1,50 @@
+name: JH2 One-Time Approved Custom CID83928 Overwrite and New Animation
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-user-approved-83928-overwrite-20261019.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  write:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - name: Fix self-hosted checkout ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Stage new native 40x40 blinking animation, erase only old test CID, upload and read back
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import os,subprocess,json,pathlib
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(v.split('=',1) for v in info['Config']['Env'] if '=' in v)
+          token=env['JASON_HOME_API_TOKEN']
+          workspace=pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          source=(workspace/'.github/scripts/jh2-overwrite-cid83928-once.mjs').read_text()
+          child=dict(os.environ,JH2_TEST_TOKEN=token)
+          command=['docker','exec','-i','-e','JH2_TEST_TOKEN','jason-home-2-web','node','--input-type=module']
+          try:
+              completed=subprocess.run(command,input=source,text=True,env=child,timeout=620)
+              code=completed.returncode
+          except subprocess.TimeoutExpired:
+              print('STOPPED: Controller test exceeded limit; do not retry without inspecting current CID',flush=True)
+              code=1
+          subprocess.run(['docker','cp','jason-home-2-web:/tmp/jh2-overwrite-83928-report.json',
+                          str(workspace/'jh2-overwrite-83928-report.json')],check=False)
+          if (workspace/'jh2-overwrite-83928-report.json').exists():
+              (workspace/'jh2-overwrite-83928-report.json').chmod(0o644)
+          raise SystemExit(code)
+          PY
+      - name: Preserve only nonsecret one-time controller transaction results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-CID83928-New-Animation-Write-Readback
+          path: jh2-overwrite-83928-report.json
+          retention-days: 7
+          if-no-files-found: warn
