@@ -1,0 +1,62 @@
+name: JH2 Saved Native CID83928 Playback Verification
+on:
+  push:
+    branches: [codex/jh2-slot-inventory-fix-20261018]
+    paths: ['.github/workflows/jh2-saved-native-slot-playback-20261019.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  play:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Verify actual controller inventory and play existing reserved test effect once
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,uuid,time
+          env=dict(x.split('=',1) for x in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in x)
+          url='http://127.0.0.1:8081';cookie=''
+          def api(path,body=None):
+              headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})}
+              request=urllib.request.Request(url+path,headers=headers,data=None if body is None else json.dumps(body).encode())
+              with urllib.request.urlopen(request,timeout=25) as r:return json.load(r),r.headers
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          def safe():
+              d,_=api('/api/curtain/status')
+              targets=d.get('curtain',{}).get('nativeTarget83928') or []
+              return d,targets
+          verified=False
+          for i in range(8):
+              d,targets=safe();c=d.get('curtain',{})
+              print('READ_ONLY_PREFLIGHT',json.dumps({'version':d.get('firmware'),'online':d.get('online'),'connected':c.get('connected'),'effects':c.get('nativeCatalogUnique'),'section':c.get('nativeTargetSectionComplete'),'target':targets,'queued':d.get('queued'),'streaming':d.get('relayStreaming')}),flush=True)
+              verified=(d.get('firmware')=='1.1.50' and d.get('online') and c.get('connected') and
+                       c.get('nativeTargetSectionComplete') and c.get('nativeCatalogUnique',0)>=88 and
+                       c.get('nativeTarget83928Count')==1 and len(targets)==1 and
+                       targets[0].get('cid')==83928 and targets[0].get('effectId')==88 and
+                       targets[0].get('slot')==33 and d.get('queued',0)==0)
+              if verified:break
+              if i<7:time.sleep(3)
+          if not verified:raise RuntimeError('Verified unique CID 83928 slot 33 is unavailable; playback not attempted')
+          queued,_=api('/api/curtain/call',{'action':'nativePlay','payload':{'cid':83928,'slot':33},'idempotencyKey':'jh2-nativePlay-83928-'+uuid.uuid4().hex})
+          cid=queued['commandId']
+          print('PLAY_COMMAND_QUEUED',cid,flush=True)
+          for attempt in range(90):
+              state,_=api('/api/curtain/command?id='+str(cid))
+              command=state.get('command') or {}
+              if command.get('state') in ('applied','failed','expired','superseded'):
+                  result=command.get('result') or {}
+                  print('PLAY_COMMAND_RESULT',json.dumps({'id':cid,'state':command.get('state'),'bleTransmitted':result.get('bleTransmitted'),'message':result.get('message'),'physicalPlaybackConfirmed':False}),flush=True)
+                  if command.get('state')!='applied' or result.get('bleTransmitted') is not True:
+                      raise RuntimeError('Native CID 83928 playback command was not transmitted')
+                  break
+              time.sleep(2)
+          else:raise RuntimeError('Controller playback command did not complete')
+          after,targets=safe()
+          print('POST_PLAY_CATALOG',json.dumps({'version':after.get('firmware'),'connected':after.get('curtain',{}).get('connected'),'target':targets}),flush=True)
+          print('CONTROLLER_PLAY_COMMAND_PASSED_VISUAL_CONFIRMATION_PENDING',flush=True)
+          PY
