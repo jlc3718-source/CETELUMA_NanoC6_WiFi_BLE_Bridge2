@@ -300,3 +300,43 @@ test('pumpkin eye edits compile to exact sparse SmartDawn RGB pixel masks withou
  assert.throws(()=>compileAsset({deltaPixels:[pixel(40,0,1,2,3)]}),/Invalid changed pixel/);
  assert.throws(()=>compileAsset({deltaPixels:[pixel(1,1,0,0,0),pixel(1,1,1,1,1)]}),/duplicate pixel/);
 });
+
+test('Nano seamless animation: first full frame, next 23 sparse deltas, exact loop closure and no clears',()=>{
+ const blank=Buffer.alloc(6400);
+ for(let i=3;i<blank.length;i+=4)blank[i]=255;
+ const pumpkin=Buffer.from(blank);
+ for(let y=10;y<31;y++)for(let x=10;x<31;x++){
+  const i=(y*40+x)*4;pumpkin[i]=255;pumpkin[i+1]=112;
+ }
+ const blink=Buffer.from(pumpkin);
+ for(let y=15;y<19;y++)for(let x=23;x<27;x++){
+  const i=(y*40+x)*4;blink[i]=255;blink[i+1]=112;blink[i+2]=0;
+ }
+ const frames=Array.from({length:24},(_,i)=>i%2?blink:pumpkin);
+ frames[23]=frames[0]; // close the loop pixel-for-pixel
+ const asset=compileAsset({seamlessAnimation:true,frames:frames.map(f=>f.toString('base64')),
+  delays:Array(24).fill(160),loop:true,name:'Blinking pumpkin'});
+ const bytes=asset.bytes;
+ assert.equal(bytes.subarray(0,4).toString(),'JHC1');
+ assert.equal(bytes.readUInt16LE(4),24);
+ assert.equal(bytes[6],1);assert.equal(bytes[7],1);
+ assert.equal(asset.format,'jh2-nano-seamless-delta-v1');
+ assert.ok(asset.bytes.length<25000,'sparse edits should remain lightweight');
+ let ptr=8;
+ for(let frame=0;frame<24;frame++){
+  assert.equal(bytes.readUInt32LE(ptr),160);
+  const packets=bytes.readUInt16LE(ptr+4);ptr+=6;
+  assert.ok(packets>=0);
+  for(let k=0;k<packets;k++){
+   const channel=bytes[ptr],len=bytes.readUInt16LE(ptr+1);ptr+=3;
+   assert.ok(ptr+len<=bytes.length);
+   if(frame>0)assert.equal(channel,1,'no clear or full image rewrite on any delta frame');
+   ptr+=len;
+  }
+ }
+ assert.equal(ptr,bytes.length,'frame records consume the entire file');
+ const mismatch=frames.map(f=>f.toString('base64'));mismatch[23]=blink.toString('base64');
+ assert.throws(()=>compileAsset({seamlessAnimation:true,frames:mismatch,delays:Array(24).fill(160)}),/Loop boundary/);
+ assert.deepEqual(validateCommand('assetSpeed',{percent:150}),{percent:150});
+ assert.throws(()=>validateCommand('assetSpeed',{percent:400}),/25–300/);
+});
