@@ -123,6 +123,8 @@ class BrowserPairingHTTPTests(unittest.TestCase):
         self.assertEqual(set(fields),{'pending','csrf'});return headers,fields
     def test_form_keeps_same_origin_without_cross_origin_referrer(self):
         headers,_=self.form();self.assertEqual(headers['referrer-policy'],'same-origin')
+        policy=headers['content-security-policy'];actions=next(d.strip().split()[1:] for d in policy.split(';') if d.strip().startswith('form-action '))
+        self.assertEqual(actions,["'self'",CALLBACK]);self.assertIn("frame-ancestors 'none'",policy)
         status,headers,_=self.request('GET','/health');self.assertEqual(status,200);self.assertEqual(headers['referrer-policy'],'no-referrer')
     def test_null_and_foreign_origins_remain_rejected(self):
         for origin in ('null','https://evil.example'):

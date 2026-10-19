@@ -8,7 +8,7 @@ import base64,contextlib,fcntl,hashlib,hmac,html,http.cookies,http.server,json,o
 from html.parser import HTMLParser
 
 NAME='Jason Home 2 Oracle Development'
-VERSION='1.0.2'
+VERSION='1.0.3'
 SCOPES={'oracle.read','oracle.deploy','oracle.device'}
 CALLBACK='https://chatgpt.com/connector_platform_oauth_redirect'
 MAX_BODY=2_000_000
@@ -428,7 +428,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             page='<!doctype html><html><meta name="viewport" content="width=device-width"><title>Connect Jason Home 2 Oracle Development</title><style>body{font:17px system-ui;background:#101827;color:#eef4ff;max-width:620px;margin:10vh auto;padding:24px}button{padding:14px;width:100%;box-sizing:border-box;margin:16px 0;background:#58b9ff;border:0;border-radius:10px;font:inherit}code{display:block;padding:16px;background:#21324a;font-size:20px}</style><h1>Jason Home 2 Oracle Development</h1><p>Connect ChatGPT to the authorized Jason Home 2 development tools.</p><p>This exact request must be approved through the existing authenticated Oracle administration channel. Credentials remain on Oracle; no API key needs to be entered here.</p><p>Connection request:</p><code id="request-fingerprint">'+fingerprint+'</code><form method="post" action="/approve"><input type="hidden" name="pending" value="'+html.escape(pending)+'"><input type="hidden" name="csrf" value="'+html.escape(csrf)+'"><button type="submit">Complete approved connection</button></form><p>Administrator approval expires after five minutes and applies only to this request. Disconnect the plugin in ChatGPT to stop using the connection.</p></html>'
             # Keep the browser's same-origin form POST Origin intact while
             # suppressing cross-origin referrers, including the OAuth redirect.
-            return self.response(200,page.encode(),{'referrer-policy':'same-origin','set-cookie':'oracle_dev_csrf='+csrf+'; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax'},'text/html; charset=utf-8')
+            return self.response(200,page.encode(),{'referrer-policy':'same-origin','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+CALLBACK+"; frame-ancestors 'none'; base-uri 'none'",'set-cookie':'oracle_dev_csrf='+csrf+'; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax'},'text/html; charset=utf-8')
         if p.path=='/mcp':return self.response(405,{'error':'Use Streamable HTTP POST'},{'Allow':'POST'})
         self.response(404,{'error':'Not found'})
     def do_POST(self):
