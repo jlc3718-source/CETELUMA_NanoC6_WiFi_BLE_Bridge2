@@ -62,6 +62,48 @@ old_resume = '.catch(()=>status("Preview mode — schedule resumed."))'
 if text.count(old_resume) != 1:
     raise SystemExit("Jason Home 2 resume error handler source changed")
 text = text.replace(old_resume, '.catch(e=>status("Resume failed: "+e.message))')
+# Jason Home 2 only: show Oracle-local provider without altering legacy Jason Home.
+text = text.replace(
+    '<div id="aiKeySetup" style="margin-top:10px">',
+    '<div id="aiKeySetup" style="margin-top:10px"><p class="sub">Oracle Local AI is starting or unavailable. No Cloudflare account, token, or paid AI subscription is needed.</p><div style="display:none">',
+    1
+)
+text = text.replace(
+    '<div class="label">Cloudflare Workers AI — free tier</div>',
+    '<div class="label">Oracle Self-Hosted AI</div>', 1)
+text = text.replace(
+    "Uses Cloudflare Workers AI's free daily allocation. The token is stored encrypted on Oracle and is never returned to the browser.",
+    "Text chat and curtain artwork run on Oracle without API fees. Voice and photo recognition still use the existing legacy integration until local replacements are ready.",
+    1)
+# Close the invisible legacy key form before the original setup container closes.
+text = text.replace(
+    '        <div class="sub" style="margin-top:5px">Text chat and curtain artwork run on Oracle without API fees. Voice and photo recognition still use the existing legacy integration until local replacements are ready.</div>\n      </div>',
+    '        <div class="sub" style="margin-top:5px">Text chat and curtain artwork run on Oracle without API fees. Voice and photo recognition still use the existing legacy integration until local replacements are ready.</div>\n        </div></div>',1)
+text = text.replace(
+    'Free Workers AI is connected to Jason Home.',
+    'Oracle local model is connected.',1)
+text = text.replace(
+    '<button id="aiDisconnectButton" class="btn" type="button">Disconnect</button>',
+    '<button id="aiDisconnectButton" class="btn" type="button" hidden aria-hidden="true">Disconnect</button>',1)
+text = text.replace(
+    'connected?"Cloudflare Workers AI free tier is connected • "+(data.model||"")',
+    'connected?"Oracle Self-Hosted AI • "+(data.model||"")',1)
+text = text.replace(
+    '$("aiUsageText").textContent="AI today: "+Number(usage.used||0).toLocaleString()+',
+    '$("aiUsageText").textContent=usage.source==="self-hosted"?"No daily credit limits · Oracle Local AI":"AI today: "+Number(usage.used||0).toLocaleString()+',1)
+text = text.replace(
+    ':\"Estimated in Jason Home • resets \"+(usage.resetAt||\"00:00 UTC\");',
+    ':usage.source==="self-hosted"?"AI runs locally on Oracle; slower generations are normal.":"Estimated in Jason Home • resets "+(usage.resetAt||"00:00 UTC");',1)
+text = text.replace(
+    '<details class="aiTextFallback" style="margin-top:12px">',
+    '<details class="aiTextFallback" style="margin-top:12px" open>',1)
+text = text.replace(
+    '<summary>Transcript &amp; typing fallback</summary>',
+    '<summary>💬 AI Chat · type your request</summary>',1)
+text = text.replace(
+    'body:JSON.stringify({message:text})},90000)',
+    'body:JSON.stringify({message:text})},240000)',1)
+
 page.write_text(ten_speed_settings(native_effect_choices(text)))
 
 ui = target / "v3_mockup.js"
