@@ -351,6 +351,23 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"nativeTargetSectionComplete",jh2_ble_target_section(&section_matches,&section_slot));
     cJSON_AddNumberToObject(out,"nativeTarget83928Count",target_matches);
     cJSON_AddBoolToObject(out,"nativeTarget83928Unique",target_matches==1);
+    // Separate new empty test target from the preserved custom slot 83928.
+    cJSON *next_target=cJSON_AddArrayToObject(out,"nativeTarget83929");
+    unsigned fresh_matches=0;
+    for(unsigned id=0;id<JH2_EFFECT_CAPACITY;id++){
+        if(!catalog_seen[id] || catalog_cid[id]!=JH2_TEST_CID)continue;
+        ++fresh_matches;
+        cJSON *item=cJSON_CreateObject();
+        if(!item)continue;
+        cJSON_AddNumberToObject(item,"effectId",id);
+        cJSON_AddNumberToObject(item,"slot",catalog_slot[id]);
+        cJSON_AddNumberToObject(item,"type",catalog_type[id]);
+        cJSON_AddNumberToObject(item,"cid",JH2_TEST_CID);
+        cJSON_AddItemToArray(next_target,item);
+    }
+    cJSON_AddNumberToObject(out,"nativeTarget83929Count",fresh_matches);
+    cJSON_AddBoolToObject(out,"nativeTarget83929Empty",fresh_matches==0);
+
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeCatalogEnqueued",catalog_enqueued);
@@ -569,7 +586,7 @@ static void catalog_worker(void *unused){
             bool contiguous=true;unsigned matches=0;uint16_t slot=0;
             for(unsigned id=80;id<=batch.last;id++){
                 if(!batch.found[id])contiguous=false;
-                if(batch.cid[id]==83928){++matches;slot=batch.slot[id];}
+                if(batch.cid[id]==JH2_TEST_CID){++matches;slot=batch.slot[id];}
             }
             if(contiguous){target_section_matches=matches;target_section_slot=slot;
                 target_section_at=esp_timer_get_time();}
