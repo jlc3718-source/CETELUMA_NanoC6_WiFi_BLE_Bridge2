@@ -27,7 +27,7 @@ jobs:
               if len(raw)>=24 and raw[4] in (240,241):
                   op=int.from_bytes(raw[10:12],'big')
                   if 2931<=op<=2934:print('CONTROLLER_REPLY',notice['id'],op,'rcode',raw[18],'first_bytes',raw[:40].hex(),flush=True)
-          for cid in range(14870,14910):
+          for cid in range(14920,14942):
               try:result,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
               except Exception:continue
               command=result.get('command') or {}
@@ -38,3 +38,5 @@ jobs:
 # Read-only inspection of repeat controller rejection #14834.
 # Restarted read-only readiness verification before any controller mutations.
 
+
+# Live v1.1.51 native 20KB type0 response diagnostic; read-only.
