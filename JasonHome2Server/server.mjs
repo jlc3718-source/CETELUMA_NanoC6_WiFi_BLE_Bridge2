@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { lightingNightDate, resolveNightEvents, resolveNightCandidates, resolveNightCandidateScene } from "./night_resolver.mjs";
 import { createNanoC6BrightnessSync } from "./nanoc6_sync.mjs";
 import { createCurtainAiAnimation, normalizeCurtainAiGuides, CURTAIN_AI_DEFAULT_GUIDES } from "./curtain_ai_animation.mjs";
+import { createLocalAI } from "./local_ai.mjs";
 
 const root=resolve(process.env.JH2_WEB_ROOT||new URL("./web/",import.meta.url).pathname);
 const dataDir=resolve(process.env.JH2_DATA_DIR||"./data");
@@ -143,7 +144,8 @@ db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NUL
 const meta=(key,fallback=null)=>{const row=db.prepare("SELECT value FROM meta WHERE key=?").get(key);return row?JSON.parse(row.value):fallback;};
 const put=(key,value)=>db.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,JSON.stringify(value));
 const curtainRelay=createCurtainBridge({db});
-const curtainAnimationAi=createCurtainAiAnimation({run:cloudflareAiRun,chat:cloudflareAiChat,text:cloudflareAiText,configured:cloudflareAiConfigured,model:AI_MODEL,guides:()=>meta("curtain_ai_animation_guides",CURTAIN_AI_DEFAULT_GUIDES)});
+const localAI=createLocalAI({url:process.env.JH2_LOCAL_AI_URL||"http://127.0.0.1:11434"});
+const curtainAnimationAi=createCurtainAiAnimation({run:cloudflareAiRun,chat:body=>localAI.completion(body),text:cloudflareAiText,configured:()=>true,model:localAI.model,guides:()=>meta("curtain_ai_animation_guides",CURTAIN_AI_DEFAULT_GUIDES)});
 const nanoC6BrightnessSync=createNanoC6BrightnessSync({meta,put,upstream,bridge:curtainRelay});
 for(const key of ["event_overrides","custom_schedules","presets"]){const value=meta(key);if(value)put(key,normalizeEffects(value));}
 if(!meta("speed_scale_10")){
@@ -366,15 +368,15 @@ function cloudflareAiText(payload){
   return typeof value==="string"?value:JSON.stringify(value||{});
 }
 async function callLightingAi(message){
-  if(!cloudflareAiConfigured())throw fail(409,"Free AI is not connected yet. Add your Cloudflare Account ID and Workers AI API token in the AI tab.");
+  if(!(await localAI.status()).ok)throw fail(503,"Oracle local AI model is temporarily unavailable.");
   const thread=meta("ai_thread",[]).slice(-24),prior=meta("ai_draft",null);
   const today=localDay(new Date()),instructions=AI_SYSTEM+"\nToday is "+[today.year,String(today.month).padStart(2,"0"),String(today.day).padStart(2,"0")].join("-")+
     ". Scheduled AI layers must use speeds 1-5. If the user refers to the current draft, revise it rather than starting over."+(prior?"\nExisting draft: "+JSON.stringify(prior):"");
   const messages=[{role:"system",content:instructions},...thread.map(m=>({role:m.role,content:m.text+(m.role==="assistant"&&m.draft?"\nCurrent draft: "+JSON.stringify(m.draft):"")})),{role:"user",content:String(message)}];
-  const payload=await cloudflareAiChat({
-    model:AI_MODEL,messages,max_completion_tokens:1800,temperature:.55,
-    response_format:{type:"json_schema",json_schema:AI_SCHEMA}
-  },{timeout:60000});
+  const payload=await localAI.completion({
+    model:localAI.model,messages,max_completion_tokens:1100,temperature:.35,
+    response_format:{type:"json_schema",json_schema:{name:"lighting_design",schema:AI_SCHEMA}}
+  });
   const content=payload?.choices?.[0]?.message?.content;
   let parsed;try{parsed=typeof content==="string"?JSON.parse(content):content;}catch{throw fail(502,"Free AI returned an unreadable lighting design");}
   if(!parsed||typeof parsed!=="object")throw fail(502,"Free AI returned an empty lighting design");
@@ -437,7 +439,8 @@ async function aiState(){
     return {id:e.id,name:e.name,date:sp?[sp.year,String(sp.month).padStart(2,"0"),String(sp.day).padStart(2,"0")].join("-"):"",replaceEventId:e.aiReplaceEventId||"",brightness:Number(e.brightness)||100,
       colors:rgb(e.colors),effect:e.effect||layers[0]?.effect||"Static",speed:Number(e.speed||layers[0]?.speed)||1,layers,layerCount:layers.length||1,expiresAt:e.expiresAt||"",aiOneTime:true};
   });
-  return {ok:true,configured:cloudflareAiConfigured(),provider:"Cloudflare Workers AI",freeTier:true,model:AI_MODEL,accountId:cloudflareAiConfigured()?cloudflareAiAccount():"",usage:aiUsageState(),thread:meta("ai_thread",[]),draft,applied};
+  const local=await localAI.status();
+  return {ok:true,configured:local.ok,provider:"Oracle Self-Hosted AI",freeTier:true,model:localAI.model,accountId:"",usage:{limit:0,used:0,remaining:0,percent:0,source:"self-hosted",note:"No daily AI credits or Cloudflare text/image API charges."},legacyCloudflareFeatures:["voice","photo subject analysis"],thread:meta("ai_thread",[]),draft,applied};
 }
 
 const send=(res,status,value,headers={})=>{const body=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","content-length":Buffer.byteLength(body),...headers});res.end(body);};
@@ -1087,11 +1090,17 @@ async function route(req,res){
     }
     throw fail(405,"Unsupported settings operation");
   }
-  if(method==="POST"&&path==="/api/curtain/ai-animation/generate")return send(res,200,await curtainAnimationAi.generate(await input(req)));
+  if(method==="GET"&&path==="/api/local-ai/status")return send(res,200,await localAI.status());
+  if(method==="POST"&&path==="/api/local-ai/chat")return send(res,200,await localAI.chat(await input(req)));
+  if(method==="POST"&&path==="/api/local-ai/art")return send(res,200,await localAI.art(await input(req)));
+  if(method==="POST"&&path==="/api/curtain/ai-animation/generate")return send(res,200,await localAI.art(await input(req)));
   if(method==="POST"&&path==="/api/curtain/ai-animation/motion")return send(res,200,await curtainAnimationAi.motion(await input(req)));
   if(method==="POST"&&path==="/api/curtain/ai-revamp")return send(res,200,await analyzeCurtainSubject(await input(req)));
   if(method==="GET"&&path==="/api/ai")return send(res,200,await aiState());
   if(method==="POST"&&path==="/api/ai/key"){
+    // Preserve previously saved credentials privately for rollback; never require them for local AI.
+    const state=await localAI.status();
+    return send(res,state.ok?200:503,{ok:state.ok,configured:state.ok,provider:"Oracle Self-Hosted AI",freeTier:true,model:localAI.model});
     const body=await input(req);
     if(body?.remove){
       put("cf_ai_account_id","");put("cf_ai_token_cipher",null);put("ai_api_key_cipher",null);
