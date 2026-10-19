@@ -232,3 +232,29 @@ test('new picture supersedes a previous queued or downloaded transfer while keep
   assert.equal(b.command(c2.id).state,'applied');
  }finally{b.close();}
 });
+
+
+test('Nano-local verified first frame frees Oracle bytes while preserving metadata for replay',()=>{
+ const {b,db}=create();try{
+  const source=b.upload(preparedColor(44,66,88)),command=b.enqueue('asset',{sha256:source.sha256});
+  assert.ok(b.asset(source.sha256).length>0);
+  b.sync({status:{curtain:{nanoLocalCacheSupported:true}},
+    acks:[{id:command.id,state:'applied',result:{bleTransmitted:true,message:'Verified animation cached on Nano; first frame sent over BLE; visual output unconfirmed'}}]});
+  const meta=b.assetManifest(source.sha256);
+  assert.equal(b.asset(source.sha256),undefined,'Oracle must delete animation bytes after verified Nano-local cache');
+  assert.equal(meta.bytes,source.bytes);
+  assert.equal(meta.oracleBytes,0);
+  assert.equal(meta.nanoCached,true);
+  assert.equal(db.prepare('SELECT length(bytes) n FROM curtain_assets WHERE sha=?').get(source.sha256).n,0);
+  assert.equal(b.enqueue('asset',{sha256:source.sha256}).payload.sha256,source.sha256,
+    'Nano can replay from its verified local persistent cache');
+ }finally{b.close();db.close();}
+});
+test('Older streaming Nano firmware never drops Oracle animation bytes',()=>{
+ const {b,db}=create();try{
+  const source=b.upload(preparedColor(12,23,34)),c=b.enqueue('asset',{sha256:source.sha256});
+  b.sync({status:{curtain:{nanoLocalCacheSupported:false}},
+    acks:[{id:c.id,state:'applied',result:{bleTransmitted:true,message:'Native stream first frame transmitted'}}]});
+  assert.ok(b.asset(source.sha256)?.length>0);
+ }finally{b.close();db.close();}
+});
