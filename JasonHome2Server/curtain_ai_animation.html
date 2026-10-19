@@ -19,14 +19,33 @@ canvas{width:min(65vw,230px);height:min(65vw,230px);image-rendering:pixelated;ba
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.controls button{margin-top:3px}
 #status{padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0b2430;color:#c1f5df;border:1px solid #376373;border-radius:12px;min-height:45px}
 .small{font-size:12px;color:#98b6c8}.hide{display:none}
+.modebar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:15px 0}
+.modebar button{margin:0}.modebar button.active{background:#087d69;border-color:#23b69c}
+#chatHistory{height:170px;overflow-y:auto;background:#071723;border:1px solid #345571;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:9px}
+.chatBubble{max-width:90%;padding:9px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#244059;align-self:flex-start}
+.chatBubble.user{background:#12634f;align-self:flex-end}
+[hidden]{display:none!important}
 </style></head>
 <body><main>
-<h1>✨ AI Animation</h1>
-<p>Generate one 40×40 picture. Animate changes only a tiny eye or mouth patch, then restores the original pixels—just like the working three-frame wink test. The Nano loops the changes locally.</p>
+<h1>✨ Oracle AI Studio</h1>
+<p>Self-hosted on Oracle. Ask for one 40×40 picture and a small-pixel animation. No Cloudflare artwork calls. The Nano handles playback.</p>
+<div class="modebar" role="group" aria-label="AI creation mode">
+ <button type="button" id="quickMode" class="active" aria-pressed="true">⚡ Quick Create</button>
+ <button type="button" id="chatMode" aria-pressed="false">💬 AI Chat</button>
+</div>
+<section id="chatPanel" class="card" hidden>
+ <h2>Chat with your pixel-art assistant</h2>
+ <div id="chatHistory" role="log" aria-live="polite"></div>
+ <textarea id="chatInput" maxlength="900" placeholder="Draw a pumpkin that winks twice, and use a darker orange."></textarea>
+ <button id="chatSend" class="primary" type="button">Send · AI will create or revise when asked</button>
+ <button id="chatReset" type="button">New conversation</button>
+ <p class="small">You can keep talking and refining. Publishing to the curtain always requires your confirmation.</p>
+</section>
 <section class="card">
  <h2>1 · Describe and generate</h2>
  <textarea id="prompt" maxlength="400" placeholder="A smiling orange pumpkin that winks one eye. Solid black background, bold colors."></textarea>
- <button id="generate" class="primary">Generate 40×40 artwork</button>
+ <button id="quickCreate" class="primary">✨ Create artwork + animation</button>
+ <button id="generate">Generate artwork only</button>
  <div class="preview">
   <canvas id="artwork" width="40" height="40" aria-label="Generated 40 by 40 LED artwork"></canvas>
   <div class="side" id="artInfo">Artwork appears here after generation.</div>
@@ -75,7 +94,7 @@ let base=null,frames=[],description='',busy=false,published=false,previewTimer=n
 const ctx=id=>$(id).getContext('2d',{willReadFrequently:true});
 function paint(id,pixels){if(!pixels)return;const c=ctx(id),image=c.createImageData(40,40);image.data.set(pixels);c.putImageData(image,0,0);}
 function refresh(){const hasArt=!!base,hasFrames=frames.length>1;
- $('generate').disabled=busy;$('animate').disabled=busy||!hasArt;
+ $('generate').disabled=busy;$('quickCreate').disabled=busy;$('animate').disabled=busy||!hasArt;
  $('publish').disabled=busy||!hasFrames;$('play').disabled=busy||!hasFrames;
  $('pause').disabled=!previewTimer;$('count').disabled=busy;$('speed').disabled=busy;
  $('publish').textContent='Publish '+(frames.length||Number($('count').value))+' frames to Nano';
@@ -127,12 +146,12 @@ async function generate(){
  if(prompt.length<3){say('Describe what to draw first.');return;}
  busy=true;pause();base=null;frames=[];published=false;refresh();say('AI is drawing your 40×40 character…');
  try{
-  const response=await api('/api/curtain/ai-animation/generate',{prompt});
+  const response=await api('/api/curtain/ai-animation/generate',{prompt,styleGuide:$('styleGuide').value});
   base=await decodePose(response.image);
   description=prompt;paint('artwork',base);paint('preview',base);
-  $('artInfo').textContent='Original 40×40 picture saved. It will never be redrawn for animation.';
+  $('artInfo').textContent=response.sourceKind==='fallback'?'Local starter artwork used. Animation will preserve these exact pixels.':'Original 40×40 Oracle AI artwork saved. Animation never redraws it.';
   $('motionInfo').textContent='Tap Animate to change up to 25 eye or mouth pixels, then restore them.';
-  say('Picture ready. Tap Animate for the same small-pixel wink method that worked before.');
+  say('Picture ready from '+(response.sourceModel||'Oracle Local AI')+'. Tap Animate or use Quick Create next time.');
  }catch(e){say('Artwork generation failed: '+e.message);}
  finally{busy=false;refresh();resize();}
 }
@@ -207,6 +226,45 @@ async function saveGuides(){
 }
 $('saveGuides').onclick=saveGuides;
 $('resetGuides').onclick=()=>{$('styleGuide').value='';$('motionGuide').value='';saveGuides();};
+const thread=[];
+function bubble(role,message){
+ const el=document.createElement('div');el.className='chatBubble'+(role==='user'?' user':'');el.textContent=message;
+ $('chatHistory').appendChild(el);$('chatHistory').scrollTop=$('chatHistory').scrollHeight;
+}
+function mode(which){
+ const chat=which==='chat';$('chatPanel').hidden=!chat;
+ $('quickMode').classList.toggle('active',!chat);$('chatMode').classList.toggle('active',chat);
+ $('quickMode').setAttribute('aria-pressed',String(!chat));$('chatMode').setAttribute('aria-pressed',String(chat));resize();
+}
+$('quickMode').onclick=()=>mode('quick');$('chatMode').onclick=()=>mode('chat');
+$('quickCreate').onclick=async()=>{
+ if(busy)return;await generate();if(base)await animate();
+};
+let chatBusy=false;
+$('chatSend').onclick=async()=>{
+ if(chatBusy||busy)return;
+ const message=$('chatInput').value.trim();if(message.length<2)return;
+ chatBusy=true;$('chatSend').disabled=true;bubble('user',message);$('chatInput').value='';
+ try{
+  const result=await api('/api/local-ai/chat',{message});
+  bubble('assistant',result.reply||'I can help with that.');
+  const motionOnly=!!base&&/\b(wink|blink|smile|mouth|eye)\b/i.test(message)&&
+    !/\b(draw|create|picture|color|shade|outline|background|new|replace|redraw)\b/i.test(message);
+  const artRequest=/\b(draw|create|make|generate|paint|picture|image|revise|change|modify|edit|add|pumpkin|ghost|tree|star|heart|animate|wink|blink|smile)\b/i.test(message);
+  if(motionOnly){$('motionGuide').value=message;await animate();}
+  else if(artRequest){
+   $('prompt').value=(description?description+'. '+message:message).slice(0,400);
+   await generate();if(base)await animate();
+  }
+ }catch(e){bubble('assistant','Could not complete the request: '+e.message);}
+ finally{chatBusy=false;$('chatSend').disabled=false;resize();}
+};
+$('chatInput').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('chatSend').click();}};
+$('chatReset').onclick=async()=>{
+ if(chatBusy)return;
+ try{await api('/api/local-ai/chat',{clear:true});$('chatHistory').replaceChildren();bubble('assistant','Fresh conversation. What should I create?');}
+ catch(e){bubble('assistant','Could not reset: '+e.message);}
+};
 $('generate').onclick=generate;$('animate').onclick=animate;
 $('play').onclick=play;$('pause').onclick=pause;$('publish').onclick=publish;
 $('stop').onclick=async()=>{try{await command('assetStop',{},30000);published=false;say('Nano animation stopped.');}catch(e){say('Stop failed: '+e.message);}};
