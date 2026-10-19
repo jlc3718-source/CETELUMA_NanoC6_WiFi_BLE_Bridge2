@@ -64,7 +64,13 @@ export function createCurtainBridge({db,now=Date.now}){
  const hasAsset=sha=>!!(sha&&db.prepare('SELECT sha FROM curtain_assets WHERE sha=?').get(sha));
  const transaction=fn=>{db.exec('BEGIN IMMEDIATE');try{const result=fn();db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}};
 
- function assetManifest(sha){const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);return r?{sha256:sha,bytes:r.size,...JSON.parse(r.metadata)}:null;}
+ function assetManifest(sha){
+  const r=db.prepare('SELECT length(bytes) size,metadata FROM curtain_assets WHERE sha=?').get(sha);
+  if(!r)return null;
+  const meta=JSON.parse(r.metadata);
+  return {sha256:sha,bytes:meta.originalBytes||r.size,...meta,oracleBytes:r.size,
+    nanoCached:meta.nanoCached===true};
+ }
  function garbageCollect(){
   // A scheduled scene or outstanding Nano transfer must never lose its bytes.
   // Preserve these references even when reducing the ad-hoc upload history.
@@ -296,6 +302,23 @@ export function createCurtainBridge({db,now=Date.now}){
    if(!old||!['queued','downloaded'].includes(old.state))continue;
    const result=ack.result&&typeof ack.result==='object'?ack.result:{};
    db.prepare('UPDATE curtain_commands SET state=?,result=? WHERE id=?').run(ack.state,JSON.stringify(result).slice(0,12000),ack.id);
+   // Nano 1.1.53+ stores an entire SHA-verified JHC1 animation in LittleFS.
+   // After the Nano reports its first BLE frame from that verified local copy,
+   // discard the large Oracle blob, retaining ONLY the SHA and metadata.
+   // Keep full bytes for old firmware and for transfers without confirmation.
+   if(old.action==='asset'&&ack.state==='applied'&&result.bleTransmitted===true&&
+      body.status?.curtain?.nanoLocalCacheSupported===true&&
+      String(result.message||'').includes('cached on Nano')){
+     const requested=JSON.parse(old.payload).sha256;
+     const file=db.prepare('SELECT metadata,length(bytes) stored FROM curtain_assets WHERE sha=?').get(requested);
+     if(file&&file.stored>0){
+       const meta=JSON.parse(file.metadata);
+       meta.originalBytes=Number(meta.originalBytes)||file.stored;
+       meta.nanoCached=true;
+       db.prepare('UPDATE curtain_assets SET bytes=?,metadata=? WHERE sha=?')
+         .run(Buffer.alloc(0),JSON.stringify(meta),requested);
+     }
+   }
    const displaySelection=['asset','effect','nativePlay','sequenceStart','sequenceStop','assetStop'].includes(old.action)||
     (old.action==='power'&&JSON.parse(old.payload)?.on===false);
    if(['asset','nativeSlotUpload'].includes(old.action)&&slot().pending_command===ack.id){
@@ -337,7 +360,7 @@ export function createCurtainBridge({db,now=Date.now}){
  function upload(input){
   let a;try{a=input?.nativeEff!==undefined?compileNativeEffect(input):compileAsset(input);}catch(e){throw fail(413,e.message);}
   if(input?.target&&input.target!==TARGET)throw fail(400,'Unknown curtain target');
-  const metadata={format:a.format,frames:a.frames,loop:a.loop,...(a.native?{native:true,cid:83928}:{}),name:String(input.name||'Curtain asset').slice(0,100)};
+  const metadata={format:a.format,frames:a.frames,loop:a.loop,originalBytes:a.bytes.length,nanoCached:false,...(a.native?{native:true,cid:83928}:{}),name:String(input.name||'Curtain asset').slice(0,100)};
   return transaction(()=>{
    const r=slot(),sameActive=r.active_sha===a.sha256,samePending=r.pending_sha===a.sha256;
    if(!sameActive&&!samePending&&r.pending_sha){
