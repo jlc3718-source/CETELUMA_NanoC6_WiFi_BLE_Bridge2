@@ -2,7 +2,7 @@ name: JH2 One-Time Signed v1.1.53 Web OTA With Post-Reboot Verification
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
-    paths: ['.github/workflows/jh2-one-time-install-signed-152-via-oracle-20261019.yml']
+    paths: ['.github/workflows/jh2-one-time-install-signed-153-via-oracle-20261019.yml']
 permissions: {contents: read}
 concurrency:
   group: jh2-production-signed-ota-singleton
