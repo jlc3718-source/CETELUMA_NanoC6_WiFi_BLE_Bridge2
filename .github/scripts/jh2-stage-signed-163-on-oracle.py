@@ -53,21 +53,27 @@ with tempfile.TemporaryDirectory(prefix="jh2-signed-stage-") as temporary:
     assert mount,"Expected dedicated web-only persistent /data volume"
     root=pathlib.Path(mount["Source"])
     dest=root/"signed-ota"/version
-    assert not dest.exists(),"Signed staging already exists; inspect before retrying"
-    stage=root/"signed-ota"/(version+".staging")
-    stage.mkdir(parents=True,exist_ok=False)
-    try:
-        shutil.copy2(binary,stage/binary.name)
-        shutil.copy2(manifest_file,stage/"latest.json")
-        assert hashlib.sha256((stage/binary.name).read_bytes()).hexdigest()==fields["sha256"]
-        stage.rename(dest)
-    except BaseException:
-        if stage.exists():shutil.rmtree(stage)
-        raise
+    if dest.exists():
+        # A previous guarded stage may have completed the immutable file copy
+        # before stopping. Only reuse byte-for-byte identical, signed assets.
+        assert (dest/binary.name).is_file() and (dest/"latest.json").is_file(),"Incomplete existing OTA staging"
+        assert hashlib.sha256((dest/binary.name).read_bytes()).hexdigest()==fields["sha256"],"Existing staged runtime differs"
+        assert json.loads((dest/"latest.json").read_text())==manifest,"Existing staged manifest differs"
+    else:
+        stage=root/"signed-ota"/(version+".staging")
+        stage.mkdir(parents=True,exist_ok=False)
+        try:
+            shutil.copy2(binary,stage/binary.name)
+            shutil.copy2(manifest_file,stage/"latest.json")
+            assert hashlib.sha256((stage/binary.name).read_bytes()).hexdigest()==fields["sha256"]
+            stage.rename(dest)
+        except BaseException:
+            if stage.exists():shutil.rmtree(stage)
+            raise
     source=tmp/"server.original.mjs"
     run(["docker","cp","jason-home-2-web:/app/server.mjs",str(source)])
     original=source.read_text()
-    anchor='// JH2_SIGNED_LOCAL_163_BEGIN'
+    anchor='// JH2_SIGNED_LOCAL_162_BEGIN'
     assert original.count(anchor)==1,"Cannot isolate exact server firmware endpoint"
     marker="// JH2_SIGNED_LOCAL_163_BEGIN"
     assert marker not in original,"Local OTA handler already installed"
