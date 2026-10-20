@@ -21,7 +21,7 @@ for waiting in range(60):
     time.sleep(5)
 assert signed.get('schema')==1 and signed.get('signature')
 manifest=dict(x.split('=',1) for x in signed['payload'].strip().splitlines())
-assert manifest.get('version')=='1.1.63' and manifest.get('commit')==os.environ['GITHUB_SHA'], 'Signed version changed; no OTA'
+assert manifest.get('version')=='1.1.63' and manifest.get('commit')==os.environ.get('JH2_SIGNED_SOURCE_SHA',os.environ['GITHUB_SHA']), 'Signed version changed; no OTA'
 with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.63.bin',timeout=90) as res:
     digest=hashlib.sha256();total=0
     while True:
