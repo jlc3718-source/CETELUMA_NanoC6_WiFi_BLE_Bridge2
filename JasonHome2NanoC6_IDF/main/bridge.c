@@ -46,6 +46,26 @@
 extern const unsigned char tls_roots_pem_start[] asm("_binary_tls_roots_pem_start");
 
 static const char *TAG="JH2_IDF_ORACLE";
+// Signed automatic OTA is ON by default in final firmware and persists in NVS.
+static volatile bool firmware_auto_update=true;
+bool jh2_bridge_auto_update_enabled(void){return firmware_auto_update;}
+bool jh2_bridge_set_auto_update_enabled(bool enabled){
+    nvs_handle_t n;
+    if(nvs_open("jh2-fwcfg",NVS_READWRITE,&n)!=ESP_OK)return false;
+    esp_err_t error=nvs_set_u8(n,"auto",enabled?1:0);
+    if(error==ESP_OK)error=nvs_commit(n);
+    nvs_close(n);
+    if(error!=ESP_OK)return false;
+    firmware_auto_update=enabled;
+    return true;
+}
+static void jh2_load_auto_ota(void){
+    nvs_handle_t n;
+    if(nvs_open("jh2-fwcfg",NVS_READONLY,&n)!=ESP_OK)return;
+    uint8_t stored=1;
+    if(nvs_get_u8(n,"auto",&stored)==ESP_OK)firmware_auto_update=(stored!=0);
+    nvs_close(n);
+}
 #define WIFI_READY BIT0
 #define MAX_ORACLE_BODY 65536
 #define MAX_ACKS 16
@@ -64,7 +84,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.61"
+#define NATIVE_FW_VERSION "1.1.62"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -492,10 +512,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         restart_after_ack=current;
     }else if(strcmp(action->valuestring,"nanoAutoUpdate")==0){
         cJSON *enabled=cJSON_GetObjectItemCaseSensitive(payload,"enabled");
-        if(cJSON_IsFalse(enabled))
-            append_ack(current,"applied","Automatic updates remain disabled",false);
-        else
-            append_ack(current,"failed","No automatic updates during native firmware migration",false);
+        const bool valid=cJSON_IsTrue(enabled)||cJSON_IsFalse(enabled);
+        const bool saved=valid&&jh2_bridge_set_auto_update_enabled(cJSON_IsTrue(enabled));
+        append_ack(current,saved?"applied":"failed",saved?
+            (cJSON_IsTrue(enabled)?"Automatic signed updates enabled":"Automatic signed updates disabled"):
+            (valid?"Cannot save OTA preference":"Invalid auto-update setting"),false);
     }else if(strcmp(action->valuestring,"nanoFirmwareCheck")==0){
         cJSON *m=https_json("/api/curtain/firmware-manifest",NULL);
         char version[32]={0},error[150]={0};
@@ -667,7 +688,7 @@ static cJSON *sync_document(void){
     cJSON *status=cJSON_AddObjectToObject(body,"status");
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
-    cJSON_AddBoolToObject(status,"autoUpdate",false);
+    cJSON_AddBoolToObject(status,"autoUpdate",jh2_bridge_auto_update_enabled());
     #if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
     cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",true);
 #else
@@ -707,6 +728,7 @@ static void oracle_task(void *ctx){
     initial_boot_id();
     bridge_active=true;
     uint32_t retry_ms=1000;
+    int64_t next_auto_ota_check_us=esp_timer_get_time()+45000000LL;
     while(true){
         if(!(xEventGroupWaitBits(wifi_group,WIFI_READY,pdFALSE,pdTRUE,pdMS_TO_TICKS(12000))&WIFI_READY)){
             vTaskDelay(pdMS_TO_TICKS(1200));continue;
@@ -765,12 +787,30 @@ static void oracle_task(void *ctx){
                 break; // Preserve sequential ACK and Oracle ordering
             }
         }
+        const bool idle_commands=!cJSON_IsArray(commands)||cJSON_GetArraySize(commands)==0;
         cJSON_Delete(reply);
+        // Periodic production OTA; never writes runtime in-place and never
+        // interrupts an active animation, sequence, or pending command.
+        const int64_t now_us=esp_timer_get_time();
+        if(firmware_auto_update&&idle_commands&&ack_count==0&&restart_after_ack==0&&
+           !jh2_asset_stream_active()&&!jh2_native_sequence_running()&&
+           now_us>=next_auto_ota_check_us){
+            next_auto_ota_check_us=now_us+900000000LL; // fifteen minutes
+            char newer[32]={0},err[170]={0};
+            if(jh2_bridge_signed_firmware(true,newer,sizeof(newer),err,sizeof(err))){
+                ESP_LOGW(TAG,"Verified newer signed firmware %s; entering factory updater",newer);
+                vTaskDelay(pdMS_TO_TICKS(1500));
+                esp_restart();
+            }else{
+                ESP_LOGI(TAG,"Auto OTA check: %s",err[0]?err:"no newer signed firmware");
+            }
+        }
         vTaskDelay(pdMS_TO_TICKS(1100));
     }
 }
 void jh2_bridge_start(void){
     if(bridge_active)return;
+    jh2_load_auto_ota();
     ack_lock=xSemaphoreCreateMutex();
     if(!ack_lock)return;
     if(xTaskCreate(oracle_task,"jh2-idf-oracle",12288,NULL,4,NULL)!=pdPASS){
