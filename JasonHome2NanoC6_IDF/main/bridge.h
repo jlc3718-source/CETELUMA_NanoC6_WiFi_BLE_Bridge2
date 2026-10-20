@@ -14,3 +14,7 @@ bool jh2_bridge_ready(void);
 // Never download or replace the running OTA0 image in-place.
 bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
                                 char *error,size_t error_size);
+
+// Proxy one original manufacturer still thumbnail over the authenticated Oracle
+// bridge. Caller owns *out and must free(); never exposes Oracle credentials.
+bool jh2_bridge_factory_preview(uint8_t effect,uint8_t **out,size_t *length);
