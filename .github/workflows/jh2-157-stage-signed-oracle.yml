@@ -36,5 +36,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/jh2-stage-signed-156-on-oracle.py
-          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-156-on-oracle.py
+          python3 -m py_compile .github/scripts/jh2-stage-signed-157-on-oracle.py
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-157-on-oracle.py
