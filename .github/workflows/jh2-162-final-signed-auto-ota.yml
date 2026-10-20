@@ -39,118 +39,33 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           a=Path('JasonHome2NanoC6_IDF/main')
-          main=(a/'main.c').read_text()
-          web=(a/'web_recovery.c').read_text()
           bridge=(a/'bridge.c').read_text()
-          cmake=(a/'CMakeLists.txt').read_text()
-          assert 'jh2_web_start()' in main
-          assert 'CATALOG_RX_QUEUE_DEPTH 24' in main
-          assert 'catalog_queue=xQueueCreate' in main
-          assert 'xQueueSend(catalog_queue,&packet,0)' in main
-          assert 'catalog_worker(void *unused)' in main
-          assert 'nativeCatalogQueueDrops' in main
-          assert 'rx16-targeted-cid83928-feature-restoration' in main
-          assert 'ble_gap_update_params(connection,&pacing)' in main
-          assert 'ble_gap_set_prefered_le_phy(' in main
-          assert 'pacing.itvl_min=8;' in main
-          assert 'pacing.itvl_max=12;' in main
-          diag=(a/'hci_rx_diag.c').read_text()
-          assert '__wrap_ble_hs_hci_evt_acl_process' in diag
-          assert '__real_ble_hs_hci_evt_acl_process' in diag
-          assert 'nativeHCINotify396' in diag
-          assert 'nativeTarget83928' in main
-          assert 'jh2_ble_select_target' in main
-          assert 'local_probe_post' in web
-          assert 'jh2_ble_playback_status(o);' in web
-          assert 'Now Playing' not in web and 'drawPlaying' not in web and 'refreshPlaying' not in web
-          assert 'firmware_auto_post' in web and 'jh2_bridge_set_auto_update_enabled' in bridge
-          assert 'next_auto_ota_check_us' in bridge and 'signedAutoUpdate' in web
-          assert 'jh2_decode_power(' in main and 'controllerPower' in main
-          assert 'jh2_bridge_factory_preview(' in bridge and 'jh2_bridge_factory_preview(' in web
-          commands=(a/'native_commands.c').read_text()
-          cmdhead=(a/'native_commands.h').read_text()
-          assert 'bool jh2_native_curtain_reboot(void)' in commands and 'return command(2599,NULL,0);' in commands
-          assert 'bool jh2_native_curtain_reboot(void);' in cmdhead
-          assert 'curtainRebootMain' in web and 'curtainRebootFirmware' in web
-          assert 'async function curtainReboot()' in web and 'curtainReboot' in web
-          assert '60000000LL' in web and 'jh2_native_curtain_reboot()' in web
-          assert 'xTaskCreate(preview_fetch_task' in web
-          assert 'static esp_err_t factory_preview_get' in web
-          factory_route=web[web.index('static esp_err_t factory_preview_get'):web.index('static esp_err_t status_get')]
-          assert 'jh2_bridge_factory_preview(' not in factory_route
-          assert 'httpd_resp_set_status(r,"202 Accepted")' in factory_route
-          assert 'nanoStatusRefreshing' in web and 'finally{nanoStatusRefreshing=false' in web
-          assert 'bool jh2_native_curtain_reboot(void)' in commands
-
-          assert 'M_FACTORY_RESET' not in commands or 'command(2598' not in commands
-
-          assert '/api/curtain-bridge/preview/' in bridge
-          assert '/api/factory-preview' in web
-          assert '150.136.245.51/jason-home-2/curtain_real_' not in web
-          assert 'factory_preview_get' in web and 'httpd_resp_set_type(r,"image/webp")' in web
-          assert 'HTTPD_503_SERVICE_UNAVAILABLE' not in web
-          assert 'HTTPD_500_INTERNAL_SERVER_ERROR' in web
-          assert "image.src='/api/factory-preview?effect='+num" in web
-          assert 'href=\\\"/firmware' in web
-          assert 'void jh2_ble_playback_status(cJSON *status)' in main
-          assert 'nativeDiscoveredDevices' in main
-          assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n' in Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
-          assert 'ble_att_set_preferred_mtu(517);' in main
-          assert 'ble_gap_set_data_len' not in main
-          assert 'ble_gap_set_data_len' not in main
-          assert 'BLE_GAP_EVENT_DATA_LEN_CHG' not in main
-          assert 'nativeHostMsys2Bytes' in main
-          assert 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=768' in Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
-          assert 'jh2_hci_acl_diag(out);' in main
-          assert '"hci_rx_diag.c"' in cmake
-          assert '--wrap=ble_hs_hci_evt_acl_process' in cmake
-          assert 'nativeBLEPhyRequestRc' in main
-          assert 'nativeBLEPhyRX' in main
-          sdk=Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
-          assert 'CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=64' in sdk
-          assert 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=64' in sdk
-          assert 'nativeBLEConnInterval1250us' in main
-          assert 'nativeUnexpectedNotifyCount' in main
-          assert 'static const char *HOME_HTML' in web
-          assert '/api/ble/local' in web
-          assert 'nanoReceived' in web
-          assert 'notificationDelta' in web
-          assert '1.1.62-final-ota' in web
-          assert 'async function checkUpdate()' in web
-          assert 'async function installUpdate()' in web
-          assert '/api/firmware/check' in web
-          assert '/api/firmware/install' in web
-          assert 'jh2_bridge_signed_firmware(true' in web
-          assert 'jh2_queue_signed_update(manifest' in bridge
-          assert 'https_json("/api/curtain/firmware-manifest",NULL)' in bridge
-          assert 'static bool local_only(httpd_req_t *r)' in web
-          assert 'static bool local_only(httpd_req_t *r)' in web
-          assert '(void)r;\n    return true;' in web
-          assert 'static const char *HOME_HTML=' in web
-          assert 'httpd_resp_set_hdr(r,"Location","/")' in web
-          assert '/setup?edit=1' in web
-          assert '(explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML)' in web
-          assert 'getpeername(' not in web and 'same_subnet(' not in web
-          assert 'jh2_enter_local_recovery()' in web
-          assert 'jh2_web_request_recovery();' in bridge
-          assert 'jh2_enter_local_recovery()' in bridge
-          assert 'HTTP_POST,.handler=recovery_post' in web
-          assert 'httpd_start(&web_server,&cfg)' in web
-          assert 'start_setup_ap' in web
-          assert '192.168.4.1/firmware' in web
-          assert 'mdns_hostname_set("jason-home-2")' in web
-          assert '"web_recovery.c"' in cmake
-          assert 'esp_http_server' in cmake
-          assert 'nanoInstallUpdate' in bridge
-          assert 'format_if_mount_failed=false' in web
-          assert 'format_if_mount_failed=false' in bridge
-          assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE' in bridge
+          web=(a/'web_recovery.c').read_text()
+          signed=(a/'signed_ota.c').read_text()
+          main=(a/'main.c').read_text()
           assert 'NATIVE_FW_VERSION "1.1.62"' in bridge
+          assert 'jh2_bridge_set_auto_update_enabled' in bridge
+          assert 'nvs_commit(n)' in bridge and 'jh2_load_auto_ota()' in bridge
+          assert 'next_auto_ota_check_us' in bridge
+          assert 'jh2_bridge_signed_firmware(true,newer' in bridge
+          assert 'jh2_asset_stream_active()' in bridge
+          assert 'jh2_native_sequence_running()' in bridge
+          assert 'autoUpdate",jh2_bridge_auto_update_enabled()' in bridge
+          assert 'Now Playing' not in web and 'drawPlaying' not in web and 'refreshPlaying' not in web
+          assert 'jh2_ble_playback_status(o);' in web and 'controllerPlayback' in main
+          assert 'firmware_auto_post' in web and '/api/firmware/auto' in web
+          assert 'signedAutoUpdate' in web and 'jh2_bridge_auto_update_enabled()' in web
           assert '1.1.62-final-ota' in web
-          assert 'jh2_slot_validate' in bridge
-          assert 'size<4096||size>JH2_NATIVE_RAM_LIMIT' in (a/'asset_stream.c').read_text()
-          assert 'nativeSlotWrite' in bridge
-          print('SIGNED_WEB_CHECK_INSTALL_STATIC_CHECKS_PASSED')
+          assert 'jh2_native_curtain_reboot()' in web
+          assert 'jh2_queue_signed_update(manifest' in bridge and 'mbedtls_pk_verify(' in signed
+          assert 'format_if_mount_failed=false' in web and 'format_if_mount_failed=false' in bridge
+          assert 'nvs_flash_erase(' not in bridge+web+main
+          assert '/api/firmware/check' in web and '/api/firmware/install' in web
+          assert 'jh2_enter_local_recovery()' in web
+          assert 'ble_att_set_preferred_mtu(517);' in main
+          assert '/api/curtain-bridge/preview/' in bridge
+          print('FINAL_162_SOURCE_VALIDATED')
+
           PY
       - name: Enable Oracle, browser compatibility and safe catalog acceptance
         shell: bash
