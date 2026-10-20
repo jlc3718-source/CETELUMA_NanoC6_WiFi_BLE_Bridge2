@@ -8,6 +8,9 @@
 // All credentials loaded from the EXISTING non-formatted storage.
 void jh2_bridge_start(void);
 bool jh2_bridge_ready(void);
+// Persistent automatic signed OTA preference; verified factory updater only.
+bool jh2_bridge_auto_update_enabled(void);
+bool jh2_bridge_set_auto_update_enabled(bool enabled);
 
 // Query Oracle's existing signed firmware mirror. On install, verify the
 // production signing key and then hand off to the permanent factory updater.
