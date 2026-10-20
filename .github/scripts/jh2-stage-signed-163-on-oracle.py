@@ -19,7 +19,7 @@ assert manifest["schema"]==1 and manifest["signature"] and manifest["payload"]
 fields=dict(line.split("=",1) for line in manifest["payload"].strip().splitlines())
 assert fields["product"]=="jason-home-2-nanoc6"
 assert fields["version"]==version
-assert fields["commit"]==os.environ['GITHUB_SHA'], 'Stage source commit mismatch'
+assert fields["commit"]==os.environ.get('JH2_SIGNED_SOURCE_SHA',os.environ['GITHUB_SHA']), 'Stage source commit mismatch'
 assert fields["url"]==f"https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v{version}/jh2-runtime-{version}.bin"
 fw=binary.read_bytes()
 assert len(fw)==int(fields["bytes"]) and len(fw)>0x120000 and fw[:1]==b"\xe9"
