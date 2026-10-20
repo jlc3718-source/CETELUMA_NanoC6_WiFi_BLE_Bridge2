@@ -9,13 +9,9 @@
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
 __attribute__((used)) const char jh2_native_runtime_marker[] =
     "jason-home-2-nanoc6-runtime-v1";
-/* Keep the native app's image larger than the factory updater's
- * minimum (>0x120000). The section is mapped flash ROM, not heap.
- * Both first and last entries initialized to force a complete region.
+/* No artificial padding: the original recovery updater requires a runtime
+ * image larger than 0x120000 bytes. The build-only optimization gate checks
+ * the final image size, product marker and partition bounds. Keeping the
+ * original bootloader, factory updater and partitions makes this OTA-safe.
  */
-__attribute__((used,aligned(16)))
-const unsigned char jh2_native_compat_padding[0x120100] = {
-    [0] = 0x4a,
-    [0x1200ff] = 0x32,
-};
 #endif
