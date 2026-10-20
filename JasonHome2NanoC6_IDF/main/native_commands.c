@@ -56,6 +56,12 @@ static int raw_brightness(int ui){
     const int pct=4+((ui-1)*96+49)/99;
     return (pct*255+50)/100;
 }
+// Original Smart Dawn 1.2.4 APK: M_REBOOT=2599 (0x0A27), sent with
+// no protobuf payload. This restarts the SmartDawn controller, NOT the Nano.
+// Do not confuse with M_FACTORY_RESET=2598, which is never used here.
+bool jh2_native_curtain_reboot(void){
+    return command(2599,NULL,0);
+}
 bool jh2_native_power(bool on){
     return command(on?0x09d2:0x09d3,NULL,0);
 }
