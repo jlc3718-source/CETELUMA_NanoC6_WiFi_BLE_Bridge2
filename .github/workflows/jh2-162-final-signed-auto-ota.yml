@@ -1,0 +1,363 @@
+name: JH2 1.1.62 Final Nano Website Cleanup and Automatic Signed OTA
+on:
+  push:
+    branches: [codex/jh2-finalization-ota-162-20261020]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-162-final-signed-auto-ota.yml'
+permissions: {contents: write, actions: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  build-and-package:
+    name: Build native signed web runtime and full recovery backup (no flash)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source safeguards and 88-effect parser tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/effectlist.c \
+            JasonHome2NanoC6_IDF/tests/effectlist_test.c \
+            -o /tmp/jh2-effectlist
+          /tmp/jh2-effectlist
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/native_slot_guard.c \
+            JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c \
+            -o /tmp/jh2-native-slot-guard
+          /tmp/jh2-native-slot-guard
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/native_slot_guard.c \
+            JasonHome2NanoC6_IDF/main/native_slot_upload.c \
+            JasonHome2NanoC6_IDF/tests/native_slot_upload_test.c \
+            -o /tmp/jh2-native-ram-upload
+          /tmp/jh2-native-ram-upload
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('JasonHome2NanoC6_IDF/main')
+          main=(a/'main.c').read_text()
+          web=(a/'web_recovery.c').read_text()
+          bridge=(a/'bridge.c').read_text()
+          cmake=(a/'CMakeLists.txt').read_text()
+          assert 'jh2_web_start()' in main
+          assert 'CATALOG_RX_QUEUE_DEPTH 24' in main
+          assert 'catalog_queue=xQueueCreate' in main
+          assert 'xQueueSend(catalog_queue,&packet,0)' in main
+          assert 'catalog_worker(void *unused)' in main
+          assert 'nativeCatalogQueueDrops' in main
+          assert 'rx16-targeted-cid83928-feature-restoration' in main
+          assert 'ble_gap_update_params(connection,&pacing)' in main
+          assert 'ble_gap_set_prefered_le_phy(' in main
+          assert 'pacing.itvl_min=8;' in main
+          assert 'pacing.itvl_max=12;' in main
+          diag=(a/'hci_rx_diag.c').read_text()
+          assert '__wrap_ble_hs_hci_evt_acl_process' in diag
+          assert '__real_ble_hs_hci_evt_acl_process' in diag
+          assert 'nativeHCINotify396' in diag
+          assert 'nativeTarget83928' in main
+          assert 'jh2_ble_select_target' in main
+          assert 'local_probe_post' in web
+          assert 'jh2_ble_playback_status(o);' in web
+          assert 'Now Playing' not in web and 'drawPlaying' not in web and 'refreshPlaying' not in web
+          assert 'firmware_auto_post' in web and 'jh2_bridge_set_auto_update_enabled' in bridge
+          assert 'next_auto_ota_check_us' in bridge and 'signedAutoUpdate' in web
+          assert 'jh2_decode_power(' in main and 'controllerPower' in main
+          assert 'jh2_bridge_factory_preview(' in bridge and 'jh2_bridge_factory_preview(' in web
+          commands=(a/'native_commands.c').read_text()
+          cmdhead=(a/'native_commands.h').read_text()
+          assert 'bool jh2_native_curtain_reboot(void)' in commands and 'return command(2599,NULL,0);' in commands
+          assert 'bool jh2_native_curtain_reboot(void);' in cmdhead
+          assert 'curtainRebootMain' in web and 'curtainRebootFirmware' in web
+          assert 'async function curtainReboot()' in web and 'curtainReboot' in web
+          assert '60000000LL' in web and 'jh2_native_curtain_reboot()' in web
+          assert 'xTaskCreate(preview_fetch_task' in web
+          assert 'static esp_err_t factory_preview_get' in web
+          factory_route=web[web.index('static esp_err_t factory_preview_get'):web.index('static esp_err_t status_get')]
+          assert 'jh2_bridge_factory_preview(' not in factory_route
+          assert 'httpd_resp_set_status(r,"202 Accepted")' in factory_route
+          assert 'nanoStatusRefreshing' in web and 'finally{nanoStatusRefreshing=false' in web
+          assert 'bool jh2_native_curtain_reboot(void)' in commands
+
+          assert 'M_FACTORY_RESET' not in commands or 'command(2598' not in commands
+
+          assert '/api/curtain-bridge/preview/' in bridge
+          assert '/api/factory-preview' in web
+          assert '150.136.245.51/jason-home-2/curtain_real_' not in web
+          assert 'factory_preview_get' in web and 'httpd_resp_set_type(r,"image/webp")' in web
+          assert 'HTTPD_503_SERVICE_UNAVAILABLE' not in web
+          assert 'HTTPD_500_INTERNAL_SERVER_ERROR' in web
+          assert "image.src='/api/factory-preview?effect='+num" in web
+          assert 'href=\\\"/firmware' in web
+          assert 'void jh2_ble_playback_status(cJSON *status)' in main
+          assert 'nativeDiscoveredDevices' in main
+          assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n' in Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
+          assert 'ble_att_set_preferred_mtu(517);' in main
+          assert 'ble_gap_set_data_len' not in main
+          assert 'ble_gap_set_data_len' not in main
+          assert 'BLE_GAP_EVENT_DATA_LEN_CHG' not in main
+          assert 'nativeHostMsys2Bytes' in main
+          assert 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=768' in Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
+          assert 'jh2_hci_acl_diag(out);' in main
+          assert '"hci_rx_diag.c"' in cmake
+          assert '--wrap=ble_hs_hci_evt_acl_process' in cmake
+          assert 'nativeBLEPhyRequestRc' in main
+          assert 'nativeBLEPhyRX' in main
+          sdk=Path('JasonHome2NanoC6_IDF/sdkconfig.defaults').read_text()
+          assert 'CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=64' in sdk
+          assert 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_COUNT=64' in sdk
+          assert 'nativeBLEConnInterval1250us' in main
+          assert 'nativeUnexpectedNotifyCount' in main
+          assert 'static const char *HOME_HTML' in web
+          assert '/api/ble/local' in web
+          assert 'nanoReceived' in web
+          assert 'notificationDelta' in web
+          assert '1.1.62-final-ota' in web
+          assert 'async function checkUpdate()' in web
+          assert 'async function installUpdate()' in web
+          assert '/api/firmware/check' in web
+          assert '/api/firmware/install' in web
+          assert 'jh2_bridge_signed_firmware(true' in web
+          assert 'jh2_queue_signed_update(manifest' in bridge
+          assert 'https_json("/api/curtain/firmware-manifest",NULL)' in bridge
+          assert 'static bool local_only(httpd_req_t *r)' in web
+          assert 'static bool local_only(httpd_req_t *r)' in web
+          assert '(void)r;\n    return true;' in web
+          assert 'static const char *HOME_HTML=' in web
+          assert 'httpd_resp_set_hdr(r,"Location","/")' in web
+          assert '/setup?edit=1' in web
+          assert '(explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML)' in web
+          assert 'getpeername(' not in web and 'same_subnet(' not in web
+          assert 'jh2_enter_local_recovery()' in web
+          assert 'jh2_web_request_recovery();' in bridge
+          assert 'jh2_enter_local_recovery()' in bridge
+          assert 'HTTP_POST,.handler=recovery_post' in web
+          assert 'httpd_start(&web_server,&cfg)' in web
+          assert 'start_setup_ap' in web
+          assert '192.168.4.1/firmware' in web
+          assert 'mdns_hostname_set("jason-home-2")' in web
+          assert '"web_recovery.c"' in cmake
+          assert 'esp_http_server' in cmake
+          assert 'nanoInstallUpdate' in bridge
+          assert 'format_if_mount_failed=false' in web
+          assert 'format_if_mount_failed=false' in bridge
+          assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE' in bridge
+          assert 'NATIVE_FW_VERSION "1.1.62"' in bridge
+          assert '1.1.62-final-ota' in web
+          assert 'jh2_slot_validate' in bridge
+          assert 'size<4096||size>JH2_NATIVE_RAM_LIMIT' in (a/'asset_stream.c').read_text()
+          assert 'nativeSlotWrite' in bridge
+          print('SIGNED_WEB_CHECK_INSTALL_STATIC_CHECKS_PASSED')
+          PY
+      - name: Enable Oracle, browser compatibility and safe catalog acceptance
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Compile ESP-IDF 5.5.1 ESP32-C6 for 4MB, no flash
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Verify active ESP-IDF controller and host Msys configurations
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -x 'CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE=768' JasonHome2NanoC6_IDF/sdkconfig
+          echo 'RX16_ACTIVE_NIMBLE_MSYS2_768_CONFIRMED'
+      - name: Assemble and checksum complete 0x0 flash image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build-output
+          gh release download jason-home-2-nanoc6-v1.1.27 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'jh2-full-install-1.1.27.bin' \
+            --pattern 'SHA256SUMS' --dir build-output --clobber
+          (
+            cd build-output
+            grep -F 'jh2-full-install-1.1.27.bin' SHA256SUMS | sha256sum -c -
+          )
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('build-output')
+          old=(root/'jh2-full-install-1.1.27.bin').read_bytes()
+          app=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin').read_bytes()
+          if len(old)!=0x400000:raise ValueError('base factory bundle must be exactly 4 MB')
+          if not 0x120000<len(app)<=0x290000:raise ValueError('app violates factory OTA accepted size')
+          if old[0]!=0xe9 or old[0x10000]!=0xe9:
+              raise ValueError('factory updater or bootloader invalid')
+          if app[0]!=0xe9 or app[12]!=13 or app[13]!=0:
+              raise ValueError('runtime is not a valid ESP32-C6 image')
+          if b'jason-home-2-nanoc6-runtime-v1' not in app:
+              raise ValueError('missing factory-accepted runtime identity')
+          if b'1.1.62-final-ota' not in app or b'/firmware/recovery' not in app:
+              raise ValueError('native firmware browser OTA service missing')
+          full=bytearray(old)
+          full[0x130000:0x3c0000]=b'\xff'*0x290000
+          full[0x130000:0x130000+len(app)]=app
+          if full[:0x130000]!=old[:0x130000]:
+              raise ValueError('factory updater/bootloader/NVS or partition changed')
+          if full[0x3c0000:]!=old[0x3c0000:]:
+              raise ValueError('recovery LittleFS template modified')
+          if len(full)!=0x400000 or full[0x130000]!=0xe9:
+              raise ValueError('not a valid 0x0 full flash image')
+          fn=root/'JH2-RX16-2M-PHY-1.1.62-FULL-FLASH-0x0.bin'
+          fn.write_bytes(full)
+          ota=root/'JH2-RX16-2M-PHY-1.1.62-RUNTIME-OTA.bin'
+          ota.write_bytes(app)
+          manifest={
+              'product':'Jason Home 2 NanoC6','version':'1.1.62-final-ota',
+              'commit':os.environ.get('GITHUB_SHA'),'esp_idf':'5.5.1','target':'esp32c6',
+              'flash_bytes':len(full),'runtime_offset_hex':'0x130000',
+              'factory_offset_hex':'0x10000','storage_offset_hex':'0x3c0000',
+              'runtime_bytes':len(app),
+              'sha256_full':hashlib.sha256(full).hexdigest(),
+              'sha256_ota':hashlib.sha256(app).hexdigest(),
+              'factory_preserved':True,'local_firmware_web':True,
+              'setup_ap':True,'oracle_enabled':True,'auto_ota':True,
+              'physical_validation':'NOT TESTED: initial full-flash only'
+          }
+          (root/'BUILD-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          (root/'SHA256SUMS-NEW.txt').write_text(
+              manifest['sha256_full']+'  '+fn.name+'\n'+
+              manifest['sha256_ota']+'  '+ota.name+'\n')
+          print('FULL_IMAGE_VERIFIED',json.dumps(manifest,indent=2))
+          PY
+          cat > build-output/README-FIRST.md <<'EOF'
+          # Jason Home 2 NanoC6 RX3 Deferred BLE Catalog + OTA Recovery v1.1.62 (ESP-IDF)
+
+          EXPERIMENTAL: CI COMPILED AND PACKAGED; PHYSICAL FUNCTIONALITY NOT YET VERIFIED.
+
+          FULL INSTALL: JH2-RX16-2M-PHY-1.1.62-FULL-FLASH-0x0.bin - exactly 4,194,304 bytes. USB-flash at 0x0.
+          RUNTIME OTA: JH2-RX16-2M-PHY-1.1.62-RUNTIME-OTA.bin - for the local /firmware browser updater only.
+
+          IMPORTANT: A complete 0x0 flash overwrites NVS and LittleFS, including your current
+          Wi-Fi/Oracle credentials. Back up the chip privately if you need to preserve them.
+          For first-time setup, connect to Wi-Fi SSID Jason-Home-2-Setup, password JasonHome2,
+          then visit http://192.168.4.1/setup and enter your Wi-Fi, Oracle endpoint, bridge ID
+          and bridge token if the original image contains no valid credentials.
+
+          USB command example (replace COM4):
+              python -m pip install --user esptool
+              python -m esptool --chip esp32c6 --port COM4 write-flash 0x0 JH2-RX16-2M-PHY-1.1.62-FULL-FLASH-0x0.bin
+
+          Local firmware web:
+          http://jason-home-2.local/firmware OR http://192.168.4.1/firmware on Setup AP
+          POST /firmware/recovery requests the existing 1.1.27 factory browser updater.
+          Always use the runtime OTA BIN in the browser, NOT the 4MB full-flash BIN.
+
+          Original updater at 0x10000, runtime OTA0 at 0x130000.
+          Native slot writes are validated for the user-approved CID 83928 only; unrelated effects are protected. Local web pages do not enforce IP restrictions; do not forward Nano port 80 to the public internet. Only a fresh, unique test-CID mapping can authorize its replacement. Automatic signed OTA enabled with NVS preference and signature validation.
+          EOF
+          (
+            cd build-output
+            sha256sum -c SHA256SUMS-NEW.txt
+            test "$(stat -c %s JH2-RX16-2M-PHY-1.1.62-FULL-FLASH-0x0.bin)" -eq 4194304
+          )
+          echo "NO_AUTOMATIC_FLASH_NO_ORACLE_PRODUCTION_DEPLOY"
+      - name: ECDSA-sign runtime-only OTA and publish v1.1.62
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          OTA_SIGNING_KEY_B64: '${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}'
+        run: |
+          set -euo pipefail
+          test -n "$OTA_SIGNING_KEY_B64"
+          mkdir -p signed-package
+          cp build-output/JH2-RX16-2M-PHY-1.1.62-RUNTIME-OTA.bin signed-package/jh2-runtime-1.1.62.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('signed-package')
+          data=(root/'jh2-runtime-1.1.62.bin').read_bytes()
+          assert 0x120000<len(data)<=0x290000 and data[0]==0xe9
+          assert b'1.1.62-final-ota' in data
+          release={'product':'jason-home-2-nanoc6','version':'1.1.62','commit':os.environ['GITHUB_SHA'],
+                   'files':{'jh2-runtime-1.1.62.bin':{'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}}}
+          (root/'release.json').write_text(json.dumps(release,indent=2)+'\n')
+          PY
+          key="$RUNNER_TEMP/jh2-ota-sign.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 -d > "$key"
+          chmod 600 "$key"
+          python3 JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release signed-package/release.json --output signed-package/latest.json
+          python3 - <<'PY'
+          import base64,json,subprocess,tempfile
+          from pathlib import Path
+          m=json.loads(Path('signed-package/latest.json').read_text())
+          assert m['schema']==1 and 'version=1.1.62\n' in m['payload']
+          with tempfile.TemporaryDirectory() as d:
+              p=Path(d);(p/'payload').write_text(m['payload'])
+              (p/'signature').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem',
+                              '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          print('JH2_162_SIGNED_MANIFEST_VERIFIED')
+          PY
+          if gh release view jason-home-2-nanoc6-v1.1.62 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists: refusing to overwrite';exit 1
+          fi
+          gh release create jason-home-2-nanoc6-v1.1.62 signed-package/jh2-runtime-1.1.62.bin             signed-package/latest.json signed-package/release.json --repo "$GITHUB_REPOSITORY"             --title "Jason Home 2 NanoC6 1.1.62 — Auto OTA + Website Cleanup"             --notes "Runtime-only signed OTA preserving recovery partition, NVS, BLE pairing and Oracle. Removes both Nano web Now Playing panels, leaves APK telemetry intact, enables periodic signed auto OTA with NVS preference."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-1.1.62-FINAL-SIGNED-OTA
+          path: |
+            signed-package/jh2-runtime-1.1.62.bin
+            signed-package/latest.json
+            signed-package/release.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload full-flash and OTA artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-RX16-2M-PHY-1.1.62-FULL-0x0-AND-OTA
+          path: |
+            build-output/JH2-RX16-2M-PHY-1.1.62-FULL-FLASH-0x0.bin
+            build-output/JH2-RX16-2M-PHY-1.1.62-RUNTIME-OTA.bin
+            build-output/README-FIRST.md
+            build-output/BUILD-MANIFEST.json
+            build-output/SHA256SUMS-NEW.txt
+          retention-days: 21
+          if-no-files-found: error
+
+  stage:
+    name: Verify and stage signed v1.1.62 on Oracle
+    needs: build-and-package
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 22
+    steps:
+      - name: Repair runner ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-1.1.62-FINAL-SIGNED-OTA
+          path: signed-package
+      - name: Validate signature, stage on Oracle, verify and rollback if needed
+        run: |
+          python3 -m py_compile .github/scripts/jh2-stage-signed-162-on-oracle.py
+          sudo -n --preserve-env=GITHUB_SHA,GITHUB_WORKSPACE python3 .github/scripts/jh2-stage-signed-162-on-oracle.py
+  install:
+    name: Safe one-time OTA then verify Nano boot and BLE
+    needs: stage
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - name: Repair runner ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Install signed runtime only when Nano idle and verified
+        run: |
+          python3 -m py_compile .github/scripts/jh2-install-signed-162-on-oracle.py
+          sudo -n --preserve-env=GITHUB_SHA python3 .github/scripts/jh2-install-signed-162-on-oracle.py
