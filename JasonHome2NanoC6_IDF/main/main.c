@@ -341,6 +341,34 @@ static void jh2_add_progress(cJSON *parent,const char *name,
     }
     if(v->has_interval)cJSON_AddNumberToObject(o,"intervalMs",v->interval_ms);
 }
+/* SmartDawn vendor p2p.proto power: 2103 DeviceInfoNotify field 7,
+ * 2105 SimpleMessage.i1 (0=off, nonzero=on). Passive and read-only. */
+typedef struct{uint32_t id,received_ms,opcode;bool valid,on;} jh2_power_info;
+static jh2_power_info current_power={0};
+static bool jh2_decode_power(const gatt_notice *notice,jh2_power_info *out){
+ const uint8_t *b=notice->b;const size_t n=notice->len;
+ if(n<24||n>520||b[1]!=1||b[2]!=0||b[3]!=0||b[4]!=0xf1||b[5]!=1||
+    (((uint16_t)b[8]<<8)|b[9])!=n-4)return false;
+ const uint32_t opcode=((uint32_t)b[10]<<8)|b[11];
+ if(opcode!=2103&&opcode!=2105)return false;
+ size_t at=24;bool found=false;uint32_t power=0;
+ while(at<n){
+  uint32_t tag=0;
+  if(!jh2_progress_varint(b,n,&at,&tag)||!tag)return false;
+  uint32_t field=tag>>3,wire=tag&7;
+  if(wire==0){uint32_t val=0;if(!jh2_progress_varint(b,n,&at,&val))return false;
+   if((opcode==2105&&field==1)||(opcode==2103&&field==7)){power=val;found=true;}
+  }else if(wire==2){uint32_t size=0;if(!jh2_progress_varint(b,n,&at,&size)||size>n-at)return false;at+=size;}
+  else if(wire==1){if(n-at<8)return false;at+=8;}
+  else if(wire==5){if(n-at<4)return false;at+=4;}
+  else return false;
+ }
+ // The powerstate int32 in a full DeviceInfoNotify defaults to zero in proto3.
+ if(opcode==2103&&!found&&n>=40){power=0;found=true;}
+ if(!found||power>255)return false;
+ *out=(jh2_power_info){.id=notice->id,.received_ms=notice->received_ms,
+  .opcode=opcode,.valid=true,.on=power!=0};return true;
+}
 void jh2_ble_playback_status(cJSON *status){
     if(!status)return;
     // Pull the bounded latest notice ring in producer order. Lock only to copy
@@ -355,6 +383,8 @@ void jh2_ble_playback_status(cJSON *status){
         xSemaphoreGive(notice_lock);
         if(!found)break;
         playback_cursor=sample.id;
+        jh2_power_info power={0};
+        if(jh2_decode_power(&sample,&power))current_power=power;
         jh2_playback_info parsed={0};
         if(jh2_decode_progress(&sample,&parsed)){
             playback_now=parsed;
@@ -364,6 +394,18 @@ void jh2_ble_playback_status(cJSON *status){
     bool connected=connection!=BLE_HS_CONN_HANDLE_NONE;
     jh2_add_progress(status,"controllerPlayback",&playback_now,connected);
     jh2_add_progress(status,"controllerLastIdentified",&playback_identified,connected);
+    cJSON *power=cJSON_AddObjectToObject(status,"controllerPower");
+    if(power){
+     if(!current_power.valid)cJSON_AddStringToObject(power,"state","unknown");
+     else{
+      cJSON_AddStringToObject(power,"state",connected?"last-reported":"stale");
+      cJSON_AddBoolToObject(power,"on",current_power.on);
+      cJSON_AddNumberToObject(power,"opcode",current_power.opcode);
+      cJSON_AddNumberToObject(power,"noticeId",current_power.id);
+      cJSON_AddNumberToObject(power,"ageMs",(uint32_t)(esp_timer_get_time()/1000)-current_power.received_ms);
+      cJSON_AddStringToObject(power,"source","controller-ble");
+     }
+    }
 }
 uint32_t jh2_ble_notice_cursor(void){
     if(!notice_lock)return 0;
