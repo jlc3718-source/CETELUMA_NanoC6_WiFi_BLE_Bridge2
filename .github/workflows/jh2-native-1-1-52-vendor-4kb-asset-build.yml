@@ -77,6 +77,9 @@ jobs:
           assert '/api/factory-preview' in web
           assert '150.136.245.51/jason-home-2/curtain_real_' not in web
           assert 'factory_preview_get' in web and 'httpd_resp_set_type(r,"image/webp")' in web
+          assert 'HTTPD_503_SERVICE_UNAVAILABLE' not in web
+          assert 'HTTPD_500_INTERNAL_SERVER_ERROR' in web
+          assert "image.src='/api/factory-preview?effect='+num" in web
           assert 'playPreview' in web and 'powerState' in web
           assert 'href=\\\"/firmware' in web
           assert 'void jh2_ble_playback_status(cJSON *status)' in main
