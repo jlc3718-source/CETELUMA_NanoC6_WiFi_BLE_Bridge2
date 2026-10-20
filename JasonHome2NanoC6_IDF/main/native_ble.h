@@ -29,3 +29,6 @@ bool jh2_ble_target_section(unsigned *matches, uint16_t *slot);
 uint32_t jh2_ble_notice_cursor(void);
 bool jh2_ble_upload_reply(uint32_t *cursor,uint16_t opcode,uint8_t session,
                          uint32_t parts,uint32_t timeout_ms,const char **error);
+
+// Read-only, controller-originated SmartDawn PlayProgressNotify (2630).
+void jh2_ble_playback_status(cJSON *status);
