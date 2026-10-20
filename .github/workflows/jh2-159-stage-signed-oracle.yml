@@ -2,7 +2,7 @@ name: JH2 1.1.59 Stage Verified Nano Now Playing OTA
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
-    paths: ['.github/workflows/jh2-157-stage-signed-oracle.yml']
+    paths: ['.github/workflows/jh2-159-stage-signed-oracle.yml']
 permissions: {contents: read, actions: read}
 concurrency: {group: jh2-production-signed-ota-singleton, cancel-in-progress: false}
 jobs:
@@ -27,7 +27,7 @@ jobs:
               with urllib.request.urlopen(req,timeout=20) as response:run=json.load(response)
               if run['status']=='completed':
                   assert run['conclusion']=='success','Firmware signing failed: '+str(run['conclusion'])
-                  print('PINNED_SIGNED_157_VALIDATED',flush=True)
+                  print('PINNED_SIGNED_159_VALIDATED',flush=True)
                   break
               time.sleep(6)
           else:raise SystemExit('SIGNING_TIMEOUT')
