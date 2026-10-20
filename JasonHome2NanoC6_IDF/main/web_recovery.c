@@ -77,7 +77,17 @@ static const char *HOME_HTML=
 "').textContent=e.message}\n}\nasync function installUpdate(){\n  if($('install').disabled||!confirm('Install verified firmware and restart Nano now?'))return;\n  $('install')"
 ".disabled=true;$('updateResult').textContent='Starting verified OTA...';\n  try{\n    const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();\n    if("
 "!r.ok||!d.ok)throw Error(d.message||'OTA request failed');\n    $('updateResult').textContent='Update queued. Nano will restart into verified updater.';\n  }catch(e){$('upd"
-"ateResult').textContent=e.message}\n}\n\nconst sdGroups=[15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494];\nconst sdIndexes=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33];\nconst previewAttempts=new Set();\nlet lastReadback=null;\nfunction sdFactory(p){\n if(!p?.identityReported)return null;\n if(p.cid===15924&&Number.isInteger(p.slot)&&p.slot>=0&&p.slot<55)return p.slot;\n const i=sdGroups.findIndex((cid,j)=>cid===p.cid&&sdIndexes[j]===p.slot);\n return i>=0?55+i:null;\n}\nfunction drawPlaying(d){\n lastReadback=d;\n const p=d.controllerPlayback||{},last=d.controllerLastIdentified||{},power=d.controllerPower||{};\n const connected=!!d.curtain?.connected,live=connected&&p.state==='current';\n const identified=live&&p.identityReported===true;\n const num=sdFactory(identified?p:last),isCustom=identified&&num===null;\n const powerKnown=connected&&power.state==='last-reported'&&typeof power.on==='boolean';\n $('powerState').textContent='Power: '+(powerKnown?(power.on?'ON':'OFF'):'Unknown')+\n     (powerKnown?' (controller-reported)':'');\n $('powerState').style.color=powerKnown?(power.on?'#7be4b6':'#ffbbae'):'#bdcbd6';\n $('playLive').textContent=identified?'● EFFECT REPORTED':live?'● MODE ONLY':connected?'● WAITING':'● OFFLINE';\n $('playLive').style.color=identified?'#7be4b6':live?'#efc987':'#ffbbae';\n $('playState').textContent=identified?(num===null?'Custom':'E-'+num):\n    live?(p.type===9?'Custom':'Current mode: '+(p.mode||'Unknown')):\n    connected?'Awaiting playback report':'Controller offline';\n if(identified){\n  $('playDetails').textContent='Controller CID '+p.cid+' · slot '+p.slot+\n     (p.totalFrames>0?' · frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');\n }else{\n  $('playDetails').textContent=num!==null?'Last identified E-'+num+' (not verified currently playing)':\n    live?'Mode notification has no effect ID':'Waiting for SmartDawn effect identity';\n }\n const image=$('playPreview'),fallback=$('playFallback');\n const hide=(msg)=>{image.hidden=true;fallback.hidden=false;fallback.textContent=msg;};\n if(powerKnown&&!power.on){hide('Curtain OFF');return;}\n if(isCustom||(live&&p.type===9)){hide('Custom');return;}\n if(num===null){hide('No identified factory preview');return;}\n const src=(window.JH2_CURTAIN_IMAGE_SRC||{})[String(num)];\n if(src){image.src=src;image.hidden=false;image.style.opacity=identified?'1':'.55';fallback.hidden=true;return;}\n hide('E-'+num+' · loading factory sample');\n const shard=String(Math.floor(num/8)).padStart(2,'0');\n if(previewAttempts.has(shard))return;\n previewAttempts.add(shard);\n const script=document.createElement('script');\n script.src='https://150.136.245.51/jason-home-2/curtain_real_'+shard+'.js?v=real-captured-20261011';\n script.onload=()=>{if(lastReadback)drawPlaying(lastReadback)};\n script.onerror=()=>{fallback.textContent='E-'+num+' (preview image unavailable)'};\n document.head.appendChild(script);\n}\nrefresh();setInterval(refresh,3500);\n</script></body></html>\n";
+"ateResult').textContent=e.message}\n}\n\nconst sdGroups=[15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494];\nconst sdIndexes=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33];\nconst previewAttempts=new Set();\nlet lastReadback=null;\nfunction sdFactory(p){\n if(!p?.identityReported)return null;\n if(p.cid===15924&&Number.isInteger(p.slot)&&p.slot>=0&&p.slot<55)return p.slot;\n const i=sdGroups.findIndex((cid,j)=>cid===p.cid&&sdIndexes[j]===p.slot);\n return i>=0?55+i:null;\n}\nfunction drawPlaying(d){\n lastReadback=d;\n const p=d.controllerPlayback||{},last=d.controllerLastIdentified||{},power=d.controllerPower||{};\n const connected=!!d.curtain?.connected,live=connected&&p.state==='current';\n const identified=live&&p.identityReported===true;\n const num=sdFactory(identified?p:last),isCustom=identified&&num===null;\n const powerKnown=connected&&power.state==='last-reported'&&typeof power.on==='boolean';\n $('powerState').textContent='Power: '+(powerKnown?(power.on?'ON':'OFF'):'Unknown')+\n     (powerKnown?' (controller-reported)':'');\n $('powerState').style.color=powerKnown?(power.on?'#7be4b6':'#ffbbae'):'#bdcbd6';\n $('playLive').textContent=identified?'● EFFECT REPORTED':live?'● MODE ONLY':connected?'● WAITING':'● OFFLINE';\n $('playLive').style.color=identified?'#7be4b6':live?'#efc987':'#ffbbae';\n $('playState').textContent=identified?(num===null?'Custom':'E-'+num):\n    live?(p.type===9?'Custom':'Current mode: '+(p.mode||'Unknown')):\n    connected?'Awaiting playback report':'Controller offline';\n if(identified){\n  $('playDetails').textContent='Controller CID '+p.cid+' · slot '+p.slot+\n     (p.totalFrames>0?' · frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');\n }else{\n  $('playDetails').textContent=num!==null?'Last identified E-'+num+' (not verified currently playing)':\n    live?'Mode notification has no effect ID':'Waiting for SmartDawn effect identity';\n }\n const image=$('playPreview'),fallback=$('playFallback');\n const hide=(msg)=>{image.hidden=true;fallback.hidden=false;fallback.textContent=msg;};\n if(powerKnown&&!power.on){hide('Curtain OFF');return;}\n if(isCustom||(live&&p.type===9)){hide('Custom');return;}\n if(num===null){hide('No identified factory preview');return;}\n const want=String(num);
+ image.onload=()=>{image.hidden=false;fallback.hidden=true;};
+ image.onerror=()=>hide('E-'+num+' · preview temporarily unavailable');
+ image.style.opacity=identified?'1':'.55';
+ if(image.dataset.effect!==want){
+  image.dataset.effect=want;image.hidden=true;fallback.hidden=false;
+  fallback.textContent='E-'+num+' · loading preview';
+  image.src='/api/factory-preview?effect='+num;
+ }else if(image.complete&&image.naturalWidth>0){
+  image.hidden=false;fallback.hidden=true;
+ }\n}\nrefresh();setInterval(refresh,3500);\n</script></body></html>\n";
 
 static const char *SETUP_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -160,14 +170,12 @@ static const char *FIRMWARE_HTML=
 "if(pw.state==='last-reported'&&!pw.on){mini.hidden=true;fallback.hidden=false;fallback.textContent='Curtain OFF';}"
 "else if(custom){mini.hidden=true;fallback.hidden=false;fallback.textContent='Custom';}"
 "else if(num===null){mini.hidden=true;fallback.hidden=false;fallback.textContent='No identified factory effect';}"
-"else {fallback.hidden=false;fallback.textContent='E-'+num+' - preview requires Oracle access';"
-"const sources=window.JH2_CURTAIN_IMAGE_SRC||{},saved=sources[String(num)];"
-"if(saved){mini.hidden=false;mini.style.opacity=exact?'1':'.6';mini.src=saved;fallback.hidden=true;}"
-"else{mini.hidden=true;const shard=String(Math.floor(num/8)).padStart(2,'0');"
-"if(window.jh2ThumbShard!==shard){window.jh2ThumbShard=shard;"
-"const sc=document.createElement('script');"
-"sc.src='https://150.136.245.51/jason-home-2/curtain_real_'+shard+'.js?v=real-captured-20261011';"
-"sc.onload=()=>refreshPlaying();sc.onerror=()=>{fallback.textContent='E-'+num+' - open Jason Home 2 for preview';};document.head.appendChild(sc);}}}"
+"else {fallback.hidden=false;fallback.textContent='E-'+num+' - loading preview';"
+"mini.onload=()=>{mini.hidden=false;fallback.hidden=true;};"
+"mini.onerror=()=>{mini.hidden=true;fallback.hidden=false;fallback.textContent='E-'+num+' - preview temporarily unavailable';};"
+"if(mini.dataset.effect!==String(num)){mini.dataset.effect=String(num);mini.hidden=true;"
+"mini.src='/api/factory-preview?effect='+num;}"
+"else if(mini.complete&&mini.naturalWidth>0){mini.hidden=false;fallback.hidden=true;}}"
 "const last=known(l),recent=l.ageMs!=null?Math.round(l.ageMs/1000)+'s ago':'unknown age';"
 "if(online&&p.state==='current'&&p.identityReported){title.textContent=known(p);"
 "meta.textContent='Controller-reported CID '+p.cid+' / slot '+p.slot+(p.totalFrames>0?' | frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');"
@@ -204,15 +212,35 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.58-dashboard-readback");
+    cJSON_AddStringToObject(o,"version","1.1.59-local-thumbnails");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
+}
+// Same-origin local image route. Device fetches the original bytes through
+// its already paired, authenticated Oracle TLS bridge; no browser login.
+static esp_err_t factory_preview_get(httpd_req_t *r){
+    if(!local_only(r))return denied(r);
+    char query[48]={0},value[5]={0};
+    if(httpd_req_get_url_query_str(r,query,sizeof(query))!=ESP_OK||
+       httpd_query_key_value(query,"effect",value,sizeof(value))!=ESP_OK||
+       !value[0])return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Effect required");
+    for(const char *p=value;*p;p++)
+        if(!isdigit((unsigned char)*p))return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid effect");
+    const long number=strtol(value,NULL,10);
+    if(number<0||number>87)return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Invalid effect");
+    uint8_t *image=NULL;size_t bytes=0;
+    if(!jh2_bridge_factory_preview((uint8_t)number,&image,&bytes))
+       return httpd_resp_send_err(r,HTTPD_503_SERVICE_UNAVAILABLE,"Factory preview unavailable");
+    httpd_resp_set_type(r,"image/webp");
+    httpd_resp_set_hdr(r,"Cache-Control","private, max-age=600");
+    const esp_err_t result=httpd_resp_send(r,(const char *)image,(ssize_t)bytes);
+    free(image);return result;
 }
 static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.58-dashboard-readback");
+    cJSON_AddStringToObject(o,"version","1.1.59-local-thumbnails");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -691,6 +719,7 @@ bool jh2_web_start(void){
         {.uri="/api/firmware/install",.method=HTTP_POST,.handler=firmware_install},
         {.uri="/jason-home-2/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/jason-home-2/recovery",.method=HTTP_GET,.handler=html_get},
+        {.uri="/api/factory-preview",.method=HTTP_GET,.handler=factory_preview_get},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/curtain/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/health",.method=HTTP_GET,.handler=health_get},
