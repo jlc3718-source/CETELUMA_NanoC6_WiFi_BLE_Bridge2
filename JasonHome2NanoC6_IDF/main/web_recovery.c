@@ -107,6 +107,10 @@ static const char *FIRMWARE_HTML=
 "a{color:#71ded2}small{color:#c1d5e5}</style></head><body><h1>Firmware recovery</h1>"
 "<p>The original permanent updater is preserved in the factory partition. "
 "The updater verifies the product identity, image, and runtime size before installing.</p>"
+"<section id='playback' style='border:1px solid #355b74;border-radius:12px;padding:15px;margin:18px 0;background:#14273b'>"
+"<h2 style='margin:0 0 6px'>SmartDawn - Now Playing</h2>"
+"<strong id='playTitle'>Checking controller...</strong><p id='playMeta' style='color:#c1d5e5;font-size:14px'>Reading controller BLE notifications</p>"
+"<small id='playSource'>Controller-reported, not inferred from last sent command</small></section>"
 "<p>Update online directly from Oracle. No BIN download or file upload required.</p>"
 "<button onclick='checkUpdate()'>Check for updates</button>"
 "<button id='install' onclick='installUpdate()' disabled>Install verified update and restart</button>"
@@ -135,6 +139,23 @@ static const char *FIRMWARE_HTML=
 "if(!r.ok||!d.ok)throw Error(d.message||'Installation could not be scheduled');"
 "result.textContent='Verified update '+d.version+' queued. The Nano will download, verify SHA-256, and reboot; reconnect here after restart.';"
 "}catch(e){result.textContent=e.message;}}"
+"async function refreshPlaying(){"
+"const title=document.getElementById('playTitle'),meta=document.getElementById('playMeta'),src=document.getElementById('playSource');"
+"try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('status unavailable');"
+"const d=await r.json(),p=d.controllerPlayback||{},l=d.controllerLastIdentified||{},online=!!d.curtain?.connected;"
+"const known=x=>x.identityReported?(x.cid===15924&&Number.isInteger(x.slot)&&x.slot>=0&&x.slot<55?'E-'+x.slot:'CID '+x.cid+' / slot '+x.slot):null;"
+"const last=known(l),recent=l.ageMs!=null?Math.round(l.ageMs/1000)+'s ago':'unknown age';"
+"if(online&&p.state==='current'&&p.identityReported){title.textContent=known(p)||p.title||'Effect';"
+"meta.textContent='Controller-reported CID '+p.cid+' / slot '+p.slot+(p.totalFrames>0?' | frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');"
+"src.textContent='Confirmed by BLE telemetry; physical LEDs not directly observed';}"
+"else if(online&&p.state==='current'){title.textContent='Mode: '+(p.mode||'Unknown');"
+"meta.textContent=last?'Last identified '+last+' ('+recent+'); not confirmed as currently playing':'No exact effect ID in the latest report';"
+"src.textContent='Live mode-only BLE notification';}"
+"else{title.textContent=online?'Waiting for playback report':'Bluetooth offline';"
+"meta.textContent=last?'Last identified '+last+' ('+recent+'); current effect unverified':'No identified effect yet';"
+"src.textContent=online?'Waiting for fresh controller report':'No live Bluetooth connection';}}"
+"catch(e){title.textContent='Readback unavailable';meta.textContent=e.message;src.textContent='No guessed effect ID';}}"
+"refreshPlaying();setInterval(refreshPlaying,3500);"
 "checkUpdate();</script></body></html>";
 
 // User-requested local-controller access policy: no client IP, subnet,
@@ -159,7 +180,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.55-local-ai-animation");
+    cJSON_AddStringToObject(o,"version","1.1.56-now-playing");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -167,7 +188,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.55-local-ai-animation");
+    cJSON_AddStringToObject(o,"version","1.1.56-now-playing");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -177,6 +198,7 @@ static esp_err_t status_get(httpd_req_t *r){
     cJSON_AddBoolToObject(o,"signedAutoUpdate",false);
     cJSON *curtain=cJSON_AddObjectToObject(o,"curtain");
     jh2_ble_status(curtain);
+    jh2_ble_playback_status(o);
     return send_json(r,o);
 }
 // On-device manual BLE controls. Restrict target playback to a controller-
