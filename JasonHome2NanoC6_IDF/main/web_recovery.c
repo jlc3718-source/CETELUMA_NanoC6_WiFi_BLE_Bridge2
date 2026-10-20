@@ -58,14 +58,14 @@ static const char *HOME_HTML=
 "ry\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button>"
 "</div>\n<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" on"
 "click=\"power('powerOn')\" disabled>ON</button>\n<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<button id=\"curtainRebootMain\" onclick=\"curtainReboot()\" disabled>Curtain Reboot</button>\n<p id=\"curtainRebootMessage\" class=\"muted\" role=\"status\"></p>\n<p id=\"result\" class=\"muted\" role=\"status\"></p></se"
-"ction>\n<style>\n#nowPlaying{border-color:#386781;background:linear-gradient(140deg,#182f46,#102235)}\n#playLive{font-size:.79rem;color:#e7cb8c;font-weight:700}\n#playState{font-size:1.45rem;font-weight:800;margin:14px 0 6px}\n#playDetails{font-size:.82rem;color:#c4dbea;line-height:1.5}\n#powerState{font-size:.86rem;font-weight:700;margin:10px 0;color:#aeddd1}\n#playPreviewBox{width:190px;min-height:95px;display:grid;place-items:center;background:#091a2b;border:1px solid #3b5871;border-radius:10px;margin:12px 0;overflow:hidden}\n#playPreview{max-width:100%;max-height:150px;object-fit:contain}\n#playPreview[hidden],#playFallback[hidden]{display:none}\n#playFallback{font-size:.85rem;color:#c6dcf0;padding:12px;text-align:center}\n#playNote{font-size:.76rem;color:#b8cad8}\n</style>\n<section class=\"panel\" id=\"nowPlaying\">\n<div class=\"status\"><h2>Now Playing</h2><span id=\"playLive\">Checking…</span></div>\n<div id=\"powerState\">Power: Unknown</div>\n<div id=\"playPreviewBox\"><img id=\"playPreview\" hidden alt=\"SmartDawn captured factory effect still\"><span id=\"playFallback\">Waiting for controller status</span></div>\n<div id=\"playState\">Waiting for controller…</div>\n<div id=\"playDetails\">Reading native Bluetooth playback telemetry</div>\n<p id=\"playNote\">Factory image: captured still, not a live video feed.</p>\n<p class=\"muted\"><a href=\"/firmware\">Firmware &amp; detailed diagnostics</a></p>\n</section>\n<section class=\"panel\"><h2>Firmware updates</h2>\n<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"pri"
-"mary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n<a class=\"action\" href=\"/firmware\">Manual / web firmware update</a>\n<p id=\"updateResult\" class=\"muted\""
-" role=\"status\">Automatic updates are off.</p></section>\n<script>\nconst $=id=>document.getElementById(id);\nlet nanoStatusRefreshing=false;\nasync function refresh(){\n  if(nanoStatusRefreshing)return;\n  nanoStatusRefreshing=true;\n  try{\n    const r=await fetch('/api/s"
-"tatus',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    drawPlaying(d);\n    $('version'"
+"ction>\n<section class=\"panel\"><h2>Firmware updates</h2>\n<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"pri"
+"mary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n<label><input type='checkbox' id='autoUpdate' onchange='setAutoUpdate(this.checked)'> Enable automatic signed updates</label>\n<a class=\"action\" href=\"/firmware\">Firmware recovery &amp; diagnostics</a>\n<p id=\"updateResult\" class=\"muted\""
+" role=\"status\">Signed automatic updates enabled by default.</p></section>\n<script>\nconst $=id=>document.getElementById(id);\nlet nanoStatusRefreshing=false;\nasync function refresh(){\n  if(nanoStatusRefreshing)return;\n  nanoStatusRefreshing=true;\n  try{\n    const r=await fetch('/api/s"
+"tatus',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    $('autoUpdate').checked=d.signedAutoUpdate===true;\n    $('version'"
 ").textContent=d.version||'Unknown';\n    const paused=c.nativeReconnectPaused===true;\n    $('ble').textContent=connected?'Connected':paused?'Disconnected (paused)':'Discon"
 "nected / searching';\n    $('ble').className=connected?'good':'bad';\n    $('bleConnect').disabled=connected;\n    $('bleDisconnect').disabled=paused;\n    $('curtainRebootMain').disabled=!connected;\n    $('on').disabled=$"
 "('off').disabled=!connected;\n  }catch(e){\n    $('version').textContent='Unavailable';\n    $('ble').textContent='Disconnected';\n    $('ble').className='bad';\n    $('bleCon"
-"nect').disabled=$('bleDisconnect').disabled=true;\n    $('on').disabled=$('off').disabled=true;\n    $('curtainRebootMain').disabled=true;\n    $('playState').textContent='Status temporarily unavailable - retrying';\n  }finally{nanoStatusRefreshing=false;}\n}\nasync function curtainReboot(){\n if(!confirm('Reboot the SmartDawn curtain controller? The curtain will briefly disconnect from Bluetooth. The Nano will NOT restart.'))return;\n const b=$('curtainRebootMain');b.disabled=true;\n $('curtainRebootMessage').textContent='Sending manufacturer reboot request to SmartDawn...';\n try{\n  const r=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'curtainReboot'})});\n  const d=await r.json();\n  if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Bluetooth reboot request failed');\n  $('curtainRebootMessage').textContent='SmartDawn reboot command accepted by GATT. Reconnection may take a moment; actual reboot not yet verified.';\n }catch(e){$('curtainRebootMessage').textContent=e.message;}\n await refresh();\n}\nasync function bluetooth(action){\n  $('bleConnect').disabled=$('bleDi"
+"nect').disabled=$('bleDisconnect').disabled=true;\n    $('on').disabled=$('off').disabled=true;\n    $('curtainRebootMain').disabled=true;\n  }finally{nanoStatusRefreshing=false;}\n}\nasync function curtainReboot(){\n if(!confirm('Reboot the SmartDawn curtain controller? The curtain will briefly disconnect from Bluetooth. The Nano will NOT restart.'))return;\n const b=$('curtainRebootMain');b.disabled=true;\n $('curtainRebootMessage').textContent='Sending manufacturer reboot request to SmartDawn...';\n try{\n  const r=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'curtainReboot'})});\n  const d=await r.json();\n  if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Bluetooth reboot request failed');\n  $('curtainRebootMessage').textContent='SmartDawn reboot command accepted by GATT. Reconnection may take a moment; actual reboot not yet verified.';\n }catch(e){$('curtainRebootMessage').textContent=e.message;}\n await refresh();\n}\nasync function bluetooth(action){\n  $('bleConnect').disabled=$('bleDi"
 "sconnect').disabled=true;\n  $('bleResult').textContent=action==='connect'?'Looking for saved SmartDawn controller...':'Disconnecting Bluetooth...';\n  try{\n    const r=awa"
 "it fetch('/api/ble/'+action,{method:'POST'});\n    const d=await r.json();\n    if(!r.ok||!d.ok)throw Error(d.message||'Bluetooth request rejected');\n    $('bleResult').tex"
 "tContent=d.message||'Request accepted; checking Bluetooth status';\n  }catch(e){$('bleResult').textContent=e.message;}\n  await refresh();\n}\nasync function power(action){\n "
@@ -78,7 +78,7 @@ static const char *HOME_HTML=
 "').textContent=e.message}\n}\nasync function installUpdate(){\n  if($('install').disabled||!confirm('Install verified firmware and restart Nano now?'))return;\n  $('install')"
 ".disabled=true;$('updateResult').textContent='Starting verified OTA...';\n  try{\n    const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();\n    if("
 "!r.ok||!d.ok)throw Error(d.message||'OTA request failed');\n    $('updateResult').textContent='Update queued. Nano will restart into verified updater.';\n  }catch(e){$('upd"
-"ateResult').textContent=e.message}\n}\n\nconst sdGroups=[15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494];\nconst sdIndexes=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33];\nconst previewAttempts=new Set();\nlet lastReadback=null;\nfunction sdFactory(p){\n if(!p?.identityReported)return null;\n if(p.cid===15924&&Number.isInteger(p.slot)&&p.slot>=0&&p.slot<55)return p.slot;\n const i=sdGroups.findIndex((cid,j)=>cid===p.cid&&sdIndexes[j]===p.slot);\n return i>=0?55+i:null;\n}\nfunction drawPlaying(d){\n lastReadback=d;\n const p=d.controllerPlayback||{},last=d.controllerLastIdentified||{},power=d.controllerPower||{};\n const connected=!!d.curtain?.connected,live=connected&&p.state==='current';\n const identified=live&&p.identityReported===true;\n const num=sdFactory(identified?p:last),isCustom=identified&&num===null;\n const powerKnown=connected&&power.state==='last-reported'&&typeof power.on==='boolean';\n $('powerState').textContent='Power: '+(powerKnown?(power.on?'ON':'OFF'):'Unknown')+\n     (powerKnown?' (controller-reported)':'');\n $('powerState').style.color=powerKnown?(power.on?'#7be4b6':'#ffbbae'):'#bdcbd6';\n $('playLive').textContent=identified?'● EFFECT REPORTED':live?'● MODE ONLY':connected?'● WAITING':'● OFFLINE';\n $('playLive').style.color=identified?'#7be4b6':live?'#efc987':'#ffbbae';\n $('playState').textContent=identified?(num===null?'Custom':'E-'+num):\n    live?(p.type===9?'Custom':'Current mode: '+(p.mode||'Unknown')):\n    connected?(num!==null?'Last identified E-'+num:'Waiting for new playback ID'):'Controller offline';\n if(identified){\n  $('playDetails').textContent='Controller CID '+p.cid+' · slot '+p.slot+\n     (p.totalFrames>0?' · frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');\n }else{\n  $('playDetails').textContent=num!==null?'Last identified E-'+num+' (not verified currently playing)':\n    live?'Mode notification has no effect ID':'Waiting for SmartDawn effect identity';\n }\n const image=$('playPreview'),fallback=$('playFallback');\n const hide=(msg)=>{image.hidden=true;fallback.hidden=false;fallback.textContent=msg;};\n if(powerKnown&&!power.on){hide('Curtain OFF');return;}\n if(isCustom||(live&&p.type===9)){hide('Custom');return;}\n if(num===null){hide('No identified factory preview');return;}\n const want=String(num);\n image.onload=()=>{image.hidden=false;fallback.hidden=true;};\n image.onerror=()=>{if(image.dataset.effect!==want)return;\n  const tries=Number(image.dataset.tries||'0');\n  if(tries>=22){hide('E-'+num+' · preview unavailable');return;}\n  image.dataset.tries=String(tries+1);hide('E-'+num+' · loading preview');\n  setTimeout(()=>{if(image.dataset.effect===want)\n    image.src='/api/factory-preview?effect='+num+'&attempt='+Number(image.dataset.tries);},1200);\n };\n image.style.opacity=identified?'1':'.55';\n if(image.dataset.effect!==want){\n  image.dataset.effect=want;image.dataset.tries='0';image.hidden=true;fallback.hidden=false;\n  fallback.textContent='E-'+num+' · loading preview';\n  image.src='/api/factory-preview?effect='+num;\n }else if(image.complete&&image.naturalWidth>0){\n  image.hidden=false;fallback.hidden=true;\n }\n}\nrefresh();setInterval(refresh,3500);\n</script></body></html>\n";
+"ateResult').textContent=e.message}\n}\n\nasync function setAutoUpdate(enabled){\n  try{const r=await fetch('/api/firmware/auto',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'enabled='+(enabled?1:0)});\n  const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Save failed');\n  $('updateResult').textContent=enabled?'Automatic signed updates ON':'Automatic signed updates OFF';\n  await refresh();\n  }catch(e){$('updateResult').textContent=e.message;await refresh();}\n}\nrefresh();setInterval(refresh,3500);\n</script></body></html>\n";
 
 static const char *SETUP_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -108,14 +108,6 @@ static const char *FIRMWARE_HTML=
 "a{color:#71ded2}small{color:#c1d5e5}</style></head><body><h1>Firmware recovery</h1>"
 "<p>The original permanent updater is preserved in the factory partition. "
 "The updater verifies the product identity, image, and runtime size before installing.</p>"
-"<section id='playback' style='border:1px solid #355b74;border-radius:12px;padding:15px;margin:18px 0;background:#14273b'>"
-"<h2 style='margin:0 0 6px'>SmartDawn - Now Playing</h2>"
-"<strong id='playTitle'>Checking controller...</strong><p id='playMeta' style='color:#c1d5e5;font-size:14px'>Reading controller BLE notifications</p>"
-"<p id='playPower' style='color:#94e9c4;font-weight:bold'>Power: Unknown</p>"
-"<div style='max-width:190px;min-height:92px;border:1px solid #355b74;border-radius:10px;background:#091625;padding:7px;margin:10px 0;display:grid;place-items:center'>"
-"<img id='playThumb' hidden style='max-width:100%;max-height:135px;object-fit:contain' alt='Original SmartDawn effect sample'>"
-"<span id='playThumbFallback' style='color:#bcd6e8;font-size:13px;text-align:center'>No factory preview</span></div>"
-"<small id='playSource'>Controller-reported, not inferred from last sent command</small></section>"
 "<section style='margin:18px 0;padding:15px;border:1px solid #355b74;border-radius:12px;background:#14273b'>"
 "<h2>Curtain Reboot</h2>"
 "<p>Restart the SmartDawn curtain controller only. This will NOT restart the Nano or erase effects.</p>"
@@ -124,7 +116,7 @@ static const char *FIRMWARE_HTML=
 "<p>Update online directly from Oracle. No BIN download or file upload required.</p>"
 "<button onclick='checkUpdate()'>Check for updates</button>"
 "<button id='install' onclick='installUpdate()' disabled>Install verified update and restart</button>"
-"<p id='result' role='status'>Automatic updates are disabled. Install only when you choose.</p>"
+"<label><input type='checkbox' id='otaAuto' onchange='setAutoUpdate(this.checked)'> Automatically install newer signed firmware</label>"\n"<p id='autoState' role='status'>Reading signed OTA preference...</p>"\n"<p id='result' role='status'>Manual signed check and recovery remain available.</p>"
 "<details><summary>Manual recovery (backup method)</summary>"
 "<p><b>Use the runtime-only BIN, not a 4 MB full-flash image.</b></p>"
 "<button onclick='go()'>Open manual firmware upload mode</button></details>"
@@ -135,7 +127,7 @@ static const char *FIRMWARE_HTML=
 "try{const r=await fetch('/firmware/recovery',{method:'POST'});if(!r.ok)throw Error(await r.text());"
 "s.textContent='Restarting to factory upload mode. Reconnect to http://192.168.4.1/firmware or use the home IP /firmware.';"
 "}catch(e){s.textContent=e.message}}"
-"const result=document.getElementById('result'),btn=document.getElementById('install');"
+"const result=document.getElementById('result'),btn=document.getElementById('install');"\n"async function refreshAuto(){try{const r=await fetch('/api/status',{cache:'no-store'});const d=await r.json();document.getElementById('otaAuto').checked=d.signedAutoUpdate===true;document.getElementById('autoState').textContent=d.signedAutoUpdate?'Automatic signed updates ON':'Automatic signed updates OFF';}catch(e){document.getElementById('autoState').textContent='Cannot read update setting';}}"\n"async function setAutoUpdate(enabled){try{const r=await fetch('/api/firmware/auto',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'enabled='+(enabled?1:0)});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Save failed');}catch(e){result.textContent=e.message;}await refreshAuto();}"
 "async function checkUpdate(){btn.disabled=true;result.textContent='Checking signed firmware via Oracle...';"
 "try{const r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();"
 "if(!r.ok||!d.available)throw Error(d.message||'No newer signed update is available');"
@@ -161,47 +153,7 @@ static const char *FIRMWARE_HTML=
 " }catch(e){o.textContent=e.message;}"
 " setTimeout(()=>{b.disabled=false},60000);"
 "}"
-"async function refreshPlaying(){"
-"const title=document.getElementById('playTitle'),meta=document.getElementById('playMeta'),src=document.getElementById('playSource');"
-"try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('status unavailable');"
-"const d=await r.json(),p=d.controllerPlayback||{},l=d.controllerLastIdentified||{},pw=d.controllerPower||{},online=!!d.curtain?.connected;"
-"document.getElementById('playPower').textContent='Power: '+(pw.state==='last-reported'?(pw.on?'ON':'OFF'):'Unknown')+(pw.state==='last-reported'?' - SmartDawn reported':'');"
-"const groups=[15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494];"
-"const slots=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33];"
-"const number=x=>{if(!x.identityReported)return null;"
-"if(x.cid===15924&&Number.isInteger(x.slot)&&x.slot>=0&&x.slot<55)return x.slot;"
-"const i=groups.findIndex((v,j)=>v===x.cid&&slots[j]===x.slot);return i>=0?i+55:null;};"
-"const known=x=>{const n=number(x);return n===null?'Custom':'E-'+n;};"
-"const mini=document.getElementById('playThumb'),fallback=document.getElementById('playThumbFallback');"
-"const exact=online&&p.state==='current'&&p.identityReported;"
-"const num=number(exact?p:l),custom=exact&&num===null;"
-"if(pw.state==='last-reported'&&!pw.on){mini.hidden=true;fallback.hidden=false;fallback.textContent='Curtain OFF';}"
-"else if(custom){mini.hidden=true;fallback.hidden=false;fallback.textContent='Custom';}"
-"else if(num===null){mini.hidden=true;fallback.hidden=false;fallback.textContent='No identified factory effect';}"
-"else {fallback.hidden=false;fallback.textContent='E-'+num+' - loading preview';"
-"mini.onload=()=>{mini.hidden=false;fallback.hidden=true;};"
-"mini.onerror=()=>{if(mini.dataset.effect!==String(num))return;"
-"const retries=Number(mini.dataset.tries||'0');mini.hidden=true;fallback.hidden=false;"
-"if(retries>=22){fallback.textContent='E-'+num+' - preview unavailable';return;}"
-"mini.dataset.tries=String(retries+1);fallback.textContent='E-'+num+' - loading preview';"
-"setTimeout(()=>{if(mini.dataset.effect===String(num))"
-"mini.src='/api/factory-preview?effect='+num+'&attempt='+Number(mini.dataset.tries);},1200);};"
-"if(mini.dataset.effect!==String(num)){mini.dataset.effect=String(num);mini.dataset.tries='0';mini.hidden=true;"
-"mini.src='/api/factory-preview?effect='+num;}"
-"else if(mini.complete&&mini.naturalWidth>0){mini.hidden=false;fallback.hidden=true;}}"
-"const last=known(l),recent=l.ageMs!=null?Math.round(l.ageMs/1000)+'s ago':'unknown age';"
-"if(online&&p.state==='current'&&p.identityReported){title.textContent=known(p);"
-"meta.textContent='Controller-reported CID '+p.cid+' / slot '+p.slot+(p.totalFrames>0?' | frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');"
-"src.textContent='Confirmed by BLE telemetry; physical LEDs not directly observed';}"
-"else if(online&&p.state==='current'){title.textContent='Mode: '+(p.mode||'Unknown');"
-"meta.textContent=last?'Last identified '+last+' ('+recent+'); not confirmed as currently playing':'No exact effect ID in the latest report';"
-"src.textContent='Live mode-only BLE notification';}"
-"else{title.textContent=online?'Waiting for playback report':'Bluetooth offline';"
-"meta.textContent=last?'Last identified '+last+' ('+recent+'); current effect unverified':'No identified effect yet';"
-"src.textContent=online?'Waiting for fresh controller report':'No live Bluetooth connection';}}"
-"catch(e){title.textContent='Readback unavailable';meta.textContent=e.message;src.textContent='No guessed effect ID';}}"
-"refreshPlaying();setInterval(refreshPlaying,3500);"
-"checkUpdate();</script></body></html>";
+"refreshAuto();checkUpdate();</script></body></html>";
 
 // User-requested local-controller access policy: no client IP, subnet,
 // LAN-origin, or host restrictions. The Setup AP still has its WPA2 password.
@@ -225,7 +177,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.61-status-unblock");
+    cJSON_AddStringToObject(o,"version","1.1.62-final-ota");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -294,14 +246,14 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.61-status-unblock");
+    cJSON_AddStringToObject(o,"version","1.1.62-final-ota");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
     cJSON_AddBoolToObject(o,"storageReady",fs_ready);
     cJSON_AddBoolToObject(o,"setupAP",ap_enabled);
     cJSON_AddBoolToObject(o,"wifi",net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY));
-    cJSON_AddBoolToObject(o,"signedAutoUpdate",false);
+    cJSON_AddBoolToObject(o,"signedAutoUpdate",jh2_bridge_auto_update_enabled());
     cJSON *curtain=cJSON_AddObjectToObject(o,"curtain");
     jh2_ble_status(curtain);
     jh2_ble_playback_status(o);
@@ -645,6 +597,23 @@ static esp_err_t recovery_post(httpd_req_t *r){
 }
 // Deliberately manual signed OTA. Oracle hosts the signed manifest and
 // permanent factory updater does the actual download + SHA-256 verification.
+static esp_err_t firmware_auto_post(httpd_req_t *req){
+    if(!local_only(req))return denied(req);
+    if(req->content_len!=9)return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Invalid setting");
+    char form[12]={0};
+    if(httpd_req_recv(req,form,req->content_len)!=req->content_len)
+        return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Invalid form");
+    bool enabled=false;
+    if(strcmp(form,"enabled=1")==0)enabled=true;
+    else if(strcmp(form,"enabled=0")!=0)
+        return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Invalid setting");
+    bool ok=jh2_bridge_set_auto_update_enabled(enabled);
+    cJSON *out=cJSON_CreateObject();
+    cJSON_AddBoolToObject(out,"ok",ok);
+    cJSON_AddBoolToObject(out,"enabled",jh2_bridge_auto_update_enabled());
+    cJSON_AddStringToObject(out,"message",ok?"Signed OTA preference saved":"OTA preference save failed");
+    return send_json(req,out);
+}
 static esp_err_t firmware_check(httpd_req_t *req){
     char version[32]={0},error[170]={0};
     bool available=jh2_bridge_signed_firmware(false,version,sizeof(version),error,sizeof(error));
@@ -787,6 +756,7 @@ bool jh2_web_start(void){
         {.uri="/recovery",.method=HTTP_GET,.handler=html_get},
         {.uri="/firmware/recovery",.method=HTTP_POST,.handler=recovery_post},
         {.uri="/api/firmware/check",.method=HTTP_GET,.handler=firmware_check},
+        {.uri="/api/firmware/auto",.method=HTTP_POST,.handler=firmware_auto_post},
         {.uri="/api/firmware/install",.method=HTTP_POST,.handler=firmware_install},
         {.uri="/jason-home-2/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/jason-home-2/recovery",.method=HTTP_GET,.handler=html_get},
