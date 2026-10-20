@@ -1,0 +1,61 @@
+name: JH2 1.1.63 Verified Stage Retry - Runtime Only
+on:
+  push:
+    branches: [release/jh2-optimized-ota-163-20261020]
+    paths: [.github/workflows/jh2-163-verified-stage-retry.yml]
+permissions:
+  contents: read
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+env:
+  JH2_SIGNED_SOURCE_SHA: 7c2f592962dc16eb962fde8b63d7d100d8aae983
+jobs:
+  stage:
+    name: Verify signed release and stage on Oracle
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 22
+    steps:
+      - name: Repair runner ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Download only existing immutable signed 1.1.63 release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p signed-package
+          gh release download jason-home-2-nanoc6-v1.1.63 --repo "$GITHUB_REPOSITORY" --pattern 'jh2-runtime-1.1.63.bin' --pattern 'latest.json' --pattern 'release.json' --dir signed-package --clobber
+          python3 - <<'PY'
+          import json,os,pathlib,hashlib
+          p=pathlib.Path('signed-package')
+          meta=json.loads((p/'release.json').read_text())
+          assert meta['version']=='1.1.63' and meta['commit']==os.environ['JH2_SIGNED_SOURCE_SHA']
+          b=(p/'jh2-runtime-1.1.63.bin').read_bytes()
+          assert 0x120000<len(b)<=0x290000 and len(b)<2546624 and b[0]==0xe9
+          assert meta['files']['jh2-runtime-1.1.63.bin']['sha256']==hashlib.sha256(b).hexdigest()
+          print('IMMUTABLE_RELEASE_163_DIGEST_VERIFIED',len(b),flush=True)
+          PY
+      - name: Stage 1.1.63 only after ECDSA and live-compat verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-stage-signed-163-on-oracle.py
+          sudo -n --preserve-env=GITHUB_SHA,GITHUB_WORKSPACE,JH2_SIGNED_SOURCE_SHA python3 .github/scripts/jh2-stage-signed-163-on-oracle.py
+
+  install:
+    name: Idle-only verified runtime OTA with postboot check
+    needs: stage
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - name: Repair runner ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Install signed app-only image when Nano idle, preserve factory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-install-signed-163-on-oracle.py
+          sudo -n --preserve-env=GITHUB_SHA,JH2_SIGNED_SOURCE_SHA python3 .github/scripts/jh2-install-signed-163-on-oracle.py
