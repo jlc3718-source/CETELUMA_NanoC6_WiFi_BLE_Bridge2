@@ -1,22 +1,22 @@
-name: JH2 1.1.55 Nano Local GIF and Bluetooth Controls Signed OTA
+name: JH2 1.1.56 Nano Local GIF and Bluetooth Controls Signed OTA
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
     paths: ['.github/workflows/jh2-154-sign-ble-controls-ota-20261019.yml']
-permissions: {contents: read, actions: read}
+permissions: {contents: write, actions: read}
 jobs:
   package:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Verify 1.1.55 builder completed successfully
+      - name: Verify 1.1.56 builder completed successfully
         env: {GH_TOKEN: '${{ github.token }}'}
         shell: bash
         run: |
           set -euo pipefail
           for i in {1..120}; do
-            state="$(gh run view 39198462146 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "")')"
+            state="$(gh run view 39360823104 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "")')"
             if [[ "$state" == "completed success" ]]; then echo "SOURCE_BUILD_VALIDATED";exit 0;fi
             if [[ "$state" == "completed "* ]]; then echo "BUILD_UNSUCCESSFUL $state";exit 1;fi
             sleep 7
@@ -24,31 +24,31 @@ jobs:
           echo "BUILD_TIMEOUT";exit 1
       - uses: actions/download-artifact@v4
         with:
-          name: JH2-RX16-2M-PHY-1.1.55-FULL-0x0-AND-OTA
-          run-id: 39198462146
+          name: JH2-RX16-2M-PHY-1.1.56-FULL-0x0-AND-OTA
+          run-id: 39360823104
           github-token: '${{ github.token }}'
           path: signed-package
-      - name: Validate complete build and ECDSA sign pinned v1.1.55 image
+      - name: Validate complete build and ECDSA sign pinned v1.1.56 image
         shell: bash
         env: {OTA_SIGNING_KEY_B64: '${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}'}
         run: |
           set -euo pipefail
           test -n "$OTA_SIGNING_KEY_B64"
-          cp signed-package/JH2-RX16-2M-PHY-1.1.55-RUNTIME-OTA.bin signed-package/jh2-runtime-1.1.55.bin
+          cp signed-package/JH2-RX16-2M-PHY-1.1.56-RUNTIME-OTA.bin signed-package/jh2-runtime-1.1.56.bin
           python3 - <<'PY'
           from pathlib import Path
           import hashlib,json
           root=Path('signed-package')
           manifest=json.loads((root/'BUILD-MANIFEST.json').read_text())
-          assert manifest['version']=='1.1.55-local-ai-animation'
-          assert manifest['commit']=='0fa4a70666bc7e594bb633d01640ee08073b98f3'
-          raw=(root/'jh2-runtime-1.1.55.bin').read_bytes()
+          assert manifest['version']=='1.1.56-now-playing'
+          assert manifest['commit']=='5a56057fcba051b6bff7d39f95dfc8066d849486'
+          raw=(root/'jh2-runtime-1.1.56.bin').read_bytes()
           assert 0x120000<len(raw)<=0x290000 and raw[0]==0xe9
-          assert b'1.1.55-local-ai-animation' in raw
+          assert b'1.1.56-now-playing' in raw
           assert hashlib.sha256(raw).hexdigest()==manifest['sha256_ota']
-          release={'product':'jason-home-2-nanoc6','version':'1.1.55',
+          release={'product':'jason-home-2-nanoc6','version':'1.1.56',
                    'commit':manifest['commit'],
-                   'files':{'jh2-runtime-1.1.55.bin':{'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}}}
+                   'files':{'jh2-runtime-1.1.56.bin':{'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}}}
           (root/'release.json').write_text(json.dumps(release,indent=2)+'\n')
           print('PINNED_NANO_LOCAL_CACHE_153_VERIFIED',len(raw),flush=True)
           PY
@@ -61,7 +61,7 @@ jobs:
           from pathlib import Path
           import json,base64,subprocess,tempfile
           root=Path('signed-package');data=json.loads((root/'latest.json').read_text())
-          assert data['schema']==1 and 'version=1.1.55\n' in data['payload']
+          assert data['schema']==1 and 'version=1.1.56\n' in data['payload']
           with tempfile.TemporaryDirectory() as tmp:
            t=Path(tmp);(t/'payload').write_text(data['payload'])
            (t/'signature').write_bytes(base64.b64decode(data['signature'],validate=True))
@@ -69,11 +69,26 @@ jobs:
                            '-signature',str(t/'signature'),str(t/'payload')],check=True)
           print('SIGNED_AND_VERIFIED_153',flush=True)
           PY
+      - name: Publish only verified signed runtime and manifest as v1.1.56
+        shell: bash
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          if gh release view jason-home-2-nanoc6-v1.1.56 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; verify manually before replacing';exit 1
+          fi
+          gh release create jason-home-2-nanoc6-v1.1.56 \
+            signed-package/jh2-runtime-1.1.56.bin \
+            signed-package/latest.json \
+            signed-package/release.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Jason Home 2 NanoC6 1.1.56 — Local Now Playing" \
+            --notes "Signed runtime-only OTA based on installed 1.1.55 source. Adds a read-only SmartDawn opcode 2630 Now Playing decoder and the real Nano /firmware page display. Does not erase credentials, alter saved effects, change BLE writes, or auto-flash."
       - uses: actions/upload-artifact@v4
         with:
-          name: JH2-1.1.55-SIGNED-NANO-LOCAL-CACHE-OTA
+          name: JH2-1.1.56-SIGNED-NANO-LOCAL-CACHE-OTA
           path: |
-            signed-package/jh2-runtime-1.1.55.bin
+            signed-package/jh2-runtime-1.1.56.bin
             signed-package/latest.json
             signed-package/release.json
           retention-days: 30
