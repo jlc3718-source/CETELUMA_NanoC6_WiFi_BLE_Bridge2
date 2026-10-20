@@ -20,7 +20,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import json,os,time,urllib.request
-          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/39366280602'
+          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/39366606545'
           headers={'Accept':'application/vnd.github+json','Authorization':'Bearer '+os.environ['GH_TOKEN']}
           for attempt in range(120):
               req=urllib.request.Request(url,headers=headers)
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: JH2-1.1.59-SIGNED-NANO-LOCAL-CACHE-OTA
-          run-id: 39366280602
+          run-id: 39366606545
           github-token: '${{ github.token }}'
           path: signed-package
       - name: Verify ECDSA and atomically stage v1.1.59 for Nano only
