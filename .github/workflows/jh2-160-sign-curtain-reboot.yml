@@ -2,7 +2,7 @@ name: JH2 1.1.60 Nano Local GIF and Bluetooth Controls Signed OTA
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
-    paths: ['.github/workflows/jh2-159-sign-local-thumbnails.yml']
+    paths: ['.github/workflows/jh2-160-sign-curtain-reboot.yml']
 permissions: {contents: write, actions: read}
 jobs:
   package:
