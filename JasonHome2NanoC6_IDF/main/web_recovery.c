@@ -56,15 +56,15 @@ static const char *HOME_HTML=
 "Checking...</strong></div>\n<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Checking...</strong></div>\n<div class=\"actions\"><button id=\"bleConnect\" class=\"prima"
 "ry\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button>"
 "</div>\n<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" on"
-"click=\"power('powerOn')\" disabled>ON</button>\n<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<p id=\"result\" class=\"muted\" role=\"status\"></p></se"
+"click=\"power('powerOn')\" disabled>ON</button>\n<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<button id=\\"curtainRebootMain\\" onclick=\\"curtainReboot()\\" disabled>Curtain Reboot</button>\n<p id=\\"curtainRebootMessage\\" class=\\"muted\\" role=\\"status\\"></p>\n<p id=\\"result\\" class=\"muted\" role=\"status\"></p></se"
 "ction>\n<style>\n#nowPlaying{border-color:#386781;background:linear-gradient(140deg,#182f46,#102235)}\n#playLive{font-size:.79rem;color:#e7cb8c;font-weight:700}\n#playState{font-size:1.45rem;font-weight:800;margin:14px 0 6px}\n#playDetails{font-size:.82rem;color:#c4dbea;line-height:1.5}\n#powerState{font-size:.86rem;font-weight:700;margin:10px 0;color:#aeddd1}\n#playPreviewBox{width:190px;min-height:95px;display:grid;place-items:center;background:#091a2b;border:1px solid #3b5871;border-radius:10px;margin:12px 0;overflow:hidden}\n#playPreview{max-width:100%;max-height:150px;object-fit:contain}\n#playPreview[hidden],#playFallback[hidden]{display:none}\n#playFallback{font-size:.85rem;color:#c6dcf0;padding:12px;text-align:center}\n#playNote{font-size:.76rem;color:#b8cad8}\n</style>\n<section class=\"panel\" id=\"nowPlaying\">\n<div class=\"status\"><h2>Now Playing</h2><span id=\"playLive\">Checking…</span></div>\n<div id=\"powerState\">Power: Unknown</div>\n<div id=\"playPreviewBox\"><img id=\"playPreview\" hidden alt=\"SmartDawn captured factory effect still\"><span id=\"playFallback\">Waiting for controller status</span></div>\n<div id=\"playState\">Waiting for controller…</div>\n<div id=\"playDetails\">Reading native Bluetooth playback telemetry</div>\n<p id=\"playNote\">Factory image: captured still, not a live video feed.</p>\n<p class=\"muted\"><a href=\"/firmware\">Firmware &amp; detailed diagnostics</a></p>\n</section>\n<section class=\"panel\"><h2>Firmware updates</h2>\n<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"pri"
 "mary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n<a class=\"action\" href=\"/firmware\">Manual / web firmware update</a>\n<p id=\"updateResult\" class=\"muted\""
 " role=\"status\">Automatic updates are off.</p></section>\n<script>\nconst $=id=>document.getElementById(id);\nasync function refresh(){\n  try{\n    const r=await fetch('/api/s"
 "tatus',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    drawPlaying(d);\n    $('version'"
 ").textContent=d.version||'Unknown';\n    const paused=c.nativeReconnectPaused===true;\n    $('ble').textContent=connected?'Connected':paused?'Disconnected (paused)':'Discon"
-"nected / searching';\n    $('ble').className=connected?'good':'bad';\n    $('bleConnect').disabled=connected;\n    $('bleDisconnect').disabled=paused;\n    $('on').disabled=$"
+"nected / searching';\n    $('ble').className=connected?'good':'bad';\n    $('bleConnect').disabled=connected;\n    $('bleDisconnect').disabled=paused;\n    $('curtainRebootMain').disabled=!connected;\n    $('on').disabled=$"
 "('off').disabled=!connected;\n  }catch(e){\n    $('version').textContent='Unavailable';\n    $('ble').textContent='Disconnected';\n    $('ble').className='bad';\n    $('bleCon"
-"nect').disabled=$('bleDisconnect').disabled=true;\n    $('on').disabled=$('off').disabled=true;\n  }\n}\nasync function bluetooth(action){\n  $('bleConnect').disabled=$('bleDi"
+"nect').disabled=$('bleDisconnect').disabled=true;\n    $('on').disabled=$('off').disabled=true;\n    $('curtainRebootMain').disabled=true;\n  }\n}\nasync function curtainReboot(){\n if(!confirm('Reboot the SmartDawn curtain controller? The curtain will briefly disconnect from Bluetooth. The Nano will NOT restart.'))return;\n const b=$('curtainRebootMain');b.disabled=true;\n $('curtainRebootMessage').textContent='Sending manufacturer reboot request to SmartDawn...';\n try{\n  const r=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'curtainReboot'})});\n  const d=await r.json();\n  if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Bluetooth reboot request failed');\n  $('curtainRebootMessage').textContent='SmartDawn reboot command accepted by GATT. Reconnection may take a moment; actual reboot not yet verified.';\n }catch(e){$('curtainRebootMessage').textContent=e.message;}\n await refresh();\n}\nasync function bluetooth(action){\n  $('bleConnect').disabled=$('bleDi"
 "sconnect').disabled=true;\n  $('bleResult').textContent=action==='connect'?'Looking for saved SmartDawn controller...':'Disconnecting Bluetooth...';\n  try{\n    const r=awa"
 "it fetch('/api/ble/'+action,{method:'POST'});\n    const d=await r.json();\n    if(!r.ok||!d.ok)throw Error(d.message||'Bluetooth request rejected');\n    $('bleResult').tex"
 "tContent=d.message||'Request accepted; checking Bluetooth status';\n  }catch(e){$('bleResult').textContent=e.message;}\n  await refresh();\n}\nasync function power(action){\n "
@@ -115,6 +115,11 @@ static const char *FIRMWARE_HTML=
 "<img id='playThumb' hidden style='max-width:100%;max-height:135px;object-fit:contain' alt='Original SmartDawn effect sample'>"
 "<span id='playThumbFallback' style='color:#bcd6e8;font-size:13px;text-align:center'>No factory preview</span></div>"
 "<small id='playSource'>Controller-reported, not inferred from last sent command</small></section>"
+"<section style='margin:18px 0;padding:15px;border:1px solid #355b74;border-radius:12px;background:#14273b'>"
+"<h2>Curtain Reboot</h2>"
+"<p>Restart the SmartDawn curtain controller only. This will NOT restart the Nano or erase effects.</p>"
+"<button id='curtainRebootFirmware' onclick='curtainReboot()'>Curtain Reboot</button>"
+"<p id='curtainRebootMessage' role='status' style='color:#c1d5e5'></p></section>"
 "<p>Update online directly from Oracle. No BIN download or file upload required.</p>"
 "<button onclick='checkUpdate()'>Check for updates</button>"
 "<button id='install' onclick='installUpdate()' disabled>Install verified update and restart</button>"
@@ -143,6 +148,18 @@ static const char *FIRMWARE_HTML=
 "if(!r.ok||!d.ok)throw Error(d.message||'Installation could not be scheduled');"
 "result.textContent='Verified update '+d.version+' queued. The Nano will download, verify SHA-256, and reboot; reconnect here after restart.';"
 "}catch(e){result.textContent=e.message;}}"
+"async function curtainReboot(){"
+" if(!confirm('Restart SmartDawn curtain only? Bluetooth will disconnect temporarily; the Nano remains running.'))return;"
+" const b=document.getElementById('curtainRebootFirmware'),o=document.getElementById('curtainRebootMessage');"
+" b.disabled=true;o.textContent='Sending SmartDawn reboot command...';"
+" try{"
+"  const r=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'curtainReboot'})});"
+"  const d=await r.json();"
+"  if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Controller reboot GATT request not accepted');"
+"  o.textContent='Controller reboot command accepted. Bluetooth reconnection may take a moment; actual restart not yet verified.';"
+" }catch(e){o.textContent=e.message;}"
+" setTimeout(()=>{b.disabled=false},60000);"
+"}"
 "async function refreshPlaying(){"
 "const title=document.getElementById('playTitle'),meta=document.getElementById('playMeta'),src=document.getElementById('playSource');"
 "try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('status unavailable');"
@@ -202,7 +219,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.59-local-thumbnails");
+    cJSON_AddStringToObject(o,"version","1.1.60-curtain-reboot");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -230,7 +247,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.59-local-thumbnails");
+    cJSON_AddStringToObject(o,"version","1.1.60-curtain-reboot");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -289,6 +306,7 @@ static esp_err_t ble_control_post(httpd_req_t *r){
 // The local Nano console deliberately bypasses Oracle to separate a Nano/BLE
 // defect from APK -> Oracle and Oracle -> Nano transport failures.
 static uint32_t local_trace_serial=0;
+static int64_t last_curtain_reboot_us=0;
 static esp_err_t local_probe_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     if(r->content_len<=0 || r->content_len>256)
@@ -344,6 +362,20 @@ static esp_err_t local_probe_post(httpd_req_t *r){
            jh2_ble_target_slot_seen((uint16_t)slot))
             ok=jh2_native_play(83928,(uint32_t)slot);
         transmitted=ok;message=ok?"Verified CID 83928 playback requested":"Slot not verified or GATT failed";
+    }else if(strcmp(action,"curtainReboot")==0){
+        const int64_t time_us=esp_timer_get_time();
+        // Reboot SmartDawn (APK M_REBOOT 2599), not the ESP32-C6;
+        // prevent accidental repeated commands while controller reconnects.
+        if(last_curtain_reboot_us>0 &&
+           time_us-last_curtain_reboot_us<60000000LL){
+            message="Curtain Reboot already sent; wait 60 seconds before retry";
+        }else{
+            ok=jh2_native_curtain_reboot();
+            transmitted=ok;
+            if(ok)last_curtain_reboot_us=time_us;
+            message=ok?"SmartDawn reboot opcode 2599 accepted by GATT; reboot not yet confirmed":
+                       "SmartDawn GATT reboot request rejected";
+        }
     }else if(strcmp(action,"solid")==0){
         bool hasColor=form_value(form,"rgb",num,sizeof(num));
         bool hasBrightness=form_value(form,"value",extra,sizeof(extra));
