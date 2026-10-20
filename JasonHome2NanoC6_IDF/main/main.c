@@ -31,7 +31,7 @@
 #include "web_recovery.h"
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
 extern const char jh2_native_runtime_marker[];
-extern const unsigned char jh2_native_compat_padding[];
+
 #endif
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
@@ -961,11 +961,11 @@ void app_main(void){
     ble_att_set_preferred_mtu(517);
     nimble_port_freertos_init(host_task);
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
-    // Keep the product marker and compat segment in the actual ESP32-C6
-    // app image (not appended after its checksum). Required by the
-    // existing 1.1.27 factory browser updater's verified runtime gate.
-    ESP_LOGI(TAG,"NATIVE_BROWSER_OTA_COMPAT_MARKER %s padding=%p",
-             jh2_native_runtime_marker,(const void*)jh2_native_compat_padding);
+    // Retain the product marker in the signed application image. The
+    // original factory browser updater validates it and the final size;
+    // the separate build gate enforces its >0x120000-byte requirement.
+    ESP_LOGI(TAG,"NATIVE_BROWSER_OTA_COMPAT_MARKER %s",
+             jh2_native_runtime_marker);
 #endif
 #if CONFIG_JH2_NATIVE_ENABLE_ORACLE
     // Lab opt-in only. Default firmware remains the non-destructive BLE
