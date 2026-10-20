@@ -1,0 +1,97 @@
+name: JH2 OTA runtime size audit (build only)
+on:
+  push:
+    branches:
+      - optimization/jh2-ota-padding-20261020
+    paths:
+      - JasonHome2NanoC6_IDF/**
+      - .github/workflows/jh2-ota-padding-size-audit-20261020.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify unchanged production partition boundaries and OTA identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^boot, app, factory, 0x10000, 0x120000$' JasonHome2NanoC6_IDF/partitions.csv
+          grep -Eq '^runtime, app, ota_0, 0x130000, 0x290000$' JasonHome2NanoC6_IDF/partitions.csv
+          grep -Eq '^storage, data, spiffs, 0x3C0000, 0x40000$' JasonHome2NanoC6_IDF/partitions.csv
+          grep -Fq '"jason-home-2-nanoc6-runtime-v1"' JasonHome2NanoC6_IDF/main/browser_ota_compat.c
+          if grep -Fq 'jh2_native_compat_padding[0x120100]' JasonHome2NanoC6_IDF/main/browser_ota_compat.c; then
+            echo 'Artificial 1.125 MiB padding is still compiled'; exit 1
+          fi
+
+      - name: C source regression tests without touching a device
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/effectlist.c JasonHome2NanoC6_IDF/tests/effectlist_test.c -o /tmp/jh2-effectlist
+          /tmp/jh2-effectlist
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/jh2-native-slot-guard
+          /tmp/jh2-native-slot-guard
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/main/native_slot_upload.c JasonHome2NanoC6_IDF/tests/native_slot_upload_test.c -o /tmp/jh2-native-ram-upload
+          /tmp/jh2-native-ram-upload
+
+      - name: Match production build configuration, without publishing
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+
+      - name: Build ESP-IDF 5.5.1 ESP32-C6 app only
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+
+      - name: Enforce factory updater size and identity, compare production
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os
+          image=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin').read_bytes()
+          current_production=2546624 # Published 1.1.62 runtime asset in bytes
+          minimum=0x120000
+          maximum=0x290000
+          assert image[:1]==b'\xe9', 'not an ESP firmware image'
+          assert minimum<len(image)<=maximum, f'not accepted by permanent factory updater: {len(image)}'
+          assert b'jason-home-2-nanoc6-runtime-v1' in image, 'factory updater product marker missing'
+          assert b'1.1.62-final-ota' in image, 'production runtime identity missing'
+          assert len(image)<current_production, 'no firmware size reduction'
+          saved=current_production-len(image)
+          pct=100*saved/current_production
+          report=(f'Baseline v1.1.62: {current_production:,} bytes\n'
+                  f'Optimized build: {len(image):,} bytes\n'
+                  f'Saved: {saved:,} bytes ({pct:.2f}%)\n'
+                  f'Factory OTA minimum: {minimum:,} bytes\n'
+                  f'App partition maximum: {maximum:,} bytes\n'
+                  f'SHA-256: {hashlib.sha256(image).hexdigest()}\n'
+                  f'Build-only: NO FLASH, NO OTA PUBLISH, NO CURTAIN COMMANDS\n')
+          print(report)
+          Path('jh2-size-audit.txt').write_text(report)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as s:s.write('### JH2 build-only size audit\n\n```\n'+report+'```\n')
+          PY
+
+      - name: Keep candidate app for review (never publish or install)
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-unreleased-size-optimized-runtime
+          path: |
+            JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+            jh2-size-audit.txt
+          retention-days: 7
