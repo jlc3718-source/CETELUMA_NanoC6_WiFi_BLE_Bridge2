@@ -64,7 +64,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.58"
+#define NATIVE_FW_VERSION "1.1.59"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -263,6 +263,39 @@ static cJSON *https_json(const char *path,const char *request_text){
     esp_http_client_cleanup(http);
     free(out.data);
     return result;
+}
+// Small, read-only manufacturer thumbnail tunnel using the existing pinned
+// Oracle TLS CA and Nano bridge credentials. No credentials reach the phone.
+bool jh2_bridge_factory_preview(uint8_t effect,uint8_t **bytes,size_t *length){
+    if(bytes)*bytes=NULL;if(length)*length=0;
+    if(!bytes||!length||effect>87||!jh2_bridge_ready())return false;
+    char url[MAX_ENDPOINT+80];
+    const int n=snprintf(url,sizeof(url),"%s/api/curtain-bridge/preview/%u",
+                         endpoint,(unsigned)effect);
+    if(n<1||(size_t)n>=sizeof(url))return false;
+    http_output out={0};
+    const esp_http_client_config_t cfg={
+        .url=url,.cert_pem=(const char *)tls_roots_pem_start,
+        .event_handler=receive_http,.user_data=&out,
+        .timeout_ms=11000,.buffer_size=2048,.buffer_size_tx=1024,
+    };
+    esp_http_client_handle_t http=esp_http_client_init(&cfg);
+    if(!http)return false;
+    char auth[75];snprintf(auth,sizeof(auth),"Bearer %s",bridge_token);
+    esp_http_client_set_header(http,"Authorization",auth);
+    esp_http_client_set_header(http,"X-JH2-Bridge-Token",bridge_token);
+    esp_http_client_set_method(http,HTTP_METHOD_GET);
+    const esp_err_t rc=esp_http_client_perform(http);
+    const int status=esp_http_client_get_status_code(http);
+    const bool valid=rc==ESP_OK&&status==200&&!out.exceeded&&
+       out.data&&out.len>=64&&out.len<=16000&&
+       memcmp(out.data,"RIFF",4)==0&&memcmp(out.data+8,"WEBP",4)==0;
+    esp_http_client_cleanup(http);
+    if(valid){*bytes=(uint8_t *)out.data;*length=out.len;return true;}
+    free(out.data);
+    ESP_LOGW(TAG,"Factory preview unavailable id=%u status=%d",
+       (unsigned)effect,status);
+    return false;
 }
 bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
                                 char *error,size_t error_size){
