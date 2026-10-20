@@ -1,5 +1,5 @@
 name: Jason Home 2 finite SmolVLM actual pixel calibration
-true:
+'on':
   push:
     branches:
     - codex/jh2-image-model-benchmark-20261019
