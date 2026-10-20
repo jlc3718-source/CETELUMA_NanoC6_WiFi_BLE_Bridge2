@@ -110,6 +110,10 @@ static const char *FIRMWARE_HTML=
 "<section id='playback' style='border:1px solid #355b74;border-radius:12px;padding:15px;margin:18px 0;background:#14273b'>"
 "<h2 style='margin:0 0 6px'>SmartDawn - Now Playing</h2>"
 "<strong id='playTitle'>Checking controller...</strong><p id='playMeta' style='color:#c1d5e5;font-size:14px'>Reading controller BLE notifications</p>"
+"<p id='playPower' style='color:#94e9c4;font-weight:bold'>Power: Unknown</p>"
+"<div style='max-width:190px;min-height:92px;border:1px solid #355b74;border-radius:10px;background:#091625;padding:7px;margin:10px 0;display:grid;place-items:center'>"
+"<img id='playThumb' hidden style='max-width:100%;max-height:135px;object-fit:contain' alt='Original SmartDawn effect sample'>"
+"<span id='playThumbFallback' style='color:#bcd6e8;font-size:13px;text-align:center'>No factory preview</span></div>"
 "<small id='playSource'>Controller-reported, not inferred from last sent command</small></section>"
 "<p>Update online directly from Oracle. No BIN download or file upload required.</p>"
 "<button onclick='checkUpdate()'>Check for updates</button>"
@@ -142,10 +146,30 @@ static const char *FIRMWARE_HTML=
 "async function refreshPlaying(){"
 "const title=document.getElementById('playTitle'),meta=document.getElementById('playMeta'),src=document.getElementById('playSource');"
 "try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('status unavailable');"
-"const d=await r.json(),p=d.controllerPlayback||{},l=d.controllerLastIdentified||{},online=!!d.curtain?.connected;"
-"const known=x=>x.identityReported?(x.cid===15924&&Number.isInteger(x.slot)&&x.slot>=0&&x.slot<55?'E-'+x.slot:'CID '+x.cid+' / slot '+x.slot):null;"
+"const d=await r.json(),p=d.controllerPlayback||{},l=d.controllerLastIdentified||{},pw=d.controllerPower||{},online=!!d.curtain?.connected;"
+"document.getElementById('playPower').textContent='Power: '+(pw.state==='last-reported'?(pw.on?'ON':'OFF'):'Unknown')+(pw.state==='last-reported'?' - SmartDawn reported':'');"
+"const groups=[15193,15194,15195,15196,15197,15198,15199,15200,15201,15202,15203,15204,15205,15206,15207,15208,15209,15210,15211,15212,15213,15214,15215,15216,15217,15218,15219,15220,15221,15222,15224,15225,83494];"
+"const slots=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,33];"
+"const number=x=>{if(!x.identityReported)return null;"
+"if(x.cid===15924&&Number.isInteger(x.slot)&&x.slot>=0&&x.slot<55)return x.slot;"
+"const i=groups.findIndex((v,j)=>v===x.cid&&slots[j]===x.slot);return i>=0?i+55:null;};"
+"const known=x=>{const n=number(x);return n===null?'Custom':'E-'+n;};"
+"const mini=document.getElementById('playThumb'),fallback=document.getElementById('playThumbFallback');"
+"const exact=online&&p.state==='current'&&p.identityReported;"
+"const num=number(exact?p:l),custom=exact&&num===null;"
+"if(pw.state==='last-reported'&&!pw.on){mini.hidden=true;fallback.hidden=false;fallback.textContent='Curtain OFF';}"
+"else if(custom){mini.hidden=true;fallback.hidden=false;fallback.textContent='Custom';}"
+"else if(num===null){mini.hidden=true;fallback.hidden=false;fallback.textContent='No identified factory effect';}"
+"else {fallback.hidden=false;fallback.textContent='E-'+num+' - preview requires Oracle access';"
+"const sources=window.JH2_CURTAIN_IMAGE_SRC||{},saved=sources[String(num)];"
+"if(saved){mini.hidden=false;mini.style.opacity=exact?'1':'.6';mini.src=saved;fallback.hidden=true;}"
+"else{mini.hidden=true;const shard=String(Math.floor(num/8)).padStart(2,'0');"
+"if(window.jh2ThumbShard!==shard){window.jh2ThumbShard=shard;"
+"const sc=document.createElement('script');"
+"sc.src='https://150.136.245.51/jason-home-2/curtain_real_'+shard+'.js?v=real-captured-20261011';"
+"sc.onload=()=>refreshPlaying();sc.onerror=()=>{fallback.textContent='E-'+num+' - open Jason Home 2 for preview';};document.head.appendChild(sc);}}}"
 "const last=known(l),recent=l.ageMs!=null?Math.round(l.ageMs/1000)+'s ago':'unknown age';"
-"if(online&&p.state==='current'&&p.identityReported){title.textContent=known(p)||p.title||'Effect';"
+"if(online&&p.state==='current'&&p.identityReported){title.textContent=known(p);"
 "meta.textContent='Controller-reported CID '+p.cid+' / slot '+p.slot+(p.totalFrames>0?' | frame '+(p.currentFrame||0)+'/'+p.totalFrames:'');"
 "src.textContent='Confirmed by BLE telemetry; physical LEDs not directly observed';}"
 "else if(online&&p.state==='current'){title.textContent='Mode: '+(p.mode||'Unknown');"
@@ -180,7 +204,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.56-now-playing");
+    cJSON_AddStringToObject(o,"version","1.1.57-power-preview");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -188,7 +212,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.56-now-playing");
+    cJSON_AddStringToObject(o,"version","1.1.57-power-preview");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
