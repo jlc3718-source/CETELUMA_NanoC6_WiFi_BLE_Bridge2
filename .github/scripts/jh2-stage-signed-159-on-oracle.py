@@ -19,7 +19,7 @@ assert manifest["schema"]==1 and manifest["signature"] and manifest["payload"]
 fields=dict(line.split("=",1) for line in manifest["payload"].strip().splitlines())
 assert fields["product"]=="jason-home-2-nanoc6"
 assert fields["version"]==version
-assert fields["commit"]=="6abadb829b7d1da9b94bd706de5f25705e66ee02"
+assert fields["commit"]=="3484882a0f8961f82c2e087f8ad0857cf3080bdf"
 assert fields["url"]==f"https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v{version}/jh2-runtime-{version}.bin"
 fw=binary.read_bytes()
 assert len(fw)==int(fields["bytes"]) and len(fw)>0x120000 and fw[:1]==b"\xe9"
