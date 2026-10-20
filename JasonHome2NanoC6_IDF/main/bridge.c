@@ -267,7 +267,8 @@ static cJSON *https_json(const char *path,const char *request_text){
 // Small, read-only manufacturer thumbnail tunnel using the existing pinned
 // Oracle TLS CA and Nano bridge credentials. No credentials reach the phone.
 bool jh2_bridge_factory_preview(uint8_t effect,uint8_t **bytes,size_t *length){
-    if(bytes)*bytes=NULL;if(length)*length=0;
+    if(bytes)*bytes=NULL;
+    if(length)*length=0;
     if(!bytes||!length||effect>87||!jh2_bridge_ready())return false;
     char url[MAX_ENDPOINT+80];
     const int n=snprintf(url,sizeof(url),"%s/api/curtain-bridge/preview/%u",
