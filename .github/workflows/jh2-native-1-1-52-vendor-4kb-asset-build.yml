@@ -1,4 +1,4 @@
-name: JH2 1.1.56 SmartDawn Nano Local GIF Cache and BLE Controls Build
+name: JH2 1.1.57 SmartDawn Nano Local GIF Cache and BLE Controls Build
 on:
   push:
     branches: [codex/jh2-slot-inventory-fix-20261018]
@@ -68,6 +68,8 @@ jobs:
           assert 'jh2_ble_select_target' in main
           assert 'local_probe_post' in web
           assert 'jh2_ble_playback_status(o);' in web
+          assert 'jh2_decode_power(' in main and 'controllerPower' in main
+          assert 'playPower' in web and 'playThumb' in web and 'Custom' in web
           assert 'void jh2_ble_playback_status(cJSON *status)' in main
           assert "SmartDawn - Now Playing" in web
           assert 'nativeDiscoveredDevices' in main
@@ -92,7 +94,7 @@ jobs:
           assert '/api/ble/local' in web
           assert 'nanoReceived' in web
           assert 'notificationDelta' in web
-          assert '1.1.56-now-playing' in web
+          assert '1.1.57-power-preview' in web
           assert 'async function checkUpdate()' in web
           assert 'async function installUpdate()' in web
           assert '/api/firmware/check' in web
@@ -123,8 +125,8 @@ jobs:
           assert 'format_if_mount_failed=false' in web
           assert 'format_if_mount_failed=false' in bridge
           assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE' in bridge
-          assert 'NATIVE_FW_VERSION "1.1.56"' in bridge
-          assert '1.1.56-now-playing' in web
+          assert 'NATIVE_FW_VERSION "1.1.57"' in bridge
+          assert '1.1.57-power-preview' in web
           assert 'nvs_flash_erase(' not in web+bridge+main
           assert 'jh2_slot_validate' in bridge
           assert 'size<4096||size>JH2_NATIVE_RAM_LIMIT' in (a/'asset_stream.c').read_text()
@@ -181,7 +183,7 @@ jobs:
               raise ValueError('runtime is not a valid ESP32-C6 image')
           if b'jason-home-2-nanoc6-runtime-v1' not in app:
               raise ValueError('missing factory-accepted runtime identity')
-          if b'1.1.56-now-playing' not in app or b'/firmware/recovery' not in app:
+          if b'1.1.57-power-preview' not in app or b'/firmware/recovery' not in app:
               raise ValueError('native firmware browser OTA service missing')
           full=bytearray(old)
           full[0x130000:0x3c0000]=b'\xff'*0x290000
@@ -192,12 +194,12 @@ jobs:
               raise ValueError('recovery LittleFS template modified')
           if len(full)!=0x400000 or full[0x130000]!=0xe9:
               raise ValueError('not a valid 0x0 full flash image')
-          fn=root/'JH2-RX16-2M-PHY-1.1.56-FULL-FLASH-0x0.bin'
+          fn=root/'JH2-RX16-2M-PHY-1.1.57-FULL-FLASH-0x0.bin'
           fn.write_bytes(full)
-          ota=root/'JH2-RX16-2M-PHY-1.1.56-RUNTIME-OTA.bin'
+          ota=root/'JH2-RX16-2M-PHY-1.1.57-RUNTIME-OTA.bin'
           ota.write_bytes(app)
           manifest={
-              'product':'Jason Home 2 NanoC6','version':'1.1.56-now-playing',
+              'product':'Jason Home 2 NanoC6','version':'1.1.57-power-preview',
               'commit':os.environ.get('GITHUB_SHA'),'esp_idf':'5.5.1','target':'esp32c6',
               'flash_bytes':len(full),'runtime_offset_hex':'0x130000',
               'factory_offset_hex':'0x10000','storage_offset_hex':'0x3c0000',
@@ -215,12 +217,12 @@ jobs:
           print('FULL_IMAGE_VERIFIED',json.dumps(manifest,indent=2))
           PY
           cat > build-output/README-FIRST.md <<'EOF'
-          # Jason Home 2 NanoC6 RX3 Deferred BLE Catalog + OTA Recovery v1.1.56 (ESP-IDF)
+          # Jason Home 2 NanoC6 RX3 Deferred BLE Catalog + OTA Recovery v1.1.57 (ESP-IDF)
 
           EXPERIMENTAL: CI COMPILED AND PACKAGED; PHYSICAL FUNCTIONALITY NOT YET VERIFIED.
 
-          FULL INSTALL: JH2-RX16-2M-PHY-1.1.56-FULL-FLASH-0x0.bin - exactly 4,194,304 bytes. USB-flash at 0x0.
-          RUNTIME OTA: JH2-RX16-2M-PHY-1.1.56-RUNTIME-OTA.bin - for the local /firmware browser updater only.
+          FULL INSTALL: JH2-RX16-2M-PHY-1.1.57-FULL-FLASH-0x0.bin - exactly 4,194,304 bytes. USB-flash at 0x0.
+          RUNTIME OTA: JH2-RX16-2M-PHY-1.1.57-RUNTIME-OTA.bin - for the local /firmware browser updater only.
 
           IMPORTANT: A complete 0x0 flash overwrites NVS and LittleFS, including your current
           Wi-Fi/Oracle credentials. Back up the chip privately if you need to preserve them.
@@ -230,7 +232,7 @@ jobs:
 
           USB command example (replace COM4):
               python -m pip install --user esptool
-              python -m esptool --chip esp32c6 --port COM4 write-flash 0x0 JH2-RX16-2M-PHY-1.1.56-FULL-FLASH-0x0.bin
+              python -m esptool --chip esp32c6 --port COM4 write-flash 0x0 JH2-RX16-2M-PHY-1.1.57-FULL-FLASH-0x0.bin
 
           Local firmware web:
           http://jason-home-2.local/firmware OR http://192.168.4.1/firmware on Setup AP
@@ -243,16 +245,16 @@ jobs:
           (
             cd build-output
             sha256sum -c SHA256SUMS-NEW.txt
-            test "$(stat -c %s JH2-RX16-2M-PHY-1.1.56-FULL-FLASH-0x0.bin)" -eq 4194304
+            test "$(stat -c %s JH2-RX16-2M-PHY-1.1.57-FULL-FLASH-0x0.bin)" -eq 4194304
           )
           echo "NO_AUTOMATIC_FLASH_NO_ORACLE_PRODUCTION_DEPLOY"
       - name: Upload full-flash and OTA artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: JH2-RX16-2M-PHY-1.1.56-FULL-0x0-AND-OTA
+          name: JH2-RX16-2M-PHY-1.1.57-FULL-0x0-AND-OTA
           path: |
-            build-output/JH2-RX16-2M-PHY-1.1.56-FULL-FLASH-0x0.bin
-            build-output/JH2-RX16-2M-PHY-1.1.56-RUNTIME-OTA.bin
+            build-output/JH2-RX16-2M-PHY-1.1.57-FULL-FLASH-0x0.bin
+            build-output/JH2-RX16-2M-PHY-1.1.57-RUNTIME-OTA.bin
             build-output/README-FIRST.md
             build-output/BUILD-MANIFEST.json
             build-output/SHA256SUMS-NEW.txt
