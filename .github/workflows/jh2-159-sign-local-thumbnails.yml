@@ -16,7 +16,7 @@ jobs:
         run: |
           set -euo pipefail
           for i in {1..120}; do
-            state="$(gh run view 39366218882 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "")')"
+            state="$(gh run view 39366580574 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "")')"
             if [[ "$state" == "completed success" ]]; then echo "SOURCE_BUILD_VALIDATED";exit 0;fi
             if [[ "$state" == "completed "* ]]; then echo "BUILD_UNSUCCESSFUL $state";exit 1;fi
             sleep 7
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: JH2-RX16-2M-PHY-1.1.59-FULL-0x0-AND-OTA
-          run-id: 39366218882
+          run-id: 39366580574
           github-token: '${{ github.token }}'
           path: signed-package
       - name: Validate complete build and ECDSA sign pinned v1.1.59 image
@@ -41,7 +41,7 @@ jobs:
           root=Path('signed-package')
           manifest=json.loads((root/'BUILD-MANIFEST.json').read_text())
           assert manifest['version']=='1.1.59-local-thumbnails'
-          assert manifest['commit']=='6abadb829b7d1da9b94bd706de5f25705e66ee02'
+          assert manifest['commit']=='3484882a0f8961f82c2e087f8ad0857cf3080bdf'
           raw=(root/'jh2-runtime-1.1.59.bin').read_bytes()
           assert 0x120000<len(raw)<=0x290000 and raw[0]==0xe9
           assert b'1.1.59-local-thumbnails' in raw
