@@ -194,7 +194,7 @@ static const char *HEART_UUID_TEXT="02020074-1972-1925-3022-077119514e44";
 static const char *UPLOAD_UUID_TEXT="27923001-2072-1925-3022-077119514e44";
 #define NOTICE_RING_SIZE 48
 #define CATALOG_RX_QUEUE_DEPTH 24
-typedef struct{uint32_t id;uint16_t len;uint8_t b[520];} gatt_notice;
+typedef struct{uint32_t id;uint16_t len;uint32_t received_ms;uint8_t b[520];} gatt_notice;
 static gatt_notice notices[NOTICE_RING_SIZE];
 // The NimBLE GAP callback must never parse protobuf or log a 400-byte
 // catalog frame. The phone sends five responses in ~14 ms, often before
@@ -218,6 +218,7 @@ static void record_notice(const uint8_t *raw,size_t len){
     else ++notice_count;
     notices[idx].id=++notice_number;
     notices[idx].len=(uint16_t)len;
+    notices[idx].received_ms=(uint32_t)(esp_timer_get_time()/1000);
     memcpy(notices[idx].b,raw,len);
     xSemaphoreGive(notice_lock);
 }
@@ -245,6 +246,124 @@ uint32_t jh2_ble_collect_notices(cJSON *array,uint32_t after){
         cursor=item.id;
     }
     return cursor;
+}
+/* SmartDawn PlayProgressNotify (2630) readback. Parses only short
+ * controller-originated notices on the HTTP status task, never on the NimBLE
+ * callback. A mode-only notice never erases the last reported effect identity.
+ * No BLE commands, storage writes, or physical playback claims are made. */
+typedef struct {
+    uint32_t id,received_ms,type,slot,cid,total_frames,current_frame,interval_ms;
+    bool valid,identity,slot_defaulted,has_frames,has_interval;
+    char title[97];
+} jh2_playback_info;
+static jh2_playback_info playback_now={0},playback_identified={0};
+static uint32_t playback_cursor=0;
+static bool jh2_progress_varint(const uint8_t *b,size_t n,size_t *offset,uint32_t *out){
+    uint32_t value=0;
+    for(unsigned shift=0;shift<=28;shift+=7){
+        if(*offset>=n)return false;
+        uint8_t v=b[(*offset)++];
+        if(shift==28 && (v&0xf0))return false;
+        value|=(uint32_t)(v&0x7f)<<shift;
+        if(!(v&0x80)){*out=value;return true;}
+    }
+    return false;
+}
+static bool jh2_decode_progress(const gatt_notice *notice,jh2_playback_info *out){
+    const uint8_t *b=notice->b;size_t n=notice->len;
+    if(n<26||n>520||b[1]!=1||b[2]!=0||b[3]!=0||b[4]!=0xf1||b[5]!=1||
+       (((uint16_t)b[8]<<8)|b[9])!=n-4||
+       (((uint16_t)b[10]<<8)|b[11])!=2630)return false;
+    jh2_playback_info v={.id=notice->id,.received_ms=notice->received_ms};
+    size_t at=24;bool has_type=false,has_slot=false,has_cid=false;
+    while(at<n){
+        uint32_t tag=0;
+        if(!jh2_progress_varint(b,n,&at,&tag)||!tag)return false;
+        uint32_t field=tag>>3,wire=tag&7;
+        if(wire==0){
+            uint32_t x=0;if(!jh2_progress_varint(b,n,&at,&x))return false;
+            switch(field){
+            case 2:v.type=x;has_type=true;break;
+            case 3:v.slot=x;has_slot=true;break;
+            case 4:v.cid=x;has_cid=true;break;
+            case 5:v.total_frames=x;v.has_frames=true;break;
+            case 6:v.current_frame=x;break;
+            case 9:v.interval_ms=x;v.has_interval=true;break;
+            default:break;
+            }
+        }else if(wire==2){
+            uint32_t size=0;
+            if(!jh2_progress_varint(b,n,&at,&size)||size>n-at)return false;
+            if(field==1){
+                size_t count=size<sizeof(v.title)-1?size:sizeof(v.title)-1;
+                memcpy(v.title,b+at,count);v.title[count]=0;
+                for(size_t k=0;k<count;k++)if((unsigned char)v.title[k]<32)v.title[k]=' ';
+            }
+            at+=size;
+        }else if(wire==1){if(n-at<8)return false;at+=8;}
+        else if(wire==5){if(n-at<4)return false;at+=4;}
+        else return false;
+    }
+    if(!has_type||v.type>32|| (has_slot&&v.slot>100000)||
+       (has_cid&&v.cid>0x7fffffff))return false;
+    // Protobuf3 omits zero fields. For known CID-addressed native effects, zero
+    // is a valid slot (E-0), but for doodle/mode-only it is not an identity.
+    v.slot_defaulted=!has_slot&&has_cid&&(v.type==1||v.type==3);
+    v.identity=has_cid&&(has_slot||v.slot_defaulted);
+    v.valid=true;*out=v;return true;
+}
+static void jh2_add_progress(cJSON *parent,const char *name,
+                            const jh2_playback_info *v,bool connected){
+    cJSON *o=cJSON_AddObjectToObject(parent,name);
+    if(!v->valid){cJSON_AddStringToObject(o,"state","unknown");return;}
+    uint32_t age=(uint32_t)(esp_timer_get_time()/1000)-v->received_ms;
+    cJSON_AddStringToObject(o,"state",!connected?"stale":
+       age<30000?"current":"stale");
+    cJSON_AddNumberToObject(o,"ageMs",age);
+    cJSON_AddNumberToObject(o,"noticeId",v->id);
+    cJSON_AddStringToObject(o,"source","controller-ble");
+    cJSON_AddNumberToObject(o,"opcode",2630);
+    cJSON_AddNumberToObject(o,"type",v->type);
+    cJSON_AddStringToObject(o,"mode",v->type==9?"Doodle":v->type==10?"Solid color":"Effect");
+    cJSON_AddBoolToObject(o,"identityReported",v->identity);
+    cJSON_AddBoolToObject(o,"slotDefaulted",v->slot_defaulted);
+    if(v->identity){
+        cJSON_AddNumberToObject(o,"slot",v->slot);
+        cJSON_AddNumberToObject(o,"cid",v->cid);
+    }else{
+        cJSON_AddNullToObject(o,"slot");cJSON_AddNullToObject(o,"cid");
+    }
+    if(v->title[0])cJSON_AddStringToObject(o,"title",v->title);
+    else cJSON_AddNullToObject(o,"title");
+    if(v->has_frames){
+        cJSON_AddNumberToObject(o,"totalFrames",v->total_frames);
+        cJSON_AddNumberToObject(o,"currentFrame",v->current_frame);
+    }
+    if(v->has_interval)cJSON_AddNumberToObject(o,"intervalMs",v->interval_ms);
+}
+void jh2_ble_playback_status(cJSON *status){
+    if(!status)return;
+    // Pull the bounded latest notice ring in producer order. Lock only to copy
+    // one notice; parse outside NimBLE and the mutex.
+    for(unsigned pass=0;pass<NOTICE_RING_SIZE;pass++){
+        gatt_notice sample={0};bool found=false;
+        if(!notice_lock||xSemaphoreTake(notice_lock,pdMS_TO_TICKS(40))!=pdTRUE)break;
+        for(size_t i=0;i<notice_count;i++){
+            const gatt_notice *p=&notices[(notice_head+i)%NOTICE_RING_SIZE];
+            if(p->id>playback_cursor){sample=*p;found=true;break;}
+        }
+        xSemaphoreGive(notice_lock);
+        if(!found)break;
+        playback_cursor=sample.id;
+        jh2_playback_info parsed={0};
+        if(jh2_decode_progress(&sample,&parsed)){
+            playback_now=parsed;
+            if(parsed.identity)playback_identified=parsed;
+        }
+    }
+    bool connected=connection!=BLE_HS_CONN_HANDLE_NONE;
+    jh2_add_progress(status,"controllerPlayback",&playback_now,connected);
+    jh2_add_progress(status,"controllerLastIdentified",&playback_identified,connected);
 }
 uint32_t jh2_ble_notice_cursor(void){
     if(!notice_lock)return 0;
