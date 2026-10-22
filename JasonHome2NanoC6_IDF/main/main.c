@@ -203,6 +203,8 @@ static QueueHandle_t catalog_queue=NULL;
 static volatile uint32_t catalog_enqueued=0,catalog_queue_drops=0;
 static volatile uint32_t catalog_parsed=0,catalog_parse_errors=0,catalog_fragments=0;
 static size_t notice_head=0,notice_count=0;
+// Per-current-BLE-link wire counters: raw GATT receipt, independent of decoding.
+static volatile uint32_t raw_rx_2103=0,raw_rx_2105=0,raw_rx_2630=0;
 static void record_notice(const uint8_t *raw,size_t len){
     if(!raw||len==0||len>sizeof(notices[0].b)){++notice_drops;return;}
     if(len>=24 && raw[1]==1 && raw[2]==0 && raw[3]==0
@@ -536,6 +538,9 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"nativeTarget83929Empty",fresh_matches==0);
 
     cJSON_AddNumberToObject(out,"nativeNotificationsSeen",notification_count);
+    cJSON_AddNumberToObject(out,"nativeRawPower2103Seen",raw_rx_2103);
+    cJSON_AddNumberToObject(out,"nativeRawPower2105Seen",raw_rx_2105);
+    cJSON_AddNumberToObject(out,"nativeRawPlayback2630Seen",raw_rx_2630);
     cJSON_AddNumberToObject(out,"nativeNoticeDrops",notice_drops);
     cJSON_AddNumberToObject(out,"nativeCatalogEnqueued",catalog_enqueued);
     cJSON_AddNumberToObject(out,"nativeCatalogParsed",catalog_parsed);
@@ -801,6 +806,12 @@ static void on_notification(struct os_mbuf *om){
     uint8_t raw[520];
     if(os_mbuf_copydata(om,0,len,raw)!=0){++notice_drops;return;}
     record_notice(raw,len);
+    if(len>=24&&raw[1]==1&&raw[2]==0&&raw[3]==0&&raw[4]==0xf1&&raw[5]==1){
+        const uint16_t op=((uint16_t)raw[10]<<8)|raw[11];
+        if(op==2103)++raw_rx_2103;
+        else if(op==2105)++raw_rx_2105;
+        else if(op==2630)++raw_rx_2630;
+    }
     if(len<24)return;
     if(raw[1]!=1 || raw[2]!=0 || raw[3]!=0){
         ++catalog_fragments;
@@ -899,6 +910,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         memset(catalog_cid,0,sizeof(catalog_cid));
         target_section_at=0;
         catalog_packets=catalog_unique=notification_count=0;
+        raw_rx_2103=raw_rx_2105=raw_rx_2630=0;
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
         conn_updates=0;
