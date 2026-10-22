@@ -1,0 +1,23 @@
+name: JH2 1.1.66 self hosted build capacity check
+on:
+  push:
+    branches: [release/jh2-nano-power-decode-166-20261022]
+    paths: [.github/workflows/jh2-166-oracle-runner-capability.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check whether Oracle can compile same 1.1.66 firmware without hosted runner
+        shell: bash
+        run: |
+          set -e
+          echo "HOST_ARCH=$(uname -m)"
+          if command -v idf.py >/dev/null; then echo "IDF_PATH=$(command -v idf.py)"; else echo "IDF_PATH=NOT_INSTALLED"; fi
+          if command -v riscv32-esp-elf-gcc >/dev/null; then echo "RISCV_COMPILER=YES"; else echo "RISCV_COMPILER=NOT_INSTALLED"; fi
+          if command -v docker >/dev/null; then
+            echo "DOCKER=YES"
+            sudo -n docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -Ei 'espressif|esp-idf' | head -5 || true
+          else echo "DOCKER=NO"; fi
