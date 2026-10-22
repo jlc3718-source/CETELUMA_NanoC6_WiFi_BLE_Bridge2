@@ -1,0 +1,68 @@
+name: JH2 1.1.64 physical BLE ON OFF readback verification
+on:
+  push:
+    branches: [release/jh2-1-1-64-readonly-2104-20261022]
+    paths: [.github/workflows/jh2-164-live-readback-acceptance.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-164-readback-acceptance
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query actual SmartDawn power without altering device state
+        run: |
+          python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          host='http://127.0.0.1:8081'
+          def req(path,cookie='',body=None):
+              data=json.dumps(body).encode() if body is not None else None
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              r=urllib.request.Request(host+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=20) as response:
+                  return json.load(response),response.headers
+          _,headers=req('/api/session',body={'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          assert cookie.startswith('jh2=')
+          s,_=req('/api/curtain/status',cookie)
+          assert s.get('firmware')=='1.1.64' and s.get('online') is True
+          assert (s.get('curtain') or {}).get('connected') is True
+          before=s.get('controllerPower') or {}
+          baseline=int(before.get('noticeId') or 0)
+          print('PRE_PROBE',json.dumps({'fw':s['firmware'],'connected':True,'baselineNoticeId':baseline,'powerState':before.get('state'),'queued':s.get('queued')}),flush=True)
+          for i in range(30):
+              if int(s.get('queued') or 0)==0:break
+              time.sleep(1)
+              s,_=req('/api/curtain/status',cookie)
+          assert int(s.get('queued') or 0)==0,'Device queue did not settle'
+          result,_=req('/api/curtain/power-readback',cookie,{'probe':'running'})
+          assert result.get('requested') is True and int(result.get('commandId') or 0)>0, result
+          cid=int(result['commandId'])
+          print('READ_ONLY_2104_COMMAND',cid,flush=True)
+          status=''
+          for i in range(35):
+              time.sleep(1)
+              command,_=req('/api/curtain/command?id='+str(cid),cookie)
+              obj=command.get('command') or {}
+              status=obj.get('state','')
+              if status in ('applied','failed','expired','superseded'):
+                  print('BLE_GATT_RESULT',json.dumps({'commandId':cid,'state':status,'result':obj.get('result')},sort_keys=True),flush=True)
+                  break
+          assert status=='applied','Read-only opcode did not transmit successfully'
+          for i in range(25):
+              s,_=req('/api/curtain/status',cookie)
+              p=s.get('controllerPower') or {}
+              if p.get('known') is True and int(p.get('noticeId') or 0)>baseline and p.get('state') in ('reported-on','reported-off'):
+                  print('VERIFIED_FRESH_SMARTDAWN_POWER',json.dumps({'state':p.get('state'),'on':p.get('on'),'opcode':p.get('opcode'),'noticeId':p.get('noticeId'),'firmware':s.get('firmware'),'connected':True},sort_keys=True),flush=True)
+                  raise SystemExit(0)
+              time.sleep(1)
+          p=s.get('controllerPower') or {}
+          print('NO_FRESH_REPLY',json.dumps({'state':p.get('state'),'noticeId':p.get('noticeId'),'baseline':baseline,'opcode':p.get('opcode')},sort_keys=True),flush=True)
+          raise RuntimeError('2104 transmitted but did not elicit fresh explicit power state')
+          PY
