@@ -34,7 +34,7 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
     if(!s||!uuid||!b||n>508)return false;
     if(strcmp(uuid,JH2_SLOT_COMMAND_UUID)==0){
         uint16_t op=jh2_slot_command_opcode(b,n);
-        if(op==205||op==167||op==2904){
+        if(op==205||op==167||op==2904||op==2104){
             if(n!=24)return false;
             *error=NULL;return true;
         }
