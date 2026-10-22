@@ -1,0 +1,62 @@
+name: JH2 SmartDawn 1.1.67 end to end APK reopening simulation
+on:
+  push:
+    branches: [release/jh2-nano-status-forward-167-20261022]
+    paths: [.github/workflows/jh2-167-final-app-reopen-acceptance.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-167-final-readback-one-time
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bounded Nano Bluetooth reconnect and fresh 2103 power and playback comparison
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          def api(path,cookie='',body=None):
+              data=json.dumps(body).encode() if body is not None else None
+              headers={'content-type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=20) as r:return json.load(r),r.headers
+          _,h=api('/api/session',body={'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          def read():return api('/api/curtain/status',cookie)[0]
+          s=read();curtain=s.get('curtain') or {}
+          assert s.get('firmware')=='1.1.67' and s.get('online') and curtain.get('connected') and not s.get('relayStreaming')
+          assert int(s.get('queued') or 0)==0,'Busy Nano, no reconnect'
+          b=max(int((s.get('nanoControllerPower') or {}).get('noticeId') or 0),int((s.get('controllerPower') or {}).get('noticeId') or 0))
+          print('PRE_RECONNECT',json.dumps({'fw':s.get('firmware'),'baseline':b,'nano':s.get('nanoControllerPower'),'oracle':s.get('controllerPower')},default=str),flush=True)
+          result,_=api('/api/curtain/power-reconnect',cookie,{})
+          print('RECONNECT',json.dumps(result,sort_keys=True),flush=True)
+          assert result.get('requested') is True,result
+          for i in range(105):
+              time.sleep(1)
+              s=read();nano=s.get('nanoControllerPower') or {};power=s.get('controllerPower') or {}
+              ble=s.get('curtain') or {}
+              newNano=int(nano.get('noticeId') or 0)>b
+              newOracle=int(power.get('noticeId') or 0)>b
+              good=s.get('firmware')=='1.1.67' and s.get('online') is True and ble.get('connected') is True and \
+                   newNano and newOracle and power.get('known') is True and power.get('on')==nano.get('on') and \
+                   nano.get('state')=='last-reported' and nano.get('opcode') in (2103,2105) and power.get('opcode') in (2103,2105)
+              if good:
+                  native=s.get('nanoControllerPlayback') or {}
+                  oracle=s.get('controllerPlayback') or {}
+                  if native.get('identityReported') and oracle.get('identityReported'):
+                      assert native.get('slot')==oracle.get('slot') and native.get('cid')==oracle.get('cid'), 'Effect identity differs'
+                      assert native.get('title')==oracle.get('title'), 'Effect filename differs'
+                  print('JH2_167_APK_REOPEN_STATUS_PASS',json.dumps({'fw':s.get('firmware'),'freshNotice':nano.get('noticeId'),
+                    'power':power.get('on'),'nanoOpcode':nano.get('opcode'),'oracleOpcode':power.get('opcode'),
+                    'nativeEffect':native,'oracleEffect':oracle,'bleConnected':True,
+                    'nativeRaw2103':ble.get('nativeRawPower2103Seen')},sort_keys=True,default=str),flush=True)
+                  raise SystemExit(0)
+              if i%20==0:print('AWAIT_FRESH_2103',json.dumps({'i':i,'native':nano,'oracle':power,'connected':ble.get('connected')},default=str),flush=True)
+          raise RuntimeError('Physical Nano reconnect did not deliver matching fresh 2103/2105 and playback')
+          PY
