@@ -4,7 +4,7 @@ on:
     branches: [release/jh2-nano-direct-status-165-20261022]
     paths:
       - 'JasonHome2NanoC6_IDF/**'
-      - '.github/workflows/jh2-165-signed-readonly-build.yml'
+      - '.github/workflows/jh2-165-signed-direct-status-build.yml'
 permissions: {contents: write, actions: read}
 concurrency:
   group: jh2-production-signed-ota-singleton
