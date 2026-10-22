@@ -1,0 +1,28 @@
+name: SmartDawn 2104 read-only Nano safety regression
+on:
+  push:
+    branches:
+      - release/jh2-1-1-64-readonly-2104-20261022
+  pull_request:
+    branches:
+      - codex/jh2-slot-inventory-fix-20261018
+permissions:
+  contents: read
+jobs:
+  readback-guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and exercise exact Nano packet validator (no device)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O2 \
+             -I JasonHome2NanoC6_IDF/main \
+             JasonHome2NanoC6_IDF/main/native_slot_guard.c \
+             JasonHome2NanoC6_IDF/tests/status_2104_guard_test.c \
+             -o /tmp/status-2104-test
+          /tmp/status-2104-test
+          grep -Fq 'opcode!=2104' JasonHome2NanoC6_IDF/main/native_commands.c
+          echo 'NANO_READONLY_STATUS_OPCODE_GUARD_PASSED'
