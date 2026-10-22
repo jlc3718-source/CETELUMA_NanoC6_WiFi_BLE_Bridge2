@@ -14,6 +14,10 @@ This file is authoritative for the Run Daily project. A Run Daily execution is i
 - Slickdeals Daily Draw
 - Pet freebies and permanent free/near-free pet offers
 
+## PERMANENT REPORTING / PRODUCT EXCLUSIONS — OCTOBER 22, 2026
+- **eBay:** Report ONLY currently active, purchasable listings whose availability is freshly verified. Do not surface sold/completed/ended eBay listings, historical sale prices, or sold comparables; do not use expired listings as shopping recommendations. If a listing cannot be verified as currently for sale, omit it or mark the category unverified, without citing a sold listing.
+- **Govee Curtain Lights Pro:** Remove this exact product completely from all recurring Internet Checks product scans, watchlists, shopping links and reports. This does NOT remove the exact **SmartDawn 40×40 / 1,600-LED curtain light** watch (prioritize current Amazon and eBay listings, new/open-box/used).
+
 ## REQUIRED 2 — Deals / bargains / misprices
 - Mispriced items and obvious pricing errors
 - Unusually cheap tools/equipment
@@ -29,7 +33,7 @@ This file is authoritative for the Run Daily project. A Run Daily execution is i
 
 ## REQUIRED 3 — Standing brands / targets
 - Anker / SOLIX / eufy / soundcore
-- Govee, especially Curtain Light / Curtain Light Pro / high-density animated curtains
+- Govee promotions and lighting bargains, EXCLUDING Govee Curtain Lights Pro from product scans, price watches, shopping recommendations, and daily report mentions unless the user explicitly asks for that model again. Other Govee products remain eligible.
 - Reolink / Wyze / security-camera gear
 - Roborock / Dreame / MOVA / robotic vacuums
 - BLUETTI / Jackery / portable power / solar
