@@ -1,0 +1,19 @@
+name: JH2 1.1.65 Nano direct status guarded install
+on:
+  push:
+    branches: [release/jh2-nano-direct-status-165-20261022]
+    paths: [.github/workflows/jh2-165-dashboard-guarded-install.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production OTA preflight
+        run: python3 -m py_compile .github/scripts/jh2-install-signed-165-on-oracle.py
+      - name: Signed 1.1.65 runtime-only update and physical version verification
+        run: sudo -n python3 .github/scripts/jh2-install-signed-165-on-oracle.py
