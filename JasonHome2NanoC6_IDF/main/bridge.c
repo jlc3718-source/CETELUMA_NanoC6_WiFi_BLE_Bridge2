@@ -700,6 +700,10 @@ static cJSON *sync_document(void){
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
     jh2_ble_status(curtain);
     cJSON_AddBoolToObject(curtain,"sequenceRunning",jh2_native_sequence_running());
+    // Forward the Nano's own read-only power + playback decoder result to
+    // Oracle alongside native GATT notices, so the APK can compare both.
+    // This is passive; no new GATT request, lighting control or BLE reset.
+    jh2_ble_playback_status(status);
     cJSON *notifications=cJSON_AddArrayToObject(body,"notifications");
     (void)jh2_ble_collect_notices(notifications,committed_notice_cursor);
     cJSON *batch=cJSON_AddArrayToObject(body,"acks");
