@@ -1,0 +1,82 @@
+name: JH2 one-time SmartDawn reconnect status acceptance
+on:
+  push:
+    branches: [release/jh2-1-1-64-readonly-2104-20261022]
+    paths: [.github/workflows/jh2-164-reconnect-readback-once.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-curtain-live-ble-status-reconnect-once
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Perform one bounded live BLE reconnect and verify ON OFF state
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(s.split('=',1) for s in info['Config']['Env'] if '=' in s)
+          base='http://127.0.0.1:8081'
+          def api(path,cookie='',body=None):
+              headers={'content-type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  return json.load(response),response.headers
+          _,headers=api('/api/session',body={'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          assert cookie.startswith('jh2=')
+          s,_=api('/api/curtain/status',cookie)
+          assert s['firmware']=='1.1.64' and s['online'] and s['curtain']['connected']
+          assert int(s['queued'])==0 and not s.get('relayStreaming') and not s.get('curtain',{}).get('streaming')
+          power=s.get('controllerPower') or {}
+          oldId=int(power.get('noticeId') or 0)
+          print('BASELINE',json.dumps({'firmware':s['firmware'],'oldNoticeId':oldId,'previousPower':power.get('state')}),flush=True)
+          r,_=api('/api/curtain/power-reconnect',cookie,{})
+          print('RECONNECT_QUEUED',json.dumps(r),flush=True)
+          assert r.get('requested') is True and r.get('scanCommandId')
+          scan=int(r['scanCommandId'])
+          for n in range(30):
+              time.sleep(1)
+              cmd,_=api('/api/curtain/command?id='+str(scan),cookie)
+              state=(cmd.get('command') or {}).get('state','')
+              if state in ('applied','failed','expired','superseded'):
+                  print('SCAN_ACK',state,flush=True)
+                  assert state=='applied'
+                  break
+          else:raise RuntimeError('Nano scan command did not finish')
+          def observe(seconds,label):
+              for i in range(seconds):
+                  st,_=api('/api/curtain/status',cookie)
+                  power=st.get('controllerPower') or {}
+                  if st.get('firmware')=='1.1.64' and st.get('online') and st.get('curtain',{}).get('connected') and power.get('known') is True and int(power.get('noticeId') or 0)>oldId and power.get('state') in ('reported-on','reported-off') and int(power.get('opcode') or 0) in (2103,2105):
+                      print('VERIFIED_FRESH_CONTROLLER_POWER',json.dumps({'phase':label,'on':power.get('on'),'opcode':power.get('opcode'),'noticeId':power.get('noticeId'),'firmware':st['firmware']}),flush=True)
+                      return True
+                  time.sleep(1)
+              return False
+          if observe(24,'reconnect'):raise SystemExit(0)
+          for attempt in range(2):
+              st,_=api('/api/curtain/status',cookie)
+              assert st.get('online') and st.get('curtain',{}).get('connected'),'Nano BLE did not reconnect'
+              cmd,_=api('/api/curtain/power-readback',cookie,{'probe':'handshake'})
+              if cmd.get('pending'):
+                  cid=cmd['commandId']
+              else:
+                  assert cmd.get('requested') is True,cmd
+                  cid=cmd['commandId']
+              for i in range(20):
+                  time.sleep(1)
+                  item,_=api('/api/curtain/command?id='+str(cid),cookie)
+                  state=item.get('command',{}).get('state')
+                  if state in ('applied','failed','expired','superseded'):
+                      print('205_GATT_RESULT',json.dumps({'attempt':attempt+1,'state':state,'transmitted':item.get('command',{}).get('result',{}).get('bleTransmitted')}),flush=True)
+                      break
+              if observe(12,'handshake'+str(attempt+1)):raise SystemExit(0)
+          st,_=api('/api/curtain/status',cookie)
+          print('NO_FRESH_REPLY',json.dumps({'connected':st.get('curtain',{}).get('connected'),'lastNotice':(st.get('controllerPower') or {}).get('noticeId'),'baseline':oldId,'state':(st.get('controllerPower') or {}).get('state')}),flush=True)
+          raise RuntimeError('Physical reconnect and 205 did not elicit fresh 2103 or 2105')
+          PY
