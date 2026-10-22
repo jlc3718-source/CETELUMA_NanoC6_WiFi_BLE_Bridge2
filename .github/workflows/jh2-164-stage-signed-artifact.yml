@@ -1,0 +1,71 @@
+name: JH2 1.1.64 ECDSA-verified Oracle artifact staging
+on:
+  push:
+    branches: [release/jh2-1-1-64-readonly-2104-20261022]
+    paths: [.github/workflows/jh2-164-stage-signed-artifact.yml]
+permissions: {contents: read}
+jobs:
+  stage-artifact:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download immutable signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p signed-package
+          gh release download jason-home-2-nanoc6-v1.1.64 --repo "$GITHUB_REPOSITORY" --pattern 'jh2-runtime-1.1.64.bin' --pattern 'latest.json' --pattern 'release.json' --dir signed-package
+      - name: Verify source image, payload, ECDSA signature and digest
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,subprocess,tempfile
+          root=Path('signed-package')
+          rel=json.loads((root/'release.json').read_text())
+          m=json.loads((root/'latest.json').read_text())
+          assert rel['product']=='jason-home-2-nanoc6' and rel['version']=='1.1.64'
+          lines=dict(x.split('=',1) for x in m['payload'].strip().splitlines())
+          assert lines['product']=='jason-home-2-nanoc6' and lines['version']=='1.1.64'
+          assert lines['commit']==rel['commit']
+          assert lines['url'].endswith('/jason-home-2-nanoc6-v1.1.64/jh2-runtime-1.1.64.bin')
+          b=(root/'jh2-runtime-1.1.64.bin').read_bytes()
+          sha=hashlib.sha256(b).hexdigest()
+          assert b[:1]==b'\xe9' and len(b)>0x120000
+          assert len(b)==int(lines['bytes'])
+          assert sha==lines['sha256']==rel['files']['jh2-runtime-1.1.64.bin']['sha256']
+          with tempfile.TemporaryDirectory() as d:
+              t=Path(d)
+              (t/'payload').write_text(m['payload'])
+              (t/'sig').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem','-signature',str(t/'sig'),str(t/'payload')],check=True)
+          print('JH2_164_SIGNED_RELEASE_VERIFIED',len(b),sha)
+          PY
+      - name: Stage only immutable signed bytes into existing Oracle data mount
+        run: |
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import json,subprocess,shutil,hashlib,os
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mounts=[x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind']
+          assert len(mounts)==1
+          root=Path(mounts[0]['Source'])/'signed-ota'
+          dest=root/'1.1.64'
+          pkg=Path(os.environ['GITHUB_WORKSPACE'])/'signed-package'
+          files=['jh2-runtime-1.1.64.bin','latest.json','release.json']
+          root.mkdir(parents=True,exist_ok=True)
+          if dest.exists():
+              assert all((dest/f).read_bytes()==(pkg/f).read_bytes() for f in files)
+              print('ALREADY_STAGED_IDENTICAL_164')
+          else:
+              temp=root/'1.1.64.staging'
+              assert not temp.exists()
+              temp.mkdir()
+              try:
+                  for f in files:shutil.copy2(pkg/f,temp/f)
+                  temp.rename(dest)
+              except BaseException:
+                  shutil.rmtree(temp)
+                  raise
+              print('SIGNED_164_ARTIFACT_STAGED_ONLY_NO_SERVER_PATCH_NO_OTA')
+          PY
