@@ -53,7 +53,7 @@ static const char *HOME_HTML=
 "olor:#7be4b6}.bad{color:#ffbaac}\n.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}\nbutton,a.action{border:1px solid #48718a;border-radius:12px;padding:14px 10"
 "px;background:#1d4d65;color:white;font:inherit;text-align:center;text-decoration:none;cursor:pointer}\nbutton:disabled{opacity:.45;cursor:not-allowed}\nbutton.primary{backg"
 "round:#0d756b;border-color:#0c8d80}\na.action{display:block;margin-top:10px}#bleResult,#result,#updateResult{min-height:23px;font-size:.91rem}\n</style></head><body>\n<h1>Ja"
-"son Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<section class=\"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">"
+"son Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<a class=\\\"action\\\" href=\\\"/status\\\">View Nano Live Status</a>\n<section class=\"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">"
 "Checking...</strong></div>\n<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Checking...</strong></div>\n<div class=\"actions\"><button id=\"bleConnect\" class=\"prima"
 "ry\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button>"
 "</div>\n<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" on"
@@ -79,6 +79,78 @@ static const char *HOME_HTML=
 ".disabled=true;$('updateResult').textContent='Starting verified OTA...';\n  try{\n    const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();\n    if("
 "!r.ok||!d.ok)throw Error(d.message||'OTA request failed');\n    $('updateResult').textContent='Update queued. Nano will restart into verified updater.';\n  }catch(e){$('upd"
 "ateResult').textContent=e.message}\n}\n\nasync function setAutoUpdate(enabled){\n  try{const r=await fetch('/api/firmware/auto',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'enabled='+(enabled?1:0)});\n  const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Save failed');\n  $('updateResult').textContent=enabled?'Automatic signed updates ON':'Automatic signed updates OFF';\n  await refresh();\n  }catch(e){$('updateResult').textContent=e.message;await refresh();}\n}\nrefresh();setInterval(refresh,3500);\n</script></body></html>\n";
+
+// Independent local Nano diagnostic UI; never passes through Oracle.
+static const char *STATUS_HTML =
+"<!doctype html>\n"
+"<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+"<title>Nano C6 - Direct Curtain Status</title>\n"
+"<style>\n"
+":root{color-scheme:dark}*{box-sizing:border-box}body{font:16px system-ui,-apple-system,sans-serif;background:#091624;color:#eef6ff;margin:0 auto;padding:20px;max-width:660px}\n"
+"h1{font-size:1.55rem;margin:0 0 5px}h2{font-size:1rem;margin:0 0 12px;color:#bfd3e8}\n"
+"p{line-height:1.5}.muted{color:#afc3d8}.panel{background:#14273b;border:1px solid #34506d;border-radius:16px;padding:18px;margin:14px 0}\n"
+".big{font-size:1.8rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px;margin:10px 0}.row strong{text-align:right;overflow-wrap:anywhere}\n"
+".good{color:#7be4b6}.bad{color:#ffb2a6}.warn{color:#e4c489}\n"
+"a{color:#7be4b6}small{color:#bdcbd9}code{font-size:.85rem}button{font:inherit;border:1px solid #4b7a91;border-radius:10px;padding:10px 15px;background:#1b4761;color:white;cursor:pointer}\n"
+"</style></head><body>\n"
+"<h1>Nano C6 - Live Curtain Status</h1>\n"
+"<p class=\"muted\">Direct Nano Wi-Fi to Bluetooth data. This page does not contact Oracle or send lighting commands.</p>\n"
+"<div class=\"panel\"><h2>Actual power report</h2><div id=\"power\" class=\"big warn\">Checking...</div>\n"
+"<div id=\"powerDetail\" class=\"muted\">Waiting for controller data</div></div>\n"
+"<div class=\"panel\"><h2>What the curtain is displaying</h2><div id=\"effect\" class=\"big\">Checking...</div>\n"
+"<p id=\"effectDetail\" class=\"muted\"></p><div class=\"row\"><span>Last identified</span><strong id=\"lastEffect\">Unknown</strong></div></div>\n"
+"<div class=\"panel\"><h2>Bluetooth diagnostics</h2>\n"
+"<div class=\"row\"><span>Connection</span><strong id=\"ble\">Checking...</strong></div>\n"
+"<div class=\"row\"><span>Firmware</span><strong id=\"firmware\">...</strong></div>\n"
+"<div class=\"row\"><span>Power opcode 2103 received</span><strong id=\"rx2103\">...</strong></div>\n"
+"<div class=\"row\"><span>Power opcode 2105 received</span><strong id=\"rx2105\">...</strong></div>\n"
+"<div class=\"row\"><span>Playback opcode 2630 received</span><strong id=\"rx2630\">...</strong></div>\n"
+"<div class=\"row\"><span>Other notifications received</span><strong id=\"total\">...</strong></div>\n"
+"<div class=\"row\"><span>Notification drops</span><strong id=\"drops\">...</strong></div>\n"
+"<div class=\"row\"><span>Last checked</span><strong id=\"checked\">...</strong></div></div>\n"
+"<p><button type=\"button\" onclick=\"refresh()\">Refresh now</button> &nbsp; <a href=\"/\">Nano controls</a> &nbsp; <a href=\"/api/status\">Raw JSON</a></p>\n"
+"<p class=\"muted\"><small>Auto-refreshes every 3 seconds. Counts apply to the current Nano Bluetooth session. UNKNOWN means there is no fresh controller confirmation; it does not mean OFF. This page is available on the local Wi-Fi network only if the router keeps Nano port 80 private.</small></p>\n"
+"<script>\n"
+"'use strict';\n"
+"const el=id=>document.getElementById(id);\n"
+"const set=(id,value)=>{el(id).textContent=String(value)};\n"
+"const age=value=>Number.isFinite(Number(value))&&Number(value)>=0?Math.round(Number(value)/1000)+'s ago':'age unknown';\n"
+"function labelEffect(p){\n"
+" if(!p||p.state==='unknown')return 'Not reported';\n"
+" const kind=p.mode||'Effect',title=p.title||'';\n"
+" const slot=Number.isInteger(p.slot)?'slot '+p.slot:'';\n"
+" const cid=Number.isInteger(p.cid)?'CID '+p.cid:'';\n"
+" return [title||kind,slot,cid].filter(Boolean).join(' / ');\n"
+"}\n"
+"let busy=false;\n"
+"async function refresh(){\n"
+" if(busy)return;busy=true;\n"
+" try{\n"
+"  const res=await fetch('/api/status',{cache:'no-store'});\n"
+"  if(!res.ok)throw Error('HTTP '+res.status);\n"
+"  const d=await res.json(),c=d.curtain||{},p=d.controllerPower||{},x=d.controllerPlayback||{},last=d.controllerLastIdentified||{};\n"
+"  const connected=c.connected===true;\n"
+"  set('firmware',d.version||'Unknown');set('ble',connected?'Connected':c.nativeReconnectPaused?'Disconnected (paused)':'Disconnected / searching');\n"
+"  el('ble').className=connected?'good':'bad';\n"
+"  const seconds=Number(p.ageMs);\n"
+"  const fresh=connected&&typeof p.on==='boolean'&&Number.isFinite(seconds)&&seconds>=0&&seconds<=60000&&[2103,2105].includes(Number(p.opcode));\n"
+"  set('power',fresh?(p.on?'ON - CONFIRMED':'OFF - CONFIRMED'):'UNKNOWN / STALE');\n"
+"  el('power').className='big '+(fresh?'good':'warn');\n"
+"  set('powerDetail',typeof p.on==='boolean'?'Last real report: '+(p.on?'ON':'OFF')+', opcode '+p.opcode+', '+age(p.ageMs)+(fresh?'':' (not current)'):'No 2103/2105 power report received in this session');\n"
+"  const current=connected&&x.state==='current'&&Number(x.ageMs)<=30000;\n"
+"  set('effect',current?labelEffect(x):'Current display not verified');\n"
+"  set('effectDetail',x.noticeId?'Last playback notification: '+age(x.ageMs)+', type '+(x.type??'unknown')+(current?' (recent)':' (stale)'):'No playback notification yet');\n"
+"  set('lastEffect',last.noticeId?labelEffect(last)+' ('+age(last.ageMs)+')':'Unknown');\n"
+"  set('rx2103',c.nativeRawPower2103Seen??'N/A');set('rx2105',c.nativeRawPower2105Seen??'N/A');\n"
+"  set('rx2630',c.nativeRawPlayback2630Seen??'N/A');\n"
+"  set('total',c.nativeNotificationsSeen??'N/A');set('drops',c.nativeNoticeDrops??'N/A');\n"
+"  set('checked',new Date().toLocaleTimeString());\n"
+" }catch(e){set('power','NANO NOT REACHABLE');el('power').className='big bad';set('powerDetail',String(e.message||e));set('ble','Unavailable');set('checked',new Date().toLocaleTimeString())}\n"
+" finally{busy=false}\n"
+"}\n"
+"refresh();setInterval(refresh,3000);\n"
+"</script></body></html>\n"
+;
 
 static const char *SETUP_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -181,7 +253,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.64-readonly-2104");
+    cJSON_AddStringToObject(o,"version","1.1.65-direct-status");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -250,7 +322,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.64-readonly-2104");
+    cJSON_AddStringToObject(o,"version","1.1.65-direct-status");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -436,7 +508,8 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
-    const char *page=firmware?FIRMWARE_HTML:
+    const bool status_page=strcmp(r->uri,"/status")==0;
+    const char *page=status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
         (explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML);
     httpd_resp_set_type(r,"text/html; charset=utf-8");
     httpd_resp_set_hdr(r,"Cache-Control","no-store");
@@ -765,6 +838,7 @@ bool jh2_web_start(void){
         {.uri="/jason-home-2/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/jason-home-2/recovery",.method=HTTP_GET,.handler=html_get},
         {.uri="/api/factory-preview",.method=HTTP_GET,.handler=factory_preview_get},
+        {.uri="/status",.method=HTTP_GET,.handler=html_get},
         {.uri="/api/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/curtain/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/health",.method=HTTP_GET,.handler=health_get},
