@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Query actual SmartDawn power without altering device state
         run: |
-          python3 - <<'PY'
+          sudo -n python3 - <<'PY'
           import json,subprocess,urllib.request,time
           info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
           env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
