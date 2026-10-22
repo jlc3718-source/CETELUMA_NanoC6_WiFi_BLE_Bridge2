@@ -1,0 +1,72 @@
+name: JH2 Nano 1.1.66 verified artifact staging retry
+on:
+  push:
+    branches: [release/jh2-nano-power-decode-166-20261022]
+    paths: [.github/workflows/jh2-166-stage-signed-power.yml]
+permissions: {contents: read, actions: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39815275840
+          github-token: ${{ github.token }}
+          name: JH2-1.1.66-FINAL-SIGNED-OTA
+          path: signed-package
+      - name: Validate ECDSA signature and image digest
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,subprocess,tempfile
+          d=Path('signed-package')
+          m=json.loads((d/'latest.json').read_text())
+          meta=json.loads((d/'release.json').read_text())
+          fields=dict(x.split('=',1) for x in m['payload'].strip().splitlines())
+          image=(d/'jh2-runtime-1.1.66.bin').read_bytes()
+          checksum=hashlib.sha256(image).hexdigest()
+          assert fields['version']==meta['version']=='1.1.66'
+          assert fields['commit']==meta['commit']
+          assert checksum==fields['sha256']==meta['files']['jh2-runtime-1.1.66.bin']['sha256']
+          assert len(image)==int(fields['bytes'])
+          with tempfile.TemporaryDirectory() as root:
+              p=Path(root)
+              (p/'payload').write_text(m['payload'])
+              (p/'sig').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem','-signature',str(p/'sig'),str(p/'payload')],check=True)
+          print('SIGNED_166_VERIFIED',len(image),checksum)
+          PY
+      - name: Copy only signed assets into dedicated Oracle persistent volume
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          from pathlib import Path
+          import json,os,subprocess,shutil
+          pkg=Path(os.environ['GITHUB_WORKSPACE'])/'signed-package'
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          base=Path(mount['Source'])/'signed-ota'
+          target=base/'1.1.66'
+          files=['jh2-runtime-1.1.66.bin','latest.json','release.json']
+          base.mkdir(parents=True,exist_ok=True)
+          if target.exists():
+              assert all((target/f).read_bytes()==(pkg/f).read_bytes() for f in files)
+              print('SIGNED_166_ASSETS_ALREADY_STAGED')
+          else:
+              temp=base/'1.1.66.staging'
+              assert not temp.exists()
+              temp.mkdir()
+              try:
+                  for f in files:shutil.copy2(pkg/f,temp/f)
+                  temp.rename(target)
+              except:
+                  shutil.rmtree(temp)
+                  raise
+              print('SIGNED_166_ASSETS_STAGED; NO OTA SENT')
+          PY
