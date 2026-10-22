@@ -1,0 +1,60 @@
+name: JH2 SmartDawn 2103 decode-only packet forensics
+on:
+  push:
+    branches: [release/jh2-nano-direct-status-165-20261022]
+    paths: [.github/workflows/jh2-165-2103-field-forensics.yml]
+permissions: {contents: read}
+jobs:
+  decode:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode field metadata from retained 2103 packets, do not write hardware
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,base64
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          root='http://127.0.0.1:8081'
+          payload=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode()
+          request=urllib.request.Request(root+'/api/session',data=payload,headers={'content-type':'application/json'},method='POST')
+          with urllib.request.urlopen(request,timeout=15) as res:cookie=res.headers['Set-Cookie'].split(';')[0]
+          request=urllib.request.Request(root+'/api/curtain/notifications',headers={'cookie':cookie})
+          with urllib.request.urlopen(request,timeout=15) as res:notes=json.load(res)['notifications']
+          def vnum(buf,pos):
+            result=0
+            for n in range(10):
+              if pos>=len(buf):raise ValueError('truncated varint')
+              q=buf[pos];pos+=1
+              result|=(q&127)<<(n*7)
+              if q<128:return result,pos
+            raise ValueError('varint too long')
+          for row in notes:
+            b=base64.b64decode(row['data'])
+            if len(b)<24 or int.from_bytes(b[10:12],'big')!=2103:continue
+            summary={'noticeId':row['id'],'len':len(b),'prefixBytes':b[:24].hex(),'headerTotal':int.from_bytes(b[8:10],'big'),'bodyLen':len(b)-24,'bodyFirst16':b[24:40].hex(),'fields':[]}
+            j=24
+            try:
+              while j<len(b):
+                tag,j=vnum(b,j)
+                field=tag>>3;wire=tag&7
+                if wire==0:
+                  value,j=vnum(b,j)
+                  summary['fields'].append({'field':field,'wire':wire,'value':value})
+                elif wire==2:
+                  size,j=vnum(b,j)
+                  summary['fields'].append({'field':field,'wire':wire,'length':size})
+                  if size>len(b)-j:raise ValueError('exceeds end')
+                  j+=size
+                elif wire==1:
+                  summary['fields'].append({'field':field,'wire':wire})
+                  j+=8
+                elif wire==5:
+                  summary['fields'].append({'field':field,'wire':wire})
+                  j+=4
+                else:raise ValueError('unexpected wire '+str(wire))
+              summary['parsedOk']=j==len(b)
+            except Exception as e:summary['parseError']=str(e);summary['offset']=j
+            print('SMARTDAWN_2103_STRUCT',json.dumps(summary,sort_keys=True))
+          PY
