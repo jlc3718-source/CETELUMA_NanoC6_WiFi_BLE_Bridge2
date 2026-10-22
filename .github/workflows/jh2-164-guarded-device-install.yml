@@ -1,0 +1,20 @@
+name: JH2 1.1.64 guarded physical Nano OTA
+on:
+  push:
+    branches: [release/jh2-1-1-64-readonly-2104-20261022]
+    paths: [.github/workflows/jh2-164-guarded-device-install.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  install:
+    name: Verify signed image, install on idle Nano, confirm 1.1.64 physical heartbeat
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check safety-gated install script
+        run: python3 -m py_compile .github/scripts/jh2-install-signed-164-on-oracle.py
+      - name: Install exactly signed 1.1.64 without erasing factory or NVS
+        run: sudo -n --preserve-env=GITHUB_SHA python3 .github/scripts/jh2-install-signed-164-on-oracle.py
