@@ -1,0 +1,27 @@
+name: SmartDawn 2104 ESP-IDF build only
+on:
+  push:
+    branches:
+      - codex/jh2-smartdawn-power-read-2104-20261021
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-compile Nano source with read-only 2104
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Validate generated build artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          echo BUILD_ONLY_NO_FLASH_NO_OTA

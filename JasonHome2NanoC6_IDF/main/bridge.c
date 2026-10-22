@@ -381,7 +381,7 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     if(current<=last_command)return;
 #if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
     // Stage-1 field acceptance: Oracle provides diagnostics and read-only
-    // 205/167/2904 ONLY. Queued old visual, OTA, upload, or schedule actions
+    // 205/167/2904/2104 ONLY. Queued old visual, OTA, upload, or schedule actions
     // must not mutate the curtain during inventory recovery.
     if(strcmp(action->valuestring,"rawWrite")!=0 &&
        strcmp(action->valuestring,"status")!=0 &&
