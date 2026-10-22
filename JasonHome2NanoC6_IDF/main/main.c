@@ -378,7 +378,9 @@ static bool jh2_decode_power(const gatt_notice *notice,jh2_power_info *out){
   if(wire==0){
    uint64_t val=0;if(!jh2_power_varint64(b,n,&at,&val))return false;
    if((opcode==2105&&field==1)||(opcode==2103&&field==7)){
-    if(val>255)return false;power=(uint32_t)val;found=true;
+    if(val>255)return false;
+    power=(uint32_t)val;
+    found=true;
    }
    if(opcode==2103){
     if(field==8)width=val;
