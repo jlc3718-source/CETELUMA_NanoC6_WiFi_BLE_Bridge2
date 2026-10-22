@@ -10,7 +10,7 @@ concurrency:
 jobs:
   stage:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -69,4 +69,60 @@ jobs:
                   shutil.rmtree(temp)
                   raise
               print('SIGNED_166_ASSETS_STAGED; NO OTA SENT')
+          PY
+      - name: Install and verify physical Nano signed 1.1.66 without repeating an automatic OTA
+        run: |
+          sudo -n python3 .github/scripts/jh2-install-signed-166-on-oracle.py
+      - name: Verify fresh SmartDawn 2103 power is identical in Nano and Oracle
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(e.split('=',1) for e in info['Config']['Env'] if '=' in e)
+          base='http://127.0.0.1:8081'
+          def api(path,cookie='',body=None):
+              data=json.dumps(body).encode() if body is not None else None
+              headers={'content-type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=20) as response:return json.load(response),response.headers
+          _,headers=api('/api/session',body={'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          assert cookie.startswith('jh2=')
+          def read():
+              st,_=api('/api/curtain/status',cookie)
+              return st
+          def valid(st):
+              n=st.get('nanoControllerPower') or {}
+              p=st.get('controllerPower') or {}
+              raw=st.get('curtain') or {}
+              return st.get('firmware')=='1.1.66' and st.get('online') is True and raw.get('connected') is True and \
+                  isinstance(n.get('on'),bool) and n.get('opcode') in (2103,2105) and n.get('state')=='last-reported' and 0<=float(n.get('ageMs') or 1e9)<=60000 and \
+                  p.get('known') is True and isinstance(p.get('on'),bool) and p.get('on')==n.get('on') and p.get('opcode') in (2103,2105)
+          def check(seconds):
+              for i in range(seconds):
+                  st=read()
+                  if valid(st):
+                      print('END_TO_END_NANO_ORACLE_POWER_VERIFIED',json.dumps({
+                        'firmware':st['firmware'],'power':st['controllerPower'].get('on'),
+                        'nanoOpcode':st['nanoControllerPower'].get('opcode'),'oracleOpcode':st['controllerPower'].get('opcode'),
+                        'nativePowerId':st['nanoControllerPower'].get('noticeId'),'oracleNoticeId':st['controllerPower'].get('noticeId'),
+                        'raw2103':st['curtain'].get('nativeRawPower2103Seen'),
+                        'nativePlayback':st.get('nanoControllerPlayback'),'oraclePlayback':st.get('controllerPlayback'),
+                        'connected':True},sort_keys=True,default=str),flush=True)
+                      return True
+                  if i%10==0:print('WAITING_FOR_FRESH_POWER',json.dumps({
+                    'version':st.get('firmware'),'native':st.get('nanoControllerPower'),'oracle':st.get('controllerPower'),
+                    'raw2103':(st.get('curtain') or {}).get('nativeRawPower2103Seen')},sort_keys=True,default=str),flush=True)
+                  time.sleep(1)
+              return False
+          if check(35):raise SystemExit(0)
+          st=read()
+          if int(st.get('queued') or 0)>0 or not st.get('curtain',{}).get('connected'):
+              raise RuntimeError('Nano busy or BLE offline; no reconnect sent')
+          result,_=api('/api/curtain/power-reconnect',cookie,{})
+          print('BOUNDED_STATUS_RECONNECT',json.dumps(result,sort_keys=True),flush=True)
+          if not result.get('requested'):raise RuntimeError('Cannot safely request fresh controller power: '+str(result.get('reason')))
+          if check(80):raise SystemExit(0)
+          raise RuntimeError('Read-only SmartDawn 2103 still not confirmed by both Nano and Oracle')
           PY
