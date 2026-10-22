@@ -344,30 +344,66 @@ static void jh2_add_progress(cJSON *parent,const char *name,
     if(v->has_interval)cJSON_AddNumberToObject(o,"intervalMs",v->interval_ms);
 }
 /* SmartDawn vendor p2p.proto power: 2103 DeviceInfoNotify field 7,
- * 2105 SimpleMessage.i1 (0=off, nonzero=on). Passive and read-only. */
+ * 2105 SimpleMessage.i1 (0=off, nonzero=on). Passive and read-only.
+ * The valid 40x40 DeviceInfoNotify has an unrelated negative int64 in field
+ * 22, encoded as a ten-byte unsigned varint. A uint32 decoder rejects the
+ * entire notification and loses the power state. Decode wire uint64 here;
+ * keep playback's existing uint32 parser unchanged. */
 typedef struct{uint32_t id,received_ms,opcode;bool valid,on;} jh2_power_info;
 static jh2_power_info current_power={0};
+static bool jh2_power_varint64(const uint8_t *b,size_t n,size_t *pos,uint64_t *out){
+ uint64_t value=0;
+ for(unsigned k=0;k<10;k++){
+  if(*pos>=n)return false;
+  const uint8_t part=b[(*pos)++];
+  if(k==9 && (part&0xfe)!=0)return false; // reject uint64 overflow
+  value|=((uint64_t)(part&0x7f))<<(7*k);
+  if((part&0x80)==0){*out=value;return true;}
+ }
+ return false;
+}
 static bool jh2_decode_power(const gatt_notice *notice,jh2_power_info *out){
+ if(!notice||!out)return false;
  const uint8_t *b=notice->b;const size_t n=notice->len;
  if(n<24||n>520||b[1]!=1||b[2]!=0||b[3]!=0||b[4]!=0xf1||b[5]!=1||
     (((uint16_t)b[8]<<8)|b[9])!=n-4)return false;
  const uint32_t opcode=((uint32_t)b[10]<<8)|b[11];
  if(opcode!=2103&&opcode!=2105)return false;
- size_t at=24;bool found=false;uint32_t power=0;
+ size_t at=24;bool found=false,identity=false;
+ uint32_t power=0;uint64_t width=0,height=0,raw_width=0,raw_height=0;
  while(at<n){
-  uint32_t tag=0;
-  if(!jh2_progress_varint(b,n,&at,&tag)||!tag)return false;
-  uint32_t field=tag>>3,wire=tag&7;
-  if(wire==0){uint32_t val=0;if(!jh2_progress_varint(b,n,&at,&val))return false;
-   if((opcode==2105&&field==1)||(opcode==2103&&field==7)){power=val;found=true;}
-  }else if(wire==2){uint32_t size=0;if(!jh2_progress_varint(b,n,&at,&size)||size>n-at)return false;at+=size;}
-  else if(wire==1){if(n-at<8)return false;at+=8;}
-  else if(wire==5){if(n-at<4)return false;at+=4;}
-  else return false;
+  uint64_t tag=0;
+  if(!jh2_power_varint64(b,n,&at,&tag)||tag==0||tag>UINT32_MAX)return false;
+  const uint32_t field=(uint32_t)(tag>>3),wire=(uint32_t)(tag&7);
+  if(wire==0){
+   uint64_t val=0;if(!jh2_power_varint64(b,n,&at,&val))return false;
+   if((opcode==2105&&field==1)||(opcode==2103&&field==7)){
+    if(val>255)return false;power=(uint32_t)val;found=true;
+   }
+   if(opcode==2103){
+    if(field==8)width=val;
+    if(field==9)height=val;
+    if(field==39)raw_width=val;
+    if(field==40)raw_height=val;
+    if(field==2||field==3||field==6||field==33||field==34||field==36)identity=true;
+   }
+  }else if(wire==2){
+   uint64_t size=0;
+   if(!jh2_power_varint64(b,n,&at,&size)||size>(uint64_t)(n-at))return false;
+   if(opcode==2103&&size>0&&(field==4||field==5||field==12||field==29))identity=true;
+   at+=(size_t)size;
+  }else if(wire==1){if(n-at<8)return false;at+=8;}
+   else if(wire==5){if(n-at<4)return false;at+=4;}
+   else return false;
  }
- // The powerstate int32 in a full DeviceInfoNotify defaults to zero in proto3.
- if(opcode==2103&&!found&&n>=40){power=0;found=true;}
- if(!found||power>255)return false;
+ // Proto3 omits scalar field 7 when powerstate=0. Only infer OFF from a
+ // structurally complete 40x40 DeviceInfoNotify; never from 2630 playback,
+ // an arbitrary short fragment, or an unrecognized device.
+ if(opcode==2103&&!found&&identity&&
+    ((width==40&&height==40)||(raw_width==40&&raw_height==40))){
+  power=0;found=true;
+ }
+ if(!found)return false;
  *out=(jh2_power_info){.id=notice->id,.received_ms=notice->received_ms,
   .opcode=opcode,.valid=true,.on=power!=0};return true;
 }
