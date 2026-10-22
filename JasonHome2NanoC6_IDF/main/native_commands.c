@@ -43,7 +43,7 @@ static bool command(uint16_t opcode,const uint8_t *payload,size_t len){
     return jh2_ble_raw_write(CTRL_UUID,bytes,len+24,12000);
 }
 bool jh2_native_read(uint16_t opcode){
-    if(opcode!=205 && opcode!=167 && opcode!=2904)return false;
+    if(opcode!=205 && opcode!=167 && opcode!=2904 && opcode!=2104)return false;
     return command(opcode,NULL,0);
 }
 static bool scalar(uint16_t opcode,uint32_t v){
