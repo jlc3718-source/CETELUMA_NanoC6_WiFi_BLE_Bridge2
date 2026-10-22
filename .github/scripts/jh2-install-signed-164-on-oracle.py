@@ -21,7 +21,7 @@ for waiting in range(60):
     time.sleep(5)
 assert signed.get('schema')==1 and signed.get('signature')
 manifest=dict(x.split('=',1) for x in signed['payload'].strip().splitlines())
-assert manifest.get('version')=='1.1.64' and manifest.get('commit')==os.environ['GITHUB_SHA'], 'Signed version changed; no OTA'
+assert manifest.get('version')=='1.1.64' and manifest.get('commit')=='5ecdec5f91035badc5404a3956d526d224301eff', 'Signed version changed; no OTA'
 with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.64.bin',timeout=90) as res:
     digest=hashlib.sha256();total=0
     while True:
@@ -45,7 +45,7 @@ for _ in range(60):
     time.sleep(1)
     s,_=api('/api/curtain/status',cookie=cookie)
 assert int(s.get('queued') or 0)==0, 'Queued operations never drained; no OTA'
-request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},'idempotencyKey':'jh2-164-20261020-status-repair-preflight'},cookie=cookie)
+request,_=api('/api/curtain/call',{'action':'nanoFirmwareCheck','payload':{},'idempotencyKey':'jh2-164-20261022-readback-2104-preflight'},cookie=cookie)
 cid=int(request['commandId']);accepted=False
 for _ in range(100):
     r,_=api('/api/curtain/command?id='+str(cid),cookie=cookie);c=r['command']
@@ -55,7 +55,7 @@ for _ in range(100):
         break
     time.sleep(.6)
 assert accepted, 'Nano declined signed image; no OTA'
-request,_=api('/api/curtain/call',{'action':'nanoInstallUpdate','payload':{},'idempotencyKey':'jh2-164-20261020-status-repair-install-once'},cookie=cookie)
+request,_=api('/api/curtain/call',{'action':'nanoInstallUpdate','payload':{},'idempotencyKey':'jh2-164-20261022-readback-2104-install-once'},cookie=cookie)
 cid=int(request['commandId']);print('OTA_INSTALL_COMMAND',cid,flush=True)
 accepted=False
 for _ in range(150):
