@@ -1,0 +1,50 @@
+name: JH2 Nano direct status diagnostic acceptance
+on:
+  push:
+    branches: [release/jh2-nano-direct-status-165-20261022]
+    paths: [.github/workflows/jh2-165-direct-status-acceptance.yml]
+permissions: {contents: read}
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare Nano-originated power/playback status with Oracle
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,base64,collections
+          meta=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in meta['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          data=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode()
+          req=urllib.request.Request(base+'/api/session',data=data,headers={'content-type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=20) as r:cookie=r.headers['Set-Cookie'].split(';')[0]
+          def read(path):
+              with urllib.request.urlopen(urllib.request.Request(base+path,headers={'cookie':cookie}),timeout=20) as response:return json.load(response)
+          st=read('/api/curtain/status')
+          c=st.get('curtain') or {}
+          print('NANO_DIRECT_FIELDS',json.dumps({'firmware':st.get('firmware'),'online':st.get('online'),'bleConnected':c.get('connected'),
+             'raw2103':c.get('nativeRawPower2103Seen'),'raw2105':c.get('nativeRawPower2105Seen'),'raw2630':c.get('nativeRawPlayback2630Seen'),
+             'notificationsSeen':c.get('nativeNotificationsSeen'),'noticeDrops':c.get('nativeNoticeDrops'),'unexpectedHandle':c.get('nativeUnexpectedNotifyCount'),
+             'power':st.get('controllerPower'),'playback':st.get('controllerPlayback'),'lastIdentified':st.get('controllerLastIdentified')},sort_keys=True,default=str))
+          notes=read('/api/curtain/notifications').get('notifications') or []
+          counted=collections.Counter()
+          brief=[]
+          for row in notes:
+              try:b=base64.b64decode(row.get('data') or '',validate=True)
+              except Exception:continue
+              if len(b)<24:continue
+              op=int.from_bytes(b[10:12],'big')
+              counted[str(op)]+=1
+              if op in (2103,2105):
+                  brief.append({'id':row.get('id'),'opcode':op,'bytes':len(b),'validEnvelope':b[4:6]==b'\\xf1\\x01' and int.from_bytes(b[8:10],'big')==len(b)-4})
+          print('RAW_BLE_OPCODE_COUNTS',json.dumps(dict(counted),sort_keys=True))
+          print('RECENT_NATIVE_POWER_NOTICES',json.dumps(brief[-12:],sort_keys=True))
+          assert st.get('firmware')=='1.1.65' and st.get('online') is True
+          assert c.get('connected') is True
+          assert isinstance(c.get('nativeRawPower2103Seen'),(int,float))
+          assert isinstance(c.get('nativeRawPower2105Seen'),(int,float))
+          assert isinstance(c.get('nativeRawPlayback2630Seen'),(int,float))
+          print('NANO_DIRECT_STATUS_165_FIELDS_VERIFIED')
+          PY
