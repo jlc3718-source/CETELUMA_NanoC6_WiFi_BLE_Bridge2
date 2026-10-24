@@ -1,0 +1,122 @@
+name: JH2 1.1.68 Stage Signed OTA with Verified Rollback
+on:
+  push:
+    branches: [feature/jh2-nano-oracle-launch-settings-20261024]
+    paths: [.github/workflows/jh2-168-stage-with-rollback.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-168-oracle-staging
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain immutable old and new signed releases (no device commands)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for version in 1.1.67 1.1.68; do
+            mkdir -p "firmware-$version"
+            found=0
+            for i in $(seq 1 90); do
+              if gh release view "jason-home-2-nanoc6-v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then found=1;break;fi
+              sleep 5
+            done
+            test "$found" = 1
+            gh release download "jason-home-2-nanoc6-v$version" --repo "$GITHUB_REPOSITORY" \
+              --pattern "jh2-runtime-$version.bin" --pattern latest.json --pattern release.json \
+              --dir "firmware-$version"
+          done
+      - name: Validate both signatures, exact build commit and recovery image
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,subprocess,tempfile
+          for version in ('1.1.67','1.1.68'):
+              d=Path('firmware-'+version)
+              m=json.loads((d/'latest.json').read_text())
+              meta=json.loads((d/'release.json').read_text())
+              f=dict(x.split('=',1) for x in m['payload'].strip().splitlines())
+              b=(d/('jh2-runtime-'+version+'.bin')).read_bytes()
+              assert m['schema']==1 and f['version']==meta['version']==version
+              assert f['product']=='jason-home-2-nanoc6'
+              assert f['commit']==meta['commit']
+              if version=='1.1.68':assert f['commit']=='98b13b72b09eca8566816562fe7b3ffcaba34959'
+              assert f['sha256']==hashlib.sha256(b).hexdigest() and int(f['bytes'])==len(b)
+              assert 0x120000<len(b)<=0x290000 and b[0]==0xe9 and b[12]==13 and b[13]==0
+              assert b'jason-home-2-nanoc6-runtime-v1' in b
+              assert (b'/settings/nano' in b) if version=='1.1.68' else True
+              with tempfile.TemporaryDirectory() as t:
+                  p=Path(t);(p/'payload').write_text(m['payload'])
+                  (p/'sig').write_bytes(base64.b64decode(m['signature'],validate=True))
+                  subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem','-signature',str(p/'sig'),str(p/'payload')],check=True)
+              print('SIGNED_AND_HASH_VERIFIED',version,len(b),f['sha256'],flush=True)
+          PY
+      - name: Verify current Nano and disable automatic update during guarded rollout
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          base='http://127.0.0.1:8081'
+          def api(path,payload=None,cookie=''):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              data=json.dumps(payload).encode() if payload is not None else None
+              req=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data else 'GET')
+              with urllib.request.urlopen(req,timeout=25) as res:return json.load(res),res.headers
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          st,_=api('/api/curtain/status',cookie=cookie)
+          assert st.get('firmware')=='1.1.67' and st.get('online') is True
+          assert int(st.get('queued') or 0)==0 and st.get('relayStreaming') is not True
+          assert (st.get('curtain') or {}).get('connected') is True
+          request,_=api('/api/curtain/call',{'action':'nanoAutoUpdate','payload':{'enabled':False},
+                   'idempotencyKey':'jh2-168-safe-staging-disable-auto-20261024'},cookie)
+          cid=int(request['commandId'])
+          for _ in range(80):
+              state,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+              c=state['command']
+              if c.get('state') in ('applied','failed','expired','superseded'):
+                  assert c['state']=='applied',c
+                  print('AUTO_OTA_TEMPORARILY_DISABLED',cid,flush=True)
+                  break
+              time.sleep(.6)
+          else:raise RuntimeError('Disable-auto was not acknowledged, no staging')
+          PY
+      - name: Preserve legacy backup and stage new signed assets, no install
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          from pathlib import Path
+          import json,os,subprocess,shutil,hashlib
+          workspace=Path(os.environ['GITHUB_WORKSPACE'])
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          base=Path(mount['Source'])/'signed-ota'
+          base.mkdir(parents=True,exist_ok=True)
+          for version in ('1.1.67','1.1.68'):
+              src=workspace/('firmware-'+version)
+              dest=base/version
+              files=['jh2-runtime-'+version+'.bin','latest.json','release.json']
+              if dest.exists():
+                  assert all((dest/f).read_bytes()==(src/f).read_bytes() for f in files),'Existing release conflict '+version
+              else:
+                  tmp=base/(version+'.safe-stage')
+                  assert not tmp.exists()
+                  tmp.mkdir()
+                  try:
+                      for f in files:shutil.copy2(src/f,tmp/f)
+                      tmp.rename(dest)
+                  except:
+                      shutil.rmtree(tmp)
+                      raise
+              assert all((dest/f).read_bytes()==(src/f).read_bytes() for f in files)
+              print('RELEASE_STAGED_AND_PRESERVED',version,flush=True)
+          assert (base/'1.1.67/jh2-runtime-1.1.67.bin').is_file()
+          print('ROLLBACK_BACKUP_PERSISTENT_BOTH_VERSIONS_STAGED_NO_FLASH',flush=True)
+          PY
