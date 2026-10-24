@@ -13,23 +13,21 @@ jobs:
     timeout-minutes: 28
     steps:
       - uses: actions/checkout@v4
-      - name: Obtain immutable old and new signed releases (no device commands)
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Retrieve signed build and rollback backups directly from verified CI run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 40114103378
+          github-token: ${{ github.token }}
+          name: JH2-1.1.68-SIGNED-RELEASE-AND-1.1.67-ROLLBACK
+          path: signed-bundle
+      - name: Materialize immutable signed packages
         run: |
           set -euo pipefail
-          for version in 1.1.67 1.1.68; do
-            mkdir -p "firmware-$version"
-            found=0
-            for i in $(seq 1 90); do
-              if gh release view "jason-home-2-nanoc6-v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then found=1;break;fi
-              sleep 5
-            done
-            test "$found" = 1
-            gh release download "jason-home-2-nanoc6-v$version" --repo "$GITHUB_REPOSITORY" \
-              --pattern "jh2-runtime-$version.bin" --pattern latest.json --pattern release.json \
-              --dir "firmware-$version"
-          done
+          test -s signed-bundle/signed-package/jh2-runtime-1.1.68.bin
+          test -s signed-bundle/backup-167/jh2-runtime-1.1.67.bin
+          mv signed-bundle/signed-package firmware-1.1.68
+          mv signed-bundle/backup-167 firmware-1.1.67
+          echo 'BOTH_VERIFIED_CI_PACKAGES_PRESENT'
       - name: Validate both signatures, exact build commit and recovery image
         run: |
           python3 - <<'PY'
