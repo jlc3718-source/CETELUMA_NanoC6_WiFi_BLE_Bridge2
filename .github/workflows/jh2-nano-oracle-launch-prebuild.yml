@@ -26,7 +26,7 @@ jobs:
           assert 'saved_oracle_endpoint[len-1]' in s
           assert 'httpd_resp_set_status(r,"302 Found")' in s
           assert 'net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY)' in s
-          assert '!ap_enabled' in s
+          assert 'request_on_sta(r)' in s and 'ip!=0xc0a80401UL' in s
           assert 'strcmp(r->uri,"/settings/nano")==0' in s
           assert '{.uri="/settings/nano",.method=HTTP_GET,.handler=html_get}' in s
           assert 'nano_settings?HOME_HTML:status_page?STATUS_HTML' in s
