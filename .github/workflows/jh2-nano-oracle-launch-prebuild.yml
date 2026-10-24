@@ -1,0 +1,79 @@
+name: JH2 Nano Oracle Launch and Settings - Prebuild Only
+on:
+  push:
+    branches:
+      - feature/jh2-nano-oracle-launch-settings-20261024
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-nano-oracle-launch-prebuild.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  build:
+    name: ESP32-C6 local redirect prebuild - no flashing or OTA publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve local recovery and verify redirect changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('JasonHome2NanoC6_IDF/main/web_recovery.c').read_text()
+          assert 'static char saved_oracle_endpoint[176]={0};' in s
+          assert 'saved_oracle_endpoint[len-1]' in s
+          assert 'httpd_resp_set_status(r,"302 Found")' in s
+          assert 'net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY)' in s
+          assert '!ap_enabled' in s
+          assert 'strcmp(r->uri,"/settings/nano")==0' in s
+          assert '{.uri="/settings/nano",.method=HTTP_GET,.handler=html_get}' in s
+          assert 'nano_settings?HOME_HTML:status_page?STATUS_HTML' in s
+          assert '/setup?edit=1' in s
+          assert '{.uri="/firmware",.method=HTTP_GET,.handler=html_get}' in s
+          assert '{.uri="/api/status",.method=HTTP_GET,.handler=status_get}' in s
+          assert 'format_if_mount_failed=false' in s
+          assert 'nvs_flash_erase(' not in s
+          assert 'valid_https(e->valuestring)' in s
+          print('NANO_REDIRECT_AND_RECOVERY_ROUTES_PASS')
+          PY
+          gcc -std=c11 -Wall -Wextra -Werror -O2             JasonHome2NanoC6_IDF/main/effectlist.c             JasonHome2NanoC6_IDF/tests/effectlist_test.c -o /tmp/jh2-effectlist
+          /tmp/jh2-effectlist
+      - name: Enable existing Oracle runtime configuration (build only)
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Build ESP-IDF 5.5.1 ESP32-C6 - no flash
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Validate prebuild image and non-deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin')
+          b=p.read_bytes()
+          assert 0x120000<len(b)<=0x290000, len(b)
+          assert b[0]==0xe9 and b[12]==13 and b[13]==0
+          assert b'jason-home-2-nanoc6-runtime-v1' in b
+          assert b'/settings/nano' in b
+          assert b'1.1.67-status-forward' in b
+          print('PREBUILD_ONLY',len(b),'sha256',hashlib.sha256(b).hexdigest())
+          print('NOT_SIGNED_NOT_PUBLISHED_NOT_FLASHED')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-Nano-Oracle-Launch-PREBUILD-ONLY
+          path: JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          retention-days: 7
