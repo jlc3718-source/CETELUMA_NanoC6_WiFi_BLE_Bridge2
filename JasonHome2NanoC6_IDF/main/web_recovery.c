@@ -42,6 +42,7 @@ static bool creds_ready=false,fs_ready=false,ap_enabled=false;
 static volatile bool recovery_request=false;
 static httpd_handle_t web_server=NULL;
 static char saved_ssid[33]={0},saved_pass[65]={0};
+static char saved_oracle_endpoint[176]={0};
 static int64_t wifi_down_since=0;
 static bool sntp_started=false,mdns_started=false;
 
@@ -108,7 +109,7 @@ static const char *STATUS_HTML =
 "<div class=\"row\"><span>Other notifications received</span><strong id=\"total\">...</strong></div>\n"
 "<div class=\"row\"><span>Notification drops</span><strong id=\"drops\">...</strong></div>\n"
 "<div class=\"row\"><span>Last checked</span><strong id=\"checked\">...</strong></div></div>\n"
-"<p><button type=\"button\" onclick=\"refresh()\">Refresh now</button> &nbsp; <a href=\"/\">Nano controls</a> &nbsp; <a href=\"/api/status\">Raw JSON</a></p>\n"
+"<p><button type=\"button\" onclick=\"refresh()\">Refresh now</button> &nbsp; <a href=\"/settings/nano\">Nano controls</a> &nbsp; <a href=\"/api/status\">Raw JSON</a></p>\n"
 "<p class=\"muted\"><small>Auto-refreshes every 3 seconds. Counts apply to the current Nano Bluetooth session. UNKNOWN means there is no fresh controller confirmation; it does not mean OFF. This page is available on the local Wi-Fi network only if the router keeps Nano port 80 private.</small></p>\n"
 "<script>\n"
 "'use strict';\n"
@@ -194,7 +195,7 @@ static const char *FIRMWARE_HTML=
 "<details><summary>Manual recovery (backup method)</summary>"
 "<p><b>Use the runtime-only BIN, not a 4 MB full-flash image.</b></p>"
 "<button onclick='go()'>Open manual firmware upload mode</button></details>"
-"<p id='state'></p><p><a href='/'>Dashboard</a> &nbsp; <a href='/setup?edit=1'>Edit settings</a></p>"
+"<p id='state'></p><p><a href='/settings/nano'>Nano settings</a> &nbsp; <a href='/setup?edit=1'>Edit settings</a></p>"
 "<small>The Nano reboots into its original updater. If your home connection drops, "
 "join Jason-Home-2-Setup Wi-Fi and open http://192.168.4.1/firmware .</small>"
 "<script>async function go(){const s=document.getElementById('state');s.textContent='Selecting factory updater...';"
@@ -508,8 +509,26 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
+    // / remains a local, no-credential entry point into the HTTPS Oracle UI.
+    // Never redirect while the setup AP is serving recovery or Wi-Fi is offline.
+    // /settings/nano, /status, /setup?edit=1, and /firmware remain local.
+    if(strcmp(r->uri,"/")==0 && programmed && creds_ready &&
+       saved_oracle_endpoint[0] && !ap_enabled &&
+       net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY)){
+        char target[184];
+        size_t len=strlen(saved_oracle_endpoint);
+        int n=snprintf(target,sizeof(target),"%s%s",saved_oracle_endpoint,
+                       saved_oracle_endpoint[len-1]=='/'?"":"/");
+        if(n>0 && n<(int)sizeof(target)){
+            httpd_resp_set_status(r,"302 Found");
+            httpd_resp_set_hdr(r,"Location",target);
+            httpd_resp_set_hdr(r,"Cache-Control","no-store");
+            return httpd_resp_send(r,NULL,0);
+        }
+    }
     const bool status_page=strcmp(r->uri,"/status")==0;
-    const char *page=status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
+    const bool nano_settings=strcmp(r->uri,"/settings/nano")==0;
+    const char *page=nano_settings?HOME_HTML:status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
         (explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML);
     httpd_resp_set_type(r,"text/html; charset=utf-8");
     httpd_resp_set_hdr(r,"Cache-Control","no-store");
@@ -588,6 +607,8 @@ static void read_saved(void){
     creds_ready=cJSON_IsString(e)&&e->valuestring&&valid_https(e->valuestring) &&
         cJSON_IsString(t)&&t->valuestring&&valid_hex(t->valuestring) &&
         cJSON_IsString(b)&&b->valuestring&&strlen(b->valuestring)>0;
+    saved_oracle_endpoint[0]=0;
+    if(creds_ready)snprintf(saved_oracle_endpoint,sizeof(saved_oracle_endpoint),"%s",e->valuestring);
     cJSON_Delete(d);
     if(!saved_ssid[0]){
         nvs_handle_t n;
@@ -828,6 +849,7 @@ bool jh2_web_start(void){
     const httpd_uri_t routes[]={
         {.uri="/",.method=HTTP_GET,.handler=html_get},
         {.uri="/setup",.method=HTTP_GET,.handler=html_get},
+        {.uri="/settings/nano",.method=HTTP_GET,.handler=html_get},
         {.uri="/setup",.method=HTTP_POST,.handler=setup_post},
         {.uri="/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/recovery",.method=HTTP_GET,.handler=html_get},
