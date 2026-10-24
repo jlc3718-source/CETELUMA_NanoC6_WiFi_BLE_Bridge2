@@ -135,10 +135,24 @@ export function effectE22(effect:string,colors:number[],speed:number,reverse:boo
   const mode=e120ModeId(effect,reverse);
   return nativeE22Fields(mode,e120SpeedValue(speed),colors?.length?colors:[0xffffff],lampCount,level,reverse,pattern);
 }
+/** Historical 2026-09-28 four-string Eufy color calibration.
+ * Pool/House = E120; Garage/Shed = E22. Preserve canonical saved scene colors.
+ * These are verified RGB lookup corrections, not a continuous gamma exponent.
+ */
+export function calibratedColor(model:string,rgb:number):number{
+  const e22=isE22(model),c=rgb&0xffffff;
+  if(c===0x0d00ff)return e22?0x0000ff:0x0d00ff; // Blue
+  if(c===0x5b00e6)return e22?0x1800ff:0x4800ff; // Purple
+  if(c===0xff0024)return e22?0xff0024:0xff0080; // Pink
+  if(c===0x00ffb8)return e22?0x00ffff:0x00ffb8; // Aqua
+  if(c===0xdc143c)return e22?0xa40008:0xdc143c; // Crimson
+  if(c===0xff0d00)return 0xff0a00; // Legacy UI orange -> approved True Orange
+  return c;
+}
 export function buildEffect(model:string,effect:string,colors:number[],speed:number,reverse:boolean,level=100,lampCount=defaultLampCount(model),pattern?:SegmentPattern):{opcode:number;fields:Uint8Array}{
-  const raw=streamlightPalette(effect,colors);
-  if(isE22(model))return {opcode:OP_COLOR,fields:effectE22(effect,raw,speed,reverse,lampCount,level,pattern)};
-  return {opcode:OP_COLOR,fields:effectE120(effect,raw,speed,reverse,lampCount,level,pattern)};
+  const raw=streamlightPalette(effect,colors),safe=raw.map(c=>calibratedColor(model,c));
+  if(isE22(model))return {opcode:OP_COLOR,fields:effectE22(effect,safe,speed,reverse,lampCount,level,pattern)};
+  return {opcode:OP_COLOR,fields:effectE120(effect,safe,speed,reverse,lampCount,level,pattern)};
 }
 
 /** A brightness slider request should not resend the Eufy power/effect/color recipe. */
