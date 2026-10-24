@@ -146,6 +146,10 @@ export function calibratedColor(model:string,rgb:number):number{
   if(c===0xff0024)return e22?0xff0024:0xff0080; // Pink
   if(c===0x00ffb8)return e22?0x00ffff:0x00ffb8; // Aqua
   if(c===0xdc143c)return e22?0xa40008:0xdc143c; // Crimson
+  // The saved Test/Special Halloween palette uses #FF7A00, not #FF0D00.
+  // House/Pool E120 physically rendered the high-green input yellow; keep
+  // Garage/Shed E22's visually accepted orange unchanged.
+  if(c===0xff7a00)return e22?0xff7a00:0xff0a00;
   if(c===0xff0d00)return 0xff0a00; // Legacy UI orange -> approved True Orange
   return c;
 }
