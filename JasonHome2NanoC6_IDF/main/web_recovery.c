@@ -492,6 +492,18 @@ static esp_err_t local_probe_post(httpd_req_t *r){
     return send_json(r,out);
 }
 
+// Distinguish Nano STA traffic from the dedicated setup/recovery AP when
+// both interfaces remain enabled after Wi-Fi recovers. Never redirect AP
+// visitors, even when the STA happens to be connected.
+static bool request_on_sta(httpd_req_t *r){
+    if(!ap_enabled)return true;
+    struct sockaddr_storage local={0};
+    socklen_t length=sizeof(local);
+    if(getsockname(httpd_req_to_sockfd(r),(struct sockaddr *)&local,&length)!=0
+       ||local.ss_family!=AF_INET)return false;
+    const uint32_t ip=ntohl(((const struct sockaddr_in *)&local)->sin_addr.s_addr);
+    return ip!=0xc0a80401UL; // ESP32 default setup AP 192.168.4.1
+}
 static esp_err_t html_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     const bool firmware=strstr(r->uri,"firmware")||strstr(r->uri,"recovery");
@@ -513,7 +525,7 @@ static esp_err_t html_get(httpd_req_t *r){
     // Never redirect while the setup AP is serving recovery or Wi-Fi is offline.
     // /settings/nano, /status, /setup?edit=1, and /firmware remain local.
     if(strcmp(r->uri,"/")==0 && programmed && creds_ready &&
-       saved_oracle_endpoint[0] && !ap_enabled &&
+       saved_oracle_endpoint[0] && request_on_sta(r) &&
        net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY)){
         char target[184];
         size_t len=strlen(saved_oracle_endpoint);
