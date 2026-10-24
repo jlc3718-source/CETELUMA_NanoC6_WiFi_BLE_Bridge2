@@ -3,7 +3,7 @@ on:
   push:
     branches: [feature/jh2-nano-oracle-launch-settings-20261024]
     paths: [.github/workflows/jh2-168-stage-with-rollback.yml]
-permissions: {contents: read}
+permissions: {contents: read, actions: read}
 concurrency:
   group: jh2-168-oracle-staging
   cancel-in-progress: false
