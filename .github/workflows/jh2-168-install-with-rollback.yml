@@ -1,0 +1,47 @@
+name: JH2 1.1.68 Guarded Oracle-to-Nano Install
+on:
+  push:
+    branches: [feature/jh2-nano-oracle-launch-settings-20261024]
+    paths: [.github/workflows/jh2-168-install-with-rollback.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-168-physical-install-once
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check rollback backup and signed OTA are independently staged
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,hashlib
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          base=Path(mount['Source'])/'signed-ota'
+          for ver in ('1.1.67','1.1.68'):
+              d=base/ver
+              manifest=json.loads((d/'latest.json').read_text())
+              metadata=json.loads((d/'release.json').read_text())
+              fields=dict(x.split('=',1) for x in manifest['payload'].strip().splitlines())
+              b=(d/('jh2-runtime-'+ver+'.bin')).read_bytes()
+              assert fields['version']==metadata['version']==ver
+              assert fields['sha256']==hashlib.sha256(b).hexdigest() and len(b)==int(fields['bytes'])
+              assert 0x120000<len(b)<=0x290000 and b[0]==0xe9 and b[12]==13
+              if ver=='1.1.68':assert fields['commit']=='98b13b72b09eca8566816562fe7b3ffcaba34959'
+              print('ROLLBACK_OR_NEW_RUNTIME_VERIFIED',ver,len(b),fields['sha256'],flush=True)
+          print('SAFE_TO_REQUEST_SIGNED_INSTALL; FACTORY_RECOVERY_UNMODIFIED',flush=True)
+          PY
+      - name: Install only if v1.1.67 healthy and 1.1.68 manifest verified
+        run: |
+          sudo -n python3 .github/scripts/jh2-install-signed-168-on-oracle.py
+      - name: Preserve rollback restore instructions
+        run: |
+          echo 'KNOWN_GOOD_167_FIRMWARE_BACKUP_IN_ORACLE_VOLUME'
+          echo 'If device is reachable: Nano /firmware -> Manual recovery -> factory upload of jh2-runtime-1.1.67.bin.'
+          echo 'If Nano is unreachable: recover through Jason-Home-2-Setup AP http://192.168.4.1/firmware.'
+          echo 'There is only ONE runtime slot. No automatic dual-slot rollback is possible.'
+          echo 'Automatic signed OTA remains off until user confirms recovery readiness, preventing immediate reinstall after rollback.'
