@@ -45,3 +45,5 @@ jobs:
           echo 'If Nano is unreachable: recover through Jason-Home-2-Setup AP http://192.168.4.1/firmware.'
           echo 'There is only ONE runtime slot. No automatic dual-slot rollback is possible.'
           echo 'Automatic signed OTA remains off until user confirms recovery readiness, preventing immediate reinstall after rollback.'
+
+# Verified staging gate passed in CI run 40115130306; execute once.
