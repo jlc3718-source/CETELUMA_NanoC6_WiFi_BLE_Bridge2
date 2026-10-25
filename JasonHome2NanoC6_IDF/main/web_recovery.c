@@ -58,7 +58,7 @@ static const char *HOME_HTML=
 "olor:#7be4b6}.bad{color:#ffbaac}\n.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}\nbutton,a.action{border:1px solid #48718a;border-radius:12px;padding:14px 10"
 "px;background:#1d4d65;color:white;font:inherit;text-align:center;text-decoration:none;cursor:pointer}\nbutton:disabled{opacity:.45;cursor:not-allowed}\nbutton.primary{backg"
 "round:#0d756b;border-color:#0c8d80}\na.action{display:block;margin-top:10px}#bleResult,#result,#updateResult{min-height:23px;font-size:.91rem}\n</style></head><body>\n<h1>Ja"
-"son Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<a class=\"action\" href=\"/status\">View Nano Live Status</a>\n<section class=\"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">"
+"son Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<a class=\"action\" href=\"/status\">View Nano Live Status</a> &nbsp; <a href=\\\"/settings/oracle\\\">Settings / Oracle</a>\n<section class=\"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">"
 "Checking...</strong></div>\n<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Checking...</strong></div>\n<div class=\"actions\"><button id=\"bleConnect\" class=\"prima"
 "ry\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button>"
 "</div>\n<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" on"
@@ -158,25 +158,9 @@ static const char *STATUS_HTML =
 ;
 
 static const char *SETUP_HTML=
-"<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<meta charset='UTF-8'><title>Jason Home 2 Setup</title>"
-"<style>body{font:16px system-ui;margin:24px auto;max-width:560px;padding:16px;background:#081321;color:#eef5ff}"
-"a{color:#71ded2}input,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:9px}"
-"button{background:#69dec6;border:0;font-weight:700}small{color:#c1d5e5}</style></head><body>"
-"<h1>Jason Home 2 NanoC6</h1><p>Native RX2 &bull; permanent browser firmware recovery</p>"
-"<p><a href='/firmware'>Open firmware updater</a> &nbsp; <a href='/api/status'>Diagnostics</a></p>"
-"<h2>Wi-Fi &amp; Oracle pairing</h2>"
-"<p>Leave any already-configured value blank to keep it unchanged.</p>"
-"<form action='/setup' method='POST'>"
-"<label>2.4 GHz Wi-Fi name<input name='ssid' maxlength='32'></label>"
-"<label>Wi-Fi password<input type='password' name='password' maxlength='64'></label>"
-"<label>Oracle HTTPS base URL<input name='oracleEndpoint' placeholder='https://server/jason-home-2' maxlength='175'></label>"
-"<label>Oracle bridge ID<input name='oracleBridgeId' maxlength='63'></label>"
-"<label>Oracle bridge token (64 hex digits)<input type='password' name='oracleBridgeToken' maxlength='64'></label>"
-"<button type='submit'>Save settings and restart</button></form>"
-"<small>Connect to open JH2-Nano-Fresh Wi-Fi (no password), even while home Wi-Fi is online. "
-"This page never displays saved passwords or bridge tokens. Personalized 2.0.0 firmware can prefill Oracle without pre-configuring Wi-Fi.</small>"
-"</body></html>";
+"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Jason Home 2 Wi-Fi setup</title><style>body{font:16px system-ui;margin:18px auto;max-width:570px;padding:18px;background:#081321;color:#eef5ff}a{color:#71ded2}input,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:9px}button{background:#69dec6;border:0;font-weight:700}section{border:1px solid #355b74;padding:16px;border-radius:12px;margin:14px 0}</style></head><body><h1>Jason Home 2 - Wi-Fi</h1><p>Setup access point: <b>JH2-Nano-Fresh</b> (no password). Set up your 2.4 GHz home Wi-Fi first. Oracle links later.</p><section><form action=\"/setup\" method=\"POST\"><label>Home Wi-Fi name<input name=\"ssid\" maxlength=\"32\" required></label><label>Home Wi-Fi password<input type=\"password\" name=\"password\" maxlength=\"63\"></label><input type=\"hidden\" name=\"oracleEndpoint\" value=\"\"><input type=\"hidden\" name=\"oracleBridgeId\" value=\"\"><input type=\"hidden\" name=\"oracleBridgeToken\" value=\"\"><button type=\"submit\">Save Wi-Fi &amp; restart</button></form></section><p><a href=\"/settings/oracle\">Settings / Oracle automatic connection</a> &nbsp; <a href=\"/api/status\">Diagnostics</a> &nbsp; <a href=\"/firmware\">Firmware recovery</a></p><small>Setup AP and local page do not require Oracle, Bluetooth or filesystem initialization.</small></body></html>\n";
+static const char *ORACLE_HTML=
+"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Oracle settings</title><style>body{font:16px system-ui;margin:18px auto;max-width:570px;padding:18px;background:#081321;color:#eef5ff}a{color:#71ded2}input,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:9px}button{background:#69dec6;border:0;font-weight:700}section{border:1px solid #355b74;padding:16px;border-radius:12px;margin:14px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#14273b;padding:12px;border-radius:9px}</style></head><body><h1>Settings / Oracle</h1><p>Connect home Wi-Fi first. The Nano can use its saved bridge token to link to Oracle. You do not need an Oracle administrator API key here.</p><section><h2>Automatic Oracle setup</h2><button type=\"button\" onclick=\"link()\">Connect Automatically</button><pre id=\"status\" role=\"status\">Checking...</pre></section><section><h2>Manual bridge settings</h2><form method=\"POST\" action=\"/settings/oracle\"><input type=\"hidden\" name=\"ssid\" value=\"\"><input type=\"hidden\" name=\"password\" value=\"\"><label>Oracle HTTPS base URL<input name=\"oracleEndpoint\" maxlength=\"175\" placeholder=\"https://server/jason-home-2\"></label><label>Bridge ID<input name=\"oracleBridgeId\" maxlength=\"63\"></label><label>Bridge token<input name=\"oracleBridgeToken\" maxlength=\"64\" type=\"password\" autocomplete=\"off\"></label><button type=\"submit\">Save Oracle settings &amp; restart</button></form><small>Blank fields retain existing values. Saved tokens are never displayed.</small></section><p>If a key is missing or invalid, re-pair or rotate it from the signed-in Oracle control page; the administrator API key is never copied to the Nano.</p><p><a href=\"/setup?edit=1\">Wi-Fi settings</a> &nbsp; <a href=\"/status\">Nano status</a> &nbsp; <a href=\"/firmware\">Firmware recovery</a></p><script>async function refresh(){try{let r=await fetch('/api/oracle/link-status',{cache:'no-store'}),d=await r.json();document.getElementById('status').textContent=(d.state||'Waiting')+'\\nHome Wi-Fi: '+(d.wifiConnected?'Connected':'Not connected')+'\\nOracle token: '+(d.verified?'Verified':'Unverified')+'\\nBridge service: '+(d.bridgeRunning?'Running':'Not running');}catch(e){document.getElementById('status').textContent='Nano not responding: '+e.message}}async function link(){document.getElementById('status').textContent='Connecting to Oracle...';try{const r=await fetch('/api/oracle/autolink',{method:'POST'}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Link request failed');}catch(e){document.getElementById('status').textContent=e.message;return}await refresh()}refresh();setInterval(refresh,2500);</script></body></html>\n";
 static const char *FIRMWARE_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
 "<meta charset='UTF-8'><title>Jason Home 2 Firmware</title>"
@@ -560,7 +544,8 @@ static esp_err_t html_get(httpd_req_t *r){
     }
     const bool status_page=strcmp(r->uri,"/status")==0;
     const bool nano_settings=strcmp(r->uri,"/settings/nano")==0;
-    const char *page=nano_settings?HOME_HTML:status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
+    const bool oracle_settings=strcmp(r->uri,"/settings/oracle")==0;
+    const char *page=oracle_settings?ORACLE_HTML:nano_settings?HOME_HTML:status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
         (explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML);
     httpd_resp_set_type(r,"text/html; charset=utf-8");
     httpd_resp_set_hdr(r,"Cache-Control","no-store");
@@ -802,6 +787,26 @@ static bool import_factory_provision(void){
     else{ESP_LOGW(TAG,"Embedded provisioning could not be restored");}
     return ok;
 }
+static esp_err_t oracle_link_status_get(httpd_req_t *r){
+    cJSON *out=cJSON_CreateObject();
+    const bool online=net_event&&((xEventGroupGetBits(net_event)&WEB_WIFI_READY)!=0);
+    cJSON_AddBoolToObject(out,"ok",true);
+    cJSON_AddBoolToObject(out,"wifiConnected",online);
+    cJSON_AddBoolToObject(out,"verified",jh2_bridge_autolink_verified());
+    cJSON_AddBoolToObject(out,"bridgeRunning",jh2_bridge_ready());
+    cJSON_AddStringToObject(out,"state",jh2_bridge_autolink_status());
+    return send_json(r,out);
+}
+static esp_err_t oracle_autolink_post(httpd_req_t *r){
+    const bool online=net_event&&((xEventGroupGetBits(net_event)&WEB_WIFI_READY)!=0);
+    cJSON *out=cJSON_CreateObject();
+    const bool accepted=online&&jh2_bridge_autolink_request();
+    cJSON_AddBoolToObject(out,"ok",accepted);
+    cJSON_AddStringToObject(out,"message",online?
+       (accepted?"Oracle bridge verification queued":"Oracle pairing already underway or unavailable"):
+       "Connect home Wi-Fi first; the open setup AP stays available");
+    return send_json(r,out);
+}
 static esp_err_t setup_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     if(r->content_len<=0||r->content_len>1600)
@@ -1027,13 +1032,15 @@ bool jh2_web_has_oracle_credentials(void){return creds_ready;}
 void jh2_web_request_recovery(void){recovery_request=true;}
 bool jh2_web_recovery_requested(void){return recovery_request;}
 bool jh2_web_start(void){
-    fs_ready=mount_store();import_factory_provision();seed_embedded_oracle_if_missing();read_saved();
+    // A working setup AP must exist before any LittleFS or Oracle access.
+    // Initially read only NVS, preserving 1.1.79 Wi-Fi credentials.
+    read_saved();
     if(!start_net()){ESP_LOGE(TAG,"Wi-Fi/AP setup failed");return false;}
     if(!preview_lock)preview_lock=xSemaphoreCreateMutex();
     if(!preview_lock){ESP_LOGE(TAG,"Preview mutex allocation failed");return false;}
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();
     cfg.server_port=80;
-    cfg.max_uri_handlers=24;
+    cfg.max_uri_handlers=32;
     cfg.stack_size=7168;
     cfg.lru_purge_enable=true;
     if(httpd_start(&web_server,&cfg)!=ESP_OK)return false;
@@ -1041,6 +1048,10 @@ bool jh2_web_start(void){
         {.uri="/",.method=HTTP_GET,.handler=html_get},
         {.uri="/setup",.method=HTTP_GET,.handler=html_get},
         {.uri="/settings/nano",.method=HTTP_GET,.handler=html_get},
+        {.uri="/settings/oracle",.method=HTTP_GET,.handler=html_get},
+        {.uri="/settings/oracle",.method=HTTP_POST,.handler=setup_post},
+        {.uri="/api/oracle/link-status",.method=HTTP_GET,.handler=oracle_link_status_get},
+        {.uri="/api/oracle/autolink",.method=HTTP_POST,.handler=oracle_autolink_post},
         {.uri="/setup",.method=HTTP_POST,.handler=setup_post},
         {.uri="/firmware",.method=HTTP_GET,.handler=html_get},
         {.uri="/recovery",.method=HTTP_GET,.handler=html_get},
@@ -1065,6 +1076,27 @@ bool jh2_web_start(void){
     };
     for(size_t i=0;i<sizeof(routes)/sizeof(routes[0]);i++)
         if(httpd_register_uri_handler(web_server,&routes[i])!=ESP_OK)return false;
-    ESP_LOGI(TAG,"Persistent HTTP web recovery ready on port 80, AP fallback enabled");
+    ESP_LOGW(TAG,"2.0.2 OPEN SETUP WIFI AND HTTP READY; no Oracle or filesystem required");
+    // After the AP is broadcasting and HTTP routes are registered, recover
+    // old Oracle secrets and optional Wi-Fi profiles. Failure is nonfatal.
+    fs_ready=mount_store();
+    if(fs_ready){
+        import_factory_provision();
+        seed_embedded_oracle_if_missing();
+        bool had_ssid=saved_ssid[0]!=0;
+        read_saved();
+        if(!had_ssid&&saved_ssid[0]){
+            wifi_config_t sta={0};
+            size_t n=strlen(saved_ssid);
+            if(n<=sizeof(sta.sta.ssid)&&strlen(saved_pass)<=63){
+                memcpy(sta.sta.ssid,saved_ssid,n);
+                strlcpy((char*)sta.sta.password,saved_pass,sizeof(sta.sta.password));
+                sta.sta.threshold.authmode=WIFI_AUTH_OPEN;
+                sta.sta.pmf_cfg.capable=true;
+                if(esp_wifi_set_config(WIFI_IF_STA,&sta)==ESP_OK)
+                    esp_wifi_connect();
+            }
+        }
+    }else ESP_LOGW(TAG,"LittleFS unavailable: Wi-Fi AP and manual recovery remain active");
     return true;
 }
