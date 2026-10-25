@@ -87,7 +87,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.73"
+#define NATIVE_FW_VERSION "1.1.74"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -594,10 +594,10 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     }else if(strcmp(action->valuestring,"nanoAutoUpdate")==0){
         cJSON *enabled=cJSON_GetObjectItemCaseSensitive(payload,"enabled");
         const bool valid=cJSON_IsTrue(enabled)||cJSON_IsFalse(enabled);
-        const bool saved=valid&&jh2_bridge_set_auto_update_enabled(cJSON_IsTrue(enabled));
+        const bool saved=valid&&!cJSON_IsTrue(enabled)&&jh2_bridge_set_auto_update_enabled(false);
         append_ack(current,saved?"applied":"failed",saved?
-            (cJSON_IsTrue(enabled)?"Automatic signed updates enabled":"Automatic signed updates disabled"):
-            (valid?"Cannot save OTA preference":"Invalid auto-update setting"),false);
+            "Automatic updates disabled; use independent A/B rescue uploader":
+            (valid?"Automatic updates locked OFF until hardware A/B acceptance":"Invalid auto-update setting"),false);
     }else if(strcmp(action->valuestring,"nanoFirmwareCheck")==0){
         cJSON *m=https_json("/api/curtain/firmware-manifest",NULL);
         char version[32]={0},error[150]={0};
