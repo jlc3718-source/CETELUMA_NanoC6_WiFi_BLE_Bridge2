@@ -47,7 +47,7 @@ jobs:
           assert 'jh2_bridge_autolink_request()' in web
           assert 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384' in Path("JasonHome2NanoC6_IDF/sdkconfig.defaults").read_text()
           assert 'jh2_bridge_start();' not in runtime
-          assert '2.0.7 setup AP ready' in runtime
+          assert '2.0.6 setup AP ready' in runtime  # unchanged AP startup log preserved
           assert 'jh2_bridge_autolink_request(void)' in Path("JasonHome2NanoC6_IDF/main/bridge.c").read_text()
           assert 'https_json("/api/curtain-bridge/bootstrap",NULL)' in bridge
           assert 'const wifi_mode_t mode=saved_ssid[0]?WIFI_MODE_APSTA:WIFI_MODE_AP;' in web, "First boot must be AP-only"
@@ -132,7 +132,7 @@ jobs:
           assert 'cfg.ap.authmode=WIFI_AUTH_OPEN' in web
           assert 'if(!jh2_web_has_oracle_credentials())' not in runtime
           assert 'NATIVE_FW_VERSION "2.0.7"' in bridge
-          assert '2.0.7 setup AP ready' in runtime
+          assert '2.0.6 setup AP ready' in runtime  # unchanged AP startup log preserved
           assert 'nvs_open("jh2basic",NVS_READONLY' in web
           assert 'failsafe_confirm_after_60s();' in runtime
           assert '#define NATIVE_FW_VERSION "2.0.7"' in bridge
