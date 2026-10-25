@@ -1,0 +1,242 @@
+name: JH2 1.1.74 Fail-Safe Dual Slot + Factory Rescue 4MB (Build Only)
+on:
+  push:
+    branches: [recovery/jh2-174-dual-slot-rescue-20261025]
+    paths: [.github/workflows/jh2-174-dual-slot-failsafe-fullflash.yml]
+permissions: {contents: write}
+concurrency:
+  group: jh2-174-dualslot-factory-rescue
+  cancel-in-progress: false
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Verify no Oracle or Eufy source changes, and exactly matching A/B partition layouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base='f320e65e43eb30b5bcc846e2460e2b78d9e1b7f6'
+          changed=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          allowed={'JasonHome2NanoC6_IDF/main/bridge.c','JasonHome2NanoC6_IDF/main/native_slot_guard.c',
+                   'JasonHome2NanoC6_IDF/main/web_recovery.c','JasonHome2NanoC6_IDF/main/native_recovery.c',
+                   'JasonHome2NanoC6_IDF/main/signed_ota.c','JasonHome2NanoC6_IDF/main/main.c',
+                   'JasonHome2NanoC6_IDF/partitions.csv','JasonHome2NanoC6_IDF/sdkconfig.defaults',
+                   '.github/workflows/jh2-173-usb-runtime-recovery.yml',
+                   '.github/workflows/jh2-173-complete-fullflash-0x0.yml',
+                   '.github/workflows/jh2-174-dual-slot-failsafe-fullflash.yml'}
+          assert all(p in allowed or p.startswith('JasonHome2NanoC6_Rescue/') for p in changed),changed
+          p1=Path('JasonHome2NanoC6_IDF/partitions.csv').read_text().splitlines()
+          p2=Path('JasonHome2NanoC6_Rescue/partitions.csv').read_text().splitlines()
+          a=[x.strip().lower() for x in p1 if x.strip() and not x.strip().startswith('#')]
+          b=[x.strip().lower() for x in p2 if x.strip() and not x.strip().startswith('#')]
+          assert a==b,(a,b)
+          assert a==[
+           'nvs, data, nvs, 0x9000, 0x5000','otadata, data, ota, 0xe000, 0x2000',
+           'rescue, app, factory, 0x10000, 0x100000',
+           'runtime, app, ota_0, 0x110000, 0x160000',
+           'runtime_b, app, ota_1, 0x270000, 0x160000',
+           'storage, data, spiffs, 0x3d0000, 0x30000'],a
+          rescue=Path('JasonHome2NanoC6_Rescue/main/rescue.c').read_text()
+          runtime=Path('JasonHome2NanoC6_IDF/main/main.c').read_text()
+          bridge=Path('JasonHome2NanoC6_IDF/main/bridge.c').read_text()
+          assert 'esp_ota_set_boot_partition(p)' in rescue
+          assert 'esp_ota_get_state_partition' in rescue
+          assert 'ESP_OTA_IMG_ABORTED' in rescue
+          assert 'esp_ota_mark_app_valid_cancel_rollback' in runtime
+          assert 'esp_ota_mark_app_invalid_rollback_and_reboot' in runtime
+          assert 'failsafe_confirm_after_60s();' in runtime
+          assert 'failsafe_boot_failed();' in runtime
+          assert '#define NATIVE_FW_VERSION "1.1.74"' in bridge
+          assert 'Remote OTA locked off for 1.1.74 A/B recovery' in Path('JasonHome2NanoC6_IDF/main/signed_ota.c').read_text()
+          print('ORACLE_EUFY_SERVER_UNTOUCHED; DUAL_SLOT_LAYOUTS_MATCH; ROLLBACK_GUARDS_PRESENT')
+          PY
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/guard174
+          /tmp/guard174
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/effectlist.c JasonHome2NanoC6_IDF/tests/effectlist_test.c -o /tmp/effects174
+          /tmp/effects174
+      - name: Compile dedicated 1MB independent factory rescue ESP32-C6 app
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_Rescue
+          command: idf.py build
+      - name: Verify rescue app and rollback-enabled bootloader
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f JasonHome2NanoC6_Rescue/build/jh2_nanoc6_rescue.bin
+          grep -qx 'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y' JasonHome2NanoC6_Rescue/sdkconfig
+          python3 - <<'PY'
+          from pathlib import Path
+          b=Path('JasonHome2NanoC6_Rescue/build/jh2_nanoc6_rescue.bin').read_bytes()
+          assert 0<len(b)<=0x100000,('Factory rescue exceeds 1MB',len(b))
+          assert b[0]==0xe9 and b[12:14]==b'\x0d\x00'
+          for marker in [b'Jason Home 2 - Emergency Recovery',b'Jason-Home-2-Setup',
+                         b'/firmware/upload',b'ESP_OTA_IMG_VALID']:
+              # ESP_OTA_IMG_VALID is a C enum, not a binary string.
+              if marker!=b'ESP_OTA_IMG_VALID':assert marker in b,marker
+          print('INDEPENDENT_FACTORY_RESCUE_VERIFIED',len(b))
+          PY
+      - name: Enable production BLE and Oracle on native A/B runtime (manual OTA only)
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Compile A/B runtime with 60-second confirmation and automatic rollback
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Validate binary sizes and compose a single complete 0x0 flash image
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qx 'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y' JasonHome2NanoC6_IDF/sdkconfig
+          mkdir -p recovery-output
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,struct,binascii
+          a=Path('JasonHome2NanoC6_Rescue/build')
+          b=Path('JasonHome2NanoC6_IDF/build')
+          factory=(a/'jh2_nanoc6_rescue.bin').read_bytes()
+          runtime=(b/'jh2_native_ble_probe.bin').read_bytes()
+          bootloader=(a/'bootloader/bootloader.bin').read_bytes()
+          partitions=(a/'partition_table/partition-table.bin').read_bytes()
+          assert len(factory)<=0x100000,('Factory too big',len(factory))
+          assert len(runtime)<=0x160000,('Runtime too big',len(runtime))
+          assert len(bootloader)<0x8000,('Bootloader overlaps partition table',len(bootloader))
+          assert len(partitions)<=0x1000
+          assert b'1.1.74-native-upload-flow' in runtime
+          assert b'jason-home-2-nanoc6-runtime-v1' in runtime
+          assert b'/settings/nano' in runtime
+          assert b'Jason Home 2 - Emergency Recovery' in factory
+          def parse_part(buf):
+              p=[]
+              for i in range(0,len(buf),32):
+                  if buf[i:i+2]!=b'\xaaP':break
+                  _,t,s,offset,size,label,flags=struct.unpack_from('<HBBII16sI',buf,i)
+                  p.append((label.split(b'\0')[0].decode(),t,s,offset,size))
+              return p
+          layout=parse_part(partitions)
+          expected=[
+           ('nvs',1,2,0x9000,0x5000),('otadata',1,0,0xe000,0x2000),
+           ('rescue',0,0,0x10000,0x100000),
+           ('runtime',0,16,0x110000,0x160000),
+           ('runtime_b',0,17,0x270000,0x160000),
+           ('storage',1,130,0x3d0000,0x30000)]
+          assert layout==expected,(layout,expected)
+          # Confirm native and factory partition table binaries identical.
+          assert partitions==(b/'partition_table/partition-table.bin').read_bytes()
+          full=bytearray(b'\xff'*0x400000)
+          for offset,part in ((0,bootloader),(0x8000,partitions),
+                              (0x10000,factory),(0x110000,runtime),(0x270000,runtime)):
+              full[offset:offset+len(part)]=part
+          # Mark ota_0 as VALID; leave ota_1 intact as a second recovery copy.
+          seq=struct.pack('<I',1)
+          full[0xe000:0xe004]=seq
+          struct.pack_into('<I',full,0xe000+24,2)
+          struct.pack_into('<I',full,0xe000+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
+          assert full[0x9000:0xe000]==b'\xff'*0x5000
+          assert full[0x3d0000:]==b'\xff'*0x30000
+          assert full[0x110000:0x110000+len(runtime)]==runtime
+          assert full[0x270000:0x270000+len(runtime)]==runtime
+          filename='JH2-NanoC6-1.1.74-FAILSAFE-AB-FULL-FLASH-0x0.bin'
+          out=Path('recovery-output')/filename
+          out.write_bytes(full)
+          (Path('recovery-output')/'JH2-NanoC6-1.1.74-RUNTIME-ONLY.bin').write_bytes(runtime)
+          manifest={'product':'Jason Home 2 NanoC6','version':'1.1.74',
+            'flash_address':'0x0','full_size_bytes':len(full),
+            'full_sha256':hashlib.sha256(full).hexdigest(),
+            'runtime_size_bytes':len(runtime),'factory_size_bytes':len(factory),
+            'bootloader_rollback_enabled':True,'two_runtime_slots':True,
+            'factory_rescue_ap':'Jason-Home-2-Setup','factory_rescue_url':'http://192.168.4.1/firmware',
+            'ota0_address':'0x110000','ota1_address':'0x270000',
+            'factory_address':'0x10000','storage_address':'0x3D0000',
+            'oracle_server_modified':False,'eufy_server_modified':False,
+            'automatic_signed_ota_enabled':False,
+            'wifi_and_oracle_nano_credentials_preserved':False,
+            'hardware_boot_tested':False,'source_commit':os.environ['GITHUB_SHA']}
+          Path('recovery-output/BUILD-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          Path('recovery-output/SHA256SUMS.txt').write_text(
+            manifest['full_sha256']+'  '+filename+'\n'+
+            hashlib.sha256(runtime).hexdigest()+'  JH2-NanoC6-1.1.74-RUNTIME-ONLY.bin\n')
+          print('COMPLETE_4MB_FAILSAFE_AB_VERIFIED',json.dumps(manifest),flush=True)
+          PY
+          (cd recovery-output && sha256sum -c SHA256SUMS.txt)
+      - name: Write Flash Download Tool 3.9.11 instructions
+        shell: bash
+        run: |
+          cat > recovery-output/READ-ME-FIRST.txt <<'EOF'
+          Jason Home 2 NanoC6 1.1.74 FAIL-SAFE A/B + FACTORY RESCUE
+          =========================================================
+          THIS IS A NEW 4MB PARTITION LAYOUT. ONLY A FULL 0x0 FLASH
+          INSTALLS THE NEW BOOTLOADER, INDEPENDENT FACTORY RESCUE, AND
+          TWO RUNTIME PARTITIONS. Do not flash 1.1.74 at old 0x130000.
+
+          ESPRESSIF FLASH DOWNLOAD TOOL 3.9.11
+          Chip: ESP32-C6, Develop mode, 4MB flash, DIO, DoNotChgBin.
+          Select ONLY JH2-NanoC6-1.1.74-FAILSAFE-AB-FULL-FLASH-0x0.bin.
+          Address: 0x0. Confirm FINISH; release BOOT; press RESET.
+
+          RECOVERY AP: Jason-Home-2-Setup
+          Password: JasonHome2
+          Emergency browser: http://192.168.4.1/firmware
+          On a healthy runtime, use http://192.168.4.1/setup or
+          http://192.168.4.1/settings/nano for Wi-Fi and Oracle pairing.
+
+          The factory rescue partition is independent from BOTH runtime
+          partitions. It accepts only a runtime BIN and installs it into
+          the inactive slot; it does not erase the last known-good slot.
+          ESP-IDF bootloader rollback is enabled. A candidate runtime
+          must survive 60 seconds of startup before confirmation.
+          Three consecutive watchdog/panic boot loops force factory rescue.
+          If both runtime slots fail, the bootloader can select factory.
+          The ESP32-C6 ROM USB bootloader remains the last-resort recovery
+          if bootloader, flash hardware or factory partition are damaged.
+
+          FULL FLASH WILL RESET THE NANO'S LOCAL Wi-Fi/Oracle PAIRING.
+          It does NOT alter Oracle cloud APIs, Eufy devices, or the
+          SmartDawn curtain controller's own stored effects. Re-enter
+          Nano Wi-Fi and Oracle bridge settings locally after flashing.
+          Automatic OTA is intentionally locked OFF until physical A/B
+          rollback and rescue testing succeeds.
+
+          IMPORTANT: This image has been CI compiled and structure-tested,
+          but is NOT yet proven to boot on physical hardware.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-1.1.74-FAILSAFE-AB-FULL-4MB
+          path: recovery-output/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish manual USB only (never signed OTA channel)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jh2-usb-failsafe-ab-1.1.74
+          name: "JH2 NanoC6 1.1.74 - Dual Slot Rollback + Independent Factory Rescue"
+          prerelease: true
+          draft: false
+          body: |
+            New 4MB flash layout with ESP-IDF A/B rollback bootloader,
+            independent factory recovery web uploader and two runtime copies.
+            Flash complete 4MB BIN at **0x0** only.
+            Reconfigure Nano Wi-Fi and Oracle bridge after full flash.
+            No Oracle server, Eufy integration, or curtain controller changes.
+            Automatic remote OTA disabled pending hardware acceptance.
+            Build verified; not yet physically boot verified.
+          files: recovery-output/*
+          fail_on_unmatched_files: true
+          target_commitish: ${{ github.sha }}
