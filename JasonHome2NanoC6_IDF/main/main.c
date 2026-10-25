@@ -113,7 +113,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.0 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.1 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -1133,7 +1133,7 @@ void app_main(void){
     // keep the HTTP configuration page alive. Do not start Bluetooth/Oracle
     // until the user enters valid credentials and setup handler reboots.
     if(!jh2_web_has_oracle_credentials()){
-        ESP_LOGW(TAG,"2.0.0 manual setup: Wi-Fi portal active; BLE/Oracle deferred");
+        ESP_LOGW(TAG,"2.0.1 manual setup: Wi-Fi portal active; BLE/Oracle deferred");
         while(true){
             vTaskDelay(pdMS_TO_TICKS(10000));
             failsafe_confirm_after_60s();
@@ -1148,7 +1148,7 @@ void app_main(void){
             vTaskDelay(pdMS_TO_TICKS(2000));
             failsafe_confirm_after_60s();
         }
-        ESP_LOGI(TAG,"2.0.0 Wi-Fi STA online; starting native BLE and Oracle");
+        ESP_LOGI(TAG,"2.0.1 Wi-Fi STA online; starting native BLE and Oracle");
     }
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
