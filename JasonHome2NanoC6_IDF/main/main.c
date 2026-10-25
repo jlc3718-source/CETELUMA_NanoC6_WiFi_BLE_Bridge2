@@ -481,6 +481,53 @@ static bool reply_varint(const uint8_t *b,size_t n,size_t *p,uint32_t *value){
     }
     return false;
 }
+/* SmartDawn sends upload-progress opcode 2933 at 7,17,27... packets.
+ * 0xFB (251) is observed DURING active upload, so it must not be treated
+ * as a completed-file acknowledgment. The sender waits for a real
+ * controller-originated counter before pushing each next packet window. */
+bool jh2_ble_upload_progress(uint32_t *cursor,uint32_t parts,uint32_t min_completed,
+                            uint32_t timeout_ms,const char **error){
+    *error="SmartDawn progress response did not catch up with local BLE packet window";
+    if(!cursor||!parts||!min_completed)return false;
+    const int64_t deadline=esp_timer_get_time()+(int64_t)timeout_ms*1000;
+    while(esp_timer_get_time()<deadline&&connection!=BLE_HS_CONN_HANDLE_NONE){
+        gatt_notice item={0};bool found=false;
+        xSemaphoreTake(notice_lock,portMAX_DELAY);
+        for(size_t i=0;i<notice_count;i++){
+            const gatt_notice *p=&notices[(notice_head+i)%NOTICE_RING_SIZE];
+            if(p->id>*cursor){item=*p;found=true;break;}
+        }
+        xSemaphoreGive(notice_lock);
+        if(!found){vTaskDelay(pdMS_TO_TICKS(15));continue;}
+        *cursor=item.id;
+        const uint8_t *b=item.b;size_t n=item.len;
+        if(n<24||b[1]!=1||b[2]||b[3]||b[5]!=1||
+           (((uint16_t)b[10]<<8)|b[11])!=2933)continue;
+        uint32_t fields[8]={0};size_t pos=24;bool valid=true;
+        while(pos<n){
+            uint32_t tag=0,v=0;
+            if(!reply_varint(b,n,&pos,&tag)||!tag){valid=false;break;}
+            unsigned type=tag&7,field=tag>>3;
+            if(type==0){
+                if(!reply_varint(b,n,&pos,&v)){valid=false;break;}
+                if(field<8)fields[field]=v;
+            }else if(type==2){
+                if(!reply_varint(b,n,&pos,&v)||v>n-pos){valid=false;break;}
+                pos+=v;
+            }else{valid=false;break;}
+        }
+        if(!valid||fields[1]!=parts)continue;
+        if(b[18]!=0&&b[18]!=251){
+            *error="SmartDawn rejected a native file progress window";return false;
+        }
+        if(fields[3]>=min_completed){
+            ESP_LOGI(TAG,"Native progress confirmed received=%lu minimum=%lu total=%lu",
+                (unsigned long)fields[3],(unsigned long)min_completed,(unsigned long)parts);
+            *error=NULL;return true;
+        }
+    }
+    return false;
+}
 bool jh2_ble_upload_reply(uint32_t *cursor,uint16_t opcode,uint8_t session,
         uint32_t parts,uint32_t timeout_ms,const char **error){
     *error="Controller native upload response timed out";
@@ -515,7 +562,11 @@ bool jh2_ble_upload_reply(uint32_t *cursor,uint16_t opcode,uint8_t session,
         ESP_LOGI(TAG,"Native upload reply op=%u rcode=%u result=%lu count=%lu",
             opcode,b[18],(unsigned long)values[1],(unsigned long)values[2]);
         if(b[18]||values[1]||(opcode==2931&&values[5])){
-            *error="Controller rejected native upload (inspect response code)";return false;
+            static char rejection[132];
+            snprintf(rejection,sizeof(rejection),
+                "SmartDawn rejected native upload: opcode=%u responseCode=%u result=%lu count=%lu",
+                (unsigned)opcode,(unsigned)b[18],(unsigned long)values[1],(unsigned long)values[2]);
+            *error=rejection;return false;
         }
         if(opcode==2934&&values[2]!=parts){*error="Controller final packet count differs from file";return false;}
         *error=NULL;return true;
