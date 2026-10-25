@@ -21,3 +21,9 @@ bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
 // Proxy one original manufacturer still thumbnail over the authenticated Oracle
 // bridge. Caller owns *out and must free(); never exposes Oracle credentials.
 bool jh2_bridge_factory_preview(uint8_t effect,uint8_t **out,size_t *length);
+
+// Button-driven, authenticated Oracle bridge bootstrap after Wi-Fi is online.
+// Never returns or exposes the bridge token or administrator API key.
+bool jh2_bridge_autolink_request(void);
+const char *jh2_bridge_autolink_status(void);
+bool jh2_bridge_autolink_verified(void);
