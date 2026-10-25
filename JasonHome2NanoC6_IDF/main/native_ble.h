@@ -16,6 +16,11 @@ bool jh2_ble_asset_packet(uint8_t channel,const uint8_t *bytes,size_t len);
 
 // Restored local Bluetooth scan/select tools. Selected MAC is persisted in
 // its own NVS namespace; other network/Oracle settings are untouched.
+// A finite full scan lists advertisements without auto-connecting to a target.
+// Previously selected devices are retained in nonvolatile memory.
+bool jh2_ble_full_scan(void);
+// Reconnect only the most recently selected Bluetooth controller.
+bool jh2_ble_reconnect_last(void);
 bool jh2_ble_scan_start(void);
 bool jh2_ble_select_target(const char *mac);
 bool jh2_ble_disconnect(void);
