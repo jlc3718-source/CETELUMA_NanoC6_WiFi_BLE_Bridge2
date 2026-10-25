@@ -1,0 +1,142 @@
+name: JH2 1.1.69 Stage Verified Signed Runtime and Recovery
+on:
+  push:
+    branches: [release/jh2-nano-169-assigned-cid-20261024]
+    paths: [.github/workflows/jh2-169-stage-signed-with-recovery.yml]
+permissions: {contents: write, actions: read}
+concurrency:
+  group: jh2-169-signed-staging
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact production candidate build completed successfully
+        shell: bash
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          for i in {1..180}; do
+            state="$(gh run view 40151509332 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status+" "+(.conclusion // "")')"
+            if [[ "$state" == "completed success" ]]; then echo CANDIDATE_BUILD_COMPLETE;exit 0;fi
+            if [[ "$state" == "completed "* ]]; then echo "CANDIDATE_BUILD_FAILED $state";exit 1;fi
+            sleep 5
+          done
+          echo CANDIDATE_BUILD_NOT_CONFIRMED;exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 40151509332
+          name: JH2-1.1.69-SIGNED-CID-PRODUCTION-CANDIDATE-AND-RECOVERY
+          github-token: '${{ github.token }}'
+          path: signed-bundle
+      - name: Verify all three package signatures and exact source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,subprocess,tempfile
+          for ver,d in [('1.1.67',Path('signed-bundle/backup-1.1.67')),
+                        ('1.1.68',Path('signed-bundle/backup-1.1.68')),
+                        ('1.1.69',Path('signed-bundle/signed-package'))]:
+              latest=json.loads((d/'latest.json').read_text())
+              release=json.loads((d/'release.json').read_text())
+              fields=dict(x.split('=',1) for x in latest['payload'].strip().splitlines())
+              raw=(d/('jh2-runtime-'+ver+'.bin')).read_bytes()
+              assert fields['version']==ver==release['version']
+              assert fields['product']=='jason-home-2-nanoc6'
+              assert fields['commit']==release['commit']
+              assert hashlib.sha256(raw).hexdigest()==fields['sha256']
+              assert len(raw)==int(fields['bytes']) and raw[0]==0xe9 and raw[12]==13
+              if ver=='1.1.68':assert fields['commit']=='98b13b72b09eca8566816562fe7b3ffcaba34959'
+              if ver=='1.1.69':
+                  assert fields['commit']=='72c5a1994faf5e5c03722875ff35eaa137574de1'
+                  assert b'1.1.69-assigned-cid' in raw and b'/settings/nano' in raw
+              with tempfile.TemporaryDirectory() as td:
+                  p=Path(td)
+                  (p/'payload').write_text(latest['payload'])
+                  (p/'signature').write_bytes(base64.b64decode(latest['signature'],validate=True))
+                  subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem','-signature',str(p/'signature'),str(p/'payload')],check=True)
+              print('SIGNED_RECOVERY_OR_CANDIDATE_OK',ver,len(raw),fields['sha256'],flush=True)
+          PY
+      - name: Ensure Nano 1.1.68 idle and disable automatic updates
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time,uuid
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          root='http://127.0.0.1:8081'
+          def api(path,data=None,cookie=''):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(root+path,data=json.dumps(data).encode() if data is not None else None,
+                     headers=headers,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=25) as r:return json.load(r),r.headers
+          _,hdr=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=hdr['Set-Cookie'].split(';')[0]
+          st,_=api('/api/curtain/status',cookie=cookie)
+          assert st.get('online') is True and st.get('firmware')=='1.1.68',st.get('firmware')
+          assert (st.get('curtain') or {}).get('connected') is True
+          assert int(st.get('queued') or 0)==0 and st.get('relayStreaming') is not True
+          q,_=api('/api/curtain/call',{'action':'nanoAutoUpdate','payload':{'enabled':False},
+                'idempotencyKey':'jh2-169-staging-disable-auto-20261024'},cookie)
+          command=int(q['commandId'])
+          for _ in range(80):
+              r,_=api('/api/curtain/command?id='+str(command),cookie=cookie)
+              state=r['command'].get('state')
+              if state in ('applied','failed','expired','superseded'):
+                  assert state=='applied',state
+                  print('NANO_AUTO_OTA_DISABLED_FOR_SAFE_STAGING',command,flush=True)
+                  break
+              time.sleep(.6)
+          else:raise RuntimeError('Auto-update disable not confirmed; stage blocked')
+          PY
+      - name: Preserve verified releases in Oracle immutable signed storage
+        shell: bash
+        env: {GITHUB_WORKSPACE: '${{ github.workspace }}'}
+        run: |
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          from pathlib import Path
+          import json,os,subprocess,shutil
+          work=Path(os.environ['GITHUB_WORKSPACE'])
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          base=Path(mount['Source'])/'signed-ota'
+          base.mkdir(parents=True,exist_ok=True)
+          for version,rel in [('1.1.67','backup-1.1.67'),('1.1.68','backup-1.1.68'),('1.1.69','signed-package')]:
+              src=work/'signed-bundle'/rel
+              dst=base/version
+              files=['jh2-runtime-'+version+'.bin','latest.json','release.json']
+              if dst.exists():
+                  assert all((dst/f).read_bytes()==(src/f).read_bytes() for f in files),'Immutable release conflict '+version
+              else:
+                  tmp=base/(version+'.169-staging')
+                  assert not tmp.exists()
+                  tmp.mkdir()
+                  try:
+                      for f in files:shutil.copy2(src/f,tmp/f)
+                      tmp.rename(dst)
+                  except:
+                      shutil.rmtree(tmp)
+                      raise
+              assert all((dst/f).read_bytes()==(src/f).read_bytes() for f in files)
+              print('PERSISTENT_SIGNED_FIRMWARE_VERIFIED',version,flush=True)
+          PY
+      - name: Publish immutable signed v1.1.69 GitHub release without flashing
+        shell: bash
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          if gh release view jason-home-2-nanoc6-v1.1.69 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Existing 1.1.69 release requires review; refusing overwrite';exit 1
+          fi
+          gh release create jason-home-2-nanoc6-v1.1.69 \
+            signed-bundle/signed-package/jh2-runtime-1.1.69.bin \
+            signed-bundle/signed-package/latest.json signed-bundle/signed-package/release.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Jason Home 2 NanoC6 1.1.69 — SmartDawn Assigned CID" \
+            --notes "Signed and verified from exact 1.1.68 production source. Corrects manufacturer-assigned native upload CIDs while keeping factory effect protection, Oracle launcher, Nano Settings and manual factory recovery. 1.1.68 and 1.1.67 signed recovery images preserved. Single runtime slot: manual rollback only. No controller write performed by this build."
+          echo 'SIGNED_169_PUBLISHED_NO_CONTROLLER_FLASH'
