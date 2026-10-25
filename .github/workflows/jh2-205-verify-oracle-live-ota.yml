@@ -1,0 +1,39 @@
+name: JH2 2.0.5 Oracle Signed Runtime Live HTTP Verification
+on:
+  push:
+    branches: [fix/jh2-2.0.5-ble-scan-remember-reconnect-20261025]
+    paths: [.github/workflows/jh2-205-verify-oracle-live-ota.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  verify-readonly:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Read only approved Oracle manifest and runtime with SHA-256 check
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec jason-home-2-web node -e '
+          const {createHash}=require("node:crypto");
+          (async()=>{
+            const root="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+            const health=await fetch(root+"/api/health");
+            if(!health.ok)throw Error("App health failed "+health.status);
+            const resp=await fetch(root+"/api/curtain/firmware-manifest");
+            const obj=await resp.json();
+            if(!resp.ok||obj.schema!==1||!obj.payload||!obj.signature)
+                throw Error("Oracle manifest not served: "+resp.status+" "+JSON.stringify(obj));
+            const fields=Object.fromEntries(obj.payload.trim().split("\n").map(row=>row.split(/=(.*)/s).slice(0,2)));
+            if(fields.version!=="2.0.5"||fields.product!=="jason-home-2-nanoc6")
+                throw Error("Wrong OTA release "+fields.version);
+            const binresp=await fetch(root+"/api/curtain/firmware-runtime/2.0.5.bin");
+            if(!binresp.ok)throw Error("Runtime not served "+binresp.status);
+            const bin=Buffer.from(await binresp.arrayBuffer());
+            const sha=createHash("sha256").update(bin).digest("hex");
+            if(sha!==fields.sha256||bin.length!==Number(fields.bytes)||bin.length>0x160000)
+                throw Error("Oracle runtime does not match signed manifest");
+            console.log("ORACLE_HTTP_205_SIGNED_RUNTIME_VERIFIED",resp.status,binresp.status,bin.length,sha);
+            console.log("NO_DEVICE_FLASH_PERFORMED");
+          })().catch(e=>{console.error(e);process.exitCode=1});'
+
