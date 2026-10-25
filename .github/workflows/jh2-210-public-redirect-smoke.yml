@@ -1,0 +1,30 @@
+name: JH2 2.0.10 Public DDNS and HTTPS Read-Only Smoke Test
+on:
+  push:
+    branches: [fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025]
+    paths: [.github/workflows/jh2-210-public-redirect-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  external-urls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Check DDNS root Location and HTTPS landing page from outside home LAN
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess,re
+          targets=['http://craumer.tplinkdns.com/','https://150.136.245.51/jason-home-2/']
+          for url in targets:
+            proc=subprocess.run(['curl','--silent','--show-error','--ipv4','--max-time','18',
+             '--connect-timeout','7','--dump-header','-','--output','/dev/null',url],
+             text=True,capture_output=True)
+            headers=proc.stdout.strip().splitlines()
+            status=[s for s in headers if re.match(r'^HTTP/\\S+\\s+\\d+',s)]
+            location=[s for s in headers if s.lower().startswith('location:')]
+            print('PUBLIC_URL_PROBE',url,'curl_exit',proc.returncode,'http',status[-1:] or [],
+              'location',location[-1:] or [],'error',proc.stderr.strip()[:350],flush=True)
+            if proc.returncode==0 and url==targets[0]:
+              assert location and location[-1].split(':',1)[1].strip()=='https://150.136.245.51/jason-home-2/','Wrong public redirect destination'
+          PY
