@@ -112,7 +112,7 @@ jobs:
           if s.get('firmware')=='1.1.71':
               print('ALREADY_171_INSTALLED_NO_REPEAT',flush=True)
               raise SystemExit(0)
-          assert s.get('firmware')=='1.1.69','Nano must be exactly production 1.1.69 prior to upgrade'
+          assert s.get('firmware')=='1.1.70','Nano must be exactly production 1.1.70 prior to upgrade'
           assert s.get('relayStreaming') is not True and int(s.get('queued') or 0)==0,'Nano/controller busy; do not flash'
           print('NANO_SAFE_INSTALL_PRECONDITIONS_PASS',flush=True)
           def issue(action,key):
