@@ -2,7 +2,7 @@ name: JH2 Nano 2.0.8 OTA Repair Build Sign Publish Oracle
 on:
   push:
     branches:
-      - fix/jh2-2.0.8-oracle-root-ble-reconnect-20261025
+      - fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025
     paths:
       - JasonHome2NanoC6_IDF/**
       - .github/workflows/jh2-207-repair-build-sign-stage.yml
