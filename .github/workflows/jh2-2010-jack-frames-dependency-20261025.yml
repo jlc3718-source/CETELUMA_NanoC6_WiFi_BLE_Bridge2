@@ -1,0 +1,33 @@
+name: JH2 Jack Run frame and runtime decoder preflight
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-jack-frames-dependency-20261025.yml']
+permissions: {contents: read}
+jobs:
+  preflight:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Examine the exact 8 source PNG frame headers, installed libraries and available browser tooling
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,struct
+          env=dict(t.split('=',1) for t in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in t)
+          base='http://127.0.0.1:8081'
+          req=urllib.request.Request(base+'/api/session',data=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode(),headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=12) as r:cookie=r.headers['Set-Cookie'].split(';')[0]
+          src='jacklanternanimated-8e3f74948a71e03508d7eaea'
+          out=[]
+          for i in range(8):
+              req=urllib.request.Request(base+'/api/curtain/internet-art/gif?id='+src+'&frame='+str(i),headers={'Cookie':cookie})
+              with urllib.request.urlopen(req,timeout=12) as r:b=r.read()
+              if b[:8]!=bytes.fromhex('89504e470d0a1a0a'):raise RuntimeError('Expected original PNG at frame '+str(i))
+              w,h,bitDepth,colorType=struct.unpack('>IIBB',b[16:26])
+              out.append({'index':i,'bytes':len(b),'width':w,'height':h,'bitDepth':bitDepth,'colorType':colorType})
+          js="const packages=['pngjs','sharp','canvas','gifencoder','gif-encoder-2','playwright','puppeteer','ffmpeg-static'];for(const p of packages){try{const x=require.resolve(p);console.log(p+'=present')}catch{console.log(p+'=absent')}}"
+          node=subprocess.run(['docker','exec','jason-home-2-web','node','-e',js],text=True,capture_output=True,timeout=15)
+          print('JH2_JACK_FRAME_PREFLIGHT',json.dumps({'frames':out,'nodeRuntime':node.stdout.splitlines(),'nodeOk':node.returncode==0,'safety':'Read-only source/decoder inspection'}),flush=True)
+          PY
