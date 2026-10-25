@@ -1,0 +1,29 @@
+name: JH2 2.0.6 Public GitHub Asset SHA256 Verification
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/jh2-206-public-release-download-check.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify exact public GitHub OTA BIN download is the signed image
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v2.0.6/jh2-runtime-2.0.6.bin"
+          curl -fL --retry 3 --retry-delay 2 --max-time 150 -sS -o /tmp/jh2-206-public-runtime.bin "$url"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          b=Path('/tmp/jh2-206-public-runtime.bin').read_bytes()
+          sha=hashlib.sha256(b).hexdigest()
+          assert len(b)==1382016, ('Wrong OTA size',len(b))
+          assert sha=='006c79e2b06b5b5df0b3bc15fb9b4fb896e661c30e2e32cfb13105911b841ff1', ('SHA mismatch',sha)
+          assert b[0]==0xE9
+          print('PUBLIC_GITHUB_SIGNED_206_ASSET_VALID',len(b),sha)
+          PY
