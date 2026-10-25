@@ -1,0 +1,36 @@
+name: JH2 2.0.6 OTA ACK Read Only
+on:
+  push:
+    branches: [fix/jh2-2.0.6-ble-backoff-reboot-diagnostics-20261025]
+    paths: [.github/workflows/jh2-206-ota-ack-readonly.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect latest OTA commands only, without modifying Nano
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec jason-home-2-web node -e '
+          (async()=>{
+             const base="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+             const auth=await fetch(base+"/api/session",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:process.env.JH2_UPSTREAM_TOKEN})});
+             if(!auth.ok)throw Error("Oracle session unavailable");
+             const cookie=auth.headers.get("set-cookie").split(";")[0];
+             const headers={cookie};
+             let x=await fetch(base+"/api/curtain/call",{method:"POST",headers:{...headers,"content-type":"application/json"},body:JSON.stringify({action:"status"})});
+             if(!x.ok)throw Error("Nano status unavailable");
+             const s=await x.json();
+             console.log("NANO_LIVE",JSON.stringify({firmware:s.firmware,online:s.online,queued:s.queued}));
+             for(let id=16551;id<=16563;id++){
+               const response=await fetch(base+"/api/curtain/command?id="+id,{headers});
+               if(!response.ok)continue;
+               const c=(await response.json()).command;
+               if(!["nanoFirmwareCheck","nanoInstallUpdate","nanoAutoUpdate"].includes(c.action))continue;
+               console.log("OTA_COMMAND",JSON.stringify({id:c.id,action:c.action,state:c.state,result:c.result}));
+             }
+          })().catch(e=>{console.error("OTA_READ_ONLY_ERROR",e.message);process.exitCode=1});
+          '
