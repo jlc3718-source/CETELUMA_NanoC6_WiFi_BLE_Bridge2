@@ -2,7 +2,7 @@ name: JH2 2.0.8 Guarded OTA From Running 2.0.6
 on:
   push:
     branches: [fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025]
-    paths: [.github/workflows/jh2-208-guarded-install-once.yml]
+    paths: [.github/workflows/jh2-208-guarded-install.yml]
 permissions:
   contents: read
 jobs:
