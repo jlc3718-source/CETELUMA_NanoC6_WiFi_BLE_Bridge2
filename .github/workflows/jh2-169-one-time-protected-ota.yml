@@ -1,0 +1,126 @@
+name: JH2 Nano 1.1.69 one-time signed OTA after recovery preflight
+on:
+  push:
+    branches: [release/jh2-nano-169-assigned-cid-20261024]
+    paths: [.github/workflows/jh2-169-one-time-protected-ota.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  install-once:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify signed target, preserved recovery, idle Nano, and install exactly once
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import base64,hashlib,json,subprocess,tempfile,time,urllib.request,urllib.error
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(item.split('=',1) for item in info['Config']['Env'] if '=' in item)
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in web['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          persistent=Path(mount['Source'])/'signed-ota'
+          key=Path('remote-update/anderson_ota_signing_public.pem')
+          expected={'1.1.69':'72c5a1994faf5e5c03722875ff35eaa137574de1',
+                    '1.1.68':'98b13b72b09eca8566816562fe7b3ffcaba34959'}
+          digests={}
+          for version in ('1.1.67','1.1.68','1.1.69'):
+              directory=persistent/version
+              latest=json.loads((directory/'latest.json').read_text())
+              release=json.loads((directory/'release.json').read_text())
+              fields=dict(row.split('=',1) for row in latest['payload'].strip().splitlines())
+              image=(directory/('jh2-runtime-'+version+'.bin')).read_bytes()
+              sha=hashlib.sha256(image).hexdigest()
+              assert latest['schema']==1 and fields['product']=='jason-home-2-nanoc6'
+              assert fields['version']==release['version']==version
+              assert fields['commit']==release['commit']
+              if version in expected:assert fields['commit']==expected[version]
+              assert sha==fields['sha256'] and len(image)==int(fields['bytes'])
+              assert image[:1]==b'\\xe9' and len(image)<=0x290000
+              with tempfile.TemporaryDirectory() as tmp:
+                  root=Path(tmp);(root/'payload').write_text(latest['payload'])
+                  (root/'sig').write_bytes(base64.b64decode(latest['signature'],validate=True))
+                  subprocess.run(['openssl','dgst','-sha256','-verify',str(key),
+                     '-signature',str(root/'sig'),str(root/'payload')],check=True,stdout=subprocess.DEVNULL)
+              digests[version]=sha
+              print('SIGNED_FW_RECOVERY_VERIFIED',version,len(image),sha,flush=True)
+          if not (persistent/'1.1.68/jh2-runtime-1.1.68.bin').is_file() or not (persistent/'1.1.67/jh2-runtime-1.1.67.bin').is_file():
+              raise RuntimeError('Manual recovery firmware missing; abort without install')
+          root='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              request=urllib.request.Request(root+path,data=json.dumps(body).encode() if body is not None else None,
+                  headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(request,timeout=28) as response:return json.load(response),response.headers
+          public_manifest,_=api('/api/curtain/firmware-manifest')
+          fields=dict(row.split('=',1) for row in public_manifest['payload'].strip().splitlines())
+          assert fields['version']=='1.1.69' and fields['commit']==expected['1.1.69']
+          assert fields['sha256']==digests['1.1.69'], 'Oracle serves wrong signed firmware'
+          with urllib.request.urlopen(root+'/api/curtain/firmware-runtime/1.1.69.bin',timeout=90) as response:
+              digest=hashlib.sha256();n=0
+              while True:
+                  buf=response.read(65536)
+                  if not buf:break
+                  digest.update(buf);n+=len(buf)
+          assert digest.hexdigest()==digests['1.1.69'] and n==int(fields['bytes'])
+          print('ORACLE_169_SIGNED_FIRMWARE_ENDPOINT_VERIFIED',n,digest.hexdigest(),flush=True)
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          assert cookie.startswith('jh2=')
+          def status():return api('/api/curtain/status',cookie=cookie)[0]
+          st=status()
+          if st.get('firmware')=='1.1.69':
+              print('ALREADY_169_NO_REFLASH',flush=True)
+              raise SystemExit(0)
+          assert st.get('firmware')=='1.1.68' and st.get('online') is True, 'Nano version/online changed; abort'
+          assert (st.get('curtain') or {}).get('connected') is True, 'Controller relay disconnected; abort'
+          assert st.get('relayStreaming') is not True, 'Nano streaming busy; abort'
+          # Drain earlier commands; do not interrupt an in-flight BLE operation.
+          for i in range(70):
+              st=status()
+              if st.get('firmware')!='1.1.68':raise RuntimeError('Nano version changed during preflight')
+              if int(st.get('queued') or 0)==0:break
+              time.sleep(1)
+          assert int(st.get('queued') or 0)==0 and st.get('relayStreaming') is not True, 'Nano not idle; abort'
+          print('PRE_OTA_168_ONLINE_IDLE_AND_RECOVERY_PRESERVED',flush=True)
+          def call_once(action,ident,wait_seconds=115):
+              q,_=api('/api/curtain/call',{'action':action,'payload':{},'idempotencyKey':ident},cookie)
+              cid=int(q['commandId']);print('OTA_COMMAND_QUEUED',action,cid,flush=True)
+              end=time.monotonic()+wait_seconds
+              while time.monotonic()<end:
+                  c,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  v=c.get('command') or {}; state=v.get('state')
+                  if state in ('applied','failed','expired','superseded'):
+                      print('OTA_COMMAND_ACK',action,cid,state,json.dumps(v.get('result') or {},sort_keys=True),flush=True)
+                      assert state=='applied','Command '+action+' not applied: '+str(state)
+                      return
+                  time.sleep(1)
+              raise RuntimeError('Unknown outcome for command '+str(cid)+'; DO NOT RETRY')
+          call_once('nanoFirmwareCheck','jh2-169-assigned-cid-signed-preflight-20261024')
+          # Re-check immediately before single-slot flash and preserve recovery.
+          st=status()
+          assert st.get('firmware')=='1.1.68' and st.get('online') is True
+          assert int(st.get('queued') or 0)==0 and st.get('relayStreaming') is not True
+          call_once('nanoInstallUpdate','jh2-169-assigned-cid-INSTALL-ONCE-20261024',150)
+          print('OTA_INSTALL_ACCEPTED_WAIT_FOR_NEW_PHYSICAL_HEARTBEAT',flush=True)
+          deadline=time.monotonic()+330
+          while time.monotonic()<deadline:
+              time.sleep(3)
+              st=status()
+              if st.get('firmware')=='1.1.69' and st.get('online') is True:
+                  c=st.get('curtain') or {}
+                  print('JH2_NANO_169_PHYSICAL_POST_REBOOT_VERIFIED',json.dumps({
+                     'version':st.get('firmware'),'online':st.get('online'),
+                     'bluetoothConnected':c.get('connected'),'mtu':c.get('mtu'),
+                     'queued':st.get('queued'),'uptimeSeconds':c.get('uptimeSeconds')},sort_keys=True),flush=True)
+                  assert c.get('connected') is True, 'Nano upgraded but BLE not connected; check recovery'
+                  assert int(st.get('queued') or 0)==0, 'Nano upgraded but queue not drained'
+                  raise SystemExit(0)
+          raise RuntimeError('OTA accepted but 1.1.69 heartbeat NOT confirmed. Manual recovery check needed; NEVER auto-retry the flash')
+          PY
