@@ -139,6 +139,9 @@ bool jh2_validate_signed_manifest(const cJSON *manifest,const char *current_vers
 }
 bool jh2_queue_signed_update(const cJSON *manifest,const char *current_version,
                              char *error,size_t error_capacity){
+    (void)manifest;(void)current_version;
+    msg(error,error_capacity,"Remote OTA locked off for 1.1.74 A/B recovery. Use local factory rescue upload.");
+    return false;
     char version[32];
     if(!jh2_validate_signed_manifest(manifest,current_version,version,
                                     sizeof(version),error,error_capacity))return false;
