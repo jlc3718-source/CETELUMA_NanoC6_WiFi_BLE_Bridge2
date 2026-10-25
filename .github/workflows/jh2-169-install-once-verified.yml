@@ -1,0 +1,127 @@
+name: JH2 1.1.69 Guarded Physical OTA and Release
+on:
+  push:
+    branches: [release/jh2-nano-169-assigned-cid-20261024]
+    paths: [.github/workflows/jh2-169-install-once-verified.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned signed 1.1.69, install once, confirm physical Nano heartbeat
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import base64,hashlib,json,subprocess,tempfile,time,urllib.request
+          from pathlib import Path
+          expected_version='1.1.69'
+          expected_commit='72c5a1994faf5e5c03722875ff35eaa137574de1'
+          expected_sha='ac6e5825cda1dda45bc85abaea5ca8d851c7cdba54441068f187bba25dbf1c01'
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(e.split('=',1) for e in info['Config']['Env'] if '=' in e)
+          base='http://127.0.0.1:8081'
+          def api(path,body=None,cookie='',timeout=25):
+              data=json.dumps(body).encode() if body is not None else None
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=timeout) as resp:return json.load(resp),resp.headers
+          signed,_=api('/api/curtain/firmware-manifest')
+          assert signed.get('schema')==1 and signed.get('signature'),'Missing signed firmware manifest'
+          fields=dict(x.split('=',1) for x in signed['payload'].strip().splitlines())
+          assert fields['product']=='jason-home-2-nanoc6'
+          assert fields['version']==expected_version and fields['commit']==expected_commit,'Manifest does not match pinned build'
+          assert fields['sha256']==expected_sha,'Unexpected signed image digest'
+          with tempfile.TemporaryDirectory() as td:
+              p=Path(td);(p/'payload').write_text(signed['payload'])
+              (p/'signature').write_bytes(base64.b64decode(signed['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem',
+                              '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          with urllib.request.urlopen(base+'/api/curtain/firmware-runtime/1.1.69.bin',timeout=90) as resp:
+              raw=resp.read()
+          assert len(raw)==int(fields['bytes']) and hashlib.sha256(raw).hexdigest()==expected_sha
+          assert raw[0]==0xe9 and raw[12]==13 and b'1.1.69-assigned-cid' in raw
+          print('VERIFIED_EXACT_SIGNED_169',len(raw),expected_sha,flush=True)
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in web['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          root=Path(mount['Source'])/'signed-ota'
+          for ver in ('1.1.67','1.1.68'):
+              d=root/ver
+              assert (d/('jh2-runtime-'+ver+'.bin')).is_file() and (d/'latest.json').is_file(),'Recovery missing '+ver
+          print('SIGNED_RECOVERY_167_168_PRESERVED',flush=True)
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          assert cookie.startswith('jh2='),'Authentication failed'
+          status,_=api('/api/curtain/status',cookie=cookie)
+          if status.get('firmware')==expected_version and status.get('online') is True:
+              print('ALREADY_169_INSTALLED_NO_REFLASH',flush=True)
+              raise SystemExit(0)
+          assert status.get('firmware')=='1.1.68' and status.get('online') is True,'Different running firmware; stop'
+          assert (status.get('curtain') or {}).get('connected') is True,'SmartDawn BLE not connected; stop'
+          assert status.get('relayStreaming') is not True,'Animation streaming active; stop'
+          assert int(status.get('queued') or 0)==0,'Pending controller commands; stop'
+          print('SAFE_PRE_INSTALL_168_IDLE',flush=True)
+          def issue(action,key):
+              r,_=api('/api/curtain/call',{'action':action,'payload':{},'idempotencyKey':key},cookie=cookie)
+              cid=int(r['commandId']);print('COMMAND_SENT',action,cid,flush=True)
+              for n in range(120):
+                  x,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  c=x['command'];state=c.get('state')
+                  if state in ('applied','failed','expired','superseded'):
+                      print('COMMAND_ACK',action,cid,state,json.dumps(c.get('result'),sort_keys=True),flush=True)
+                      return state=='applied'
+                  time.sleep(.75)
+              return False
+          assert issue('nanoFirmwareCheck','jh2-169-assigned-cid-20261024-signature-check-once'), 'Signed OTA preflight rejected; not installing'
+          assert issue('nanoInstallUpdate','jh2-169-assigned-cid-20261024-install-physical-once'), 'Nano did not acknowledge OTA; no repeat'
+          for n in range(150):
+              time.sleep(2)
+              try:
+                  live,_=api('/api/curtain/status',cookie=cookie)
+              except Exception as e:
+                  if n%10==0:print('RECONNECT_WAIT',str(e),flush=True)
+                  continue
+              if live.get('firmware')==expected_version and live.get('online') is True:
+                  print('PHYSICAL_NANO_169_HEARTBEAT_VERIFIED',
+                        json.dumps({'firmware':live['firmware'],'online':live['online'],
+                                    'bleConnected':(live.get('curtain') or {}).get('connected'),
+                                    'uptimeSeconds':live.get('uptimeSeconds'),
+                                    'queued':live.get('queued')},sort_keys=True),flush=True)
+                  raise SystemExit(0)
+              if n%10==0:print('WAITING_NEW_FIRMWARE',live.get('firmware'),live.get('online'),flush=True)
+          raise RuntimeError('OTA sent, but physical 1.1.69 heartbeat not verified. Do not retry automatically.')
+          PY
+      - name: Publish draft firmware release ONLY after verified physical installation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          api='https://api.github.com/repos/'+os.environ['REPO']+'/releases/423089598'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                   'Accept':'application/vnd.github+json',
+                   'X-GitHub-Api-Version':'2022-11-28',
+                   'Content-Type':'application/json'}
+          def request(method,data=None):
+              body=json.dumps(data).encode() if data is not None else None
+              req=urllib.request.Request(api,data=body,headers=headers,method=method)
+              with urllib.request.urlopen(req,timeout=25) as resp:return json.load(resp)
+          current=request('GET')
+          assert current['tag_name']=='jason-home-2-nanoc6-v1.1.69'
+          assert current['target_commitish']=='72c5a1994faf5e5c03722875ff35eaa137574de1'
+          assert {x['name'] for x in current['assets']}=={'jh2-runtime-1.1.69.bin','latest.json','release.json'}
+          if current['draft']:
+              current=request('PATCH',{'draft':False,'prerelease':False})
+          assert current['draft'] is False and current['published_at'] is not None
+          print('SIGNED_169_RELEASE_PUBLISHED',current['html_url'],flush=True)
+          PY
