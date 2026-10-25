@@ -5,7 +5,7 @@ on:
       - fix/jh2-2.0.6-ble-backoff-reboot-diagnostics-20261025
     paths:
       - JasonHome2NanoC6_IDF/**
-      - .github/workflows/jh2-206-ble-reconnect-auto-ota.yml
+      - .github/workflows/jh2-206-ble-stability-reboot-ota-persistence.yml
   workflow_dispatch:
 permissions:
   contents: read
