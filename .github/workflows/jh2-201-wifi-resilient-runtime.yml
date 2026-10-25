@@ -5,7 +5,7 @@ on:
       - fix/jh2-2.0.1-wifi-1179-20261025
     paths:
       - JasonHome2NanoC6_IDF/**
-      - .github/workflows/jh2-201-runtime-dualslot-oracle-bootstrap.yml
+      - .github/workflows/jh2-201-wifi-resilient-runtime.yml
   workflow_dispatch:
 permissions:
   contents: read
