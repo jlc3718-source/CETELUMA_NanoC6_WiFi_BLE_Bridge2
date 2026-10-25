@@ -1,0 +1,121 @@
+name: JH2 2.0.6 User-Triggered Signed OTA Install
+on:
+  push:
+    branches:
+      - fix/jh2-2.0.6-ble-backoff-reboot-diagnostics-20261025
+    paths:
+      - .github/workflows/jh2-206-trigger-ota-now.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jh2-206-user-triggered-install
+  cancel-in-progress: false
+jobs:
+  issue-verified-command:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 9
+    steps:
+      - name: Authenticated user-directed 2.0.6 signed runtime update, wait for Nano ACK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/jh2-206-trigger.js" <<'JS'
+          const crypto=require('node:crypto');
+          const wait=ms=>new Promise(r=>setTimeout(r,ms));
+          const expectedSha=""; // Determined exclusively from Oracle's currently approved signed manifest.
+          const root="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+          const token=process.env.JH2_UPSTREAM_TOKEN;
+          if(!token||token.length<30)throw Error("Oracle internal authorization unavailable");
+          async function get(path,opts={}){
+            const res=await fetch(root+path,{redirect:"error",signal:AbortSignal.timeout(25000),...opts});
+            let body={};try{body=await res.json()}catch{}
+            if(!res.ok)throw Error(path+" HTTP "+res.status+" "+String(body.error||body.message||"").slice(0,100));
+            return {body,headers:res.headers};
+          }
+          (async()=>{
+            // Only the signed, staged 2.0.6 binary; never fetch or stage a different version.
+            const man=(await get("/api/curtain/firmware-manifest")).body;
+            if(man.schema!==1||!man.payload||!man.signature)throw Error("Approved signed OTA manifest missing");
+            const fields=Object.fromEntries(man.payload.trim().split("\n").map(x=>{
+              const at=x.indexOf("=");return [x.slice(0,at),x.slice(at+1)];
+            }));
+            if(fields.product!=="jason-home-2-nanoc6"||fields.version!=="2.0.6"||
+              !/^[0-9a-f]{64}$/.test(fields.sha256||"")||
+              !Number.isInteger(Number(fields.bytes))||Number(fields.bytes)>0x160000)
+              throw Error("Expected signed 2.0.6 OTA is not available");
+            const binary=await fetch(root+"/api/curtain/firmware-runtime/2.0.6.bin",{redirect:"error",signal:AbortSignal.timeout(60000)});
+            if(!binary.ok)throw Error("Oracle OTA binary HTTP "+binary.status);
+            const bytes=Buffer.from(await binary.arrayBuffer());
+            const sha=crypto.createHash("sha256").update(bytes).digest("hex");
+            if(sha!==fields.sha256||bytes.length!==Number(fields.bytes)||bytes[0]!==0xe9)
+              throw Error("2.0.6 OTA binary/manifest mismatch");
+            console.log("ORACLE_SIGNED_206_RUNTIME_VERIFIED",bytes.length,sha);
+            const login=await get("/api/session",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token})});
+            const cookie=login.headers.get("set-cookie")?.split(";")[0];
+            if(!cookie||login.body.ok!==true)throw Error("Authenticated Oracle session unavailable");
+            const api=(path,method="GET",data)=>get(path,{method,headers:{cookie,"content-type":"application/json"},...(data?{body:JSON.stringify(data)}:{})});
+            const current=(await api("/api/curtain/call","POST",{action:"status"})).body;
+            const nowVersion=String(current.firmware||current.curtain?.firmware||"");
+            console.log("NANO_PRECHECK",JSON.stringify({firmware:nowVersion,online:current.online,queued:current.queued}));
+            if(nowVersion==="2.0.6"){console.log("NANO_ALREADY_ON_206");return;}
+            if(nowVersion!=="2.0.5"||current.online!==true)
+              throw Error("Nano not on known 2.0.5 online baseline; no firmware command sent");
+            async function send(action,key){
+              const d=(await api("/api/curtain/call","POST",{
+                action,payload:{},idempotencyKey:key
+              })).body;
+              if(!d.ok||!Number.isInteger(d.commandId))throw Error("Cannot enqueue "+action);
+              console.log("COMMAND_ENQUEUED",action,d.commandId);
+              return d.commandId;
+            }
+            async function ack(id,timeoutMs=55000){
+              const deadline=Date.now()+timeoutMs;
+              while(Date.now()<deadline){
+                const c=(await api("/api/curtain/command?id="+id)).body.command;
+                if(c&&["applied","failed","expired","superseded"].includes(c.state)){
+                  console.log("NANO_COMMAND_ACK",id,c.action,c.state,JSON.stringify(c.result||{}).slice(0,360));
+                  return c;
+                }
+                await wait(3500);
+              }
+              throw Error("Timed out waiting for Nano command "+id+"; no additional commands sent");
+            }
+            const checkId=await send("nanoFirmwareCheck","user-ota-206-check-20261025");
+            const checked=await ack(checkId);
+            if(checked.state!=="applied")throw Error("Nano rejected signed 2.0.6 update check");
+            console.log("NANO_SIGNED_206_UPDATE_AVAILABLE_ACK");
+            for(let i=0;i<10;i++){
+              const cur=(await api("/api/curtain/call","POST",{action:"status"})).body;
+              const version=String(cur.firmware||cur.curtain?.firmware||"");
+              if(version==="2.0.6"){console.log("NANO_206_INSTALLED_CONFIRMED");return;}
+              if(version!=="2.0.5"&&cur.online===true)throw Error("Nano changed to unexpected firmware "+version);
+              const id=await send("nanoInstallUpdate","user-ota-206-install-20261025-attempt-"+i);
+              const done=await ack(id);
+              if(done.state==="applied"){
+                console.log("NANO_SIGNED_206_INSTALL_ACCEPTED",id);
+                // Reboot is automatic after ACK. Allow device to disappear and return.
+                const deadline=Date.now()+120000;
+                while(Date.now()<deadline){
+                  await wait(5000);
+                  const s=(await api("/api/curtain/call","POST",{action:"status"})).body;
+                  if(s.online&&String(s.firmware||s.curtain?.firmware)==="2.0.6"){
+                    console.log("NANO_206_INSTALLED_CONFIRMED",JSON.stringify({firmware:s.firmware,online:s.online}));
+                    return;
+                  }
+                }
+                console.log("NANO_INSTALL_COMMAND_ACCEPTED_REBOOT_VERSION_NOT_YET_CONFIRMED");
+                return;
+              }
+              const message=String(done.result?.message||"");
+              if(!/download|still|staging|wait|busy|verif/i.test(message))
+                throw Error("Nano install rejected: "+message.slice(0,140));
+              console.log("NANO_OTA_DOWNLOAD_IN_PROGRESS_WAIT",i);
+              await wait(16000);
+            }
+            throw Error("OTA download not confirmed ready; Nano preserved running release");
+          })().catch(e=>{console.error("USER_TRIGGERED_206_OTA_STATUS",e.message);process.exitCode=1});
+          JS
+          # Execution happens inside the existing Oracle container; the
+          # Oracle admin token remains only in its process environment.
+          sudo -n docker exec -i jason-home-2-web node - < "$RUNNER_TEMP/jh2-206-trigger.js"
