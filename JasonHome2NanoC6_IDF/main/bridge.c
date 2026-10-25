@@ -815,6 +815,9 @@ static cJSON *sync_document(void){
     cJSON *status=cJSON_AddObjectToObject(body,"status");
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
+    // Live reset diagnostics let Oracle distinguish a Nano reboot from
+    // an ordinary Bluetooth connection cycle; no credentials included.
+    jh2_runtime_boot_diagnostics(status);
     cJSON_AddBoolToObject(status,"autoUpdate",jh2_bridge_auto_update_enabled());
     #if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
     cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",true);
@@ -926,7 +929,7 @@ static void oracle_task(void *ctx){
         const int64_t now_us=esp_timer_get_time();
         if(firmware_auto_update&&idle_commands&&ack_count==0&&restart_after_ack==0&&
            !jh2_asset_stream_active()&&!jh2_native_sequence_running()&&
-           now_us>=next_auto_ota_check_us){
+           now_us>=next_auto_ota_check_us&&now_us>=300000000LL){
             next_auto_ota_check_us=now_us+900000000LL; // fifteen minutes
             char newer[32]={0},err[170]={0};
             if(jh2_bridge_signed_firmware(false,newer,sizeof(newer),err,sizeof(err))){
@@ -939,7 +942,7 @@ static void oracle_task(void *ctx){
         // signature, SHA-256 and ESP-IDF image validation all succeeded.
         if(firmware_auto_update&&idle_commands&&ack_count==0&&restart_after_ack==0&&
            !jh2_asset_stream_active()&&!jh2_native_sequence_running()&&
-           jh2_ota_staged_ready()){
+           now_us>=300000000LL && jh2_ota_staged_ready()){
             char install_error[140]={0};
             if(jh2_ota_install_staged(install_error,sizeof(install_error))){
                 ESP_LOGW(TAG,"Signed A/B update selected; rebooting into rollback-protected candidate");
