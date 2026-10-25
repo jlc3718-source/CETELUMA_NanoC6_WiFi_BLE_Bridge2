@@ -62,11 +62,12 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
     if(!s||!uuid||!b||n>508)return false;
     if(strcmp(uuid,JH2_SLOT_COMMAND_UUID)==0){
         uint16_t op=jh2_slot_command_opcode(b,n);
-        if(op==205||op==167||op==2904||op==2104){
+        if(op==205||op==167||op==2904||op==2104||op==2627){
+            // Manufacturer read-only controller playlist catalog (single DDP).
             if(n!=24)return false;
             *error=NULL;return true;
         }
-        if(read_only){*error="Read-only firmware permits only 205/167/2904/2104";return false;}
+        if(read_only){*error="Read-only firmware permits only 205/167/2904/2104/2627";return false;}
         if(op!=2909&&op!=2606)return false;
         size_t p=24;uint32_t tag=0,cid=0,play_slot=0;
         if(!varint(b,n,&p,&tag)||tag!=8||!varint(b,n,&p,&cid)||!cid)return false;
