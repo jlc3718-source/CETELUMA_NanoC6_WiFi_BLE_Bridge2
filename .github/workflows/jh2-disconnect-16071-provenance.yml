@@ -1,0 +1,25 @@
+name: JH2 Read Only Disconnect Provenance 16071
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-disconnect-16071-provenance.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read disconnect command source/idempotency and current BLE state; no writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import sqlite3,subprocess,json,urllib.request
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          m=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(m['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          for n in (16070,16071,16072,16073,16074,16085):
+              x=db.execute('SELECT id,action,source,idempotency,created,expires,state,result FROM curtain_commands WHERE id=?',(n,)).fetchone()
+              print('SOURCE',repr(x),flush=True)
+          print('NO_WRITES_PERFORMED',flush=True)
+          PY
