@@ -1,0 +1,114 @@
+name: JH2 Read Only Verify SmartDawn Saved CID After 2934
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-verify-native-cid-after-2934-readonly.yml]
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Query SmartDawn catalog via only 205, 167 and 2904; never upload or erase
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,sqlite3,subprocess,urllib.request,time,base64
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(mount['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          command=db.execute('SELECT action,payload,state,result FROM curtain_commands WHERE id=16004').fetchone()
+          assert command and command[0]=='nativeSlotCommit' and command[2]=='failed'
+          payload=json.loads(command[1]);target=int(payload['cid'])
+          assert target>0
+          print('FAILED_16004_CID',target,flush=True)
+          def notices():
+              row=db.execute("SELECT value FROM curtain_meta WHERE key='notifications'").fetchone()
+              return json.loads(row[0]) if row else []
+          previous=max([int(n['id']) for n in notices()],default=0)
+          nano=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(z.split('=',1) for z in nano['Config']['Env'] if '=' in z)
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(host+path,data=json.dumps(body).encode() if body is not None else None,
+                  headers=h,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=25) as resp:return json.load(resp),resp.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          state,_=api('/api/curtain/status',cookie=cookie)
+          assert state.get('online') and state.get('firmware')=='1.1.71'
+          assert state.get('queued')==0 and not state.get('relayStreaming')
+          assert (state.get('curtain') or {}).get('connected')
+          print('READ_ONLY_CATALOG_START',previous,flush=True)
+          for idx,op in enumerate((205,167,2904)):
+              ddp=bytearray(20);ddp[0]=240;ddp[1]=4
+              ddp[2]=idx+1;ddp[6]=op>>8;ddp[7]=op&255
+              frame=bytes((65+idx,1,0,0))+bytes(ddp)
+              body={'action':'rawWrite','payload':{'uuid':'01020074-1972-1925-3022-077119514e44',
+                 'data':base64.b64encode(frame).decode()},
+                 'idempotencyKey':f'jason-home-2-read-only-catalog-16004-{op}-1'}
+              q,_=api('/api/curtain/call',body,cookie)
+              id=int(q['commandId'])
+              for i in range(60):
+                  z,_=api('/api/curtain/command?id='+str(id),cookie=cookie)
+                  row=z['command']
+                  if row['state'] in ('applied','failed','expired','superseded'):
+                      assert row['state']=='applied',str((op,row['state'],row.get('result')))
+                      print('READ_ONLY_COMMAND_APPLIED',op,id,flush=True)
+                      break
+                  time.sleep(.25)
+              else:raise RuntimeError('Read-only controller request timed out')
+              time.sleep(.2)
+          time.sleep(12)
+          ns=[n for n in notices() if int(n['id'])>previous]
+          fragments={}
+          for n in ns:
+              raw=base64.b64decode(n.get('data',''))
+              if len(raw)<8 or raw[3]!=0 or raw[1]<1 or raw[1]>100 or raw[2]>=raw[1]:continue
+              key=(raw[0],raw[1])
+              parts=fragments.setdefault(key,{})
+              ix=raw[1]-raw[2]-1
+              if ix not in parts:parts[ix]=raw[4:]
+          messages=[]
+          for (msgid,total),pieces in fragments.items():
+              if len(pieces)!=total:continue
+              raw=b''.join(pieces[i] for i in range(total))
+              if len(raw)<20 or raw[0] not in (240,241) or int.from_bytes(raw[6:8],'big')!=2904:continue
+              messages.append(raw)
+          def var(b,i):
+              v=0
+              for shift in range(0,70,7):
+                  c=b[i];i+=1;v|=(c&127)<<shift
+                  if c<128:return v,i
+              raise ValueError('Bad protobuf integer')
+          def fields(buf,start=0):
+              i=start;out=[]
+              while i<len(buf):
+                  tag,i=var(buf,i);num=tag>>3;wire=tag&7
+                  if wire==0:v,i=var(buf,i)
+                  elif wire==2:
+                      count,i=var(buf,i);v=buf[i:i+count];i+=count
+                  elif wire==1:v=buf[i:i+8];i+=8
+                  elif wire==5:v=buf[i:i+4];i+=4
+                  else:break
+                  out.append((num,wire,v))
+              return out
+          found=[];unique=set();details=[]
+          for message in messages:
+              itemCount=0
+              for field,wire,sub in fields(message,20):
+                  if field!=1 or wire!=2:continue
+                  ef={k:int(v) for k,w,v in fields(sub) if w==0}
+                  if 4 in ef:
+                      eid=ef.get(1,0);itemCount+=1;unique.add(eid)
+                      if ef[4]==target:found.append({'id':eid,'slot':ef.get(3,0),'type':ef.get(2,0),'cid':ef[4]})
+              details.append(itemCount)
+          print('FRESH_CATALOG_MESSAGES',len(messages),'COUNTS',details,'UNIQUE_EFFECT_IDS',len(unique),flush=True)
+          print('TARGET_CID_INSTALLED_MATCHES',json.dumps(found),flush=True)
+          if len(unique)<80:print('CATALOG_INCOMPLETE_DO_NOT_ASSUME_ABSENT',flush=True)
+          elif len(found)==0:print('FRESH_COMPLETE_CATALOG_TARGET_ABSENT',flush=True)
+          else:print('FRESH_CATALOG_TARGET_PRESENT_VERIFY_TWICE_BEFORE_CLAIM',flush=True)
+          PY
