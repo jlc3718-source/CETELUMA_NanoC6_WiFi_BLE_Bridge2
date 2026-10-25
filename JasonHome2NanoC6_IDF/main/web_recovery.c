@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <arpa/inet.h>
@@ -64,6 +65,7 @@ static const char *HOME_HTML=
 "<html lang=\"en\"><head><meta charset=\"UTF-8\">\n"
 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
 "<title>Jason Home 2 Nano</title>\n"
+"<script>if(location.pathname==='/'&&location.hostname.toLowerCase()==='craumer.tplinkdns.com')location.replace('https://150.136.245.51/jason-home-2/');</script>\n"
 "<style>\n"
 ":root{color-scheme:dark}*{box-sizing:border-box}\n"
 "body{font:16px system-ui,-apple-system,sans-serif;max-width:500px;margin:28px auto;padding:0 16px;background:#091624;color:#eef6ff}\n"
@@ -662,17 +664,27 @@ static esp_err_t local_probe_post(httpd_req_t *r){
     return send_json(r,out);
 }
 
-// Only the home-network homepage redirects to Oracle. Recovery and settings
-// pages remain served directly by the Nano, even when Oracle is unavailable.
+// Exact user-selected public launch route. Match the HTTP Host name rather
+// than getsockname(): routers can NAT/proxy the connection to any Nano IP.
+// A redirect is read-only, safe even if the browser appears external to the
+// Nano's private-LAN authorization check. Do not require Wi-Fi credentials,
+// Oracle pairing, BLE connection or active bridge availability.
+#define JH2_WEB_LAUNCH_URL "https://150.136.245.51/jason-home-2/"
+static bool is_jason_public_launch(httpd_req_t *r){
+    if(strcmp(r->uri,"/")!=0)return false;
+    char host[128]={0};
+    if(httpd_req_get_hdr_value_str(r,"Host",host,sizeof(host))!=ESP_OK)return false;
+    // Accept the DDNS hostname with an optional HTTP :port; never compare
+    // suffixes which could match an attacker's lookalike hostname.
+    char *port=strchr(host,':');
+    if(port)*port=0;
+    return strcasecmp(host,"craumer.tplinkdns.com")==0;
+}
+// Preserve the standalone, OPEN factory AP's root landing page. Every
+// explicit Nano diagnostics/setup/recovery URL is served locally.
 static bool home_lan_request(httpd_req_t *r){
-    // A DDNS name may hairpin via the home router. The previous root
-    // handler checked only getsockname() and could return the Nano page
-    // instead of the Oracle 302 when the local socket address is missing
-    // or rewritten by the NAT/proxy. Prefer the HTTP Host actually used.
     char host[128]={0};
     if(httpd_req_get_hdr_value_str(r,"Host",host,sizeof(host))==ESP_OK&&host[0]){
-        // Preserve ONLY the factory open AP landing page on its literal IP.
-        // /setup?edit=1 and every explicit /settings/* path also stay local.
         if(strncmp(host,"192.168.4.1",11)==0 &&
             (host[11]==0 || host[11]==':'))return false;
         return saved_ssid[0]!=0;
@@ -684,11 +696,20 @@ static bool home_lan_request(httpd_req_t *r){
         const uint32_t ip=ntohl(((const struct sockaddr_in *)&local)->sin_addr.s_addr);
         if(ip==0xc0a80401UL)return false;
     }
-    // A configured Nano launched from a LAN IP or DDNS name should never
-    // depend on a fragile socket-address check to reach Oracle.
     return saved_ssid[0]!=0;
 }
+static esp_err_t launch_oracle(httpd_req_t *r){
+    httpd_resp_set_status(r,"302 Found");
+    httpd_resp_set_hdr(r,"Location",JH2_WEB_LAUNCH_URL);
+    httpd_resp_set_hdr(r,"Cache-Control","no-store, no-cache, must-revalidate");
+    httpd_resp_set_hdr(r,"Pragma","no-cache");
+    return httpd_resp_send(r,NULL,0);
+}
 static esp_err_t html_get(httpd_req_t *r){
+    // DDNS launch runs before any local-only authorization or setup-status
+    // check. An HTTPS-hosted Jason Home interface should be shown even when
+    // the Nano's NVS Wi-Fi profile has not loaded.
+    if(is_jason_public_launch(r))return launch_oracle(r);
     if(!local_only(r))return denied(r);
     const bool firmware=strstr(r->uri,"firmware")||strstr(r->uri,"recovery");
     const bool explicit_setup=strncmp(r->uri,"/setup",6)==0;
@@ -698,21 +719,15 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_query_key_value(query,"edit",edit,sizeof(edit))==ESP_OK &&
         strcmp(edit,"1")==0;
     const bool programmed=saved_ssid[0]!=0;
-    // After initial Wi-Fi configuration, / is the dashboard. Visiting the
-    // old /setup bookmark also returns home unless the user requests editing.
     if(explicit_setup && programmed && creds_ready && !editing){
         httpd_resp_set_status(r,"302 Found");
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
-    // LAN root launches Oracle even before bridge authentication. Keep the
-    // open setup AP plus all explicit diagnostics/recovery paths local.
-    if(strcmp(r->uri,"/")==0 && home_lan_request(r)){
-        httpd_resp_set_status(r,"302 Found");
-        httpd_resp_set_hdr(r,"Location","http://150.136.245.51/jason");
-        httpd_resp_set_hdr(r,"Cache-Control","no-store");
-        return httpd_resp_send(r,NULL,0);
-    }
+    // Preserve the user's prior LAN-root behavior, without affecting AP
+    // provisioning and explicit /settings/* /firmware /status routes.
+    if(strcmp(r->uri,"/")==0 && home_lan_request(r))
+        return launch_oracle(r);
     const bool status_page=strcmp(r->uri,"/status")==0;
     const bool nano_settings=strcmp(r->uri,"/settings/nano")==0;
     const bool oracle_settings=strcmp(r->uri,"/settings/oracle")==0;
