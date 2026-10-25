@@ -59,39 +59,153 @@ static volatile int64_t sta_ip_since_us=0;
 static bool sntp_started=false,mdns_started=false;
 
 static const char *HOME_HTML=
-"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Jason Home 2 Nano</title>\n<style>\n"
-":root{color-scheme:dark}*{box-sizing:border-box}\nbody{font:16px system-ui,-apple-system,sans-serif;max-width:500px;margin:28px auto;padding:0 16px;background:#091624;colo"
-"r:#eef6ff}\nh1{font-size:1.65rem;margin-bottom:4px}h2{font-size:1.12rem;margin:0 0 15px}\np{line-height:1.45}.muted{color:#b9cbdc}.panel{background:#14273b;border:1px solid"
-" #35506a;border-radius:16px;padding:20px;margin:16px 0}\n.status{display:flex;justify-content:space-between;gap:12px;margin:12px 0}.status strong{text-align:right}\n.good{c"
-"olor:#7be4b6}.bad{color:#ffbaac}\n.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}\nbutton,a.action{border:1px solid #48718a;border-radius:12px;padding:14px 10"
-"px;background:#1d4d65;color:white;font:inherit;text-align:center;text-decoration:none;cursor:pointer}\nbutton:disabled{opacity:.45;cursor:not-allowed}\nbutton.primary{backg"
-"round:#0d756b;border-color:#0c8d80}\na.action{display:block;margin-top:10px}#bleResult,#result,#updateResult{min-height:23px;font-size:.91rem}\n</style></head><body>\n<h1>Ja"
-"son Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n<a class=\"action\" href=\"/status\">View Nano Live Status</a> &nbsp; <a href='/settings/oracle'>Settings / Oracle</a>\n<section class=\"panel\"><h2>Controller</h2>\n<div class=\"status\"><span>Firmware</span><strong id=\"version\">"
-"Checking...</strong></div>\n<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Checking...</strong></div>\n<div class=\"actions\"><button id=\"bleConnect\" class=\"prima"
-"ry\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button>"
-"</div>\n<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n</section>\n<section class=\"panel\"><h2>Curtain power</h2>\n<div class=\"actions\"><button id=\"on\" class=\"primary\" on"
-"click=\"power('powerOn')\" disabled>ON</button>\n<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<button id=\"curtainRebootMain\" onclick=\"curtainReboot()\" disabled>Curtain Reboot</button>\n<p id=\"curtainRebootMessage\" class=\"muted\" role=\"status\"></p>\n<p id=\"result\" class=\"muted\" role=\"status\"></p></se"
-"ction>\n<section class=\"panel\"><h2>Firmware updates</h2>\n<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"pri"
-"mary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n<label><input type='checkbox' id='autoUpdate' onchange='setAutoUpdate(this.checked)'> Enable automatic signed updates</label>\n<a class=\"action\" href=\"/firmware\">Firmware recovery &amp; diagnostics</a>\n<p id=\"updateResult\" class=\"muted\""
-" role=\"status\">Signed automatic updates are off by default in recovery firmware.</p>\n<details class='panel'><summary>Recovery / rollback to 1.1.67</summary><p class='muted'>Download the verified 1.1.67 runtime BIN before updating. To roll back, open firmware recovery, start the manual uploader, and upload the saved BIN. Wi-Fi and pairing settings are preserved. This is not instant A/B rollback.</p><a class='action' href='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.1.67/jh2-runtime-1.1.67.bin' target='_blank' rel='noopener noreferrer'>Download verified 1.1.67 backup</a><a class='action' href='/firmware'>Open Nano firmware recovery</a></details></section>\n<script>\nconst $=id=>document.getElementById(id);\nlet nanoStatusRefreshing=false;\nasync function refresh(){\n  if(nanoStatusRefreshing)return;\n  nanoStatusRefreshing=true;\n  try{\n    const r=await fetch('/api/s"
-"tatus',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    $('autoUpdate').checked=d.signedAutoUpdate===true;\n    $('version'"
-").textContent=d.version||'Unknown';\n    const paused=c.nativeReconnectPaused===true;\n    $('ble').textContent=connected?'Connected':paused?'Disconnected (paused)':'Discon"
-"nected / searching';\n    $('ble').className=connected?'good':'bad';\n    $('bleConnect').disabled=connected;\n    $('bleDisconnect').disabled=paused;\n    $('curtainRebootMain').disabled=!connected;\n    $('on').disabled=$"
-"('off').disabled=!connected;\n  }catch(e){\n    $('version').textContent='Unavailable';\n    $('ble').textContent='Disconnected';\n    $('ble').className='bad';\n    $('bleCon"
-"nect').disabled=$('bleDisconnect').disabled=true;\n    $('on').disabled=$('off').disabled=true;\n    $('curtainRebootMain').disabled=true;\n  }finally{nanoStatusRefreshing=false;}\n}\nasync function curtainReboot(){\n if(!confirm('Reboot the SmartDawn curtain controller? The curtain will briefly disconnect from Bluetooth. The Nano will NOT restart.'))return;\n const b=$('curtainRebootMain');b.disabled=true;\n $('curtainRebootMessage').textContent='Sending manufacturer reboot request to SmartDawn...';\n try{\n  const r=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'curtainReboot'})});\n  const d=await r.json();\n  if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Bluetooth reboot request failed');\n  $('curtainRebootMessage').textContent='SmartDawn reboot command accepted by GATT. Reconnection may take a moment; actual reboot not yet verified.';\n }catch(e){$('curtainRebootMessage').textContent=e.message;}\n await refresh();\n}\nasync function bluetooth(action){\n  $('bleConnect').disabled=$('bleDi"
-"sconnect').disabled=true;\n  $('bleResult').textContent=action==='connect'?'Looking for saved SmartDawn controller...':'Disconnecting Bluetooth...';\n  try{\n    const r=awa"
-"it fetch('/api/ble/'+action,{method:'POST'});\n    const d=await r.json();\n    if(!r.ok||!d.ok)throw Error(d.message||'Bluetooth request rejected');\n    $('bleResult').tex"
-"tContent=d.message||'Request accepted; checking Bluetooth status';\n  }catch(e){$('bleResult').textContent=e.message;}\n  await refresh();\n}\nasync function power(action){\n "
-" $('on').disabled=$('off').disabled=true;\n  $('result').textContent='Sending command...';\n  try{\n    const r=await fetch('/api/ble/local',{method:'POST',\n      headers:{'"
-"Content-Type':'application/x-www-form-urlencoded'},\n      body:new URLSearchParams({action})});\n    const d=await r.json();\n    if(!r.ok||!d.ok||!d.gattAccepted)throw Err"
-"or(d.message||'Controller did not accept command');\n    $('result').textContent=action==='powerOn'?'ON command accepted':'OFF command accepted';\n  }catch(e){$('result').t"
-"extContent=e.message}\n  await refresh();\n}\nasync function checkUpdate(){\n  $('install').disabled=true;$('updateResult').textContent='Checking signed OTA...';\n  try{\n    c"
-"onst r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();\n    if(!r.ok||!d.available)throw Error(d.message||'No update available');\n    $('install')."
-"disabled=false;\n    $('install').textContent='Install '+d.version;\n    $('updateResult').textContent='Signed update '+d.version+' available.';\n  }catch(e){$('updateResult"
-"').textContent=e.message}\n}\nasync function installUpdate(){\n  if($('install').disabled||!confirm('Install verified firmware and restart Nano now?'))return;\n  $('install')"
-".disabled=true;$('updateResult').textContent='Starting verified OTA...';\n  try{\n    const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();\n    if("
-"!r.ok||!d.ok)throw Error(d.message||'OTA request failed');\n    $('updateResult').textContent='Update queued. Nano will restart into verified updater.';\n  }catch(e){$('upd"
-"ateResult').textContent=e.message}\n}\n\nasync function setAutoUpdate(enabled){\n  try{const r=await fetch('/api/firmware/auto',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'enabled='+(enabled?1:0)});\n  const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Save failed');\n  $('updateResult').textContent=enabled?'Automatic signed updates ON':'Automatic signed updates OFF';\n  await refresh();\n  }catch(e){$('updateResult').textContent=e.message;await refresh();}\n}\nrefresh();setInterval(refresh,3500);\n</script></body></html>\n";
+"<!doctype html>\n"
+"<html lang=\"en\"><head><meta charset=\"UTF-8\">\n"
+"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+"<title>Jason Home 2 Nano</title>\n"
+"<style>\n"
+":root{color-scheme:dark}*{box-sizing:border-box}\n"
+"body{font:16px system-ui,-apple-system,sans-serif;max-width:500px;margin:28px auto;padding:0 16px;background:#091624;color:#eef6ff}\n"
+"h1{font-size:1.65rem;margin-bottom:4px}h2{font-size:1.12rem;margin:0 0 15px}\n"
+"p{line-height:1.45}.muted{color:#b9cbdc}.panel{background:#14273b;border:1px solid #35506a;border-radius:16px;padding:20px;margin:16px 0}\n"
+".status{display:flex;justify-content:space-between;gap:12px;margin:12px 0}.status strong{text-align:right}\n"
+".good{color:#7be4b6}.bad{color:#ffbaac}\n"
+".actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n"
+"button,a.action{border:1px solid #48718a;border-radius:12px;padding:14px 10px;background:#1d4d65;color:white;font:inherit;text-align:center;text-decoration:none;cursor:pointer}\n"
+"button:disabled{opacity:.45;cursor:not-allowed}\n"
+"button.primary{background:#0d756b;border-color:#0c8d80}\n"
+"a.action{display:block;margin-top:10px}#bleResult,#result,#updateResult{min-height:23px;font-size:.91rem}\n"
+"</style></head><body>\n"
+"<h1>Jason Home 2</h1><p class=\"muted\">SmartDawn curtain controller</p>\n"
+"<a class=\"action\" href=\"/status\">View Nano Live Status</a><a class=\"action\" href=\"/settings/bluetooth\">Bluetooth · Full Scan / Remembered Reconnect</a><a class=\"action\" href=\"/settings/oracle\">Settings · Oracle</a><a class=\"action\" id=\"oracleWebControl\" href=\"/settings/oracle\">Open Oracle Web Control</a><p class=\"muted\"><small>When Oracle is paired, the home-network homepage opens its web control. Use /settings/nano for this local page.</small></p>\n"
+"<section class=\"panel\"><h2>Controller</h2>\n"
+"<div class=\"status\"><span>Firmware</span><strong id=\"version\">Checking...</strong></div>\n"
+"<div class=\"status\"><span>Bluetooth</span><strong id=\"ble\">Checking...</strong></div>\n"
+"<div class=\"actions\"><button id=\"bleConnect\" class=\"primary\" onclick=\"bluetooth('connect')\" disabled>Connect Bluetooth</button>\n"
+"<button id=\"bleDisconnect\" onclick=\"bluetooth('disconnect')\" disabled>Disconnect Bluetooth</button></div>\n"
+"<p id=\"bleResult\" class=\"muted\" role=\"status\"></p>\n"
+"</section>\n"
+"<section class=\"panel\"><h2>Curtain power</h2>\n"
+"<div class=\"actions\"><button id=\"on\" class=\"primary\" onclick=\"power('powerOn')\" disabled>ON</button>\n"
+"<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n"
+"<button id=\"curtainRebootMain\" onclick=\"curtainReboot()\" disabled>Curtain Reboot</button>\n"
+"<p id=\"curtainRebootMessage\" class=\"muted\" role=\"status\"></p>\n"
+"<p id=\"result\" class=\"muted\" role=\"status\"></p></section>\n"
+"<section class=\"panel\"><h2>Firmware updates</h2>\n"
+"<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n"
+"<button id=\"install\" class=\"primary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n"
+"<label><input type='checkbox' id='autoUpdate' onchange='setAutoUpdate(this.checked)'> Enable automatic signed updates</label>\n"
+"<a class=\"action\" href=\"/firmware\">Firmware recovery &amp; diagnostics</a>\n"
+"<p id=\"updateResult\" class=\"muted\" role=\"status\">Check for updates downloads verified firmware to the inactive slot.</p><p id=\"otaProgress\" class=\"muted\">No signed download in progress.</p>\n"
+"<details class='panel'><summary>Recovery / rollback to 1.1.67</summary><p class='muted'>Download the verified 1.1.67 runtime BIN before updating. To roll back, open firmware recovery, start the manual uploader, and upload the saved BIN. Wi-Fi and pairing settings are preserved. This is not instant A/B rollback.</p><a class='action' href='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.1.67/jh2-runtime-1.1.67.bin' target='_blank' rel='noopener noreferrer'>Download verified 1.1.67 backup</a><a class='action' href='/firmware'>Open Nano firmware recovery</a></details></section>\n"
+"<script>\n"
+"const $=id=>document.getElementById(id);\n"
+"let nanoStatusRefreshing=false;\n"
+"async function refresh(){\n"
+"  if(nanoStatusRefreshing)return;\n"
+"  nanoStatusRefreshing=true;\n"
+"  try{\n"
+"    const r=await fetch('/api/status',{cache:'no-store'});\n"
+"    if(!r.ok)throw Error('Controller status unavailable');\n"
+"    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n"
+"    $('autoUpdate').checked=d.signedAutoUpdate===true;\n"
+"    if(d.oracleWebUrl && d.oracleWebUrl.startsWith('https://'))\n"
+"       $('oracleWebControl').href=d.oracleWebUrl;\n"
+"    $('version').textContent=d.version||'Unknown';\n"
+"    const paused=c.nativeReconnectPaused===true;\n"
+"    $('ble').textContent=connected?'Connected':paused?'Disconnected (paused)':'Disconnected / searching';\n"
+"    $('ble').className=connected?'good':'bad';\n"
+"    $('bleConnect').disabled=connected;\n"
+"    $('bleDisconnect').disabled=paused;\n"
+"    $('curtainRebootMain').disabled=!connected;\n"
+"    $('on').disabled=$('off').disabled=!connected;\n"
+"  }catch(e){\n"
+"    $('version').textContent='Unavailable';\n"
+"    $('ble').textContent='Disconnected';\n"
+"    $('ble').className='bad';\n"
+"    $('bleConnect').disabled=$('bleDisconnect').disabled=true;\n"
+"    $('on').disabled=$('off').disabled=true;\n"
+"    $('curtainRebootMain').disabled=true;\n"
+"  }finally{nanoStatusRefreshing=false;}\n"
+"}\n"
+"async function curtainReboot(){\n"
+" if(!confirm('Reboot the SmartDawn curtain controller? The curtain will briefly disconnect from Bluetooth. The Nano will NOT restart.'))return;\n"
+" const b=$('curtainRebootMain');b.disabled=true;\n"
+" $('curtainRebootMessage').textContent='Sending manufacturer reboot request to SmartDawn...';\n"
+" try{\n"
+"  const r=await fetch('/api/ble/local',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({action:'curtainReboot'})});\n"
+"  const d=await r.json();\n"
+"  if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Bluetooth reboot request failed');\n"
+"  $('curtainRebootMessage').textContent='SmartDawn reboot command accepted by GATT. Reconnection may take a moment; actual reboot not yet verified.';\n"
+" }catch(e){$('curtainRebootMessage').textContent=e.message;}\n"
+" await refresh();\n"
+"}\n"
+"async function bluetooth(action){\n"
+"  $('bleConnect').disabled=$('bleDisconnect').disabled=true;\n"
+"  $('bleResult').textContent=action==='connect'?'Looking for saved SmartDawn controller...':'Disconnecting Bluetooth...';\n"
+"  try{\n"
+"    const r=await fetch('/api/ble/'+action,{method:'POST'});\n"
+"    const d=await r.json();\n"
+"    if(!r.ok||!d.ok)throw Error(d.message||'Bluetooth request rejected');\n"
+"    $('bleResult').textContent=d.message||'Request accepted; checking Bluetooth status';\n"
+"  }catch(e){$('bleResult').textContent=e.message;}\n"
+"  await refresh();\n"
+"}\n"
+"async function power(action){\n"
+"  $('on').disabled=$('off').disabled=true;\n"
+"  $('result').textContent='Sending command...';\n"
+"  try{\n"
+"    const r=await fetch('/api/ble/local',{method:'POST',\n"
+"      headers:{'Content-Type':'application/x-www-form-urlencoded'},\n"
+"      body:new URLSearchParams({action})});\n"
+"    const d=await r.json();\n"
+"    if(!r.ok||!d.ok||!d.gattAccepted)throw Error(d.message||'Controller did not accept command');\n"
+"    $('result').textContent=action==='powerOn'?'ON command accepted':'OFF command accepted';\n"
+"  }catch(e){$('result').textContent=e.message}\n"
+"  await refresh();\n"
+"}\n"
+"async function refreshOta(){\n"
+" try{\n"
+"  const r=await fetch('/api/firmware/stage',{cache:'no-store'}),d=await r.json();\n"
+"  const current=d.downloadedBytes||0;\n"
+"  $('otaProgress').textContent=d.state==='downloading'?\n"
+"     'Downloading signed firmware: '+(current/1024).toFixed(0)+' KB received':\n"
+"     d.state==='ready'?'Verified '+d.version+' downloaded to inactive slot. Ready to install.':\n"
+"     d.state==='failed'?'Download failed: '+(d.message||'Unknown error'):\n"
+"     d.state==='installing'?'Verified image selected; restarting...':'No download in progress.';\n"
+"  $('install').disabled=d.installReady!==true;\n"
+"  if(d.installReady)$('install').textContent='Install '+d.version;\n"
+" }catch(e){$('otaProgress').textContent='OTA status unavailable: '+e.message}\n"
+"}\n"
+"async function checkUpdate(){\n"
+" $('install').disabled=true;$('updateResult').textContent='Contacting signed firmware feed...';\n"
+" try{\n"
+"  const r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();\n"
+"  if(!r.ok||!d.available)throw Error(d.message||'No newer signed update available');\n"
+"  $('updateResult').textContent='Signed '+d.version+' found; download and SHA-256 verification started.';\n"
+" }catch(e){$('updateResult').textContent=e.message}\n"
+" await refreshOta();\n"
+"}\n"
+"async function installUpdate(){\n"
+" if($('install').disabled||!confirm('Boot the downloaded, verified A/B firmware? Automatic signed updates will turn ON after this manual install.'))return;\n"
+" $('install').disabled=true;$('updateResult').textContent='Selecting verified firmware for reboot...';\n"
+" try{\n"
+"  const r=await fetch('/api/firmware/install',{method:'POST'}),d=await r.json();\n"
+"  if(!r.ok||!d.ok)throw Error(d.message||'Install request failed');\n"
+"  $('updateResult').textContent='Verified firmware selected; rebooting. Automatic signed OTA preference saved.';\n"
+" }catch(e){$('updateResult').textContent=e.message;await refreshOta()}\n"
+"}\n"
+"\n"
+"async function setAutoUpdate(enabled){\n"
+"  try{const r=await fetch('/api/firmware/auto',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'enabled='+(enabled?1:0)});\n"
+"  const d=await r.json();if(!r.ok||!d.ok)throw Error(d.message||'Save failed');\n"
+"  $('updateResult').textContent=enabled?'Automatic signed updates ON':'Automatic signed updates OFF';\n"
+"  await refresh();\n"
+"  }catch(e){$('updateResult').textContent=e.message;await refresh();}\n"
+"}\n"
+"refresh();refreshOta();setInterval(refresh,3500);setInterval(refreshOta,2500);\n"
+"</script></body></html>\n"
+"\n";
 
 // Independent local Nano diagnostic UI; never passes through Oracle.
 static const char *STATUS_HTML =
@@ -528,8 +642,16 @@ static esp_err_t local_probe_post(httpd_req_t *r){
     return send_json(r,out);
 }
 
-// All local Nano pages (including /) stay local on BOTH Wi-Fi interfaces.
-// Oracle is separately configured under Settings > Oracle; no auto-redirect.
+// Only the home-network homepage redirects to Oracle. Recovery and settings
+// pages remain served directly by the Nano, even when Oracle is unavailable.
+static bool home_lan_request(httpd_req_t *r){
+    struct sockaddr_storage local={0};
+    socklen_t len=sizeof(local);
+    if(getsockname(httpd_req_to_sockfd(r),(struct sockaddr *)&local,&len)!=0 ||
+       local.ss_family!=AF_INET)return false;
+    const uint32_t ip=ntohl(((const struct sockaddr_in *)&local)->sin_addr.s_addr);
+    return ip!=0xc0a80401UL && ip!=0;
+}
 static esp_err_t html_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     const bool firmware=strstr(r->uri,"firmware")||strstr(r->uri,"recovery");
@@ -547,8 +669,17 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
-    // Always serve the local dashboard when the browser visits the Nano IP.
-    // Do not redirect the LAN interface to Oracle, even if pairing is saved.
+    // Once authenticated, open the Oracle web control from the LAN homepage.
+    // The AP hostname and all direct Nano settings pages remain local.
+    if(strcmp(r->uri,"/")==0 && programmed && saved_oracle_endpoint[0] &&
+       jh2_bridge_autolink_verified() && jh2_bridge_ready() &&
+       net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY) &&
+       home_lan_request(r)){
+        httpd_resp_set_status(r,"302 Found");
+        httpd_resp_set_hdr(r,"Location",saved_oracle_endpoint);
+        httpd_resp_set_hdr(r,"Cache-Control","no-store");
+        return httpd_resp_send(r,NULL,0);
+    }
     const bool status_page=strcmp(r->uri,"/status")==0;
     const bool nano_settings=strcmp(r->uri,"/settings/nano")==0;
     const bool oracle_settings=strcmp(r->uri,"/settings/oracle")==0;
@@ -871,8 +1002,8 @@ static esp_err_t recovery_post(httpd_req_t *r){
     if(!jh2_enter_local_recovery())ESP_LOGE(TAG,"Cannot select factory updater");
     return ESP_OK;
 }
-// Deliberately manual signed OTA. Oracle hosts the signed manifest and
-// permanent factory updater does the actual download + SHA-256 verification.
+// Signed A/B OTA: Check predownloads to inactive slot; Install activates
+// only after signature, SHA-256 and image validation.
 static esp_err_t firmware_auto_post(httpd_req_t *req){
     if(!local_only(req))return denied(req);
     if(req->content_len!=9)return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Invalid setting");
@@ -889,6 +1020,12 @@ static esp_err_t firmware_auto_post(httpd_req_t *req){
     cJSON_AddBoolToObject(out,"enabled",jh2_bridge_auto_update_enabled());
     cJSON_AddStringToObject(out,"message",ok?"Signed OTA preference saved":"OTA preference save failed");
     return send_json(req,out);
+}
+static esp_err_t firmware_stage_get(httpd_req_t *req){
+    cJSON *o=cJSON_CreateObject();
+    cJSON_AddBoolToObject(o,"ok",true);
+    jh2_ota_status(o);
+    return send_json(req,o);
 }
 static esp_err_t firmware_check(httpd_req_t *req){
     char version[32]={0},error[170]={0};
@@ -915,6 +1052,10 @@ static esp_err_t firmware_install(httpd_req_t *req){
         cJSON_AddStringToObject(j,"message",error[0]?error:"Signed update unavailable");
         return send_json(req,j);
     }
+    // First explicitly installed signed update opts in to subsequent
+    // automatic signed releases, with preference persisted in NVS.
+    if(!jh2_bridge_set_auto_update_enabled(true))
+        ESP_LOGW(TAG,"Signed OTA selected but auto-update preference could not be persisted");
     if(xTaskCreate(update_reboot,"jh2-signed-ota-boot",3072,NULL,3,NULL)!=pdPASS){
         // NVS already has pending signed update, and factory is selected.
         // Return an explicit failure rather than claiming a restart.
@@ -926,7 +1067,7 @@ static esp_err_t firmware_install(httpd_req_t *req){
     cJSON *j=cJSON_CreateObject();
     cJSON_AddBoolToObject(j,"ok",true);
     cJSON_AddStringToObject(j,"version",version);
-    cJSON_AddStringToObject(j,"message","Factory updater selected; rebooting to install");
+    cJSON_AddStringToObject(j,"message","Verified inactive A/B image selected; rebooting with rollback protection");
     return send_json(req,j);
 }
 static void update_time(void){
@@ -1136,6 +1277,7 @@ bool jh2_web_start(void){
         {.uri="/recovery",.method=HTTP_GET,.handler=html_get},
         {.uri="/firmware/recovery",.method=HTTP_POST,.handler=recovery_post},
         {.uri="/api/firmware/check",.method=HTTP_GET,.handler=firmware_check},
+        {.uri="/api/firmware/stage",.method=HTTP_GET,.handler=firmware_stage_get},
         {.uri="/api/firmware/auto",.method=HTTP_POST,.handler=firmware_auto_post},
         {.uri="/api/firmware/install",.method=HTTP_POST,.handler=firmware_install},
         {.uri="/jason-home-2/firmware",.method=HTTP_GET,.handler=html_get},
