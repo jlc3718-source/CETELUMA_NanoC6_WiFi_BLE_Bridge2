@@ -1,0 +1,49 @@
+name: JH2 Clear Pending Nano Commands Once
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-clear-pending-curtain-queue-once-20261024.yml]
+permissions: {contents: read}
+jobs:
+  clear-queued:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Supersede queued and downloaded Oracle->Nano commands without touching running firmware or saved effects
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,sqlite3,subprocess,time
+          from pathlib import Path
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in web['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          dbfile=Path(mount['Source'])/'jason-home-2.sqlite'
+          assert dbfile.exists(),'Production DB missing; will not create new one'
+          db=sqlite3.connect('file:'+str(dbfile)+'?mode=rw',uri=True,timeout=25,isolation_level=None)
+          db.execute('PRAGMA busy_timeout=25000')
+          db.execute('BEGIN IMMEDIATE')
+          try:
+              cols={row[1] for row in db.execute('PRAGMA table_info(curtain_commands)')}
+              assert {'id','action','state','result','source'}<=cols
+              pending=db.execute("SELECT id,action,state,source FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id").fetchall()
+              print('PENDING_BEFORE',json.dumps(pending),flush=True)
+              ids=[int(row[0]) for row in pending]
+              cutoff=max(ids,default=0)
+              for cid,action,state,source in pending:
+                  result=json.dumps({'ok':False,'cancelledByUser':True,'error':'Pending command queue cleared at user request; do not replay','reason':'queue-reset-20261024'},separators=(',',':'))
+                  n=db.execute("UPDATE curtain_commands SET state='superseded',result=? WHERE id=? AND state IN ('queued','downloaded')",(result,cid)).rowcount
+                  assert n in (0,1)
+              remaining=db.execute("SELECT id,action,state FROM curtain_commands WHERE id<=? AND state IN ('queued','downloaded')",(cutoff,)).fetchall()
+              assert not remaining,'Old queued commands remain; abort'
+              db.execute('COMMIT')
+              print('QUEUE_CLEARED_USER_REQUEST',json.dumps({'count':len(ids),'ids':ids,'cutoff':cutoff}),flush=True)
+          except Exception:
+              db.execute('ROLLBACK')
+              raise
+          finally:db.close()
+          # Query the database again after the write to detect newly scheduled commands.
+          db=sqlite3.connect('file:'+str(dbfile)+'?mode=ro',uri=True)
+          new=db.execute("SELECT id,action,state,source FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id").fetchall()
+          print('PENDING_AFTER',json.dumps(new),flush=True)
+          db.close()
+          PY
