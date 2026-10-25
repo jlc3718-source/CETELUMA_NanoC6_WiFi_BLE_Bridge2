@@ -1,0 +1,78 @@
+name: JH2 2.0.6 Pre-release Full Read-Only Health Check
+on:
+  push:
+    branches:
+      - fix/jh2-2.0.6-oracle-home-auto-redirect-20261025
+    paths:
+      - .github/workflows/jh2-206-readonly-health-before-redirect.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  external-oracle-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Probe public Oracle HTTPS, login and protected API (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PUBLIC_WEB_HEALTH_START"
+          for route in /jason-home-2/ /jason-home-2/api/health; do
+            # -k allows us to distinguish server reachability from certificate validation.
+            http=$(curl -k -sS -o /tmp/jh2-answer -w '%{http_code}' --connect-timeout 8 --max-time 18 "https://150.136.245.51$route")
+            echo "PUBLIC_HTTP_RESULT route=$route status=$http bytes=$(wc -c </tmp/jh2-answer)"
+            test "$http" = 200
+            if [[ "$route" == "/jason-home-2/" ]]; then
+              grep -qi 'Jason Home 2' /tmp/jh2-answer
+              echo "ORACLE_FULL_UI_ENTRYPOINT_VERIFIED"
+            else
+              python3 -c 'import json;d=json.load(open("/tmp/jh2-answer"));assert d.get("ok") and d.get("service")=="jason-home-2-web";print("PUBLIC_ORACLE_API_HEALTH_VERIFIED")'
+            fi
+          done
+          # Check HTTPS trust without suppressing verification. A non-zero result
+          # should be visible but won't mask a working service behind a local cert.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 18 'https://150.136.245.51/jason-home-2/' 2>/tmp/jh2-cert-error) || true
+          echo "PUBLIC_TLS_STRICT_HTTP_STATUS=$code"
+          if [ "$code" != 200 ]; then
+            echo "PUBLIC_TLS_CERTIFICATE_WARNING (strict TLS failed; inspect certificate for IP access)"
+            tail -c 180 /tmp/jh2-cert-error || true
+          fi
+  oracle-internal:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Validate application, container, signed OTA manifest and runtime hash (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker inspect -f 'ORACLE_CONTAINER name={{.Name}} state={{.State.Status}} running={{.State.Running}} restarts={{.RestartCount}}' jason-home-2-web
+          sudo -n docker exec jason-home-2-web node -e '
+          const {createHash}=require("node:crypto");
+          (async()=>{
+            const base="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+            const home=await fetch(base+"/");
+            if(home.status!==200)throw Error("Oracle application root status "+home.status);
+            const html=await home.text();
+            if(!html.includes("Jason Home 2"))throw Error("Oracle UI login HTML absent");
+            console.log("ORACLE_INTERNAL_UI_VERIFIED",home.status);
+            const health=await fetch(base+"/api/health");
+            const h=await health.json();
+            if(!health.ok||!h.ok||h.service!=="jason-home-2-web")throw Error("Oracle app health failed");
+            console.log("ORACLE_INTERNAL_HEALTH_VERIFIED",health.status);
+            const resp=await fetch(base+"/api/curtain/firmware-manifest");
+            const man=await resp.json();
+            if(!resp.ok||man.schema!==1||!man.signature||!man.payload)
+                 throw Error("Signed manifest unavailable "+resp.status);
+            const fields=Object.fromEntries(man.payload.trim().split("\n").map(line=>line.split(/=(.*)/s).slice(0,2)));
+            if(fields.version!=="2.0.5"||fields.product!=="jason-home-2-nanoc6")
+                 throw Error("Current approved OTA release incorrect");
+            const binresp=await fetch(base+"/api/curtain/firmware-runtime/2.0.5.bin");
+            if(!binresp.ok)throw Error("Signed OTA bytes unavailable "+binresp.status);
+            const data=Buffer.from(await binresp.arrayBuffer());
+            const sha=createHash("sha256").update(data).digest("hex");
+            if(sha!==fields.sha256||data.length!==Number(fields.bytes)||data.length>0x160000)
+                 throw Error("Oracle signed OTA runtime checksum mismatch");
+            console.log("ORACLE_SIGNED_OTA_205_VERIFIED",data.length,sha);
+            console.log("NO_DEVICE_COMMANDS_NO_INSTALL_NO_FLASH");
+          })().catch(e=>{console.error(e);process.exitCode=1});'
