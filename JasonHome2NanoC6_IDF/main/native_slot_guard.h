@@ -9,13 +9,19 @@
 typedef struct {
     uint32_t size, parts, next, last_ms;
     uint8_t id, type;
+    uint32_t cid;
     bool active;
 } jh2_slot_session;
 
 // Validate on a COPY; commit that copy only after the GATT write succeeds.
-// This accepts only the disposable test CID, never arbitrary storage writes.
+// For assigned CIDs, the caller supplies a fresh, per-CID controller-inventory result.
+// Never authorize factory effect deletion or a duplicate stored CID.
 bool jh2_slot_validate(jh2_slot_session *session, const char *uuid,
     const uint8_t *bytes, size_t len, uint32_t now_ms,
     bool target_section_known, unsigned matches, uint16_t target_slot,
     bool read_only, const char **error);
 uint16_t jh2_slot_command_opcode(const uint8_t *bytes, size_t len);
+// Discover the CID for a command, native upload header, or active data packet.
+// The caller must cross-check it against a fresh controller inventory before writing.
+uint32_t jh2_slot_packet_cid(const jh2_slot_session *session, const char *uuid,
+    const uint8_t *bytes, size_t len);
