@@ -385,6 +385,9 @@ static bool stop_image_stream_and_wait(void){
 #define NATIVE_SLOT_READ_ONLY false
 #endif
 static jh2_slot_session native_slot_session={0};
+static char staged_native_sha[65]={0};
+static uint32_t staged_native_cid=0,staged_native_size=0;
+
 static bool slot_write_ram(void *context,const uint8_t *packet,size_t len){
     (void)context;return jh2_ble_raw_write(JH2_SLOT_UPLOAD_UUID,packet,len,2000);
 }
@@ -472,6 +475,72 @@ static void handle_command(const cJSON *row,const cJSON *assets){
            started?"Authenticated Oracle image stream started":
                     (!idle?"Previous image stream is still stopping":
                      "Requested image digest missing from Oracle sync or BLE worker unavailable"),false);
+
+    }else if(strcmp(action->valuestring,"nativeSlotStage")==0){
+        cJSON *digest=cJSON_GetObjectItemCaseSensitive(payload,"sha256");
+        cJSON *target=cJSON_GetObjectItemCaseSensitive(payload,"cid");
+        const char *sha=cJSON_IsString(digest)?digest->valuestring:NULL;
+        uint32_t cid=cJSON_IsNumber(target)&&target->valuedouble>=1&&
+            target->valuedouble<=4294967295.0?(uint32_t)target->valuedouble:0;
+        uint32_t bytes=0;cJSON *entry=NULL;
+        cJSON_ArrayForEach(entry,assets){
+            cJSON *h=cJSON_GetObjectItemCaseSensitive(entry,"sha256");
+            cJSON *count=cJSON_GetObjectItemCaseSensitive(entry,"bytes");
+            cJSON *assigned=cJSON_GetObjectItemCaseSensitive(entry,"cid");
+            if(sha&&cJSON_IsString(h)&&!strcmp(sha,h->valuestring)&&
+               cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry,"native"))&&
+               cJSON_IsNumber(assigned)&&assigned->valuedouble==(double)cid&&
+               cJSON_IsNumber(count)&&count->valuedouble>=8192&&
+               count->valuedouble<=JH2_NATIVE_LOCAL_LIMIT){
+                bytes=(uint32_t)count->valuedouble;break;
+            }
+        }
+        // No controller erase or BLE upload occurs during staging. Any
+        // failure leaves the existing SmartDawn effect entirely untouched.
+        staged_native_sha[0]=0;staged_native_size=0;staged_native_cid=0;
+        bool ready=sha&&safe_hex64(sha)&&cid&&bytes&&!NATIVE_SLOT_READ_ONLY;
+        if(ready){jh2_native_sequence_stop();ready=stop_image_stream_and_wait();}
+        if(ready)ready=jh2_asset_stage_native(endpoint,bridge_token,sha,bytes,cid);
+        if(ready){
+            memcpy(staged_native_sha,sha,64);staged_native_sha[64]=0;
+            staged_native_size=bytes;staged_native_cid=cid;
+        }
+        append_ack(current,ready?"applied":"failed",
+            ready?"Whole native .eff staged to Nano LittleFS and SHA-256/CID verified; old controller effect unchanged":
+                  "Native local stage rejected: invalid CID, insufficient flash or authenticated download failed",false);
+    }else if(strcmp(action->valuestring,"nativeSlotCommit")==0){
+        cJSON *digest=cJSON_GetObjectItemCaseSensitive(payload,"sha256");
+        cJSON *target=cJSON_GetObjectItemCaseSensitive(payload,"cid");
+        const char *sha=cJSON_IsString(digest)?digest->valuestring:NULL;
+        uint32_t cid=cJSON_IsNumber(target)&&target->valuedouble>=1&&
+            target->valuedouble<=4294967295.0?(uint32_t)target->valuedouble:0;
+        const char *error="No matching verified Nano-local native effect staged";
+        bool ready=sha&&safe_hex64(sha)&&cid&&staged_native_size&&
+                   cid==staged_native_cid&&!strcmp(sha,staged_native_sha)&&
+                   !NATIVE_SLOT_READ_ONLY;
+        if(ready){jh2_native_sequence_stop();ready=stop_image_stream_and_wait();}
+        if(ready)ready=jh2_asset_native_verified(sha,staged_native_size,cid);
+        if(ready){
+            unsigned matches=0;uint16_t slot=0;
+            bool known=jh2_ble_catalog_cid(cid,&matches,&slot);
+            if(known&&matches==0){
+                uint32_t cursor=jh2_ble_notice_cursor();
+                jh2_slot_io io={.context=&cursor,.write=slot_write_ram,
+                               .reply=slot_reply_ram,.pace=slot_pace_ram};
+                ready=jh2_slot_transfer_file(jh2_native_local_path(),cid,(uint8_t)esp_random(),
+                    (uint32_t)(esp_timer_get_time()/1000),known,matches,slot,&io,&error);
+                jh2_ble_target_invalidate();
+            }else{
+                ready=false;error="Fresh complete SmartDawn catalog must show assigned CID empty";
+            }
+        }
+        // One-shot commit. Explicit new stage required before any retry to
+        // prevent accidental repeat writes after an uncertain BLE response.
+        staged_native_sha[0]=0;staged_native_size=0;staged_native_cid=0;
+        native_slot_session.active=false;
+        append_ack(current,ready?"applied":"failed",ready?
+            "Nano sent entire flash-cached native effect over BLE; controller final ACK received; verify catalog twice":
+            (error?error:"Local native upload did not complete"),ready);
     }else if(strcmp(action->valuestring,"nativeSlotUpload")==0){
         cJSON *requested=cJSON_GetObjectItemCaseSensitive(payload,"sha256");
         const char *sha=cJSON_IsString(requested)?requested->valuestring:NULL;
