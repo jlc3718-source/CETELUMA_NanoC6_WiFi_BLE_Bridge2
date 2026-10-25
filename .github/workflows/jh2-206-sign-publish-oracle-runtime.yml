@@ -1,0 +1,246 @@
+name: JH2 2.0.6 Sign Publish and Stage Oracle Runtime OTA
+on:
+  push:
+    branches:
+      - fix/jh2-2.0.6-ble-backoff-reboot-diagnostics-20261025
+    paths:
+      - .github/workflows/jh2-206-sign-publish-oracle-runtime.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: jh2-206-public-signed-oracle-runtime-publish
+  cancel-in-progress: false
+
+jobs:
+  sign-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for 2.0.6 compiler to finish successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 48); do
+            state="$(gh api repos/"$GITHUB_REPOSITORY"/actions/runs/40227991223 --jq '.status + ":" + (.conclusion // "")')"
+            echo "Compiler completion check $i: $state"
+            if [ "$state" = "completed:success" ]; then exit 0; fi
+            if [[ "$state" == completed:* ]]; then echo "Compiler did not pass; refusing to sign"; exit 1; fi
+            sleep 25
+          done
+          echo "Timed out waiting for compiler";exit 1
+      - name: Retrieve exact successful 2.0.6 compiler output
+        uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.6-RUNTIME-UNPERSONALIZED-CI
+          repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          run-id: 40227991223
+          github-token: ${{ github.token }}
+          path: unsigned-runtime
+      - name: Verify compile provenance and no exposed personal Oracle key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signed-package
+          cp unsigned-runtime/JH2-NanoC6-2.0.6-RUNTIME-UNPERSONALIZED.bin signed-package/jh2-runtime-2.0.6.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib,os
+          b=Path('signed-package/jh2-runtime-2.0.6.bin').read_bytes()
+          source=json.loads(Path('unsigned-runtime/manifest.json').read_text())
+          sha=hashlib.sha256(b).hexdigest()
+          compile_sha='dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5'
+          assert source['source_commit']==compile_sha, 'Wrong ESP-IDF compiler revision'
+          assert source['version']=='2.0.6' and source['runtime_sha256']==sha
+          assert source['runtime_bytes']==len(b) and source['private_oracle_token_embedded'] is False
+          assert 0x100000<len(b)<=0x160000 and b[0]==0xe9, 'Not compatible with the dual-slot 1.375MB partition'
+          marker=b'JH2V200PRIVATEORACLETOKENREPLACEME'.ljust(64,b'_')
+          assert b.count(marker)==1, 'Personalized Oracle credentials must never enter public signed OTA'
+          assert b'2.0.6-native-upload-flow' in b and b'JH2-Nano-Fresh' in b
+          assert b'/settings/bluetooth' in b and b'/settings/oracle' in b
+          release={'product':'jason-home-2-nanoc6','version':'2.0.6',
+                   'commit':compile_sha,'files':{'jh2-runtime-2.0.6.bin':{
+                       'bytes':len(b),'sha256':sha}}}
+          Path('signed-package/release.json').write_text(json.dumps(release,indent=2)+'\n')
+          print('UNPERSONALIZED_SIGNING_INPUT_VERIFIED',len(b),sha)
+          PY
+      - name: ECDSA-sign runtime and verify pinned production public key
+        shell: bash
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$OTA_SIGNING_KEY_B64"
+          key="$RUNNER_TEMP/jh2-private-ota-sign.pem"
+          trap 'shred -u "$key" 2>/dev/null || rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 -d > "$key"
+          chmod 600 "$key"
+          python3 JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release signed-package/release.json --output signed-package/latest.json
+          python3 - <<'PY'
+          import json,base64,hashlib,tempfile,subprocess
+          from pathlib import Path
+          root=Path('signed-package')
+          m=json.loads((root/'latest.json').read_text())
+          fields=dict(x.split('=',1) for x in m['payload'].strip().splitlines())
+          b=(root/'jh2-runtime-2.0.6.bin').read_bytes()
+          assert m['schema']==1 and fields['version']=='2.0.6'
+          assert fields['product']=='jason-home-2-nanoc6'
+          assert fields['commit']=='dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5'
+          assert int(fields['bytes'])==len(b) and hashlib.sha256(b).hexdigest()==fields['sha256']
+          assert fields['url']=='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v2.0.6/jh2-runtime-2.0.6.bin'
+          with tempfile.TemporaryDirectory() as d:
+              p=Path(d);(p/'payload').write_text(m['payload'])
+              (p/'signature').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                  'remote-update/anderson_ota_signing_public.pem',
+                  '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          print('JH2_206_ECDSA_SHA256_VERIFIED_BEFORE_RELEASE')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-2.0.6-SIGNED-ORACLE-OTA
+          path: signed-package/
+          retention-days: 45
+          if-no-files-found: error
+
+  publish-signed-download:
+    needs: sign-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.6-SIGNED-ORACLE-OTA
+          path: signed-package
+      - name: Publish ONLY generic signed OTA (no private personalization)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='jason-home-2-nanoc6-v2.0.6'
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Existing signed release: refuse to overwrite';exit 1
+          fi
+          gh release create "$tag" signed-package/jh2-runtime-2.0.6.bin signed-package/latest.json signed-package/release.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 'dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5' \
+            --title 'Jason Home 2 Nano C6 2.0.6 — Bluetooth + Signed A/B OTA' \
+            --notes 'Signed runtime-only, 1.375MB-slot compatible. Wi-Fi setup AP automatically shuts off after stable home IP; full BLE scan, remembered reconnection; Oracle control and authenticated automatic pairing. Does not contain private Oracle token. Preserves NVS, filesystem, bootloader and factory rescue. First install on 2.0.3/2.0.4 requires manual runtime upload because those versions disabled the OTA install handler. Do not use a 4MB full-flash image here.'
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets > /tmp/jh2-206-published.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/jh2-206-published.json'))
+          assert j['tagName']=='jason-home-2-nanoc6-v2.0.6' and not j['isDraft']
+          assert {a['name'] for a in j['assets']} == {
+              'jh2-runtime-2.0.6.bin','latest.json','release.json'}
+          print('SIGNED_206_RELEASE_PUBLISHED_NO_DEVICE_FLASH',flush=True)
+          PY
+
+  stage-on-oracle:
+    needs: publish-signed-download
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.6-SIGNED-ORACLE-OTA
+          path: signed-package
+      - name: Verify and atomically stage approved 2.0.6 OTA runtime on Oracle
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import base64,hashlib,json,os,shutil,subprocess,tempfile
+          from pathlib import Path
+          work=Path(os.environ['GITHUB_WORKSPACE'])/'signed-package'
+          names=('jh2-runtime-2.0.6.bin','latest.json','release.json')
+          assert all((work/p).is_file() for p in names), 'Missing signed release asset'
+          man=json.loads((work/'latest.json').read_text())
+          info=json.loads((work/'release.json').read_text())
+          fields=dict(row.split('=',1) for row in man['payload'].strip().splitlines())
+          data=(work/'jh2-runtime-2.0.6.bin').read_bytes()
+          sha=hashlib.sha256(data).hexdigest()
+          assert man['schema']==1 and fields['product']=='jason-home-2-nanoc6'
+          assert fields['version']=='2.0.6' and fields['commit']=='dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5'
+          assert fields['sha256']==sha and int(fields['bytes'])==len(data)
+          assert 0x100000<len(data)<=0x160000 and data[0]==0xe9
+          assert info['files']['jh2-runtime-2.0.6.bin']['sha256']==sha
+          assert b'JH2V200PRIVATEORACLETOKENREPLACEME'.ljust(64,b'_') in data
+          assert fields['url']=='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v2.0.6/jh2-runtime-2.0.6.bin'
+          with tempfile.TemporaryDirectory() as temp:
+              t=Path(temp)
+              (t/'payload').write_text(man['payload'])
+              (t/'sig').write_bytes(base64.b64decode(man['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                str(Path(os.environ['GITHUB_WORKSPACE'])/'remote-update/anderson_ota_signing_public.pem'),
+                '-signature',str(t/'sig'),str(t/'payload')],check=True)
+          details=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mounts=[m for m in details['Mounts'] if m['Destination']=='/data' and m['Type']=='bind']
+          assert len(mounts)==1, 'Oracle /data bind mount not found'
+          root=Path(mounts[0]['Source'])/'signed-ota'
+          assert root.exists() and root.is_dir(), 'Signed OTA storage not present'
+          approved=root/'approved'
+          target=root/'2.0.6'
+          if target.exists():
+              assert target.is_dir() and all((target/p).read_bytes()==(work/p).read_bytes() for p in names), 'Signed 2.0.6 immutable conflict'
+          else:
+              temporary=root/('.2.0.6-stage-'+str(os.getpid()))
+              temporary.mkdir(mode=0o755)
+              try:
+                  for p in names:shutil.copy2(work/p,temporary/p)
+                  for p in names:assert (temporary/p).read_bytes()==(work/p).read_bytes()
+                  temporary.rename(target)
+              except BaseException:
+                  shutil.rmtree(temporary,ignore_errors=True)
+                  raise
+          if approved.exists() or approved.is_symlink():
+              old=json.loads((approved/'latest.json').read_text())
+              old_fields=dict(row.split('=',1) for row in old['payload'].strip().splitlines())
+              old_ver=old_fields.get('version','0.0.0')
+              def semver(v):return tuple(int(k) for k in v.split('.'))
+              assert semver(old_ver)<=semver('2.0.6'), 'Refusing to demote newer approved OTA'
+              if not approved.is_symlink():
+                  backup=root/('approved-before-2.0.6-'+str(os.getpid()))
+                  approved.rename(backup)
+                  print('PREVIOUS_APPROVED_SAVED',str(backup),flush=True)
+          symlink=root/('.approved-2.0.6-'+str(os.getpid()))
+          symlink.symlink_to('2.0.6',target_is_directory=True)
+          os.replace(symlink,approved)
+          assert all((approved/p).read_bytes()==(work/p).read_bytes() for p in names)
+          print('ORACLE_APPROVED_SIGNED_206_RUNTIME_PUBLISHED',sha,len(data),'runtime_only',flush=True)
+          print('ORACLE_NO_NANO_FLASH_NO_RECOVERY_OVERWRITE',flush=True)
+          PY
+      - name: Probe Oracle approved firmware feed from application network
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Read-only HTTP check inside Oracle. This must not trigger any Nano flash.
+          sudo -n docker exec jason-home-2-web node -e '
+          const {createHash}=require("node:crypto");
+          (async()=>{
+            const base="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+            const res=await fetch(base+"/api/curtain/firmware-manifest");
+            const m=await res.json();
+            if(!res.ok||m.schema!==1||!m.payload||!m.signature)
+              throw Error("Approved signed manifest inaccessible: "+res.status);
+            const values=Object.fromEntries(m.payload.trim().split("\n").map(row=>row.split(/=(.*)/s).slice(0,2)));
+            if(values.version!=="2.0.6"||values.product!=="jason-home-2-nanoc6")
+              throw Error("Wrong approved OTA version: "+values.version);
+            const binary=await fetch(base+"/api/curtain/firmware-runtime/2.0.6.bin");
+            if(!binary.ok)throw Error("Runtime binary HTTP "+binary.status);
+            const bytes=Buffer.from(await binary.arrayBuffer());
+            const digest=createHash("sha256").update(bytes).digest("hex");
+            if(bytes.length!==Number(values.bytes)||digest!==values.sha256)
+              throw Error("Oracle runtime SHA mismatch");
+            console.log("ORACLE_SIGNED_206_HTTP_VERIFIED",res.status,binary.status,bytes.length,digest);
+            console.log("NO_NANO_INSTALL_OR_FLASH_PERFORMED");
+          })().catch(e=>{console.error(e);process.exitCode=1});'
+
