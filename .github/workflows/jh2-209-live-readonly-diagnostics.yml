@@ -1,0 +1,53 @@
+name: JH2 2.0.9 Read-Only Nano BLE and Redirect Diagnostics
+on:
+  push:
+    branches: [fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025]
+    paths: [.github/workflows/jh2-209-live-readonly-diagnostics.yml]
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read saved live Nano BLE status and test published root redirect, NO commands
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,urllib.error
+          env=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env']
+          token=next(v.split('=',1)[1] for v in env if v.startswith('JASON_HOME_API_TOKEN='))
+          def query(path,cookie=None,body=None):
+              req=urllib.request.Request('http://127.0.0.1:8081'+path,
+                  data=json.dumps(body).encode() if body is not None else None,
+                  headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},
+                  method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=25) as f:
+                  return json.load(f),f.headers
+          _,hdr=query('/api/session',body={'token':token})
+          cookie=hdr['Set-Cookie'].split(';')[0]
+          j,_=query('/api/curtain/status',cookie=cookie)
+          b=j.get('curtain') or {}
+          chosen=['connected','nativeReconnectPaused','nativeBleStackReady','nativeBleFullScanActive',
+              'nativeConnecting','nativeRememberedDevice','nativeRetryDelaySeconds','nativeRetryInSeconds',
+              'nativeReconnectAttempts','nativeLastConnectError','nativeLastScanCancelError',
+              'nativeLastBleDisconnectReason','nativeFullBleScans','nativeRecoveryScans',
+              'nativeReconnectFailures','nativeConnectionsSucceeded','nativeSelectedControllerMac',
+              'nativeDiscoveredDevices','nativeBLEPhyQueryRc','nativeBLEPhyTX','nativeBLEPhyRX',
+              'nativeHostMsys2Count','nativeHostAclCount']
+          print('LIVE_NANO_STATUS',json.dumps({'fw':j.get('firmware'),'online':j.get('online'),
+                'lastSeen':j.get('lastSeen'),'curtain':{k:b.get(k) for k in chosen},
+                'OTA':j.get('signedOta')},separators=(',',':')),flush=True)
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):return None
+          opener=urllib.request.build_opener(NoRedirect())
+          for path in ('/','/settings/nano','/api/health'):
+              url='http://craumer.tplinkdns.com'+path
+              try:
+                  with opener.open(url,timeout=12) as f:
+                      print('HTTP_READONLY',path,f.status, f.headers.get('Location',''),f.headers.get('Content-Type',''))
+              except urllib.error.HTTPError as e:
+                  print('HTTP_READONLY',path,e.code,e.headers.get('Location',''),e.headers.get('Content-Type',''))
+              except Exception as e:
+                  print('HTTP_READONLY_ERROR',path,type(e).__name__,str(e)[:130])
+          PY
