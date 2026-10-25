@@ -82,6 +82,10 @@ static char endpoint[MAX_ENDPOINT]={0},bridge_token[MAX_TOKEN]={0},bridge_id[MAX
 static char ssid[33]={0},password[65]={0};
 static char boot_id[17]={0};
 static volatile bool bridge_active=false;
+static volatile bool bridge_start_requested=false;
+static volatile bool oracle_link_busy=false;
+static volatile bool oracle_link_verified=false;
+static const char *oracle_link_status="Not linked. Open Settings > Oracle and select Connect Automatically.";
 static EventGroupHandle_t wifi_group;
 
 typedef struct { uint64_t command_id; char *json; } ack_record;
@@ -89,7 +93,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.1"
+#define NATIVE_FW_VERSION "2.0.2"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -813,6 +817,7 @@ static void clear_sent_ack_batch(size_t sent){
 static void oracle_task(void *ctx){
     (void)ctx;
     if(!load_saved_settings() || !wifi_setup()){
+        bridge_start_requested=false;
         ESP_LOGE(TAG,"Native bridge disabled; saved production settings unchanged");
         vTaskDelete(NULL);return;
     }
@@ -900,14 +905,61 @@ static void oracle_task(void *ctx){
     }
 }
 void jh2_bridge_start(void){
-    if(bridge_active)return;
+    if(bridge_active||bridge_start_requested)return;
+    bridge_start_requested=true;
     jh2_load_auto_ota();
-    ack_lock=xSemaphoreCreateMutex();
-    if(!ack_lock)return;
+    if(!ack_lock)ack_lock=xSemaphoreCreateMutex();
+    if(!ack_lock){bridge_start_requested=false;return;}
     if(xTaskCreate(oracle_task,"jh2-idf-oracle",12288,NULL,4,NULL)!=pdPASS){
-        vSemaphoreDelete(ack_lock);
-        ack_lock=NULL;
+        bridge_start_requested=false;
         ESP_LOGE(TAG,"Unable to start native Oracle task");
     }
 }
 bool jh2_bridge_ready(void){return bridge_active;}
+
+// Connect Automatically uses the private device bridge token already saved
+// on the Nano. A failed credential cannot create a new pairing on the open AP.
+static void oracle_link_task(void *ctx){
+    (void)ctx;
+    bool success=false;
+    EventGroupHandle_t group=jh2_web_wifi_group();
+    if(!group || !(xEventGroupGetBits(group)&WIFI_READY)){
+        oracle_link_status="Connect to home Wi-Fi first; setup AP remains available.";
+    }else if(!load_saved_settings()){
+        oracle_link_status="No valid bridge token saved. Use the signed-in Oracle pairing page.";
+    }else{
+        oracle_link_status="Verifying bridge ID and token with Oracle...";
+        cJSON *bootstrap=https_json("/api/curtain-bridge/bootstrap",NULL);
+        const cJSON *valid=bootstrap?cJSON_GetObjectItemCaseSensitive(bootstrap,"ok"):NULL;
+        const cJSON *identity=bootstrap?cJSON_GetObjectItemCaseSensitive(bootstrap,"bridgeId"):NULL;
+        const cJSON *address=bootstrap?cJSON_GetObjectItemCaseSensitive(bootstrap,"endpoint"):NULL;
+        if(cJSON_IsTrue(valid)&&cJSON_IsString(identity)&&identity->valuestring&&
+           strcmp(identity->valuestring,bridge_id)==0&&
+           cJSON_IsString(address)&&address->valuestring&&
+           strcmp(address->valuestring,endpoint)==0){
+            oracle_link_verified=true;
+            oracle_link_status="Bridge verified. Starting Oracle synchronization.";
+            jh2_bridge_start();
+            success=true;
+        }else{
+            oracle_link_status="Oracle authentication failed or bridge identity mismatch. Re-pair through Oracle.";
+        }
+        cJSON_Delete(bootstrap);
+    }
+    if(!success)oracle_link_verified=false;
+    oracle_link_busy=false;
+    vTaskDelete(NULL);
+}
+bool jh2_bridge_autolink_request(void){
+    if(oracle_link_busy)return false;
+    oracle_link_busy=true;
+    oracle_link_status="Preparing encrypted Oracle verification...";
+    if(xTaskCreate(oracle_link_task,"jh2-oracle-link",10240,NULL,3,NULL)!=pdPASS){
+        oracle_link_busy=false;
+        oracle_link_status="Cannot allocate Oracle link task. Wi-Fi remains available.";
+        return false;
+    }
+    return true;
+}
+const char *jh2_bridge_autolink_status(void){return oracle_link_status;}
+bool jh2_bridge_autolink_verified(void){return oracle_link_verified;}
