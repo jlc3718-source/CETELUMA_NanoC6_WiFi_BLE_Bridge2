@@ -35,7 +35,7 @@ jobs:
           assert 'const bool oracle_settings=strcmp(r->uri,"/settings/oracle")==0;' in w
           assert 'cfg.ap.authmode=WIFI_AUTH_OPEN' in w and 'JH2-Nano-Fresh' in w
           assert 'if(!selected && !named)return 0;' in b
-          assert 'BLE_FULL_SCAN_COMPLETE found=%u, automatic reconnect resumed' in b
+          assert 'BLE_FULL_SCAN_COMPLETE found=%u; reconnect resumed' in b
           assert 'ble_last_connect_error=event->connect.status;' in b
           assert 'ble_last_scan_cancel_error=cancel_rc;' in b
           assert 'ble_service_tick();' in b and 'schedule_ble_retry("disconnected")' in b
