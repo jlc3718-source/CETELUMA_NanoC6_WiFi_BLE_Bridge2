@@ -20,6 +20,7 @@
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_littlefs.h"
+#include "esp_partition.h"
 #include "mdns.h"
 #include "lwip/sockets.h"
 #include "lwip/apps/sntp.h"
@@ -254,7 +255,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.73-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","1.1.74-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -588,6 +589,25 @@ static bool mount_store(void){
                                      .format_if_mount_failed=false,.dont_mount=false};
     esp_err_t err=esp_vfs_littlefs_register(&c);
     if(err==ESP_OK||err==ESP_ERR_INVALID_STATE)return true;
+    // A brand-new FULL FLASH leaves the new 192KB storage partition erased.
+    // Format ONLY if the entire partition is demonstrably blank; never wipe
+    // damaged or previously populated settings after a routine OTA update.
+    const esp_partition_t *p=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_SPIFFS,"storage");
+    if(p&&p->size==0x30000){
+        uint8_t sample[256];bool blank=true;
+        for(size_t offset=0;offset<p->size;offset+=sizeof(sample)){
+            if(esp_partition_read(p,offset,sample,sizeof(sample))!=ESP_OK){blank=false;break;}
+            for(size_t i=0;i<sizeof(sample);i++)if(sample[i]!=0xff){blank=false;break;}
+            if(!blank)break;
+        }
+        if(blank){
+            const esp_vfs_littlefs_conf_t first={.base_path="/littlefs",.partition_label="storage",
+                .format_if_mount_failed=true,.dont_mount=false};
+            ESP_LOGW(TAG,"Formatting ONLY confirmed blank new 192KB LittleFS partition");
+            err=esp_vfs_littlefs_register(&first);
+            if(err==ESP_OK||err==ESP_ERR_INVALID_STATE)return true;
+        }
+    }
     ESP_LOGE(TAG,"Existing settings storage unavailable; no automatic format (%s)",esp_err_to_name(err));
     return false;
 }
