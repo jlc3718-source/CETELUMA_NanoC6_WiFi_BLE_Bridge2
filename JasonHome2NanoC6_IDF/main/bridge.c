@@ -62,25 +62,14 @@ bool jh2_bridge_set_auto_update_enabled(bool enabled){
 }
 static void jh2_load_auto_ota(void){
     nvs_handle_t n;
-    if(nvs_open("jh2-fwcfg",NVS_READWRITE,&n)!=ESP_OK){
-        // First boot still permits signed updates; no unsigned bypass.
-        firmware_auto_update=true;return;
+    uint8_t stored=0; // First signed update is manually installed.
+    if(nvs_open("jh2-fwcfg",NVS_READONLY,&n)==ESP_OK){
+        (void)nvs_get_u8(n,"auto",&stored);
+        nvs_close(n);
     }
-    uint8_t stored=1,upgraded=0;
-    (void)nvs_get_u8(n,"auto",&stored);
-    (void)nvs_get_u8(n,"v205",&upgraded);
-    if(!upgraded){
-        // Earlier 2.0.x forced OTA OFF even when requested by the owner.
-        // Migrate exactly once; later explicit ON/OFF selections persist.
-        stored=1;
-        if(nvs_set_u8(n,"auto",1)==ESP_OK &&
-           nvs_set_u8(n,"v205",1)==ESP_OK)
-            (void)nvs_commit(n);
-    }
-    nvs_close(n);
     firmware_auto_update=stored==1;
-    ESP_LOGW(TAG,"Signed automatic OTA after 2.0.5 migration: %s",
-             firmware_auto_update?"ON":"OFF");
+    ESP_LOGW(TAG,"Signed OTA mode: %s (first install remains manual)",
+             firmware_auto_update?"automatic enabled":"manual until first install");
 }
 #define WIFI_READY BIT0
 #define MAX_ORACLE_BODY 65536
