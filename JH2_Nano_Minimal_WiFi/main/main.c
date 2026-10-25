@@ -19,7 +19,7 @@
 #include "nvs_flash.h"
 
 #define AP_SSID "JH2-Nano-Fresh"
-#define AP_PASSWORD "NanoFresh2026!"
+#define AP_PASSWORD ""
 #define WIFI_NAMESPACE "jh2basic"
 static const char *TAG="JH2_WIFI_BASE";
 static esp_netif_t *sta_netif=NULL;
@@ -205,11 +205,11 @@ void app_main(void){
 
     wifi_config_t ap={0};
     strlcpy((char*)ap.ap.ssid,AP_SSID,sizeof(ap.ap.ssid));
-    strlcpy((char*)ap.ap.password,AP_PASSWORD,sizeof(ap.ap.password));
+    ap.ap.password[0]=0; // Open setup network, explicitly requested
     ap.ap.ssid_len=strlen(AP_SSID);
     ap.ap.channel=6;
     ap.ap.max_connection=4;
-    ap.ap.authmode=WIFI_AUTH_WPA2_PSK;
+    ap.ap.authmode=WIFI_AUTH_OPEN;
     ap.ap.pmf_cfg.required=false;
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP,&ap));
     if(configured){
