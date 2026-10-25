@@ -113,7 +113,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.1 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.2 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -1129,27 +1129,10 @@ void app_main(void){
         failsafe_boot_failed();
         return;
     }
-    // On an erased 4MB full flash, start the usual manual setup AP and
-    // keep the HTTP configuration page alive. Do not start Bluetooth/Oracle
-    // until the user enters valid credentials and setup handler reboots.
-    if(!jh2_web_has_oracle_credentials()){
-        ESP_LOGW(TAG,"2.0.1 manual setup: Wi-Fi portal active; BLE/Oracle deferred");
-        while(true){
-            vTaskDelay(pdMS_TO_TICKS(10000));
-            failsafe_confirm_after_60s();
-        }
-    }
-    // Wait for station IP before allocating Bluetooth and Oracle tasks.
-    // Initial setup stays available indefinitely when credentials are absent;
-    // on bad Wi-Fi the local recovery AP opens without switching partitions.
-    EventGroupHandle_t wifi_event=jh2_web_wifi_group();
-    if(wifi_event){
-        while(!(xEventGroupGetBits(wifi_event)&BIT0)){
-            vTaskDelay(pdMS_TO_TICKS(2000));
-            failsafe_confirm_after_60s();
-        }
-        ESP_LOGI(TAG,"2.0.1 Wi-Fi STA online; starting native BLE and Oracle");
-    }
+    // 2.0.2: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
+    // BLE, filesystem nor Oracle is allowed to gate the setup AP.
+    // Configure Oracle later with Settings > Oracle > Connect Automatically.
+    ESP_LOGW(TAG,"2.0.2 setup AP ready; proceeding with independent BLE startup");
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
     // Nano into the isolated factory uploader.
@@ -1188,12 +1171,11 @@ void app_main(void){
              jh2_native_runtime_marker);
 #endif
 #if CONFIG_JH2_NATIVE_ENABLE_ORACLE
-    // Lab opt-in only. Default firmware remains the non-destructive BLE
-    // inventory probe; enabling this option does not authorize OTA or flashing.
-    ESP_LOGW(TAG,"NATIVE_ORACLE_LAB_OPT_IN: starting saved-credential bridge");
-    jh2_bridge_start();
+    // Do not connect to Oracle on boot. Oracle is a separate, button-driven
+    // service only after home Wi-Fi is online and bridge credentials verify.
+    ESP_LOGW(TAG,"Oracle standby; use Settings > Oracle > Connect Automatically");
 #else
-    ESP_LOGW(TAG,"DIAGNOSTIC_ONLY; native inventory read; Oracle startup disabled");
+    ESP_LOGW(TAG,"Oracle disabled at build-time; local Wi-Fi + BLE still run");
 #endif
     while(true){
         vTaskDelay(pdMS_TO_TICKS(10000));
