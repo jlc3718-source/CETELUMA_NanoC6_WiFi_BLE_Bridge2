@@ -1,0 +1,46 @@
+name: JH2 Inspect Encoded SmartDawn File Layout Readonly
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-inspect-cid85299-file-layout.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect existing Oracle native asset bytes WITHOUT writing controller
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import subprocess,json,sqlite3,hashlib,struct
+          from pathlib import Path
+          w=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(m for m in w['Mounts'] if m['Destination']=='/data' and m['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(mount['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          row=db.execute("SELECT payload FROM curtain_commands WHERE id=16004").fetchone()
+          assert row
+          p=json.loads(row[0])
+          cid=p['cid']
+          assert cid==85299
+          sha=p['sha256']
+          r=db.execute('SELECT bytes,metadata FROM curtain_assets WHERE sha=?',(sha,)).fetchone()
+          assert r
+          b=bytes(r[0]);m=json.loads(r[1])
+          assert hashlib.sha256(b).hexdigest()==sha
+          offset=struct.unpack_from('<I',b,128)[0]
+          n=struct.unpack_from('<H',b,134)[0]
+          stride=struct.unpack_from('<I',b,10)[0]
+          dnstride=struct.unpack_from('<I',b,offset+5)[0]
+          dnframes=struct.unpack_from('<I',b,offset+9)[0]
+          print('CID',cid,'LEN',len(b),'SHA',sha[:20],flush=True)
+          print('FORMAT',b[:4], 'version',b[4],'container',b[5],
+           'dims',struct.unpack_from('<HH',b,6),'stride',stride,'frames',n,
+           'frameOff',offset,'dnx2Stride',dnstride,'dnx2Frames',dnframes,flush=True)
+          print('HEADER_FLAGS',list(b[120:144]),'DNX2_FLAGS',list(b[offset+150:offset+165]),flush=True)
+          print('HEADER_NAME_ASCII',repr(b[38:62].decode('ascii','replace').rstrip(chr(0))),flush=True)
+          print('FIRST_24_BYTES',b[:24].hex(),flush=True)
+          print('FILE_PAD_SIZE',len(b)-(offset+4096+stride*n),'mod4096',len(b)%4096,flush=True)
+          print('METADATA_FIELDS',sorted(m.keys()),flush=True)
+          print('ASSET_FORMAT',m.get('format'),'METADATA_FRAMES',m.get('frames'),flush=True)
+          PY
