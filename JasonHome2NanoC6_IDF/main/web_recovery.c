@@ -767,8 +767,8 @@ static bool import_factory_provision(void){
         }
     }
     cJSON_Delete(cfg);
-    ESP_LOGW(TAG,ok?"Saved embedded Nano provisioning (values hidden)":
-                  "Embedded provisioning could not be restored");
+    if(ok){ESP_LOGI(TAG,"Saved embedded Nano provisioning (values hidden)");}
+    else{ESP_LOGW(TAG,"Embedded provisioning could not be restored");}
     return ok;
 }
 static esp_err_t setup_post(httpd_req_t *r){
