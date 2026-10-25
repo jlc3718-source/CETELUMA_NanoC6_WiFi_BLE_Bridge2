@@ -1,0 +1,38 @@
+name: JH2 Cancel Exact Curtain Command 15952
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-170-cancel-command-15952.yml]
+permissions: {contents: read}
+jobs:
+  cancel-one:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Cancel only exact pending command 15952; never touch others
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,sqlite3,subprocess,time
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(m for m in info['Mounts'] if m['Destination']=='/data' and m['Type']=='bind')
+          dbfile=Path(mount['Source'])/'jason-home-2.sqlite'
+          assert dbfile.is_file(), 'DB missing; refusing to create new one'
+          db=sqlite3.connect('file:'+str(dbfile)+'?mode=rw',uri=True,timeout=15)
+          db.execute('BEGIN IMMEDIATE')
+          r=db.execute('SELECT id,action,state,source FROM curtain_commands WHERE id=?',(15952,)).fetchone()
+          if r is None:
+              db.rollback();raise RuntimeError('Command 15952 not found in production DB')
+          print('COMMAND_15952_BEFORE',r,flush=True)
+          if r[2] in ('queued','downloaded'):
+              result=json.dumps({'ok':False,'cancelledByUser':True,'error':'Cancelled by user; do not replay'})
+              n=db.execute("UPDATE curtain_commands SET state='superseded',result=? WHERE id=? AND state IN ('queued','downloaded')",(result,15952)).rowcount
+              assert n==1
+              db.commit()
+              print('COMMAND_15952_CANCELLED_BEFORE_EXECUTION',flush=True)
+          else:
+              db.rollback()
+              print('COMMAND_15952_ALREADY_TERMINAL_NOT_REPLAYED',r[2],flush=True)
+          db.close()
+          PY
