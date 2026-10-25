@@ -58,6 +58,18 @@ static const char *TAG="JH2_IDF_BLE";
  */
 static int64_t failsafe_boot_us=0;
 static bool failsafe_confirmed=false;
+static esp_reset_reason_t previous_reset_reason=ESP_RST_UNKNOWN;
+static uint32_t persistent_boot_count=0;
+static uint8_t persistent_crash_streak=0;
+void jh2_runtime_boot_diagnostics(cJSON *out){
+    if(!cJSON_IsObject(out))return;
+    cJSON_AddNumberToObject(out,"espResetReason",(int)previous_reset_reason);
+    cJSON_AddNumberToObject(out,"bootCounter",persistent_boot_count);
+    cJSON_AddNumberToObject(out,"consecutiveCrashResets",persistent_crash_streak);
+    cJSON_AddNumberToObject(out,"runtimeUptimeSeconds",(double)(esp_timer_get_time()/1000000ULL));
+    cJSON_AddBoolToObject(out,"runtimeHealthy60s",failsafe_confirmed);
+}
+
 static void failsafe_boot_failed(void){
     const esp_partition_t *running=esp_ota_get_running_partition();
     esp_ota_img_states_t state;
@@ -75,12 +87,16 @@ static void failsafe_boot_failed(void){
 static void failsafe_boot_begin(void){
     failsafe_boot_us=esp_timer_get_time();
     const esp_reset_reason_t reason=esp_reset_reason();
+    previous_reset_reason=reason;
+    ESP_LOGW(TAG,"BOOT_DIAGNOSTIC reset_reason=%d",(int)reason);
     bool crash=reason==ESP_RST_PANIC||reason==ESP_RST_INT_WDT||
                reason==ESP_RST_TASK_WDT||reason==ESP_RST_WDT;
     nvs_handle_t n;
     if(nvs_open("jh2-failsafe",NVS_READWRITE,&n)==ESP_OK){
         uint8_t streak=0;
         (void)nvs_get_u8(n,"crashes",&streak);
+        (void)nvs_get_u32(n,"boots",&persistent_boot_count);
+        if(persistent_boot_count<UINT32_MAX)++persistent_boot_count;
         if(crash&&streak<255)streak++;
         if(!crash)streak=0;
         if(streak>=3){
@@ -88,8 +104,12 @@ static void failsafe_boot_begin(void){
             ESP_LOGE(TAG,"Consecutive crash resets; retaining A/B runtime and local setup");
             streak=0;
         }
+        persistent_crash_streak=streak;
+        (void)nvs_set_u32(n,"boots",persistent_boot_count);
         (void)nvs_set_u8(n,"crashes",streak);
         (void)nvs_commit(n);nvs_close(n);
+        ESP_LOGW(TAG,"BOOT_DIAGNOSTIC boots=%lu crash_streak=%u",
+                 (unsigned long)persistent_boot_count,(unsigned)streak);
     }
 }
 static void failsafe_confirm_after_60s(void){
@@ -111,9 +131,10 @@ static void failsafe_confirm_after_60s(void){
         nvs_set_u8(n,"good",running->subtype==ESP_PARTITION_SUBTYPE_APP_OTA_1?1:0);
         nvs_set_u8(n,"crashes",0);
         nvs_commit(n);nvs_close(n);
+        persistent_crash_streak=0;
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.5 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.6 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -196,6 +217,25 @@ static volatile bool ble_scan_only=false;
 static volatile uint32_t ble_full_scan_requests=0;
 static volatile uint32_t ble_last_disconnect_reason=0;
 static volatile uint32_t ble_reconnect_attempts=0;
+static volatile uint32_t ble_connection_successes=0;
+static volatile uint32_t ble_recovery_scan_cycles=0;
+static volatile uint32_t ble_retry_delay_seconds=0;
+static volatile uint8_t ble_failure_streak=0;
+static volatile int64_t ble_next_retry_us=0;
+static volatile int64_t ble_connected_since_us=0;
+static volatile bool ble_connect_pending=false;
+static ble_addr_t ble_connect_addr={0};
+// GAP callbacks only schedule retries; never recursively scan / connect.
+static void schedule_ble_retry(const char *reason){
+    if(hold_disconnect||ble_scan_only)return;
+    if(ble_failure_streak<5)++ble_failure_streak;
+    uint32_t delay=10U << (ble_failure_streak-1);
+    if(delay>120U)delay=120U;
+    ble_retry_delay_seconds=delay;
+    ble_next_retry_us=esp_timer_get_time()+(int64_t)delay*1000000LL;
+    ESP_LOGW(TAG,"BLE_RETRY_SCHEDULED cause=%s seconds=%lu failures=%u",
+             reason,(unsigned long)delay,(unsigned)ble_failure_streak);
+}
 static volatile uint32_t local_command_seq=0,local_command_success=0,local_command_failure=0;
 static bool hold_disconnect=false;
 static void begin_scan(void);
@@ -240,49 +280,49 @@ static void load_target(void){
 bool jh2_ble_scan_start(void){
     ++ble_scan_requests;
     if(!ble_host_ready)return false;
-    hold_disconnect=false;
-    ble_scan_only=false;
     if(connection!=BLE_HS_CONN_HANDLE_NONE)return true;
-    if(ble_gap_disc_active())ble_gap_disc_cancel();
-    begin_scan();
-    return true;
+    hold_disconnect=false;ble_scan_only=false;
+    ble_failure_streak=0;ble_retry_delay_seconds=0;
+    ble_next_retry_us=esp_timer_get_time();
+    return true; // Main task starts a bounded scan, not this HTTP callback.
 }
 bool jh2_ble_full_scan(void){
-    if(!ble_host_ready || !discovered_lock)return false;
+    if(!ble_host_ready||!discovered_lock ||
+       connection!=BLE_HS_CONN_HANDLE_NONE || ble_connect_pending ||
+       ble_gap_disc_active())return false;
     if(xSemaphoreTake(discovered_lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
-    // A full scan starts with fresh observations; the NVS selection persists.
     discovered_count=0;
     memset(discovered,0,sizeof(discovered));
     xSemaphoreGive(discovered_lock);
     ++ble_full_scan_requests;
+    hold_disconnect=false;
     ble_scan_only=true;
-    if(ble_gap_disc_active())ble_gap_disc_cancel();
-    begin_scan();
+    begin_scan(); // 15-second discovery only; never initiates connection.
     return true;
 }
 bool jh2_ble_reconnect_last(void){
     if(!ble_host_ready||!selected_valid)return false;
-    hold_disconnect=false;
-    ble_scan_only=false;
     if(connection!=BLE_HS_CONN_HANDLE_NONE){
         struct ble_gap_conn_desc current={0};
         if(ble_gap_conn_find(connection,&current)==0 &&
            ble_addr_cmp(&current.peer_ota_addr,&selected_addr)==0)
-            return true; // Already connected to the remembered controller.
+            return true; // Never disconnect an already-correct, healthy link.
+        // Switching to a different selected device requires one termination.
+        hold_disconnect=false;
         return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
     }
-    if(ble_gap_disc_active())ble_gap_disc_cancel();
-    begin_scan(); // Reconnect only the saved peer, not a random advertiser.
+    hold_disconnect=false;ble_scan_only=false;
+    ble_failure_streak=0;ble_retry_delay_seconds=0;
+    ble_next_retry_us=esp_timer_get_time();
     return true;
 }
 bool jh2_ble_select_target(const char *mac){
     uint8_t desired[6]={0};
-    if(!parse_mac(mac,desired) || !discovered_lock)return false;
+    if(!parse_mac(mac,desired)||!discovered_lock)return false;
     ble_addr_t addr={0};bool found=false;
     if(xSemaphoreTake(discovered_lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
     for(size_t i=0;i<discovered_count;i++){
         if(memcmp(discovered[i].addr.val,desired,6)==0){
-            // Select only a device observed by our BLE scan; no guessed MAC.
             addr=discovered[i].addr;found=true;break;
         }
     }
@@ -295,23 +335,25 @@ bool jh2_ble_select_target(const char *mac){
     nvs_close(n);
     if(!saved)return false;
     selected_addr=addr;selected_valid=true;
-    hold_disconnect=false;
-    ble_scan_only=false;
+    hold_disconnect=false;ble_scan_only=false;
+    ble_failure_streak=0;ble_retry_delay_seconds=0;
+    ble_next_retry_us=esp_timer_get_time();
     if(connection!=BLE_HS_CONN_HANDLE_NONE){
         struct ble_gap_conn_desc current={0};
         if(ble_gap_conn_find(connection,&current)==0 &&
            ble_addr_cmp(&current.peer_ota_addr,&selected_addr)==0)
-            return true; // Same selected controller: do not reset working BLE.
+            return true; // Do not disturb matching connection.
         return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
-    }else{
-        if(ble_gap_disc_active())ble_gap_disc_cancel();
-        begin_scan();
     }
+    // A running discovery is allowed to finish; a later bounded scan uses
+    // the remembered controller address without resetting the BLE stack.
     return true;
 }
 bool jh2_ble_disconnect(void){
     hold_disconnect=true;
     ble_scan_only=false;
+    ble_connect_pending=false;
+    ble_next_retry_us=0;
     if(ble_host_ready&&ble_gap_disc_active())ble_gap_disc_cancel();
     if(connection==BLE_HS_CONN_HANDLE_NONE)return true;
     return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
@@ -707,6 +749,14 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"nativeBleStackReady",ble_host_ready);
     cJSON_AddBoolToObject(out,"nativeBleFullScanActive",ble_scan_only&&ble_host_ready);
     cJSON_AddNumberToObject(out,"nativeReconnectAttempts",ble_reconnect_attempts);
+    cJSON_AddNumberToObject(out,"nativeConnectionsSucceeded",ble_connection_successes);
+    cJSON_AddNumberToObject(out,"nativeRecoveryScans",ble_recovery_scan_cycles);
+    cJSON_AddNumberToObject(out,"nativeReconnectFailures",ble_failure_streak);
+    cJSON_AddNumberToObject(out,"nativeRetryDelaySeconds",ble_retry_delay_seconds);
+    const int64_t now_us=esp_timer_get_time();
+    cJSON_AddNumberToObject(out,"nativeRetryInSeconds",
+        ble_next_retry_us>now_us?(double)((ble_next_retry_us-now_us+999999)/1000000):0);
+    cJSON_AddBoolToObject(out,"nativeConnecting",ble_connect_pending);
     cJSON_AddNumberToObject(out,"nativeLastBleDisconnectReason",ble_last_disconnect_reason);
     cJSON_AddBoolToObject(out,"nativeRememberedDevice",selected_valid);
     char chosen[18]="";
@@ -868,15 +918,32 @@ static void fail(const char *stage,int rc){
 }
 
 static void begin_scan(void){
-    if(!ble_host_ready || hold_disconnect)return;
-    if(connection!=BLE_HS_CONN_HANDLE_NONE && !ble_scan_only)return;
-    if(ble_hs_id_infer_auto(0,&own_addr)!=0)return;
+    if(!ble_host_ready||hold_disconnect||ble_connect_pending||
+       connection!=BLE_HS_CONN_HANDLE_NONE||ble_gap_disc_active())return;
+    if(ble_hs_id_infer_auto(0,&own_addr)!=0){
+        if(!ble_scan_only)schedule_ble_retry("address");return;
+    }
     struct ble_gap_disc_params params={0};
-    params.passive=0; // active scan includes complete advertising + scan responses
-    params.filter_duplicates=0;
-    const int32_t duration=ble_scan_only?15000:BLE_HS_FOREVER;
+    params.passive=0;params.filter_duplicates=0;
+    const int32_t duration=ble_scan_only?15000:12000;
     int rc=ble_gap_disc(own_addr,duration,&params,gap_event,NULL);
-    if(rc && rc!=BLE_HS_EALREADY)fail("scan",rc);
+    if(rc!=0){
+        fail("scan",rc);
+        if(!ble_scan_only)schedule_ble_retry("scan_start");
+        else{ble_scan_only=false;hold_disconnect=true;}
+    }else if(!ble_scan_only)++ble_recovery_scan_cycles;
+}
+// Called periodically by the normal main loop, never reentered from GAP.
+static void ble_service_tick(void){
+    if(!ble_host_ready||hold_disconnect||ble_scan_only||
+       ble_connect_pending||connection!=BLE_HS_CONN_HANDLE_NONE||
+       ble_gap_disc_active())return;
+    if(ble_next_retry_us==0)
+        ble_next_retry_us=esp_timer_get_time()+5000000LL;
+    if(esp_timer_get_time()>=ble_next_retry_us){
+        ble_next_retry_us=0;
+        begin_scan();
+    }
 }
 
 static int write_done(uint16_t conn,const struct ble_gatt_error *error,
@@ -1063,24 +1130,36 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         struct ble_hs_adv_fields f;
         if(ble_hs_adv_parse_fields(&f,event->disc.data,event->disc.length_data)!=0)return 0;
         cache_discovery(&event->disc,&f);
-        if(ble_scan_only)return 0; // List all devices, don't auto-connect during full scan.
+        if(ble_scan_only||ble_connect_pending)return 0;
         bool selected=selected_valid && ble_addr_cmp(&event->disc.addr,&selected_addr)==0;
         bool named=(f.name && f.name_len==strlen(TARGET)&&
                     memcmp(f.name,TARGET,f.name_len)==0);
         if(!selected && (selected_valid || !named))return 0;
-        ESP_LOGI(TAG,"FOUND_TARGET %s",TARGET);
-        if(ble_gap_disc_cancel()!=0)return 0;
-        int rc=ble_gap_connect(own_addr,&event->disc.addr,30000,NULL,gap_event,NULL);
-        if(rc){fail("gap_connect",rc);begin_scan();}
+        ble_connect_addr=event->disc.addr;
+        ble_connect_pending=true;
+        // Do not begin connecting inside the discovery callback before
+        // NimBLE has completed the scan cancellation.
+        const int cancel_rc=ble_gap_disc_cancel();
+        if(cancel_rc!=0){
+            ble_connect_pending=false;
+            fail("scan_cancel",cancel_rc);
+            schedule_ble_retry("scan_cancel");
+        }
         return 0;
     }
     case BLE_GAP_EVENT_CONNECT:
         if(event->connect.status){
             fail("connect",event->connect.status);
             ++ble_reconnect_attempts;
-            begin_scan();return 0;
+            ble_connect_pending=false;
+            schedule_ble_retry("connect_failed");
+            return 0;
         }
         connection=event->connect.conn_handle;
+        ble_connect_pending=false;
+        ble_failure_streak=0;ble_retry_delay_seconds=0;ble_next_retry_us=0;
+        ble_connected_since_us=esp_timer_get_time();
+        ++ble_connection_successes;
         ESP_LOGI(TAG,"SMARTDAWN_CONNECTED conn=%u",connection);
         {
             struct ble_gap_conn_desc desc={0};
@@ -1088,23 +1167,13 @@ static int gap_event(struct ble_gap_event *event,void *arg){
                 conn_interval_units=desc.conn_itvl;
                 conn_latency=desc.conn_latency;
             }
-            // ESP32-C6 receives only 3 of the 5 rapid catalog notifications.
-            // Request a short 10-15ms connection interval, latency 0,
-            // allowing multi-PDU bursts to drain between events. This
-            // request is advisory: GATT operates normally if refused.
-            struct ble_gap_upd_params pacing={0};
-            pacing.itvl_min=8;
-            pacing.itvl_max=12;
-            pacing.latency=0;
-            pacing.supervision_timeout=400;
-            conn_update_request_rc=ble_gap_update_params(connection,&pacing);
-            // Prefer 2M PHY for the controller's five 2904 inventory notifications
-            // sent in a ~14ms burst. Controller may decline; 1M is still valid.
-            phy_2m_request_rc=ble_gap_set_prefered_le_phy(
-                connection,BLE_GAP_LE_PHY_2M_MASK,BLE_GAP_LE_PHY_2M_MASK,0);
-            ESP_LOGI(TAG,"BLE_RX5_PHY_2M_REQUEST rc=%d",phy_2m_request_rc);
-            ESP_LOGI(TAG,"BLE_RX6_SHORT_INTERVAL_REQUEST rc=%d before_interval=%u",
-                     conn_update_request_rc,conn_interval_units);
+            // Stability first: keep negotiated connection interval and 1M PHY.
+            // 2.0.6 forced 10-15ms + 2M PHY on every reconnection, which
+            // can produce RF contention with ESP32-C6 simultaneous Wi-Fi.
+            conn_update_request_rc=-2;
+            phy_2m_request_rc=-2;
+            ESP_LOGW(TAG,"BLE_STABILITY_MODE retaining controller default PHY/interval=%u",
+                     conn_interval_units);
             int rc=ble_gattc_exchange_mtu(connection,mtu_done,NULL);
             if(rc)fail("exchange_mtu",rc);
         }
@@ -1132,6 +1201,11 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         ESP_LOGW(TAG,"BLE_DISCONNECTED reason=%u",event->disconnect.reason);
         ble_last_disconnect_reason=event->disconnect.reason;
         connection=BLE_HS_CONN_HANDLE_NONE;
+        ble_connect_pending=false;
+        if(ble_connected_since_us &&
+           esp_timer_get_time()-ble_connected_since_us>60000000LL)
+            ble_failure_streak=0;
+        ble_connected_since_us=0;
         service_start=service_end=writer=notifier=cccd=heart=upload=0;
         raw_write_fault=false;raw_write_pending=false;
         next_def_after_notify=UINT16_MAX;
@@ -1147,15 +1221,28 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         conn_interval_units=conn_latency=0;
         conn_update_request_rc=conn_update_status=phy_2m_request_rc=-1;
         conn_updates=0;
-        if(!hold_disconnect)begin_scan();
+        if(!hold_disconnect)schedule_ble_retry("disconnected");
         return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
         if(ble_scan_only){
             ble_scan_only=false;
+            hold_disconnect=true; // Wait for explicit Select or Reconnect Last.
             ESP_LOGI(TAG,"BLE_FULL_SCAN_COMPLETE found=%u",(unsigned)discovered_count);
             return 0;
         }
-        if(connection==BLE_HS_CONN_HANDLE_NONE && !hold_disconnect)begin_scan();
+        if(ble_connect_pending){
+            ble_connect_pending=false;
+            if(!hold_disconnect && connection==BLE_HS_CONN_HANDLE_NONE){
+                int rc=ble_gap_connect(own_addr,&ble_connect_addr,20000,NULL,gap_event,NULL);
+                if(rc!=0){
+                    fail("gap_connect",rc);
+                    schedule_ble_retry("gap_connect");
+                }
+            }
+            return 0;
+        }
+        if(connection==BLE_HS_CONN_HANDLE_NONE&&!hold_disconnect)
+            schedule_ble_retry("discovery_complete");
         return 0;
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG,"NEGOTIATED_MTU %u",event->mtu.value);
@@ -1164,16 +1251,18 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     }
 }
 static void on_sync(void){
-    ble_host_ready=true;
     int rc=ble_hs_util_ensure_addr(0);
     if(rc){fail("ensure_address",rc);return;}
+    ble_host_ready=true;
+    ble_next_retry_us=esp_timer_get_time()+5000000LL;
     ESP_LOGI(TAG,"NIMBLE_NATIVE_READY msys2=%d no_wifi diagnostics_only",
              CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
-    begin_scan();
+    ESP_LOGW(TAG,"BLE_STABILITY_READY discovery deferred to bounded main-loop retry");
 }
 static void on_reset(int reason){
     ble_host_ready=false;
     ble_scan_only=false;
+    ble_connect_pending=false;
     fail("nimble_reset",reason);
 }
 static void host_task(void *parameter){
@@ -1204,7 +1293,7 @@ static void start_ble_after_home_wifi(void){
     EventGroupHandle_t group=jh2_web_wifi_group();
     if(!group || !(xEventGroupGetBits(group)&BIT0))return;
     ble_start_attempted=true;
-    ESP_LOGW(TAG,"2.0.5 home Wi-Fi online; BLE startup permitted");
+    ESP_LOGW(TAG,"2.0.6 home Wi-Fi online; BLE startup permitted");
     esp_err_t rc=ESP_OK;
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
@@ -1236,7 +1325,7 @@ static void start_ble_after_home_wifi(void){
         ble_att_set_preferred_mtu(517);
         nimble_port_freertos_init(host_task);
     }
-    ESP_LOGW(TAG,"2.0.5 BLE startup attempt finished; setup AP retained");
+    ESP_LOGW(TAG,"2.0.6 BLE startup attempt finished; setup AP retained");
 }
 
 void app_main(void){
@@ -1254,13 +1343,13 @@ void app_main(void){
         failsafe_boot_failed();
         return;
     }
-    // 2.0.5: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
+    // 2.0.6: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
     // BLE, filesystem nor Oracle is allowed to gate the setup AP.
     // Configure Oracle later with Settings > Oracle > Connect Automatically.
-    ESP_LOGW(TAG,"2.0.5 setup AP ready; proceeding with independent BLE startup");
+    ESP_LOGW(TAG,"2.0.6 setup AP ready; proceeding with independent BLE startup");
     // Initial provisioning: BLE stays OFF to avoid simultaneous 2.4 GHz
     // radio arbitration while the phone associates with JH2-Nano-Fresh.
-    ESP_LOGW(TAG,"2.0.5 Bluetooth deferred until home Wi-Fi connects");
+    ESP_LOGW(TAG,"2.0.6 Bluetooth deferred until home Wi-Fi connects");
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Retain the product marker in the signed application image. The
     // original factory browser updater validates it and the final size;
@@ -1279,6 +1368,7 @@ void app_main(void){
         vTaskDelay(pdMS_TO_TICKS(10000));
         failsafe_confirm_after_60s();
         start_ble_after_home_wifi();
+        ble_service_tick();
         start_oracle_after_home_wifi();
         if(requested && !finished && started_at &&
            esp_timer_get_time()-started_at>20000000LL){
