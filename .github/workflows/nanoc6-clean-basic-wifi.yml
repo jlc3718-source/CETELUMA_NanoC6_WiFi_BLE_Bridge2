@@ -24,6 +24,10 @@ jobs:
           for marker in ['NanoC6-Fresh-Setup','WIFI_AUTH_OPEN','CONFIG','WIFI_MODE_APSTA','httpd_start','/api/status','nvs_commit','esp_ota_mark_app_valid_cancel_rollback']:
               assert marker in s,(marker,'not in source')
           assert 'Oracle' not in s.replace('No Oracle','') if False else True
+          assert 'WIFI_AUTH_OPEN' in s
+          assert 'NanoC6Start26!' not in s
+          assert 'snprintf((char*)sta.sta.ssid' not in s
+          assert 'memcpy(sta.sta.ssid' in s
           assert 'ota_0,app,ota_0,0x10000,0x180000' in p
           assert 'ota_1,app,ota_1,0x190000,0x180000' in p
           print('CLEAN_WIFI_ONLY_STARTUP_AND_DUAL_SLOT_LAYOUT_PASS')
