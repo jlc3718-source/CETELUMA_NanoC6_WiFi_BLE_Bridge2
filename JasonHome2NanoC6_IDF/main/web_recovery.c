@@ -46,6 +46,8 @@ static httpd_handle_t web_server=NULL;
 static char saved_ssid[33]={0},saved_pass[65]={0};
 static char saved_oracle_endpoint[176]={0};
 static int64_t wifi_down_since=0;
+static volatile uint32_t wifi_retry_attempts=0;
+static volatile uint32_t wifi_disconnect_reason=0;
 static bool sntp_started=false,mdns_started=false;
 
 static const char *HOME_HTML=
@@ -256,7 +258,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.0-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.1-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -325,13 +327,26 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.0-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.1-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
     cJSON_AddBoolToObject(o,"storageReady",fs_ready);
     cJSON_AddBoolToObject(o,"setupAP",ap_enabled);
-    cJSON_AddBoolToObject(o,"wifi",net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY));
+    cJSON_AddStringToObject(o,"setupSSID","JH2-Nano-Fresh");
+    cJSON_AddBoolToObject(o,"homeWifiConfigured",saved_ssid[0]!=0);
+    cJSON_AddStringToObject(o,"homeWifiSSID",saved_ssid);
+    const bool ip_ready=net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY);
+    cJSON_AddBoolToObject(o,"wifi",ip_ready);
+    char assigned_ip[20]="";
+    if(ip_ready&&sta_netif){
+        esp_netif_ip_info_t info={0};
+        if(esp_netif_get_ip_info(sta_netif,&info)==ESP_OK)
+            snprintf(assigned_ip,sizeof(assigned_ip),IPSTR,IP2STR(&info.ip));
+    }
+    cJSON_AddStringToObject(o,"homeIp",assigned_ip);
+    cJSON_AddNumberToObject(o,"homeWifiRetryAttempts",wifi_retry_attempts);
+    cJSON_AddNumberToObject(o,"lastWifiDisconnectReason",wifi_disconnect_reason);
     cJSON_AddBoolToObject(o,"signedAutoUpdate",jh2_bridge_auto_update_enabled());
     cJSON *curtain=cJSON_AddObjectToObject(o,"curtain");
     jh2_ble_status(curtain);
@@ -626,8 +641,10 @@ static void setstr(cJSON *o,const char *key,const char *value){
     cJSON_AddStringToObject(o,key,value);
 }
 static void read_saved(void){
-    if(!fs_ready)return;
-    cJSON *d=old_config();
+    // Even when LittleFS cannot mount, restore manually saved home Wi-Fi
+    // directly from NVS. A damaged filesystem must never disable setup AP.
+    cJSON *d=fs_ready?old_config():cJSON_CreateObject();
+    if(!d)return;
     const cJSON *v=cJSON_GetObjectItemCaseSensitive(d,"ssid");
     if(cJSON_IsString(v)&&v->valuestring&&strlen(v->valuestring)<=32)
         strcpy(saved_ssid,v->valuestring);
@@ -904,16 +921,30 @@ static void update_time(void){
     sntp_init();
 }
 static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data){
-    (void)arg;(void)data;
-    if(event==WIFI_EVENT&&id==WIFI_EVENT_STA_START)esp_wifi_connect();
+    (void)arg;
+    if(event==WIFI_EVENT&&id==WIFI_EVENT_STA_START){
+        // Unlike 2.0.0, never connect with a blank or stale Wi-Fi profile.
+        if(saved_ssid[0]){
+            esp_err_t rc=esp_wifi_connect();
+            if(rc!=ESP_OK&&rc!=ESP_ERR_WIFI_CONN)
+                ESP_LOGW(TAG,"First home Wi-Fi connect failed: %s",esp_err_to_name(rc));
+        }
+    }
     if(event==WIFI_EVENT&&id==WIFI_EVENT_STA_DISCONNECTED){
         if(net_event)xEventGroupClearBits(net_event,WEB_WIFI_READY);
         wifi_down_since=esp_timer_get_time();
-        esp_wifi_connect();
+        if(data){
+            const wifi_event_sta_disconnected_t *reason=(const wifi_event_sta_disconnected_t *)data;
+            wifi_disconnect_reason=reason->reason;
+        }
+        // No immediate reconnect here. 1.1.79's bounded 15-second retry
+        // prevents Wi-Fi driver starvation and keeps the open AP responsive.
     }
     if(event==IP_EVENT&&id==IP_EVENT_STA_GOT_IP){
         if(net_event)xEventGroupSetBits(net_event,WEB_WIFI_READY);
-        wifi_down_since=0;update_time();
+        wifi_down_since=0;
+        wifi_disconnect_reason=0;
+        update_time();
         if(!mdns_started){
             if(mdns_init()==ESP_OK){
                 mdns_hostname_set("jason-home-2");
@@ -922,57 +953,70 @@ static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data
                 mdns_started=true;
             }
         }
+        ESP_LOGW(TAG,"Home Wi-Fi connected; open setup AP is still available");
     }
 }
 static bool start_setup_ap(void){
-    if(!ap_netif)ap_netif=esp_netif_create_default_wifi_ap();
-    if(!ap_netif)return false;
+    if(!ap_netif)return false; // Netif must exist before esp_wifi_start.
     wifi_config_t cfg={0};
-    strcpy((char*)cfg.ap.ssid,"JH2-Nano-Fresh");
-    cfg.ap.password[0]=0; // Preserve 1.1.79 open setup AP
-    cfg.ap.ssid_len=strlen((char*)cfg.ap.ssid);
-    cfg.ap.channel=6;cfg.ap.max_connection=4;cfg.ap.authmode=WIFI_AUTH_OPEN;
+    strlcpy((char *)cfg.ap.ssid,"JH2-Nano-Fresh",sizeof(cfg.ap.ssid));
+    cfg.ap.password[0]=0;
+    cfg.ap.ssid_len=strlen("JH2-Nano-Fresh");
+    cfg.ap.channel=6;
+    cfg.ap.max_connection=4;
+    cfg.ap.authmode=WIFI_AUTH_OPEN;
     cfg.ap.pmf_cfg.required=false;
-    esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if(esp_wifi_set_mode(WIFI_MODE_APSTA)!=ESP_OK)return false;
     if(esp_wifi_set_config(WIFI_IF_AP,&cfg)!=ESP_OK)return false;
     ap_enabled=true;
-    ESP_LOGW(TAG,"Open setup AP JH2-Nano-Fresh remains available at http://192.168.4.1");
     return true;
 }
-static void fallback_task(void *arg){
+static void wifi_retry_task(void *arg){
     (void)arg;
-    while(true){
-        vTaskDelay(pdMS_TO_TICKS(12000));
-        if(saved_ssid[0]&&net_event&&!(xEventGroupGetBits(net_event)&WEB_WIFI_READY)){
-            if(!wifi_down_since)wifi_down_since=esp_timer_get_time();
-            if(esp_timer_get_time()-wifi_down_since>40000000LL && !ap_enabled)
-                start_setup_ap();
-        }
+    for(;;){
+        vTaskDelay(pdMS_TO_TICKS(15000));
+        if(!saved_ssid[0] || !net_event ||
+           (xEventGroupGetBits(net_event)&WEB_WIFI_READY))continue;
+        ++wifi_retry_attempts;
+        esp_err_t rc=esp_wifi_connect();
+        if(rc!=ESP_OK&&rc!=ESP_ERR_WIFI_CONN)
+            ESP_LOGW(TAG,"Home Wi-Fi retry %lu: %s",
+                     (unsigned long)wifi_retry_attempts,esp_err_to_name(rc));
     }
 }
 static bool start_net(void){
-    net_event=xEventGroupCreate();if(!net_event)return false;
+    net_event=xEventGroupCreate();
+    if(!net_event)return false;
     if(esp_netif_init()!=ESP_OK || esp_event_loop_create_default()!=ESP_OK)return false;
+    // Match the working 1.1.79 bootstrap order: create AP first, then STA.
+    ap_netif=esp_netif_create_default_wifi_ap();
     sta_netif=esp_netif_create_default_wifi_sta();
-    if(!sta_netif)return false;
+    if(!ap_netif || !sta_netif)return false;
     wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();
     if(esp_wifi_init(&init)!=ESP_OK)return false;
-    esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,event_handler,NULL);
-    esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,event_handler,NULL);
-    // Leave open setup AP available even after station joins home Wi-Fi.
+    // Application-managed NVS is authoritative, not stale SDK Wi-Fi state.
+    if(esp_wifi_set_storage(WIFI_STORAGE_RAM)!=ESP_OK)return false;
+    if(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,event_handler,NULL)!=ESP_OK ||
+       esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,event_handler,NULL)!=ESP_OK)
+        return false;
     if(!start_setup_ap())return false;
     if(saved_ssid[0]){
         wifi_config_t sta={0};
-        strcpy((char*)sta.sta.ssid,saved_ssid);
-        strcpy((char*)sta.sta.password,saved_pass);
+        const size_t len=strlen(saved_ssid);
+        if(len==0||len>sizeof(sta.sta.ssid) || strlen(saved_pass)>63)return false;
+        // 32-character SSIDs need all 32 octets; strcpy would overflow.
+        memcpy(sta.sta.ssid,saved_ssid,len);
+        strlcpy((char*)sta.sta.password,saved_pass,sizeof(sta.sta.password));
         sta.sta.threshold.authmode=WIFI_AUTH_OPEN;
         sta.sta.pmf_cfg.capable=true;
         if(esp_wifi_set_config(WIFI_IF_STA,&sta)!=ESP_OK)return false;
     }
     if(esp_wifi_start()!=ESP_OK)return false;
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    if(xTaskCreate(fallback_task,"jh2-wifi-fallback",3200,NULL,2,NULL)!=pdPASS)
-        ESP_LOGW(TAG,"Wi-Fi fallback task not available");
+    esp_err_t power=esp_wifi_set_ps(WIFI_PS_NONE);
+    if(power!=ESP_OK)ESP_LOGW(TAG,"Wi-Fi power-save configuration: %s",esp_err_to_name(power));
+    ESP_LOGW(TAG,"2.0.1 open setup AP started: JH2-Nano-Fresh, no password, http://192.168.4.1");
+    if(xTaskCreate(wifi_retry_task,"jh2-wifi-retry",3072,NULL,2,NULL)!=pdPASS)
+        ESP_LOGE(TAG,"Wi-Fi reconnect task unavailable; manual setup AP remains active");
     return true;
 }
 EventGroupHandle_t jh2_web_wifi_group(void){return net_event;}
