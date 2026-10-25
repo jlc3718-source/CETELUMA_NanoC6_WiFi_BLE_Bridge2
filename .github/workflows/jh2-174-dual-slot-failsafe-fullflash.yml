@@ -143,14 +143,16 @@ jobs:
           for offset,part in ((0,bootloader),(0x8000,partitions),
                               (0x10000,factory),(0x110000,runtime),(0x270000,runtime)):
               full[offset:offset+len(part)]=part
-          # Mark ota_0 as NEW so the rollback bootloader requires a 60-second health confirmation.\n          # If first boot fails, factory rescue is selected instead of a boot loop.
+          # Mark ota_0 as NEW so the rollback bootloader requires a 60-second health confirmation.
+          # If first boot fails, factory rescue is selected instead of a boot loop.
           seq=struct.pack('<I',1)
           full[0xe000:0xe004]=seq
           struct.pack_into('<I',full,0xe000+24,0) # ESP_OTA_IMG_NEW
           struct.pack_into('<I',full,0xe000+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
           assert full[0x9000:0xe000]==b'\xff'*0x5000
           assert full[0x3d0000:]==b'\xff'*0x30000
-          assert struct.unpack_from('<I',full,0xe000+24)[0]==0\n          assert full[0x110000:0x110000+len(runtime)]==runtime
+          assert struct.unpack_from('<I',full,0xe000+24)[0]==0
+          assert full[0x110000:0x110000+len(runtime)]==runtime
           assert full[0x270000:0x270000+len(runtime)]==runtime
           filename='JH2-NanoC6-1.1.74-FAILSAFE-AB-FULL-FLASH-0x0.bin'
           out=Path('recovery-output')/filename
