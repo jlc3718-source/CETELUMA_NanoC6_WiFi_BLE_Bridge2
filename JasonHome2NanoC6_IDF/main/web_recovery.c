@@ -706,8 +706,8 @@ static bool seed_embedded_oracle_if_missing(void){
     setstr(cfg,"oracleBridgeToken",jh2_builtin_oracle_token);
     const bool ok=save_config(cfg);
     cJSON_Delete(cfg);
-    ESP_LOGI(TAG,ok?"Embedded Oracle pairing loaded (token redacted)":
-                     "Embedded Oracle pairing storage failed");
+    if(ok){ESP_LOGI(TAG,"Embedded Oracle pairing loaded (token redacted)");}
+    else{ESP_LOGW(TAG,"Embedded Oracle pairing storage failed");}
     return ok;
 }
 /*
