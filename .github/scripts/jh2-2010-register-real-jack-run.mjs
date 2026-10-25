@@ -117,7 +117,7 @@ try{
   throw Error('40x40 manufacturer registration GIF invalid');
  out.preflight={frames:8,size40x40:true,paletteSize:palette.length,
   gifBytes:gif.length,gifSha256:crypto.createHash('sha256').update(gif).digest('hex')};
- console.log('JH2_NEW_CID_PREFLIGHT',JSON.stringify(out.preflight),flush=true);
+ console.log('JH2_NEW_CID_PREFLIGHT',JSON.stringify(out.preflight));
  // This registers source GIF in manufacturer cloud and allocates a NEW CID.
  // No BLE commands are sent by this endpoint.
  const registered=await req('/api/curtain/smartdawn/register-gif',
