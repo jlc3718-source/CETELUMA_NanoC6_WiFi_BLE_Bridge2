@@ -1,0 +1,5 @@
+# Minimal 4 MB NanoC6 with two identical OTA runtime slots, no old recovery app
+nvs,data,nvs,0x9000,0x5000
+otadata,data,ota,0xe000,0x2000
+ota_0,app,ota_0,0x10000,0x180000
+ota_1,app,ota_1,0x190000,0x180000
