@@ -1,0 +1,75 @@
+name: JH2 2.0.6 Publish GitHub Release From Signed Artifact
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/jh2-206-publish-with-precreated-tag.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.6-SIGNED-ORACLE-OTA
+          repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          run-id: 40228351177
+          github-token: ${{ github.token }}
+          path: signed
+      - name: Verify signed 2.0.6 image integrity before release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,base64,subprocess,tempfile
+          from pathlib import Path
+          p=Path("signed")
+          m=json.loads((p/"latest.json").read_text())
+          b=(p/"jh2-runtime-2.0.6.bin").read_bytes()
+          f=dict(row.split("=",1) for row in m["payload"].strip().splitlines())
+          assert f["version"]=="2.0.6" and f["commit"]=="e003fa12b48414920aeb41db1b4fd9694590c4c9"
+          assert len(b)==int(f["bytes"])==1382016
+          assert hashlib.sha256(b).hexdigest()==f["sha256"]=="006c79e2b06b5b5df0b3bc15fb9b4fb896e661c30e2e32cfb13105911b841ff1"
+          with tempfile.TemporaryDirectory() as td:
+              t=Path(td);(t/"payload").write_text(m["payload"]);(t/"signature").write_bytes(base64.b64decode(m["signature"],validate=True))
+              subprocess.run(["openssl","dgst","-sha256","-verify","remote-update/anderson_ota_signing_public.pem","-signature",str(t/"signature"),str(t/"payload")],check=True)
+          print("SIGNED_206_VERIFIED")
+          PY
+      - name: Push exact signed-release tag first
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=jason-home-2-nanoc6-v2.0.6
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git config user.name 'github-actions[bot]'
+            git tag -a "$tag" e003fa12b48414920aeb41db1b4fd9694590c4c9 -m 'Verified signed JH2 NanoC6 2.0.6 runtime'
+            git push origin "refs/tags/$tag"
+          fi
+      - name: Create and verify GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=jason-home-2-nanoc6-v2.0.6
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" signed/jh2-runtime-2.0.6.bin signed/latest.json signed/release.json \
+              --verify-tag --repo "$GITHUB_REPOSITORY" \
+              --title "Jason Home 2 Nano C6 2.0.6 - Signed Runtime OTA" \
+              --notes "1,382,016 bytes; SHA-256 006c79e2b06b5b5df0b3bc15fb9b4fb896e661c30e2e32cfb13105911b841ff1. Runtime-only A/B firmware."
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,tagName > /tmp/release.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/release.json'))
+          assert x['tagName']=='jason-home-2-nanoc6-v2.0.6' and not x['isDraft']
+          assert {'jh2-runtime-2.0.6.bin','latest.json','release.json'}.issubset({a['name'] for a in x['assets']})
+          print('PUBLIC_GITHUB_RELEASE_206_VERIFIED')
+          PY
