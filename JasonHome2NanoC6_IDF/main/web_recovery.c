@@ -285,7 +285,7 @@ static const char *BLE_HTML=
 "let busy=false;\n"
 "async function api(path,options){const r=await fetch(path,options||{cache:'no-store'}),d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||'Request failed');return d}\n"
 "async function act(name,mac){if(busy)return;busy=true;document.getElementById('notice').textContent=name==='scan'?'Scanning advertisements for 15 seconds...':'Sending '+name+' request...';try{const o={method:'POST'};if(name==='select'){o.headers={'Content-Type':'application/x-www-form-urlencoded'};o.body=new URLSearchParams({mac})}const d=await api('/api/ble/'+name,o);document.getElementById('notice').textContent=d.message||'Request accepted';}catch(e){document.getElementById('notice').textContent=e.message}finally{busy=false;refresh()}}\n"
-"async function refresh(){try{const d=await api('/api/status'),b=d.curtain||{},list=b.nativeDiscoveredDevices||[],selected=b.nativeSelectedControllerMac||'None';document.getElementById('current').textContent=(b.connected?'Connected':'Disconnected')+' · '+(b.nativeBleStackReady?'Bluetooth ready':'Bluetooth starting / waiting for home Wi-Fi')+' · Last selected: '+selected+(b.nativeReconnectPaused?' · Reconnect paused':'')+(b.nativeBleFullScanActive?' · Scanning...':'');document.getElementById('reconnect').disabled=!b.nativeRememberedDevice||!b.nativeBleStackReady;document.getElementById('scan').disabled=!b.nativeBleStackReady;const box=document.getElementById('devices');box.replaceChildren();if(!list.length){box.textContent='No nearby devices recorded. Use Full Scan.';return}for(const item of list){const line=document.createElement('div');line.className='device';const desc=document.createElement('div');const title=document.createElement('strong');title.textContent=item.name||'Unnamed Bluetooth device';const subtitle=document.createElement('div');subtitle.className='muted';subtitle.textContent=(item.mac||'')+' · '+String(item.rssi ?? '?')+' dBm'+(item.selected?' · Remembered':'');desc.append(title,subtitle);const btn=document.createElement('button');btn.textContent=item.selected?'Reconnect':'Select & Connect';btn.onclick=()=>act('select',item.mac);line.append(desc,btn);box.append(line)}}catch(e){document.getElementById('current').textContent='Nano unavailable: '+e.message}}\n"
+"async function refresh(){try{const d=await api('/api/status'),b=d.curtain||{},list=b.nativeDiscoveredDevices||[],selected=b.nativeSelectedControllerMac||'None';document.getElementById('current').textContent=(b.connected?'Connected':'Disconnected')+' · '+(b.nativeBleStackReady?'Bluetooth ready':'Bluetooth starting / waiting for home Wi-Fi')+' · Last selected: '+selected+(b.nativeReconnectPaused?' · Reconnect paused':'')+(b.nativeRetryInSeconds>0?' · Retry in '+b.nativeRetryInSeconds+' seconds':'')+(b.nativeBleFullScanActive?' · Scanning...':'');document.getElementById('reconnect').disabled=!b.nativeRememberedDevice||!b.nativeBleStackReady;document.getElementById('scan').disabled=!b.nativeBleStackReady;const box=document.getElementById('devices');box.replaceChildren();if(!list.length){box.textContent='No nearby devices recorded. Use Full Scan.';return}for(const item of list){const line=document.createElement('div');line.className='device';const desc=document.createElement('div');const title=document.createElement('strong');title.textContent=item.name||'Unnamed Bluetooth device';const subtitle=document.createElement('div');subtitle.className='muted';subtitle.textContent=(item.mac||'')+' · '+String(item.rssi ?? '?')+' dBm'+(item.selected?' · Remembered':'');desc.append(title,subtitle);const btn=document.createElement('button');btn.textContent=item.selected?'Reconnect':'Select & Connect';btn.onclick=()=>act('select',item.mac);line.append(desc,btn);box.append(line)}}catch(e){document.getElementById('current').textContent='Nano unavailable: '+e.message}}\n"
 "refresh();setInterval(refresh,2000);\n"
 "</script></body></html>\n";
 static const char *SETUP_HTML=
@@ -373,8 +373,9 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.5-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.6-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
+    jh2_runtime_boot_diagnostics(o);
     return send_json(r,o);
 }
 // Factory image downloads must never block the Nano's single HTTP task.
@@ -442,8 +443,9 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.5-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.6-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
+    jh2_runtime_boot_diagnostics(o);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     // The endpoint is a public web URL; the private API/bridge tokens never leave the Nano.
     cJSON_AddStringToObject(o,"oracleWebUrl",saved_oracle_endpoint);
