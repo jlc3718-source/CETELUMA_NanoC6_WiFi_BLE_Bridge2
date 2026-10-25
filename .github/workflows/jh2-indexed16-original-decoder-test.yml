@@ -1,0 +1,66 @@
+name: JH2 Original Decoder Indexed16 Offline Test
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths:
+      - .github/workflows/jh2-indexed16-original-decoder-test.yml
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Test deployed indexed16 encoder against independent SuperPix palette-2 decoder; no BLE writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --max-time 20 'http://127.0.0.1:8081/jason/curtain_native_research.js?v=controller-install-timestamp-20261024' > /tmp/jh2-indexed16-native-research.js
+          grep -q 'encodeSmartDawnIndexed16' /tmp/jh2-indexed16-native-research.js
+          node - <<'JS'
+          const fs=require('fs'),vm=require('vm'),assert=require('assert'),crypto=require('crypto');
+          const context={Uint8Array,ArrayBuffer,DataView,TextEncoder,console,Math,Date,Map,Number,String,Error,Array,Set};
+          context.window=context;
+          vm.runInNewContext(fs.readFileSync('/tmp/jh2-indexed16-native-research.js','utf8'),context,{timeout:15000});
+          const f=context.JH2NativeResearch;
+          assert(f.encodeSmartDawnIndexed16 && f.decodeSmartDawnIndexed16);
+          const frames=[];
+          for(let n=0;n<9;n++){
+            const a=new Uint8Array(40*40*4);
+            for(let y=0;y<40;y++)for(let x=0;x<40;x++){
+              const i=(y*40+x)*4,idx=(x+y+n)%24;
+              a[i]=idx*10%256;a[i+1]=(idx*37)%256;a[i+2]=(idx*19)%256;a[i+3]=255;
+            }
+            frames.push(a);
+          }
+          const cid=85299,raw=f.encodeSmartDawn(frames,{cid,name:'INDEXED TEST',timestamp:1792900000});
+          const tiny=f.encodeSmartDawnIndexed16(frames,{cid,name:'INDEXED TEST',timestamp:1792900000});
+          const meta=f.inspectSmartDawnIndexed16(tiny,cid);
+          const decoded=f.decodeSmartDawnIndexed16(tiny,cid);
+          assert.equal(meta.transportUploadType,0);
+          assert.equal(meta.paletteType,2);
+          assert.equal(meta.frameBytes,800);
+          assert.equal(meta.frames,9);
+          assert.equal(tiny.byteLength,16384);
+          assert.equal(raw.byteLength,53248);
+          assert.equal(decoded.frames.length,9);
+          // Independent manufacturer EffectPreview global 16-color palette
+          // decoder: high nibble first, palette at effect offset+1024.
+          for(let n=0;n<9;n++){
+            const out=decoded.frames[n],independent=new Uint8Array(40*40*4);
+            for(let x=0;x<40;x++)for(let y=0;y<40;y++){
+              const p=x*40+y,byte=tiny[8192+n*800+(p>>>1)];
+              const ix=(p&1)?byte&15:byte>>>4;
+              const po=5120+ix*3,dst=(y*40+x)*4;
+              independent[dst]=tiny[po];independent[dst+1]=tiny[po+1];
+              independent[dst+2]=tiny[po+2];independent[dst+3]=255;
+            }
+            assert.deepStrictEqual([...out],[...independent]);
+          }
+          console.log('INDEXED16_OFFLINE_ROUNDTRIP_PASS',JSON.stringify({
+            type:'DNMX palette 2, BLE upload type 0',frames:meta.frames,
+            beforeBytes:raw.length,afterBytes:tiny.length,
+            reductionPercent:Math.round((1-tiny.length/raw.length)*100),
+            sha256:crypto.createHash('sha256').update(tiny).digest('hex')
+          }));
+          console.log('NO_NANO_OR_CONTROLLER_UPLOAD_COMMANDS_SENT');
+          JS
