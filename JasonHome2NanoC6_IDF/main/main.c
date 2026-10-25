@@ -134,7 +134,7 @@ static void failsafe_confirm_after_60s(void){
         persistent_crash_streak=0;
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.6 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.7 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -217,6 +217,8 @@ static volatile bool ble_scan_only=false;
 static volatile uint32_t ble_full_scan_requests=0;
 static volatile uint32_t ble_last_disconnect_reason=0;
 static volatile uint32_t ble_reconnect_attempts=0;
+static volatile int ble_last_connect_error=0;
+static volatile int ble_last_scan_cancel_error=0;
 static bool hold_disconnect=false;
 static volatile uint32_t ble_connection_successes=0;
 static volatile uint32_t ble_recovery_scan_cycles=0;
@@ -750,6 +752,8 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddBoolToObject(out,"nativeBleStackReady",ble_host_ready);
     cJSON_AddBoolToObject(out,"nativeBleFullScanActive",ble_scan_only&&ble_host_ready);
     cJSON_AddNumberToObject(out,"nativeReconnectAttempts",ble_reconnect_attempts);
+    cJSON_AddNumberToObject(out,"nativeLastConnectError",ble_last_connect_error);
+    cJSON_AddNumberToObject(out,"nativeLastScanCancelError",ble_last_scan_cancel_error);
     cJSON_AddNumberToObject(out,"nativeConnectionsSucceeded",ble_connection_successes);
     cJSON_AddNumberToObject(out,"nativeRecoveryScans",ble_recovery_scan_cycles);
     cJSON_AddNumberToObject(out,"nativeReconnectFailures",ble_failure_streak);
@@ -1137,7 +1141,9 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         bool selected=selected_valid && ble_addr_cmp(&event->disc.addr,&selected_addr)==0;
         bool named=(f.name && f.name_len==strlen(TARGET)&&
                     memcmp(f.name,TARGET,f.name_len)==0);
-        if(!selected && (selected_valid || !named))return 0;
+        // A controller may advertise a new address after reboot. Match
+        // either the remembered address OR the exact SmartDawn name.
+        if(!selected && !named)return 0;
         ble_connect_addr=event->disc.addr;
         ble_connect_pending=true;
         // Do not begin connecting inside the discovery callback before
@@ -1145,6 +1151,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         const int cancel_rc=ble_gap_disc_cancel();
         if(cancel_rc!=0){
             ble_connect_pending=false;
+            ble_last_scan_cancel_error=cancel_rc;
             fail("scan_cancel",cancel_rc);
             schedule_ble_retry("scan_cancel");
         }
@@ -1152,6 +1159,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     }
     case BLE_GAP_EVENT_CONNECT:
         if(event->connect.status){
+            ble_last_connect_error=event->connect.status;
             fail("connect",event->connect.status);
             ++ble_reconnect_attempts;
             ble_connect_pending=false;
@@ -1159,6 +1167,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
             return 0;
         }
         connection=event->connect.conn_handle;
+        ble_last_connect_error=0;
         ble_connect_pending=false;
         ble_failure_streak=0;ble_retry_delay_seconds=0;ble_next_retry_us=0;
         ble_connected_since_us=esp_timer_get_time();
@@ -1229,8 +1238,11 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     case BLE_GAP_EVENT_DISC_COMPLETE:
         if(ble_scan_only){
             ble_scan_only=false;
-            hold_disconnect=true; // Wait for explicit Select or Reconnect Last.
-            ESP_LOGI(TAG,"BLE_FULL_SCAN_COMPLETE found=%u",(unsigned)discovered_count);
+            // Full Scan must never leave reconnect permanently paused.
+            hold_disconnect=false;
+            ble_next_retry_us=esp_timer_get_time()+1000000LL;
+            ESP_LOGI(TAG,"BLE_FULL_SCAN_COMPLETE found=%u; reconnect resumed",
+                     (unsigned)discovered_count);
             return 0;
         }
         if(ble_connect_pending){
@@ -1368,7 +1380,7 @@ void app_main(void){
     ESP_LOGW(TAG,"Oracle disabled at build-time; local Wi-Fi + BLE still run");
 #endif
     while(true){
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(1000));
         failsafe_confirm_after_60s();
         start_ble_after_home_wifi();
         ble_service_tick();
