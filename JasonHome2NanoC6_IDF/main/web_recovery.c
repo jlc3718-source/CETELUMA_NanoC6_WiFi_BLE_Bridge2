@@ -373,7 +373,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.5-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.6-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -442,7 +442,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.5-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.6-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     // The endpoint is a public web URL; the private API/bridge tokens never leave the Nano.
@@ -670,10 +670,13 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
-    // Once authenticated, open the Oracle web control from the LAN homepage.
-    // The AP hostname and all direct Nano settings pages remain local.
+    // The LAN homepage always opens the Oracle web control after home Wi-Fi
+    // has an IP and a configured HTTPS Oracle URL. The earlier 2.0.5 code
+    // required a manually initiated autolink verification first, even while
+    // Oracle was already receiving Nano status; that suppressed redirects.
+    // Keep /settings/nano, /settings/oracle, /settings/bluetooth, /status,
+    // and /firmware strictly local for offline management/recovery.
     if(strcmp(r->uri,"/")==0 && programmed && saved_oracle_endpoint[0] &&
-       jh2_bridge_autolink_verified() && jh2_bridge_ready() &&
        net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY) &&
        home_lan_request(r)){
         httpd_resp_set_status(r,"302 Found");
