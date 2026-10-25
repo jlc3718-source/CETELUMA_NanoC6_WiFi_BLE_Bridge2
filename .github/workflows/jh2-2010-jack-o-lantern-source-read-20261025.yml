@@ -1,0 +1,42 @@
+name: JH2 2.0.10 exact Jack-o-Lantern original source audit (read-only)
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-jack-o-lantern-source-read-20261025.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find exact user-selected jack-o-lantern artwork and verify local encoder prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,os,subprocess,urllib.request,re,importlib.util
+          data=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(s.split('=',1) for s in data['Config']['Env'] if '=' in s)
+          token=env['JASON_HOME_API_TOKEN']
+          base='http://127.0.0.1:8081'
+          req=urllib.request.Request(base+'/api/session',data=json.dumps({'token':token}).encode(),
+              headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=12) as response:
+              cookie=response.headers['Set-Cookie'].split(';')[0]
+          req=urllib.request.Request(base+'/api/curtain/internet-art',headers={'Cookie':cookie})
+          with urllib.request.urlopen(req,timeout=18) as response:items=json.load(response)
+          catalog=items if isinstance(items,list) else next((items[k] for k in ('art','artworks','items','entries') if isinstance(items.get(k),list)),[])
+          candidates=[]
+          for item in catalog:
+              if not isinstance(item,dict):continue
+              label=str(item.get('name',''))
+              if any(w in label.lower() for w in ('jack','pumpkin','lantern')):
+                  candidates.append({k:item.get(k) for k in ('id','name','kind','frameCount','frame_count','frameWidth','frameHeight','previewPath','source') if k in item})
+          try:pillow=importlib.util.find_spec('PIL') is not None
+          except:pillow=False
+          print('JH2_JACK_SOURCE_AUDIT',json.dumps({'catalogEntries':len(catalog),'candidates':candidates[:30],
+             'pillowAvailable':pillow,'ffmpegAvailable':subprocess.run(['which','ffmpeg'],stdout=subprocess.DEVNULL).returncode==0,
+             'safety':'GET only; no CID allocation, controller commands, upload, or erase'}))
+          PY
