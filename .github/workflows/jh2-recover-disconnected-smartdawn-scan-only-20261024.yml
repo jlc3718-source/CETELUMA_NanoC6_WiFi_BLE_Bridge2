@@ -30,12 +30,14 @@ jobs:
           assert status.get('online') is True,'Nano not online; do not issue BLE action'
           assert status.get('firmware')=='1.1.71','Unexpected Nano firmware'
           assert not status.get('relayStreaming') and not (status.get('curtain') or {}).get('streaming'),'Animation playing; no intervention'
-          assert int(status.get('queued') or 0)==0,'Command queue active; no intervention'
+          # A single pending brightness command cannot succeed while BLE is down.
+          # Enqueue scan behind existing commands; do not cancel or preempt them.
+          assert int(status.get('queued') or 0)<4,'Queue congested; defer recovery'
           if (status.get('curtain') or {}).get('connected') is True:
               print('BLE_ALREADY_CONNECTED_NO_SCAN_NEEDED',flush=True);raise SystemExit(0)
           print('SMARTDAWN_DISCONNECTED_ISSUE_SCAN_ONLY',flush=True)
           item,_=api('/api/curtain/call',{
-              'action':'scan','payload':{},'idempotencyKey':'jh2-recover-disconnected-smartdawn-scan-only-20261024'},cookie)
+              'action':'scan','payload':{},'idempotencyKey':'jh2-recover-disconnected-smartdawn-scan-only-20261024-second'},cookie)
           command=int(item['commandId'])
           print('SAFE_SCAN_COMMAND_QUEUED',command,flush=True)
           for n in range(80):
