@@ -1,0 +1,52 @@
+name: JH2 2.0.9 Post-OTA Live BLE Stability Validation
+on:
+  push:
+    branches: [fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025]
+    paths: [.github/workflows/jh2-209-post-ota-readonly-validation.yml]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read confirmed runtime, GAP start and sustained SmartDawn link
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          env=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env']
+          key=next(v.split('=',1)[1] for v in env if v.startswith('JASON_HOME_API_TOKEN='))
+          root='http://127.0.0.1:8081'
+          def query(path,body=None,cookie=''):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(root+path,
+                  data=json.dumps(body).encode() if body is not None else None,
+                  headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  return json.load(r),r.headers
+          _,headers=query('/api/session',{'token':key})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          records=[]
+          for i in range(10):
+              s,_=query('/api/curtain/status',cookie=cookie)
+              d=s.get('curtain') or {}
+              row={'firmware':s.get('firmware'),'online':s.get('online'),
+                   'uptimeSeconds':s.get('uptimeSeconds'),'connected':d.get('connected'),
+                   'gapConnectStarts':d.get('nativeGapConnectStartRequests'),
+                   'connectionSuccesses':d.get('nativeConnectionsSucceeded'),
+                   'lastConnectError':d.get('nativeLastConnectError'),
+                   'pendingScanCancel':d.get('nativePendingScanCancellation'),
+                   'gapConnecting':d.get('nativeGapConnectInProgress'),
+                   'bleRetrySeconds':d.get('nativeRetryInSeconds'),
+                   'selectedMac':d.get('nativeSelectedControllerMac')}
+              records.append(row)
+              print('NANO_209_BLE_SAMPLE',i,json.dumps(row,separators=(',',':')),flush=True)
+              if i<9:time.sleep(9)
+          assert all(r['firmware']=='2.0.9' and r['online'] for r in records),'Runtime not stable'
+          assert records[-1]['uptimeSeconds']>=60,'A/B firmware 60s validation not reached'
+          assert any(r['gapConnectStarts'] and r['gapConnectStarts']>=1 for r in records),'No actual GAP connection started'
+          assert sum(r['connected'] is True for r in records[-5:])>=3,'SmartDawn not connected consistently after OTA'
+          print('NANO_209_BLE_LINK_CONFIRMED_AFTER_60S_BOOT',flush=True)
+          PY
