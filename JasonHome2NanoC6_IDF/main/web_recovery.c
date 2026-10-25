@@ -61,7 +61,7 @@ static const char *HOME_HTML=
 "click=\"power('powerOn')\" disabled>ON</button>\n<button id=\"off\" onclick=\"power('powerOff')\" disabled>OFF</button></div>\n<button id=\"curtainRebootMain\" onclick=\"curtainReboot()\" disabled>Curtain Reboot</button>\n<p id=\"curtainRebootMessage\" class=\"muted\" role=\"status\"></p>\n<p id=\"result\" class=\"muted\" role=\"status\"></p></se"
 "ction>\n<section class=\"panel\"><h2>Firmware updates</h2>\n<div class=\"actions\"><button id=\"check\" onclick=\"checkUpdate()\">Check OTA</button>\n<button id=\"install\" class=\"pri"
 "mary\" onclick=\"installUpdate()\" disabled>Install OTA</button></div>\n<label><input type='checkbox' id='autoUpdate' onchange='setAutoUpdate(this.checked)'> Enable automatic signed updates</label>\n<a class=\"action\" href=\"/firmware\">Firmware recovery &amp; diagnostics</a>\n<p id=\"updateResult\" class=\"muted\""
-" role=\"status\">Signed automatic updates enabled by default.</p>\n<details class='panel'><summary>Recovery / rollback to 1.1.67</summary><p class='muted'>Download the verified 1.1.67 runtime BIN before updating. To roll back, open firmware recovery, start the manual uploader, and upload the saved BIN. Wi-Fi and pairing settings are preserved. This is not instant A/B rollback.</p><a class='action' href='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.1.67/jh2-runtime-1.1.67.bin' target='_blank' rel='noopener noreferrer'>Download verified 1.1.67 backup</a><a class='action' href='/firmware'>Open Nano firmware recovery</a></details></section>\n<script>\nconst $=id=>document.getElementById(id);\nlet nanoStatusRefreshing=false;\nasync function refresh(){\n  if(nanoStatusRefreshing)return;\n  nanoStatusRefreshing=true;\n  try{\n    const r=await fetch('/api/s"
+" role=\"status\">Signed automatic updates are off by default in recovery firmware.</p>\n<details class='panel'><summary>Recovery / rollback to 1.1.67</summary><p class='muted'>Download the verified 1.1.67 runtime BIN before updating. To roll back, open firmware recovery, start the manual uploader, and upload the saved BIN. Wi-Fi and pairing settings are preserved. This is not instant A/B rollback.</p><a class='action' href='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v1.1.67/jh2-runtime-1.1.67.bin' target='_blank' rel='noopener noreferrer'>Download verified 1.1.67 backup</a><a class='action' href='/firmware'>Open Nano firmware recovery</a></details></section>\n<script>\nconst $=id=>document.getElementById(id);\nlet nanoStatusRefreshing=false;\nasync function refresh(){\n  if(nanoStatusRefreshing)return;\n  nanoStatusRefreshing=true;\n  try{\n    const r=await fetch('/api/s"
 "tatus',{cache:'no-store'});\n    if(!r.ok)throw Error('Controller status unavailable');\n    const d=await r.json(),c=d.curtain||{},connected=!!c.connected;\n    $('autoUpdate').checked=d.signedAutoUpdate===true;\n    $('version'"
 ").textContent=d.version||'Unknown';\n    const paused=c.nativeReconnectPaused===true;\n    $('ble').textContent=connected?'Connected':paused?'Disconnected (paused)':'Discon"
 "nected / searching';\n    $('ble').className=connected?'good':'bad';\n    $('bleConnect').disabled=connected;\n    $('bleDisconnect').disabled=paused;\n    $('curtainRebootMain').disabled=!connected;\n    $('on').disabled=$"
@@ -254,7 +254,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.71-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","1.1.73-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -323,7 +323,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.71-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","1.1.73-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
