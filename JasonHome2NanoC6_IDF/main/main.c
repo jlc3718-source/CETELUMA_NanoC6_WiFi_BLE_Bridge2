@@ -217,6 +217,7 @@ static volatile bool ble_scan_only=false;
 static volatile uint32_t ble_full_scan_requests=0;
 static volatile uint32_t ble_last_disconnect_reason=0;
 static volatile uint32_t ble_reconnect_attempts=0;
+static bool hold_disconnect=false;
 static volatile uint32_t ble_connection_successes=0;
 static volatile uint32_t ble_recovery_scan_cycles=0;
 static volatile uint32_t ble_retry_delay_seconds=0;
@@ -237,7 +238,7 @@ static void schedule_ble_retry(const char *reason){
              reason,(unsigned long)delay,(unsigned)ble_failure_streak);
 }
 static volatile uint32_t local_command_seq=0,local_command_success=0,local_command_failure=0;
-static bool hold_disconnect=false;
+
 static void begin_scan(void);
 static void format_mac(const ble_addr_t *addr,char out[18]){
     snprintf(out,18,"%02X:%02X:%02X:%02X:%02X:%02X",addr->val[5],addr->val[4],
@@ -921,7 +922,9 @@ static void begin_scan(void){
     if(!ble_host_ready||hold_disconnect||ble_connect_pending||
        connection!=BLE_HS_CONN_HANDLE_NONE||ble_gap_disc_active())return;
     if(ble_hs_id_infer_auto(0,&own_addr)!=0){
-        if(!ble_scan_only)schedule_ble_retry("address");return;
+        if(!ble_scan_only)
+            schedule_ble_retry("address");
+        return;
     }
     struct ble_gap_disc_params params={0};
     params.passive=0;params.filter_duplicates=0;
