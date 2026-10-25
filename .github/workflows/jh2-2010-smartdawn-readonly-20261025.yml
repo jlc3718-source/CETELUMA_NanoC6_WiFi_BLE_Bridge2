@@ -1,0 +1,94 @@
+name: Jason Home 2 Nano 2.0.10 SmartDawn read-only diagnostics
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-smartdawn-readonly-20261025.yml']
+permissions:
+  contents: read
+concurrency:
+  group: jh2-readonly-smartdawn-2010
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect live authenticated Oracle status and retained BLE reports without writing any controller command
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,os,subprocess,urllib.request,base64,collections,pathlib
+          report={'mode':'READ_ONLY','noDeviceCommand':True,'noControllerErase':True,'noFirmwareFlash':True}
+          def container(name):
+              return json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
+          parent=container('jason-home')
+          env=dict(item.split('=',1) for item in parent['Config']['Env'] if '=' in item)
+          key=env.get('JASON_HOME_API_TOKEN')
+          if not key:raise RuntimeError('Oracle login token not available in existing service environment')
+          origin='http://127.0.0.1:8081'
+          req=urllib.request.Request(origin+'/api/session',
+              data=json.dumps({'token':key}).encode(),
+              headers={'content-type':'application/json'},method='POST')
+          with urllib.request.urlopen(req,timeout=15) as rsp:
+              cookie=rsp.headers.get('Set-Cookie','').split(';')[0]
+          assert cookie,'Oracle session cookie missing'
+          def get(path):
+              req=urllib.request.Request(origin+path,headers={'Cookie':cookie,'Cache-Control':'no-store'},method='GET')
+              with urllib.request.urlopen(req,timeout=15) as rsp:return json.load(rsp)
+          d=get('/api/curtain/status')
+          c=d.get('curtain') or {}
+          report['nano']={'firmware':d.get('firmware'),'online':d.get('online'),
+            'bleConnected':c.get('connected'),'mtu':c.get('mtu'),
+            'queued':d.get('queued'),'streaming':d.get('relayStreaming'),
+            'lastSync':d.get('lastSync'),'nanoLocalCacheSupported':c.get('nanoLocalCacheSupported'),
+            'nativeTargetSectionComplete':c.get('nativeTargetSectionComplete'),
+            'nativeCatalogUnique':c.get('nativeCatalogUnique'),
+            'nativeTarget83928Count':c.get('nativeTarget83928Count')}
+          report['physicalPlayback']={'controller':d.get('controllerPlayback'),
+            'lastIdentified':d.get('controllerLastIdentified'),
+            'controllerPower':d.get('controllerPower'),
+            'videoCapabilities':d.get('controllerVideoCapabilities')}
+          feed=get('/api/curtain/notifications?since=0')
+          notices=feed.get('notifications') or []
+          report['noticesTotal']=len(notices)
+          # Identify exact native DDP packet IDs; never request a new inventory.
+          pages=collections.defaultdict(lambda:{'parts':{},'total':None})
+          counts=collections.Counter()
+          for n in notices:
+              try:raw=base64.b64decode(n.get('data',''),validate=True)
+              except Exception:continue
+              if len(raw)<5 or raw[3]!=0:continue
+              ident,total,left=raw[:3]
+              if not 0<total<=100 or left>=total:continue
+              k=(ident,total)
+              page=pages[k]
+              page['total']=total
+              page['parts'][total-left-1]=raw[4:]
+          assembled=[]
+          for (ident,total),v in pages.items():
+              if len(v['parts'])!=total:continue
+              body=b''.join(v['parts'][i] for i in range(total))
+              if len(body)<20 or body[0] not in (240,241) or body[1]!=1:continue
+              op=body[6]*256+body[7]
+              counts[str(op)]+=1
+              assembled.append({'opcode':op,'bytes':len(body),'parts':total})
+          report['completeNativeMessagesByOpcode']=dict(counts)
+          report['completeNativeMessages']=assembled[-35:]
+          report['nativeCatalogCurrentOnlyWhenRecent']=counts.get('2904',0)>0
+          report['healthy']=d.get('online') is True and c.get('connected') is True and int(c.get('mtu') or 0)>=399
+          # No POST /api/curtain/call, rawWrite, upload, delete, or play.
+          print('SMARTDAWN_READONLY_AUDIT',json.dumps(report,default=str),flush=True)
+          dest=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'jh2-2010-smartdawn-readonly.json'
+          dest.write_text(json.dumps(report,indent=2,default=str))
+          dest.chmod(0o644)
+          if d.get('firmware')!='2.0.10':raise RuntimeError('Firmware changed; report retained, no controller action was made')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jh2-2010-smartdawn-readonly-result
+          path: jh2-2010-smartdawn-readonly.json
+          retention-days: 7
+          if-no-files-found: warn
