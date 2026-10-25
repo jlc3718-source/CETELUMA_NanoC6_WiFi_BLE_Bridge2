@@ -21,7 +21,7 @@ jobs:
           from pathlib import Path
           s=Path('NanoC6_BasicWifi/main/main.c').read_text()
           p=Path('NanoC6_BasicWifi/partitions.csv').read_text()
-          for marker in ['NanoC6-Fresh-Setup','NanoC6Start26!','CONFIG','WIFI_MODE_APSTA','httpd_start','/api/status','nvs_commit','esp_ota_mark_app_valid_cancel_rollback']:
+          for marker in ['NanoC6-Fresh-Setup','WIFI_AUTH_OPEN','CONFIG','WIFI_MODE_APSTA','httpd_start','/api/status','nvs_commit','esp_ota_mark_app_valid_cancel_rollback']:
               assert marker in s,(marker,'not in source')
           assert 'Oracle' not in s.replace('No Oracle','') if False else True
           assert 'ota_0,app,ota_0,0x10000,0x180000' in p
@@ -62,10 +62,10 @@ jobs:
           name='NanoC6-BASIC-WIFI-DUAL-SLOT-FULL-0x0.bin'
           (out/name).write_bytes(full)
           (out/'NanoC6-BASIC-WIFI-RUNTIME-ONLY.bin').write_bytes(app)
-          meta={'firmware':'NanoC6 Basic Wi-Fi 1.0','setup_ssid':'NanoC6-Fresh-Setup','setup_password':'NanoC6Start26!',
+          meta={'firmware':'NanoC6 Basic Wi-Fi 1.0','setup_ssid':'NanoC6-Fresh-Setup','setup_password':None,
                 'url':'http://192.168.4.1','flash_address':'0x0','image_bytes':len(full),
                 'sha256':hashlib.sha256(full).hexdigest(),'runtime_bytes':len(app),
-                'no_oracle':True,'no_bluetooth':True,'no_factory_rescue':True,
+                'no_oracle':True,'no_bluetooth':True,'no_factory_rescue':True,'setup_ap_open':True,
                 'setup_ap_always_on':True,'dual_slot':True,'wifi_settings_manual':True,
                 'hardware_boot_tested':False}
           (out/'build-manifest.json').write_text(json.dumps(meta,indent=2)+'\n')
