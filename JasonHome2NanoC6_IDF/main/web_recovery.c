@@ -172,7 +172,7 @@ static const char *SETUP_HTML=
 "<label>Oracle bridge ID<input name='oracleBridgeId' maxlength='63'></label>"
 "<label>Oracle bridge token (64 hex digits)<input type='password' name='oracleBridgeToken' maxlength='64'></label>"
 "<button type='submit'>Save settings and restart</button></form>"
-"<small>Connect to the Jason-Home-2-Setup Wi-Fi if the home network is unavailable. "
+"<small>Connect to open JH2-Nano-Fresh Wi-Fi (no password), even while home Wi-Fi is online. "
 "This page never displays saved passwords or bridge tokens. Personalized 2.0.0 firmware can prefill Oracle without pre-configuring Wi-Fi.</small>"
 "</body></html>";
 static const char *FIRMWARE_HTML=
@@ -199,7 +199,7 @@ static const char *FIRMWARE_HTML=
 "<button onclick='go()'>Open manual firmware upload mode</button></details>"
 "<p id='state'></p><p><a href='/settings/nano'>Nano settings</a> &nbsp; <a href='/setup?edit=1'>Edit settings</a></p>"
 "<small>The Nano reboots into its original updater. If your home connection drops, "
-"join Jason-Home-2-Setup Wi-Fi and open http://192.168.4.1/firmware .</small>"
+"join open JH2-Nano-Fresh Wi-Fi and open http://192.168.4.1/firmware .</small>"
 "<script>async function go(){const s=document.getElementById('state');s.textContent='Selecting factory updater...';"
 "try{const r=await fetch('/firmware/recovery',{method:'POST'});if(!r.ok)throw Error(await r.text());"
 "s.textContent='Restarting to factory upload mode. Reconnect to http://192.168.4.1/firmware or use the home IP /firmware.';"
@@ -654,6 +654,17 @@ static void read_saved(void){
         }
     }
 }
+    if(!saved_ssid[0]){
+        // Preserve the 1.1.79 Wi-Fi-only runtime NVS namespace on upgrade.
+        nvs_handle_t legacy=0;
+        if(nvs_open("jh2basic",NVS_READONLY,&legacy)==ESP_OK){
+            size_t n=sizeof(saved_ssid);
+            if(nvs_get_str(legacy,"ssid",saved_ssid,&n)!=ESP_OK)saved_ssid[0]=0;
+            n=sizeof(saved_pass);
+            if(nvs_get_str(legacy,"password",saved_pass,&n)!=ESP_OK)saved_pass[0]=0;
+            nvs_close(legacy);
+        }
+    }
 static bool save_config(cJSON *d){
     if(!fs_ready)return false;
     char *json=cJSON_PrintUnformatted(d);if(!json)return false;
@@ -812,7 +823,7 @@ static esp_err_t setup_post(httpd_req_t *r){
             nvs_commit(n);nvs_close(n);
         }
     }
-    const char *result="<html><body><h2>Settings saved.</h2><p>Restarting. Rejoin home Wi-Fi or Jason-Home-2-Setup.</p><p><a href='/'>Home</a></p></body></html>";
+    const char *result="<html><body><h2>Settings saved.</h2><p>Restarting. Rejoin home Wi-Fi or open JH2-Nano-Fresh.</p><p><a href='/'>Home</a></p></body></html>";
     httpd_resp_set_type(r,"text/html; charset=utf-8");
     httpd_resp_send(r,result,HTTPD_RESP_USE_STRLEN);
     vTaskDelay(pdMS_TO_TICKS(450));esp_restart();return ESP_OK;
@@ -917,15 +928,15 @@ static bool start_setup_ap(void){
     if(!ap_netif)ap_netif=esp_netif_create_default_wifi_ap();
     if(!ap_netif)return false;
     wifi_config_t cfg={0};
-    strcpy((char*)cfg.ap.ssid,"Jason-Home-2-Setup");
-    strcpy((char*)cfg.ap.password,"JasonHome2");
+    strcpy((char*)cfg.ap.ssid,"JH2-Nano-Fresh");
+    cfg.ap.password[0]=0; // Preserve 1.1.79 open setup AP
     cfg.ap.ssid_len=strlen((char*)cfg.ap.ssid);
-    cfg.ap.channel=6;cfg.ap.max_connection=4;cfg.ap.authmode=WIFI_AUTH_WPA2_PSK;
+    cfg.ap.channel=6;cfg.ap.max_connection=4;cfg.ap.authmode=WIFI_AUTH_OPEN;
     cfg.ap.pmf_cfg.required=false;
-    esp_wifi_set_mode(saved_ssid[0]?WIFI_MODE_APSTA:WIFI_MODE_AP);
+    esp_wifi_set_mode(WIFI_MODE_APSTA);
     if(esp_wifi_set_config(WIFI_IF_AP,&cfg)!=ESP_OK)return false;
     ap_enabled=true;
-    ESP_LOGW(TAG,"Recovery AP enabled: Jason-Home-2-Setup, browse http://192.168.4.1/firmware");
+    ESP_LOGW(TAG,"Open setup AP JH2-Nano-Fresh remains available at http://192.168.4.1");
     return true;
 }
 static void fallback_task(void *arg){
@@ -948,16 +959,15 @@ static bool start_net(void){
     if(esp_wifi_init(&init)!=ESP_OK)return false;
     esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,event_handler,NULL);
     esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,event_handler,NULL);
-    if(!saved_ssid[0]){
-        if(!start_setup_ap())return false;
-    }else{
+    // Leave open setup AP available even after station joins home Wi-Fi.
+    if(!start_setup_ap())return false;
+    if(saved_ssid[0]){
         wifi_config_t sta={0};
         strcpy((char*)sta.sta.ssid,saved_ssid);
         strcpy((char*)sta.sta.password,saved_pass);
         sta.sta.threshold.authmode=WIFI_AUTH_OPEN;
         sta.sta.pmf_cfg.capable=true;
-        if(esp_wifi_set_mode(WIFI_MODE_STA)!=ESP_OK ||
-           esp_wifi_set_config(WIFI_IF_STA,&sta)!=ESP_OK)return false;
+        if(esp_wifi_set_config(WIFI_IF_STA,&sta)!=ESP_OK)return false;
     }
     if(esp_wifi_start()!=ESP_OK)return false;
     esp_wifi_set_ps(WIFI_PS_NONE);
