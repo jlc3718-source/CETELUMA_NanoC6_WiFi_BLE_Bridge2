@@ -66,21 +66,67 @@ jobs:
               page=pages[k]
               page['total']=total
               page['parts'][total-left-1]=raw[4:]
-          assembled=[]
+          assembled=[];catalogBodies=[]
           for (ident,total),v in pages.items():
               if len(v['parts'])!=total:continue
               body=b''.join(v['parts'][i] for i in range(total))
               if len(body)<20 or body[0] not in (240,241) or body[1]!=1:continue
               op=body[6]*256+body[7]
               counts[str(op)]+=1
+              if op==2904:catalogBodies.append(body)
               assembled.append({'opcode':op,'bytes':len(body),'parts':total})
           report['completeNativeMessagesByOpcode']=dict(counts)
           report['completeNativeMessages']=assembled[-35:]
           report['nativeCatalogCurrentOnlyWhenRecent']=counts.get('2904',0)>0
+          # Decode old 2904 notifications without sending a BLE read command.
+          def varint(blob,pos):
+              value=0;shift=0
+              for _ in range(10):
+                  if pos>=len(blob):raise ValueError('truncated varint')
+                  n=blob[pos];pos+=1
+                  value|=(n&127)<<shift
+                  if n<128:return value,pos
+                  shift+=7
+              raise ValueError('overlong varint')
+          def proto(blob):
+              pos=0
+              while pos<len(blob):
+                  tag,pos=varint(blob,pos)
+                  field,wire=tag>>3,tag&7
+                  if not field:raise ValueError('invalid protobuf tag')
+                  if wire==0:value,pos=varint(blob,pos)
+                  elif wire==2:
+                      length,pos=varint(blob,pos)
+                      if length>len(blob)-pos:raise ValueError('bad protobuf length')
+                      value=blob[pos:pos+length];pos+=length
+                  elif wire in (1,5):
+                      length=8 if wire==1 else 4
+                      if length>len(blob)-pos:raise ValueError('bad fixed field')
+                      value=blob[pos:pos+length];pos+=length
+                  else:raise ValueError('unsupported protobuf field')
+                  yield field,wire,value
+          entries={}
+          for body in catalogBodies:
+              try:
+                  for f,w,raw in proto(body[20:]):
+                      if f!=1 or w!=2:continue
+                      item={}
+                      for f2,w2,value in proto(raw):
+                          if w2==0 and f2 in (1,2,3,4):
+                              item[{1:'effectId',2:'type',3:'slot',4:'cid'}[f2]]=value
+                      if 'effectId' in item and 'cid' in item:
+                          entries[item['effectId']]=item
+              except ValueError:pass
+          report['catalogDecodedEntries']=len(entries)
+          report['catalogCustomEntries']=[entries[i] for i in sorted(entries) if i>=80]
+          report['catalogCidsOccupied']={str(cid):sum(1 for item in entries.values()
+              if item.get('cid')==cid) for cid in (83928,83929,83930,83931)}
+          report['safeWriteTargetAuthorized']=False
+
           report['healthy']=d.get('online') is True and c.get('connected') is True and int(c.get('mtu') or 0)>=399
           # No POST /api/curtain/call, rawWrite, upload, delete, or play.
           print('SMARTDAWN_READONLY_AUDIT',json.dumps(report,default=str),flush=True)
-          dest=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'jh2-2010-smartdawn-readonly.json'
+          dest=pathlib.Path(os.environ.get('GITHUB_WORKSPACE') or os.getcwd())/'jh2-2010-smartdawn-readonly.json'
           dest.write_text(json.dumps(report,indent=2,default=str))
           dest.chmod(0o644)
           if d.get('firmware')!='2.0.10':raise RuntimeError('Firmware changed; report retained, no controller action was made')
