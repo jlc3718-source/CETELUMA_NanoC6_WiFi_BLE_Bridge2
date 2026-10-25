@@ -665,12 +665,28 @@ static esp_err_t local_probe_post(httpd_req_t *r){
 // Only the home-network homepage redirects to Oracle. Recovery and settings
 // pages remain served directly by the Nano, even when Oracle is unavailable.
 static bool home_lan_request(httpd_req_t *r){
+    // A DDNS name may hairpin via the home router. The previous root
+    // handler checked only getsockname() and could return the Nano page
+    // instead of the Oracle 302 when the local socket address is missing
+    // or rewritten by the NAT/proxy. Prefer the HTTP Host actually used.
+    char host[128]={0};
+    if(httpd_req_get_hdr_value_str(r,"Host",host,sizeof(host))==ESP_OK&&host[0]){
+        // Preserve ONLY the factory open AP landing page on its literal IP.
+        // /setup?edit=1 and every explicit /settings/* path also stay local.
+        if(strncmp(host,"192.168.4.1",11)==0 &&
+            (host[11]==0 || host[11]==':'))return false;
+        return saved_ssid[0]!=0;
+    }
     struct sockaddr_storage local={0};
     socklen_t len=sizeof(local);
-    if(getsockname(httpd_req_to_sockfd(r),(struct sockaddr *)&local,&len)!=0 ||
-       local.ss_family!=AF_INET)return false;
-    const uint32_t ip=ntohl(((const struct sockaddr_in *)&local)->sin_addr.s_addr);
-    return ip!=0xc0a80401UL && ip!=0;
+    if(getsockname(httpd_req_to_sockfd(r),(struct sockaddr *)&local,&len)==0 &&
+       local.ss_family==AF_INET){
+        const uint32_t ip=ntohl(((const struct sockaddr_in *)&local)->sin_addr.s_addr);
+        if(ip==0xc0a80401UL)return false;
+    }
+    // A configured Nano launched from a LAN IP or DDNS name should never
+    // depend on a fragile socket-address check to reach Oracle.
+    return saved_ssid[0]!=0;
 }
 static esp_err_t html_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
