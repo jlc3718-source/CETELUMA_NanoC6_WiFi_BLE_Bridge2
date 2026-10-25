@@ -1,0 +1,97 @@
+name: JH2 2.0.6 Approve Signed Runtime OTA on Oracle
+on:
+  push:
+    branches: [fix/jh2-2.0.6-ble-backoff-reboot-diagnostics-20261025]
+    paths: [.github/workflows/jh2-206-oracle-approved-ota-publish.yml]
+  workflow_dispatch:
+permissions: {contents: read, actions: read}
+jobs:
+  stage-verified-runtime:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.6-SIGNED-ORACLE-OTA
+          repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          run-id: 40228351177
+          github-token: ${{ github.token }}
+          path: signed-package
+      - name: Verify ECDSA, hashes and atomically publish Oracle approved OTA
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import base64,hashlib,json,os,shutil,subprocess,tempfile
+          from pathlib import Path
+          work=Path(os.environ['GITHUB_WORKSPACE'])/'signed-package'
+          repo=Path(os.environ['GITHUB_WORKSPACE'])
+          files=('jh2-runtime-2.0.6.bin','latest.json','release.json')
+          assert all((work/x).is_file() for x in files)
+          m=json.loads((work/'latest.json').read_text())
+          f=dict(row.split('=',1) for row in m['payload'].strip().splitlines())
+          r=json.loads((work/'release.json').read_text())
+          b=(work/files[0]).read_bytes()
+          sha=hashlib.sha256(b).hexdigest()
+          assert m['schema']==1 and f['version']=='2.0.6'
+          assert f['product']=='jason-home-2-nanoc6'
+          assert f['commit']=='e003fa12b48414920aeb41db1b4fd9694590c4c9'
+          assert len(b)==int(f['bytes']) and len(b)<=0x160000 and b[0]==0xe9
+          assert sha==f['sha256']==r['files'][files[0]]['sha256']
+          assert b'JH2V200PRIVATEORACLETOKENREPLACEME'.ljust(64,b'_') in b
+          with tempfile.TemporaryDirectory() as tmp:
+              q=Path(tmp);(q/'payload').write_text(m['payload'])
+              (q/'sig').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',str(repo/'remote-update/anderson_ota_signing_public.pem'),'-signature',str(q/'sig'),str(q/'payload')],check=True)
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mounts=[x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind']
+          assert len(mounts)==1
+          root=Path(mounts[0]['Source'])/'signed-ota'
+          assert root.is_dir()
+          target=root/'2.0.6';approved=root/'approved'
+          if target.exists():
+              assert all((target/x).read_bytes()==(work/x).read_bytes() for x in files)
+          else:
+              stage=root/('.2.0.6-staging-'+str(os.getpid()))
+              stage.mkdir(mode=0o755)
+              try:
+                  for x in files:shutil.copy2(work/x,stage/x)
+                  assert all((stage/x).read_bytes()==(work/x).read_bytes() for x in files)
+                  stage.rename(target)
+              except BaseException:
+                  shutil.rmtree(stage,ignore_errors=True);raise
+          if approved.exists() or approved.is_symlink():
+              prev=json.loads((approved/'latest.json').read_text())
+              prevVer=dict(line.split('=',1) for line in prev['payload'].splitlines())['version']
+              assert tuple(map(int,prevVer.split('.'))) <= (2,0,6), 'Refusing downgrade'
+              if not approved.is_symlink():
+                  backup=root/('approved-before-2.0.6-'+str(os.getpid()))
+                  approved.rename(backup)
+          temp=root/('.approved-2.0.6-'+str(os.getpid()))
+          temp.symlink_to('2.0.6',target_is_directory=True)
+          os.replace(temp,approved)
+          assert all((approved/x).read_bytes()==(work/x).read_bytes() for x in files)
+          print('ORACLE_SIGNED_206_RUNTIME_PUBLISHED',len(b),sha,flush=True)
+          PY
+      - name: Verify actual live Oracle OTA manifest and binary download
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec jason-home-2-web node -e '
+          const {createHash}=require("node:crypto");
+          (async()=>{
+            const base="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+            const a=await fetch(base+"/api/curtain/firmware-manifest"),m=await a.json();
+            if(!a.ok||m.schema!==1)throw Error("manifest HTTP "+a.status);
+            const f=Object.fromEntries(m.payload.trim().split("\n").map(t=>t.split(/=(.*)/s).slice(0,2)));
+            if(f.version!=="2.0.6")throw Error("wrong version");
+            const r=await fetch(base+"/api/curtain/firmware-runtime/2.0.6.bin");
+            if(!r.ok)throw Error("runtime HTTP "+r.status);
+            const b=Buffer.from(await r.arrayBuffer());
+            const sha=createHash("sha256").update(b).digest("hex");
+            if(sha!==f.sha256||b.length!==Number(f.bytes))throw Error("runtime mismatch");
+            console.log("ORACLE_206_OTA_FEED_HTTP_200_VERIFIED",b.length,sha);
+          })().catch(e=>{console.error(e);process.exitCode=1});'
