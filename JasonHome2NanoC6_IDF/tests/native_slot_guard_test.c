@@ -35,6 +35,20 @@ int main(void){
   command((unsigned[]){205,167,2904}[i],0,0);
   assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,true,&error));
  }
+ // A native playlist read is safe in readonly mode; playlist writes remain blocked.
+ command(2627,0,0);
+ assert(jh2_slot_command_opcode(buf,n)==2627);
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,true,&error));
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,false,&error));
+ buf[2]=1;
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,true,&error));
+ buf[2]=0;buf[1]=0;
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,true,&error));
+ for(unsigned forbidden=0;forbidden<5;forbidden++){
+  const unsigned op=(unsigned[]){2622,2623,2626,2660,2909}[forbidden];
+  command(op,0,0);
+  assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,true,&error));
+ }
  command(2909,83928,0);
  assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,1,32,false,&error));
  assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,2,32,false,&error));
