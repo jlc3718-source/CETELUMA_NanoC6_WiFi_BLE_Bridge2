@@ -49,7 +49,20 @@ static const char *TAG="JH2_IDF_ORACLE";
 // Recovery runtime: boot safely with automatic signed OTA OFF by default.
 // Existing NVS is preserved; OTA may only be re-enabled explicitly after recovery.
 static volatile bool firmware_auto_update=false;
-bool jh2_bridge_auto_update_enabled(void){return firmware_auto_update;}
+static volatile bool firmware_auto_update_loaded=false;
+// Read the persisted NVS value even before Oracle is linked; the local
+// settings page must not show a false default and clear a saved checkbox.
+bool jh2_bridge_auto_update_enabled(void){
+    nvs_handle_t n;
+    uint8_t enabled=firmware_auto_update?1:0;
+    if(nvs_open("jh2-fwcfg",NVS_READONLY,&n)==ESP_OK){
+        if(nvs_get_u8(n,"auto",&enabled)==ESP_OK)
+            firmware_auto_update=enabled==1;
+        nvs_close(n);
+    }
+    firmware_auto_update_loaded=true;
+    return firmware_auto_update;
+}
 bool jh2_bridge_set_auto_update_enabled(bool enabled){
     nvs_handle_t n;
     if(nvs_open("jh2-fwcfg",NVS_READWRITE,&n)!=ESP_OK)return false;
@@ -58,6 +71,8 @@ bool jh2_bridge_set_auto_update_enabled(bool enabled){
     nvs_close(n);
     if(error!=ESP_OK)return false;
     firmware_auto_update=enabled;
+    firmware_auto_update_loaded=true;
+    ESP_LOGW(TAG,"AUTO_SIGNED_OTA_PERSISTED enabled=%d",enabled?1:0);
     return true;
 }
 static void jh2_load_auto_ota(void){
@@ -67,7 +82,11 @@ static void jh2_load_auto_ota(void){
         (void)nvs_get_u8(n,"auto",&stored);
         nvs_close(n);
     }
-    firmware_auto_update=stored==1;
+    // Do not replace an in-flight user change from a late Oracle startup.
+    if(!firmware_auto_update_loaded)
+        firmware_auto_update=stored==1;
+    else firmware_auto_update= jh2_bridge_auto_update_enabled();
+    firmware_auto_update_loaded=true;
     ESP_LOGW(TAG,"Signed OTA mode: %s (first install remains manual)",
              firmware_auto_update?"automatic enabled":"manual until first install");
 }
@@ -93,7 +112,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.5"
+#define NATIVE_FW_VERSION "2.0.6"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
