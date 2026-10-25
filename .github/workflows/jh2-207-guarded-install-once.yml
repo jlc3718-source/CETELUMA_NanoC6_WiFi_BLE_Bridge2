@@ -1,0 +1,101 @@
+name: JH2 2.0.7 One-Time Guarded Nano Remote Install
+on:
+  push:
+    branches: [fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025]
+    paths: [.github/workflows/jh2-207-guarded-install-once.yml]
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm signed 2.0.7 release and perform one guarded runtime-only OTA
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import os,json,hashlib,base64,subprocess,tempfile,urllib.request,time
+          from pathlib import Path
+          work=Path(os.environ['GITHUB_WORKSPACE'])
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next((m for m in info['Mounts'] if m['Destination']=='/data' and m['Type']=='bind'),None)
+          assert mount is not None,'Oracle data mount inaccessible'
+          root=Path(mount['Source'])/'signed-ota'
+          staged=root/'approved'
+          manifest=json.loads((staged/'latest.json').read_text())
+          f=dict(row.split('=',1) for row in manifest['payload'].strip().splitlines())
+          assert f['product']=='jason-home-2-nanoc6' and f['version']=='2.0.7'
+          fw=(staged/'jh2-runtime-2.0.7.bin').read_bytes()
+          assert 0x100000<len(fw)<=0x160000 and fw[0]==0xe9
+          assert len(fw)==int(f['bytes']) and hashlib.sha256(fw).hexdigest()==f['sha256']
+          with tempfile.TemporaryDirectory() as td:
+              t=Path(td)
+              (t/'payload').write_text(manifest['payload'])
+              (t/'signature').write_bytes(base64.b64decode(manifest['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                   str(work/'remote-update/anderson_ota_signing_public.pem'),
+                   '-signature',str(t/'signature'),str(t/'payload')],check=True)
+          # Never reveal or store the Oracle login secret outside its container.
+          app=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          appenv=dict(v.split('=',1) for v in app['Config']['Env'] if '=' in v)
+          assert appenv.get('JASON_HOME_API_TOKEN')
+          addr='http://127.0.0.1:8081'
+          def api(path,body=None,cookie='',timeout=40):
+              head={'Content-Type':'application/json'}
+              if cookie:head['Cookie']=cookie
+              req=urllib.request.Request(addr+path,data=json.dumps(body).encode() if body is not None else None,
+                            headers=head,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=timeout) as resp:
+                  return json.load(resp),resp.headers
+          served,_=api('/api/curtain/firmware-manifest')
+          assert served==manifest, 'Oracle feed differs from validated signed release'
+          with urllib.request.urlopen(addr+'/api/curtain/firmware-runtime/2.0.7.bin',timeout=60) as resp:
+              assert resp.read()==fw, 'Oracle download differs from signed bytes'
+          _,hdr=api('/api/session',{'token':appenv['JASON_HOME_API_TOKEN']})
+          cookie=hdr['Set-Cookie'].split(';')[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          version=status.get('firmware')
+          if version=='2.0.7':
+              print('JH2_207_ALREADY_INSTALLED',flush=True)
+              raise SystemExit(0)
+          assert version=='2.0.6','Unexpected live version; refusing blind firmware install: '+str(version)
+          assert status.get('online') is True,'Nano offline'
+          assert not status.get('relayStreaming'),'Nano busy streaming'
+          assert int(status.get('queued') or 0)==0,'Outstanding Nano commands'
+          print('JH2_207_REMOTE_OTA_PRECHECK_PASSED',len(fw),f['sha256'],flush=True)
+          def issue(action,key,limit=90):
+              d,_=api('/api/curtain/call',{'action':action,'payload':{},'idempotencyKey':key},cookie=cookie)
+              cid=int(d['commandId'])
+              print('COMMAND_SENT',action,cid,flush=True)
+              for _ in range(limit):
+                  row,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  x=row.get('command') or {}
+                  if x.get('state') in ('applied','failed','expired','superseded'):
+                      print('COMMAND_ACK',action,x['state'],str(x.get('result'))[:250],flush=True)
+                      return x.get('state')=='applied'
+                  time.sleep(1)
+              print('COMMAND_TIMEOUT',action,cid,flush=True)
+              return False
+          if not issue('nanoFirmwareCheck','jh2-207-check-once-20261025'):
+              raise RuntimeError('Signed firmware check not acknowledged; install not attempted')
+          if not issue('nanoInstallUpdate','jh2-207-install-once-20261025',120):
+              s,_=api('/api/curtain/status',cookie=cookie)
+              if s.get('firmware')!='2.0.7':
+                  raise RuntimeError('One remote OTA attempt not acknowledged; leaving recovery and 2.0.6 unchanged')
+          for i in range(80):
+              try:
+                  s,_=api('/api/curtain/status',cookie=cookie)
+                  if s.get('firmware')=='2.0.7' and s.get('online'):
+                      print('JH2_207_NANO_RUNNING_VERIFIED',json.dumps({
+                          'firmware':s.get('firmware'),'online':s.get('online'),
+                          'bleConnected':(s.get('curtain') or {}).get('connected')}),flush=True)
+                      raise SystemExit(0)
+              except Exception:
+                  pass
+              time.sleep(2)
+          raise RuntimeError('Signed OTA sent but Nano has not verified runtime 2.0.7')
+          PY
