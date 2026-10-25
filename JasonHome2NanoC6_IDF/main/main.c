@@ -16,6 +16,9 @@
 #include "esp_timer.h"
 #include "esp_err.h"
 #include "nvs_flash.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_system.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -46,6 +49,78 @@ extern const char jh2_native_runtime_marker[];
 
 extern void jh2_hci_acl_diag(cJSON *out);
 static const char *TAG="JH2_IDF_BLE";
+
+/* Hardware-independent firmware recovery state machine.
+ * A/B candidates are marked healthy only after local web + BLE + bridge
+ * have been alive for 60 seconds. ESP-IDF bootloader rolls back PENDING
+ * candidates that reboot first. Three watchdog/panic boot loops of an
+ * already confirmed app enter the separate factory rescue Wi-Fi uploader.
+ */
+static int64_t failsafe_boot_us=0;
+static bool failsafe_confirmed=false;
+static void failsafe_factory(void){
+    const esp_partition_t *factory=esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"rescue");
+    if(factory&&factory->address==0x10000&&factory->size==0x100000&&
+       esp_ota_set_boot_partition(factory)==ESP_OK){
+        ESP_LOGE(TAG,"Entering independent factory rescue Wi-Fi uploader");
+        vTaskDelay(pdMS_TO_TICKS(150));esp_restart();
+    }
+    ESP_LOGE(TAG,"Cannot select rescue; USB ROM downloader remains available");
+}
+static void failsafe_boot_failed(void){
+    const esp_partition_t *running=esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if(running&&esp_ota_get_state_partition(running,&state)==ESP_OK&&
+       state==ESP_OTA_IMG_PENDING_VERIFY){
+        ESP_LOGE(TAG,"Candidate failed startup; bootloader rollback requested");
+        if(esp_ota_mark_app_invalid_rollback_and_reboot()==ESP_OK)return;
+    }
+    failsafe_factory();
+}
+static void failsafe_boot_begin(void){
+    failsafe_boot_us=esp_timer_get_time();
+    const esp_reset_reason_t reason=esp_reset_reason();
+    bool crash=reason==ESP_RST_PANIC||reason==ESP_RST_INT_WDT||
+               reason==ESP_RST_TASK_WDT||reason==ESP_RST_WDT;
+    nvs_handle_t n;
+    if(nvs_open("jh2-failsafe",NVS_READWRITE,&n)==ESP_OK){
+        uint8_t streak=0;
+        (void)nvs_get_u8(n,"crashes",&streak);
+        if(crash&&streak<255)streak++;
+        if(!crash)streak=0;
+        (void)nvs_set_u8(n,"crashes",streak);
+        (void)nvs_commit(n);nvs_close(n);
+        if(streak>=3){
+            ESP_LOGE(TAG,"Three consecutive crash resets; forcing factory firmware screen");
+            failsafe_factory();
+        }
+    }
+}
+static void failsafe_confirm_after_60s(void){
+    if(failsafe_confirmed||!failsafe_boot_us||
+       esp_timer_get_time()-failsafe_boot_us<60000000LL)return;
+    const esp_partition_t *running=esp_ota_get_running_partition();
+    if(!running||(running->subtype!=ESP_PARTITION_SUBTYPE_APP_OTA_0&&
+                  running->subtype!=ESP_PARTITION_SUBTYPE_APP_OTA_1))return;
+    esp_ota_img_states_t state;
+    if(esp_ota_get_state_partition(running,&state)==ESP_OK&&
+       state==ESP_OTA_IMG_PENDING_VERIFY){
+        if(esp_ota_mark_app_valid_cancel_rollback()!=ESP_OK){
+            ESP_LOGE(TAG,"Cannot confirm OTA candidate; requesting safe rollback");
+            failsafe_boot_failed();return;
+        }
+    }
+    nvs_handle_t n;
+    if(nvs_open("jh2-failsafe",NVS_READWRITE,&n)==ESP_OK){
+        nvs_set_u8(n,"good",running->subtype==ESP_PARTITION_SUBTYPE_APP_OTA_1?1:0);
+        nvs_set_u8(n,"crashes",0);
+        nvs_commit(n);nvs_close(n);
+    }
+    failsafe_confirmed=true;
+    ESP_LOGW(TAG,"Runtime confirmed healthy after 60 seconds; previous A/B image remains intact");
+}
+
 static const char TARGET[]="DN5E58";
 static const ble_uuid128_t SVC_UUID=BLE_UUID128_INIT(
   0x44,0x4e,0x51,0x19,0x71,0x07,0x22,0x30,0x25,0x19,0x72,0x19,0x74,0x00,0x00,0x00);
@@ -1051,10 +1126,13 @@ void app_main(void){
         ESP_LOGE(TAG,"NVS_INIT_FAILED rc=%d; refusing destructive recovery",rc);
         return;
     }
+    failsafe_boot_begin();
     // Start web recovery immediately after NVS. Even a failed BLE mutex,
     // catalog parser task, or Oracle transport must NEVER strand OTA again.
     if(!jh2_web_start()){
         ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED");
+        failsafe_boot_failed();
+        return;
     }
     discovered_lock=xSemaphoreCreateMutex();
     load_target();
@@ -1063,17 +1141,17 @@ void app_main(void){
     raw_write_event=xSemaphoreCreateBinary();
     if(!discovered_lock||!notice_lock||!raw_write_lock||!raw_write_event){
         ESP_LOGE(TAG,"Native BLE synchronization allocation failed");
-        return;
+        failsafe_boot_failed();return;
     }
     // Catalog parser is deliberately lower priority than NimBLE and never
     // runs inside the notification callback. No dependency on Oracle uptime.
     catalog_queue=xQueueCreate(CATALOG_RX_QUEUE_DEPTH,sizeof(gatt_notice));
     if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",8192,NULL,3,NULL)!=pdPASS){
         ESP_LOGE(TAG,"CATALOG_RECEIVE_WORKER_FAILED");
-        return;
+        failsafe_boot_failed();return;
     }
     rc=nimble_port_init();
-    if(rc!=ESP_OK){fail("nimble_port_init",rc);return;}
+    if(rc!=ESP_OK){fail("nimble_port_init",rc);failsafe_boot_failed();return;}
     ble_hs_cfg.reset_cb=on_reset;
     ble_hs_cfg.sync_cb=on_sync;
     ble_att_set_preferred_mtu(517);
@@ -1095,6 +1173,7 @@ void app_main(void){
 #endif
     while(true){
         vTaskDelay(pdMS_TO_TICKS(10000));
+        failsafe_confirm_after_60s();
         if(requested && !finished && started_at &&
            esp_timer_get_time()-started_at>20000000LL){
             ESP_LOGW(TAG,"PARTIAL_CATALOG received=%u of 88 reply_packets=%u notifications=%u",
