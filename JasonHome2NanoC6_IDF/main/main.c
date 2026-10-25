@@ -1160,7 +1160,7 @@ void app_main(void){
     // Retain the product marker in the signed application image. The
     // original factory browser updater validates it and the final size;
     // the separate build gate enforces its >0x120000-byte requirement.
-    ESP_LOGI(TAG,"NATIVE_BROWSER_OTA_COMPAT_MARKER %s",
+    ESP_LOGW(TAG,"NATIVE_BROWSER_OTA_COMPAT_MARKER %s",
              jh2_native_runtime_marker);
 #endif
 #if CONFIG_JH2_NATIVE_ENABLE_ORACLE
