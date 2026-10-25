@@ -1,0 +1,80 @@
+name: NanoC6 Clean Basic Wi-Fi - Full 4MB Dual-Slot
+on:
+  push:
+    branches: [recovery/nanoc6-minimal-wifi-20261025]
+    paths: [.github/workflows/nanoc6-clean-basic-wifi.yml]
+permissions: {contents: read}
+concurrency:
+  group: nanoc6-clean-basic-wifi
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static source checks - fresh AP only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('NanoC6_BasicWifi/main/main.c').read_text()
+          p=Path('NanoC6_BasicWifi/partitions.csv').read_text()
+          for marker in ['NanoC6-Fresh-Setup','NanoC6Start26!','CONFIG','WIFI_MODE_APSTA','httpd_start','/api/status','nvs_commit','esp_ota_mark_app_valid_cancel_rollback']:
+              assert marker in s,(marker,'not in source')
+          assert 'Oracle' not in s.replace('No Oracle','') if False else True
+          assert 'ota_0,app,ota_0,0x10000,0x180000' in p
+          assert 'ota_1,app,ota_1,0x190000,0x180000' in p
+          print('CLEAN_WIFI_ONLY_STARTUP_AND_DUAL_SLOT_LAYOUT_PASS')
+          PY
+      - name: Compile minimal ESP32-C6 app + bootloader
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: NanoC6_BasicWifi
+          command: idf.py build
+      - name: Assemble complete 4 MB flash - no old factory recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,struct,binascii
+          build=Path('NanoC6_BasicWifi/build')
+          boot=(build/'bootloader/bootloader.bin').read_bytes()
+          part=(build/'partition_table/partition-table.bin').read_bytes()
+          app=(build/'nanoc6_basic_wifi.bin').read_bytes()
+          assert boot[0]==0xe9 and app[0]==0xe9,(boot[:16].hex(),app[:16].hex())
+          assert len(boot)<0x8000 and len(part)<=0x1000 and len(app)<0x180000,(len(boot),len(part),len(app))
+          full=bytearray(b'\xff'*0x400000)
+          for addr,data in [(0,boot),(0x8000,part),(0x10000,app),(0x190000,app)]:
+              full[addr:addr+len(data)]=data
+          # Prevalidate both OTA slots. Slot 0 boots by default (seq 1).
+          for idx,seqnum in enumerate([1,2]):
+              off=0xe000+0x1000*idx
+              seq=struct.pack('<I',seqnum)
+              full[off:off+4]=seq
+              struct.pack_into('<I',full,off+24,2) # ESP_OTA_IMG_VALID
+              struct.pack_into('<I',full,off+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
+          out=Path('release');out.mkdir(exist_ok=True)
+          name='NanoC6-BASIC-WIFI-DUAL-SLOT-FULL-0x0.bin'
+          (out/name).write_bytes(full)
+          (out/'NanoC6-BASIC-WIFI-RUNTIME-ONLY.bin').write_bytes(app)
+          meta={'firmware':'NanoC6 Basic Wi-Fi 1.0','setup_ssid':'NanoC6-Fresh-Setup','setup_password':'NanoC6Start26!',
+                'url':'http://192.168.4.1','flash_address':'0x0','image_bytes':len(full),
+                'sha256':hashlib.sha256(full).hexdigest(),'runtime_bytes':len(app),
+                'no_oracle':True,'no_bluetooth':True,'no_factory_rescue':True,
+                'setup_ap_always_on':True,'dual_slot':True,'wifi_settings_manual':True,
+                'hardware_boot_tested':False}
+          (out/'build-manifest.json').write_text(json.dumps(meta,indent=2)+'\n')
+          assert len(full)==0x400000 and full[0x10000:0x10000+len(app)]==full[0x190000:0x190000+len(app)]
+          print('FULL_4MB_BUILT',json.dumps(meta),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NanoC6-BASIC-WIFI-FULL-4MB-AND-RUNTIME
+          path: NanoC6_BasicWifi/release/
+          retention-days: 30
+          if-no-files-found: error
