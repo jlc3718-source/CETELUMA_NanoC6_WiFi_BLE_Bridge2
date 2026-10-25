@@ -1,0 +1,58 @@
+name: JH2 Diagnostic SmartDawn Native Upload 15984
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-diagnose-command15984-controller-20261024.yml]
+permissions: {contents: read}
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read exact controller reply fields for failed command 15984; no BLE writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import subprocess,sqlite3,json,base64,time
+          from pathlib import Path
+          container=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          m=next(x for x in container['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          path=Path(m['Source'])/'jason-home-2.sqlite'
+          db=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True)
+          for id in (15975,15984):
+              r=db.execute('SELECT id,action,state,created,result FROM curtain_commands WHERE id=?',(id,)).fetchone()
+              print('COMMAND',id,repr(r),flush=True)
+          raw=db.execute("SELECT value FROM curtain_meta WHERE key='notifications'").fetchone()
+          ns=json.loads(raw[0]) if raw else []
+          results=[]
+          for n in ns:
+              b=base64.b64decode(n.get('data',''))
+              if len(b)<24:continue
+              op=b[10]*256+b[11]
+              if op not in (2931,2932,2933,2934):continue
+              v={};at=24
+              while at<len(b):
+                  shift=0;tag=0
+                  while at<len(b):
+                      c=b[at];at+=1;tag|=(c&127)<<shift;shift+=7
+                      if not(c&128):break
+                  if (tag&7)!=0:
+                      if (tag&7)==2:
+                          shift=0;sz=0
+                          while at<len(b):
+                              c=b[at];at+=1;sz|=(c&127)<<shift;shift+=7
+                              if not(c&128):break
+                          at+=sz
+                      else:break
+                      continue
+                  shift=0;val=0
+                  while at<len(b):
+                      c=b[at];at+=1;val|=(c&127)<<shift;shift+=7
+                      if not(c&128):break
+                  v[tag>>3]=val
+              results.append({'noticeId':n['id'],'opcode':op,'rcode':b[18],'fields':v,
+                  'ageSeconds':round((time.time()*1000-n.get('receivedAt',0))/1000),
+                  'packetLen':len(b)})
+          print('SMARTDAWN_NATIVE_UPLOAD_RESPONSES',json.dumps(results[-24:]),flush=True)
+          print('NOTIFICATIONS_RETAINED',len(ns),flush=True)
+          PY
