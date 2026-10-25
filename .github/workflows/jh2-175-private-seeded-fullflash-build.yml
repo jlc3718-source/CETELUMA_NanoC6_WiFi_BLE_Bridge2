@@ -51,6 +51,7 @@ jobs:
           assert 'esp_ota_get_state_partition' in rescue
           assert 'ESP_OTA_IMG_ABORTED' in rescue
           assert 'import_factory_provision();' in Path('JasonHome2NanoC6_IDF/main/web_recovery.c').read_text()
+          assert '0x3ff000' in Path('JasonHome2NanoC6_IDF/main/web_recovery.c').read_text()
           assert 'esp_ota_mark_app_valid_cancel_rollback' in runtime
           assert 'esp_ota_mark_app_invalid_rollback_and_reboot' in runtime
           assert 'failsafe_confirm_after_60s();' in runtime
