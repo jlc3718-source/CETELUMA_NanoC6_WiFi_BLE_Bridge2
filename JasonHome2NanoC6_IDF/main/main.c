@@ -76,7 +76,11 @@ static void failsafe_boot_failed(void){
         ESP_LOGE(TAG,"Candidate failed startup; bootloader rollback requested");
         if(esp_ota_mark_app_invalid_rollback_and_reboot()==ESP_OK)return;
     }
-    failsafe_factory();
+    // A configuration or web initialization failure must NOT overwrite
+    // the OTA boot choice with factory recovery. Preserve A/B selection.
+    ESP_LOGE(TAG,"Runtime startup failed, retrying the same slot; factory recovery remains manual");
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    esp_restart();
 }
 static void failsafe_boot_begin(void){
     failsafe_boot_us=esp_timer_get_time();
@@ -92,8 +96,11 @@ static void failsafe_boot_begin(void){
         (void)nvs_set_u8(n,"crashes",streak);
         (void)nvs_commit(n);nvs_close(n);
         if(streak>=3){
-            ESP_LOGE(TAG,"Three consecutive crash resets; forcing factory firmware screen");
-            failsafe_factory();
+            // Previous releases forced emergency recovery on three crashes,
+            // even when the runtime image was intact. Keep A/B boot state.
+            ESP_LOGE(TAG,"Consecutive reset detected, preserving runtime boot slot and setup");
+            (void)nvs_set_u8(n,"crashes",0);
+            (void)nvs_commit(n);
         }
     }
 }
@@ -118,7 +125,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"1.1.77 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"1.1.78 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -1138,11 +1145,22 @@ void app_main(void){
     // keep the HTTP configuration page alive. Do not start Bluetooth/Oracle
     // until the user enters valid credentials and setup handler reboots.
     if(!jh2_web_has_oracle_credentials()){
-        ESP_LOGW(TAG,"1.1.77 manual setup: Wi-Fi portal active; BLE/Oracle deferred");
+        ESP_LOGW(TAG,"1.1.78 manual setup: Wi-Fi portal active; BLE/Oracle deferred");
         while(true){
             vTaskDelay(pdMS_TO_TICKS(10000));
             failsafe_confirm_after_60s();
         }
+    }
+    // Wait for station IP before allocating Bluetooth and Oracle tasks.
+    // Initial setup stays available indefinitely when credentials are absent;
+    // on bad Wi-Fi the local recovery AP opens without switching partitions.
+    EventGroupHandle_t wifi_event=jh2_web_wifi_group();
+    if(wifi_event){
+        while(!(xEventGroupGetBits(wifi_event)&BIT0)){
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            failsafe_confirm_after_60s();
+        }
+        ESP_LOGI(TAG,"1.1.78 Wi-Fi STA online; starting native BLE and Oracle");
     }
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
