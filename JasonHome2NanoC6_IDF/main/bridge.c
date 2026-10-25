@@ -84,7 +84,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.68"
+#define NATIVE_FW_VERSION "1.1.69"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -617,7 +617,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             if(mbedtls_base64_decode(bytes,sizeof(bytes),&n,
                 (const unsigned char*)data->valuestring,strlen(data->valuestring))==0){
                 unsigned matches=0;uint16_t slot=0;
-                bool known=jh2_ble_target_section(&matches,&slot);
+                const uint32_t assigned_cid=jh2_slot_packet_cid(&native_slot_session,
+                    uuid->valuestring,bytes,n);
+                const bool known=assigned_cid?
+                    jh2_ble_catalog_cid(assigned_cid,&matches,&slot):
+                    jh2_ble_target_section(&matches,&slot);
                 jh2_slot_session next=native_slot_session;
                 if(jh2_slot_validate(&next,uuid->valuestring,bytes,n,
                     (uint32_t)(esp_timer_get_time()/1000),known,matches,slot,
