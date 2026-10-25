@@ -372,7 +372,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.4-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.5-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -441,7 +441,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.4-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.5-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     // The endpoint is a public web URL; the private API/bridge tokens never leave the Nano.
@@ -1238,7 +1238,7 @@ static bool start_net(void){
     if(esp_wifi_start()!=ESP_OK)return false;
     esp_err_t power=esp_wifi_set_ps(WIFI_PS_NONE);
     if(power!=ESP_OK)ESP_LOGW(TAG,"Wi-Fi power-save configuration: %s",esp_err_to_name(power));
-    ESP_LOGW(TAG,"2.0.4 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
+    ESP_LOGW(TAG,"2.0.5 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
              saved_ssid[0]?"APSTA":"AP-ONLY",saved_ssid[0]?"yes":"no");
     if(xTaskCreate(wifi_retry_task,"jh2-wifi-retry",3072,NULL,2,NULL)!=pdPASS)
         ESP_LOGE(TAG,"Wi-Fi reconnect task unavailable; manual setup AP remains active");
