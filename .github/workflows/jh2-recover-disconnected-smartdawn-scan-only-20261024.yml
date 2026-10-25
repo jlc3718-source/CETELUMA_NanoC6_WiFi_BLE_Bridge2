@@ -1,0 +1,58 @@
+name: JH2 Recover Disconnected SmartDawn With Scan Only
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-recover-disconnected-smartdawn-scan-only-20261024.yml]
+permissions: {contents: read}
+jobs:
+  scan-only:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Scan only when Nano connected to Oracle but SmartDawn Bluetooth offline
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          host='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(host+path,
+                  data=json.dumps(body).encode() if body is not None else None,
+                  headers=h,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=25) as r:return json.load(r),r.headers
+          _,headers=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          status,_=api('/api/curtain/status',cookie=cookie)
+          assert status.get('online') is True,'Nano not online; do not issue BLE action'
+          assert status.get('firmware')=='1.1.71','Unexpected Nano firmware'
+          assert not status.get('relayStreaming') and not (status.get('curtain') or {}).get('streaming'),'Animation playing; no intervention'
+          assert int(status.get('queued') or 0)==0,'Command queue active; no intervention'
+          if (status.get('curtain') or {}).get('connected') is True:
+              print('BLE_ALREADY_CONNECTED_NO_SCAN_NEEDED',flush=True);raise SystemExit(0)
+          print('SMARTDAWN_DISCONNECTED_ISSUE_SCAN_ONLY',flush=True)
+          item,_=api('/api/curtain/call',{
+              'action':'scan','payload':{},'idempotencyKey':'jh2-recover-disconnected-smartdawn-scan-only-20261024'},cookie)
+          command=int(item['commandId'])
+          print('SAFE_SCAN_COMMAND_QUEUED',command,flush=True)
+          for n in range(80):
+              state,_=api('/api/curtain/command?id='+str(command),cookie=cookie)
+              row=state.get('command') or {}
+              if row.get('state') in ('applied','failed','expired','superseded'):
+                  print('SCAN_COMMAND_RESULT',row.get('state'),flush=True)
+                  assert row['state']=='applied','Scan request failed'
+                  break
+              time.sleep(.5)
+          else:raise RuntimeError('Scan did not confirm applied; no repeat')
+          for n in range(75):
+              state,_=api('/api/curtain/status',cookie=cookie)
+              ble=state.get('curtain') or {}
+              if state.get('online') is True and ble.get('connected') is True:
+                  print('SMARTDAWN_RECOVERED_CONNECTED_MTU',ble.get('mtu'),flush=True)
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise RuntimeError('Scan ACK received but SmartDawn BLE not reconnected; no forced disconnect and no scan retry')
+          PY
