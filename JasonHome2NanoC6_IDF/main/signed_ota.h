@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include "cJSON.h"
 
-// Validate the existing trusted signing key and exact channel URL,
-// persist a manual install request to the original permanent factory updater.
-// Never downloads or writes app images from the running runtime.
+// Validate the existing trusted signing key and exact release URL.
+// Download firmware only to the INACTIVE OTA slot, then boot with rollback.
+// The original independent factory rescue partition is preserved.
 bool jh2_queue_signed_update(const cJSON *manifest,const char *current_version,
                              char *error,size_t error_capacity);
 bool jh2_validate_signed_manifest(const cJSON *manifest,const char *current_version,
