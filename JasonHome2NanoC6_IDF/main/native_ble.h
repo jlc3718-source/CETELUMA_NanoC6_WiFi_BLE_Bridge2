@@ -43,3 +43,6 @@ bool jh2_ble_upload_progress(uint32_t *cursor,uint32_t parts,uint32_t min_comple
 
 // Read-only, controller-originated SmartDawn PlayProgressNotify (2630).
 void jh2_ble_playback_status(cJSON *status);
+
+// Boot health telemetry from native runtime, read-only (no NVS mutation).
+void jh2_runtime_boot_diagnostics(cJSON *out);
