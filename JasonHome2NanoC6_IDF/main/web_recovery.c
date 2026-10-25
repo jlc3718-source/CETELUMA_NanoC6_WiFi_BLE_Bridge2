@@ -21,6 +21,7 @@
 #include "esp_http_server.h"
 #include "esp_littlefs.h"
 #include "esp_partition.h"
+#include "mbedtls/sha256.h"
 #include "mdns.h"
 #include "lwip/sockets.h"
 #include "lwip/apps/sntp.h"
@@ -255,7 +256,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","1.1.74-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","1.1.75-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -593,7 +594,7 @@ static bool mount_store(void){
     // Format ONLY if the entire partition is demonstrably blank; never wipe
     // damaged or previously populated settings after a routine OTA update.
     const esp_partition_t *p=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_SPIFFS,"storage");
-    if(p&&p->size==0x30000){
+    if(p&&p->size==0x2f000){
         uint8_t sample[256];bool blank=true;
         for(size_t offset=0;offset<p->size;offset+=sizeof(sample)){
             if(esp_partition_read(p,offset,sample,sizeof(sample))!=ESP_OK){blank=false;break;}
@@ -603,7 +604,7 @@ static bool mount_store(void){
         if(blank){
             const esp_vfs_littlefs_conf_t first={.base_path="/littlefs",.partition_label="storage",
                 .format_if_mount_failed=true,.dont_mount=false};
-            ESP_LOGW(TAG,"Formatting ONLY confirmed blank new 192KB LittleFS partition");
+            ESP_LOGW(TAG,"Formatting ONLY confirmed blank new 188KB LittleFS partition");
             err=esp_vfs_littlefs_register(&first);
             if(err==ESP_OK||err==ESP_ERR_INVALID_STATE)return true;
         }
@@ -668,6 +669,67 @@ static bool save_config(cJSON *d){
         unlink("/littlefs/secrets.json.tmp");return false;
     }
     return true;
+}
+/*
+ * User-specific full-flash credentials live in a separate 4KB provisioning
+ * flash sector. Source and public CI carry NO Wi-Fi or Oracle secrets.
+ * It is only read on first boot when /littlefs/secrets.json is missing.
+ * Routine OTA never overwrites this sector or existing settings.
+ * Wire format: 8-byte magic, LE payload bytes, SHA256, UTF-8 JSON.
+ */
+static bool import_factory_provision(void){
+    if(!fs_ready)return false;
+    struct stat existing={0};
+    if(stat("/littlefs/secrets.json",&existing)==0 && existing.st_size>0)
+        return true;
+    const esp_partition_t *p=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x40,"provision");
+    if(!p||p->address!=0x3ff000||p->size!=0x1000){
+        ESP_LOGW(TAG,"Factory provisioning partition unavailable");return false;
+    }
+    uint8_t header[44]={0};
+    if(esp_partition_read(p,0,header,sizeof(header))!=ESP_OK ||
+       memcmp(header,"JH2CFG01",8)!=0)return false;
+    uint32_t bytes=(uint32_t)header[8]|((uint32_t)header[9]<<8)|
+                   ((uint32_t)header[10]<<16)|((uint32_t)header[11]<<24);
+    if(bytes<64||bytes>0x1000-sizeof(header)-1)return false;
+    char *json=calloc((size_t)bytes+1,1);
+    if(!json)return false;
+    if(esp_partition_read(p,sizeof(header),json,bytes)!=ESP_OK){free(json);return false;}
+    uint8_t sha[32]={0};
+    if(mbedtls_sha256((const unsigned char *)json,bytes,sha,0)!=0 ||
+       memcmp(sha,header+12,32)!=0){free(json);return false;}
+    cJSON *cfg=cJSON_Parse(json);free(json);
+    if(!cJSON_IsObject(cfg)){cJSON_Delete(cfg);return false;}
+    const char *names[]={"ssid","wifiPassword","oracleEndpoint","oracleBridgeId","oracleBridgeToken"};
+    const unsigned limits[]={32,63,175,63,64};
+    bool ok=true;
+    for(unsigned i=0;i<5;i++){
+        cJSON *item=cJSON_GetObjectItemCaseSensitive(cfg,names[i]);
+        if(!cJSON_IsString(item)||!item->valuestring||!item->valuestring[0]||
+           strlen(item->valuestring)>limits[i]){ok=false;break;}
+    }
+    if(ok){
+        const char *token=cJSON_GetObjectItemCaseSensitive(cfg,"oracleBridgeToken")->valuestring;
+        const char *endpoint=cJSON_GetObjectItemCaseSensitive(cfg,"oracleEndpoint")->valuestring;
+        ok=valid_hex(token)&&valid_https(endpoint);
+    }
+    if(ok)ok=save_config(cfg);
+    if(ok){
+        nvs_handle_t n=0;
+        if(nvs_open("jh2-network",NVS_READWRITE,&n)==ESP_OK){
+            const char *ssid=cJSON_GetObjectItemCaseSensitive(cfg,"ssid")->valuestring;
+            const char *password=cJSON_GetObjectItemCaseSensitive(cfg,"wifiPassword")->valuestring;
+            esp_err_t rc=nvs_set_str(n,"ssid",ssid);
+            if(rc==ESP_OK)rc=nvs_set_str(n,"password",password);
+            if(rc==ESP_OK)rc=nvs_commit(n);
+            nvs_close(n);
+            ok=rc==ESP_OK;
+        }
+    }
+    cJSON_Delete(cfg);
+    ESP_LOGW(TAG,ok?"Saved embedded Nano provisioning (values hidden)":
+                  "Embedded provisioning could not be restored");
+    return ok;
 }
 static esp_err_t setup_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
@@ -868,7 +930,7 @@ bool jh2_web_has_oracle_credentials(void){return creds_ready;}
 void jh2_web_request_recovery(void){recovery_request=true;}
 bool jh2_web_recovery_requested(void){return recovery_request;}
 bool jh2_web_start(void){
-    fs_ready=mount_store();read_saved();
+    fs_ready=mount_store();import_factory_provision();read_saved();
     if(!start_net()){ESP_LOGE(TAG,"Wi-Fi/AP setup failed");return false;}
     if(!preview_lock)preview_lock=xSemaphoreCreateMutex();
     if(!preview_lock){ESP_LOGE(TAG,"Preview mutex allocation failed");return false;}
