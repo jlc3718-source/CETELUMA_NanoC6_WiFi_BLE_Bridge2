@@ -14,3 +14,10 @@ typedef struct {
 bool jh2_slot_transfer(const uint8_t *file,size_t size,uint8_t id,
     uint32_t now,bool known,unsigned matches,uint16_t slot,
     const jh2_slot_io *io,const char **error);
+
+// Full native .eff file already downloaded and SHA-256 verified on Nano
+// LittleFS. Stream in 500-byte SmartDawn packets without any Oracle roundtrip
+// and without a 128-KiB RAM allocation. CID must be newly manufacturer-assigned.
+bool jh2_slot_transfer_file(const char *path,uint32_t cid,uint8_t id,
+    uint32_t now,bool known,unsigned matches,uint16_t slot,
+    const jh2_slot_io *io,const char **error);
