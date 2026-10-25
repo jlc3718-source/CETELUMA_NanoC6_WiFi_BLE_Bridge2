@@ -18,13 +18,18 @@ jobs:
         env: {GH_TOKEN: '${{ github.token }}'}
         run: |
           set -euo pipefail
-          for i in {1..180}; do
-            state="$(gh run view 40151509332 --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status+" "+(.conclusion // "")')"
-            if [[ "$state" == "completed success" ]]; then echo CANDIDATE_BUILD_COMPLETE;exit 0;fi
-            if [[ "$state" == "completed "* ]]; then echo "CANDIDATE_BUILD_FAILED $state";exit 1;fi
-            sleep 5
-          done
-          echo CANDIDATE_BUILD_NOT_CONFIRMED;exit 1
+          python3 - <<'PY'
+          import json,os,urllib.request
+          endpoint='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/40151509332'
+          req=urllib.request.Request(endpoint,headers={
+             'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+             'Accept':'application/vnd.github+json',
+             'X-GitHub-Api-Version':'2022-11-28'})
+          with urllib.request.urlopen(req,timeout=25) as r: run=json.load(r)
+          assert run.get('status')=='completed' and run.get('conclusion')=='success', 'Candidate build is not successful'
+          assert run.get('head_sha')=='72c5a1994faf5e5c03722875ff35eaa137574de1', 'Candidate build SHA mismatch'
+          print('CANDIDATE_BUILD_COMPLETE_VERIFIED',run['id'],run['head_sha'],flush=True)
+          PY
       - uses: actions/download-artifact@v4
         with:
           run-id: 40151509332
@@ -130,13 +135,45 @@ jobs:
         env: {GH_TOKEN: '${{ github.token }}'}
         run: |
           set -euo pipefail
-          if gh release view jason-home-2-nanoc6-v1.1.69 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'Existing 1.1.69 release requires review; refusing overwrite';exit 1
-          fi
-          gh release create jason-home-2-nanoc6-v1.1.69 \
-            signed-bundle/signed-package/jh2-runtime-1.1.69.bin \
-            signed-bundle/signed-package/latest.json signed-bundle/signed-package/release.json \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Jason Home 2 NanoC6 1.1.69 — SmartDawn Assigned CID" \
-            --notes "Signed and verified from exact 1.1.68 production source. Corrects manufacturer-assigned native upload CIDs while keeping factory effect protection, Oracle launcher, Nano Settings and manual factory recovery. 1.1.68 and 1.1.67 signed recovery images preserved. Single runtime slot: manual rollback only. No controller write performed by this build."
-          echo 'SIGNED_169_PUBLISHED_NO_CONTROLLER_FLASH'
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error,urllib.parse
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY']
+          token=os.environ['GH_TOKEN']
+          tag='jason-home-2-nanoc6-v1.1.69'
+          api='https://api.github.com/repos/'+repo
+          headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',
+                   'X-GitHub-Api-Version':'2022-11-28'}
+          def request(url,method='GET',body=None,ctype=None):
+              h=dict(headers)
+              if ctype:h['Content-Type']=ctype
+              q=urllib.request.Request(url,data=body,headers=h,method=method)
+              with urllib.request.urlopen(q,timeout=90) as r:return json.load(r)
+          try:
+              existing=request(api+'/releases/tags/'+tag)
+          except urllib.error.HTTPError as e:
+              if e.code!=404:raise
+          else:
+              raise RuntimeError('Existing immutable release '+tag+' requires review: '+str(existing.get('html_url')))
+          package=Path('signed-bundle/signed-package')
+          source='72c5a1994faf5e5c03722875ff35eaa137574de1'
+          release=request(api+'/releases','POST',json.dumps({
+              'tag_name':tag,'target_commitish':source,
+              'name':'Jason Home 2 NanoC6 1.1.69 — SmartDawn Assigned CID',
+              'draft':True,'prerelease':True,
+              'body':('Signed and verified from exact 1.1.68 production source. Corrects '
+                      'manufacturer-assigned native upload CIDs while protecting factory effects '
+                      'and retaining Oracle launcher, Nano Settings and manual factory recovery. '
+                      'Signed 1.1.68 and 1.1.67 recovery packages preserved. '
+                      'Single runtime slot: manual rollback only. '
+                      'No controller write performed by this workflow.')
+          }).encode(),'application/json')
+          uploads=release['upload_url'].split('{',1)[0]
+          for name in ['jh2-runtime-1.1.69.bin','latest.json','release.json']:
+              raw=(package/name).read_bytes()
+              item=request(uploads+'?'+urllib.parse.urlencode({'name':name}),'POST',raw,'application/octet-stream')
+              assert item.get('name')==name and item.get('state')=='uploaded' and item.get('size')==len(raw),name
+              print('SIGNED_169_RELEASE_ASSET_VERIFIED',name,len(raw),flush=True)
+          assert len(release.get('id',[])) if isinstance(release.get('id'),list) else release.get('id')
+          print('SIGNED_169_STAGED_DRAFT_RELEASE_NO_FLASH',release.get('html_url'),flush=True)
+          PY
