@@ -1,0 +1,40 @@
+name: JH2 Identify Jack-o-Lantern Run Test Animation
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-autotest-jackolantern-identify-20261025.yml]
+permissions: {contents: read}
+jobs:
+  identify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Identify exact gallery artwork and hash without modifying anything
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,sqlite3,subprocess,hashlib
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          m=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(m['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          sql="""SELECT a.id,a.name,a.pack_id,a.kind,a.frame_count,a.frame_width,a.frame_height,
+                 a.sha256,t.holiday,t.subject,t.motion,
+                 EXISTS(SELECT 1 FROM curtain_internet_hidden_gallery h WHERE h.id=a.id),
+                 length(a.gif)
+                 FROM curtain_internet_art a
+                 LEFT JOIN curtain_internet_tags t ON a.id=t.id
+                 WHERE lower(a.name) LIKE '%jack%' OR lower(a.name) LIKE '%lantern%' OR
+                       lower(COALESCE(t.subject,'')) LIKE '%jack%' OR
+                       lower(COALESCE(t.tags,'')) LIKE '%jack%'
+                 ORDER BY a.name LIMIT 45"""
+          rows=db.execute(sql).fetchall()
+          keys=['id','name','pack','kind','frame_count','frame_width','frame_height','sha256',
+                'holiday','subject','motion','hidden','source_bytes']
+          candidates=[dict(zip(keys,r)) for r in rows]
+          print('JACK_O_LANTERN_GALLERY_CANDIDATES',json.dumps(candidates,ensure_ascii=False),flush=True)
+          run=[r for r in candidates if str(r.get('motion') or '').lower()=='run' and
+             ('jack' in str(r['name']).lower() or 'lantern' in str(r['name']).lower()) and not r['hidden']]
+          print('MATCHED_VISIBLE_RUN_ART',json.dumps(run,ensure_ascii=False),flush=True)
+          print('NO_ARTWORK_MODIFIED_NO_CONTROLLER_COMMANDS',flush=True)
+          PY
