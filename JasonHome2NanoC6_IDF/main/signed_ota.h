@@ -21,3 +21,9 @@ bool jh2_ota_staged_ready(void);
 bool jh2_ota_download_active(void);
 bool jh2_ota_install_staged(char *error,size_t error_capacity);
 void jh2_ota_status(cJSON *object);
+
+// Authenticated Oracle mirror of an already verified ECDSA release payload.
+// Byte-for-byte SHA-256 check remains mandatory; GitHub is the fallback.
+bool jh2_ota_stage_signed_via_oracle(const cJSON *manifest,const char *current_version,
+                                     const char *oracle_endpoint,const char *oracle_token,
+                                     char *error,size_t error_capacity);
