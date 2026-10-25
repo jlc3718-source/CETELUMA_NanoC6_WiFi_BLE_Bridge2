@@ -39,6 +39,13 @@ jobs:
           def post(path,body):return request(path,body,cookie=cookie)[0]
           status=get('/api/curtain/status')
           ctl=status.get('curtain') or {}
+          # Wait briefly for an existing manual/schedule command to finish;
+          # do not supersede it or transmit any native request while busy.
+          for _ in range(15):
+              if int(status.get('queued') or 0)==0:break
+              time.sleep(2)
+              status=get('/api/curtain/status')
+              ctl=status.get('curtain') or {}
           out['before']={key:status.get(key) for key in ('firmware','online','queued','relayStreaming')}
           out['before'].update({key:ctl.get(key) for key in ('connected','mtu','nativeCatalogUnique',
               'nativeTarget83928Count','nativeTargetSectionComplete')})
