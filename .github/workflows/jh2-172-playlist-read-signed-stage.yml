@@ -1,0 +1,172 @@
+name: JH2 1.1.72 Read-Only Playlist Probe Signed Build and Oracle Stage
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-172-playlist-read-signed-stage.yml]
+permissions: {contents: write, actions: read}
+concurrency:
+  group: jh2-172-playlist-read-build-stage
+  cancel-in-progress: false
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recheck source safety and original partition geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define NATIVE_FW_VERSION "1.1.72"' JasonHome2NanoC6_IDF/main/bridge.c
+          grep -q '1.1.72-native-upload-flow' JasonHome2NanoC6_IDF/main/web_recovery.c
+          grep -q '^storage, data, spiffs, 0x3C0000, 0x40000' JasonHome2NanoC6_IDF/partitions.csv
+          grep -q '^runtime, app, ota_0, 0x130000, 0x290000' JasonHome2NanoC6_IDF/partitions.csv
+          grep -q 'jh2_slot_transfer_file' JasonHome2NanoC6_IDF/main/bridge.c
+          grep -q 'jh2_asset_stage_native' JasonHome2NanoC6_IDF/main/asset_stream.c
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/jh2-native-guard
+          /tmp/jh2-native-guard
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/effectlist.c JasonHome2NanoC6_IDF/tests/effectlist_test.c -o /tmp/jh2-native-effects
+          /tmp/jh2-native-effects
+      - name: Use production Oracle signed-OTA configuration
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Build complete ESP32-C6 native production runtime
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Sign exact production runtime and verify with pinned public key
+        shell: bash
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$OTA_SIGNING_KEY_B64"
+          mkdir -p signed-package
+          cp JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin signed-package/jh2-runtime-1.1.72.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,os,hashlib
+          p=Path('signed-package/jh2-runtime-1.1.72.bin')
+          b=p.read_bytes()
+          assert 0x120000<len(b)<=0x290000 and b[0]==0xe9 and b[12]==13 and b[13]==0
+          assert b'1.1.72-native-upload-flow' in b and b'curtain-native.eff' in b
+          assert b'jason-home-2-nanoc6-runtime-v1' in b and b'/settings/nano' in b
+          record={'product':'jason-home-2-nanoc6','version':'1.1.72','commit':os.environ['GITHUB_SHA'],
+            'files':{p.name:{'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}}}
+          Path('signed-package/release.json').write_text(json.dumps(record,indent=2)+'\n')
+          print('SIGNED_CANDIDATE_BYTES_SHA',len(b),record['files'][p.name]['sha256'],flush=True)
+          PY
+          key="$RUNNER_TEMP/jh2-ota-sign.pem";trap 'rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 -d > "$key"
+          chmod 600 "$key"
+          python3 JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release signed-package/release.json --output signed-package/latest.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,base64,tempfile,subprocess,hashlib
+          p=Path('signed-package');m=json.loads((p/'latest.json').read_text())
+          fields=dict(row.split('=',1) for row in m['payload'].strip().splitlines())
+          b=(p/'jh2-runtime-1.1.72.bin').read_bytes()
+          assert fields['version']=='1.1.72' and fields['product']=='jason-home-2-nanoc6'
+          assert hashlib.sha256(b).hexdigest()==fields['sha256'] and str(len(b))==fields['bytes']
+          with tempfile.TemporaryDirectory() as d:
+              x=Path(d);(x/'payload').write_text(m['payload'])
+              (x/'signature').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem',
+                  '-signature',str(x/'signature'),str(x/'payload')],check=True)
+          print('SIGNED_172_VERIFIED_NO_FLASH',flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-1.1.72-SIGNED-PRODUCTION-RUNTIME
+          path: signed-package/
+          retention-days: 45
+          if-no-files-found: error
+  stage:
+    needs: sign
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-1.1.72-SIGNED-PRODUCTION-RUNTIME
+          path: signed-package
+      - name: Verify pinned 1.1.69 / 1.1.68 / 1.1.67 recoveries and stage only signed 1.1.72
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import base64,hashlib,json,os,subprocess,shutil,tempfile
+          from pathlib import Path
+          work=Path(os.environ['GITHUB_WORKSPACE'])/'signed-package'
+          m=json.loads((work/'latest.json').read_text())
+          fields=dict(row.split('=',1) for row in m['payload'].strip().splitlines())
+          image=work/'jh2-runtime-1.1.72.bin'
+          data=image.read_bytes()
+          assert fields['version']=='1.1.72' and fields['product']=='jason-home-2-nanoc6'
+          assert hashlib.sha256(data).hexdigest()==fields['sha256']
+          assert len(data)==int(fields['bytes']) and len(data)<0x290000
+          with tempfile.TemporaryDirectory() as d:
+              p=Path(d);(p/'payload').write_text(m['payload'])
+              (p/'signature').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                str(Path(os.environ['GITHUB_WORKSPACE'])/'remote-update/anderson_ota_signing_public.pem'),
+                '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          base=Path(mount['Source'])/'signed-ota'
+          for old in ('1.1.67','1.1.68','1.1.69','1.1.70'):
+              d=base/old
+              assert all((d/p).is_file() for p in ('latest.json','release.json','jh2-runtime-'+old+'.bin'))
+              o=json.loads((d/'latest.json').read_text())
+              f=dict(row.split('=',1) for row in o['payload'].strip().splitlines())
+              assert hashlib.sha256((d/('jh2-runtime-'+old+'.bin')).read_bytes()).hexdigest()==f['sha256']
+              print('SIGNED_RECOVERY_PRESERVED',old,flush=True)
+          target=base/'1.1.72'
+          names=('jh2-runtime-1.1.72.bin','latest.json','release.json')
+          if target.exists():
+              assert all((target/p).read_bytes()==(work/p).read_bytes() for p in names),'Immutable 172 conflict'
+          else:
+              tmp=base/'1.1.72-stage-tmp'
+              assert not tmp.exists()
+              tmp.mkdir()
+              try:
+                  for p in names:shutil.copy2(work/p,tmp/p)
+                  tmp.rename(target)
+              except:
+                  shutil.rmtree(tmp)
+                  raise
+          print('SIGNED_172_STAGED_ON_ORACLE_NO_FLASH',fields['sha256'],fields['commit'],flush=True)
+          PY
+      - name: Publish downloadable GitHub draft signed package without activating Nano
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os,json,urllib.request
+          repo=os.environ['GITHUB_REPOSITORY'];url='https://api.github.com/repos/'+repo+'/releases'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}
+          release=json.dumps({'tag_name':'jason-home-2-nanoc6-v1.1.72','target_commitish':os.environ['GITHUB_SHA'],'name':'Jason Home 2 NanoC6 1.1.72 — Read-Only Playlist Probe','body':'Signed Nano 1.1.72: native type-3 upload unchanged; only read-only manufacturer playlist list opcode 2627 added; no repartition; recovery packages preserved. Controller hardware upload remains to be verified.','draft':True,'prerelease':False}).encode()
+          req=urllib.request.Request(url,data=release,headers=headers,method='POST')
+          with urllib.request.urlopen(req,timeout=25) as r:d=json.load(r)
+          print('SIGNED_172_RELEASE_DRAFT',d['id'],d['html_url'],flush=True)
+          upload=d['upload_url'].split('{',1)[0]
+          for file in ('jh2-runtime-1.1.72.bin','latest.json','release.json'):
+              data=open('signed-package/'+file,'rb').read()
+              h=dict(headers);h['Content-Type']='application/octet-stream'
+              put=urllib.request.Request(upload+'?name='+file,data=data,headers=h,method='POST')
+              with urllib.request.urlopen(put,timeout=60) as r:a=json.load(r)
+              assert a['size']==len(data)
+              print('DRAFT_SIGNED_ASSET',file,len(data),flush=True)
+          PY
