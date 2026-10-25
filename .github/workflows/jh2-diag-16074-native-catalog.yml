@@ -1,0 +1,70 @@
+name: JH2 Diagnose 16074 Native Catalog Guard Readonly
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-diag-16074-native-catalog.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read exact command and controller inventory; no BLE writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import sqlite3,subprocess,json,base64,time
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          m=next(x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(m['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          print('TABLES',db.execute('SELECT name FROM sqlite_master WHERE type="table" AND name LIKE "curtain_%"').fetchall(),flush=True)
+          for x in db.execute('SELECT id,action,state,created,result,payload FROM curtain_commands WHERE id BETWEEN 16065 AND 16079 ORDER BY id').fetchall():
+              payload=json.loads(x[5]) if x[5] else {}
+              print('COMMAND',x[0],x[1],x[2],'at',x[3],'cid',payload.get('cid'),'result',str(x[4])[:550],flush=True)
+          row=db.execute("SELECT value FROM curtain_meta WHERE key='notifications'").fetchone()
+          ns=json.loads(row[0]) if row else []
+          print('NOTIFICATIONS_RETAINED',len(ns),'LATEST_ID',ns[-1].get('id') if ns else None,flush=True)
+          def var(b,i):
+              result=0
+              for bit in range(0,70,7):
+                  if i>=len(b):raise ValueError('Truncated')
+                  d=b[i];i+=1;result|=(d&127)<<bit
+                  if d<128:return result,i
+              raise ValueError('Bad varint')
+          def fields(b,i=0):
+              while i<len(b):
+                  key,i=var(b,i)
+                  if key>>3==0:return
+                  wire=key&7
+                  if wire==0:v,i=var(b,i)
+                  elif wire==2:
+                      n,i=var(b,i);v=b[i:i+n];i+=n
+                  elif wire==1:v=b[i:i+8];i+=8
+                  elif wire==5:v=b[i:i+4];i+=4
+                  else:return
+                  yield key>>3,wire,v
+          fragments={}
+          for n in ns:
+              raw=base64.b64decode(n.get('data',''))
+              if len(raw)<8 or raw[3]!=0 or not(1<=raw[1]<=100) or raw[2]>=raw[1]:continue
+              key=(raw[0],raw[1]);at=raw[1]-raw[2]-1
+              fragments.setdefault(key,{})[at]=raw[4:]
+          pages=[]
+          for (seq,count),parts in fragments.items():
+              if len(parts)!=count:continue
+              msg=b''.join(parts[z] for z in range(count))
+              if len(msg)<20 or msg[0] not in (0xf0,0xf1) or (msg[6]<<8|msg[7])!=2904:continue
+              entries=[]
+              for k,w,data in fields(msg,20):
+                  if k!=1 or w!=2:continue
+                  z={i:int(v) for i,t,v in fields(data) if t==0}
+                  if 1 in z:entries.append({'id':z[1],'cid':z.get(4),'slot':z.get(3)})
+              if entries:pages.append({'seq':seq,'count':len(entries),'first':min(i['id'] for i in entries),'last':max(i['id'] for i in entries),'seenIds':[i['id'] for i in entries],'custom':[i for i in entries if i['id']>=87]})
+          print('RETAINED_FRESH_FULL_2904_PAGES',json.dumps(pages[-15:]),flush=True)
+          joined=set()
+          for p in pages:joined.update(p['seenIds'])
+          print('CATALOG_CONTAINS_FACTORY_0_TO_86',all(i in joined for i in range(87)),
+            'UNIQUE',len(joined),'CURRENT_CUSTOM_IDS',[i for i in sorted(joined) if i>=87],flush=True)
+          print('NO_BLE_ACTIONS_PERFORMED',flush=True)
+          PY
