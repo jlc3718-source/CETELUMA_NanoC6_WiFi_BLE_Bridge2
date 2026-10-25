@@ -1,0 +1,137 @@
+name: JH2 2.0.2 WiFi-First + Oracle Autolink (Private Personalization Needed)
+on:
+  push:
+    branches:
+      - fix/jh2-2.0.2-wifi-first-oracle-settings-20261025
+    paths:
+      - JasonHome2NanoC6_IDF/**
+      - .github/workflows/jh2-202-wifi-resilient-runtime.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jh2-202-runtime-ci
+  cancel-in-progress: false
+jobs:
+  compile-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate A/B firmware and secret-handling policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          partition = Path("JasonHome2NanoC6_IDF/partitions.csv").read_text()
+          factory = Path("JasonHome2NanoC6_Rescue/partitions.csv").read_text()
+          assert [x.strip() for x in partition.splitlines() if x.strip() and not x.startswith("#")] == [x.strip() for x in factory.splitlines() if x.strip() and not x.startswith("#")], "Runtime and rescue partition maps differ"
+          assert "runtime, app, ota_0, 0x110000, 0x160000" in partition
+          assert "runtime_b, app, ota_1, 0x270000, 0x160000" in partition
+          assert "rescue, app, factory, 0x10000, 0x100000" in partition
+          web = Path("JasonHome2NanoC6_IDF/main/web_recovery.c").read_text()
+          bridge = Path("JasonHome2NanoC6_IDF/main/bridge.c").read_text()
+          runtime = Path("JasonHome2NanoC6_IDF/main/main.c").read_text()
+          mark=re.search(r'"(JH2V200PRIVATEORACLETOKENREPLACEME_+)"',web)
+          assert mark and len(mark.group(1)) == 64, "Exactly 64-byte placeholder required"
+          assert 'seed_embedded_oracle_if_missing();' in web
+          assert 'read_saved();' in web
+          assert web.index('if(!start_net())') < web.index('fs_ready=mount_store();'), "Filesystem initialized before AP"
+          assert web.index('httpd_register_uri_handler') < web.index('fs_ready=mount_store();'), "HTTP not registered before filesystem"
+          assert 'static const char *ORACLE_HTML' in web
+          assert 'oracle_autolink_post' in web and 'oracle_link_status_get' in web
+          assert '/settings/oracle' in web
+          assert 'jh2_bridge_autolink_request()' in web
+          assert 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384' in Path("JasonHome2NanoC6_IDF/sdkconfig.defaults").read_text()
+          assert 'jh2_bridge_start();' not in runtime
+          assert '2.0.2 setup AP ready' in runtime
+          assert 'jh2_bridge_autolink_request(void)' in Path("JasonHome2NanoC6_IDF/main/bridge.c").read_text()
+          assert 'https_json("/api/curtain-bridge/bootstrap",NULL)' in bridge
+          assert 'esp_wifi_set_storage(WIFI_STORAGE_RAM)' in web
+          assert 'cJSON_AddStringToObject(out,"state",jh2_bridge_autolink_status())' in web
+          assert 'valid_hex(jh2_builtin_oracle_token)' in web
+          assert 'esp_wifi_set_mode(WIFI_MODE_APSTA)!=ESP_OK' in web
+          assert 'if(saved_ssid[0]){' in web, "Unconfigured Wi-Fi must not connect"
+          assert 'pdMS_TO_TICKS(15000)' in web, "Working 1.1.79 retry interval missing"
+          assert 'esp_wifi_set_storage(WIFI_STORAGE_RAM)' in web, "Stale SDK Wi-Fi credentials not disabled"
+          assert 'WIFI_AUTH_OPEN' in web and 'JH2-Nano-Fresh' in web
+          disconnect=web.split('if(event==WIFI_EVENT&&id==WIFI_EVENT_STA_DISCONNECTED){',1)[1].split('if(event==IP_EVENT',1)[0]
+          assert 'esp_wifi_connect()' not in disconnect, "Immediate disconnected-event retry regression"
+          assert web.index('ap_netif=esp_netif_create_default_wifi_ap();') < web.index('sta_netif=esp_netif_create_default_wifi_sta();')
+          assert 'lastWifiDisconnectReason' in web and 'homeWifiRetryAttempts' in web
+          assert 'homeWifiConfigured' in web and 'homeIp' in web
+          assert "if(enabled){ESP_LOGW(TAG" in bridge, "2.0.2 must not enable auto OTA"
+          assert 'if(!fs_ready)return;' not in web.split('static void read_saved(void){',1)[1].split('static bool save_config',1)[0], "NVS fallback lost when LittleFS unavailable"
+          assert '2.0.2-native-upload-flow' in web
+          assert 'strlcpy((char *)cfg.ap.ssid,"JH2-Nano-Fresh",sizeof(cfg.ap.ssid))' in web
+          assert 'cfg.ap.authmode=WIFI_AUTH_OPEN' in web
+          assert 'if(!jh2_web_has_oracle_credentials())' not in runtime
+          assert 'NATIVE_FW_VERSION "2.0.2"' in bridge
+          assert '2.0.2 setup AP ready' in runtime
+          assert 'nvs_open("jh2basic",NVS_READONLY' in web
+          assert 'failsafe_confirm_after_60s();' in runtime
+          assert '#define NATIVE_FW_VERSION "2.0.2"' in bridge
+          assert "Remote OTA locked off for 2.0.2 A/B recovery" in Path("JasonHome2NanoC6_IDF/main/signed_ota.c").read_text()
+          print("JH2_202_A_B_WIFI_MANUAL_ORACLE_BOOTSTRAP_SOURCE_VERIFIED")
+          PY
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/guard202
+          /tmp/guard202
+      - name: Enable native Oracle, BLE, manual browser recovery
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Compile ESP32-C6 A/B runtime (ESP-IDF 5.5.1)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Validate image, size, token marker and output checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p jh2-202-output
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os
+          app=Path("JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin").read_bytes()
+          assert 0<len(app)<=0x160000,("Runtime exceeds 1.375MiB OTA slot",len(app))
+          assert app[0]==0xe9, "Not an ESP image"
+          marker=b"JH2V200PRIVATEORACLETOKENREPLACEME".ljust(64,b"_")
+          assert len(marker)==64
+          assert app.count(marker)==1, "Unique private 64-byte patch point missing"
+          assert b"2.0.2-native-upload-flow" in app
+          assert b"JH2-Nano-Fresh" in app
+          assert b"c6e361f91c250cbb" in app
+          assert b"https://150.136.245.51/jason-home-2" in app
+          out=Path("jh2-202-output/JH2-NanoC6-2.0.2-RUNTIME-UNPERSONALIZED.bin")
+          out.write_bytes(app)
+          sha=hashlib.sha256(app).hexdigest()
+          manifest={"version":"2.0.2","base":"1.1.78","dual_slot_runtime":True,
+            "slot_max_bytes":0x160000,"runtime_bytes":len(app),"runtime_sha256":sha,
+            "private_oracle_token_embedded":False,"wifi_config":"manual",
+            "original_recovery_preserved":True,"auto_install":False,
+            "hardware_verified":False,"source_commit":os.environ["GITHUB_SHA"]}
+          Path("jh2-202-output/manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
+          Path("jh2-202-output/README.txt").write_text(
+            "2.0.2 Wi-Fi recovery candidate, requires private personalization. DO NOT INSTALL AS-IS.\n"
+            "Contains an intentionally invalid 64-byte Oracle token placeholder.\n"
+            "Do not publish the final token-personalized BIN in public GitHub Actions or releases.\n"
+            "Private customization must regenerate ESP image integrity and verify device pairing.\n"
+            "Use local A/B updater; do not change bootloader, recovery or partition table.\n")
+          print("JH2_202_COMPILED",len(app),sha)
+          PY
+          cd jh2-202-output && sha256sum *.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-2.0.2-RUNTIME-UNPERSONALIZED-CI
+          path: jh2-202-output/
+          retention-days: 14
+          if-no-files-found: error
