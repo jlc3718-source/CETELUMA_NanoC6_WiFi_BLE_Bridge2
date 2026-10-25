@@ -112,7 +112,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.7"
+#define NATIVE_FW_VERSION "2.0.8"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -376,7 +376,7 @@ bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
             // No flashing in the HTTP handler: Check downloads and verifies
             // in the background, Install only changes boot selection.
             if(!jh2_ota_staged_ready()){
-                (void)jh2_ota_stage_signed(manifest,NATIVE_FW_VERSION,error,error_size);
+                (void)jh2_ota_stage_signed_via_oracle(manifest,NATIVE_FW_VERSION,endpoint,bridge_token,error,error_size);
                 available=false;
                 if(error&&error_size&&jh2_ota_download_active())
                     snprintf(error,error_size,"Downloading signed firmware; please wait");
@@ -384,7 +384,7 @@ bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
         }else{
             // A click on Check starts the download automatically.
             if(!jh2_ota_staged_ready()&&!jh2_ota_download_active())
-                available=jh2_ota_stage_signed(manifest,NATIVE_FW_VERSION,error,error_size);
+                available=jh2_ota_stage_signed_via_oracle(manifest,NATIVE_FW_VERSION,endpoint,bridge_token,error,error_size);
             else available=true;
         }
     }
@@ -819,6 +819,10 @@ static cJSON *sync_document(void){
     // an ordinary Bluetooth connection cycle; no credentials included.
     jh2_runtime_boot_diagnostics(status);
     cJSON_AddBoolToObject(status,"autoUpdate",jh2_bridge_auto_update_enabled());
+    // Always forward OTA state through existing Nano->Oracle sync, so OTA
+    // failures can be diagnosed remotely without opening the local web UI.
+    cJSON *firmware_status=cJSON_AddObjectToObject(status,"signedOta");
+    jh2_ota_status(firmware_status);
     #if CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE
     cJSON_AddBoolToObject(status,"nativeReadOnlyAcceptance",true);
 #else
