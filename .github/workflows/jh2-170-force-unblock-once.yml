@@ -1,0 +1,27 @@
+name: JH2 1.1.70 Force Cancel Obsolete Installer
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-170-force-unblock-once.yml]
+permissions: {actions: write, contents: read}
+jobs:
+  unblock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Force cancel only obsolete installer 40153818378 to free Oracle runner
+        env: {GH_TOKEN: '${{ github.token }}', REPO: '${{ github.repository }}'}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          root='https://api.github.com/repos/'+os.environ['REPO']+'/actions/runs/40153818378'
+          h={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
+          with urllib.request.urlopen(urllib.request.Request(root,headers=h),timeout=20) as r:d=json.load(r)
+          assert d['name']=='JH2 1.1.70 Guarded Install and Public Release'
+          if d['status']!='completed':
+              q=urllib.request.Request(root+'/force-cancel',headers=h,method='POST')
+              with urllib.request.urlopen(q,timeout=20) as r:
+                  assert r.status==202
+              print('FORCE_CANCEL_OBSOLETE_INSTALL_ACCEPTED',flush=True)
+          else:print('OBSOLETE_INSTALL_ALREADY_STOPPED',d['conclusion'],flush=True)
+          PY
