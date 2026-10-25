@@ -58,16 +58,6 @@ static const char *TAG="JH2_IDF_BLE";
  */
 static int64_t failsafe_boot_us=0;
 static bool failsafe_confirmed=false;
-static void failsafe_factory(void){
-    const esp_partition_t *factory=esp_partition_find_first(
-        ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_FACTORY,"rescue");
-    if(factory&&factory->address==0x10000&&factory->size==0x100000&&
-       esp_ota_set_boot_partition(factory)==ESP_OK){
-        ESP_LOGE(TAG,"Entering independent factory rescue Wi-Fi uploader");
-        vTaskDelay(pdMS_TO_TICKS(150));esp_restart();
-    }
-    ESP_LOGE(TAG,"Cannot select rescue; USB ROM downloader remains available");
-}
 static void failsafe_boot_failed(void){
     const esp_partition_t *running=esp_ota_get_running_partition();
     esp_ota_img_states_t state;
@@ -93,15 +83,13 @@ static void failsafe_boot_begin(void){
         (void)nvs_get_u8(n,"crashes",&streak);
         if(crash&&streak<255)streak++;
         if(!crash)streak=0;
+        if(streak>=3){
+            // Do not select the factory updater automatically.
+            ESP_LOGE(TAG,"Consecutive crash resets; retaining A/B runtime and local setup");
+            streak=0;
+        }
         (void)nvs_set_u8(n,"crashes",streak);
         (void)nvs_commit(n);nvs_close(n);
-        if(streak>=3){
-            // Previous releases forced emergency recovery on three crashes,
-            // even when the runtime image was intact. Keep A/B boot state.
-            ESP_LOGE(TAG,"Consecutive reset detected, preserving runtime boot slot and setup");
-            (void)nvs_set_u8(n,"crashes",0);
-            (void)nvs_commit(n);
-        }
     }
 }
 static void failsafe_confirm_after_60s(void){
