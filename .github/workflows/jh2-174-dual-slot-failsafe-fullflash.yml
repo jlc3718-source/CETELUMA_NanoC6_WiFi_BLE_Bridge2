@@ -45,7 +45,7 @@ jobs:
           rescue=Path('JasonHome2NanoC6_Rescue/main/rescue.c').read_text()
           runtime=Path('JasonHome2NanoC6_IDF/main/main.c').read_text()
           bridge=Path('JasonHome2NanoC6_IDF/main/bridge.c').read_text()
-          assert 'esp_ota_set_boot_partition(p)' in rescue
+          assert 'write_ota_selection(good,target)' in rescue
           assert 'esp_ota_get_state_partition' in rescue
           assert 'ESP_OTA_IMG_ABORTED' in rescue
           assert 'esp_ota_mark_app_valid_cancel_rollback' in runtime
