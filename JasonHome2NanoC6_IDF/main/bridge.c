@@ -596,7 +596,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             if(mbedtls_base64_decode(bytes,sizeof(bytes),&n,
                 (const unsigned char*)data->valuestring,strlen(data->valuestring))==0){
                 unsigned matches=0;uint16_t slot=0;
-                bool known=jh2_ble_target_section(&matches,&slot);
+                const uint32_t requested_cid=jh2_slot_packet_cid(&native_slot_session,
+                    uuid->valuestring,bytes,n);
+                const bool known=requested_cid?
+                    jh2_ble_catalog_cid(requested_cid,&matches,&slot):
+                    jh2_ble_target_section(&matches,&slot);
                 jh2_slot_session next=native_slot_session;
                 if(jh2_slot_validate(&next,uuid->valuestring,bytes,n,
                     (uint32_t)(esp_timer_get_time()/1000),known,matches,slot,
