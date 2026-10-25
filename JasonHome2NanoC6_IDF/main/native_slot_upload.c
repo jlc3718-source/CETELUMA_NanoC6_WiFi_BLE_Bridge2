@@ -154,6 +154,16 @@ bool jh2_slot_transfer_file(const char *path,uint32_t cid,uint8_t id,
             packet[7]=crc8(packet+8,bytes);
             if(!io->write(io->context,packet,bytes+8)){valid=false;break;}
             io->pace(io->context);
+            // Every tenth 500-byte packet: wait until real controller 2933
+            // progress confirms all but its known 3-packet reporting lag.
+            // Do not confuse local GATT queueing with SmartDawn flash writes.
+            const uint32_t sent=i+1;
+            if(sent%10==0 && sent<parts){
+                *error="SmartDawn did not acknowledge the previous native packet window";
+                if(!io->progress||!io->progress(io->context,parts,sent-3,error)){
+                    valid=false;break;
+                }
+            }
         }
         if(!valid)break;
         *error="SmartDawn final 2934 upload verification failed";
