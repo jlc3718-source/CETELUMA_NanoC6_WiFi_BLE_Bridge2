@@ -1,0 +1,35 @@
+name: JH2 1.1.70 Unblock Oracle Signed Stage
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-170-unblock-stage-once.yml]
+permissions: {actions: write, contents: read}
+jobs:
+  free-oracle-runner:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel obsolete pre-stage installer that blocked the only Oracle runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          root='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+            'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+          id=40153818378
+          q=urllib.request.Request(root+'/actions/runs/'+str(id),headers=headers)
+          with urllib.request.urlopen(q,timeout=20) as r:run=json.load(r)
+          assert run['name']=='JH2 1.1.70 Guarded Install and Public Release'
+          if run['status']=='completed':
+              print('OBSOLETE_PRE_STAGE_INSTALL_ALREADY_COMPLETE',run['conclusion'],flush=True)
+          else:
+              req=urllib.request.Request(root+'/actions/runs/'+str(id)+'/cancel',
+                  headers=headers,method='POST')
+              with urllib.request.urlopen(req,timeout=20) as r:
+                  assert r.status==202
+              print('OBSOLETE_INSTALL_RUN_CANCEL_REQUEST_ACCEPTED',id,flush=True)
+          print('SIGNED_STAGE_RUN_40153675922_CAN_USE_ORACLE_RUNNER',flush=True)
+          PY
