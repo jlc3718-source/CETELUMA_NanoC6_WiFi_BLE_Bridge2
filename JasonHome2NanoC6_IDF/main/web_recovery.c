@@ -165,6 +165,14 @@ static const char *STATUS_HTML =
 "</script></body></html>\n"
 ;
 
+static const char *BLE_HTML=
+"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Nano Bluetooth - Jason Home 2</title><style>body{font:16px system-ui;background:#081321;color:#eff8ff;max-width:700px;margin:0 auto;padding:20px}section{background:#14273b;border:1px solid #375874;padding:18px;margin:12px 0;border-radius:14px}button{padding:11px;background:#16776f;color:#fff;border:1px solid #6ad4c3;border-radius:9px;font:inherit;cursor:pointer;margin:3px}button:disabled{opacity:.4}a{color:#78dfc7}.device{padding:12px 0;border-bottom:1px solid #446579;display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.muted{color:#b3c6d9}code{font-size:.86rem}</style></head><body><h1>Bluetooth · SmartDawn</h1><p>Scan for nearby devices, select a controller, and keep it as your remembered connection. A disconnect will reconnect to the same selection unless you press Disconnect.</p><section><h2>Connection</h2><div id=\"current\" class=\"muted\">Loading Bluetooth status...</div><p><button id=\"reconnect\" onclick=\"act('reconnect-last')\">Reconnect Last Device</button><button id=\"scan\" onclick=\"act('scan')\">Full Scan · 15 seconds</button><button onclick=\"act('disconnect')\">Disconnect / Pause</button></p><div id=\"notice\" role=\"status\"></div></section><section><h2>Nearby Bluetooth devices</h2><div id=\"devices\" class=\"muted\">No scan results yet. Press Full Scan.</div></section><p><a href=\"/settings/nano\">Nano settings</a> · <a href=\"/settings/oracle\">Oracle settings</a> · <a href=\"/status\">Diagnostics</a></p><script>\n"
+"let busy=false;\n"
+"async function api(path,options){const r=await fetch(path,options||{cache:'no-store'}),d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||'Request failed');return d}\n"
+"async function act(name,mac){if(busy)return;busy=true;document.getElementById('notice').textContent=name==='scan'?'Scanning advertisements for 15 seconds...':'Sending '+name+' request...';try{const o={method:'POST'};if(name==='select'){o.headers={'Content-Type':'application/x-www-form-urlencoded'};o.body=new URLSearchParams({mac})}const d=await api('/api/ble/'+name,o);document.getElementById('notice').textContent=d.message||'Request accepted';}catch(e){document.getElementById('notice').textContent=e.message}finally{busy=false;refresh()}}\n"
+"async function refresh(){try{const d=await api('/api/status'),b=d.curtain||{},list=b.nativeDiscoveredDevices||[],selected=b.nativeSelectedControllerMac||'None';document.getElementById('current').textContent=(b.connected?'Connected':'Disconnected')+' · '+(b.nativeBleStackReady?'Bluetooth ready':'Bluetooth starting / waiting for home Wi-Fi')+' · Last selected: '+selected+(b.nativeReconnectPaused?' · Reconnect paused':'')+(b.nativeBleFullScanActive?' · Scanning...':'');document.getElementById('reconnect').disabled=!b.nativeRememberedDevice||!b.nativeBleStackReady;document.getElementById('scan').disabled=!b.nativeBleStackReady;const box=document.getElementById('devices');box.replaceChildren();if(!list.length){box.textContent='No nearby devices recorded. Use Full Scan.';return}for(const item of list){const line=document.createElement('div');line.className='device';const desc=document.createElement('div');const title=document.createElement('strong');title.textContent=item.name||'Unnamed Bluetooth device';const subtitle=document.createElement('div');subtitle.className='muted';subtitle.textContent=(item.mac||'')+' · '+String(item.rssi??'?')+' dBm'+(item.selected?' · Remembered':'');desc.append(title,subtitle);const btn=document.createElement('button');btn.textContent=item.selected?'Reconnect':'Select & Connect';btn.onclick=()=>act('select',item.mac);line.append(desc,btn);box.append(line)}}catch(e){document.getElementById('current').textContent='Nano unavailable: '+e.message}}\n"
+"refresh();setInterval(refresh,2000);\n"
+"</script></body></html>\n";
 static const char *SETUP_HTML=
 "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Jason Home 2 Wi-Fi setup</title><style>body{font:16px system-ui;margin:18px auto;max-width:570px;padding:18px;background:#081321;color:#eef5ff}a{color:#71ded2}input,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:9px}button{background:#69dec6;border:0;font-weight:700}section{border:1px solid #355b74;padding:16px;border-radius:12px;margin:14px 0}</style></head><body><h1>Jason Home 2 - Wi-Fi</h1><p>Setup access point: <b>JH2-Nano-Fresh</b> (no password). Set up your 2.4 GHz home Wi-Fi first. Oracle links later.</p><section><form action=\"/setup\" method=\"POST\"><label>Home Wi-Fi name<input name=\"ssid\" maxlength=\"32\" required></label><label>Home Wi-Fi password<input type=\"password\" name=\"password\" maxlength=\"63\"></label><input type=\"hidden\" name=\"oracleEndpoint\" value=\"\"><input type=\"hidden\" name=\"oracleBridgeId\" value=\"\"><input type=\"hidden\" name=\"oracleBridgeToken\" value=\"\"><button type=\"submit\">Save Wi-Fi &amp; restart</button></form></section><p><a href=\"/settings/oracle\">Settings / Oracle automatic connection</a> &nbsp; <a href=\"/api/status\">Diagnostics</a> &nbsp; <a href=\"/firmware\">Firmware recovery</a></p><small>Setup AP and local page do not require Oracle, Bluetooth or filesystem initialization.</small></body></html>\n";
 static const char *ORACLE_HTML=
@@ -322,6 +330,8 @@ static esp_err_t status_get(httpd_req_t *r){
     cJSON_AddStringToObject(o,"version","2.0.4-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
+    // The endpoint is a public web URL; the private API/bridge tokens never leave the Nano.
+    cJSON_AddStringToObject(o,"oracleWebUrl",saved_oracle_endpoint);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
     cJSON_AddBoolToObject(o,"storageReady",fs_ready);
     cJSON_AddBoolToObject(o,"setupAP",ap_enabled);
@@ -367,11 +377,13 @@ static esp_err_t ble_control_post(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();if(!o)return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Memory");
     bool ok=false;const char *message="Unknown command";
-    if(strcmp(r->uri,"/api/ble/connect")==0){
-        ok=jh2_ble_scan_start();
-        message=ok?"BLE connection requested; scanning for previously selected SmartDawn controller":"BLE reconnect unavailable";
+    if(strcmp(r->uri,"/api/ble/connect")==0 ||
+       strcmp(r->uri,"/api/ble/reconnect-last")==0){
+        ok=jh2_ble_reconnect_last();
+        message=ok?"Reconnecting last saved Bluetooth device":"No saved device, or Bluetooth not ready; run Full Scan";
     }else if(strcmp(r->uri,"/api/ble/scan")==0){
-        ok=jh2_ble_scan_start();message=ok?"BLE scan requested; refresh device list":"Scan unavailable";
+        ok=jh2_ble_full_scan();
+        message=ok?"Full 15-second Bluetooth scan started; choose a device":"BLE unavailable; connect home Wi-Fi first";
     }else if(strcmp(r->uri,"/api/ble/disconnect")==0){
         ok=jh2_ble_disconnect();message=ok?"BLE disconnected; scanning paused":"Disconnect request failed";
     }else if(strcmp(r->uri,"/api/bridge/resume")==0){
@@ -540,7 +552,8 @@ static esp_err_t html_get(httpd_req_t *r){
     const bool status_page=strcmp(r->uri,"/status")==0;
     const bool nano_settings=strcmp(r->uri,"/settings/nano")==0;
     const bool oracle_settings=strcmp(r->uri,"/settings/oracle")==0;
-    const char *page=oracle_settings?ORACLE_HTML:nano_settings?HOME_HTML:status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
+    const bool bluetooth_settings=strcmp(r->uri,"/settings/bluetooth")==0;
+    const char *page=bluetooth_settings?BLE_HTML:oracle_settings?ORACLE_HTML:nano_settings?HOME_HTML:status_page?STATUS_HTML:firmware?FIRMWARE_HTML:
         (explicit_setup||(!programmed)?SETUP_HTML:HOME_HTML);
     httpd_resp_set_type(r,"text/html; charset=utf-8");
     httpd_resp_set_hdr(r,"Cache-Control","no-store");
@@ -1105,7 +1118,7 @@ bool jh2_web_start(void){
     if(!preview_lock){ESP_LOGE(TAG,"Preview mutex allocation failed");return false;}
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG();
     cfg.server_port=80;
-    cfg.max_uri_handlers=32;
+    cfg.max_uri_handlers=36;
     cfg.stack_size=7168;
     cfg.lru_purge_enable=true;
     if(httpd_start(&web_server,&cfg)!=ESP_OK)return false;
@@ -1114,6 +1127,7 @@ bool jh2_web_start(void){
         {.uri="/setup",.method=HTTP_GET,.handler=html_get},
         {.uri="/settings/nano",.method=HTTP_GET,.handler=html_get},
         {.uri="/settings/oracle",.method=HTTP_GET,.handler=html_get},
+        {.uri="/settings/bluetooth",.method=HTTP_GET,.handler=html_get},
         {.uri="/settings/oracle",.method=HTTP_POST,.handler=setup_post},
         {.uri="/api/oracle/link-status",.method=HTTP_GET,.handler=oracle_link_status_get},
         {.uri="/api/oracle/autolink",.method=HTTP_POST,.handler=oracle_autolink_post},
@@ -1132,6 +1146,7 @@ bool jh2_web_start(void){
         {.uri="/api/curtain/status",.method=HTTP_GET,.handler=status_get},
         {.uri="/api/health",.method=HTTP_GET,.handler=health_get},
         {.uri="/api/ble/connect",.method=HTTP_POST,.handler=ble_control_post},
+        {.uri="/api/ble/reconnect-last",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/scan",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/select",.method=HTTP_POST,.handler=ble_control_post},
         {.uri="/api/ble/disconnect",.method=HTTP_POST,.handler=ble_control_post},
