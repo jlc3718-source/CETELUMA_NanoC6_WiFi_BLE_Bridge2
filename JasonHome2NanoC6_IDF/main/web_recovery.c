@@ -248,7 +248,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.3-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.4-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     return send_json(r,o);
 }
@@ -317,7 +317,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.3-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.4-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
@@ -508,18 +508,8 @@ static esp_err_t local_probe_post(httpd_req_t *r){
     return send_json(r,out);
 }
 
-// Distinguish Nano STA traffic from the dedicated setup/recovery AP when
-// both interfaces remain enabled after Wi-Fi recovers. Never redirect AP
-// visitors, even when the STA happens to be connected.
-static bool request_on_sta(httpd_req_t *r){
-    if(!ap_enabled)return true;
-    struct sockaddr_storage local={0};
-    socklen_t length=sizeof(local);
-    if(getsockname(httpd_req_to_sockfd(r),(struct sockaddr *)&local,&length)!=0
-       ||local.ss_family!=AF_INET)return false;
-    const uint32_t ip=ntohl(((const struct sockaddr_in *)&local)->sin_addr.s_addr);
-    return ip!=0xc0a80401UL; // ESP32 default setup AP 192.168.4.1
-}
+// All local Nano pages (including /) stay local on BOTH Wi-Fi interfaces.
+// Oracle is separately configured under Settings > Oracle; no auto-redirect.
 static esp_err_t html_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     const bool firmware=strstr(r->uri,"firmware")||strstr(r->uri,"recovery");
@@ -537,23 +527,8 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
-    // / remains a local, no-credential entry point into the HTTPS Oracle UI.
-    // Never redirect while the setup AP is serving recovery or Wi-Fi is offline.
-    // /settings/nano, /status, /setup?edit=1, and /firmware remain local.
-    if(strcmp(r->uri,"/")==0 && programmed && creds_ready &&
-       saved_oracle_endpoint[0] && request_on_sta(r) &&
-       net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY)){
-        char target[184];
-        size_t len=strlen(saved_oracle_endpoint);
-        int n=snprintf(target,sizeof(target),"%s%s",saved_oracle_endpoint,
-                       saved_oracle_endpoint[len-1]=='/'?"":"/");
-        if(n>0 && n<(int)sizeof(target)){
-            httpd_resp_set_status(r,"302 Found");
-            httpd_resp_set_hdr(r,"Location",target);
-            httpd_resp_set_hdr(r,"Cache-Control","no-store");
-            return httpd_resp_send(r,NULL,0);
-        }
-    }
+    // Always serve the local dashboard when the browser visits the Nano IP.
+    // Do not redirect the LAN interface to Oracle, even if pairing is saved.
     const bool status_page=strcmp(r->uri,"/status")==0;
     const bool nano_settings=strcmp(r->uri,"/settings/nano")==0;
     const bool oracle_settings=strcmp(r->uri,"/settings/oracle")==0;
@@ -996,6 +971,12 @@ static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data
                 mdns_started=true;
             }
         }
+        if(sta_netif){
+            esp_netif_ip_info_t info={0};
+            if(esp_netif_get_ip_info(sta_netif,&info)==ESP_OK)
+                ESP_LOGW(TAG,"HOME_LAN_WEB=http://" IPSTR "/ (use /api/health or /settings/oracle)",
+                         IP2STR(&info.ip));
+        }
         ESP_LOGW(TAG,"Home Wi-Fi connected; open setup AP is still available");
     }
 }
@@ -1061,7 +1042,7 @@ static bool start_net(void){
     if(esp_wifi_start()!=ESP_OK)return false;
     esp_err_t power=esp_wifi_set_ps(WIFI_PS_NONE);
     if(power!=ESP_OK)ESP_LOGW(TAG,"Wi-Fi power-save configuration: %s",esp_err_to_name(power));
-    ESP_LOGW(TAG,"2.0.3 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
+    ESP_LOGW(TAG,"2.0.4 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
              saved_ssid[0]?"APSTA":"AP-ONLY",saved_ssid[0]?"yes":"no");
     if(xTaskCreate(wifi_retry_task,"jh2-wifi-retry",3072,NULL,2,NULL)!=pdPASS)
         ESP_LOGE(TAG,"Wi-Fi reconnect task unavailable; manual setup AP remains active");
