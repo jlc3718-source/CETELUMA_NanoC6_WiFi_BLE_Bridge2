@@ -150,12 +150,17 @@ static const char *OTA_TAG="JH2_SIGNED_AB";
 typedef enum { OTA_EMPTY, OTA_DOWNLOADING, OTA_READY, OTA_FAILED, OTA_INSTALLING } ota_state_t;
 typedef struct {
     char url[280];
+    char oracle_url[384];
+    char oracle_token[65];
     char sha[65];
     char version[32];
     size_t bytes;
 } ota_candidate;
 static volatile ota_state_t ota_state=OTA_EMPTY;
 static volatile size_t ota_downloaded=0;
+static volatile int ota_last_http_status=0;
+static volatile int ota_last_esp_error=0;
+static char ota_download_source[12]="";
 static char ota_staged_version[32]="";
 static char ota_error[144]="";
 static const esp_partition_t *ota_staged_partition=NULL;
@@ -181,10 +186,15 @@ static esp_err_t ota_http_event(esp_http_client_event_t *e){
     ota_downloaded=ctx->downloaded;
     return ESP_OK;
 }
+// The manifest's release URL and SHA remain signed and strictly pinned.
+// Oracle is a faster authenticated mirror of EXACTLY those signed image bytes;
+// GitHub remains a fallback. Each attempt erases only the inactive A/B slot.
 static void ota_fetch_task(void *arg){
     ota_candidate *candidate=(ota_candidate *)arg;
     ota_state=OTA_DOWNLOADING;
     ota_downloaded=0;
+    ota_last_http_status=0;
+    ota_last_esp_error=0;
     ota_staged_partition=NULL;
     const esp_partition_t *running=esp_ota_get_running_partition();
     const esp_partition_t *inactive=esp_ota_get_next_update_partition(NULL);
@@ -195,71 +205,105 @@ static void ota_fetch_task(void *arg){
         snprintf(ota_error,sizeof(ota_error),"No safe inactive A/B partition available");
         goto failure;
     }
-    esp_ota_handle_t h=0;
-    esp_err_t rc=esp_ota_begin(inactive,candidate->bytes,&h);
-    if(rc!=ESP_OK){
-        snprintf(ota_error,sizeof(ota_error),"Inactive OTA partition unavailable: %s",esp_err_to_name(rc));
-        goto failure;
-    }
-    ota_download_ctx ctx={.handle=h,.downloaded=0,.expected=candidate->bytes};
-    mbedtls_sha256_init(&ctx.digest);
-    mbedtls_sha256_starts(&ctx.digest,0);
-    esp_http_client_config_t config={
-        .url=candidate->url,
-        .cert_pem=(const char*)tls_roots_pem_start,
-        .event_handler=ota_http_event,
-        .user_data=&ctx,
-        .timeout_ms=30000,
-        .buffer_size=2048,
-        .max_redirection_count=5,
-        .disable_auto_redirect=false,
-    };
-    esp_http_client_handle_t client=esp_http_client_init(&config);
-    if(!client){
-        snprintf(ota_error,sizeof(ota_error),"Cannot allocate HTTPS firmware downloader");
-        esp_ota_abort(h);
+    const bool has_oracle=candidate->oracle_url[0]!=0;
+    const unsigned tries=has_oracle?2U:1U;
+    for(unsigned attempt=0;attempt<tries;attempt++){
+        const bool via_oracle=has_oracle&&attempt==0;
+        const char *source=via_oracle?"oracle":"github";
+        const char *download_url=via_oracle?candidate->oracle_url:candidate->url;
+        snprintf(ota_download_source,sizeof(ota_download_source),"%s",source);
+        ota_downloaded=0;
+        ota_last_http_status=0;
+        ota_last_esp_error=0;
+        esp_ota_handle_t h=0;
+        esp_err_t rc=esp_ota_begin(inactive,candidate->bytes,&h);
+        if(rc!=ESP_OK){
+            ota_last_esp_error=(int)rc;
+            snprintf(ota_error,sizeof(ota_error),"A/B flash unavailable: %s",esp_err_to_name(rc));
+            goto failure; // Never repeat a failed flash initialization.
+        }
+        ota_download_ctx ctx={.handle=h,.downloaded=0,.expected=candidate->bytes};
+        mbedtls_sha256_init(&ctx.digest);
+        mbedtls_sha256_starts(&ctx.digest,0);
+        esp_http_client_config_t config={
+            .url=download_url,
+            .cert_pem=(const char*)tls_roots_pem_start,
+            .event_handler=ota_http_event,
+            .user_data=&ctx,
+            .timeout_ms=45000,
+            .buffer_size=4096,
+            .max_redirection_count=5,
+            .disable_auto_redirect=false,
+        };
+        esp_http_client_handle_t client=esp_http_client_init(&config);
+        if(!client){
+            snprintf(ota_error,sizeof(ota_error),"%s downloader allocation failed",source);
+            mbedtls_sha256_free(&ctx.digest);
+            esp_ota_abort(h);
+            goto failure;
+        }
+        if(via_oracle && candidate->oracle_token[0]){
+            char bearer[75];
+            snprintf(bearer,sizeof(bearer),"Bearer %s",candidate->oracle_token);
+            esp_http_client_set_header(client,"Authorization",bearer);
+            esp_http_client_set_header(client,"X-JH2-Bridge-Token",candidate->oracle_token);
+            memset(bearer,0,sizeof(bearer));
+        }
+        ESP_LOGW(OTA_TAG,"SIGNED_DOWNLOAD_START source=%s size=%u",source,(unsigned)candidate->bytes);
+        rc=esp_http_client_perform(client);
+        const int status=esp_http_client_get_status_code(client);
+        ota_last_http_status=status;
+        ota_last_esp_error=(int)rc;
+        esp_http_client_cleanup(client);
+        unsigned char sha[32]={0};
+        char computed[65]={0};
+        if(mbedtls_sha256_finish(&ctx.digest,sha)!=0)ctx.failed=true;
         mbedtls_sha256_free(&ctx.digest);
-        goto failure;
-    }
-    rc=esp_http_client_perform(client);
-    const int status=esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
-    unsigned char sha[32]={0};
-    char computed[65]={0};
-    if(mbedtls_sha256_finish(&ctx.digest,sha)!=0)ctx.failed=true;
-    mbedtls_sha256_free(&ctx.digest);
-    for(unsigned i=0;i<sizeof(sha);i++)snprintf(computed+i*2,3,"%02x",sha[i]);
-    bool verified=rc==ESP_OK&&!ctx.failed&&status==200&&
-         ctx.downloaded==candidate->bytes&&
-         strcasecmp(computed,candidate->sha)==0;
-    if(!verified){
-        ESP_LOGE(OTA_TAG,"SIGNED_DOWNLOAD_FAILED rc=%s status=%d received=%u expected=%u",
-                 esp_err_to_name(rc),status,(unsigned)ctx.downloaded,(unsigned)candidate->bytes);
-        snprintf(ota_error,sizeof(ota_error),"Download failed, incomplete, or SHA-256 mismatch");
+        for(unsigned i=0;i<sizeof(sha);i++)snprintf(computed+i*2,3,"%02x",sha[i]);
+        const bool verified=rc==ESP_OK&&!ctx.failed&&status==200&&
+             ctx.downloaded==candidate->bytes&&
+             strcasecmp(computed,candidate->sha)==0;
+        if(verified){
+            rc=esp_ota_end(h);
+            if(rc==ESP_OK){
+                snprintf(ota_staged_version,sizeof(ota_staged_version),"%s",candidate->version);
+                ota_staged_partition=inactive;
+                ota_error[0]=0;
+                ota_state=OTA_READY;
+                ESP_LOGW(OTA_TAG,"SIGNED_OTA_STAGED source=%s version=%s bytes=%u inactive=%s",
+                         source,candidate->version,(unsigned)ctx.downloaded,inactive->label);
+                free(candidate);
+                vTaskDelete(NULL);
+                return;
+            }
+            ota_last_esp_error=(int)rc;
+            snprintf(ota_error,sizeof(ota_error),"%s image validation failed: %s",
+                     source,esp_err_to_name(rc));
+            // esp_ota_end already consumed h; don't abort an invalid handle.
+            break;
+        }
+        const bool hash_bad=rc==ESP_OK&&status==200&&
+                            ctx.downloaded==candidate->bytes&&!ctx.failed;
+        ESP_LOGE(OTA_TAG,"SIGNED_DOWNLOAD_FAILED source=%s rc=%s http=%d bytes=%u expected=%u shaMismatch=%d",
+                 source,esp_err_to_name(rc),status,(unsigned)ctx.downloaded,
+                 (unsigned)candidate->bytes,hash_bad?1:0);
+        snprintf(ota_error,sizeof(ota_error),
+                 "%s: %s; HTTP %d; %u/%u bytes%s",
+                 source,esp_err_to_name(rc),status,(unsigned)ctx.downloaded,
+                 (unsigned)candidate->bytes,hash_bad?"; SHA-256 mismatch":"");
         esp_ota_abort(h);
-        goto failure;
+        // The source is not trusted merely because it is Oracle: the full
+        // signed image SHA and ESP boot image are rechecked on every attempt.
     }
-    rc=esp_ota_end(h);  // Validates ESP image before marking as staged.
-    if(rc!=ESP_OK){
-        snprintf(ota_error,sizeof(ota_error),"ESP firmware image validation failed: %s",esp_err_to_name(rc));
-        goto failure;
-    }
-    snprintf(ota_staged_version,sizeof(ota_staged_version),"%s",candidate->version);
-    ota_staged_partition=inactive;
-    ota_state=OTA_READY;
-    ESP_LOGW(OTA_TAG,"SIGNED_OTA_STAGED version=%s bytes=%u inactive=%s; awaiting installation",
-             candidate->version,(unsigned)ctx.downloaded,inactive->label);
-    free(candidate);
-    vTaskDelete(NULL);
-    return;
 failure:
     ota_staged_partition=NULL;
     ota_state=OTA_FAILED;
     free(candidate);
     vTaskDelete(NULL);
 }
-bool jh2_ota_stage_signed(const cJSON *manifest,const char *current_version,
-                          char *error,size_t error_capacity){
+bool jh2_ota_stage_signed_via_oracle(const cJSON *manifest,const char *current_version,
+                                     const char *oracle_endpoint,const char *oracle_token,
+                                     char *error,size_t error_capacity){
     signed_fields fields;
     if(!verify_signed(manifest,&fields,error,error_capacity))return false;
     if(!newer(fields.version,current_version)){
@@ -274,6 +318,16 @@ bool jh2_ota_stage_signed(const cJSON *manifest,const char *current_version,
     ota_candidate *candidate=calloc(1,sizeof(*candidate));
     if(!candidate){msg(error,error_capacity,"Firmware downloader memory unavailable");return false;}
     snprintf(candidate->url,sizeof(candidate->url),"%s",fields.url);
+    // Never follow an unsigned firmware URL: mirror path is fixed locally.
+    // On Oracle fetch failure, retry the exact signed GitHub release URL.
+    if(oracle_endpoint && strncmp(oracle_endpoint,"https://",8)==0 &&
+       oracle_token && strlen(oracle_token)==64){
+        const int n=snprintf(candidate->oracle_url,sizeof(candidate->oracle_url),
+             "%s/api/curtain/firmware-runtime/%s.bin",oracle_endpoint,fields.version);
+        if(n>0 && (size_t)n<sizeof(candidate->oracle_url))
+            snprintf(candidate->oracle_token,sizeof(candidate->oracle_token),"%s",oracle_token);
+        else candidate->oracle_url[0]=0;
+    }
     snprintf(candidate->sha,sizeof(candidate->sha),"%s",fields.sha);
     snprintf(candidate->version,sizeof(candidate->version),"%s",fields.version);
     candidate->bytes=fields.bytes;
@@ -286,6 +340,10 @@ bool jh2_ota_stage_signed(const cJSON *manifest,const char *current_version,
     }
     return true;
 }
+bool jh2_ota_stage_signed(const cJSON *manifest,const char *current_version,
+                          char *error,size_t error_capacity){
+    return jh2_ota_stage_signed_via_oracle(manifest,current_version,NULL,NULL,error,error_capacity);
+}
 bool jh2_ota_staged_ready(void){return ota_state==OTA_READY && ota_staged_partition;}
 bool jh2_ota_download_active(void){return ota_state==OTA_DOWNLOADING;}
 void jh2_ota_status(cJSON *object){
@@ -296,6 +354,9 @@ void jh2_ota_status(cJSON *object){
                       ota_state==OTA_INSTALLING?"installing":"idle";
     cJSON_AddStringToObject(object,"state",state);
     cJSON_AddNumberToObject(object,"downloadedBytes",ota_downloaded);
+    cJSON_AddStringToObject(object,"downloadSource",ota_download_source);
+    cJSON_AddNumberToObject(object,"lastHttpStatus",ota_last_http_status);
+    cJSON_AddNumberToObject(object,"lastEspError",ota_last_esp_error);
     cJSON_AddStringToObject(object,"version",ota_staged_version);
     cJSON_AddStringToObject(object,"message",ota_error);
     cJSON_AddBoolToObject(object,"installReady",jh2_ota_staged_ready());
