@@ -1,0 +1,49 @@
+name: JH2 SmartDawn AutoTest Stage 0 Safe Inventory
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-smartdawn-autotest-stage0-20261025.yml]
+permissions: {contents: read}
+jobs:
+  inventory:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Verify idle Nano, signed software version, historic 4K good control and rejected type0 assets
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,sqlite3,subprocess,hashlib,base64,urllib.request
+          from pathlib import Path
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          root=Path(next(m['Source'] for m in web['Mounts'] if m['Destination']=='/data' and m['Type']=='bind'))
+          db=sqlite3.connect('file:'+str(root/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          entries=db.execute('SELECT sha,bytes,metadata FROM curtain_assets').fetchall()
+          candidates=[]
+          for sha,raw,meta in entries:
+              try:
+                  b=bytes(raw);d=json.loads(meta or '{}')
+              except Exception:continue
+              if len(b)==4096 and b[:4]==b'DN\x01\xfe' and hashlib.sha256(b).hexdigest()==sha:
+                  candidates.append({'sha':sha,'cid':int.from_bytes(b[4:8],'little'),'title':b[:80].decode('latin1','replace')[-60:]})
+          print('KNOWN_GOOD_4K_ASSETS',json.dumps(candidates[:12]),flush=True)
+          for id in (16004,16098):
+              r=db.execute('SELECT id,action,state,result FROM curtain_commands WHERE id=?',(id,)).fetchone()
+              print('KNOWN_FAILED_NATIVE_COMMIT',repr(r)[:650],flush=True)
+          rows=db.execute('SELECT id,action,state FROM curtain_commands WHERE state IN (\'queued\',\'downloaded\')').fetchall()
+          print('PENDING_COMMANDS',rows[:30],flush=True)
+          row=db.execute("SELECT value FROM curtain_meta WHERE key='notifications'").fetchone()
+          print('NOTICE_COUNT',len(json.loads(row[0])) if row else 0,flush=True)
+          nano=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(s.split('=',1) for s in nano['Config']['Env'] if '=' in s)
+          host='http://127.0.0.1:8081'
+          req=urllib.request.Request(host+'/api/session',data=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode(),headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=25) as r:cookie=r.headers['Set-Cookie'].split(';')[0]
+          req=urllib.request.Request(host+'/api/curtain/status',headers={'Cookie':cookie})
+          with urllib.request.urlopen(req,timeout=25) as r:s=json.load(r)
+          print('NANO_STATUS',json.dumps({'firmware':s.get('firmware'),'online':s.get('online'),
+              'BLE':(s.get('curtain') or {}).get('connected'),'queued':s.get('queued'),
+              'streaming':s.get('relayStreaming')}),flush=True)
+          assert s.get('firmware')=='1.1.71' and s.get('online') and s.get('queued')==0
+          print('STAGE_0_READ_ONLY_PRECHECK_PASSED_NO_CONTROLLER_WRITES',flush=True)
+          PY
