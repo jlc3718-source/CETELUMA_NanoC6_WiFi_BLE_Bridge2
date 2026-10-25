@@ -1,0 +1,123 @@
+name: Jason Home 2 ORIGINAL 1.1.71 Dual Slot Full Flash
+on:
+  push:
+    branches: [recovery/jh2-171-original-dualslot-20261025]
+    paths: [.github/workflows/jh2-171-original-dualslot-fullflash.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    name: Preserve exact 1.1.71 runtime in OTA0 and OTA1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain published SHA-256-pinned original 1.1.71 and tested dual-slot base
+        shell: bash
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: |
+          set -euo pipefail
+          mkdir -p incoming dist
+          gh release download jason-home-2-nanoc6-v1.1.71 --repo "$GITHUB_REPOSITORY" \
+             --pattern 'jh2-runtime-1.1.71.bin' --dir incoming --clobber
+          gh run download 40205356452 --repo "$GITHUB_REPOSITORY" \
+             --name 'JH2-1.1.78-UNPROVISIONED-CI-ONLY' --dir incoming
+          echo '03706430c4805593b3f1f8999c192dd8ccc6d24ad22942a5ca5c1cd658cd42ad  incoming/jh2-runtime-1.1.71.bin' | sha256sum -c -
+          echo '4fde7481c8acc480e1d2ef48fb396153cc743bf4464312b269f318e9530acc53  incoming/JH2-NanoC6-1.1.78-UNPROVISIONED-BASE-0x0.bin' | sha256sum -c -
+      - name: Create standard formatted EMPTY LittleFS storage for original 1.1.71 setup UI
+        shell: bash
+        run: |
+          python3 -m pip install --disable-pip-version-check littlefs-python==0.19.0
+      - name: Assemble full 4MB dual-slot with immutable 1.1.71 app in BOTH partitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,struct,binascii,json,os
+          from littlefs import LittleFS
+          incoming=Path('incoming')
+          base=(incoming/'JH2-NanoC6-1.1.78-UNPROVISIONED-BASE-0x0.bin').read_bytes()
+          original=(incoming/'jh2-runtime-1.1.71.bin').read_bytes()
+          assert len(base)==0x400000
+          assert len(original)==1380896,('Incorrect original firmware size',len(original))
+          assert hashlib.sha256(original).hexdigest()=='03706430c4805593b3f1f8999c192dd8ccc6d24ad22942a5ca5c1cd658cd42ad'
+          assert original[0]==0xe9 and original[12:14]==b'\x0d\x00','1.1.71 is not an ESP32-C6 app image'
+          expected=[('nvs',1,2,0x9000,0x5000),('otadata',1,0,0xe000,0x2000),
+           ('rescue',0,0,0x10000,0x100000),('runtime',0,16,0x110000,0x160000),
+           ('runtime_b',0,17,0x270000,0x160000),('storage',1,130,0x3d0000,0x2f000),
+           ('provision',1,64,0x3ff000,0x1000)]
+          parts=[]
+          for off in range(0x8000,0x9000,32):
+              if base[off:off+2]!=b'\xaaP':break
+              _,typ,sub,p,size,label,flags=struct.unpack_from('<HBBII16sI',base,off)
+              parts.append((label.rstrip(b'\x00').decode(),typ,sub,p,size))
+          assert parts==expected,('Unexpected partition layout',parts)
+          assert len(original)<=0x160000,'Original app cannot fit dual slots'
+          assert base[0]==0xe9 and base[0x10000]==0xe9
+          assert base[0x9000:0xe000]==b'\xff'*0x5000
+          assert base[0x3ff000:]==b'\xff'*0x1000
+          image=bytearray(base)
+          for start in (0x110000,0x270000):
+              image[start:start+0x160000]=b'\xff'*0x160000
+              image[start:start+len(original)]=original
+              assert image[start:start+len(original)]==original
+          # Both slots are already valid. Prefer OTA_0 at sequence 3, and
+          # keep OTA_1 valid sequence 2; no NEW/PENDING_VERIFY first-boot trap.
+          image[0xe000:0x10000]=b'\xff'*0x2000
+          for index,seq_int in enumerate((3,2)):
+              off=0xe000+index*0x1000
+              seq=struct.pack('<I',seq_int)
+              image[off:off+4]=seq
+              struct.pack_into('<I',image,off+24,2)  # ESP_OTA_IMG_VALID
+              struct.pack_into('<I',image,off+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
+              assert struct.unpack_from('<I',image,off+24)[0]==2
+          # Critical: the REAL 1.1.71 app uses LittleFS.begin(false,"/littlefs",10,"storage").
+          # An erased storage partition makes its setup form fail to save.
+          # Preformat to the exact 47-block storage partition, without credentials.
+          fs=LittleFS(block_size=4096,block_count=47,read_size=256,prog_size=256,
+                      cache_size=512,lookahead_size=128)
+          with fs.open('/README.txt','wb') as f:
+              f.write(b'Jason Home 2 1.1.71 standard manual setup; no saved credentials.\n')
+          image_bytes=bytes(fs.context.buffer)
+          assert len(image_bytes)==0x2f000
+          fresh=LittleFS(block_size=4096,block_count=47,read_size=256,prog_size=256,
+                         cache_size=512,lookahead_size=128,mount=False)
+          fresh.context.buffer=bytearray(image_bytes)
+          fresh.mount()
+          with fresh.open('/README.txt','rb') as f:
+              assert b'1.1.71' in f.read()
+          image[0x3d0000:0x3ff000]=image_bytes
+          assert image[0x3ff000:]==b'\xff'*0x1000
+          assert image[0x9000:0xe000]==b'\xff'*0x5000
+          assert image[0x10000:0x110000]==base[0x10000:0x110000]
+          assert image[0x110000:0x110000+len(original)]==image[0x270000:0x270000+len(original)]
+          assert len(image)==4194304
+          output=Path('dist/JH2-NanoC6-ORIGINAL-1.1.71-DUAL-SLOT-FULL-0x0.bin')
+          output.write_bytes(image)
+          shutil_name=Path('dist/jh2-runtime-1.1.71-ORIGINAL.bin')
+          shutil_name.write_bytes(original)
+          manifest={'name':output.name,'flash_address':'0x0','bytes':len(image),
+             'sha256':hashlib.sha256(image).hexdigest(),'original_runtime_sha256':hashlib.sha256(original).hexdigest(),
+             'version':'1.1.71','original_runtime_unmodified':True,
+             'dual_slots':['0x110000','0x270000'],'preferred_slot':'OTA_0',
+             'both_ota_records_valid':True,'partition_layout':'JH2 1.1.78 dual-slot',
+             'emergency_updater':'JH2 ESP-IDF factory recovery',
+             'wifi_setup':'Original 1.1.71 native setup portal','credentials_in_image':False,
+             'littlefs_initialized_for_original_runtime':True,
+             'oracle_cloud_modified':False,'physical_boot_tested':False}
+          Path('dist/BUILD-VERIFICATION.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          Path('dist/SHA256SUMS.txt').write_text(manifest['sha256']+'  '+output.name+'\n')
+          print('DUAL_SLOT_ORIGINAL_1_1_71_VERIFIED:',json.dumps(manifest),flush=True)
+          PY
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+      - name: Upload completed 4 MB full flash with original runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-ORIGINAL-1.1.71-DUAL-SLOT-FULL-4MB
+          path: dist/
+          if-no-files-found: error
+          retention-days: 45
