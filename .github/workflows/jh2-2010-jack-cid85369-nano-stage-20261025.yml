@@ -1,0 +1,63 @@
+name: JH2 2.0.10 stage verified Jack Run CID85369 into Nano (no BLE upload)
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-jack-cid85369-nano-stage-20261025.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-staging-cid85369
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source and stage only cached native file on Nano, without calling nativeSlotCommit
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,os,urllib.request,subprocess,uuid,time
+          output={'action':'nativeSlotStage','cid':85369,'expectedSha256':'ff37c8b4e92006bae90aabddda57ee94912f899d4c9da074b61c77a44e848588',
+                  'bleUploadWrites':0,'controllerErases':0,'firmwareFlashes':0}
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          base='http://127.0.0.1:8081'
+          def request(path,body=None,cookie=None):
+              req=urllib.request.Request(base+path,data=json.dumps(body).encode() if body is not None else None,
+                headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},
+                method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=24) as r:return json.load(r),r.headers
+          _,r=request('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=r['Set-Cookie'].split(';')[0]
+          def get(p):return request(p,cookie=cookie)[0]
+          def post(p,v):return request(p,v,cookie=cookie)[0]
+          before=get('/api/curtain/status')
+          nano=before.get('curtain') or {}
+          output['before']={'firmware':before.get('firmware'),'online':before.get('online'),
+             'connected':nano.get('connected'),'mtu':nano.get('mtu'),'queued':before.get('queued'),
+             'streaming':before.get('relayStreaming'),'availableBytes':nano.get('nanoLocalCacheAvailableBytes')}
+          if before.get('firmware')!='2.0.10' or before.get('online')!=True or nano.get('connected')!=True or \
+            int(before.get('queued') or 0)!=0 or before.get('relayStreaming')==True or \
+            int(nano.get('nanoLocalCacheAvailableBytes') or 0)<49152:
+              output['result']='NO STAGE: preflight state changed'
+          else:
+              cmd=post('/api/curtain/call',{'action':'nativeSlotStage','payload':{
+                'sha256':output['expectedSha256'],'cid':85369},'idempotencyKey':str(uuid.uuid4())})
+              output['commandId']=cmd.get('commandId')
+              if not output['commandId']:raise RuntimeError('Oracle did not accept stage command')
+              final={}
+              for i in range(280):
+                  time.sleep(.5)
+                  final=get('/api/curtain/command?id='+str(output['commandId'])).get('command') or {}
+                  if final.get('state') in ('applied','failed','expired','superseded'):break
+              output['command']={'state':final.get('state'),'message':str((final.get('result') or {}).get('message',''))[:250]}
+              after=get('/api/curtain/status')
+              c=after.get('curtain') or {}
+              output['after']={'firmware':after.get('firmware'),'online':after.get('online'),
+                'connected':c.get('connected'),'queued':after.get('queued'),
+                'cacheBytes':c.get('nanoLocalCacheBytes'),'cacheSha256':c.get('nanoLocalCacheSha256'),
+                'availableBytes':c.get('nanoLocalCacheAvailableBytes')}
+              output['result']='STAGE_ACKED; LOCAL HASH EVIDENCE CHECKED' if final.get('state')=='applied' else 'STAGING_FAILED'
+          print('JH2_CID85369_STAGE',json.dumps(output),flush=True)
+          PY
