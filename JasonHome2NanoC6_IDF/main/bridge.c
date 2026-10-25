@@ -51,6 +51,8 @@ static const char *TAG="JH2_IDF_ORACLE";
 static volatile bool firmware_auto_update=false;
 bool jh2_bridge_auto_update_enabled(void){return firmware_auto_update;}
 bool jh2_bridge_set_auto_update_enabled(bool enabled){
+    // Owner freeze. Do not allow 2.0.x to enable autonomous firmware OTA.
+    if(enabled){ESP_LOGW(TAG,"2.0.1 firmware freeze: automatic OTA remains disabled");return false;}
     nvs_handle_t n;
     if(nvs_open("jh2-fwcfg",NVS_READWRITE,&n)!=ESP_OK)return false;
     esp_err_t error=nvs_set_u8(n,"auto",enabled?1:0);
@@ -87,7 +89,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.0"
+#define NATIVE_FW_VERSION "2.0.1"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
