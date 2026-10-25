@@ -51,7 +51,7 @@ jobs:
           assert "if(enabled){ESP_LOGW(TAG" in bridge, "2.0.1 must not enable auto OTA"
           assert 'if(!fs_ready)return;' not in web.split('static void read_saved(void){',1)[1].split('static bool save_config',1)[0], "NVS fallback lost when LittleFS unavailable"
           assert '2.0.1-native-upload-flow' in web
-          assert 'strcpy((char*)cfg.ap.ssid,"JH2-Nano-Fresh")' in web
+          assert 'strlcpy((char *)cfg.ap.ssid,"JH2-Nano-Fresh",sizeof(cfg.ap.ssid))' in web
           assert 'cfg.ap.authmode=WIFI_AUTH_OPEN' in web
           assert 'if(!jh2_web_has_oracle_credentials())' in runtime
           assert 'NATIVE_FW_VERSION "2.0.1"' in bridge
@@ -62,8 +62,8 @@ jobs:
           assert "Remote OTA locked off for 2.0.1 A/B recovery" in Path("JasonHome2NanoC6_IDF/main/signed_ota.c").read_text()
           print("JH2_201_A_B_WIFI_MANUAL_ORACLE_BOOTSTRAP_SOURCE_VERIFIED")
           PY
-          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/guard200
-          /tmp/guard200
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/guard201
+          /tmp/guard201
       - name: Enable native Oracle, BLE, manual browser recovery
         shell: bash
         run: |
