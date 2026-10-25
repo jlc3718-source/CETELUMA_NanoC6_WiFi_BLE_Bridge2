@@ -347,6 +347,9 @@ static esp_err_t status_get(httpd_req_t *r){
     cJSON_AddStringToObject(o,"homeIp",assigned_ip);
     cJSON_AddNumberToObject(o,"homeWifiRetryAttempts",wifi_retry_attempts);
     cJSON_AddNumberToObject(o,"lastWifiDisconnectReason",wifi_disconnect_reason);
+    const double disconnected_seconds=ip_ready||wifi_down_since<=0?0:
+        (double)(esp_timer_get_time()-wifi_down_since)/1000000.0;
+    cJSON_AddNumberToObject(o,"homeWifiDisconnectedSeconds",disconnected_seconds);
     cJSON_AddBoolToObject(o,"signedAutoUpdate",jh2_bridge_auto_update_enabled());
     cJSON *curtain=cJSON_AddObjectToObject(o,"curtain");
     jh2_ble_status(curtain);
