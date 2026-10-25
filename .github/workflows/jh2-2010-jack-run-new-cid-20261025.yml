@@ -1,0 +1,43 @@
+name: JH2 2.0.10 register original Jack Run under NEW manufacturer CID (no BLE write)
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-jack-run-new-cid-20261025.yml']
+permissions:
+  contents: read
+concurrency:
+  group: jh2-new-manufacturer-cid-2010-once
+  cancel-in-progress: false
+jobs:
+  register:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use original source PNGs and manufacturer GIF registration to get a NEW CID and stage DNMX only in Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import json,os,subprocess,pathlib
+          container=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(part.split('=',1) for part in container['Config']['Env'] if '=' in part)
+          token=env['JASON_HOME_API_TOKEN']
+          source=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'.github/scripts/jh2-2010-register-real-jack-run.mjs'
+          child=dict(os.environ,JH2_TEST_TOKEN=token)
+          result=subprocess.run(['docker','exec','-i','-e','JH2_TEST_TOKEN',
+             'jason-home-2-web','node','--input-type=module'],input=source.read_text(),
+             text=True,env=child,timeout=280)
+          output=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'jh2-2010-new-cid-jack-run.json'
+          subprocess.run(['docker','cp','jason-home-2-web:/tmp/jh2-2010-new-cid-jack-run.json',str(output)],check=False)
+          if output.exists():output.chmod(0o644)
+          raise SystemExit(result.returncode)
+          PY
+      - name: Preserve new-CID allocation and exact native file digest, no source pixels or credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jh2-new-native-cid-from-jack-run
+          path: jh2-2010-new-cid-jack-run.json
+          retention-days: 7
+          if-no-files-found: warn
