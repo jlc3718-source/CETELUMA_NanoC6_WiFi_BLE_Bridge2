@@ -331,6 +331,9 @@ bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
                                 char *error,size_t error_size){
     if(error&&error_size)error[0]=0;
     if(version&&version_size)version[0]=0;
+    // Once SHA-256 verified and staged, Install requires no further network.
+    if(install&&jh2_ota_staged_ready())
+        return jh2_ota_install_staged(error,error_size);
     // Signed releases are public and do not require the administrator token.
     // Use the authenticated Oracle manifest when linked, otherwise the
     // independent signed GitHub channel. No secrets sent to public GitHub.
