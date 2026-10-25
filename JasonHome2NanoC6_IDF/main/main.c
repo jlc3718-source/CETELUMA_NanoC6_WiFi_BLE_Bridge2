@@ -297,10 +297,14 @@ bool jh2_ble_select_target(const char *mac){
     selected_addr=addr;selected_valid=true;
     hold_disconnect=false;
     ble_scan_only=false;
-    if(connection!=BLE_HS_CONN_HANDLE_NONE)
-        ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM);
-    else{
-        ble_gap_disc_cancel();
+    if(connection!=BLE_HS_CONN_HANDLE_NONE){
+        struct ble_gap_conn_desc current={0};
+        if(ble_gap_conn_find(connection,&current)==0 &&
+           ble_addr_cmp(&current.peer_ota_addr,&selected_addr)==0)
+            return true; // Same selected controller: do not reset working BLE.
+        return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
+    }else{
+        if(ble_gap_disc_active())ble_gap_disc_cancel();
         begin_scan();
     }
     return true;
