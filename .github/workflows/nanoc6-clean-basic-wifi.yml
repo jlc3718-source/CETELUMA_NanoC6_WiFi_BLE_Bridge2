@@ -62,7 +62,7 @@ jobs:
               full[off:off+4]=seq
               struct.pack_into('<I',full,off+24,2) # ESP_OTA_IMG_VALID
               struct.pack_into('<I',full,off+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
-          out=Path('release');out.mkdir(exist_ok=True)
+          out=Path('NanoC6_BasicWifi/release');out.mkdir(parents=True,exist_ok=True)
           name='NanoC6-BASIC-WIFI-DUAL-SLOT-FULL-0x0.bin'
           (out/name).write_bytes(full)
           (out/'NanoC6-BASIC-WIFI-RUNTIME-ONLY.bin').write_bytes(app)
