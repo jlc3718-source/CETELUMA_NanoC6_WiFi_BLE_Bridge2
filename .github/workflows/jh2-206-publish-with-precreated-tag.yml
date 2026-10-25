@@ -49,7 +49,10 @@ jobs:
           if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git config user.name 'github-actions[bot]'
-            git tag -a "$tag" e003fa12b48414920aeb41db1b4fd9694590c4c9 -m 'Verified signed JH2 NanoC6 2.0.6 runtime'
+            # The GitHub App cannot tag a branch commit that introduces workflows.
+            # Tag the already published default branch; the signed asset and
+            # manifest still pin the exact audited firmware source commit.
+            git tag -a "$tag" "$GITHUB_SHA" -m 'Signed firmware source e003fa12b48414920aeb41db1b4fd9694590c4c9 (asset hash verified)'
             git push origin "refs/tags/$tag"
           fi
       - name: Create and verify GitHub Release assets
