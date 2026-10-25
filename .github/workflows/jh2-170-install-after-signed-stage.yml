@@ -1,0 +1,144 @@
+name: JH2 1.1.70 Guarded Install and Public Release
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-170-install-after-signed-stage.yml]
+permissions: {contents: write, actions: read}
+concurrency:
+  group: jh2-production-signed-ota-singleton
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for exact signed package and staging job to succeed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/40153675922'
+          head={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
+          for step in range(450):
+              with urllib.request.urlopen(urllib.request.Request(url,headers=head),timeout=20) as r:d=json.load(r)
+              assert d['head_sha']=='3647871bdc4ce4654921941516338249fbb21fe0','Unexpected signed job source commit'
+              if d['status']=='completed':
+                  assert d['conclusion']=='success','Signing/staging failed. Abort physical OTA: '+str(d['conclusion'])
+                  print('SIGNED_170_STAGE_CONFIRMED',d['html_url'],flush=True)
+                  raise SystemExit(0)
+              if step%15==0:print('WAITING_FOR_SIGNED_170_STAGE',d['status'],flush=True)
+              time.sleep(5)
+          raise RuntimeError('Signed staging never completed; physical OTA forbidden')
+          PY
+      - name: Verify EXACT pinned Oracle manifest, runtime, recovery and Nano idle state; install once
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          sudo -n --preserve-env=GH_TOKEN,GITHUB_REPOSITORY python3 - <<'PY'
+          import base64,hashlib,json,os,subprocess,time,urllib.request,tempfile
+          from pathlib import Path
+          source_commit='3647871bdc4ce4654921941516338249fbb21fe0'
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(m for m in web['Mounts'] if m['Destination']=='/data' and m['Type']=='bind')
+          signed=Path(mount['Source'])/'signed-ota'
+          for old in ('1.1.67','1.1.68','1.1.69'):
+              d=signed/old;assert (d/'latest.json').is_file() and (d/('jh2-runtime-'+old+'.bin')).is_file()
+          d=signed/'1.1.70'
+          manifest=json.loads((d/'latest.json').read_text())
+          fields=dict(x.split('=',1) for x in manifest['payload'].strip().splitlines())
+          firmware=(d/'jh2-runtime-1.1.70.bin').read_bytes()
+          assert fields['product']=='jason-home-2-nanoc6' and fields['version']=='1.1.70'
+          assert fields['commit']==source_commit
+          assert len(firmware)==int(fields['bytes'])
+          assert hashlib.sha256(firmware).hexdigest()==fields['sha256']
+          assert b'1.1.70-native-local-ble' in firmware and b'curtain-native.eff' in firmware
+          with tempfile.TemporaryDirectory() as td:
+              p=Path(td);(p/'payload').write_text(manifest['payload'])
+              (p/'signature').write_bytes(base64.b64decode(manifest['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                  str(Path(os.environ['GITHUB_WORKSPACE'])/'remote-update/anderson_ota_signing_public.pem'),
+                  '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          app=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in app['Config']['Env'] if '=' in x)
+          root='http://127.0.0.1:8081'
+          def api(path,body=None,cookie='',timeout=40):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(root+path,data=json.dumps(body).encode() if body is not None else None,
+                                        headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=timeout) as resp:return json.load(resp),resp.headers
+          online,_=api('/api/curtain/firmware-manifest')
+          assert online==manifest,'Oracle production signed manifest does not match local signed package'
+          with urllib.request.urlopen(root+'/api/curtain/firmware-runtime/1.1.70.bin',timeout=120) as resp:
+              served=resp.read()
+          assert served==firmware,'Oracle firmware bytes do not match verified immutable signed package'
+          print('SIGNED_170_ORACLE_MANIFEST_RUNTIME_RECOVERIES_VERIFIED',len(served),fields['sha256'],flush=True)
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          s,_=api('/api/curtain/status',cookie=cookie)
+          assert s['online'] is True and (s.get('curtain') or {}).get('connected') is True
+          if s.get('firmware')=='1.1.70':
+              print('ALREADY_170_INSTALLED_NO_REPEAT',flush=True)
+              raise SystemExit(0)
+          assert s.get('firmware')=='1.1.69','Nano must be exactly production 1.1.69 prior to upgrade'
+          assert s.get('relayStreaming') is not True and int(s.get('queued') or 0)==0,'Nano/controller busy; do not flash'
+          print('NANO_SAFE_INSTALL_PRECONDITIONS_PASS',flush=True)
+          def issue(action,key):
+              queued,_=api('/api/curtain/call',{'action':action,'payload':{},'idempotencyKey':key},cookie=cookie)
+              cid=int(queued['commandId'])
+              print('ISSUED',action,cid,flush=True)
+              for i in range(140):
+                  r,_=api('/api/curtain/command?id='+str(cid),cookie=cookie)
+                  row=r['command']
+                  if row['state'] in ('applied','failed','expired','superseded'):
+                      print('NANO_COMMAND_RESULT',action,row['state'],row.get('result'),flush=True)
+                      return row['state']=='applied'
+                  time.sleep(.7)
+              return False
+          assert issue('nanoFirmwareCheck','jh2-170-check-one-time-20261024'), 'Signed OTA preflight failed; no flash'
+          assert issue('nanoInstallUpdate','jh2-170-install-once-20261024'),'OTA install command failed; no retry'
+          for step in range(165):
+              time.sleep(2)
+              try:s,_=api('/api/curtain/status',cookie=cookie)
+              except Exception as e:
+                  if step%10==0:print('NANO_RECONNECT_WAIT',str(e),flush=True)
+                  continue
+              if s.get('firmware')=='1.1.70' and s.get('online') is True:
+                  print('PHYSICAL_NANO_170_HEARTBEAT_VERIFIED',json.dumps({'firmware':s['firmware'],
+                     'online':s['online'],'BLE':(s.get('curtain') or {}).get('connected'),
+                     'queued':s.get('queued')}),flush=True)
+                  raise SystemExit(0)
+              if step%15==0:print('WAITING_PHYSICAL_NANO_170',s.get('firmware'),s.get('online'),flush=True)
+          raise RuntimeError('OTA commanded but 1.1.70 physical heartbeat not verified; no automatic retry')
+          PY
+      - name: Publish already-staged signed GitHub draft only after live 1.1.70 heartbeat
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']
+          url='https://api.github.com/repos/'+repo+'/releases/tags/jason-home-2-nanoc6-v1.1.70'
+          head={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'}
+          def req(url,method='GET',data=None):
+              body=json.dumps(data).encode() if data is not None else None
+              q=urllib.request.Request(url,data=body,headers=head,method=method)
+              with urllib.request.urlopen(q,timeout=30) as r:return json.load(r)
+          release=req(url)
+          assert release['target_commitish']=='3647871bdc4ce4654921941516338249fbb21fe0'
+          assert release['tag_name']=='jason-home-2-nanoc6-v1.1.70'
+          assert {a['name'] for a in release['assets']}=={'jh2-runtime-1.1.70.bin','latest.json','release.json'}
+          if release['draft']:
+              release=req('https://api.github.com/repos/'+repo+'/releases/'+str(release['id']),
+                          'PATCH',{'draft':False,'prerelease':False})
+          assert release['draft'] is False and release['published_at']
+          print('SIGNED_NANO_170_PUBLICLY_PUBLISHED_AFTER_PHYSICAL_VERIFY',release['html_url'],flush=True)
+          PY
