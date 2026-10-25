@@ -1,0 +1,129 @@
+name: JH2 1.1.73 USB-Only Runtime Recovery Build
+on:
+  push:
+    branches: [recovery/jh2-runtime-1-1-73-usb-only-20261025]
+    paths: [.github/workflows/jh2-173-usb-runtime-recovery.yml]
+permissions: {contents: write}
+concurrency:
+  group: jh2-173-manual-usb-only-build
+  cancel-in-progress: false
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exactly the stable 1.1.71 baseline plus non-destructive recovery changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          base='f320e65e43eb30b5bcc846e2460e2b78d9e1b7f6'
+          changed=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          approved={'JasonHome2NanoC6_IDF/main/bridge.c','JasonHome2NanoC6_IDF/main/native_slot_guard.c',
+                    'JasonHome2NanoC6_IDF/main/web_recovery.c',
+                    '.github/workflows/jh2-173-usb-runtime-recovery.yml'}
+          assert changed==approved,('Unexpected source changes',changed)
+          p=Path('JasonHome2NanoC6_IDF')
+          for rel in ('partitions.csv','sdkconfig.defaults','main/main.c','main/signed_ota.c',
+                      'main/asset_stream.c','main/native_slot_upload.c'):
+              old=subprocess.check_output(['git','show',base+':JasonHome2NanoC6_IDF/'+rel])
+              assert (p/rel).read_bytes()==old,('Protected firmware changed',rel)
+          part=(p/'partitions.csv').read_text()
+          assert 'boot, app, factory, 0x10000, 0x120000' in part
+          assert 'runtime, app, ota_0, 0x130000, 0x290000' in part
+          assert 'storage, data, spiffs, 0x3C0000, 0x40000' in part
+          assert 'nvs, data, nvs, 0x9000, 0x5000' in part
+          b=(p/'main/bridge.c').read_text()
+          g=(p/'main/native_slot_guard.c').read_text()
+          w=(p/'main/web_recovery.c').read_text()
+          assert '#define NATIVE_FW_VERSION "1.1.73"' in b
+          assert 'static volatile bool firmware_auto_update=false;' in b
+          assert 'firmware_auto_update=false;' in b[b.index('static void jh2_load_auto_ota(void)'):b.index('#define WIFI_READY')]
+          assert 'op==205||op==167||op==2904||op==2104||op==2627' in g
+          assert w.count('1.1.73-native-upload-flow')==2
+          assert not any('partition' in c.lower() for c in changed)
+          print('STABLE_171_SOURCE_AND_PARTITIONS_PROTECTED; AUTO_OTA_DISABLED; PLAYLIST_READ_ONLY')
+          PY
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/jh2-guard-173
+          /tmp/jh2-guard-173
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/effectlist.c JasonHome2NanoC6_IDF/tests/effectlist_test.c -o /tmp/jh2-effectlist-173
+          /tmp/jh2-effectlist-173
+      - name: Compile production ESP32-C6 runtime only (NO FLASH OR OTA)
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Validate runtime image, address, size, identity and SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovery
+          cp JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin recovery/JH2-NanoC6-RUNTIME-ONLY-1.1.73.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,os,json
+          p=Path('recovery/JH2-NanoC6-RUNTIME-ONLY-1.1.73.bin')
+          b=p.read_bytes()
+          assert 0x120000<len(b)<=0x290000,('Image outside runtime window',len(b))
+          assert b[:1]==b'\xe9' and b[12:14]==b'\x0d\x00',('Wrong ESP32-C6 image header',b[:24].hex())
+          for marker in (b'1.1.73-native-upload-flow',b'jason-home-2-nanoc6-runtime-v1',
+                         b'curtain-native.eff',b'/settings/nano'):
+              assert marker in b,('Missing firmware runtime identity',marker)
+          sha=hashlib.sha256(b).hexdigest()
+          meta={'image':p.name,'version':'1.1.73','device':'ESP32-C6',
+                'flash_address':'0x130000','partition':'runtime/ota_0',
+                'size_bytes':len(b),'sha256':sha,'base_commit':'f320e65e43eb30b5bcc846e2460e2b78d9e1b7f6',
+                'source_commit':os.environ['GITHUB_SHA'],
+                'partition_table_modified':False,'auto_ota_on_boot':False}
+          Path('recovery/FLASH-INFO.json').write_text(json.dumps(meta,indent=2)+'\n')
+          Path('recovery/SHA256SUMS.txt').write_text(sha+'  '+p.name+'\n')
+          Path('recovery/FLASH-ADDRESS.txt').write_text(
+            'JASON HOME 2 NANOC6 - RUNTIME ONLY 1.1.73\n'
+            'ESP32-C6: flash this .bin starting at 0x130000 (decimal 1245184).\n'
+            'Preserve bootloader, partition table, factory updater, NVS, and SPIFFS.\n'
+            'NO erase_flash / fullchip erase / flash at 0x0.\n'
+            'Full image must fit runtime partition 0x130000..0x3BFFFF (0x290000 bytes).\n'
+            'If Nano does not boot after runtime-only flashing, boot-selection in OTA data might still point at factory recovery; do not blindly erase OTADATA.\n'
+            'Built from last-confirmed-live 1.1.71 code; 2627 playlist READ allowed; automatic OTA off on reboot.\n'
+            'Build-time validation does not prove physical boot; verify Oracle heartbeat and BLE after flash.\n')
+          print('USB_RUNTIME_ONLY_173_VERIFIED',json.dumps(meta),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-1.1.73-USB-RUNTIME-ONLY-RECOVERY
+          path: recovery/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish separately tagged MANUAL USB image (never an OTA release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jh2-usb-runtime-1.1.73-recovery
+          name: "Jason Home 2 NanoC6 1.1.73 - USB runtime-only recovery"
+          prerelease: true
+          draft: false
+          generate_release_notes: false
+          body: |
+            Recovery-only ESP32-C6 runtime image. FLASh ADDRESS 0x130000.
+            Derived from last known-working 1.1.71 source with native read-only 2627 playlist query.
+            Automatic signed OTA defaults to OFF even if older NVS setting was true.
+            This is NOT a full-flash/bootloader/factory/NVS/partition-table image.
+            This tag does NOT match the production OTA release channel. Do not auto-install.
+            CI verified source changes, partition preservation, compiler and binary identity.
+            Hardware recovery/boot is not yet verified until reflashed and observed.
+          files: recovery/*
+          fail_on_unmatched_files: true
+          target_commitish: ${{ github.sha }}
