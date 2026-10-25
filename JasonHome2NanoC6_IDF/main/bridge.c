@@ -51,8 +51,6 @@ static const char *TAG="JH2_IDF_ORACLE";
 static volatile bool firmware_auto_update=false;
 bool jh2_bridge_auto_update_enabled(void){return firmware_auto_update;}
 bool jh2_bridge_set_auto_update_enabled(bool enabled){
-    // Owner freeze. Do not allow 2.0.x to enable autonomous firmware OTA.
-    if(enabled){ESP_LOGW(TAG,"2.0.1 firmware freeze: automatic OTA remains disabled");return false;}
     nvs_handle_t n;
     if(nvs_open("jh2-fwcfg",NVS_READWRITE,&n)!=ESP_OK)return false;
     esp_err_t error=nvs_set_u8(n,"auto",enabled?1:0);
@@ -66,10 +64,10 @@ static void jh2_load_auto_ota(void){
     nvs_handle_t n;
     if(nvs_open("jh2-fwcfg",NVS_READONLY,&n)!=ESP_OK)return;
     uint8_t stored=0;
-    // Read historical preference without re-arming the failing 1.1.72 OTA loop.
-    (void)nvs_get_u8(n,"auto",&stored);
+    if(nvs_get_u8(n,"auto",&stored)!=ESP_OK)stored=0;
     nvs_close(n);
-    firmware_auto_update=false;
+    firmware_auto_update=stored==1;
+    ESP_LOGW(TAG,"Auto signed OTA preference restored: %s",firmware_auto_update?"ON":"OFF");
 }
 #define WIFI_READY BIT0
 #define MAX_ORACLE_BODY 65536
@@ -93,7 +91,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.4"
+#define NATIVE_FW_VERSION "2.0.5"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -329,28 +327,45 @@ bool jh2_bridge_factory_preview(uint8_t effect,uint8_t **bytes,size_t *length){
 }
 bool jh2_bridge_signed_firmware(bool install,char *version,size_t version_size,
                                 char *error,size_t error_size){
-    if(error && error_size)error[0]=0;
-    if(version && version_size)version[0]=0;
-    if(!jh2_bridge_ready()){
-        if(error && error_size)snprintf(error,error_size,"Oracle bridge not connected");
-        return false;
-    }
-    // Use the same trusted Oracle origin as the working encrypted bridge.
-    // The existing public signed manifest endpoint on Oracle also serves
-    // the factory updater; the browser never accepts arbitrary URLs.
-    cJSON *manifest=https_json("/api/curtain/firmware-manifest",NULL);
+    if(error&&error_size)error[0]=0;
+    if(version&&version_size)version[0]=0;
+    // Signed releases are public and do not require the administrator token.
+    // Use the authenticated Oracle manifest when linked, otherwise the
+    // independent signed GitHub channel. No secrets sent to public GitHub.
+    cJSON *manifest=NULL;
+    if(jh2_bridge_ready())
+        manifest=https_json("/api/curtain/firmware-manifest",NULL);
+    if(!manifest)
+        manifest=https_json("/api/public-signed-manifest",NULL);
     if(!manifest){
-        if(error && error_size)snprintf(error,error_size,"Oracle signed manifest unavailable");
+        if(error&&error_size)snprintf(error,error_size,
+            "Signed release feed unavailable; existing firmware retained");
         return false;
     }
     char fetched[32]={0};
-    bool ok=jh2_validate_signed_manifest(manifest,NATIVE_FW_VERSION,
+    bool available=jh2_validate_signed_manifest(manifest,NATIVE_FW_VERSION,
         fetched,sizeof(fetched),error,error_size);
-    if(ok&&install)
-        ok=jh2_queue_signed_update(manifest,NATIVE_FW_VERSION,error,error_size);
-    if(ok&&version&&version_size)snprintf(version,version_size,"%s",fetched);
+    if(available&&version&&version_size)
+        snprintf(version,version_size,"%s",fetched);
+    if(available){
+        if(install){
+            // No flashing in the HTTP handler: Check downloads and verifies
+            // in the background, Install only changes boot selection.
+            if(!jh2_ota_staged_ready()){
+                (void)jh2_ota_stage_signed(manifest,NATIVE_FW_VERSION,error,error_size);
+                available=false;
+                if(error&&error_size&&jh2_ota_download_active())
+                    snprintf(error,error_size,"Downloading signed firmware; please wait");
+            }else available=jh2_ota_install_staged(error,error_size);
+        }else{
+            // A click on Check starts the download automatically.
+            if(!jh2_ota_staged_ready()&&!jh2_ota_download_active())
+                available=jh2_ota_stage_signed(manifest,NATIVE_FW_VERSION,error,error_size);
+            else available=true;
+        }
+    }
     cJSON_Delete(manifest);
-    return ok;
+    return available;
 }
 static void append_ack(uint64_t command_id,const char *state,const char *message,bool ble_transmitted){
     cJSON *record=cJSON_CreateObject();
@@ -600,10 +615,10 @@ static void handle_command(const cJSON *row,const cJSON *assets){
     }else if(strcmp(action->valuestring,"nanoAutoUpdate")==0){
         cJSON *enabled=cJSON_GetObjectItemCaseSensitive(payload,"enabled");
         const bool valid=cJSON_IsTrue(enabled)||cJSON_IsFalse(enabled);
-        const bool saved=valid&&!cJSON_IsTrue(enabled)&&jh2_bridge_set_auto_update_enabled(false);
+        const bool saved=valid&&jh2_bridge_set_auto_update_enabled(cJSON_IsTrue(enabled));
         append_ack(current,saved?"applied":"failed",saved?
-            "Automatic updates disabled; use independent A/B rescue uploader":
-            (valid?"Automatic updates locked OFF until hardware A/B acceptance":"Invalid auto-update setting"),false);
+            (cJSON_IsTrue(enabled)?"Automatic signed OTA enabled and saved":"Automatic signed OTA disabled"):
+            "Invalid or unsaved auto-update preference",false);
     }else if(strcmp(action->valuestring,"nanoFirmwareCheck")==0){
         cJSON *m=https_json("/api/curtain/firmware-manifest",NULL);
         char version[32]={0},error[150]={0};
@@ -612,14 +627,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             (m?error:"Signed firmware manifest download unavailable"),false);
         cJSON_Delete(m);
     }else if(strcmp(action->valuestring,"nanoInstallUpdate")==0){
-        cJSON *m=https_json("/api/curtain/firmware-manifest",NULL);
-        char error[150]={0};
-        bool installed=m&&jh2_queue_signed_update(m,NATIVE_FW_VERSION,error,sizeof(error));
+        char version[32]={0},error[160]={0};
+        bool installed=jh2_bridge_signed_firmware(true,version,sizeof(version),error,sizeof(error));
         append_ack(current,installed?"applied":"failed",
-          installed?"Verified signed update queued in permanent updater":
-          (m?error:"Signed firmware manifest download unavailable"),false);
+          installed?"Verified signed A/B update staged and selected for reboot":error,false);
         if(installed)restart_after_ack=current;
-        cJSON_Delete(m);
     }else if(strcmp(action->valuestring,"connect")==0||
              strcmp(action->valuestring,"subscribeRaw")==0){
         append_ack(current,"applied","Native GATT connection managed by NimBLE central",false);
@@ -893,13 +905,22 @@ static void oracle_task(void *ctx){
            now_us>=next_auto_ota_check_us){
             next_auto_ota_check_us=now_us+900000000LL; // fifteen minutes
             char newer[32]={0},err[170]={0};
-            if(jh2_bridge_signed_firmware(true,newer,sizeof(newer),err,sizeof(err))){
-                ESP_LOGW(TAG,"Verified newer signed firmware %s; entering factory updater",newer);
-                vTaskDelay(pdMS_TO_TICKS(1500));
-                esp_restart();
+            if(jh2_bridge_signed_firmware(false,newer,sizeof(newer),err,sizeof(err))){
+                ESP_LOGI(TAG,"Auto OTA candidate %s: signed download requested or already staged",newer);
             }else{
                 ESP_LOGI(TAG,"Auto OTA check: %s",err[0]?err:"no newer signed firmware");
             }
+        }
+        // Only automatically activate an image AFTER HTTPS download, ECDSA
+        // signature, SHA-256 and ESP-IDF image validation all succeeded.
+        if(firmware_auto_update&&idle_commands&&ack_count==0&&restart_after_ack==0&&
+           !jh2_asset_stream_active()&&!jh2_native_sequence_running()&&
+           jh2_ota_staged_ready()){
+            char install_error[140]={0};
+            if(jh2_ota_install_staged(install_error,sizeof(install_error))){
+                ESP_LOGW(TAG,"Signed A/B update selected; rebooting into rollback-protected candidate");
+                vTaskDelay(pdMS_TO_TICKS(1200));esp_restart();
+            }else ESP_LOGW(TAG,"Automatic OTA activation refused: %s",install_error);
         }
         vTaskDelay(pdMS_TO_TICKS(1100));
     }
