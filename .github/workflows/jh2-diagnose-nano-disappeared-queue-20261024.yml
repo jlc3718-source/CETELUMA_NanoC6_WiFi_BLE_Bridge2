@@ -1,0 +1,45 @@
+name: JH2 Read Only Nano Disappearance Diagnostic
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-diagnose-nano-disappeared-queue-20261024.yml]
+permissions: {contents: read}
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect Nano heartbeat, queued commands and Oracle/Nano containers read-only
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,sqlite3,time,urllib.request
+          from pathlib import Path
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          m=next(x for x in web['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(m['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          cols=[r[1] for r in db.execute('PRAGMA table_info(curtain_commands)')]
+          print('COMMAND_COLS',cols,flush=True)
+          col=', '.join(c for c in ['id','action','state','created','source','result'] if c in cols)
+          rows=db.execute('SELECT '+col+' FROM curtain_commands ORDER BY id DESC LIMIT 22').fetchall()
+          print('LAST_22_COMMANDS',json.dumps([dict(zip(col.split(', '),r)) for r in rows],default=str),flush=True)
+          print('PENDING',db.execute("SELECT state,action,COUNT(*) FROM curtain_commands WHERE state IN ('queued','downloaded') GROUP BY state,action").fetchall(),flush=True)
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          root='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              h={'Content-Type':'application/json'}
+              if cookie:h['Cookie']=cookie
+              req=urllib.request.Request(root+path,data=json.dumps(body).encode() if body is not None else None,
+                  headers=h,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=12) as r:return json.load(r),r.headers
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=h['Set-Cookie'].split(';')[0]
+          s,_=api('/api/curtain/status',cookie=cookie)
+          print('LIVE_CURTAIN_STATUS',json.dumps(s),flush=True)
+          print('CURRENT_EPOCH_MS',round(time.time()*1000),flush=True)
+          print('NANO_LAST_SEEN_AGE_S',round(time.time()-s['lastSeen']/1000,1),flush=True)
+          for c in ('jason-home','jason-home-2-web'):
+              p=json.loads(subprocess.check_output(['docker','inspect',c],text=True))[0]
+              print('CONTAINER',c,'state',p['State']['Status'],'restarts',p['RestartCount'],'health',p['State'].get('Health',{}).get('Status'),flush=True)
+          PY
