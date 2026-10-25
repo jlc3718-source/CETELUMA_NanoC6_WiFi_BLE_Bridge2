@@ -38,10 +38,11 @@ jobs:
           assert mark and len(mark.group(1)) == 64, "Exactly 64-byte placeholder required"
           assert 'seed_embedded_oracle_if_missing();read_saved();' in web
           assert 'valid_hex(jh2_builtin_oracle_token)' in web
-          assert 'saved_ssid[0]?WIFI_MODE_APSTA:WIFI_MODE_AP' in web
-          assert 'strcpy((char*)cfg.ap.ssid,"Jason-Home-2-Setup")' in web
-          assert 'WIFI_AUTH_WPA2_PSK' in web
+          assert 'esp_wifi_set_mode(WIFI_MODE_APSTA);' in web
+          assert 'strcpy((char*)cfg.ap.ssid,"JH2-Nano-Fresh")' in web
+          assert 'cfg.ap.authmode=WIFI_AUTH_OPEN' in web
           assert 'if(!jh2_web_has_oracle_credentials())' in runtime
+          assert 'nvs_open("jh2basic",NVS_READONLY' in web
           assert 'failsafe_confirm_after_60s();' in runtime
           assert '#define NATIVE_FW_VERSION "2.0.0"' in bridge
           assert "Remote OTA locked off for 2.0.0 A/B recovery" in Path("JasonHome2NanoC6_IDF/main/signed_ota.c").read_text()
@@ -79,7 +80,7 @@ jobs:
           assert len(marker)==64
           assert app.count(marker)==1, "Unique private 64-byte patch point missing"
           assert b"2.0.0-native-upload-flow" in app
-          assert b"Jason-Home-2-Setup" in app
+          assert b"JH2-Nano-Fresh" in app
           assert b"c6e361f91c250cbb" in app
           assert b"https://150.136.245.51/jason-home-2" in app
           out=Path("jh2-200-output/JH2-NanoC6-2.0.0-RUNTIME-UNPERSONALIZED.bin")
