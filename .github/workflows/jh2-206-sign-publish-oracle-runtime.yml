@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 1 48); do
-            state="$(gh api repos/"$GITHUB_REPOSITORY"/actions/runs/40227991223 --jq '.status + ":" + (.conclusion // "")')"
+            state="$(gh api repos/"$GITHUB_REPOSITORY"/actions/runs/40228285057 --jq '.status + ":" + (.conclusion // "")')"
             echo "Compiler completion check $i: $state"
             if [ "$state" = "completed:success" ]; then exit 0; fi
             if [[ "$state" == completed:* ]]; then echo "Compiler did not pass; refusing to sign"; exit 1; fi
@@ -38,7 +38,7 @@ jobs:
         with:
           name: JH2-2.0.6-RUNTIME-UNPERSONALIZED-CI
           repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
-          run-id: 40227991223
+          run-id: 40228285057
           github-token: ${{ github.token }}
           path: unsigned-runtime
       - name: Verify compile provenance and no exposed personal Oracle key
@@ -53,7 +53,7 @@ jobs:
           b=Path('signed-package/jh2-runtime-2.0.6.bin').read_bytes()
           source=json.loads(Path('unsigned-runtime/manifest.json').read_text())
           sha=hashlib.sha256(b).hexdigest()
-          compile_sha='dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5'
+          compile_sha='e003fa12b48414920aeb41db1b4fd9694590c4c9'
           assert source['source_commit']==compile_sha, 'Wrong ESP-IDF compiler revision'
           assert source['version']=='2.0.6' and source['runtime_sha256']==sha
           assert source['runtime_bytes']==len(b) and source['private_oracle_token_embedded'] is False
@@ -89,7 +89,7 @@ jobs:
           b=(root/'jh2-runtime-2.0.6.bin').read_bytes()
           assert m['schema']==1 and fields['version']=='2.0.6'
           assert fields['product']=='jason-home-2-nanoc6'
-          assert fields['commit']=='dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5'
+          assert fields['commit']=='e003fa12b48414920aeb41db1b4fd9694590c4c9'
           assert int(fields['bytes'])==len(b) and hashlib.sha256(b).hexdigest()==fields['sha256']
           assert fields['url']=='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v2.0.6/jh2-runtime-2.0.6.bin'
           with tempfile.TemporaryDirectory() as d:
@@ -128,7 +128,7 @@ jobs:
           fi
           gh release create "$tag" signed-package/jh2-runtime-2.0.6.bin signed-package/latest.json signed-package/release.json \
             --repo "$GITHUB_REPOSITORY" \
-            --target 'dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5' \
+            --target 'e003fa12b48414920aeb41db1b4fd9694590c4c9' \
             --title 'Jason Home 2 Nano C6 2.0.6 — Bluetooth + Signed A/B OTA' \
             --notes 'Signed runtime-only, 1.375MB-slot compatible. Wi-Fi setup AP automatically shuts off after stable home IP; full BLE scan, remembered reconnection; Oracle control and authenticated automatic pairing. Does not contain private Oracle token. Preserves NVS, filesystem, bootloader and factory rescue. First install on 2.0.3/2.0.4 requires manual runtime upload because those versions disabled the OTA install handler. Do not use a 4MB full-flash image here.'
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets > /tmp/jh2-206-published.json
@@ -169,7 +169,7 @@ jobs:
           data=(work/'jh2-runtime-2.0.6.bin').read_bytes()
           sha=hashlib.sha256(data).hexdigest()
           assert man['schema']==1 and fields['product']=='jason-home-2-nanoc6'
-          assert fields['version']=='2.0.6' and fields['commit']=='dec92b0e2bc6ead77d4c8bdbf9edb8bbd284f1d5'
+          assert fields['version']=='2.0.6' and fields['commit']=='e003fa12b48414920aeb41db1b4fd9694590c4c9'
           assert fields['sha256']==sha and int(fields['bytes'])==len(data)
           assert 0x100000<len(data)<=0x160000 and data[0]==0xe9
           assert info['files']['jh2-runtime-2.0.6.bin']['sha256']==sha
