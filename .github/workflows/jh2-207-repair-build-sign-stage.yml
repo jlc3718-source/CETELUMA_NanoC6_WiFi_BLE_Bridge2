@@ -1,4 +1,4 @@
-name: JH2 Nano 2.0.8 OTA Repair Build Sign Publish Oracle
+name: JH2 Nano 2.0.9 BLE Connection and DDNS Redirect Repair
 on:
   push:
     branches:
@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: jh2-208-signed-repair
+  group: jh2-209-signed-repair
   cancel-in-progress: false
 jobs:
   compile:
@@ -41,7 +41,13 @@ jobs:
           assert 'ble_service_tick();' in b and 'schedule_ble_retry("disconnected")' in b
           assert 'BLE_HS_FOREVER' not in b and 'ble_gap_set_prefered_le_phy(' not in b
           assert 'nativeLastConnectError' in b and 'nativeLastScanCancelError' in b
-          assert '#define NATIVE_FW_VERSION "2.0.8"' in c
+          assert '#define NATIVE_FW_VERSION "2.0.9"' in c
+          assert 'ble_cancel_watchdog_sent' in b and 'BLE_SCAN_CANCEL_WATCHDOG' in b
+          assert 'nativeGapConnectStartRequests' in b
+          assert 'ble_gap_connect(own_addr,&ble_connect_addr,20000,NULL,gap_event,NULL);' in b
+          assert 'if(ble_gap_connecting||ble_gap_disc_active())return;' in b
+          assert 'httpd_req_get_hdr_value_str(r,"Host",host,sizeof(host))' in w
+          assert 'return saved_ssid[0]!=0;' in w
           ota=Path('JasonHome2NanoC6_IDF/main/signed_ota.c').read_text()
           assert 'jh2_ota_stage_signed_via_oracle' in ota
           assert 'lastHttpStatus' in ota and 'lastEspError' in ota
@@ -55,7 +61,7 @@ jobs:
           assert 'runtime, app, ota_0, 0x110000, 0x160000' in p
           assert 'runtime_b, app, ota_1, 0x270000, 0x160000' in p
           assert 'rescue, app, factory, 0x10000, 0x100000' in p
-          print('JH2_208_SOURCE_REGRESSION_CHECKS_PASSED')
+          print('JH2_209_SOURCE_REGRESSION_CHECKS_PASSED')
           PY
       - name: Enable production BLE Oracle and browser recovery
         shell: bash
@@ -82,22 +88,22 @@ jobs:
           import hashlib,json,os
           data=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin').read_bytes()
           assert 0x100000 < len(data) <= 0x160000 and data[0]==0xe9, 'Invalid A/B runtime image'
-          assert b'2.0.8-native-upload-flow' in data
+          assert b'2.0.9-native-upload-flow' in data
           assert b'http://150.136.245.51/jason' in data
           marker=b'JH2V200PRIVATEORACLETOKENREPLACEME'.ljust(64,b'_')
           assert data.count(marker)==1, 'Only unpersonalized runtime may be publicly signed'
           sha=hashlib.sha256(data).hexdigest()
           root=Path('signed-package')
-          (root/'jh2-runtime-2.0.8.bin').write_bytes(data)
-          manifest={'product':'jason-home-2-nanoc6','version':'2.0.8',
+          (root/'jh2-runtime-2.0.9.bin').write_bytes(data)
+          manifest={'product':'jason-home-2-nanoc6','version':'2.0.9',
                     'commit':os.environ['GITHUB_SHA'],
-                    'files':{'jh2-runtime-2.0.8.bin':{'bytes':len(data),'sha256':sha}}}
+                    'files':{'jh2-runtime-2.0.9.bin':{'bytes':len(data),'sha256':sha}}}
           (root/'release.json').write_text(json.dumps(manifest,indent=2)+'\n')
-          print('JH2_208_RUNTIME_VERIFIED',len(data),sha)
+          print('JH2_209_RUNTIME_VERIFIED',len(data),sha)
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: JH2-2.0.8-COMPILED
+          name: JH2-2.0.9-COMPILED
           path: signed-package/
           if-no-files-found: error
           retention-days: 45
@@ -109,7 +115,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: JH2-2.0.8-COMPILED
+          name: JH2-2.0.9-COMPILED
           path: signed-package
       - name: Sign manifest with existing protected project key
         shell: bash
@@ -134,8 +140,8 @@ jobs:
           release=json.loads((root/'release.json').read_text())
           m=json.loads((root/'latest.json').read_text())
           fields=dict(row.split('=',1) for row in m['payload'].strip().splitlines())
-          data=(root/'jh2-runtime-2.0.8.bin').read_bytes()
-          assert fields['version']=='2.0.8' and fields['product']=='jason-home-2-nanoc6'
+          data=(root/'jh2-runtime-2.0.9.bin').read_bytes()
+          assert fields['version']=='2.0.9' and fields['product']=='jason-home-2-nanoc6'
           assert fields['sha256']==hashlib.sha256(data).hexdigest()
           assert len(data)==int(fields['bytes'])
           assert fields['commit']==release['commit']
@@ -146,23 +152,23 @@ jobs:
               subprocess.run(['openssl','dgst','-sha256','-verify',
                  'remote-update/anderson_ota_signing_public.pem',
                  '-signature',str(p/'signature'),str(p/'payload')],check=True)
-          print('SIGNED_208_SHA_ECDSA_VERIFIED')
+          print('SIGNED_209_SHA_ECDSA_VERIFIED')
           PY
-      - name: Publish 2.0.8 runtime-only release without touching 2.0.6
+      - name: Publish 2.0.9 runtime-only release without touching 2.0.6
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag='jason-home-2-nanoc6-v2.0.8'
+          tag='jason-home-2-nanoc6-v2.0.9'
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'Refusing to overwrite existing immutable 2.0.8 release';exit 1
+            echo 'Refusing to overwrite existing immutable 2.0.9 release';exit 1
           fi
-          gh release create "$tag" signed-package/jh2-runtime-2.0.8.bin signed-package/latest.json signed-package/release.json             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"             --title 'Jason Home 2 Nano C6 2.0.8 Oracle Launch + BLE Reconnect Repair'             --notes 'Signed A/B runtime 2.0.8. Nonblocking firmware UI checks, HTTPS Oracle signed mirror with strict SHA256+ECDSA validation and GitHub fallback; OTA error telemetry; BLE reconnection and Oracle homepage redirect. Hardware acceptance pending.'
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fx 'jh2-runtime-2.0.8.bin'
+          gh release create "$tag" signed-package/jh2-runtime-2.0.9.bin signed-package/latest.json signed-package/release.json             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"             --title 'Jason Home 2 Nano C6 2.0.9 Oracle Launch + BLE Reconnect Repair'             --notes 'Signed 2.0.9 A/B runtime. Fixes NimBLE discover->connect permanent deadlock by app-task launch after scan cancellation with watchdog and telemetry, and DDNS/LAN root redirect via HTTP Host instead of unreliable getsockname. Includes 2.0.8 nonblocking web and signed Oracle-mirror OTA. Preserve AP recovery, NVS, A/B and user settings. Hardware verification required.'
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fx 'jh2-runtime-2.0.9.bin'
       - uses: actions/upload-artifact@v4
         with:
-          name: JH2-2.0.8-SIGNED-RELEASE
+          name: JH2-2.0.9-SIGNED-RELEASE
           path: signed-package/
           retention-days: 45
           if-no-files-found: error
@@ -174,9 +180,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: JH2-2.0.8-SIGNED-RELEASE
+          name: JH2-2.0.9-SIGNED-RELEASE
           path: signed-package
-      - name: Verify signed runtime and atomically approve 2.0.8 on Oracle
+      - name: Verify signed runtime and atomically approve 2.0.9 on Oracle
         shell: bash
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -187,11 +193,11 @@ jobs:
           from pathlib import Path
           repo=Path(os.environ['GITHUB_WORKSPACE'])
           work=repo/'signed-package'
-          files=('jh2-runtime-2.0.8.bin','latest.json','release.json')
+          files=('jh2-runtime-2.0.9.bin','latest.json','release.json')
           m=json.loads((work/'latest.json').read_text())
           f=dict(row.split('=',1) for row in m['payload'].strip().splitlines())
           image=(work/files[0]).read_bytes()
-          assert f['product']=='jason-home-2-nanoc6' and f['version']=='2.0.8'
+          assert f['product']=='jason-home-2-nanoc6' and f['version']=='2.0.9'
           assert 0x100000<len(image)<=0x160000 and image[0]==0xe9
           assert f['sha256']==hashlib.sha256(image).hexdigest() and int(f['bytes'])==len(image)
           with tempfile.TemporaryDirectory() as tmp:
@@ -206,11 +212,11 @@ jobs:
           assert len(mounts)==1
           root=Path(mounts[0]['Source'])/'signed-ota'
           assert root.is_dir()
-          dest=root/'2.0.8'
+          dest=root/'2.0.9'
           if dest.exists():
               assert all((dest/x).read_bytes()==(work/x).read_bytes() for x in files)
           else:
-              tmp=root/('.stage-2.0.8-'+str(os.getpid()))
+              tmp=root/('.stage-2.0.9-'+str(os.getpid()))
               tmp.mkdir()
               for x in files:shutil.copy2(work/x,tmp/x)
               tmp.rename(dest)
@@ -219,13 +225,13 @@ jobs:
               prev=json.loads((approved/'latest.json').read_text())
               ver=dict(x.split('=',1) for x in prev['payload'].strip().splitlines())['version']
               assert tuple(map(int,ver.split('.'))) <= (2,0,7)
-          link=root/('.approved-2.0.8-'+str(os.getpid()))
-          link.symlink_to('2.0.8',target_is_directory=True)
+          link=root/('.approved-2.0.9-'+str(os.getpid()))
+          link.symlink_to('2.0.9',target_is_directory=True)
           os.replace(link,approved)
           assert all((approved/x).read_bytes()==(work/x).read_bytes() for x in files)
-          print('ORACLE_APPROVED_SIGNED_208',len(image),f['sha256'])
+          print('ORACLE_APPROVED_SIGNED_209',len(image),f['sha256'])
           PY
-      - name: Verify Oracle application serves exact signed 2.0.8
+      - name: Verify Oracle application serves exact signed 2.0.9
         shell: bash
         run: |
           set -euo pipefail
@@ -235,9 +241,9 @@ jobs:
           const r=await fetch(base+"/api/curtain/firmware-manifest");
           const m=await r.json();
           const f=Object.fromEntries(m.payload.trim().split("\n").map(x=>x.split(/=(.*)/s).slice(0,2)));
-          if(!r.ok||f.version!=="2.0.8")throw Error("Wrong OTA manifest");
-          const d=await fetch(base+"/api/curtain/firmware-runtime/2.0.8.bin");
+          if(!r.ok||f.version!=="2.0.9")throw Error("Wrong OTA manifest");
+          const d=await fetch(base+"/api/curtain/firmware-runtime/2.0.9.bin");
           const b=Buffer.from(await d.arrayBuffer());
           if(!d.ok||b.length!==Number(f.bytes)||require("node:crypto").createHash("sha256").update(b).digest("hex")!==f.sha256)throw Error("Wrong OTA bytes");
-          console.log("ORACLE_208_SIGNED_DOWNLOAD_VERIFIED",b.length);
+          console.log("ORACLE_209_SIGNED_DOWNLOAD_VERIFIED",b.length);
           })().catch(e=>{console.error(e);process.exitCode=1});'
