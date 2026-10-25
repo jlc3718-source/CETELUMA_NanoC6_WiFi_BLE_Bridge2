@@ -2,7 +2,7 @@ name: JH2 2.0.5 Bluetooth Remember + Signed A/B OTA + Oracle Auto Link
 on:
   push:
     branches:
-      - fix/jh2-2.0.5-local-lan-dashboard-20261025
+      - fix/jh2-2.0.5-ble-scan-remember-reconnect-20261025
     paths:
       - JasonHome2NanoC6_IDF/**
       - .github/workflows/jh2-205-ble-reconnect-auto-ota.yml
