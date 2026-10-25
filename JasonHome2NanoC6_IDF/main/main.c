@@ -118,7 +118,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"1.1.75 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"1.1.76 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -1134,28 +1134,36 @@ void app_main(void){
         failsafe_boot_failed();
         return;
     }
+    // Wi-Fi and web recovery are mission critical; BLE is independent.
+    // Bluetooth initialization failure must NOT discard a fully provisioned
+    // Nano into the isolated factory uploader.
     discovered_lock=xSemaphoreCreateMutex();
     load_target();
     notice_lock=xSemaphoreCreateMutex();
     raw_write_lock=xSemaphoreCreateMutex();
     raw_write_event=xSemaphoreCreateBinary();
-    if(!discovered_lock||!notice_lock||!raw_write_lock||!raw_write_event){
-        ESP_LOGE(TAG,"Native BLE synchronization allocation failed");
-        failsafe_boot_failed();return;
+    bool ble_available=discovered_lock&&notice_lock&&raw_write_lock&&raw_write_event;
+    if(ble_available){
+        catalog_queue=xQueueCreate(CATALOG_RX_QUEUE_DEPTH,sizeof(gatt_notice));
+        if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",8192,NULL,3,NULL)!=pdPASS){
+            ble_available=false;
+            ESP_LOGE(TAG,"BLE catalog worker unavailable; retaining configured Wi-Fi and Oracle");
+        }
     }
-    // Catalog parser is deliberately lower priority than NimBLE and never
-    // runs inside the notification callback. No dependency on Oracle uptime.
-    catalog_queue=xQueueCreate(CATALOG_RX_QUEUE_DEPTH,sizeof(gatt_notice));
-    if(!catalog_queue || xTaskCreate(catalog_worker,"jh2-catalog-rx",8192,NULL,3,NULL)!=pdPASS){
-        ESP_LOGE(TAG,"CATALOG_RECEIVE_WORKER_FAILED");
-        failsafe_boot_failed();return;
+    if(ble_available){
+        rc=nimble_port_init();
+        if(rc!=ESP_OK){
+            fail("nimble_port_init",rc);
+            ble_available=false;
+            ESP_LOGE(TAG,"BLE stack unavailable; retaining configured Wi-Fi and Oracle");
+        }
     }
-    rc=nimble_port_init();
-    if(rc!=ESP_OK){fail("nimble_port_init",rc);failsafe_boot_failed();return;}
-    ble_hs_cfg.reset_cb=on_reset;
-    ble_hs_cfg.sync_cb=on_sync;
-    ble_att_set_preferred_mtu(517);
-    nimble_port_freertos_init(host_task);
+    if(ble_available){
+        ble_hs_cfg.reset_cb=on_reset;
+        ble_hs_cfg.sync_cb=on_sync;
+        ble_att_set_preferred_mtu(517);
+        nimble_port_freertos_init(host_task);
+    }
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Retain the product marker in the signed application image. The
     // original factory browser updater validates it and the final size;
