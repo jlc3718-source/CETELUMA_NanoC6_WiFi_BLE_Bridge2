@@ -84,7 +84,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.70"
+#define NATIVE_FW_VERSION "1.1.71"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -395,6 +395,14 @@ static bool slot_reply_ram(void *context,uint16_t opcode,uint8_t id,uint32_t par
     return jh2_ble_upload_reply((uint32_t*)context,opcode,id,parts,12000,error);
 }
 static void slot_pace_ram(void *context){(void)context;vTaskDelay(pdMS_TO_TICKS(25));}
+/* Native flash writes need controller processing time; the 25ms unthrottled
+ * 1.1.70 transfer received controller final rejection code 251. Keep RAM test
+ * uploader unchanged, pace registered files at 120ms plus true 2933 ACKs. */
+static void slot_pace_native(void *context){(void)context;vTaskDelay(pdMS_TO_TICKS(120));}
+static bool slot_progress_native(void *context,uint32_t parts,uint32_t minimum,
+                                 const char **error){
+    return jh2_ble_upload_progress((uint32_t*)context,parts,minimum,15000,error);
+}
 static void handle_command(const cJSON *row,const cJSON *assets){
     cJSON *id=cJSON_GetObjectItemCaseSensitive(row,"id");
     cJSON *action=cJSON_GetObjectItemCaseSensitive(row,"action");
@@ -526,7 +534,8 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             if(known&&matches==0){
                 uint32_t cursor=jh2_ble_notice_cursor();
                 jh2_slot_io io={.context=&cursor,.write=slot_write_ram,
-                               .reply=slot_reply_ram,.pace=slot_pace_ram};
+                               .reply=slot_reply_ram,.pace=slot_pace_native,
+                                .progress=slot_progress_native};
                 ready=jh2_slot_transfer_file(jh2_native_local_path(),cid,(uint8_t)esp_random(),
                     (uint32_t)(esp_timer_get_time()/1000),known,matches,slot,&io,&error);
                 jh2_ble_target_invalidate();
