@@ -1,0 +1,92 @@
+name: JH2 SmartDawn 2.0.10 ONE safe native catalog read
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-smartdawn-single-2904-read-20261025.yml']
+permissions:
+  contents: read
+concurrency:
+  group: jh2-one-readonly-native-catalog-command
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send ONE controller-only 2904 native catalog query; never delete, upload, reboot, play, or reconnect
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,os,subprocess,urllib.request,uuid,base64,time,pathlib
+          out={'test':'one-native-2904-read','reads':1,'controllerErases':0,'controllerUploads':0,'reconnects':0,'firmwareFlashes':0,'retries':0}
+          def inspect(name):
+              return json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
+          env=dict(v.split('=',1) for v in inspect('jason-home')['Config']['Env'] if '=' in v)
+          token=env.get('JASON_HOME_API_TOKEN')
+          if not token:raise RuntimeError('Session unavailable; no command sent')
+          base='http://127.0.0.1:8081'
+          def request(path,body=None,cookie=None):
+              data=json.dumps(body).encode() if body is not None else None
+              req=urllib.request.Request(base+path,data=data,method='POST' if body is not None else 'GET',
+                  headers={'content-type':'application/json',**({'Cookie':cookie} if cookie else {})})
+              with urllib.request.urlopen(req,timeout=25) as response:
+                  return json.load(response),response.headers
+          _,hdr=request('/api/session',{'token':token})
+          cookie=hdr.get('Set-Cookie','').split(';')[0]
+          def get(path):return request(path,cookie=cookie)[0]
+          def post(path,body):return request(path,body,cookie=cookie)[0]
+          status=get('/api/curtain/status')
+          ctl=status.get('curtain') or {}
+          out['before']={key:status.get(key) for key in ('firmware','online','queued','relayStreaming')}
+          out['before'].update({key:ctl.get(key) for key in ('connected','mtu','nativeCatalogUnique',
+              'nativeTarget83928Count','nativeTargetSectionComplete')})
+          if status.get('firmware')!='2.0.10' or status.get('online') is not True or \
+             ctl.get('connected') is not True or int(ctl.get('mtu') or 0)<399 or \
+             int(status.get('queued') or 0)!=0:
+              out['result']='SKIPPED: bridge not in safe preflight state'
+          else:
+              before=get('/api/curtain/notifications?since=0')
+              cursor=max([int(n.get('id') or 0) for n in before.get('notifications',[])]+[0])
+              cmd=bytes.fromhex('0a010000f004000a00000b58000000000000000000000000')
+              assert len(cmd)==24 and cmd[4]==0xf0 and cmd[5]==4 and cmd[10:12]==bytes([11,88])
+              message=post('/api/curtain/call',{'action':'rawWrite','payload':{
+                  'uuid':'01020074-1972-1925-3022-077119514e44',
+                  'data':base64.b64encode(cmd).decode()},'idempotencyKey':str(uuid.uuid4())})
+              ident=message.get('commandId')
+              if not ident:raise RuntimeError('Oracle did not assign read-only catalog query ID')
+              out['commandId']=ident
+              final={}
+              for i in range(80):
+                  time.sleep(.5)
+                  final=get('/api/curtain/command?id='+str(ident)).get('command') or {}
+                  if final.get('state') in ('applied','failed','expired','superseded'):break
+              out['ack']={'state':final.get('state'),
+                         'message':str((final.get('result') or {}).get('message',''))[:240],
+                         'error':str((final.get('result') or {}).get('error',''))[:240]}
+              if final.get('state')=='applied':
+                  time.sleep(5)
+                  notices=get('/api/curtain/notifications?since='+str(cursor))
+                  new=notices.get('notifications') or []
+                  out['newRawNotifications']=len(new)
+                  out['new2904FragmentCandidates']=sum(1 for n in new
+                      if str(n.get('uuid','')).lower()=='01010074-1972-1925-3022-077119514e44')
+              after=get('/api/curtain/status')
+              d=after.get('curtain') or {}
+              out['after']={key:after.get(key) for key in ('firmware','online','queued','relayStreaming')}
+              out['after'].update({key:d.get(key) for key in ('connected','mtu','nativeCatalogUnique',
+                  'nativeTarget83928Count','nativeTargetSectionComplete')})
+              out['result']='BLE_ACK_ONLY; native inventory completeness evaluated separately' if final.get('state')=='applied' else 'CONTROLLER_READ_NOT_ACKED'
+          print('JH2_ONE_2904_READ',json.dumps(out),flush=True)
+          artifact=pathlib.Path(os.environ.get('GITHUB_WORKSPACE') or os.getcwd())/'jh2-2010-single-2904-read.json'
+          artifact.write_text(json.dumps(out,indent=2))
+          artifact.chmod(0o644)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jh2-2010-single-read-report
+          path: jh2-2010-single-2904-read.json
+          retention-days: 7
+          if-no-files-found: warn
