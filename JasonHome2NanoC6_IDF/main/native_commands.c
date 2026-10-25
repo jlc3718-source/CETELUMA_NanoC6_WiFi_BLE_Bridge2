@@ -40,7 +40,10 @@ static bool command(uint16_t opcode,const uint8_t *payload,size_t len){
     bytes[6]=(uint8_t)(tx>>8);bytes[7]=(uint8_t)(tx&255);++tx;
     bytes[10]=(uint8_t)(opcode>>8);bytes[11]=(uint8_t)opcode;
     if(len)memcpy(bytes+24,payload,len);
-    return jh2_ble_raw_write(CTRL_UUID,bytes,len+24,12000);
+    // Factory control writes are short. An unresponsive controller must not
+    // occupy the Nano's single HTTP handler for up to 12 seconds per write.
+    // Large native animation uploads retain their separate long timeouts.
+    return jh2_ble_raw_write(CTRL_UUID,bytes,len+24,2500);
 }
 bool jh2_native_read(uint16_t opcode){
     if(opcode!=205 && opcode!=167 && opcode!=2904 && opcode!=2104)return false;
