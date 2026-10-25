@@ -341,6 +341,10 @@ static esp_err_t status_get(httpd_req_t *r){
             snprintf(assigned_ip,sizeof(assigned_ip),IPSTR,IP2STR(&info.ip));
     }
     cJSON_AddStringToObject(o,"homeIp",assigned_ip);
+    char local_url[48]="";
+    if(assigned_ip[0])
+        snprintf(local_url,sizeof(local_url),"http://%s/",assigned_ip);
+    cJSON_AddStringToObject(o,"localWebUrl",local_url);
     cJSON_AddNumberToObject(o,"homeWifiRetryAttempts",wifi_retry_attempts);
     cJSON_AddNumberToObject(o,"lastWifiDisconnectReason",wifi_disconnect_reason);
     const double disconnected_seconds=ip_ready||wifi_down_since<=0?0:
