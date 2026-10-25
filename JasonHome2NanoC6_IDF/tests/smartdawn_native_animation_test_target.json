@@ -1,0 +1,27 @@
+{
+  "name": "Animated Jack-o'-Lantern · Run",
+  "source": "jason-home-2/curtain_internet_art",
+  "gallery_id": "jacklanternanimated-8e3f74948a71e03508d7eaea",
+  "sha256": "8e3f74948a71e03508d7eaeae1042a14164e24e9d9b2061a81d9a7fa9e58e244",
+  "format": "png-sequence",
+  "original_frames": 8,
+  "source_dimensions": {
+    "width": 579,
+    "height": 763
+  },
+  "target_dimensions": {
+    "width": 40,
+    "height": 40
+  },
+  "preserve_source": true,
+  "test_variants_without_writing_source": true,
+  "success_requires": [
+    "upload_completion_reply",
+    "two_fresh_effect_catalog_readbacks",
+    "verified_controller_stored_effect"
+  ],
+  "safety": {
+    "factory_effect_erasure": false,
+    "overwrite_saved_custom_effects": false
+  }
+}
