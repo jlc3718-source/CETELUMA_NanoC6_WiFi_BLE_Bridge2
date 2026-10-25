@@ -31,14 +31,14 @@ class Node{
  fire(name){return this.listeners.get(name)?.({preventDefault(){}})}
 }
 const nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,new Node());return nodes.get(id)};
-const choices=['shirley','kelly','jason'].map(id=>{const node=new Node();node.dataset.profile=id;return node});
+const choices=['shirley','jason'].map(id=>{const node=new Node();node.dataset.profile=id;return node});
 const document={body:new Node(),getElementById:get,querySelectorAll:selector=>selector==='.profileChoice'||selector==='[data-profile]'?choices:[],addEventListener(name,fn){if(name==='DOMContentLoaded')this.ready=fn}};
 const window=new EventTarget(),unlocks=[],requests=[],logouts=[],cancelled=[];
 let cleared=0;window.addEventListener('anderson-profile-cleared',()=>++cleared);
 function response(data,status=200){return {ok:status>=200&&status<300,status,statusText:String(status),text:async()=>JSON.stringify(data)}}
 function pending(list,url,options){return new Promise(resolve=>list.push({url,options,resolve}))}
 const context=vm.createContext({window,document,Event,CustomEvent,Headers,AbortController,location:{protocol:'http:'},console,setTimeout,clearTimeout:id=>{cancelled.push(id);clearTimeout(id)},Promise,fetch:async(url,options)=>{
- if(url.startsWith('/api/auth/status'))return response({pinEnabled:true,kellyConfigured:true});
+ if(url.startsWith('/api/auth/status'))return response({pinEnabled:true,configured:true});
  if(url==='/api/auth/unlock')return pending(unlocks,url,options);
  if(url==='/api/auth/logout'){logouts.push(options.headers['X-Anderson-Session']);return response({},204)}
  return pending(requests,url,options);
@@ -49,10 +49,10 @@ async function login(id,token){choose(id);get('profilePin').value='1234';const t
 (async()=>{
  vm.runInContext(GATE,context);document.ready();await flush();
  choose('jason');get('profilePin').value='1234';const cancelledLogin=get('profilePinForm').fire('submit');
- const old=unlocks.shift();get('cancelProfilePin').fire('click');choose('kelly');
+ const old=unlocks.shift();get('cancelProfilePin').fire('click');choose('shirley');
  old.resolve(response({pinEnabled:true,token:'cancelled-token',role:'admin'}));await cancelledLogin;await flush();
  assert.equal(window.andersonProfile,undefined);assert(logouts.includes('cancelled-token'));assert.equal(get('profilePinForm').hidden,false);
- await login('kelly','current-token');assert.equal(window.andersonProfile.id,'kelly');
+ await login('shirley','current-token');assert.equal(window.andersonProfile.id,'shirley');
  vm.runInContext('let currentRole="user";const API_MODE=true;const $=id=>document.getElementById(id);let applied=[],messages=[];const applyState=s=>applied.push(s);const status=s=>messages.push(s);const loadFavorites=()=>{};let speedSyncTimer=101,pendingSpeed=3,builderWheelTimer=102,liveTuneTimer=103,liveTuneQueued=true;',context);
  vm.runInContext(API+COMMANDS+STATE,context);
  const before=cleared,oldRequest=context.api('/stale');const stale=requests.shift();
@@ -146,3 +146,12 @@ with tempfile.TemporaryDirectory() as directory:
     source=Path(directory)/'boot-off.cpp';source.write_text(cpp+boot+off+tests)
     subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',str(source),'-o',str(source.with_suffix(''))],check=True)
     subprocess.run([str(source.with_suffix(''))],check=True)
+
+# Firmware auth migration and scan regression checks.
+assert 'profile=="shirley"?ROLE_USER:ROLE_NONE' in main
+assert 'schema<5' in main and 'd["version"]=5' in main
+assert 'kelly' not in main.lower() and 'kelly' not in html.lower()
+assert 'sc->setWindow(40)' in ble and 'sc->setMaxResults(0xFF)' not in ble
+assert 'sc->clearResults()' not in ble
+assert 'scan(uint32_t ms=2500)' in (ROOT/'firmware/include/BleController.h').read_text()
+print('PASS: two-profile configuration, migration, and stable scan settings')
