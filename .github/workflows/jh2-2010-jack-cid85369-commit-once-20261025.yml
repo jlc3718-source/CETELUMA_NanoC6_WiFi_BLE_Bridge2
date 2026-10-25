@@ -1,0 +1,67 @@
+name: JH2 2.0.10 ONE guarded native upload CID85369 Jack Run
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-jack-cid85369-commit-once-20261025.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-commit-cid85369-single-attempt
+  cancel-in-progress: false
+jobs:
+  commit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Commit the verified cached CID85369 once; controller must independently prove CID unused
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,os,urllib.request,subprocess,uuid,time
+          cid=85369; sha='ff37c8b4e92006bae90aabddda57ee94912f899d4c9da074b61c77a44e848588'
+          out={'test':'single-native-file-install','cid':cid,'expectedSha256':sha,
+               'firmwareFlashes':0,'eraseCommands':0,'automaticUploadRetries':0}
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          base='http://127.0.0.1:8081'
+          def request(path,body=None,cookie=None):
+              req=urllib.request.Request(base+path,data=json.dumps(body).encode() if body is not None else None,
+                headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},
+                method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=28) as r:return json.load(r),r.headers
+          _,r=request('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          cookie=r['Set-Cookie'].split(';')[0]
+          def get(p):return request(p,cookie=cookie)[0]
+          def post(p,v):return request(p,v,cookie=cookie)[0]
+          before=get('/api/curtain/status');c=before.get('curtain') or {}
+          out['before']={key:before.get(key) for key in ('firmware','online','queued','relayStreaming')}
+          out['before'].update({key:c.get(key) for key in ('connected','mtu','nativeCatalogUnique','nativeTarget83928Count','nativeTargetSectionComplete','nanoLocalCacheAvailableBytes')})
+          # This does not pretend the user-registered CID is assigned to slot 33.
+          # All existing effects remain protected. Native firmware makes its own
+          # FRESH catalog-CID empty check before writing the upload header.
+          if before.get('firmware')!='2.0.10' or before.get('online') is not True or \
+              c.get('connected') is not True or int(c.get('mtu') or 0)<399 or \
+              int(before.get('queued') or 0)!=0 or before.get('relayStreaming') is True or \
+              int(c.get('nativeCatalogUnique') or 0)<89 or c.get('nativeTargetSectionComplete') is not True or \
+              int(c.get('nativeTarget83928Count') or 0)!=1:
+              out['result']='SKIPPED: fresh BLE safety preflight did not pass'
+          else:
+              cmd=post('/api/curtain/call',{'action':'nativeSlotCommit','payload':{'sha256':sha,'cid':cid},
+                  'idempotencyKey':'single-cid85369-commit-jack-run-20261025'})
+              out['commandId']=cmd.get('commandId')
+              if not out['commandId']:raise RuntimeError('Oracle rejected command; no BLE upload')
+              done={}
+              for i in range(380):
+                  time.sleep(.5)
+                  done=get('/api/curtain/command?id='+str(out['commandId'])).get('command') or {}
+                  if done.get('state') in ('applied','failed','expired','superseded'):break
+              result=done.get('result') or {}
+              out['ack']={'state':done.get('state'),'message':str(result.get('message',''))[:400],
+                          'error':str(result.get('error',''))[:400],
+                          'bleTransmitted':result.get('bleTransmitted')}
+              after=get('/api/curtain/status');c=after.get('curtain') or {}
+              out['after']={key:after.get(key) for key in ('firmware','online','queued','relayStreaming')}
+              out['after'].update({key:c.get(key) for key in ('connected','mtu','nativeCatalogUnique','nativeTarget83928Count','nativeTargetSectionComplete')})
+              out['result']='BLE_NATIVE_TRANSFER_ACKED; CATALOG VERIFICATION REQUIRED' if done.get('state')=='applied' else 'NATIVE_TRANSFER_NOT_CONFIRMED; READ CATALOG BEFORE RETRY'
+          print('JH2_CID85369_NATIVE_COMMIT',json.dumps(out),flush=True)
+          PY
