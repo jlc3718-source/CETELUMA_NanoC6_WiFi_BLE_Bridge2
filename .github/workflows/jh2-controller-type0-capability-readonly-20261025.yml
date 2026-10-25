@@ -1,0 +1,73 @@
+name: JH2 Read Stored SmartDawn Type0 Video Capability
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-controller-type0-capability-readonly-20261025.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Decode retained controller 2103 info and failed native commands with absolutely no BLE writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import json,sqlite3,subprocess,base64,collections
+          inst=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(m for m in inst['Mounts'] if m['Destination']=='/data' and m['Type']=='bind')
+          conn=sqlite3.connect('file:'+str(Path(mount['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          def varint(buf,i):
+              v=0
+              for shift in range(0,70,7):
+                  if i>=len(buf):raise ValueError('Truncated')
+                  c=buf[i];i+=1;v|=(c&127)<<shift
+                  if not c&128:return v,i
+              raise ValueError('Too big')
+          def proto(buf):
+              fields={};p=0
+              while p<len(buf):
+                  key,p=varint(buf,p);field=key>>3;wire=key&7
+                  if wire==0:val,p=varint(buf,p)
+                  elif wire==2:
+                      n,p=varint(buf,p);val=buf[p:p+n];p+=n
+                  elif wire==5:val=buf[p:p+4];p+=4
+                  elif wire==1:val=buf[p:p+8];p+=8
+                  else:break
+                  fields[field]=val
+              return fields
+          r=conn.execute("SELECT value FROM curtain_meta WHERE key='notifications'").fetchone()
+          notices=json.loads(r[0]) if r else []
+          frames=collections.defaultdict(dict)
+          for n in notices:
+              b=base64.b64decode(n.get('data',''))
+              if len(b)<8 or b[1]<1 or b[1]>100 or b[2]>=b[1] or b[3]!=0:continue
+              key=(b[0],b[1]);part=b[1]-b[2]-1
+              frames[key][part]=b[4:]
+          results=[]
+          for (msgid,total),parts in frames.items():
+              if len(parts)!=total:continue
+              full=b''.join(parts[i] for i in range(total))
+              if len(full)<20 or full[0] not in (0xf0,0xf1):continue
+              op=int.from_bytes(full[6:8],'big')
+              if op==2103:
+                  fields=proto(full[20:])
+                  caps=(fields.get(22,0)&0xffffffff)
+                  fw=fields.get(6,0)
+                  tf=fields.get(33,0)
+                  vid=fields.get(34,0)
+                  make=bool(fw>=23000 and tf==1 and ((caps>>31)!=1 or (caps&0x200)!=0))
+                  results.append({'firmware':fw,'tfcard':tf,'vidUpload':vid,
+                    'capacityHex':hex(caps),'videoMakeEnabled':make,'ddpHeaderResult':full[14],
+                    'fieldCount':len(fields)})
+          print('STORED_DEVICE_INFO_2103_COUNT',len(results),flush=True)
+          print('LATEST_STORED_DEVICE_INFOS',json.dumps(results[-8:]),flush=True)
+          for id in (16089,16098):
+              rec=conn.execute('SELECT id,action,state,payload,result FROM curtain_commands WHERE id=?',(id,)).fetchone()
+              if rec:
+                  p=json.loads(rec[3]);o=json.loads(rec[4]) if rec[4] else {}
+                  print('UPLOAD_COMMAND',json.dumps({'id':rec[0],'action':rec[1],'state':rec[2],
+                    'cid':p.get('cid'),'sha256':p.get('sha256','')[:16],'result':o}),flush=True)
+          print('READONLY_NO_CONTROLLER_WRITES',flush=True)
+          PY
