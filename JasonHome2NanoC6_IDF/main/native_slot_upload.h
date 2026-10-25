@@ -7,6 +7,7 @@ typedef struct {
     bool (*write)(void *context,const uint8_t *packet,size_t len);
     bool (*reply)(void *context,uint16_t opcode,uint8_t id,uint32_t parts,const char **error);
     void (*pace)(void *context);
+    bool (*progress)(void *context,uint32_t parts,uint32_t min_completed,const char **error);
 } jh2_slot_io;
 
 // The whole authenticated file is already in RAM. No network calls occur
