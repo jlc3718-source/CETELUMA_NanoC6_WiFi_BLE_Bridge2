@@ -173,7 +173,7 @@ static const char *SETUP_HTML=
 "<label>Oracle bridge token (64 hex digits)<input type='password' name='oracleBridgeToken' maxlength='64'></label>"
 "<button type='submit'>Save settings and restart</button></form>"
 "<small>Connect to the Jason-Home-2-Setup Wi-Fi if the home network is unavailable. "
-"This page never displays saved passwords or bridge tokens.</small>"
+"This page never displays saved passwords or bridge tokens. Personalized 2.0.0 firmware can prefill Oracle without pre-configuring Wi-Fi.</small>"
 "</body></html>";
 static const char *FIRMWARE_HTML=
 "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -671,6 +671,46 @@ static bool save_config(cJSON *d){
     return true;
 }
 /*
+ * Jason Home 2 2.0.0 personalization marker.
+ * The public build ships with a deliberately invalid placeholder; a private
+ * finalization step replaces EXACTLY these 64 bytes inside the runtime BIN,
+ * then refreshes ESP image integrity metadata.
+ * Never place a real bridge token in Git or public CI artifacts.
+ * The array is writable so a token supplied during private personalization
+ * cannot be optimized away by the compiler.
+ */
+static char jh2_builtin_oracle_token[65] __attribute__((used)) =
+    "JH2V200PRIVATEORACLETOKENREPLACEME______________________________";
+static const char jh2_builtin_oracle_endpoint[] =
+    "https://150.136.245.51/jason-home-2";
+static const char jh2_builtin_oracle_bridge_id[] = "c6e361f91c250cbb";
+
+static bool seed_embedded_oracle_if_missing(void){
+    if(!fs_ready || !valid_hex(jh2_builtin_oracle_token))return false;
+    cJSON *cfg=old_config();
+    if(!cfg)return false;
+    const cJSON *existing_token=cJSON_GetObjectItemCaseSensitive(cfg,"oracleBridgeToken");
+    const cJSON *existing_id=cJSON_GetObjectItemCaseSensitive(cfg,"oracleBridgeId");
+    const cJSON *existing_endpoint=cJSON_GetObjectItemCaseSensitive(cfg,"oracleEndpoint");
+    // A previously saved complete pairing always wins over the factory
+    // fallback; never silently rotate or reset a user's working identity.
+    if(cJSON_IsString(existing_token)&&existing_token->valuestring&&
+       valid_hex(existing_token->valuestring)&&
+       cJSON_IsString(existing_id)&&existing_id->valuestring&&existing_id->valuestring[0]&&
+       cJSON_IsString(existing_endpoint)&&existing_endpoint->valuestring&&
+       valid_https(existing_endpoint->valuestring)){
+        cJSON_Delete(cfg);return true;
+    }
+    setstr(cfg,"oracleEndpoint",jh2_builtin_oracle_endpoint);
+    setstr(cfg,"oracleBridgeId",jh2_builtin_oracle_bridge_id);
+    setstr(cfg,"oracleBridgeToken",jh2_builtin_oracle_token);
+    const bool ok=save_config(cfg);
+    cJSON_Delete(cfg);
+    ESP_LOGI(TAG,ok?"Embedded Oracle pairing loaded (token redacted)":
+                     "Embedded Oracle pairing storage failed");
+    return ok;
+}
+/*
  * User-specific full-flash credentials live in a separate 4KB provisioning
  * flash sector. Source and public CI carry NO Wi-Fi or Oracle secrets.
  * It is only read on first boot when /littlefs/secrets.json is missing.
@@ -930,7 +970,7 @@ bool jh2_web_has_oracle_credentials(void){return creds_ready;}
 void jh2_web_request_recovery(void){recovery_request=true;}
 bool jh2_web_recovery_requested(void){return recovery_request;}
 bool jh2_web_start(void){
-    fs_ready=mount_store();import_factory_provision();read_saved();
+    fs_ready=mount_store();import_factory_provision();seed_embedded_oracle_if_missing();read_saved();
     if(!start_net()){ESP_LOGE(TAG,"Wi-Fi/AP setup failed");return false;}
     if(!preview_lock)preview_lock=xSemaphoreCreateMutex();
     if(!preview_lock){ESP_LOGE(TAG,"Preview mutex allocation failed");return false;}
