@@ -65,3 +65,5 @@ jobs:
               out['result']='BLE_NATIVE_TRANSFER_ACKED; CATALOG VERIFICATION REQUIRED' if done.get('state')=='applied' else 'NATIVE_TRANSFER_NOT_CONFIRMED; READ CATALOG BEFORE RETRY'
           print('JH2_CID85369_NATIVE_COMMIT',json.dumps(out),flush=True)
           PY
+
+# Fresh full 2904 catalog succeeded as command 16662; CID85369 commit stays guarded.
