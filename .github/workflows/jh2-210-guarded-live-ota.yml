@@ -1,0 +1,133 @@
+name: JH2 2.0.10 Guarded OTA Exact HTTPS DDNS Redirect
+on:
+  push:
+    branches: [fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025]
+    paths: [.github/workflows/jh2-210-guarded-live-ota.yml]
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate signed 2.0.10 Oracle image then OTA update active 2.0.9
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import os,json,hashlib,base64,subprocess,tempfile,urllib.request,time
+          from pathlib import Path
+          work=Path(os.environ['GITHUB_WORKSPACE'])
+          inspect=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next((m for m in inspect['Mounts'] if m['Destination']=='/data' and m['Type']=='bind'),None)
+          assert mount is not None
+          approved=Path(mount['Source'])/'signed-ota'/'approved'
+          manifest=json.loads((approved/'latest.json').read_text())
+          f=dict(row.split('=',1) for row in manifest['payload'].strip().splitlines())
+          assert f['product']=='jason-home-2-nanoc6' and f['version']=='2.0.10'
+          fw=(approved/'jh2-runtime-2.0.10.bin').read_bytes()
+          assert 0x100000<len(fw)<=0x160000 and fw[0]==0xe9
+          assert int(f['bytes'])==len(fw) and hashlib.sha256(fw).hexdigest()==f['sha256']
+          with tempfile.TemporaryDirectory() as tmp:
+              p=Path(tmp)
+              (p/'payload').write_text(manifest['payload'])
+              (p/'signature').write_bytes(base64.b64decode(manifest['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                  str(work/'remote-update/anderson_ota_signing_public.pem'),
+                  '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(item.split('=',1) for item in info['Config']['Env'] if '=' in item)
+          token=env.get('JASON_HOME_API_TOKEN','')
+          assert token
+          root='http://127.0.0.1:8081'
+          def api(path,body=None,cookie='',timeout=35):
+              headers={'Content-Type':'application/json'}
+              if cookie:headers['Cookie']=cookie
+              req=urllib.request.Request(root+path,data=json.dumps(body).encode() if body is not None else None,
+                  headers=headers,method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=timeout) as resp:return json.load(resp),resp.headers
+          serve,_=api('/api/curtain/firmware-manifest')
+          assert serve==manifest, 'Oracle serves wrong manifest'
+          with urllib.request.urlopen(root+'/api/curtain/firmware-runtime/2.0.10.bin',timeout=60) as resp:
+              assert resp.read()==fw,'Served runtime differs from signed image'
+          _,headers=api('/api/session',{'token':token})
+          cookie=headers['Set-Cookie'].split(';')[0]
+          def live():
+              s,_=api('/api/curtain/status',cookie=cookie)
+              return s
+          s=live()
+          if s.get('firmware')=='2.0.10':
+              print('ALREADY_RUNNING_210',flush=True)
+              raise SystemExit(0)
+          assert s.get('firmware')=='2.0.9', 'Unexpected firmware; refuse remote installation'
+          assert s.get('online') is True and int(s.get('queued') or 0)==0
+          assert not s.get('relayStreaming'),'Active animation transfer; do not interrupt'
+          print('SIGNED_210_ORACLE_PRECHECK_PASS',len(fw),f['sha256'],flush=True)
+          def issue(action,key,max_checks=45):
+              reply,_=api('/api/curtain/call',{'action':action,'payload':{},'idempotencyKey':key},cookie=cookie)
+              ident=reply.get('commandId')
+              assert isinstance(ident,int)
+              print('COMMAND_SENT',action,ident,flush=True)
+              for _ in range(max_checks):
+                  d,_=api('/api/curtain/command?id='+str(ident),cookie=cookie)
+                  x=d.get('command') or {}
+                  if x.get('state') in ('applied','failed','expired','superseded'):
+                      print('COMMAND_RESULT',action,x['state'],str(x.get('result'))[:220],flush=True)
+                      return x['state']=='applied'
+                  time.sleep(2)
+              raise RuntimeError('Nano command did not acknowledge '+action)
+          if not issue('nanoFirmwareCheck','jh2-210-check-signed-20261025'):
+              raise RuntimeError('Nano rejected signed manifest')
+          initial=issue('nanoInstallUpdate','jh2-210-stage-first-20261025')
+          if not initial:
+              last=None
+              for attempt in range(32):
+                  time.sleep(6)
+                  s=live()
+                  if s.get('firmware')=='2.0.10' and s.get('online'):
+                      print('NANO_210_RUNNING_CONFIRMED',flush=True)
+                      raise SystemExit(0)
+                  ota=s.get('signedOta') or {}
+                  state=ota.get('state','missing')
+                  signature=(state,ota.get('downloadedBytes'),ota.get('lastHttpStatus'),ota.get('lastEspError'))
+                  if signature!=last:
+                      print('NANO_OTA_PROGRESS',json.dumps({'state':state,'bytes':ota.get('downloadedBytes'),
+                       'source':ota.get('downloadSource'),'http':ota.get('lastHttpStatus'),
+                       'esp':ota.get('lastEspError'),'message':str(ota.get('message',''))[:200]}),flush=True)
+                      last=signature
+                  if state=='ready':
+                      # A 2.0.9 runtime with auto-update enabled may have
+                      # already installed and rebooted between status reads.
+                      # Do not treat a duplicate 'only newer firmware' ACK
+                      # as a failed OTA if the target runtime is online.
+                      s=live()
+                      if s.get('firmware')=='2.0.10' and s.get('online'):
+                          print('NANO_210_AUTO_INSTALLED_VERIFIED',flush=True)
+                          raise SystemExit(0)
+                      accepted=issue('nanoInstallUpdate','jh2-210-activate-verified-20261025')
+                      if not accepted:
+                          time.sleep(8)
+                          s=live()
+                          if s.get('firmware')=='2.0.10' and s.get('online'):
+                              print('NANO_210_AUTO_INSTALLED_DURING_ACTIVATION',flush=True)
+                              raise SystemExit(0)
+                          raise RuntimeError('Verified staged image not yet installed; active runtime preserved')
+                      break
+                  if state=='failed':
+                      raise RuntimeError('Nano verified OTA downloader failed: '+str(ota.get('message',''))[:200])
+              else:
+                  raise RuntimeError('No verified staged firmware after bounded download window')
+          for _ in range(95):
+              s=live()
+              if s.get('firmware')=='2.0.10' and s.get('online'):
+                  print('NANO_210_RUNNING_CONFIRMED',json.dumps({
+                      'firmware':s.get('firmware'),'online':s.get('online'),
+                      'bleConnected':(s.get('curtain') or {}).get('connected'),
+                      'bleStarts':(s.get('curtain') or {}).get('nativeGapConnectStartRequests')}),flush=True)
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise RuntimeError('Signed 2.0.10 accepted but no live boot confirmation; active runtime preserved')
+          PY
