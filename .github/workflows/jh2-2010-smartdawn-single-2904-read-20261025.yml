@@ -79,6 +79,55 @@ jobs:
                   out['newRawNotifications']=len(new)
                   out['new2904FragmentCandidates']=sum(1 for n in new
                       if str(n.get('uuid','')).lower()=='01010074-1972-1925-3022-077119514e44')
+                  # Decode the post-write 2904 responses including the
+                  # target new CID 85369 and preserved control CID 83928.
+                  def unsigned(b,i):
+                      v=0
+                      for n in range(10):
+                          if i>=len(b):raise ValueError('varint EOF')
+                          c=b[i];i+=1;v|=(c&127)<<(7*n)
+                          if c<128:return v,i
+                      raise ValueError('varint overflow')
+                  def protobuf(b):
+                      i=0
+                      while i<len(b):
+                          tag,i=unsigned(b,i);key,w=tag>>3,tag&7
+                          if not key:raise ValueError('zero tag')
+                          if w==0:value,i=unsigned(b,i)
+                          elif w==2:
+                              size,i=unsigned(b,i)
+                              if size>len(b)-i:raise ValueError('length')
+                              value=b[i:i+size];i+=size
+                          elif w in (1,5):
+                              size=8 if w==1 else 4
+                              value=b[i:i+size];i+=size
+                          else:raise ValueError('wire type')
+                          yield key,w,value
+                  groups={}
+                  for n in new:
+                      try:b=base64.b64decode(n.get('data',''),validate=True)
+                      except:continue
+                      if len(b)<5 or b[3]!=0 or b[1]<1 or b[1]>100 or b[2]>=b[1]:continue
+                      key=(b[0],b[1]);group=groups.setdefault(key,{})
+                      group[b[1]-b[2]-1]=b[4:]
+                  entries={}
+                  for (id,total),group in groups.items():
+                      if len(group)!=total:continue
+                      body=b''.join(group[i] for i in range(total))
+                      if len(body)<20 or body[0] not in (240,241) or body[1]!=1 or body[6:8]!=bytes([11,88]):continue
+                      try:
+                          for f,w,embedded in protobuf(body[20:]):
+                              if f!=1 or w!=2:continue
+                              item={}
+                              for child,cw,value in protobuf(embedded):
+                                  if cw==0 and child in (1,2,3,4):
+                                      item[{1:'id',2:'type',3:'slot',4:'cid'}[child]]=value
+                              if 'cid' in item and 'slot' in item:entries[(item.get('id'),item['cid'])]=item
+                      except ValueError:continue
+                  out['newCatalogDecodedEntries']=len(entries)
+                  out['newRegisteredCid85369']=[i for i in entries.values() if i.get('cid')==85369]
+                  out['knownControlCid83928']=[i for i in entries.values() if i.get('cid')==83928]
+                  out['newCustomSlots']=[i for i in entries.values() if int(i.get('id') or -1)>=87]
               after=get('/api/curtain/status')
               d=after.get('curtain') or {}
               out['after']={key:after.get(key) for key in ('firmware','online','queued','relayStreaming')}
