@@ -118,7 +118,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"Runtime confirmed healthy after 60 seconds; previous A/B image remains intact");
+    ESP_LOGW(TAG,"1.1.75 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
