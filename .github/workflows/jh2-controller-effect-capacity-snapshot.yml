@@ -1,0 +1,60 @@
+name: JH2 Diagnose Saved Custom Effect Capacity Readonly
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-controller-effect-capacity-snapshot.yml]
+permissions: {contents: read}
+jobs:
+  catalog:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Parse existing saved 2904 catalog notifications; no BLE commands
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import subprocess,json,sqlite3,base64
+          from pathlib import Path
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          m=next(m for m in info['Mounts'] if m['Destination']=='/data' and m['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(m['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True)
+          raw=db.execute("SELECT value FROM curtain_meta WHERE key='notifications'").fetchone()
+          ns=json.loads(raw[0]) if raw else []
+          fragments={}
+          for n in ns:
+              raw=base64.b64decode(n.get('data',''))
+              if len(raw)<8 or raw[3]!=0 or raw[1]<1 or raw[1]>100 or raw[2]>=raw[1]:continue
+              key=(raw[0],raw[1]);part=raw[1]-raw[2]-1
+              bucket=fragments.setdefault(key,{})
+              if part not in bucket:bucket[part]=raw[4:]
+          def vi(b,i):
+              v=0
+              for shift in range(0,70,7):
+                  k=b[i];i+=1;v|=(k&127)<<shift
+                  if k<128:return v,i
+              raise ValueError('protobuf varint')
+          def fields(b,i=0):
+              while i<len(b):
+                  tag,i=vi(b,i);t=tag&7;key=tag>>3
+                  if t==0:v,i=vi(b,i)
+                  elif t==2:
+                      n,i=vi(b,i);v=b[i:i+n];i+=n
+                  elif t==1:v=b[i:i+8];i+=8
+                  elif t==5:v=b[i:i+4];i+=4
+                  else:raise ValueError('bad wire')
+                  yield key,t,v
+          effects={};headers=[]
+          for (id,count),parts in fragments.items():
+              if len(parts)!=count:continue
+              b=b''.join(parts[i] for i in range(count))
+              if len(b)<20 or int.from_bytes(b[6:8],'big')!=2904:continue
+              headers.append((id,count))
+              for key,t,v in fields(b,20):
+                  if (key,t)!=(1,2):continue
+                  z={field:int(value) for field,wt,value in fields(v) if wt==0}
+                  if 4 in z:effects[z.get(1,0)]={'id':z.get(1,0),'cid':z[4],'slot':z.get(3,0),'type':z.get(2,0)}
+          print('FULL_CATALOG_MESSAGES',len(headers),'UNIQUE_EFFECT_IDS',len(effects))
+          print('CONTROLLER_CUSTOM_ID_RANGE',json.dumps([effects[k] for k in sorted(effects) if k>=80]))
+          print('ALL_NONFACTORY_ID_87_PLUS',json.dumps([effects[k] for k in sorted(effects) if k>=87]))
+          print('CAPACITY_CANNOT_BE_DEDUCED_FROM_CATALOG_ALONE')
+          PY
