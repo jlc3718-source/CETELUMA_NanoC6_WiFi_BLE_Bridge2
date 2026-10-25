@@ -46,9 +46,9 @@ function segmentAssignment(lamps:number,paletteCount:number,pattern?:SegmentPatt
   return new Uint8Array(out);
 }
 export function color(model:string,rgb:number,lampCount:number):Uint8Array{
-  const lamps=clamp(lampCount,1,120),pal=concat(new Uint8Array([1]),nativeColor(model,rgb));
-  if(isE22(model))return concat(tlv(0xa3,le16(LOCAL_COLOR_ID)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([5])),tlv(0xa6,concat(new Uint8Array([1]),rgbcw((rgb&0xffffff).toString(16).padStart(6,"0")))),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,le16(0)),tlv(0xac,le32(0xffffffff)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
-  return nativeE120Fields(LOCAL_COLOR_ID,5,[rgb],lamps);
+  const lamps=clamp(lampCount,1,120),corrected=calibratedColor(model,rgb);
+  if(isE22(model))return concat(tlv(0xa3,le16(LOCAL_COLOR_ID)),tlv(0xa4,le16(0)),tlv(0xa5,new Uint8Array([5])),tlv(0xa6,concat(new Uint8Array([1]),rgbcw(corrected.toString(16).padStart(6,"0")))),tlv(0xa7,positions(lamps)),tlv(0xa8,new Uint8Array([100])),tlv(0xa9,new Uint8Array([0,0,0,0,0])),tlv(0xaa,new Uint8Array([0])),tlv(0xab,le16(0)),tlv(0xac,le32(0xffffffff)),tlv(0xad,new Uint8Array([0])),tlv(0xae,new Uint8Array([0])),tlv(0xaf,new Uint8Array([0])),tlv(0xb0,new Uint8Array([0])));
+  return nativeE120Fields(LOCAL_COLOR_ID,5,[corrected],lamps);
 }
 function speedValueE22(speed:number){return [2,3,4,6,8,14,19,25,38,50][Math.round(clamp(speed,1,10))-1];}
 /** Streamlight is a two-color effect: preserve color one, default second to black. 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { allowedApi } from "../dist/eufy/client.js";
+import { allowedApi,calibratedFactoryPreset } from "../dist/eufy/client.js";
 import { collectFactoryEffectIds, normalizeFactoryEntry, buildFactoryFields, dedupeFactoryPresetsByName, reverseFactoryPresetDirection, rgbcw } from "../dist/eufy/factory-presets.js";
 import { catalogPresetE120, nativeE22Fields, color as solidColorFields } from "../dist/eufy/light-commands.js";
 
@@ -94,7 +94,23 @@ assert.deepEqual([...rgbcw("5b00e6")],[0x5b,0,0xe6,0,0]);
 const e22PurpleOrange=nativeE22Fields(20006,1,[0x5b00e6,0xff0d00],60,100);
 assert.deepEqual([...readTlv(0xa6,e22PurpleOrange).slice(0,6)],[2,0x5b,0,0xe6,0,0]);
 const e22PurpleSolid=solidColorFields("T8L02",0x5b00e6,30);
-assert.deepEqual([...readTlv(0xa6,e22PurpleSolid)],[1,0x5b,0,0xe6,0,0]);
+assert.deepEqual([...readTlv(0xa6,e22PurpleSolid)],[1,...rgbcw("1800ff")]);
+
+
+const factoryInput={...p,layers:[{...p.layers[0],colors:"FF7A00|5B00E6|DC143C|00FFB8|F08000|000000"}]};
+for(const [model,expected] of [
+  ["T8L00","ff0a00|4800ff|dc143c|00ffb8|f08000|000000"],
+  ["T8L02","ff7a00|1800ff|a40008|00ffff|f08000|000000"]
+]){
+  const corrected=calibratedFactoryPreset(model,factoryInput);
+  assert.equal(corrected.layers[0].colors,expected,model+" factory layer must use approved substitutions");
+  assert.equal(factoryInput.layers[0].colors,"FF7A00|5B00E6|DC143C|00FFB8|F08000|000000","do not change saved catalog colors");
+  assert.deepEqual([...buildFactoryFields(model,corrected)],
+    [...buildFactoryFields(model,{...factoryInput,layers:[{...factoryInput.layers[0],colors:expected}]})],
+    model+" native factory bytes must match calibrated RGB");
+}
+const e120Color=solidColorFields("T8L00",0xff7a00,60);
+assert.deepEqual([...readTlv(0xa6,e120Color)],[1,0xff,0x0a,0,0],"E120 direct solid uses corrected orange");
 
 const malformed=normalizeFactoryEntry({light_id:10099,name:"Bad",params:"{not-json"});
 assert.equal(malformed.layers.length,0);

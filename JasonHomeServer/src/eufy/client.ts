@@ -1,7 +1,7 @@
 import { aesDecryptText, aesEncryptText, encryptPassword, md5, newEcdh, randomId, sign, LOCAL_KEY_HEX } from "./crypto.js";
 import type { MqttCredentials, MqttTarget, CommandFrame } from "./mqtt.js";
 import { effectReportMatches, startCommandCapture, mqttConnectionMode, sendMqtt, sendMqttStream, warmPersistentMqtt } from "./mqtt.js";
-import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, catalogPresetE120, brightness as brightnessFields } from "./light-commands.js";
+import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, calibratedColor, catalogPresetE120, brightness as brightnessFields } from "./light-commands.js";
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
 
@@ -17,6 +17,20 @@ const LIGHTS:LightSpec[]=[
 export function allowedApi(host:string){return /^(?:mega|app-(?:openapi|passport|push|house|devicemanage|light))-(?:us|eu)-pr\.eufy\.com$/.test(host);}
 function allowedBroker(host:string){return /^[a-zA-Z0-9.-]+$/.test(host)&&(host.endsWith(".anker.com")||host.endsWith(".eufy.com")||host.endsWith(".amazonaws.com"));}
 function nowSec(){return Math.floor(Date.now()/1000);}
+
+/** Apply the user-approved E120/E22 RGB substitutions to factory-layer
+ * palettes before their native wire encoding. Preserve effect metadata,
+ * direction, IDs, white/black gaps, and original catalog records. */
+export function calibratedFactoryPreset(model:string,preset:EufyFactoryPreset):EufyFactoryPreset {
+  return {...preset,layers:preset.layers.map(layer=>{
+    if(typeof layer.colors!=="string")return {...layer};
+    const colors=layer.colors.split("|").map(token=>
+      /^[0-9a-fA-F]{6}$/.test(token)
+        ?calibratedColor(model,parseInt(token,16)).toString(16).padStart(6,"0")
+        :token);
+    return {...layer,colors:colors.join("|")};
+  })};
+}
 
 export class EufyClient {
   region="us-pr";bootstrap="";share="";ident="";token="";uid="";accountUid="";
@@ -177,7 +191,7 @@ export class EufyClient {
       if(legacy){
         const e:any=Array.isArray((legacy.raw as any)?.light_effect)?(legacy.raw as any).light_effect[0]:{};
         const dynamicId=Number(e?.dynamic),rawSpeed=Math.max(1,Math.min(10,Math.round(Number(e?.speed??legacy.speed??5)||5)));
-        const palette=String(e?.rgb_hex??legacy.colors??"").split("|").filter(x=>/^[0-9a-fA-F]{6}$/.test(x)).slice(0,8).map(x=>parseInt(x,16));
+        const palette=String(e?.rgb_hex??legacy.colors??"").split("|").filter(x=>/^[0-9a-fA-F]{6}$/.test(x)).slice(0,8).map(x=>calibratedColor(s.model,parseInt(x,16)));
         const level=brightnessOverride==null
           ?(typeof legacy.brightness==="number"?Math.max(1,Math.min(100,Math.round(legacy.brightness))):75)
           :Math.max(1,Math.min(100,Math.round(brightnessOverride)));
@@ -231,7 +245,7 @@ export class EufyClient {
   async factoryScene(name:string,preset:EufyFactoryPreset,brightnessOverride?:number){
     const s=this.spec(name);
     const directionalPreset=REVERSED_INSTALLATIONS.has(name)?reverseFactoryPresetDirection(preset):preset;
-    const fields=buildFactoryFields(s.model,directionalPreset);
+    const fields=buildFactoryFields(s.model,calibratedFactoryPreset(s.model,directionalPreset));
     const brightness=brightnessOverride==null
       ?(typeof preset.brightness==="number"?Math.max(1,Math.min(100,Math.round(preset.brightness))):75)
       :Math.max(1,Math.min(100,Math.round(brightnessOverride)));
