@@ -1178,6 +1178,20 @@ static void host_task(void *parameter){
     nimble_port_freertos_deinit();
 }
 static volatile bool ble_start_attempted=false;
+static volatile bool oracle_autolink_boot_attempted=false;
+static void start_oracle_after_home_wifi(void){
+#if CONFIG_JH2_NATIVE_ENABLE_ORACLE
+    if(oracle_autolink_boot_attempted)return;
+    EventGroupHandle_t g=jh2_web_wifi_group();
+    if(!g || !(xEventGroupGetBits(g)&BIT0) ||
+       !jh2_web_has_oracle_credentials())return;
+    oracle_autolink_boot_attempted=true;
+    if(!jh2_bridge_autolink_request())
+        ESP_LOGW(TAG,"Automatic Oracle verification request unavailable; manual Settings > Oracle remains active");
+    else
+        ESP_LOGW(TAG,"Oracle auto-link verification started after local Wi-Fi; no boot dependency");
+#endif
+}
 // The ESP32-C6 shares one radio between BLE and Wi-Fi. Do not initialize
 // NimBLE until home Wi-Fi has an IP address. Until then the setup AP must
 // remain a simple, open and responsive recovery interface.
@@ -1251,9 +1265,9 @@ void app_main(void){
              jh2_native_runtime_marker);
 #endif
 #if CONFIG_JH2_NATIVE_ENABLE_ORACLE
-    // Do not connect to Oracle on boot. Oracle is a separate, button-driven
-    // service only after home Wi-Fi is online and bridge credentials verify.
-    ESP_LOGW(TAG,"Oracle standby; use Settings > Oracle > Connect Automatically");
+    // Oracle startup never blocks the setup AP. Existing credentials can be
+    // verified automatically after DHCP; manual controls remain available.
+    ESP_LOGW(TAG,"Oracle standby until home Wi-Fi ready; secure auto-link enabled");
 #else
     ESP_LOGW(TAG,"Oracle disabled at build-time; local Wi-Fi + BLE still run");
 #endif
@@ -1261,6 +1275,7 @@ void app_main(void){
         vTaskDelay(pdMS_TO_TICKS(10000));
         failsafe_confirm_after_60s();
         start_ble_after_home_wifi();
+        start_oracle_after_home_wifi();
         if(requested && !finished && started_at &&
            esp_timer_get_time()-started_at>20000000LL){
             ESP_LOGW(TAG,"PARTIAL_CATALOG received=%u of 88 reply_packets=%u notifications=%u",
