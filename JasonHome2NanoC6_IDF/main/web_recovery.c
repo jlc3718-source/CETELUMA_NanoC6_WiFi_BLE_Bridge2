@@ -184,7 +184,8 @@ static const char *HOME_HTML=
 " try{\n"
 "  const r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();\n"
 "  if(!r.ok||!d.available)throw Error(d.message||'No newer signed update available');\n"
-"  $('updateResult').textContent='Signed '+d.version+' found; download and SHA-256 verification started.';\n"
+"  $('updateResult').textContent=d.checking?'Checking signed firmware in background...':\n"
+"    'Signed '+(d.version||'update')+' download requested; progress shown below.';\n"
 " }catch(e){$('updateResult').textContent=e.message}\n"
 " await refreshOta();\n"
 "}\n"
@@ -343,8 +344,8 @@ static const char *FIRMWARE_HTML=
 "async function checkUpdate(){btn.disabled=true;result.textContent='Checking signed firmware via Oracle...';"
 "try{const r=await fetch('/api/firmware/check',{cache:'no-store'}),d=await r.json();"
 "if(!r.ok||!d.available)throw Error(d.message||'No newer signed update is available');"
-"btn.disabled=false;btn.textContent='Install '+d.version+' and restart';"
-"result.textContent='Verified signed update '+d.version+' is available. No files needed.';"
+"btn.disabled=true;"
+"result.textContent=d.checking?'Checking signed firmware in background...':'Signed download requested; install unlocks when fully verified.';"
 "}catch(e){result.textContent=e.message;}}"
 "async function installUpdate(){if(btn.disabled)return;"
 "if(!confirm('Install newer signed firmware from Oracle and restart the Nano now?'))return;"
@@ -365,7 +366,7 @@ static const char *FIRMWARE_HTML=
 " }catch(e){o.textContent=e.message;}"
 " setTimeout(()=>{b.disabled=false},60000);"
 "}"
-"refreshAuto();checkUpdate();</script></body></html>";
+"refreshAuto();</script></body></html>";
 
 // User-requested local-controller access policy: no client IP, subnet,
 // LAN-origin, or host restrictions. The setup AP is intentionally open.
@@ -1043,14 +1044,38 @@ static esp_err_t firmware_stage_get(httpd_req_t *req){
     jh2_ota_status(o);
     return send_json(req,o);
 }
-static esp_err_t firmware_check(httpd_req_t *req){
+// Browser HTTP worker is intentionally never used for outbound HTTPS.
+// A long or failing Oracle/GitHub request must not hold the local controls.
+static volatile bool fw_check_busy=false;
+static volatile bool fw_check_available=false;
+static char fw_check_version[32]="";
+static char fw_check_error[170]="";
+static void firmware_check_task(void *unused){
+    (void)unused;
     char version[32]={0},error[170]={0};
-    bool available=jh2_bridge_signed_firmware(false,version,sizeof(version),error,sizeof(error));
+    const bool available=jh2_bridge_signed_firmware(false,version,sizeof(version),error,sizeof(error));
+    snprintf(fw_check_version,sizeof(fw_check_version),"%s",version);
+    snprintf(fw_check_error,sizeof(fw_check_error),"%s",error);
+    fw_check_available=available;
+    fw_check_busy=false;
+    vTaskDelete(NULL);
+}
+static esp_err_t firmware_check(httpd_req_t *req){
+    bool queued=true;
+    if(!fw_check_busy && !jh2_ota_download_active() && !jh2_ota_staged_ready()){
+        fw_check_busy=true;
+        queued=xTaskCreate(firmware_check_task,"jh2-ota-check",10240,NULL,3,NULL)==pdPASS;
+        if(!queued){fw_check_busy=false;snprintf(fw_check_error,sizeof(fw_check_error),"OTA check worker unavailable");}
+    }
     cJSON *j=cJSON_CreateObject();
-    cJSON_AddBoolToObject(j,"ok",true);
-    cJSON_AddBoolToObject(j,"available",available);
-    if(available)cJSON_AddStringToObject(j,"version",version);
-    else cJSON_AddStringToObject(j,"message",error[0]?error:"No update available");
+    cJSON_AddBoolToObject(j,"ok",queued);
+    cJSON_AddBoolToObject(j,"checking",fw_check_busy);
+    cJSON_AddBoolToObject(j,"available",queued &&
+         (fw_check_busy || jh2_ota_download_active() || jh2_ota_staged_ready() || fw_check_available));
+    if(fw_check_version[0])cJSON_AddStringToObject(j,"version",fw_check_version);
+    if(!queued||(!fw_check_busy && !jh2_ota_download_active() &&
+                 !jh2_ota_staged_ready() && !fw_check_available))
+        cJSON_AddStringToObject(j,"message",fw_check_error[0]?fw_check_error:"No newer signed update");
     return send_json(req,j);
 }
 static void update_reboot(void *unused){
@@ -1060,8 +1085,16 @@ static void update_reboot(void *unused){
     vTaskDelete(NULL);
 }
 static esp_err_t firmware_install(httpd_req_t *req){
+    // Local install only activates a verified A/B slot. Do not block the
+    // Nano's single HTTP worker on the Oracle/GitHub release feed.
+    if(!jh2_ota_staged_ready()){
+        cJSON *j=cJSON_CreateObject();
+        cJSON_AddBoolToObject(j,"ok",false);
+        cJSON_AddStringToObject(j,"message","Signed image not yet verified; check OTA progress");
+        return send_json(req,j);
+    }
     char version[32]={0},error[170]={0};
-    const bool ready=jh2_bridge_signed_firmware(true,version,sizeof(version),error,sizeof(error));
+    const bool ready=jh2_ota_install_staged(error,sizeof(error));
     if(!ready){
         cJSON *j=cJSON_CreateObject();
         cJSON_AddBoolToObject(j,"ok",false);
@@ -1278,6 +1311,9 @@ bool jh2_web_start(void){
     cfg.max_uri_handlers=36;
     cfg.stack_size=7168;
     cfg.lru_purge_enable=true;
+    cfg.max_open_sockets=7; // Browser polling must not evict a pending control response.
+    cfg.recv_wait_timeout=5;
+    cfg.send_wait_timeout=5;
     if(httpd_start(&web_server,&cfg)!=ESP_OK)return false;
     const httpd_uri_t routes[]={
         {.uri="/",.method=HTTP_GET,.handler=html_get},
