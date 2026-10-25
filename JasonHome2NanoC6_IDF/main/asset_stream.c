@@ -348,3 +348,86 @@ bool jh2_asset_stream_set_speed(uint16_t percent){
 uint16_t jh2_asset_stream_get_speed(void){return speed_percent;}
 void jh2_asset_stream_stop(void){++generation;}
 bool jh2_asset_stream_active(void){return streaming;}
+
+
+/* Registered SmartDawn native effect cache. Unlike JHC1 streaming, the
+ * native transport stages an opaque .eff to LittleFS and then uploads it
+ * over BLE locally. The preexisting partition table is left unchanged. */
+#define NATIVE_CACHE_PATH "/littlefs/curtain-native.eff"
+#define NATIVE_STAGE_PATH "/littlefs/curtain-native.tmp"
+const char *jh2_native_local_path(void){return NATIVE_CACHE_PATH;}
+static uint32_t local_le32(const uint8_t *p){
+    return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
+}
+static bool native_header_ok(const char *path,uint32_t size,uint32_t cid){
+    if(!cid||size<8192||size>JH2_NATIVE_LOCAL_LIMIT)return false;
+    FILE *f=fopen(path,"rb");if(!f)return false;
+    uint8_t h[144]={0},item[17]={0};
+    bool ok=fread(h,1,sizeof(h),f)==sizeof(h);
+    if(ok){
+        uint32_t offset=local_le32(h+128),frames=(uint32_t)h[134]|(uint32_t)h[135]<<8;
+        ok=(!memcmp(h,"DNMX",4)||!memcmp(h,"DNCX",4))&&
+           h[4]==3&&h[5]==1&&h[6]==40&&h[7]==0&&h[8]==40&&h[9]==0&&
+           local_le32(h+10)==4800&&local_le32(h+14)==cid&&
+           offset>=4096&&offset<=size-4096&&frames>=2&&frames<=180&&
+           (uint64_t)offset+4096+(uint64_t)4800*frames<=size;
+        if(ok)ok=fseek(f,(long)offset,SEEK_SET)==0&&fread(item,1,sizeof(item),f)==sizeof(item)&&
+            !memcmp(item,"DNX2",4)&&item[4]==3&&local_le32(item+5)==4800&&
+            local_le32(item+9)==frames&&item[13]==40&&item[14]==0&&
+            item[15]==40&&item[16]==0;
+    }
+    fclose(f);return ok;
+}
+bool jh2_asset_native_verified(const char *sha,uint32_t size,uint32_t cid){
+    return hex64(sha)&&native_header_ok(NATIVE_CACHE_PATH,size,cid)&&
+           file_digest_ok(NATIVE_CACHE_PATH,sha,size);
+}
+bool jh2_asset_stage_native(const char *endpoint,const char *token,
+                            const char *sha,uint32_t size,uint32_t cid){
+    if(!endpoint||!token||!hex64(sha)||!cid||size<8192||
+       size>JH2_NATIVE_LOCAL_LIMIT||streaming)return false;
+    if(jh2_asset_native_verified(sha,size,cid))return true;
+    size_t total=0,used=0;
+    if(esp_littlefs_info("storage",&total,&used)!=ESP_OK||used>total)return false;
+    struct stat old={0};
+    size_t reclaim=stat(NATIVE_CACHE_PATH,&old)==0&&old.st_size>0?
+                   (size_t)old.st_size:0;
+    // The old verified animation is expendable; do not remove JHC1,
+    // secrets.json, settings, NVS or any other LittleFS path.
+    if((uint64_t)total-used+reclaim<(uint64_t)size+CACHE_RESERVED_BYTES)return false;
+    char url[370],authorization[75];
+    if(snprintf(url,sizeof(url),"%s/api/curtain-bridge/stream/%s",endpoint,sha)>=(int)sizeof(url))return false;
+    unlink(NATIVE_STAGE_PATH);unlink(NATIVE_CACHE_PATH);
+    FILE *f=fopen(NATIVE_STAGE_PATH,"wb");if(!f)return false;
+    esp_http_client_config_t cfg={.url=url,.cert_pem=(const char*)tls_roots_pem_start,
+        .timeout_ms=12000,.buffer_size=2048,.buffer_size_tx=2048};
+    esp_http_client_handle_t h=esp_http_client_init(&cfg);
+    if(!h){fclose(f);unlink(NATIVE_STAGE_PATH);return false;}
+    snprintf(authorization,sizeof(authorization),"Bearer %s",token);
+    esp_http_client_set_header(h,"Authorization",authorization);
+    esp_http_client_set_header(h,"X-JH2-Bridge-Token",token);
+    stream_source source={.h=h,.bytes=size};
+    mbedtls_sha256_init(&source.sha);
+    bool ok=false;
+    if(esp_http_client_open(h,0)==ESP_OK&&
+       esp_http_client_fetch_headers(h)==(int64_t)size&&
+       esp_http_client_get_status_code(h)==200&&
+       mbedtls_sha256_starts(&source.sha,0)==0){
+        uint8_t b[2048];uint32_t count=0;
+        while(count<size){
+            size_t take=size-count;if(take>sizeof(b))take=sizeof(b);
+            if(!read_exact(&source,b,take,generation)||fwrite(b,1,take,f)!=take)break;
+            count+=(uint32_t)take;
+        }
+        ok=count==size&&digest_matches(&source,sha)&&fflush(f)==0;
+    }
+    mbedtls_sha256_free(&source.sha);
+    esp_http_client_close(h);esp_http_client_cleanup(h);
+    if(fclose(f)!=0)ok=false;
+    if(ok)ok=native_header_ok(NATIVE_STAGE_PATH,size,cid);
+    if(ok)ok=rename(NATIVE_STAGE_PATH,NATIVE_CACHE_PATH)==0;
+    if(!ok)unlink(NATIVE_STAGE_PATH);
+    if(ok)ESP_LOGI(TAG,"NATIVE_EFF_STAGED_LOCAL size=%u cid=%lu sha=%.12s",
+                   (unsigned)size,(unsigned long)cid,sha);
+    return ok;
+}
