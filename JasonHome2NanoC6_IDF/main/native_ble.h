@@ -26,6 +26,9 @@ bool jh2_ble_target_slot_seen(uint16_t slot);
 void jh2_ble_catalog_begin_read(void);
 void jh2_ble_target_invalidate(void);
 bool jh2_ble_target_section(unsigned *matches, uint16_t *slot);
+// Per-CID inventory check for manufacturer-assigned SmartDawn animations.
+// Returns false unless full factory coverage and a fresh terminal custom page exist.
+bool jh2_ble_catalog_cid(uint32_t cid, unsigned *matches, uint16_t *slot);
 uint32_t jh2_ble_notice_cursor(void);
 bool jh2_ble_upload_reply(uint32_t *cursor,uint16_t opcode,uint8_t session,
                          uint32_t parts,uint32_t timeout_ms,const char **error);

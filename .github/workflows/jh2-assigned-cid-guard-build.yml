@@ -1,0 +1,50 @@
+name: Jason Home 2 assigned-CID native upload guard
+on:
+  push:
+    branches: [fix/jh2-smartdawn-assigned-cid-20261024]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-assigned-cid-guard-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guard-tests:
+    name: Host native-upload guard regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate catalog, CID continuity, CRC and factory protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/native_slot_guard.c \
+            JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c \
+            -o /tmp/jh2-assigned-cid-guard
+          /tmp/jh2-assigned-cid-guard
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            JasonHome2NanoC6_IDF/main/effectlist.c \
+            JasonHome2NanoC6_IDF/tests/effectlist_test.c \
+            -o /tmp/jh2-inventory-guard
+          /tmp/jh2-inventory-guard
+      - name: Verify no production auto-deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'bool jh2_ble_catalog_cid' JasonHome2NanoC6_IDF/main/main.c
+          grep -q 'jh2_slot_packet_cid' JasonHome2NanoC6_IDF/main/bridge.c
+          grep -q 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE' JasonHome2NanoC6_IDF/main/bridge.c
+  idf-cross-build:
+    name: ESP32-C6 compile only (no flash or OTA)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
