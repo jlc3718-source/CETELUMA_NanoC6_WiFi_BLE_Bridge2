@@ -653,7 +653,6 @@ static void read_saved(void){
             nvs_close(n);
         }
     }
-}
     if(!saved_ssid[0]){
         // Preserve the 1.1.79 Wi-Fi-only runtime NVS namespace on upgrade.
         nvs_handle_t legacy=0;
@@ -665,6 +664,7 @@ static void read_saved(void){
             nvs_close(legacy);
         }
     }
+}
 static bool save_config(cJSON *d){
     if(!fs_ready)return false;
     char *json=cJSON_PrintUnformatted(d);if(!json)return false;
