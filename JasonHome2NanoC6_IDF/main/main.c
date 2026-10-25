@@ -227,6 +227,11 @@ static volatile uint8_t ble_failure_streak=0;
 static volatile int64_t ble_next_retry_us=0;
 static volatile int64_t ble_connected_since_us=0;
 static volatile bool ble_connect_pending=false;
+static volatile bool ble_gap_connecting=false;
+static volatile int64_t ble_connect_requested_us=0;
+static volatile uint32_t ble_connect_launches=0;
+static volatile int ble_connect_begin_rc=0;
+static volatile bool ble_cancel_watchdog_sent=false;
 static ble_addr_t ble_connect_addr={0};
 // GAP callbacks only schedule retries; never recursively scan / connect.
 static void schedule_ble_retry(const char *reason){
@@ -761,7 +766,15 @@ void jh2_ble_status(cJSON *out){
     const int64_t now_us=esp_timer_get_time();
     cJSON_AddNumberToObject(out,"nativeRetryInSeconds",
         ble_next_retry_us>now_us?(double)((ble_next_retry_us-now_us+999999)/1000000):0);
-    cJSON_AddBoolToObject(out,"nativeConnecting",ble_connect_pending);
+    cJSON_AddBoolToObject(out,"nativeConnecting",ble_connect_pending||ble_gap_connecting);
+    cJSON_AddBoolToObject(out,"nativePendingScanCancellation",ble_connect_pending);
+    cJSON_AddBoolToObject(out,"nativeGapConnectInProgress",ble_gap_connecting);
+    cJSON_AddBoolToObject(out,"nativeGapDiscoveryActive",ble_host_ready&&ble_gap_disc_active());
+    cJSON_AddNumberToObject(out,"nativeGapConnectStartRequests",ble_connect_launches);
+    cJSON_AddNumberToObject(out,"nativeGapConnectStartRc",ble_connect_begin_rc);
+    cJSON_AddNumberToObject(out,"nativePendingScanCancelAgeMs",
+      ble_connect_pending&&ble_connect_requested_us>0?
+      (double)((esp_timer_get_time()-ble_connect_requested_us)/1000):0);
     cJSON_AddNumberToObject(out,"nativeLastBleDisconnectReason",ble_last_disconnect_reason);
     cJSON_AddBoolToObject(out,"nativeRememberedDevice",selected_valid);
     char chosen[18]="";
@@ -943,11 +956,52 @@ static void begin_scan(void){
 // Called periodically by the normal main loop, never reentered from GAP.
 static void ble_service_tick(void){
     if(!ble_host_ready||hold_disconnect||ble_scan_only||
-       ble_connect_pending||connection!=BLE_HS_CONN_HANDLE_NONE||
-       ble_gap_disc_active())return;
+       connection!=BLE_HS_CONN_HANDLE_NONE)return;
+    const int64_t now=esp_timer_get_time();
+    // ESP NimBLE may complete ble_gap_disc_cancel() without delivering a
+    // DISC_COMPLETE callback. Previous firmware set ble_connect_pending and
+    // excluded it from this tick forever. The observed 2.0.8 state had
+    // nativeConnecting=true with zero actual GAP connect start requests.
+    if(ble_connect_pending){
+        if(ble_gap_disc_active()){
+            const int64_t age=now-ble_connect_requested_us;
+            if(age>3000000LL && !ble_cancel_watchdog_sent){
+                ble_cancel_watchdog_sent=true;
+                const int rc=ble_gap_disc_cancel();
+                ble_last_scan_cancel_error=rc;
+                ESP_LOGW(TAG,"BLE_SCAN_CANCEL_WATCHDOG rc=%d age_ms=%lld",
+                         rc,(long long)(age/1000));
+            }
+            if(age>15000000LL){
+                ble_connect_pending=false;
+                schedule_ble_retry("scan_cancel_timeout");
+            }
+            return;
+        }
+        // Initiate from the normal app task, outside the GAP callback,
+        // after the scanner has really stopped. Avoid repeated connection
+        // attempts while the controller is still negotiating a link.
+        if(now-ble_connect_requested_us<250000LL)return;
+        ble_connect_pending=false;
+        ble_gap_connecting=true;
+        ++ble_reconnect_attempts;
+        ++ble_connect_launches;
+        const int rc=ble_gap_connect(own_addr,&ble_connect_addr,20000,NULL,gap_event,NULL);
+        ble_connect_begin_rc=rc;
+        ESP_LOGW(TAG,"BLE_GAP_CONNECT_LAUNCHED rc=%d attempt=%lu",rc,
+                 (unsigned long)ble_connect_launches);
+        if(rc!=0){
+            ble_gap_connecting=false;
+            ble_last_connect_error=rc;
+            fail("gap_connect_launch",rc);
+            schedule_ble_retry("gap_connect_launch");
+        }
+        return;
+    }
+    if(ble_gap_connecting||ble_gap_disc_active())return;
     if(ble_next_retry_us==0)
-        ble_next_retry_us=esp_timer_get_time()+5000000LL;
-    if(esp_timer_get_time()>=ble_next_retry_us){
+        ble_next_retry_us=now+5000000LL;
+    if(now>=ble_next_retry_us){
         ble_next_retry_us=0;
         begin_scan();
     }
@@ -1146,6 +1200,8 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         if(!selected && !named)return 0;
         ble_connect_addr=event->disc.addr;
         ble_connect_pending=true;
+        ble_connect_requested_us=esp_timer_get_time();
+        ble_cancel_watchdog_sent=false;
         // Do not begin connecting inside the discovery callback before
         // NimBLE has completed the scan cancellation.
         const int cancel_rc=ble_gap_disc_cancel();
@@ -1158,10 +1214,10 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         return 0;
     }
     case BLE_GAP_EVENT_CONNECT:
+        ble_gap_connecting=false;
         if(event->connect.status){
             ble_last_connect_error=event->connect.status;
             fail("connect",event->connect.status);
-            ++ble_reconnect_attempts;
             ble_connect_pending=false;
             schedule_ble_retry("connect_failed");
             return 0;
@@ -1214,6 +1270,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         ble_last_disconnect_reason=event->disconnect.reason;
         connection=BLE_HS_CONN_HANDLE_NONE;
         ble_connect_pending=false;
+        ble_gap_connecting=false;
         if(ble_connected_since_us &&
            esp_timer_get_time()-ble_connected_since_us>60000000LL)
             ble_failure_streak=0;
@@ -1246,14 +1303,9 @@ static int gap_event(struct ble_gap_event *event,void *arg){
             return 0;
         }
         if(ble_connect_pending){
-            ble_connect_pending=false;
-            if(!hold_disconnect && connection==BLE_HS_CONN_HANDLE_NONE){
-                int rc=ble_gap_connect(own_addr,&ble_connect_addr,20000,NULL,gap_event,NULL);
-                if(rc!=0){
-                    fail("gap_connect",rc);
-                    schedule_ble_retry("gap_connect");
-                }
-            }
+            // Do not clear the pending target here. Some controllers do not
+            // deliver this event after cancellation. The main BLE tick
+            // launches the connection when ble_gap_disc_active() is false.
             return 0;
         }
         if(connection==BLE_HS_CONN_HANDLE_NONE&&!hold_disconnect)
@@ -1278,6 +1330,7 @@ static void on_reset(int reason){
     ble_host_ready=false;
     ble_scan_only=false;
     ble_connect_pending=false;
+    ble_gap_connecting=false;
     fail("nimble_reset",reason);
 }
 static void host_task(void *parameter){
