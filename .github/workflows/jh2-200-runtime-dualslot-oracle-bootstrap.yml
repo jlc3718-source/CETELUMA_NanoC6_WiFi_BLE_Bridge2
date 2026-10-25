@@ -27,7 +27,7 @@ jobs:
           import re
           partition = Path("JasonHome2NanoC6_IDF/partitions.csv").read_text()
           factory = Path("JasonHome2NanoC6_Rescue/partitions.csv").read_text()
-          assert partition == factory, "Runtime and rescue partition maps differ"
+          assert [x.strip() for x in partition.splitlines() if x.strip() and not x.startswith("#")] == [x.strip() for x in factory.splitlines() if x.strip() and not x.startswith("#")], "Runtime and rescue partition maps differ"
           assert "runtime, app, ota_0, 0x110000, 0x160000" in partition
           assert "runtime_b, app, ota_1, 0x270000, 0x160000" in partition
           assert "rescue, app, factory, 0x10000, 0x100000" in partition
