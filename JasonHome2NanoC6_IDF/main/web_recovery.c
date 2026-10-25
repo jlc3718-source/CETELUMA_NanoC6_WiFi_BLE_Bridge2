@@ -389,7 +389,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.6-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.7-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     jh2_runtime_boot_diagnostics(o);
     return send_json(r,o);
@@ -459,7 +459,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.6-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.7-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     jh2_runtime_boot_diagnostics(o);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
@@ -688,14 +688,11 @@ static esp_err_t html_get(httpd_req_t *r){
         httpd_resp_set_hdr(r,"Location","/");
         return httpd_resp_send(r,NULL,0);
     }
-    // Once authenticated, open the Oracle web control from the LAN homepage.
-    // The AP hostname and all direct Nano settings pages remain local.
-    if(strcmp(r->uri,"/")==0 && programmed && saved_oracle_endpoint[0] &&
-       jh2_bridge_autolink_verified() && jh2_bridge_ready() &&
-       net_event && (xEventGroupGetBits(net_event)&WEB_WIFI_READY) &&
-       home_lan_request(r)){
+    // LAN root launches Oracle even before bridge authentication. Keep the
+    // open setup AP plus all explicit diagnostics/recovery paths local.
+    if(strcmp(r->uri,"/")==0 && home_lan_request(r)){
         httpd_resp_set_status(r,"302 Found");
-        httpd_resp_set_hdr(r,"Location",saved_oracle_endpoint);
+        httpd_resp_set_hdr(r,"Location","http://150.136.245.51/jason");
         httpd_resp_set_hdr(r,"Cache-Control","no-store");
         return httpd_resp_send(r,NULL,0);
     }
