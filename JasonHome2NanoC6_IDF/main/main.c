@@ -113,7 +113,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.3 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.4 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -1123,7 +1123,7 @@ static void start_ble_after_home_wifi(void){
     EventGroupHandle_t group=jh2_web_wifi_group();
     if(!group || !(xEventGroupGetBits(group)&BIT0))return;
     ble_start_attempted=true;
-    ESP_LOGW(TAG,"2.0.3 home Wi-Fi online; BLE startup permitted");
+    ESP_LOGW(TAG,"2.0.4 home Wi-Fi online; BLE startup permitted");
     esp_err_t rc=ESP_OK;
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
@@ -1155,7 +1155,7 @@ static void start_ble_after_home_wifi(void){
         ble_att_set_preferred_mtu(517);
         nimble_port_freertos_init(host_task);
     }
-    ESP_LOGW(TAG,"2.0.3 BLE startup attempt finished; setup AP retained");
+    ESP_LOGW(TAG,"2.0.4 BLE startup attempt finished; setup AP retained");
 }
 
 void app_main(void){
@@ -1173,13 +1173,13 @@ void app_main(void){
         failsafe_boot_failed();
         return;
     }
-    // 2.0.3: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
+    // 2.0.4: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
     // BLE, filesystem nor Oracle is allowed to gate the setup AP.
     // Configure Oracle later with Settings > Oracle > Connect Automatically.
-    ESP_LOGW(TAG,"2.0.3 setup AP ready; proceeding with independent BLE startup");
+    ESP_LOGW(TAG,"2.0.4 setup AP ready; proceeding with independent BLE startup");
     // Initial provisioning: BLE stays OFF to avoid simultaneous 2.4 GHz
     // radio arbitration while the phone associates with JH2-Nano-Fresh.
-    ESP_LOGW(TAG,"2.0.3 Bluetooth deferred until home Wi-Fi connects");
+    ESP_LOGW(TAG,"2.0.4 Bluetooth deferred until home Wi-Fi connects");
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Retain the product marker in the signed application image. The
     // original factory browser updater validates it and the final size;
