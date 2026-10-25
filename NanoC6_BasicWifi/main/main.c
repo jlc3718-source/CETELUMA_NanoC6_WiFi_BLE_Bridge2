@@ -90,8 +90,8 @@ static void wifi_event(void *a,esp_event_base_t b,int32_t id,void *data){
 }
 static esp_err_t connect_saved(void){
  wifi_config_t sta={0};
- snprintf((char*)sta.sta.ssid,sizeof(sta.sta.ssid),"%s",saved_ssid);
- snprintf((char*)sta.sta.password,sizeof(sta.sta.password),"%s",saved_password);
+ memcpy(sta.sta.ssid,saved_ssid,strnlen(saved_ssid,sizeof(sta.sta.ssid)));
+ memcpy(sta.sta.password,saved_password,strnlen(saved_password,sizeof(sta.sta.password)));
  sta.sta.threshold.authmode=WIFI_AUTH_OPEN;
  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA,&sta));
@@ -164,8 +164,8 @@ void app_main(void){
  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP,&config));
  if(saved_ssid[0]){
   wifi_config_t sta={0};
-  snprintf((char*)sta.sta.ssid,sizeof(sta.sta.ssid),"%s",saved_ssid);
-  snprintf((char*)sta.sta.password,sizeof(sta.sta.password),"%s",saved_password);
+  memcpy(sta.sta.ssid,saved_ssid,strnlen(saved_ssid,sizeof(sta.sta.ssid)));
+  memcpy(sta.sta.password,saved_password,strnlen(saved_password,sizeof(sta.sta.password)));
   sta.sta.threshold.authmode=WIFI_AUTH_OPEN;
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA,&sta));
  }
