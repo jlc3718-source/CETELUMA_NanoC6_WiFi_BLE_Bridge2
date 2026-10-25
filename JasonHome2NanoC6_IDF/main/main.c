@@ -113,7 +113,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.2 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.3 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -1114,25 +1114,17 @@ static void host_task(void *parameter){
     nimble_port_run();
     nimble_port_freertos_deinit();
 }
-void app_main(void){
-    // Deliberately NEVER erase NVS; production Wi-Fi and pairing data survive.
-    esp_err_t rc=nvs_flash_init();
-    if(rc!=ESP_OK){
-        ESP_LOGE(TAG,"NVS_INIT_FAILED rc=%d; refusing destructive recovery",rc);
-        return;
-    }
-    failsafe_boot_begin();
-    // Start web recovery immediately after NVS. Even a failed BLE mutex,
-    // catalog parser task, or Oracle transport must NEVER strand OTA again.
-    if(!jh2_web_start()){
-        ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED");
-        failsafe_boot_failed();
-        return;
-    }
-    // 2.0.2: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
-    // BLE, filesystem nor Oracle is allowed to gate the setup AP.
-    // Configure Oracle later with Settings > Oracle > Connect Automatically.
-    ESP_LOGW(TAG,"2.0.2 setup AP ready; proceeding with independent BLE startup");
+static volatile bool ble_start_attempted=false;
+// The ESP32-C6 shares one radio between BLE and Wi-Fi. Do not initialize
+// NimBLE until home Wi-Fi has an IP address. Until then the setup AP must
+// remain a simple, open and responsive recovery interface.
+static void start_ble_after_home_wifi(void){
+    if(ble_start_attempted)return;
+    EventGroupHandle_t group=jh2_web_wifi_group();
+    if(!group || !(xEventGroupGetBits(group)&BIT0))return;
+    ble_start_attempted=true;
+    ESP_LOGW(TAG,"2.0.3 home Wi-Fi online; BLE startup permitted");
+    esp_err_t rc=ESP_OK;
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
     // Nano into the isolated factory uploader.
@@ -1163,6 +1155,31 @@ void app_main(void){
         ble_att_set_preferred_mtu(517);
         nimble_port_freertos_init(host_task);
     }
+    ESP_LOGW(TAG,"2.0.3 BLE startup attempt finished; setup AP retained");
+}
+
+void app_main(void){
+    // Deliberately NEVER erase NVS; production Wi-Fi and pairing data survive.
+    esp_err_t rc=nvs_flash_init();
+    if(rc!=ESP_OK){
+        ESP_LOGE(TAG,"NVS_INIT_FAILED rc=%d; refusing destructive recovery",rc);
+        return;
+    }
+    failsafe_boot_begin();
+    // Start web recovery immediately after NVS. Even a failed BLE mutex,
+    // catalog parser task, or Oracle transport must NEVER strand OTA again.
+    if(!jh2_web_start()){
+        ESP_LOGE(TAG,"WEB_RECOVERY_START_FAILED");
+        failsafe_boot_failed();
+        return;
+    }
+    // 2.0.3: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
+    // BLE, filesystem nor Oracle is allowed to gate the setup AP.
+    // Configure Oracle later with Settings > Oracle > Connect Automatically.
+    ESP_LOGW(TAG,"2.0.3 setup AP ready; proceeding with independent BLE startup");
+    // Initial provisioning: BLE stays OFF to avoid simultaneous 2.4 GHz
+    // radio arbitration while the phone associates with JH2-Nano-Fresh.
+    ESP_LOGW(TAG,"2.0.3 Bluetooth deferred until home Wi-Fi connects");
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Retain the product marker in the signed application image. The
     // original factory browser updater validates it and the final size;
@@ -1180,6 +1197,7 @@ void app_main(void){
     while(true){
         vTaskDelay(pdMS_TO_TICKS(10000));
         failsafe_confirm_after_60s();
+        start_ble_after_home_wifi();
         if(requested && !finished && started_at &&
            esp_timer_get_time()-started_at>20000000LL){
             ESP_LOGW(TAG,"PARTIAL_CATALOG received=%u of 88 reply_packets=%u notifications=%u",
