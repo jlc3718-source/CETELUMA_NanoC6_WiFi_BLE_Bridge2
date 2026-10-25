@@ -18,7 +18,7 @@
 #include "nvs_flash.h"
 
 #define AP_NAME "NanoC6-Fresh-Setup"
-#define AP_PASS "NanoC6Start26!"
+#define AP_OPEN_WIFI 1
 static const char *TAG="NANOC6_BASIC";
 static const char PAGE[]="<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta charset=\"utf-8\"><title>NanoC6 Basic Wi-Fi Setup</title>\n<style>body{font:16px system-ui;max-width:520px;margin:26px auto;padding:18px;background:#101a27;color:#f4f8ff}main{background:#1d2d3f;border:1px solid #425c71;border-radius:16px;padding:20px}input,button{box-sizing:border-box;font:inherit;padding:12px;width:100%;margin:8px 0 14px;border-radius:8px}button{background:#6dddbd;border:0;font-weight:700}input{background:#eef4fc;border:1px solid #7188a2}small{color:#bed1df}#status{padding:12px;background:#152337;border-radius:8px}a{color:#7ce5cf}</style></head><body><main><h2>NanoC6 — Basic Wi-Fi</h2><p>This is a clean connectivity test. No Oracle, Bluetooth or firmware updater is running.</p><p><b>Setup Wi-Fi:</b> NanoC6-Fresh-Setup</p><p>Setup Wi-Fi remains available while Deco Wi-Fi connects.</p><div id=\"status\">Checking...</div><form id=\"f\"><label>2.4 GHz home Wi-Fi SSID<input name=\"ssid\" maxlength=\"32\" required autocomplete=\"off\"></label><label>Home Wi-Fi password<input type=\"password\" name=\"password\" maxlength=\"63\" autocomplete=\"off\" placeholder=\"Enter password\"></label><button>Save and connect to Wi-Fi</button></form><small>The saved home Wi-Fi settings persist after power loss. Your passwords are never displayed here.</small><p id=\"result\"></p></main><script>\nasync function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'}),j=await r.json();document.getElementById('status').textContent='Firmware: '+j.version+' | Home Wi-Fi: '+(j.connected?'CONNECTED':'NOT CONNECTED')+' | Home IP: '+(j.ip||'none')+' | Setup AP: '+(j.setupAP?'ON':'OFF')+' | Saved network: '+(j.ssidSaved?'YES':'NO')}catch(e){document.getElementById('status').textContent='Connection interrupted; reconnect to NanoC6-Fresh-Setup'}}setInterval(refresh,3000);refresh();\ndocument.getElementById('f').onsubmit=async e=>{e.preventDefault();const out=document.getElementById('result');out.textContent='Saving...';try{const body=new URLSearchParams(new FormData(e.target));const r=await fetch('/save',{method:'POST',body});const t=await r.text();out.textContent=t;await refresh()}catch(e){out.textContent='Save failed; stay connected to the setup Wi-Fi and retry'}};\n</script></body></html>";
 static char saved_ssid[33]={0};
@@ -156,9 +156,8 @@ void app_main(void){
  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,NULL));
  wifi_config_t config={0};
  snprintf((char*)config.ap.ssid,sizeof(config.ap.ssid),"%s",AP_NAME);
- snprintf((char*)config.ap.password,sizeof(config.ap.password),"%s",AP_PASS);
  config.ap.ssid_len=strlen(AP_NAME);
- config.ap.authmode=WIFI_AUTH_WPA2_PSK;
+ config.ap.authmode=WIFI_AUTH_OPEN;
  config.ap.channel=1;
  config.ap.max_connection=4;
  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
@@ -183,6 +182,6 @@ void app_main(void){
  ESP_ERROR_CHECK(httpd_register_uri_handler(server,&b));
  ESP_ERROR_CHECK(httpd_register_uri_handler(server,&c));
  esp_err_t state=esp_ota_mark_app_valid_cancel_rollback();
- ESP_LOGI(TAG,"Runtime marked healthy rc=%d; setup AP %s at http://192.168.4.1 password configured",state,AP_NAME);
+ ESP_LOGI(TAG,"Runtime marked healthy rc=%d; setup AP %s at http://192.168.4.1 no setup password",state,AP_NAME);
  while(true)vTaskDelay(pdMS_TO_TICKS(30000));
 }
