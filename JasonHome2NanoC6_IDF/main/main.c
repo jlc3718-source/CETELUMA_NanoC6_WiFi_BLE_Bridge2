@@ -87,6 +87,23 @@ bool jh2_ble_target_section(unsigned *matches,uint16_t *slot){
        connection==BLE_HS_CONN_HANDLE_NONE)return false;
     *matches=target_section_matches;*slot=target_section_slot;return true;
 }
+// Do not permit an assigned-CID upload or erase on an incomplete catalog.
+// The Nano has a single custom store: all factory IDs and the fresh
+// terminal custom page must be accounted for first.
+bool jh2_ble_catalog_cid(uint32_t cid,unsigned *matches,uint16_t *slot){
+    if(!cid||!matches||!slot||!target_section_at||
+       esp_timer_get_time()-target_section_at>120000000||
+       connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    for(unsigned id=0;id<=86;id++)if(!catalog_seen[id])return false;
+    *matches=0;*slot=0;
+    for(unsigned id=0;id<JH2_EFFECT_CAPACITY;id++){
+        if(!catalog_seen[id]||catalog_cid[id]!=(uint64_t)cid)continue;
+        ++*matches;
+        if(id<87){*matches=2;return true;}
+        *slot=catalog_slot[id];
+    }
+    return true;
+}
 static SemaphoreHandle_t notice_lock=NULL,raw_write_lock=NULL,raw_write_event=NULL;
 static volatile int last_write_status=-1;
 static volatile bool raw_write_pending=false,raw_write_fault=false;
