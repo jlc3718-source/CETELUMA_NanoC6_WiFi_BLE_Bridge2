@@ -13,17 +13,14 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Retrieve the existing immutable signed public 2.0.7 release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p signed-package
-          gh release download jason-home-2-nanoc6-v2.0.7 --repo "$GITHUB_REPOSITORY"              --dir signed-package --pattern 'jh2-runtime-2.0.7.bin' --pattern 'latest.json' --pattern 'release.json'
-          test -s signed-package/jh2-runtime-2.0.7.bin
-          test -s signed-package/latest.json
-          test -s signed-package/release.json
+      - name: Download signed release artifact from already successful 2.0.7 job
+        uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.7-SIGNED-ORACLE-OTA
+          repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          run-id: 40234176039
+          github-token: ${{ github.token }}
+          path: signed-package
       - name: Verify ECDSA and image before approving Oracle
         shell: bash
         env:
