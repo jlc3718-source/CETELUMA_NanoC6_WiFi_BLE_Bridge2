@@ -53,6 +53,7 @@ jobs:
           assert 'failsafe_confirm_after_60s();' in runtime
           assert 'failsafe_boot_failed();' in runtime
           assert '#define NATIVE_FW_VERSION "1.1.74"' in bridge
+          assert 'ESP_LOGW(TAG,"NATIVE_BROWSER_OTA_COMPAT_MARKER %s"' in runtime
           assert 'Remote OTA locked off for 1.1.74 A/B recovery' in Path('JasonHome2NanoC6_IDF/main/signed_ota.c').read_text()
           print('ORACLE_EUFY_SERVER_UNTOUCHED; DUAL_SLOT_LAYOUTS_MATCH; ROLLBACK_GUARDS_PRESENT')
           PY
