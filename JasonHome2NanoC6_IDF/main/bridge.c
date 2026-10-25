@@ -46,8 +46,9 @@
 extern const unsigned char tls_roots_pem_start[] asm("_binary_tls_roots_pem_start");
 
 static const char *TAG="JH2_IDF_ORACLE";
-// Signed automatic OTA is ON by default in final firmware and persists in NVS.
-static volatile bool firmware_auto_update=true;
+// Recovery runtime: boot safely with automatic signed OTA OFF by default.
+// Existing NVS is preserved; OTA may only be re-enabled explicitly after recovery.
+static volatile bool firmware_auto_update=false;
 bool jh2_bridge_auto_update_enabled(void){return firmware_auto_update;}
 bool jh2_bridge_set_auto_update_enabled(bool enabled){
     nvs_handle_t n;
@@ -62,9 +63,11 @@ bool jh2_bridge_set_auto_update_enabled(bool enabled){
 static void jh2_load_auto_ota(void){
     nvs_handle_t n;
     if(nvs_open("jh2-fwcfg",NVS_READONLY,&n)!=ESP_OK)return;
-    uint8_t stored=1;
-    if(nvs_get_u8(n,"auto",&stored)==ESP_OK)firmware_auto_update=(stored!=0);
+    uint8_t stored=0;
+    // Read historical preference without re-arming the failing 1.1.72 OTA loop.
+    (void)nvs_get_u8(n,"auto",&stored);
     nvs_close(n);
+    firmware_auto_update=false;
 }
 #define WIFI_READY BIT0
 #define MAX_ORACLE_BODY 65536
@@ -84,7 +87,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "1.1.71"
+#define NATIVE_FW_VERSION "1.1.73"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
