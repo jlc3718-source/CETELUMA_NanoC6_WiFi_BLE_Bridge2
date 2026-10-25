@@ -1,0 +1,49 @@
+name: JH2 Readonly Diagnose Nano Offline After Web Deploy
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: [.github/workflows/jh2-nano-offline-readonly-20261024.yml]
+permissions: {contents: read}
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Determine stale heartbeat, pending command types and local bridge health; no device writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,sqlite3,subprocess,urllib.request,time,socket
+          from pathlib import Path
+          web=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mount=next(x for x in web['Mounts'] if x['Destination']=='/data' and x['Type']=='bind')
+          db=sqlite3.connect('file:'+str(Path(mount['Source'])/'jason-home-2.sqlite')+'?mode=ro',uri=True,timeout=10)
+          def rows(sql):
+              return db.execute(sql).fetchall()
+          print('PENDING_AND_DOWNLOAD_COMMANDS',rows("SELECT id,action,state FROM curtain_commands WHERE state IN ('queued','downloaded') ORDER BY id LIMIT 20"),flush=True)
+          print('LATEST_COMMAND_STATES',rows("SELECT id,action,state FROM curtain_commands ORDER BY id DESC LIMIT 15"),flush=True)
+          print('META_STATUS_KEYS',rows("SELECT key FROM curtain_meta WHERE key LIKE '%nano%' OR key LIKE '%status%' OR key LIKE '%heartbeat%'"),flush=True)
+          nano=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          print('BRIDGE_CONTAINER',json.dumps({'running':nano['State']['Running'],'restarting':nano['State']['Restarting'],
+              'restarts':nano.get('RestartCount',0),'started':nano['State']['StartedAt']}),flush=True)
+          env=dict(x.split('=',1) for x in nano['Config']['Env'] if '=' in x)
+          root='http://127.0.0.1:8081'
+          def api(path,body=None,cookie=''):
+              req=urllib.request.Request(root+path,
+                  data=json.dumps(body).encode() if body is not None else None,
+                  headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},
+                  method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(req,timeout=15) as r:return json.load(r),r.headers
+          _,h=api('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          s,_=api('/api/curtain/status',cookie=h['Set-Cookie'].split(';')[0])
+          print('BRIDGE_CURTAIN_STATUS',json.dumps({'online':s.get('online'),'firmware':s.get('firmware'),
+              'lastSeen':s.get('lastSeen'),'staleSeconds':round((time.time()*1000-s.get('lastSeen',0))/1000),
+              'queued':s.get('queued'),'bleWasConnected':(s.get('curtain') or {}).get('connected'),
+              'uptimeSeconds':s.get('uptimeSeconds')}),flush=True)
+          # We only check DNS resolution. CGNAT could prevent direct ingress even if Nano is online.
+          try:
+              ips=socket.getaddrinfo('Craumer.tplinkdns.com',80,type=socket.SOCK_STREAM)
+              print('NANO_DDNS_RESOLVES',bool(ips),flush=True)
+          except Exception as ex:print('NANO_DDNS_UNRESOLVED',type(ex).__name__,flush=True)
+          db.close()
+          PY
