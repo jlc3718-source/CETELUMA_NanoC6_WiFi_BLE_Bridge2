@@ -1,8 +1,8 @@
-name: JH2 2.0.3 Isolated AP + Deferred BLE (Unpersonalized CI)
+name: JH2 2.0.4 LAN-IP Local Dashboard (Private Personalization Required)
 on:
   push:
     branches:
-      - fix/jh2-2.0.3-isolated-ap-association-20261025
+      - fix/jh2-2.0.4-isolated-ap-association-20261025
     paths:
       - JasonHome2NanoC6_IDF/**
       - .github/workflows/jh2-203-isolated-setup-ap.yml
@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: jh2-203-runtime-ci
+  group: jh2-204-runtime-ci
   cancel-in-progress: false
 jobs:
   compile-runtime:
@@ -46,13 +46,23 @@ jobs:
           assert 'jh2_bridge_autolink_request()' in web
           assert 'CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384' in Path("JasonHome2NanoC6_IDF/sdkconfig.defaults").read_text()
           assert 'jh2_bridge_start();' not in runtime
-          assert '2.0.3 setup AP ready' in runtime
+          assert '2.0.4 setup AP ready' in runtime
           assert 'jh2_bridge_autolink_request(void)' in Path("JasonHome2NanoC6_IDF/main/bridge.c").read_text()
           assert 'https_json("/api/curtain-bridge/bootstrap",NULL)' in bridge
           assert 'const wifi_mode_t mode=saved_ssid[0]?WIFI_MODE_APSTA:WIFI_MODE_AP;' in web, "First boot must be AP-only"
           assert 'WIFI_EVENT_AP_STACONNECTED' in web and 'WIFI_EVENT_AP_STADISCONNECTED' in web
           assert 'SETUP_AP_CLIENT_JOINED' in web and 'SETUP_AP_CLIENT_LEFT' in web
           assert 'setupApJoinEvents' in web and 'setupApLastLeaveReason' in web
+          # Regression: http://<home-network-IP>/ must stay on the Nano,
+          # never redirect to Oracle when Wi-Fi and credentials are saved.
+          assert 'httpd_resp_set_hdr(r,"Location",target);' not in web
+          assert 'static bool request_on_sta(' not in web
+          assert 'Always serve the local dashboard' in web
+          assert 'HOME_LAN_WEB=http://' in web
+          assert '"Location","/"' in web, "Only local setup-to-dashboard redirect remains"
+          assert 'const char *page=oracle_settings?ORACLE_HTML' in web
+          assert 'cfg.server_port=80;' in web
+          assert 'cJSON_AddStringToObject(o,"homeIp",assigned_ip);' in web
           assert 'Bluetooth deferred until home Wi-Fi connects' in runtime
           assert 'start_ble_after_home_wifi();' in runtime
           assert 'nimble_port_init();' not in runtime.split('void app_main(void){',1)[1]
@@ -70,22 +80,22 @@ jobs:
           assert web.index('ap_netif=esp_netif_create_default_wifi_ap();') < web.index('sta_netif=esp_netif_create_default_wifi_sta();')
           assert 'lastWifiDisconnectReason' in web and 'homeWifiRetryAttempts' in web
           assert 'homeWifiConfigured' in web and 'homeIp' in web
-          assert "if(enabled){ESP_LOGW(TAG" in bridge, "2.0.3 must not enable auto OTA"
+          assert "if(enabled){ESP_LOGW(TAG" in bridge, "2.0.4 must not enable auto OTA"
           assert 'if(!fs_ready)return;' not in web.split('static void read_saved(void){',1)[1].split('static bool save_config',1)[0], "NVS fallback lost when LittleFS unavailable"
-          assert '2.0.3-native-upload-flow' in web
+          assert '2.0.4-native-upload-flow' in web
           assert 'strlcpy((char *)cfg.ap.ssid,"JH2-Nano-Fresh",sizeof(cfg.ap.ssid))' in web
           assert 'cfg.ap.authmode=WIFI_AUTH_OPEN' in web
           assert 'if(!jh2_web_has_oracle_credentials())' not in runtime
-          assert 'NATIVE_FW_VERSION "2.0.3"' in bridge
-          assert '2.0.3 setup AP ready' in runtime
+          assert 'NATIVE_FW_VERSION "2.0.4"' in bridge
+          assert '2.0.4 setup AP ready' in runtime
           assert 'nvs_open("jh2basic",NVS_READONLY' in web
           assert 'failsafe_confirm_after_60s();' in runtime
-          assert '#define NATIVE_FW_VERSION "2.0.3"' in bridge
-          assert "Remote OTA locked off for 2.0.3 A/B recovery" in Path("JasonHome2NanoC6_IDF/main/signed_ota.c").read_text()
-          print("JH2_203_A_B_WIFI_MANUAL_ORACLE_BOOTSTRAP_SOURCE_VERIFIED")
+          assert '#define NATIVE_FW_VERSION "2.0.4"' in bridge
+          assert "Remote OTA locked off for 2.0.4 A/B recovery" in Path("JasonHome2NanoC6_IDF/main/signed_ota.c").read_text()
+          print("JH2_204_A_B_WIFI_MANUAL_ORACLE_BOOTSTRAP_SOURCE_VERIFIED")
           PY
-          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/guard203
-          /tmp/guard203
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/guard204
+          /tmp/guard204
       - name: Enable native Oracle, BLE, manual browser recovery
         shell: bash
         run: |
@@ -105,7 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p jh2-203-output
+          mkdir -p jh2-204-output
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json, os
@@ -115,31 +125,31 @@ jobs:
           marker=b"JH2V200PRIVATEORACLETOKENREPLACEME".ljust(64,b"_")
           assert len(marker)==64
           assert app.count(marker)==1, "Unique private 64-byte patch point missing"
-          assert b"2.0.3-native-upload-flow" in app
+          assert b"2.0.4-native-upload-flow" in app
           assert b"JH2-Nano-Fresh" in app
           assert b"c6e361f91c250cbb" in app
           assert b"https://150.136.245.51/jason-home-2" in app
-          out=Path("jh2-203-output/JH2-NanoC6-2.0.3-RUNTIME-UNPERSONALIZED.bin")
+          out=Path("jh2-204-output/JH2-NanoC6-2.0.4-RUNTIME-UNPERSONALIZED.bin")
           out.write_bytes(app)
           sha=hashlib.sha256(app).hexdigest()
-          manifest={"version":"2.0.3","base":"1.1.78","dual_slot_runtime":True,
+          manifest={"version":"2.0.4","base":"1.1.78","dual_slot_runtime":True,
             "slot_max_bytes":0x160000,"runtime_bytes":len(app),"runtime_sha256":sha,
             "private_oracle_token_embedded":False,"wifi_config":"manual",
             "original_recovery_preserved":True,"auto_install":False,
             "hardware_verified":False,"source_commit":os.environ["GITHUB_SHA"]}
-          Path("jh2-203-output/manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
-          Path("jh2-203-output/README.txt").write_text(
-            "2.0.3 Wi-Fi recovery candidate, requires private personalization. DO NOT INSTALL AS-IS.\n"
+          Path("jh2-204-output/manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
+          Path("jh2-204-output/README.txt").write_text(
+            "2.0.4 Wi-Fi recovery candidate, requires private personalization. DO NOT INSTALL AS-IS.\n"
             "Contains an intentionally invalid 64-byte Oracle token placeholder.\n"
             "Do not publish the final token-personalized BIN in public GitHub Actions or releases.\n"
             "Private customization must regenerate ESP image integrity and verify device pairing.\n"
             "Use local A/B updater; do not change bootloader, recovery or partition table.\n")
-          print("JH2_203_COMPILED",len(app),sha)
+          print("JH2_204_COMPILED",len(app),sha)
           PY
-          cd jh2-203-output && sha256sum *.bin
+          cd jh2-204-output && sha256sum *.bin
       - uses: actions/upload-artifact@v4
         with:
-          name: JH2-2.0.3-RUNTIME-UNPERSONALIZED-CI
-          path: jh2-203-output/
+          name: JH2-2.0.4-RUNTIME-UNPERSONALIZED-CI
+          path: jh2-204-output/
           retention-days: 14
           if-no-files-found: error
