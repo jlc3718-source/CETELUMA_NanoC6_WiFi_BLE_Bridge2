@@ -1,0 +1,103 @@
+name: JH2 2.0.7 Stage Already Signed Release on Oracle
+on:
+  push:
+    branches:
+      - fix/jh2-2.0.7-oracle-root-ble-reconnect-20261025
+    paths:
+      - .github/workflows/jh2-207-stage-existing-release.yml
+permissions:
+  contents: read
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve the existing immutable signed public 2.0.7 release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p signed-package
+          gh release download jason-home-2-nanoc6-v2.0.7 --repo "$GITHUB_REPOSITORY"              --dir signed-package --pattern 'jh2-runtime-2.0.7.bin' --pattern 'latest.json' --pattern 'release.json'
+          test -s signed-package/jh2-runtime-2.0.7.bin
+          test -s signed-package/latest.json
+          test -s signed-package/release.json
+      - name: Verify ECDSA and image before approving Oracle
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import base64,hashlib,json,os,subprocess,tempfile,shutil
+          from pathlib import Path
+          repo=Path(os.environ['GITHUB_WORKSPACE'])
+          src=repo/'signed-package'
+          names=('jh2-runtime-2.0.7.bin','latest.json','release.json')
+          assert all((src/n).is_file() for n in names)
+          m=json.loads((src/'latest.json').read_text())
+          rel=json.loads((src/'release.json').read_text())
+          f=dict(line.split('=',1) for line in m['payload'].strip().splitlines())
+          image=(src/names[0]).read_bytes()
+          digest=hashlib.sha256(image).hexdigest()
+          assert m['schema']==1
+          assert f['product']=='jason-home-2-nanoc6' and f['version']=='2.0.7'
+          assert f['sha256']==digest==rel['files'][names[0]]['sha256']
+          assert int(f['bytes'])==len(image) and len(image)<=0x160000 and image[0]==0xe9
+          assert b'2.0.7-native-upload-flow' in image
+          assert b'http://150.136.245.51/jason' in image
+          with tempfile.TemporaryDirectory() as td:
+              p=Path(td)
+              (p/'payload').write_text(m['payload'])
+              (p/'signature').write_bytes(base64.b64decode(m['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                  str(repo/'remote-update/anderson_ota_signing_public.pem'),
+                  '-signature',str(p/'signature'),str(p/'payload')],check=True)
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mounts=[x for x in info['Mounts'] if x['Destination']=='/data' and x['Type']=='bind']
+          assert len(mounts)==1
+          root=Path(mounts[0]['Source'])/'signed-ota'
+          assert root.is_dir()
+          target=root/'2.0.7'
+          if target.exists():
+              assert all((target/n).read_bytes()==(src/n).read_bytes() for n in names)
+          else:
+              temp=root/('.2.0.7-release-'+str(os.getpid()))
+              temp.mkdir()
+              try:
+                  for n in names: shutil.copy2(src/n,temp/n)
+                  assert all((temp/n).read_bytes()==(src/n).read_bytes() for n in names)
+                  temp.rename(target)
+              except BaseException:
+                  shutil.rmtree(temp,ignore_errors=True);raise
+          approved=root/'approved'
+          if approved.exists() or approved.is_symlink():
+              current=json.loads((approved/'latest.json').read_text())
+              currentfields=dict(row.split('=',1) for row in current['payload'].strip().splitlines())
+              old=currentfields['version']
+              assert tuple(map(int,old.split('.'))) <= (2,0,7), 'Newer existing approval cannot be downgraded'
+          link=root/('.approved-new-'+str(os.getpid()))
+          link.symlink_to('2.0.7',target_is_directory=True)
+          os.replace(link,approved)
+          assert all((approved/n).read_bytes()==(src/n).read_bytes() for n in names)
+          print('ORACLE_207_APPROVED',digest,len(image),flush=True)
+          PY
+      - name: Read-only Oracle served manifest/image verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec jason-home-2-web node -e '
+          (async()=>{
+            const base="http://127.0.0.1:"+(process.env.JH2_PORT||8081);
+            const r=await fetch(base+"/api/curtain/firmware-manifest");
+            const m=await r.json();
+            const f=Object.fromEntries(m.payload.trim().split("\n").map(s=>s.split(/=(.*)/s).slice(0,2)));
+            if(!r.ok||f.version!=="2.0.7")throw Error("manifest version mismatch");
+            const d=await fetch(base+"/api/curtain/firmware-runtime/2.0.7.bin");
+            const b=Buffer.from(await d.arrayBuffer());
+            const sha=require("node:crypto").createHash("sha256").update(b).digest("hex");
+            if(!d.ok||sha!==f.sha256||b.length!==Number(f.bytes))throw Error("runtime mismatch");
+            console.log("ORACLE_207_SIGNED_OTA_READY",b.length,sha);
+          })().catch(e=>{console.error(e);process.exitCode=1});'
