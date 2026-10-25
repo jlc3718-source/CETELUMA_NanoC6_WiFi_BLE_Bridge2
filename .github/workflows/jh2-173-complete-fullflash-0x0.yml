@@ -1,0 +1,175 @@
+name: JH2 1.1.73 Complete 4MB USB Recovery (NO Oracle Changes)
+on:
+  push:
+    branches: [recovery/jh2-runtime-1-1-73-usb-only-20261025]
+    paths: [.github/workflows/jh2-173-complete-fullflash-0x0.yml]
+permissions: {contents: write}
+concurrency:
+  group: jh2-173-complete-0x0-usb-no-deploy
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Assert no Oracle, Eufy, Curtain server or partition changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+          base='f320e65e43eb30b5bcc846e2460e2b78d9e1b7f6'
+          allowed={'JasonHome2NanoC6_IDF/main/bridge.c','JasonHome2NanoC6_IDF/main/native_slot_guard.c',
+                   'JasonHome2NanoC6_IDF/main/web_recovery.c',
+                   '.github/workflows/jh2-173-usb-runtime-recovery.yml',
+                   '.github/workflows/jh2-173-complete-fullflash-0x0.yml'}
+          changed=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          assert changed==allowed,('Unknown source change',changed)
+          for p in ('JasonHome2NanoC6/partitions.csv','JasonHome2NanoC6_IDF/partitions.csv',
+                    'JasonHome2NanoC6/src/FirmwareUpdate.cpp',
+                    'JasonHome2NanoC6/src/boot.cpp'):
+              original=subprocess.check_output(['git','show',base+':'+p])
+              assert open(p,'rb').read()==original,p
+          print('ORACLE_EUFY_CURTAIN_SERVER_UNTOUCHED; ORIGINAL_NANOC6_PARTITIONS_PROTECTED')
+          PY
+      - name: Retrieve pinned published and checksum-verifiable complete 1.1.27 factory image and verified 1.1.73 runtime
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p component full-output
+          gh release download jason-home-2-nanoc6-v1.1.27 --repo "$GITHUB_REPOSITORY" --pattern 'jh2-full-install-1.1.27.bin' --dir component --clobber
+          gh release download jh2-usb-runtime-1.1.73-recovery --repo "$GITHUB_REPOSITORY" --pattern 'JH2-NanoC6-RUNTIME-ONLY-1.1.73.bin' --dir component --clobber
+          echo '2e212eb0b10daa68a5dee59cd6d0b5e5dd856a0cd684566fd1c13f236c987c38  component/jh2-full-install-1.1.27.bin' | sha256sum -c -
+          echo 'd1875b4650f47ad66fb59f7cf51d112b06600f369d93bcec269c13f1e0feff98  component/JH2-NanoC6-RUNTIME-ONLY-1.1.73.bin' | sha256sum -c -
+      - name: Compose and verify complete single-file factory-plus-runtime flash at 0x0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,struct,binascii,os
+          base=Path('component/jh2-full-install-1.1.27.bin').read_bytes()
+          runtime=Path('component/JH2-NanoC6-RUNTIME-ONLY-1.1.73.bin').read_bytes()
+          assert len(base)==0x400000
+          assert 0x120000<len(runtime)<0x290000
+          assert base[0]==0xe9 and base[0x10000]==0xe9 and runtime[0]==0xe9
+          assert base[12:14]==runtime[12:14]==b'\x0d\x00','Bootloader/runtime wrong ESP32-C6 image header'
+          assert b'1.1.73-native-upload-flow' in runtime
+          assert b'jason-home-2-nanoc6-runtime-v1' in runtime
+          assert b'/settings/nano' in runtime
+          def part_table(buf):
+              p=[]
+              for start in range(0x8000,0x9000-32,32):
+                  if buf[start:start+2]!=b'\xaaP':break
+                  _,typ,sub,off,size,label,flags=struct.unpack_from('<HBBII16sI',buf,start)
+                  p.append((label.rstrip(b'\0').decode(),typ,sub,off,size))
+              return p
+          parts=part_table(base)
+          assert parts==[
+              ('nvs',1,2,0x9000,0x5000),
+              ('otadata',1,0,0xe000,0x2000),
+              ('boot',0,0,0x10000,0x120000),
+              ('runtime',0,16,0x130000,0x290000),
+              ('storage',1,130,0x3c0000,0x40000)
+          ],('Partition layout mismatch',parts)
+          image=bytearray(base)
+          image[0x9000:0xe000]=b'\xff'*0x5000 # explicit wipe of old local credentials; Oracle server unaffected
+          image[0xe000:0x10000]=b'\xff'*0x2000
+          # ESP-IDF esp_ota_select_entry_t: ota_seq=1 selects sole runtime (ota_0).
+          seq=struct.pack('<I',1)
+          image[0xe000:0xe004]=seq
+          struct.pack_into('<I',image,0xe000+24,2) # ESP_OTA_IMG_VALID
+          struct.pack_into('<I',image,0xe000+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
+          image[0x130000:0x3c0000]=b'\xff'*0x290000
+          image[0x130000:0x130000+len(runtime)]=runtime
+          assert image[:0x9000]==base[:0x9000], 'Bootloader/partitions changed'
+          assert image[0x10000:0x130000]==base[0x10000:0x130000], 'Factory updater changed'
+          assert image[0x3c0000:]==base[0x3c0000:], 'LittleFS factory filesystem changed'
+          assert image[0x9000:0xe000]==b'\xff'*0x5000
+          assert struct.unpack_from('<I',image,0xe000)[0]==1
+          assert len(image)==0x400000
+          full=Path('full-output/JH2-NanoC6-1.1.73-COMPLETE-FULL-FLASH-0x0.bin')
+          full.write_bytes(image)
+          sha=hashlib.sha256(image).hexdigest()
+          manifest={'device':'ESP32-C6 NanoC6','file':full.name,'version':'1.1.73',
+                    'flash_address':'0x0','size_bytes':len(image),'sha256':sha,
+                    'factory_version':'1.1.27','runtime_version':'1.1.73',
+                    'runtime_offset':'0x130000','boot_select_offset':'0xE000',
+                    'nvs_offset':'0x9000','nvs_size':'0x5000',
+                    'oracle_changes':'NONE','eufy_changes':'NONE','oracle_api_route_changes':'NONE',
+                    'factory_updater_preserved':True,'littlefs_baseline_restored':True,
+                    'local_wifi_and_bridge_settings_erased':True,
+                    'controller_ble_data_not_written':True,'boot_selection':'ota_0',
+                    'run_source_commit':os.environ['GITHUB_SHA'],
+                    'hardware_boot_verified':False}
+          Path('full-output/FLASH-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          Path('full-output/SHA256SUMS.txt').write_text(sha+'  '+full.name+'\n')
+          print('COMPLETE_FULL_IMAGE_VERIFIED',json.dumps(manifest),flush=True)
+          PY
+      - name: Write clear Windows 3.9.11 recovery instructions
+        shell: bash
+        run: |
+          cat > full-output/READ-ME-FIRST.txt <<'EOF'
+          JASON HOME 2 NANOC6 COMPLETE RECOVERY - 1.1.73 / ESP32-C6 / 4 MB
+          ================================================================
+          Source: approved 1.1.73 runtime from confirmed-working 1.1.71 branch;
+          original 1.1.27 permanent factory updater and bootloader from published bundle.
+          Source checks and binary checks passed; physical boot still NOT verified.
+
+          ESPRESSIF FLASH DOWNLOAD TOOL 3.9.11:
+          1. Chip type ESP32-C6; develop mode; same COM port used previously.
+          2. Uncheck or remove ALL prior BIN rows.
+          3. Select JH2-NanoC6-1.1.73-COMPLETE-FULL-FLASH-0x0.bin.
+          4. Set address 0x0; check ONLY this BIN.
+          5. FLASH SIZE 4MB; if offered select DIO; choose DoNotChgBin.
+          6. Click START. Confirm FINISH; remove boot strap; RESET.
+
+          WARNING: THIS IS THE COMPLETE 4 MB FLASH IMAGE.
+          It overwrites locally saved Nano Wi-Fi and Oracle pairing credentials
+          plus flash filesystem. Settings on the Oracle cloud host, Eufy,
+          its API, and SmartDawn controller itself are not touched.
+          The factory updater at 0x10000 and runtime 1.1.73 at 0x130000
+          are both included with ota_0 boot selection at 0xE000.
+          Factory LittleFS template is provided at 0x3C0000; NVS is empty.
+
+          After first start, follow Nano setup Wi-Fi instructions to provision
+          your own network and Oracle bridge identity. Do NOT upload secrets
+          to third-party websites; use your original local provisioning page.
+          Internet-based automatic Nano firmware updates are disabled initially.
+
+          Do NOT flash this 4MB image at offset 0x130000.
+          Do NOT deploy or modify the Oracle server; no Eufy API changes.
+          If controller remains offline after reconfiguration, capture 115200
+          baud USB serial logs; do not flash arbitrary new images.
+          EOF
+          (cd full-output && sha256sum -c SHA256SUMS.txt)
+          test "$(stat -c%s full-output/JH2-NanoC6-1.1.73-COMPLETE-FULL-FLASH-0x0.bin)" -eq 4194304
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-NanoC6-1.1.73-COMPLETE-FULL-0x0
+          path: full-output/
+          retention-days: 60
+          if-no-files-found: error
+      - name: Publish manual-only USB recovery package, never production OTA
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jh2-usb-fullflash-1.1.73-recovery
+          name: "Jason Home 2 NanoC6 1.1.73 - Complete USB Flash 0x0"
+          prerelease: true
+          draft: false
+          body: |
+            **Full 4MB ESP32-C6 flash recovery** for address **0x0**.
+            Verified original 1.1.27 factory updater/bootloader/partition template
+            + hash-pinned 1.1.73 recovery runtime + valid ota_0 boot selection.
+            **Wipes Nano NVS/local WiFi/Oracle bridge pairing.** 
+            Does not change Oracle server, Eufy integration, API routes or SmartDawn controller storage.
+            Runtime will need local Wi-Fi and Oracle bridge setup after first boot.
+            Offline assembly and SHA256 verified. Device boot requires manual hardware validation.
+            This package is NOT in the signed automatic-OTA channel.
+          files: full-output/*
+          fail_on_unmatched_files: true
+          target_commitish: ${{ github.sha }}
