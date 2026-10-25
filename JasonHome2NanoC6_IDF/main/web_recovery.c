@@ -48,6 +48,12 @@ static char saved_oracle_endpoint[176]={0};
 static int64_t wifi_down_since=0;
 static volatile uint32_t wifi_retry_attempts=0;
 static volatile uint32_t wifi_disconnect_reason=0;
+// AP association diagnostics, independent of the home Wi-Fi station.
+static volatile uint32_t ap_client_count=0;
+static volatile uint32_t ap_join_events=0;
+static volatile uint32_t ap_leave_events=0;
+static volatile uint32_t ap_last_leave_reason=0;
+static volatile bool ap_broadcasting=false;
 static bool sntp_started=false,mdns_started=false;
 
 static const char *HOME_HTML=
@@ -317,6 +323,12 @@ static esp_err_t status_get(httpd_req_t *r){
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
     cJSON_AddBoolToObject(o,"storageReady",fs_ready);
     cJSON_AddBoolToObject(o,"setupAP",ap_enabled);
+    cJSON_AddBoolToObject(o,"setupApBroadcasting",ap_broadcasting);
+    cJSON_AddBoolToObject(o,"setupApOnlyMode",saved_ssid[0]==0);
+    cJSON_AddNumberToObject(o,"setupApClientCount",ap_client_count);
+    cJSON_AddNumberToObject(o,"setupApJoinEvents",ap_join_events);
+    cJSON_AddNumberToObject(o,"setupApLeaveEvents",ap_leave_events);
+    cJSON_AddNumberToObject(o,"setupApLastLeaveReason",ap_last_leave_reason);
     cJSON_AddStringToObject(o,"setupSSID","JH2-Nano-Fresh");
     cJSON_AddBoolToObject(o,"homeWifiConfigured",saved_ssid[0]!=0);
     cJSON_AddStringToObject(o,"homeWifiSSID",saved_ssid);
@@ -930,6 +942,29 @@ static void update_time(void){
 }
 static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data){
     (void)arg;
+    if(event==WIFI_EVENT&&id==WIFI_EVENT_AP_START){
+        ap_broadcasting=true;
+        ESP_LOGW(TAG,"SETUP_AP_BROADCASTING open SSID JH2-Nano-Fresh channel 6; use http://192.168.4.1");
+    }
+    if(event==WIFI_EVENT&&id==WIFI_EVENT_AP_STOP){
+        ap_broadcasting=false;
+        ESP_LOGE(TAG,"SETUP_AP_STOPPED unexpectedly; home Wi-Fi setup unavailable");
+    }
+    if(event==WIFI_EVENT&&id==WIFI_EVENT_AP_STACONNECTED){
+        const wifi_event_ap_staconnected_t *joined=(const wifi_event_ap_staconnected_t *)data;
+        ++ap_join_events;
+        ++ap_client_count;
+        ESP_LOGW(TAG,"SETUP_AP_CLIENT_JOINED aid=%u clients=%lu",
+                 joined?(unsigned)joined->aid:0U,(unsigned long)ap_client_count);
+    }
+    if(event==WIFI_EVENT&&id==WIFI_EVENT_AP_STADISCONNECTED){
+        const wifi_event_ap_stadisconnected_t *left=(const wifi_event_ap_stadisconnected_t *)data;
+        if(ap_client_count) --ap_client_count;
+        ++ap_leave_events;
+        ap_last_leave_reason=left?left->reason:0;
+        ESP_LOGW(TAG,"SETUP_AP_CLIENT_LEFT reason=%lu clients=%lu",
+                 (unsigned long)ap_last_leave_reason,(unsigned long)ap_client_count);
+    }
     if(event==WIFI_EVENT&&id==WIFI_EVENT_STA_START){
         // Unlike 2.0.0, never connect with a blank or stale Wi-Fi profile.
         if(saved_ssid[0]){
@@ -974,7 +1009,11 @@ static bool start_setup_ap(void){
     cfg.ap.max_connection=4;
     cfg.ap.authmode=WIFI_AUTH_OPEN;
     cfg.ap.pmf_cfg.required=false;
-    if(esp_wifi_set_mode(WIFI_MODE_APSTA)!=ESP_OK)return false;
+    // Full-flash first boot has no home credentials. AP ONLY prevents
+    // background STA/channel scans from disturbing the phone's association.
+    // After Wi-Fi provisioning, the next boot uses APSTA normally.
+    const wifi_mode_t mode=saved_ssid[0]?WIFI_MODE_APSTA:WIFI_MODE_AP;
+    if(esp_wifi_set_mode(mode)!=ESP_OK)return false;
     if(esp_wifi_set_config(WIFI_IF_AP,&cfg)!=ESP_OK)return false;
     ap_enabled=true;
     return true;
@@ -1002,8 +1041,8 @@ static bool start_net(void){
     if(!ap_netif || !sta_netif)return false;
     wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();
     if(esp_wifi_init(&init)!=ESP_OK)return false;
-    // Application-managed NVS is authoritative, not stale SDK Wi-Fi state.
-    if(esp_wifi_set_storage(WIFI_STORAGE_RAM)!=ESP_OK)return false;
+    // Match the known-working 1.1.79 Wi-Fi storage behavior. The explicit
+    // station configuration, when present, overrides any SDK-saved profile.
     if(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,event_handler,NULL)!=ESP_OK ||
        esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,event_handler,NULL)!=ESP_OK)
         return false;
@@ -1022,7 +1061,8 @@ static bool start_net(void){
     if(esp_wifi_start()!=ESP_OK)return false;
     esp_err_t power=esp_wifi_set_ps(WIFI_PS_NONE);
     if(power!=ESP_OK)ESP_LOGW(TAG,"Wi-Fi power-save configuration: %s",esp_err_to_name(power));
-    ESP_LOGW(TAG,"2.0.1 open setup AP started: JH2-Nano-Fresh, no password, http://192.168.4.1");
+    ESP_LOGW(TAG,"2.0.3 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
+             saved_ssid[0]?"APSTA":"AP-ONLY",saved_ssid[0]?"yes":"no");
     if(xTaskCreate(wifi_retry_task,"jh2-wifi-retry",3072,NULL,2,NULL)!=pdPASS)
         ESP_LOGE(TAG,"Wi-Fi reconnect task unavailable; manual setup AP remains active");
     return true;
@@ -1086,6 +1126,11 @@ bool jh2_web_start(void){
         bool had_ssid=saved_ssid[0]!=0;
         read_saved();
         if(!had_ssid&&saved_ssid[0]){
+            // A preexisting Wi-Fi profile may have been restored from a
+            // legacy LittleFS partition after the new open AP had started.
+            // Transition to APSTA only when credentials really exist.
+            if(esp_wifi_set_mode(WIFI_MODE_APSTA)!=ESP_OK)
+                ESP_LOGW(TAG,"Deferred STA mode unavailable; setup AP retained");
             wifi_config_t sta={0};
             size_t n=strlen(saved_ssid);
             if(n<=sizeof(sta.sta.ssid)&&strlen(saved_pass)<=63){
