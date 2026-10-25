@@ -1,0 +1,66 @@
+name: JH2 2.0.6 Publish Verified Signed Runtime Release
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/jh2-206-publish-signed-runtime-main.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          run-id: 40228351177
+          name: JH2-2.0.6-SIGNED-ORACLE-OTA
+          github-token: ${{ github.token }}
+          path: signed-package
+      - name: Verify signature, exact 2.0.6 binary and release URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,subprocess,tempfile
+          p=Path('signed-package')
+          manifest=json.loads((p/'latest.json').read_text())
+          r=json.loads((p/'release.json').read_text())
+          f=dict(x.split('=',1) for x in manifest['payload'].strip().splitlines())
+          b=(p/'jh2-runtime-2.0.6.bin').read_bytes()
+          h=hashlib.sha256(b).hexdigest()
+          assert manifest['schema']==1 and f['product']=='jason-home-2-nanoc6'
+          assert f['version']=='2.0.6' and f['commit']=='e003fa12b48414920aeb41db1b4fd9694590c4c9'
+          assert f['sha256']==h==r['files']['jh2-runtime-2.0.6.bin']['sha256']
+          assert h=='006c79e2b06b5b5df0b3bc15fb9b4fb896e661c30e2e32cfb13105911b841ff1'
+          assert int(f['bytes'])==len(b)==1382016
+          assert f['url']=='https://github.com/jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2/releases/download/jason-home-2-nanoc6-v2.0.6/jh2-runtime-2.0.6.bin'
+          assert b'JH2V200PRIVATEORACLETOKENREPLACEME'.ljust(64,b'_') in b
+          with tempfile.TemporaryDirectory() as d:
+              q=Path(d);(q/'payload').write_text(manifest['payload'])
+              (q/'sig').write_bytes(base64.b64decode(manifest['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',
+                'remote-update/anderson_ota_signing_public.pem','-signature',str(q/'sig'),str(q/'payload')],check=True)
+          print('VERIFIED_SIGNED_PRIVATE_TOKEN_FREE_206_FIRMWARE',len(b),h)
+          PY
+      - name: Publish canonical signed runtime release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='jason-home-2-nanoc6-v2.0.6'
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; refusing overwrite"
+            exit 1
+          fi
+          gh release create "$tag" signed-package/jh2-runtime-2.0.6.bin signed-package/latest.json signed-package/release.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --target e003fa12b48414920aeb41db1b4fd9694590c4c9 \
+            --title "Jason Home 2 Nano 2.0.6 — Signed Runtime OTA" \
+            --notes "Verified ECDSA-signed runtime-only Nano C6 update (1,382,016 bytes). SHA-256 006c79e2b06b5b5df0b3bc15fb9b4fb896e661c30e2e32cfb13105911b841ff1. Already mirrored to Oracle approved OTA feed; does not include any private bridge credentials. Factory recovery unchanged."
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,tagName
