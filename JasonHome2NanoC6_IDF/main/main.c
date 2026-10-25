@@ -113,7 +113,7 @@ static void failsafe_confirm_after_60s(void){
         nvs_commit(n);nvs_close(n);
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.4 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.5 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
@@ -191,6 +191,11 @@ static SemaphoreHandle_t discovered_lock=NULL;
 static ble_addr_t selected_addr={0};
 static bool selected_valid=false;
 static volatile uint32_t ble_scan_requests=0;
+static volatile bool ble_host_ready=false;
+static volatile bool ble_scan_only=false;
+static volatile uint32_t ble_full_scan_requests=0;
+static volatile uint32_t ble_last_disconnect_reason=0;
+static volatile uint32_t ble_reconnect_attempts=0;
 static volatile uint32_t local_command_seq=0,local_command_success=0,local_command_failure=0;
 static bool hold_disconnect=false;
 static void begin_scan(void);
@@ -215,6 +220,8 @@ static void cache_discovery(const struct ble_gap_disc_desc *disc,const struct bl
     discovered[i].addr=disc->addr;
     discovered[i].rssi=disc->rssi;
     discovered[i].seen_ms=(uint32_t)(esp_timer_get_time()/1000);
+    // Advertisements and scan responses arrive separately. Keep an
+    // existing name when a subsequent packet has no name field.
     if(f->name && f->name_len){
         size_t n=f->name_len<sizeof(discovered[i].name)-1?f->name_len:sizeof(discovered[i].name)-1;
         memcpy(discovered[i].name,f->name,n);
@@ -232,9 +239,40 @@ static void load_target(void){
 }
 bool jh2_ble_scan_start(void){
     ++ble_scan_requests;
+    if(!ble_host_ready)return false;
     hold_disconnect=false;
+    ble_scan_only=false;
     if(connection!=BLE_HS_CONN_HANDLE_NONE)return true;
+    if(ble_gap_disc_active())ble_gap_disc_cancel();
     begin_scan();
+    return true;
+}
+bool jh2_ble_full_scan(void){
+    if(!ble_host_ready || !discovered_lock)return false;
+    if(xSemaphoreTake(discovered_lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
+    // A full scan starts with fresh observations; the NVS selection persists.
+    discovered_count=0;
+    memset(discovered,0,sizeof(discovered));
+    xSemaphoreGive(discovered_lock);
+    ++ble_full_scan_requests;
+    ble_scan_only=true;
+    if(ble_gap_disc_active())ble_gap_disc_cancel();
+    begin_scan();
+    return true;
+}
+bool jh2_ble_reconnect_last(void){
+    if(!ble_host_ready||!selected_valid)return false;
+    hold_disconnect=false;
+    ble_scan_only=false;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE){
+        struct ble_gap_conn_desc current={0};
+        if(ble_gap_conn_find(connection,&current)==0 &&
+           ble_addr_cmp(&current.peer_ota_addr,&selected_addr)==0)
+            return true; // Already connected to the remembered controller.
+        return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
+    }
+    if(ble_gap_disc_active())ble_gap_disc_cancel();
+    begin_scan(); // Reconnect only the saved peer, not a random advertiser.
     return true;
 }
 bool jh2_ble_select_target(const char *mac){
@@ -258,6 +296,7 @@ bool jh2_ble_select_target(const char *mac){
     if(!saved)return false;
     selected_addr=addr;selected_valid=true;
     hold_disconnect=false;
+    ble_scan_only=false;
     if(connection!=BLE_HS_CONN_HANDLE_NONE)
         ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM);
     else{
@@ -268,6 +307,8 @@ bool jh2_ble_select_target(const char *mac){
 }
 bool jh2_ble_disconnect(void){
     hold_disconnect=true;
+    ble_scan_only=false;
+    if(ble_host_ready&&ble_gap_disc_active())ble_gap_disc_cancel();
     if(connection==BLE_HS_CONN_HANDLE_NONE)return true;
     return ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)==0;
 }
@@ -658,6 +699,12 @@ void jh2_ble_status(cJSON *out){
     cJSON_AddNumberToObject(out,"nativeLocalCommandsSucceeded",local_command_success);
     cJSON_AddNumberToObject(out,"nativeLocalCommandsFailed",local_command_failure);
     cJSON_AddNumberToObject(out,"nativeBleScanRequests",ble_scan_requests);
+    cJSON_AddNumberToObject(out,"nativeFullBleScans",ble_full_scan_requests);
+    cJSON_AddBoolToObject(out,"nativeBleStackReady",ble_host_ready);
+    cJSON_AddBoolToObject(out,"nativeBleFullScanActive",ble_scan_only&&ble_host_ready);
+    cJSON_AddNumberToObject(out,"nativeReconnectAttempts",ble_reconnect_attempts);
+    cJSON_AddNumberToObject(out,"nativeLastBleDisconnectReason",ble_last_disconnect_reason);
+    cJSON_AddBoolToObject(out,"nativeRememberedDevice",selected_valid);
     char chosen[18]="";
     if(selected_valid)format_mac(&selected_addr,chosen);
     cJSON_AddStringToObject(out,"nativeSelectedControllerMac",chosen);
@@ -817,13 +864,15 @@ static void fail(const char *stage,int rc){
 }
 
 static void begin_scan(void){
-    if(connection!=BLE_HS_CONN_HANDLE_NONE || hold_disconnect)return;
+    if(!ble_host_ready || hold_disconnect)return;
+    if(connection!=BLE_HS_CONN_HANDLE_NONE && !ble_scan_only)return;
     if(ble_hs_id_infer_auto(0,&own_addr)!=0)return;
     struct ble_gap_disc_params params={0};
-    params.passive=0; // active scan obtains DN5E58 name when in scan response
+    params.passive=0; // active scan includes complete advertising + scan responses
     params.filter_duplicates=0;
-    int rc=ble_gap_disc(own_addr,BLE_HS_FOREVER,&params,gap_event,NULL);
-    if(rc)fail("scan",rc);
+    const int32_t duration=ble_scan_only?15000:BLE_HS_FOREVER;
+    int rc=ble_gap_disc(own_addr,duration,&params,gap_event,NULL);
+    if(rc && rc!=BLE_HS_EALREADY)fail("scan",rc);
 }
 
 static int write_done(uint16_t conn,const struct ble_gatt_error *error,
@@ -1010,6 +1059,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         struct ble_hs_adv_fields f;
         if(ble_hs_adv_parse_fields(&f,event->disc.data,event->disc.length_data)!=0)return 0;
         cache_discovery(&event->disc,&f);
+        if(ble_scan_only)return 0; // List all devices, don't auto-connect during full scan.
         bool selected=selected_valid && ble_addr_cmp(&event->disc.addr,&selected_addr)==0;
         bool named=(f.name && f.name_len==strlen(TARGET)&&
                     memcmp(f.name,TARGET,f.name_len)==0);
@@ -1022,7 +1072,9 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     }
     case BLE_GAP_EVENT_CONNECT:
         if(event->connect.status){
-            fail("connect",event->connect.status);begin_scan();return 0;
+            fail("connect",event->connect.status);
+            ++ble_reconnect_attempts;
+            begin_scan();return 0;
         }
         connection=event->connect.conn_handle;
         ESP_LOGI(TAG,"SMARTDAWN_CONNECTED conn=%u",connection);
@@ -1074,6 +1126,7 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     }
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGW(TAG,"BLE_DISCONNECTED reason=%u",event->disconnect.reason);
+        ble_last_disconnect_reason=event->disconnect.reason;
         connection=BLE_HS_CONN_HANDLE_NONE;
         service_start=service_end=writer=notifier=cccd=heart=upload=0;
         raw_write_fault=false;raw_write_pending=false;
@@ -1093,6 +1146,11 @@ static int gap_event(struct ble_gap_event *event,void *arg){
         if(!hold_disconnect)begin_scan();
         return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
+        if(ble_scan_only){
+            ble_scan_only=false;
+            ESP_LOGI(TAG,"BLE_FULL_SCAN_COMPLETE found=%u",(unsigned)discovered_count);
+            return 0;
+        }
         if(connection==BLE_HS_CONN_HANDLE_NONE && !hold_disconnect)begin_scan();
         return 0;
     case BLE_GAP_EVENT_MTU:
@@ -1102,13 +1160,18 @@ static int gap_event(struct ble_gap_event *event,void *arg){
     }
 }
 static void on_sync(void){
+    ble_host_ready=true;
     int rc=ble_hs_util_ensure_addr(0);
     if(rc){fail("ensure_address",rc);return;}
     ESP_LOGI(TAG,"NIMBLE_NATIVE_READY msys2=%d no_wifi diagnostics_only",
              CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
     begin_scan();
 }
-static void on_reset(int reason){fail("nimble_reset",reason);}
+static void on_reset(int reason){
+    ble_host_ready=false;
+    ble_scan_only=false;
+    fail("nimble_reset",reason);
+}
 static void host_task(void *parameter){
     (void)parameter;
     nimble_port_run();
@@ -1123,7 +1186,7 @@ static void start_ble_after_home_wifi(void){
     EventGroupHandle_t group=jh2_web_wifi_group();
     if(!group || !(xEventGroupGetBits(group)&BIT0))return;
     ble_start_attempted=true;
-    ESP_LOGW(TAG,"2.0.4 home Wi-Fi online; BLE startup permitted");
+    ESP_LOGW(TAG,"2.0.5 home Wi-Fi online; BLE startup permitted");
     esp_err_t rc=ESP_OK;
     // Wi-Fi and web recovery are mission critical; BLE is independent.
     // Bluetooth initialization failure must NOT discard a fully provisioned
@@ -1155,7 +1218,7 @@ static void start_ble_after_home_wifi(void){
         ble_att_set_preferred_mtu(517);
         nimble_port_freertos_init(host_task);
     }
-    ESP_LOGW(TAG,"2.0.4 BLE startup attempt finished; setup AP retained");
+    ESP_LOGW(TAG,"2.0.5 BLE startup attempt finished; setup AP retained");
 }
 
 void app_main(void){
@@ -1173,13 +1236,13 @@ void app_main(void){
         failsafe_boot_failed();
         return;
     }
-    // 2.0.4: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
+    // 2.0.5: open setup Wi-Fi and HTTP are now up. Neither home Wi-Fi,
     // BLE, filesystem nor Oracle is allowed to gate the setup AP.
     // Configure Oracle later with Settings > Oracle > Connect Automatically.
-    ESP_LOGW(TAG,"2.0.4 setup AP ready; proceeding with independent BLE startup");
+    ESP_LOGW(TAG,"2.0.5 setup AP ready; proceeding with independent BLE startup");
     // Initial provisioning: BLE stays OFF to avoid simultaneous 2.4 GHz
     // radio arbitration while the phone associates with JH2-Nano-Fresh.
-    ESP_LOGW(TAG,"2.0.4 Bluetooth deferred until home Wi-Fi connects");
+    ESP_LOGW(TAG,"2.0.5 Bluetooth deferred until home Wi-Fi connects");
 #if CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT
     // Retain the product marker in the signed application image. The
     // original factory browser updater validates it and the final size;
