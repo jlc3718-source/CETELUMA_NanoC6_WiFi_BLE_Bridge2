@@ -66,6 +66,57 @@ static int known_good(void){
     }
     return good<=1 && image_valid(slot(good))?(int)good:-1;
 }
+/* Two OTA records are written together so a new candidate has a VALID
+ * previous slot to roll back to. If power fails mid-write, factory rescue
+ * remains independently bootable. CRC covers only ota_seq (ESP-IDF 5.5.1).
+ */
+static uint32_t ota_crc(uint32_t seq){
+    uint32_t crc=0;
+    const uint8_t *b=(const uint8_t *)&seq;
+    crc=~0xffffffffU;
+    for(int i=0;i<4;i++){
+        crc^=b[i];
+        for(int j=0;j<8;j++)crc=(crc>>1)^((crc&1)?0xedb88320U:0U);
+    }
+    return ~crc;
+}
+static esp_err_t write_ota_selection(int old_good,unsigned candidate){
+    const esp_partition_t *p=esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_OTA,NULL);
+    if(!p||p->address!=0xe000||p->size!=0x2000)return ESP_ERR_INVALID_STATE;
+    uint8_t old[32],next[32];
+    memset(old,0xff,sizeof(old));memset(next,0xff,sizeof(next));
+    uint32_t old_seq=old_good==1?2U:1U;
+    uint32_t new_seq=old_good<0?1U:old_seq+1U;
+    if(((new_seq-1U)%2U)!=candidate)return ESP_ERR_INVALID_ARG;
+    if(old_good>=0){
+        memcpy(old,&old_seq,4);
+        uint32_t valid=ESP_OTA_IMG_VALID,crc=ota_crc(old_seq);
+        memcpy(old+24,&valid,4);memcpy(old+28,&crc,4);
+    }
+    memcpy(next,&new_seq,4);
+    uint32_t state=ESP_OTA_IMG_NEW,crc=ota_crc(new_seq);
+    memcpy(next+24,&state,4);memcpy(next+28,&crc,4);
+    esp_err_t rc=esp_partition_erase_range(p,0,0x2000);
+    if(rc!=ESP_OK)return rc;
+    if(old_good>=0){
+        rc=esp_partition_write(p,0,old,sizeof(old));
+        if(rc!=ESP_OK)return rc;
+        return esp_partition_write(p,0x1000,next,sizeof(next));
+    }
+    return esp_partition_write(p,0,next,sizeof(next));
+}
+static esp_err_t select_known_good(unsigned good){
+    const esp_partition_t *p=esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_OTA,NULL);
+    if(!p||p->address!=0xe000||p->size!=0x2000)return ESP_ERR_INVALID_STATE;
+    uint8_t record[32];memset(record,0xff,sizeof(record));
+    uint32_t seq=good==1?2U:1U;
+    uint32_t valid=ESP_OTA_IMG_VALID,crc=ota_crc(seq);
+    memcpy(record,&seq,4);memcpy(record+24,&valid,4);memcpy(record+28,&crc,4);
+    esp_err_t rc=esp_partition_erase_range(p,0,0x2000);
+    return rc==ESP_OK?esp_partition_write(p,0,record,sizeof(record)):rc;
+}
 static esp_err_t send(httpd_req_t *r,const char *status,const char *message){
     httpd_resp_set_status(r,status);
     httpd_resp_set_type(r,"text/plain; charset=utf-8");
@@ -80,8 +131,7 @@ static esp_err_t page_get(httpd_req_t *r){
 static esp_err_t return_post(httpd_req_t *r){
     int good=known_good();
     if(good<0)return send(r,"409 Conflict","No confirmed working runtime. Upload firmware here.");
-    const esp_partition_t *p=slot((unsigned)good);
-    if(esp_ota_set_boot_partition(p)!=ESP_OK)
+    if(select_known_good((unsigned)good)!=ESP_OK)
         return send(r,"500 Internal Server Error","Could not select the working runtime.");
     send(r,"200 OK","Returning to last known-good runtime.");
     vTaskDelay(pdMS_TO_TICKS(400));esp_restart();return ESP_OK;
@@ -100,15 +150,18 @@ static esp_err_t upload_post(httpd_req_t *r){
         free(buf);return send(r,"500 Internal Server Error","Cannot open inactive runtime slot.");
     }
     bool ok=true,product=false,header=false;
+    uint8_t first[24]={0};size_t first_len=0;
     size_t matched=0,total=0;
     while(total<(size_t)r->content_len){
         int n=httpd_req_recv(r,(char*)buf,
             (size_t)r->content_len-total>4096?4096:(size_t)r->content_len-total);
         if(n<=0){ok=false;break;}
         if(!header){
-            if(n<24 && total==0){ok=false;break;}
-            if(buf[0]!=0xe9||buf[12]!=13||buf[13]!=0){ok=false;break;}
-            header=true;
+            for(int i=0;i<n&&first_len<sizeof(first);i++)first[first_len++]=buf[i];
+            if(first_len==sizeof(first)){
+                if(first[0]!=0xe9||first[12]!=13||first[13]!=0){ok=false;break;}
+                header=true;
+            }
         }
         for(int i=0;i<n;i++){
             if(buf[i]==(uint8_t)MARKER[matched])matched++;
@@ -119,14 +172,14 @@ static esp_err_t upload_post(httpd_req_t *r){
         total+=(size_t)n;
     }
     free(buf);
-    if(!ok||total!=(size_t)r->content_len||!product){
+    if(!ok||!header||total!=(size_t)r->content_len||!product){
         esp_ota_abort(handle);
         return send(r,"400 Bad Request","Incomplete or wrong product firmware. Existing good slot is preserved.");
     }
     if(esp_ota_end(handle)!=ESP_OK)
         return send(r,"400 Bad Request","Firmware image validation failed; rescue remains available.");
-    if(esp_ota_set_boot_partition(p)!=ESP_OK)
-        return send(r,"500 Internal Server Error","Image stored, but boot selection failed.");
+    if(write_ota_selection(good,target)!=ESP_OK)
+        return send(r,"500 Internal Server Error","Image stored, but A/B boot selection failed; factory rescue remains available.");
     send(r,"200 OK","Firmware installed to inactive slot; booting candidate. Rollback enabled.");
     vTaskDelay(pdMS_TO_TICKS(400));esp_restart();return ESP_OK;
 }
