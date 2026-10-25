@@ -1257,7 +1257,7 @@ static bool start_net(void){
     if(esp_wifi_start()!=ESP_OK)return false;
     esp_err_t power=esp_wifi_set_ps(WIFI_PS_NONE);
     if(power!=ESP_OK)ESP_LOGW(TAG,"Wi-Fi power-save configuration: %s",esp_err_to_name(power));
-    ESP_LOGW(TAG,"2.0.5 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
+    ESP_LOGW(TAG,"2.0.6 SETUP_AP_READY mode=%s open JH2-Nano-Fresh; homeWiFiConfigured=%s",
              saved_ssid[0]?"APSTA":"AP-ONLY",saved_ssid[0]?"yes":"no");
     if(xTaskCreate(wifi_retry_task,"jh2-wifi-retry",3072,NULL,2,NULL)!=pdPASS)
         ESP_LOGE(TAG,"Wi-Fi reconnect task unavailable; manual setup AP remains active");
