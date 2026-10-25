@@ -1,0 +1,75 @@
+name: JH2 SmartDawn Automatic Type3 Control Hardware Test
+on:
+  push:
+    branches: [feature/jh2-native-local-upload-no-repartition-20261024]
+    paths: ['.github/workflows/jh2-native-autotest-type3-20261025.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-native-slot-field-test
+  cancel-in-progress: false
+jobs:
+  control:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 16
+    steps:
+      - name: Ensure runner ownership
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+      - name: Retrieve the ORIGINAL successful SmartDawn 4KB file
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin feat/jh2-curtain-offline-workspace-20261015
+          git show FETCH_HEAD:JasonHome2Server/curtain_converter.html > "$RUNNER_TEMP/jh2-verified-original.html"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,hashlib,base64,os
+          s=Path(os.environ['RUNNER_TEMP']+'/jh2-verified-original.html').read_text()
+          m=re.search(r"const BACKUP=Uint8Array.from\(atob\('([A-Za-z0-9+/=]+)'\)",s)
+          assert m
+          b=base64.b64decode(m[1],validate=True)
+          assert len(b)==4096 and b[:4]==b'DN\x01\xfe'
+          assert int.from_bytes(b[4:8],'little')==83928
+          assert hashlib.sha256(b).hexdigest()=='7680f2865d770dd6cf56feda71c7af9c892b021480a9828c72f01d2f41c3ff2e'
+          print('VENDOR_ORIGINAL_VERIFIED_4K_UPLOAD_SNAPSHOT',flush=True)
+          PY
+      - name: Preflight: current controller must be idle, connected, 1.1.71; no erasure allowed
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          sudo -n --preserve-env=GITHUB_WORKSPACE,RUNNER_TEMP python3 - <<'PY'
+          import json,subprocess,os,re,base64,hashlib
+          from pathlib import Path
+          src=Path(os.environ['RUNNER_TEMP']+'/jh2-verified-original.html').read_text()
+          match=re.search(r"const BACKUP=Uint8Array.from\(atob\('([A-Za-z0-9+/=]+)'\)",src)
+          assert match
+          backup=base64.b64decode(match[1],validate=True)
+          assert hashlib.sha256(backup).hexdigest()=='7680f2865d770dd6cf56feda71c7af9c892b021480a9828c72f01d2f41c3ff2e'
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]
+          env=dict(x.split('=',1) for x in info['Config']['Env'] if '=' in x)
+          extra=dict(os.environ,JH2_TEST_TOKEN=env['JASON_HOME_API_TOKEN'],JH2_TEST_BACKUP_B64=match[1])
+          script=Path(os.environ['GITHUB_WORKSPACE']+'/.github/scripts/jh2-native-autotest-type3-control-20261025.mjs').read_text()
+          # Safety audit: no delete command 2909 or factory-range writes in test.
+          assert '2909' not in script
+          assert "if(!final.section||final.matches!==1)" in script
+          assert "s.matches!==0" in script
+          assert "uploadUuid" in script
+          cmd=['docker','exec','-i','-e','JH2_TEST_TOKEN','-e','JH2_TEST_BACKUP_B64',
+               'jason-home-2-web','node','--input-type=module']
+          p=subprocess.run(cmd,input=script,text=True,env=extra)
+          try:
+              subprocess.run(['docker','cp','jason-home-2-web:/tmp/jh2-native-4kb-control.json',
+                os.environ['GITHUB_WORKSPACE']+'/jh2-native-type3-autotest-result.json'],check=False)
+          except Exception:pass
+          raise SystemExit(p.returncode)
+          PY
+      - name: Preserve complete logged results with no token or file contents
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JH2-20261025-SMARTDAWN-TYPE3-CONTROL-RESULT
+          path: jh2-native-type3-autotest-result.json
+          if-no-files-found: warn
+          retention-days: 14
