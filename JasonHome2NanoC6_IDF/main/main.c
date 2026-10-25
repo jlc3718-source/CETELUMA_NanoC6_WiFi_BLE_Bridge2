@@ -134,7 +134,7 @@ static void failsafe_confirm_after_60s(void){
         persistent_crash_streak=0;
     }
     failsafe_confirmed=true;
-    ESP_LOGW(TAG,"2.0.7 runtime health confirmed after 60 seconds; A/B recovery retained");
+    ESP_LOGW(TAG,"2.0.9 runtime health confirmed after 60 seconds; A/B recovery retained");
 }
 
 static const char TARGET[]="DN5E58";
