@@ -33,7 +33,7 @@ jobs:
           assert hashlib.sha256(b).hexdigest()=='7680f2865d770dd6cf56feda71c7af9c892b021480a9828c72f01d2f41c3ff2e'
           print('VENDOR_ORIGINAL_VERIFIED_4K_UPLOAD_SNAPSHOT',flush=True)
           PY
-      - name: Preflight: current controller must be idle, connected, 1.1.71; no erasure allowed
+      - name: "Preflight: controller idle, connected, 1.1.71; no erasure allowed"
         shell: bash
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
