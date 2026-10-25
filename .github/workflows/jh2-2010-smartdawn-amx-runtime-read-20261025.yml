@@ -1,0 +1,31 @@
+name: JH2 SmartDawn genuine AMX runtime availability read
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-2010-smartdawn-amx-runtime-read-20261025.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch manufacturer AMX runtime files referenced in original SmartDawn APK, no Bluetooth/Oracle writes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,json,hashlib
+          results=[]
+          for name in ('tuwen.amx','text-build-in.amx'):
+              url='https://cdn.daniaokeji.com/data/amx/commons/'+name
+              try:
+                  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; JasonHome2-native-format-diagnostic)'})
+                  with urllib.request.urlopen(req,timeout=16) as response:
+                      blob=response.read(512*1024+1)
+                      if len(blob)>512*1024:raise ValueError('AMX runtime exceeds safe 512KiB limit')
+                      if response.status!=200:raise ValueError('not HTTP 200')
+                      results.append({'file':name,'ok':True,'bytes':len(blob),
+                        'sha256':hashlib.sha256(blob).hexdigest(),'first16':blob[:16].hex()})
+              except Exception as e:results.append({'file':name,'ok':False,'error':str(e)[:200]})
+          print('SMARTDAWN_AMX_ORIGINAL_APP_RUNTIME_READ',json.dumps(results),flush=True)
+          PY
