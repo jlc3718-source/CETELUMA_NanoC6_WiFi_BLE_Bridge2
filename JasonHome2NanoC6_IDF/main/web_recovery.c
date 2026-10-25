@@ -54,6 +54,8 @@ static volatile uint32_t ap_join_events=0;
 static volatile uint32_t ap_leave_events=0;
 static volatile uint32_t ap_last_leave_reason=0;
 static volatile bool ap_broadcasting=false;
+static volatile bool setup_ap_shutdown_requested=false;
+static volatile int64_t sta_ip_since_us=0;
 static bool sntp_started=false,mdns_started=false;
 
 static const char *HOME_HTML=
@@ -323,6 +325,8 @@ static esp_err_t status_get(httpd_req_t *r){
     cJSON_AddBoolToObject(o,"oracleRunning",jh2_bridge_ready());
     cJSON_AddBoolToObject(o,"storageReady",fs_ready);
     cJSON_AddBoolToObject(o,"setupAP",ap_enabled);
+    cJSON_AddBoolToObject(o,"setupApAutoShutdownEnabled",true);
+    cJSON_AddBoolToObject(o,"setupApWillResumeOnWifiFailure",true);
     cJSON_AddBoolToObject(o,"setupApBroadcasting",ap_broadcasting);
     cJSON_AddBoolToObject(o,"setupApOnlyMode",saved_ssid[0]==0);
     cJSON_AddNumberToObject(o,"setupApClientCount",ap_client_count);
@@ -927,7 +931,11 @@ static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data
     }
     if(event==WIFI_EVENT&&id==WIFI_EVENT_AP_STOP){
         ap_broadcasting=false;
-        ESP_LOGE(TAG,"SETUP_AP_STOPPED unexpectedly; home Wi-Fi setup unavailable");
+        ap_enabled=false;
+        if(setup_ap_shutdown_requested)
+            ESP_LOGW(TAG,"SETUP_AP_DISABLED home Wi-Fi connected; local LAN UI remains online");
+        else
+            ESP_LOGE(TAG,"SETUP_AP_STOPPED unexpectedly; recovery monitoring will restore if needed");
     }
     if(event==WIFI_EVENT&&id==WIFI_EVENT_AP_STACONNECTED){
         const wifi_event_ap_staconnected_t *joined=(const wifi_event_ap_staconnected_t *)data;
@@ -955,6 +963,7 @@ static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data
     if(event==WIFI_EVENT&&id==WIFI_EVENT_STA_DISCONNECTED){
         if(net_event)xEventGroupClearBits(net_event,WEB_WIFI_READY);
         wifi_down_since=esp_timer_get_time();
+        sta_ip_since_us=0;
         if(data){
             const wifi_event_sta_disconnected_t *reason=(const wifi_event_sta_disconnected_t *)data;
             wifi_disconnect_reason=reason->reason;
@@ -965,6 +974,7 @@ static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data
     if(event==IP_EVENT&&id==IP_EVENT_STA_GOT_IP){
         if(net_event)xEventGroupSetBits(net_event,WEB_WIFI_READY);
         wifi_down_since=0;
+        sta_ip_since_us=esp_timer_get_time();
         wifi_disconnect_reason=0;
         update_time();
         if(!mdns_started){
@@ -981,7 +991,7 @@ static void event_handler(void *arg,esp_event_base_t event,int32_t id,void *data
                 ESP_LOGW(TAG,"HOME_LAN_WEB=http://" IPSTR "/ (use /api/health or /settings/oracle)",
                          IP2STR(&info.ip));
         }
-        ESP_LOGW(TAG,"Home Wi-Fi connected; open setup AP is still available");
+        ESP_LOGW(TAG,"Home Wi-Fi connected; setup AP will stop after 20 seconds of stable IP");
     }
 }
 static bool start_setup_ap(void){
@@ -1002,6 +1012,34 @@ static bool start_setup_ap(void){
     if(esp_wifi_set_config(WIFI_IF_AP,&cfg)!=ESP_OK)return false;
     ap_enabled=true;
     return true;
+}
+// Keep setup AP available until DHCP succeeds; then disable the OPEN network.
+// Restore it if the home network remains unavailable for 45 seconds.
+// Do NOT toggle the AP for short router roaming outages.
+static void setup_ap_guard_task(void *arg){
+    (void)arg;
+    for(;;){
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        if(!saved_ssid[0] || !net_event)continue;
+        const bool home_ok=(xEventGroupGetBits(net_event)&WEB_WIFI_READY)!=0;
+        const int64_t now=esp_timer_get_time();
+        if(home_ok&&ap_enabled&&sta_ip_since_us>0&&
+           now-sta_ip_since_us>=20000000LL){
+            setup_ap_shutdown_requested=true;
+            const esp_err_t rc=esp_wifi_set_mode(WIFI_MODE_STA);
+            if(rc!=ESP_OK){
+                setup_ap_shutdown_requested=false;
+                ESP_LOGW(TAG,"SETUP_AP_DISABLE_FAILED %s",esp_err_to_name(rc));
+            }
+        }else if(!home_ok&&!ap_enabled&&wifi_down_since>0&&
+                 now-wifi_down_since>=45000000LL){
+            setup_ap_shutdown_requested=false;
+            const esp_err_t rc=esp_wifi_set_mode(WIFI_MODE_APSTA);
+            if(rc==ESP_OK)
+                ESP_LOGW(TAG,"SETUP_AP_RECOVERY_RESTORED open JH2-Nano-Fresh; home Wi-Fi unavailable");
+            else ESP_LOGW(TAG,"SETUP_AP_RECOVERY_FAILED %s",esp_err_to_name(rc));
+        }
+    }
 }
 static void wifi_retry_task(void *arg){
     (void)arg;
@@ -1050,6 +1088,8 @@ static bool start_net(void){
              saved_ssid[0]?"APSTA":"AP-ONLY",saved_ssid[0]?"yes":"no");
     if(xTaskCreate(wifi_retry_task,"jh2-wifi-retry",3072,NULL,2,NULL)!=pdPASS)
         ESP_LOGE(TAG,"Wi-Fi reconnect task unavailable; manual setup AP remains active");
+    if(xTaskCreate(setup_ap_guard_task,"jh2-setup-ap",3072,NULL,2,NULL)!=pdPASS)
+        ESP_LOGE(TAG,"Setup AP control task unavailable; open AP remains available");
     return true;
 }
 EventGroupHandle_t jh2_web_wifi_group(void){return net_event;}
