@@ -21,7 +21,8 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 # Reduce embedded assertion strings without removing runtime safety checks.
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
 CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT=y
-CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_LOG_MAXIMUM_LEVEL_WARN=y
 
 # RX8: on ESP32-C6 with NimBLE, BT_LE_MSYS settings are intentionally disabled.
 # Enlarge the active NimBLE RX block to carry 396-byte notifications plus overhead.
@@ -29,3 +30,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # Feature parity: power/brightness/effects/streams/sequence commands active.
 # Destructive 2909 and file upload remain separately guarded.
 CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+
+# Bootloader rejects unconfirmed updates and selects previous valid runtime.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_BOOTLOADER_WDT_ENABLE=y
+CONFIG_BOOTLOADER_WDT_TIME_MS=9000
