@@ -1,0 +1,7 @@
+# Minimal dual-slot Wi-Fi baseline for 4 MB ESP32-C6 (no factory recovery application)
+# Name,  Type, SubType, Offset,   Size
+nvs,     data, nvs,     0x9000,   0x5000
+otadata, data, ota,     0xE000,   0x2000
+ota_0,   app,  ota_0,   0x10000,  0x1D0000
+ota_1,   app,  ota_1,   0x1E0000, 0x1D0000
+storage, data, spiffs,  0x3B0000, 0x50000
