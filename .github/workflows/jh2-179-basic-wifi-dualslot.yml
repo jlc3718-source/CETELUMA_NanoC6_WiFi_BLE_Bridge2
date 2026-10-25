@@ -1,0 +1,111 @@
+name: JH2 NanoC6 1.1.79 Open WiFi Dual-Slot 4MB
+on:
+  push:
+    branches: [recovery/jh2-minimal-wifi-dualslot-20261025]
+    paths: [.github/workflows/jh2-179-basic-wifi-dualslot.yml]
+permissions: {contents: read}
+concurrency:
+  group: jh2-179-open-wifi
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolated Wi-Fi baseline, OPEN setup AP, and dual OTA slots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('JH2_Nano_Minimal_WiFi')
+          src=(p/'main/main.c').read_text()
+          pt=(p/'partitions.csv').read_text()
+          for marker in ('AP_SSID "JH2-Nano-Fresh"','WIFI_MODE_APSTA',
+                         'ap.ap.authmode=WIFI_AUTH_OPEN','esp_wifi_set_config(WIFI_IF_STA',
+                         'esp_ota_mark_app_valid_cancel_rollback','JH2_WIFI_BASE'):
+              assert marker in src,marker
+          assert 'WIFI_AUTH_WPA2_PSK' not in src
+          assert 'NanoFresh2026!' not in src
+          assert 'NimBLE' not in src and 'oracleEndpoint' not in src
+          assert 'ota_0' in pt and 'ota_1' in pt
+          print('OPEN_AP_WIFI_ONLY_DUALSLOT_SOURCE_PASS')
+          PY
+      - name: Compile ESP-IDF 5.5.1 ESP32-C6 fresh Wi-Fi baseline
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JH2_Nano_Minimal_WiFi
+          command: idf.py build
+      - name: Build full 4 MB with two VALID OTA slot images and blank credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - <<'PY'
+          from pathlib import Path
+          import binascii,hashlib,json,struct
+          b=Path('JH2_Nano_Minimal_WiFi/build')
+          boot=(b/'bootloader/bootloader.bin').read_bytes()
+          pt=(b/'partition_table/partition-table.bin').read_bytes()
+          app=(b/'jh2_nanoc6_wifi_only.bin').read_bytes()
+          assert boot[0]==app[0]==0xe9
+          assert len(boot)<0x8000 and len(pt)<=0x1000
+          assert 0<len(app)<0x1D0000
+          for token in [b'JH2-Nano-Fresh',b'1.1.79',b'WIFI_AUTH_OPEN']:
+              if token==b'WIFI_AUTH_OPEN':continue
+              assert token in app,token
+          assert b'NanoFresh2026!' not in app
+          table=[]
+          for i in range(0,len(pt)-32,32):
+              chunk=pt[i:i+32]
+              if chunk[:2]!=b'\xaaP':break
+              _,kind,sub,addr,size,name,flags=struct.unpack('<HBBII16sI',chunk)
+              table.append((name.split(b'\0')[0].decode(),kind,sub,addr,size))
+          expected=[
+            ('nvs',1,2,0x9000,0x5000),
+            ('otadata',1,0,0xe000,0x2000),
+            ('ota_0',0,16,0x10000,0x1D0000),
+            ('ota_1',0,17,0x1e0000,0x1D0000),
+            ('storage',1,130,0x3b0000,0x50000)]
+          assert table==expected,(table,expected)
+          image=bytearray(b'\xff'*0x400000)
+          for offset,buf in [(0,boot),(0x8000,pt),(0x10000,app),(0x1e0000,app)]:
+              image[offset:offset+len(buf)]=buf
+          # Each ESP-IDF OTA selector entry is 32 bytes; CRC covers 4-byte sequence.
+          # First valid entry selects ota_0; second valid entry selects ota_1.
+          # Sequence 2 (the newer copy) is preferred at first power-up.
+          for idx,seq_value in enumerate((1,2)):
+              off=0xe000+idx*0x1000
+              seq=struct.pack('<I',seq_value)
+              image[off:off+4]=seq
+              struct.pack_into('<I',image,off+24,2) # ESP_OTA_IMG_VALID
+              struct.pack_into('<I',image,off+28,binascii.crc32(seq,0xffffffff)&0xffffffff)
+              assert image[off+24:off+28]==struct.pack('<I',2)
+          assert image[0x9000:0xe000]==b'\xff'*0x5000
+          assert image[0x3b0000:]==b'\xff'*0x50000
+          assert image[0x10000:0x10000+len(app)]==app
+          assert image[0x1e0000:0x1e0000+len(app)]==app
+          out=Path('release/JH2-NanoC6-1.1.79-OPEN-WIFI-DUAL-SLOT-FULL-0x0.bin')
+          out.write_bytes(image)
+          runtime=Path('release/JH2-NanoC6-1.1.79-WIFI-ONLY-RUNTIME.bin')
+          runtime.write_bytes(app)
+          digest=hashlib.sha256(image).hexdigest()
+          manifest={'version':'1.1.79','full_flash_size':len(image),'full_flash_sha256':digest,
+                    'runtime_size':len(app),'flash_offset':'0x0','open_setup_ssid':'JH2-Nano-Fresh',
+                    'password_required':False,'setup_page':'http://192.168.4.1',
+                    'dual_slot':True,'preconfirmed_boot_slots':True,
+                    'oracle_enabled':False,'bluetooth_enabled':False,'hardware_boot_tested':False}
+          Path('release/BUILD-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          Path('release/SHA256SUMS.txt').write_text(digest+'  '+out.name+'\n')
+          assert len(image)==4194304
+          print('MINIMAL_WIFI_FULL_IMAGE_VERIFIED',json.dumps(manifest))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-1.1.79-OPEN-WIFI-DUAL-SLOT
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
