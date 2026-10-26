@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_littlefs.h"
+#include "esp_timer.h"
 #include <unistd.h>
 #include <sys/stat.h>
 #include "mbedtls/sha256.h"
@@ -235,6 +236,7 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
         if(seamless&&(frames>24||!header[6]))break;
         *repeat=header[6]!=0;
         bool failed=false;
+        uint32_t frame_deadline_overruns=0,total_ble_ms=0,max_ble_ms=0;
         for(uint16_t f=0;f<frames&&wanted(job->generation);f++){
             uint8_t fh[6];
             if(!local_exact(file,fh,6,&position,job->size)){failed=true;break;}
@@ -242,6 +244,10 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
                 (uint32_t)fh[2]<<16|(uint32_t)fh[3]<<24;
             uint16_t packets=(uint16_t)fh[4]|((uint16_t)fh[5]<<8);
             if(packets>5000||hold<40||hold>60000){failed=true;break;}
+            // Frame deadline starts BEFORE submitting this frame's BLE packets.
+            // The old player added the whole hold AFTER transmission, creating
+            // frame-dependent delays and visibly uneven animation.
+            const int64_t frame_started_us=esp_timer_get_time();
             for(uint16_t i=0;i<packets&&wanted(job->generation);i++){
                 uint8_t meta[3],packet[508];
                 if(!local_exact(file,meta,3,&position,job->size)){failed=true;break;}
@@ -267,10 +273,28 @@ static bool stream_local_once(asset_job *job,bool *first_sent,bool *repeat,bool 
             if(rate<25||rate>300)rate=100;
             uint32_t adjusted=(uint32_t)(((uint64_t)hold*100U+rate/2)/rate);
             if(adjusted<20)adjusted=20;
-            while(!verify_only&&elapsed<adjusted&&wanted(job->generation)){
-                uint32_t step=adjusted-elapsed>20?20:adjusted-elapsed;
+            uint32_t ble_ms=0;
+            if(!verify_only){
+                int64_t elapsed_us=esp_timer_get_time()-frame_started_us;
+                if(elapsed_us>0)ble_ms=(uint32_t)(((uint64_t)elapsed_us+999U)/1000U);
+                total_ble_ms+=ble_ms;
+                if(ble_ms>max_ble_ms)max_ble_ms=ble_ms;
+                if(ble_ms>adjusted)++frame_deadline_overruns;
+            }
+            // BLE transmission counts against frame dwell time. When overrun,
+            // send the next frame without introducing an additional pause.
+            const uint32_t remaining_ms=adjusted>ble_ms?adjusted-ble_ms:0;
+            while(!verify_only&&elapsed<remaining_ms&&wanted(job->generation)){
+                uint32_t step=remaining_ms-elapsed>20?20:remaining_ms-elapsed;
                 vTaskDelay(pdMS_TO_TICKS(step));elapsed+=step;
             }
+        }
+        if(!verify_only){
+            static unsigned pacing_cycles=0;
+            if((pacing_cycles++&15U)==0U)
+                ESP_LOGI(TAG,"Frame pacing: frames=%u BLE_total_ms=%u BLE_max_ms=%u frame_deadline_overruns=%u",
+                    (unsigned)frames,(unsigned)total_ble_ms,(unsigned)max_ble_ms,
+                    (unsigned)frame_deadline_overruns);
         }
         ok=!failed&&wanted(job->generation)&&position==job->size;
     }while(0);
