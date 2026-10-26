@@ -360,7 +360,18 @@ static uint32_t local_le32(const uint8_t *p){
     return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
 }
 static bool native_header_ok(const char *path,uint32_t size,uint32_t cid){
-    if(!cid||size<8192||size>JH2_NATIVE_LOCAL_LIMIT)return false;
+    if(!cid||size<4096||size>JH2_NATIVE_LOCAL_LIMIT)return false;
+    // Preserve the established Type-0 validator, add only CID+CRC+protobuf
+    // validated multi-page native TinyProgram files.
+    FILE *probe=fopen(path,"rb");
+    if(!probe)return false;
+    uint8_t magic[4];
+    const bool readable=fread(magic,1,sizeof(magic),probe)==sizeof(magic);
+    fclose(probe);
+    if(!readable)return false;
+    if(memcmp(magic,"DN\x01\xfe",4)==0)
+        return jh2_slot_type3_verified(path,size,cid);
+    if(size<8192)return false;
     FILE *f=fopen(path,"rb");if(!f)return false;
     uint8_t h[144]={0},item[17]={0};
     bool ok=fread(h,1,sizeof(h),f)==sizeof(h);
