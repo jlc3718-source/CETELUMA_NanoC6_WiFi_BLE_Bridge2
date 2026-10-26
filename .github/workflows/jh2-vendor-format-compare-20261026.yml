@@ -1,0 +1,26 @@
+name: SmartDawn original Jack Run vendor format diagnostic (no BLE writes)
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-vendor-format-compare-20261026.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-vendor-compare-no-device
+  cancel-in-progress: false
+jobs:
+  vendor-format:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import json,os,subprocess,pathlib
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          source=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'.github/scripts/jh2-vendor-format-compare-20261026.mjs'
+          child=dict(os.environ,JH2_TEST_TOKEN=env['JASON_HOME_API_TOKEN'])
+          r=subprocess.run(['docker','exec','-i','-e','JH2_TEST_TOKEN','jason-home-2-web','node','--input-type=module'],input=source.read_text(),text=True,env=child,timeout=360)
+          raise SystemExit(r.returncode)
+          PY
