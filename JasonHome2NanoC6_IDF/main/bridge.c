@@ -112,7 +112,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.13"
+#define NATIVE_FW_VERSION "2.0.14"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -265,7 +265,70 @@ static bool wifi_setup(void){
     }
     return true;
 }
+// Performance-safe Oracle ↔ Nano sync transport. Only the long-lived bridge
+// task uses this handle; all firmware/recovery/bootstrap calls retain independent
+// HTTP clients. Holding one handle keeps TCP/TLS alive between 1.1 s syncs,
+// eliminating repeated handshakes. No binary asset/SmartDawn BLE changes.
+static cJSON *https_json_sync(const char *request_text){
+    if(!request_text)return NULL;
+    static esp_http_client_handle_t sync_http=NULL;
+    static http_output response={0};
+    static char connected_url[MAX_ENDPOINT+80]={0};
+    static uint32_t request_count=0;
+    char url[MAX_ENDPOINT+80];
+    int written=snprintf(url,sizeof(url),"%s/api/curtain-bridge/sync",endpoint);
+    if(written<=0||written>=(int)sizeof(url))return NULL;
+    if(sync_http && strcmp(connected_url,url)!=0){
+        esp_http_client_cleanup(sync_http);
+        sync_http=NULL;connected_url[0]=0;
+    }
+    bool new_connection=sync_http==NULL;
+    if(!sync_http){
+        // Keep the response buffer too, avoiding repeated 2–8KiB allocations.
+        esp_http_client_config_t cfg={
+            .url=url,.cert_pem=(const char *)tls_roots_pem_start,
+            .event_handler=receive_http,.user_data=&response,
+            .timeout_ms=13000,.buffer_size=2048,.buffer_size_tx=2048,
+            .keep_alive_enable=true,.keep_alive_idle=15,
+            .keep_alive_interval=5,.keep_alive_count=3,
+        };
+        sync_http=esp_http_client_init(&cfg);
+        if(!sync_http)return NULL;
+        memcpy(connected_url,url,(size_t)written+1);
+    }
+    response.len=0;response.exceeded=false;
+    char auth[75];
+    snprintf(auth,sizeof(auth),"Bearer %s",bridge_token);
+    esp_http_client_set_header(sync_http,"Authorization",auth);
+    esp_http_client_set_header(sync_http,"X-JH2-Bridge-Token",bridge_token);
+    esp_http_client_set_header(sync_http,"Content-Type","application/json");
+    esp_http_client_set_method(sync_http,HTTP_METHOD_POST);
+    esp_http_client_set_post_field(sync_http,request_text,(int)strlen(request_text));
+    const int64_t start_us=esp_timer_get_time();
+    esp_err_t rc=esp_http_client_perform(sync_http);
+    int code=esp_http_client_get_status_code(sync_http);
+    cJSON *result=NULL;
+    if(rc==ESP_OK&&code==200&&!response.exceeded&&response.data&&response.len)
+        result=cJSON_ParseWithLength(response.data,response.len);
+    if(!result){
+        ESP_LOGW(TAG,"Oracle sync HTTPS failure rc=%s code=%d bytes=%u",
+            esp_err_to_name(rc),code,(unsigned)response.len);
+        // Never reuse an uncertain socket/response boundary.
+        esp_http_client_cleanup(sync_http);
+        sync_http=NULL;connected_url[0]=0;
+    }
+    // Report cadence every 32 iterations, without credentials or payload data.
+    if((++request_count&31U)==0U){
+        int64_t elapsed_us=esp_timer_get_time()-start_us;
+        ESP_LOGI(TAG,"JH2_SYNC_TRANSPORT ms=%u reusedHandle=%u bodyBytes=%u ok=%u",
+            (unsigned)(elapsed_us>0?elapsed_us/1000:0),new_connection?0U:1U,
+            (unsigned)response.len,result?1U:0U);
+    }
+    return result;
+}
 static cJSON *https_json(const char *path,const char *request_text){
+    if(strcmp(path,"/api/curtain-bridge/sync")==0)
+        return https_json_sync(request_text);
     const size_t endpoint_len=strlen(endpoint),path_len=strlen(path);
     if(endpoint_len+path_len+1>MAX_ENDPOINT+256)return NULL;
     char *url=malloc(endpoint_len+path_len+1);
