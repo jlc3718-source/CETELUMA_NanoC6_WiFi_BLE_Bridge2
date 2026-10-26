@@ -1,0 +1,56 @@
+name: JH2 2.0.14 read-only Oracle Nano ACK timing
+on:
+  push:
+    branches: [test/jh2-214-persistent-oracle-sync-20261026]
+    paths: ['.github/workflows/jh2-214-readonly-latency-20261026.yml']
+permissions: {contents: read}
+jobs:
+  sample:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read-only status command benchmark, no display actions
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,time,subprocess,urllib.request
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          cookie=''
+          def req(path,body=None):
+              global cookie
+              r=urllib.request.Request('http://127.0.0.1:8081'+path,
+                data=json.dumps(body).encode() if body is not None else None,
+                headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})},
+                method='POST' if body is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=20) as h:
+                  if path=='/api/session':cookie=h.headers['Set-Cookie'].split(';')[0]
+                  return json.load(h)
+          req('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+          s=req('/api/curtain/status')
+          assert s['firmware']=='2.0.14' and s['online'] and s['curtain']['connected'] is True
+          assert s['curtain']['mtu']>=500 and s['queued']==0 and s['relayStreaming'] is False
+          ids=[];submitted={}
+          for n in range(3):
+              stamp=time.monotonic()
+              res=req('/api/curtain/call',{'action':'status','payload':{},'idempotencyKey':'jh2-214-status-only-20261026-'+str(n)})
+              ident=res['commandId']
+              ids.append(ident);submitted[ident]=stamp
+          pending=set(ids);results=[]
+          stop=time.monotonic()+45
+          while pending and time.monotonic()<stop:
+              for ident in list(pending):
+                  c=req('/api/curtain/command?id='+str(ident)).get('command') or {}
+                  if c.get('state') in ('applied','failed','expired','superseded'):
+                      results.append({'id':ident,'state':c['state'],
+                         'ackLatencyMs':round((time.monotonic()-submitted[ident])*1000),
+                         'message':str((c.get('result') or {}).get('message',''))[:85]})
+                      pending.remove(ident)
+              if pending:time.sleep(0.25)
+          report={'firmware':s['firmware'],'queuedBefore':s['queued'],'commands':results,
+             'outstanding':list(pending),'readOnly':True,'bleCommands':0,'displayWrites':0}
+          print('JH2_214_READ_ONLY_LATENCY_RESULT',json.dumps(report),flush=True)
+          assert not pending and len(results)==3 and all(r['state']=='applied' for r in results)
+          after=req('/api/curtain/status')
+          assert after['firmware']=='2.0.14' and after['curtain']['connected'] is True and after['queued']==0
+          print('JH2_214_NO_REGRESSION_FIRMWARE_BLE_CONNECTED',flush=True)
+          PY
