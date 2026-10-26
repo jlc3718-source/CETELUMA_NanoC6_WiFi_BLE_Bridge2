@@ -24,7 +24,7 @@ static void part(unsigned index,unsigned size,unsigned type,unsigned cid){
  buf[0]=17;buf[1]=parts>>8;buf[2]=parts&255;buf[3]=17;buf[4]=255;buf[5]=left>>8;buf[6]=left&255;
  unsigned bytes=size-index*500;if(bytes>500)bytes=500;n=8+bytes;
  if(index==0){
-  if(type==3){memcpy(buf+8,"DN\x01\xfe",4);put32(buf+12,cid);}
+  if(type==3){memcpy(buf+8,"DN\x01\xfe",4);put32(buf+12,cid);buf[16]=(uint8_t)(size/4096);}
   else{memcpy(buf+8,"DNMX",4);buf[12]=3;buf[13]=1;buf[14]=40;buf[16]=40;put32(buf+22,cid);}
  }
  buf[7]=crc(buf+8,bytes);
@@ -85,5 +85,23 @@ int main(void){
  header(0,20480,assigned);
  buf[30]^=1;buf[7]=0;buf[7]=crc(buf,n);
  assert(!jh2_slot_validate(&state,JH2_SLOT_UPLOAD_UUID,buf,n,44,true,0,0,false,&error));
+ // New-CID 8192-byte Type3 must require empty inventory, exact pages and
+ // complete packet order; malformed, oversized or factory-target uploads fail.
+ const uint32_t new_type3_cid=85391;
+ header(3,8192,new_type3_cid);
+ assert(jh2_slot_validate(&state,JH2_SLOT_UPLOAD_UUID,buf,n,50,true,0,0,false,&error));
+ part(0,8192,3,new_type3_cid);copy=state;buf[16]=1;buf[7]=crc(buf+8,n-8);
+ assert(!jh2_slot_validate(&copy,JH2_SLOT_UPLOAD_UUID,buf,n,51,false,0,0,false,&error));
+ for(unsigned i=0;i<17;i++){
+  part(i,8192,3,new_type3_cid);
+  assert(jh2_slot_validate(&state,JH2_SLOT_UPLOAD_UUID,buf,n,51+i,false,0,0,false,&error));
+ }
+ assert(!state.active&&state.next==17);
+ header(3,6144,new_type3_cid);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_UPLOAD_UUID,buf,n,70,true,0,0,false,&error));
+ header(3,36864,new_type3_cid);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_UPLOAD_UUID,buf,n,70,true,0,0,false,&error));
+ header(3,8192,new_type3_cid);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_UPLOAD_UUID,buf,n,70,true,1,0,false,&error));
  puts("NATIVE_SLOT_GUARD_PASS reads assigned_CID file_header upload_filename CRC sequence timeout type0 type3 replay factory_protection");
 }
