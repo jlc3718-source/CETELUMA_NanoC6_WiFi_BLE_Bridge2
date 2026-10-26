@@ -29,7 +29,7 @@ jobs:
           body=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode()
           req=urllib.request.Request(BASE+'/api/session',data=body,headers={'Content-Type':'application/json'})
           with urllib.request.urlopen(req,timeout=20) as r:cookie=r.headers['Set-Cookie'].split(';')[0]
-          for path in ['/jason-home-2/curtain.js','/jason-home-2/v3_mockup.js','/api/status','/api/curtain/status']:
+          for path in ['/curtain.js','/v3_mockup.js','/api/status','/api/curtain/status']:
             results={}
             for enc in ['identity','gzip','br']:
               try:results[enc]=get(path,enc)
