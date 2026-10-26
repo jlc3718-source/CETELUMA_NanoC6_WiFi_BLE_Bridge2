@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 5
     steps:
-      - name: Read-only status command benchmark, no display actions
+      - name: Queue 3 connection-handler no-op ACKs, no BLE reconnect or display actions
         shell: bash
         run: |
           sudo -n python3 - <<'PY'
@@ -32,7 +32,7 @@ jobs:
           ids=[];submitted={}
           for n in range(3):
               stamp=time.monotonic()
-              res=req('/api/curtain/call',{'action':'status','payload':{},'idempotencyKey':'jh2-214-status-only-20261026-'+str(n)})
+              res=req('/api/curtain/call',{'action':'connect','payload':{},'idempotencyKey':'jh2-214-connect-noop-20261026-'+str(n)})
               ident=res['commandId']
               ids.append(ident);submitted[ident]=stamp
           pending=set(ids);results=[]
