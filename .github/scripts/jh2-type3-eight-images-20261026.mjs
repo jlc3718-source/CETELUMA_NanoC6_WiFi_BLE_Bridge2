@@ -120,7 +120,7 @@ try{
   throw Error('Manufacturer runtime identity mismatch');
  const vi=n=>{const a=[];do{let b=n&127;n=Math.floor(n/128);a.push(n?b|128:b);}while(n);return Buffer.from(a)};
  const proto=Buffer.concat([
-   Buffer.from([0x08,0]),Buffer.from([0x12]),vi(25),Buffer.from('Jack Run Eight Native Poses'),
+   Buffer.from([0x08,0]),Buffer.from([0x12]),vi(27),Buffer.from('Jack Run Eight Native Poses'),
    Buffer.from([0x1a]),vi(25),Buffer.from('Jack Run Eight Native Poses'),
    Buffer.from([0x22,0,0x28,1,0x30]),vi(cid),
    Buffer.from([0x38]),vi(nFrames*periodSeconds*20),
@@ -129,7 +129,7 @@ try{
    Buffer.from([0x52,2,8,0,0x62,1,0,0x68,0])
  ]);
  const label=Buffer.from('Jack Run Eight Native Poses');
- if(label.length!==25)throw Error('Header label size assumption invalid '+label.length);
+ if(label.length!==27)throw Error('Header label size assumption invalid '+label.length);
  // Global 8-color palette, padded to 16 vendor palette entries.
  const palette16=Array.from({length:16},(_,i)=>palette[i]||[0,0,0]);
  const optionHeader=Buffer.alloc(10+51*nFrames);
