@@ -20,7 +20,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text=Path('JasonHome2NanoC6_IDF/main/native_slot_guard.c').read_text()
-          for x in ('op==2511','op==2620','op==2623','op==2624','op==2629','op==2660','list_id!=3','matches!=1','JH2TEST'):
+          for x in ('op==2511','op==2622','op==2626','op==2623','op==2624','op==2629','op==2660','list_id!=3','matches!=1','JH2TEST'):
            assert x in text,x
           assert 'nvs_flash_erase(' not in text
           print('JH2_PLAYLIST_GUARD_READONLY_AND_FACTORY_PROTECTION_PASS')
