@@ -1,0 +1,14 @@
+name: JH2 2.0.13 read only pumpkin source and live Nano
+on:
+  push:
+    branches: [test/jh2-213-smooth-nano-frames-20261026]
+    paths: ['.github/workflows/jh2-213-jack-art-readonly-20261026.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Only inspect original artwork identifiers and Nano state
+        run: sudo -n python3 .github/scripts/jh2-213-jack-art-readonly-20261026.py
