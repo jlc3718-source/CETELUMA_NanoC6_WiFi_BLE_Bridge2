@@ -1,0 +1,71 @@
+name: JH2 2.0.11 stage signed A-B candidate Oracle NOT approved
+on:
+  push:
+    branches: [test/jh2-type3-multipage-v2010-20261026]
+    paths: ['.github/workflows/jh2-type3-211-stage-signed-oracle-not-approved.yml']
+permissions: {contents: read, actions: read}
+jobs:
+  stage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: JH2-2.0.11-TEST-ONLY-SIGNED
+          repository: jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2
+          run-id: 40254688149
+          github-token: ${{ github.token }}
+          path: signed-package
+      - name: Strict signed identity and immutable non-approved staging
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 - <<'PY'
+          import os,json,base64,hashlib,subprocess,shutil,tempfile
+          from pathlib import Path
+          repo=Path(os.environ['GITHUB_WORKSPACE']);src=repo/'signed-package'
+          names=('jh2-runtime-2.0.11.bin','latest.json','release.json')
+          assert all((src/n).is_file() for n in names)
+          data=(src/names[0]).read_bytes()
+          latest=json.loads((src/'latest.json').read_text())
+          rel=json.loads((src/'release.json').read_text())
+          fields=dict(s.split('=',1) for s in latest['payload'].strip().splitlines())
+          digest=hashlib.sha256(data).hexdigest()
+          assert latest['schema']==1
+          assert fields['product']=='jason-home-2-nanoc6' and fields['version']=='2.0.11'
+          assert digest==fields['sha256']==rel['files'][names[0]]['sha256']
+          assert len(data)==int(fields['bytes'])==rel['files'][names[0]]['bytes']
+          assert len(data)<=0x160000 and data[0]==0xe9
+          assert b'2.0.11-native-upload-flow' in data
+          with tempfile.TemporaryDirectory() as d:
+              p=Path(d);(p/'payload').write_text(latest['payload'])
+              (p/'sig').write_bytes(base64.b64decode(latest['signature'],validate=True))
+              subprocess.run(['openssl','dgst','-sha256','-verify',str(repo/'remote-update/anderson_ota_signing_public.pem'),
+                  '-signature',str(p/'sig'),str(p/'payload')],check=True)
+          state=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          mounted=[x for x in state['Mounts'] if x['Destination']=='/data' and x['Type']=='bind']
+          assert len(mounted)==1
+          root=Path(mounted[0]['Source'])/'signed-ota'
+          assert root.is_dir()
+          approved=root/'approved'
+          approved_before=approved.resolve() if approved.exists() else None
+          folder=root/'2.0.11'
+          if folder.exists():
+              assert all((folder/n).read_bytes()==(src/n).read_bytes() for n in names),'Immutable 2.0.11 collision'
+          else:
+              temp=root/('.2.0.11-staging-'+str(os.getpid()))
+              temp.mkdir()
+              try:
+                  for n in names:shutil.copy2(src/n,temp/n)
+                  assert all((temp/n).read_bytes()==(src/n).read_bytes() for n in names)
+                  temp.rename(folder)
+              except BaseException:
+                  shutil.rmtree(temp,ignore_errors=True)
+                  raise
+          assert (approved.resolve() if approved.exists() else None)==approved_before,'Approved manifest must not change'
+          # Firmware may still be 2.0.10: no direct OTA command is part of this workflow.
+          print('JH2_211_SIGNED_STAGED_NOT_APPROVED_NO_OTA',digest,len(data),str(approved_before) if approved_before else 'no prior approved release',flush=True)
+          PY
