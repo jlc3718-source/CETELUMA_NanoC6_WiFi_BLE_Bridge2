@@ -1,0 +1,66 @@
+name: Nano 2.0.10 isolated Type3 multipage firmware build only
+on:
+  push:
+    branches: [test/jh2-type3-multipage-v2010-20261026]
+    paths: ['.github/workflows/jh2-type3-multipage-idf-buildonly-20261026.yml']
+permissions: {contents: read}
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify safety invariants and non-destructive changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('JasonHome2NanoC6_IDF')
+          partition=(p/'partitions.csv').read_text()
+          for line in ['rescue, app, factory, 0x10000, 0x100000',
+                       'runtime, app, ota_0, 0x110000, 0x160000',
+                       'runtime_b, app, ota_1, 0x270000, 0x160000',
+                       'storage, data, spiffs, 0x3D0000, 0x2F000']:
+              assert line in partition,line
+          native=(p/'main/native_slot_upload.c').read_text()
+          guard=(p/'main/native_slot_guard.c').read_text()
+          asset=(p/'main/asset_stream.c').read_text()
+          assert 'jh2_slot_type3_verified' in native and 'jh2_slot_type3_verified' in asset
+          assert 'values[3]<=32768&&values[3]%4096==0' in guard
+          assert 'format_if_mount_failed=false' in (p/'main/bridge.c').read_text()
+          assert 'nvs_flash_erase(' not in native+asset+(p/'main/bridge.c').read_text()
+          print('SAFETY_PREFLIGHT_PASSED_PARTITIONS_SETTINGS_RECOVERY_UNCHANGED')
+          PY
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -I JasonHome2NanoC6_IDF/main JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c JasonHome2NanoC6_IDF/main/native_slot_guard.c -o /tmp/type3-guard
+          /tmp/type3-guard
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -I JasonHome2NanoC6_IDF/main JasonHome2NanoC6_IDF/tests/native_slot_upload_test.c JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/main/native_slot_upload.c -o /tmp/type3-native
+          /tmp/type3-native
+      - name: Keep existing Oracle and BLE configuration
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: ESP32-C6 cross-compile only; no flash, OTA or release
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Inspect unpersonalized firmware image
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          f=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin')
+          data=f.read_bytes()
+          assert 0x100000 < len(data) <= 0x160000 and data[0]==0xe9
+          assert b'2.0.10-native-upload-flow' in data
+          assert b'curtain-native.eff' in data
+          print('TYPE3_MULTIPAGE_FIRMWARE_BUILD_ONLY_PASS',len(data),hashlib.sha256(data).hexdigest())
+          PY
