@@ -122,7 +122,9 @@ jobs:
                               for child,cw,value in protobuf(embedded):
                                   if cw==0 and child in (1,2,3,4):
                                       item[{1:'id',2:'type',3:'slot',4:'cid'}[child]]=value
-                              if 'cid' in item and 'slot' in item:entries[(item.get('id'),item['cid'])]=item
+                              if 'cid' in item:
+                                      for default_key in ('id','type','slot'):item.setdefault(default_key,0)
+                                      entries[(item['id'],item['cid'])]=item
                       except ValueError:continue
                   out['newCatalogDecodedEntries']=len(entries)
                   out['newRegisteredCid85369']=[i for i in entries.values() if i.get('cid')==85369]
