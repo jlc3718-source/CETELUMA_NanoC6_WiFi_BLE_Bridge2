@@ -31,7 +31,7 @@ jobs:
           with urllib.request.urlopen(req,timeout=20) as r:cookie=r.headers['Set-Cookie'].split(';')[0]
           for path in ['/curtain.js','/v3_mockup.js','/api/status','/api/curtain/status']:
             results={}
-            for enc in ['identity','gzip','br']:
+            for enc in ['identity','gzip','br','gzip, br']:
               try:results[enc]=get(path,enc)
               except Exception as e:results[enc]={'error':type(e).__name__,'reason':str(e)[:110]}
             print('JH2_HTTP_ENCODING',json.dumps({'path':path,'responses':results}),flush=True)
