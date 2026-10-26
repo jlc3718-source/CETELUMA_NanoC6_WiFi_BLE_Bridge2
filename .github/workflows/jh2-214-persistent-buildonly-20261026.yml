@@ -1,7 +1,7 @@
 name: JH2 Nano 2.0.14 persistent Oracle sync signed BUILD ONLY
 on:
   push:
-    branches: [test/jh2-214-smooth-nano-frames-20261026]
+    branches: [test/jh2-214-persistent-oracle-sync-20261026]
     paths: ['.github/workflows/jh2-214-persistent-buildonly-20261026.yml', 'JasonHome2NanoC6_IDF/main/asset_stream.c', 'JasonHome2NanoC6_IDF/main/bridge.c']
 permissions: {contents: read}
 concurrency: {group: jh2-214-persistent-build-only, cancel-in-progress: false}
