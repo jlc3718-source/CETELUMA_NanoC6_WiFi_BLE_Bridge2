@@ -1,0 +1,16 @@
+name: Jack Run original eight-pose Type3 8KB native controller test once
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-type3-eight-native-test-once-20261026.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-type3-eight-native-controller-test
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo -n python3 .github/scripts/jh2-type3-eight-native-test-once-20261026.py
