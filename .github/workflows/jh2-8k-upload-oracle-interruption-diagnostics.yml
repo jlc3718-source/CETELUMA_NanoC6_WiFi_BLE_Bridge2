@@ -1,0 +1,33 @@
+name: Jason Home 2 native 8KB interruption Oracle read-only diagnostics
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-8k-upload-oracle-interruption-diagnostics.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess
+          for name in ['jason-home-2-web','jason-home']:
+           try:
+            info=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
+            state=info['State']
+            print('JH2_ORACLE_CONTAINER_HEALTH',json.dumps({'name':name,'restartCount':info.get('RestartCount'),
+              'status':state.get('Status'),'OOMKilled':state.get('OOMKilled'),'ExitCode':state.get('ExitCode'),
+              'StartedAt':state.get('StartedAt'),'FinishedAt':state.get('FinishedAt'),
+              'memoryLimit':info.get('HostConfig',{}).get('Memory')}),flush=True)
+           except Exception as e: print('CONTAINER_INSPECT_UNAVAILABLE',name,type(e).__name__)
+          try:
+           s=subprocess.check_output(['docker','events','--since','2026-10-26T01:39:00','--until','2026-10-26T01:43:00',
+              '--format','{{.Time}}|{{.Type}}|{{.Action}}|{{.Actor.Attributes.name}}'],text=True,timeout=15)
+           lines=[x for x in s.splitlines() if 'jason-home' in x and any(w in x for w in ['die','restart','start','stop','oom','kill'])]
+           print('JH2_ORACLE_RESTART_EVENTS',json.dumps(lines[-24:]),flush=True)
+          except Exception as e: print('RESTART_EVENT_QUERY_UNAVAILABLE',type(e).__name__)
+          PY
