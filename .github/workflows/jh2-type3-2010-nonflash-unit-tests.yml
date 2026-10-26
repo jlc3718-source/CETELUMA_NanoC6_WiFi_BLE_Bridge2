@@ -1,0 +1,24 @@
+name: Nano 2.0.10 guarded Type3 multipage offline unit tests
+on:
+  push:
+    branches: [test/jh2-type3-multipage-v2010-20261026]
+    paths: ['.github/workflows/jh2-type3-2010-nonflash-unit-tests.yml']
+permissions: {contents: read}
+concurrency:
+  group: jh2-type3-nonflash
+  cancel-in-progress: false
+jobs:
+  native:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          set -euo pipefail
+          cd JasonHome2NanoC6_IDF
+          cc -std=c11 -O2 -Wall -Wextra -Werror -I main tests/native_slot_guard_test.c main/native_slot_guard.c -o /tmp/jh2-type3-guard-test
+          /tmp/jh2-type3-guard-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -I main tests/native_slot_upload_test.c main/native_slot_guard.c main/native_slot_upload.c -o /tmp/jh2-type3-upload-test
+          /tmp/jh2-type3-upload-test
+          echo JH2_TYPE3_BOUNDED_MULTIPAGE_UNIT_TESTS_PASS_NO_DEVICE_ACTION
