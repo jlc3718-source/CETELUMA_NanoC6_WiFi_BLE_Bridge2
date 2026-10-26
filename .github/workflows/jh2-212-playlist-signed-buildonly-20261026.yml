@@ -2,7 +2,7 @@ name: JH2 Nano 2.0.12 SmartDawn playlist A-B signed build only NO FLASH
 on:
   push:
     branches: [test/jh2-212-smartdawn-playlist-guard-20261026]
-    paths: ['.github/workflows/jh2-212-playlist-signed-buildonly-20261026.yml']
+    paths: ['.github/workflows/jh2-212-playlist-signed-buildonly-20261026.yml', 'JasonHome2NanoC6_IDF/main/native_slot_guard.c', 'JasonHome2NanoC6_IDF/main/bridge.c', 'JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c']
 permissions: {contents: read}
 concurrency: {group: jh2-type3-212-build-only, cancel-in-progress: false}
 jobs:
@@ -26,7 +26,7 @@ jobs:
           assert 'format_if_mount_failed=false' in bridge
           assert 'nvs_flash_erase(' not in bridge
           assert 'jh2_slot_type3_verified' in (p/'main/asset_stream.c').read_text()
-          assert 'op==2620' in (p/'main/native_slot_guard.c').read_text()
+          assert 'op==2626' in (p/'main/native_slot_guard.c').read_text() and 'op==2622' in (p/'main/native_slot_guard.c').read_text()
           assert 'op==2660' in (p/'main/native_slot_guard.c').read_text()
           print('JH2_212_PARTITIONS_RECOVERY_SECRETS_UNCHANGED')
           PY
