@@ -34,7 +34,7 @@ uint32_t jh2_slot_packet_cid(const jh2_slot_session *s,const char *uuid,
     if(!uuid||!b)return 0;
     if(strcmp(uuid,JH2_SLOT_COMMAND_UUID)==0){
         uint16_t op=jh2_slot_command_opcode(b,n);
-        if(op!=2909&&op!=2606)return 0;
+        if(op!=2909&&op!=2606&&op!=2620)return 0;
         size_t p=24;uint32_t tag=0,cid=0;
         return varint(b,n,&p,&tag)&&tag==8&&varint(b,n,&p,&cid)?cid:0;
     }
@@ -68,6 +68,41 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
             *error=NULL;return true;
         }
         if(read_only){*error="Read-only firmware permits only 205/167/2904/2104/2627";return false;}
+        // Narrow, reversible SmartDawn autonomous playlist trial. No flash,
+        // erase, reset, uploaded animation packets or factory list changes.
+        // The manufacturer exposes M_UNLOCK_FRAME as a no-argument write.
+        if(op==2511&&n==24){*error=NULL;return true;}
+        // Create exactly the reserved JH2TEST playlist through M_PL_SAVE.
+        // Manufacturer SimpleMessage: i1=0 (tag 8), s1 (tag 26).
+        if(op==2660){
+            size_t p=24;uint32_t tag=0,v=0;
+            if(!varint(b,n,&p,&tag)||tag!=8||!varint(b,n,&p,&v)||v!=0||
+               !varint(b,n,&p,&tag)||tag!=26||!varint(b,n,&p,&v)||v!=7||
+               n-p!=7||memcmp(b+p,"JH2TEST",7)!=0)return false;
+            *error=NULL;return true;
+        }
+        // Only the first non-factory playlist (ID 3), never Favorites,
+        // Sync or Link. Disable and remove operations are safe rollback.
+        if(op==2623||op==2624||op==2629){
+            size_t p=24;uint32_t tag=0,list_id=0;
+            if(!varint(b,n,&p,&tag)||tag!=8||
+               !varint(b,n,&p,&list_id)||list_id!=3||p!=n)return false;
+            *error=NULL;return true;
+        }
+        // Add a previously verified saved custom CID to playlist 3.
+        // SimpleMessage fields: i1 CID, i2 slot, i3 playlist ID.
+        if(op==2620){
+            size_t p=24;uint32_t tag=0,cid=0,play_slot=0,list_id=0;
+            if(!varint(b,n,&p,&tag)||tag!=8||!varint(b,n,&p,&cid)||
+               !varint(b,n,&p,&tag)||tag!=16||!varint(b,n,&p,&play_slot)||
+               !varint(b,n,&p,&tag)||tag!=40||!varint(b,n,&p,&list_id)||
+               list_id!=3||p!=n||cid<80000||play_slot<32||play_slot>200||
+               !known||matches!=1||play_slot!=slot){
+                *error="Playlist entry requires verified saved custom CID and playlist ID 3";
+                return false;
+            }
+            *error=NULL;return true;
+        }
         if(op!=2909&&op!=2606)return false;
         size_t p=24;uint32_t tag=0,cid=0,play_slot=0;
         if(!varint(b,n,&p,&tag)||tag!=8||!varint(b,n,&p,&cid)||!cid)return false;
