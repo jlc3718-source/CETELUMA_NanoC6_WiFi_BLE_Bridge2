@@ -1,0 +1,43 @@
+name: JH2 read-only HTTP compression and latency checks
+on:
+  push:
+    branches: [test/jh2-213-smooth-nano-frames-20261026]
+    paths: ['.github/workflows/jh2-http-performance-readonly-20261026.yml']
+permissions: {contents: read}
+jobs:
+  measure:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Read-only responses: verify content encoding, size and latency
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import os,json,time,statistics,gzip,subprocess,urllib.request
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          BASE='http://127.0.0.1:8081';cookie=''
+          def get(path,encoding):
+            req=urllib.request.Request(BASE+path,headers={'Accept-Encoding':encoding,**({'Cookie':cookie} if cookie else {})})
+            t=time.perf_counter()
+            with urllib.request.urlopen(req,timeout=20) as r:
+              b=r.read();e=r.headers.get('Content-Encoding','identity'); status=r.status
+            if e=='gzip':
+              decoded=gzip.decompress(b)
+            else:
+              decoded=b
+            return {'status':status,'encoding':e,'bytes':len(b),'plainBytes':len(decoded),'ms':round((time.perf_counter()-t)*1000,1)}
+          body=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode()
+          req=urllib.request.Request(BASE+'/api/session',data=body,headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=20) as r:cookie=r.headers['Set-Cookie'].split(';')[0]
+          for path in ['/jason-home-2/curtain.js','/jason-home-2/v3_mockup.js','/api/status','/api/curtain/status']:
+            results={}
+            for enc in ['identity','gzip','br']:
+              try:results[enc]=get(path,enc)
+              except Exception as e:results[enc]={'error':type(e).__name__,'reason':str(e)[:110]}
+            print('JH2_HTTP_ENCODING',json.dumps({'path':path,'responses':results}),flush=True)
+          for encoding in ['identity','gzip']:
+            latency=[]
+            for i in range(12):latency.append(get('/api/status',encoding)['ms'])
+            latency.sort()
+            print('JH2_HTTP_LATENCY',json.dumps({'encoding':encoding,'samples':len(latency),'p50ms':latency[6],'p95ms':latency[11]}),flush=True)
+          PY
