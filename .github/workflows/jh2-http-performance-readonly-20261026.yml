@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 6
     steps:
-      - name: Read-only responses: verify content encoding, size and latency
+      - name: 'Read-only responses - verify content encoding, size and latency'
         shell: bash
         run: |
           sudo -n python3 - <<'PY'
