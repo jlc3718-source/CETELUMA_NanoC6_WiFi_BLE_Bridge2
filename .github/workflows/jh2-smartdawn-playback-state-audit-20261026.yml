@@ -1,0 +1,24 @@
+name: SmartDawn native live frame lock diagnostic
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-smartdawn-playback-state-audit-20261026.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          req=urllib.request.Request('http://127.0.0.1:8081/api/session',data=json.dumps({'token':env['JASON_HOME_API_TOKEN']}).encode(),headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as v:cookie=v.headers['Set-Cookie'].split(';')[0]
+          req=urllib.request.Request('http://127.0.0.1:8081/api/curtain/status',headers={'Cookie':cookie})
+          with urllib.request.urlopen(req,timeout=30) as v:d=json.load(v)
+          p=d.get('controllerPlayback') or {};last=d.get('controllerLastIdentified') or {};power=d.get('controllerPower') or {}
+          cap=d.get('controllerVideoCapabilities') or {}
+          print('JH2_NATIVE_FRAME_LOCK_DIAGNOSTIC '+json.dumps({'nanoFirmware':d.get('firmware'),'online':d.get('online'),'connected':(d.get('curtain') or {}).get('connected'),'queued':d.get('queued'),'relayStreaming':d.get('relayStreaming'),'playback':p,'lastIdentified':last,'controllerPower':power,'videoCaps':cap},default=str))
+          PY
