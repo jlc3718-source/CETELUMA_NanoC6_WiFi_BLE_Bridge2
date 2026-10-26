@@ -34,7 +34,7 @@ uint32_t jh2_slot_packet_cid(const jh2_slot_session *s,const char *uuid,
     if(!uuid||!b)return 0;
     if(strcmp(uuid,JH2_SLOT_COMMAND_UUID)==0){
         uint16_t op=jh2_slot_command_opcode(b,n);
-        if(op!=2909&&op!=2606&&op!=2620)return 0;
+        if(op!=2909&&op!=2606)return 0;
         size_t p=24;uint32_t tag=0,cid=0;
         return varint(b,n,&p,&tag)&&tag==8&&varint(b,n,&p,&cid)?cid:0;
     }
@@ -67,7 +67,7 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
             if(n!=24)return false;
             *error=NULL;return true;
         }
-        if(read_only){*error="Read-only firmware permits only 205/167/2904/2104/2627";return false;}
+        if(read_only){*error="Read-only firmware permits only 205/167/2904/2104/2627/2622";return false;}
         // Narrow, reversible SmartDawn autonomous playlist trial. No flash,
         // erase, reset, uploaded animation packets or factory list changes.
         // The manufacturer exposes M_UNLOCK_FRAME as a no-argument write.
@@ -89,18 +89,41 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
                !varint(b,n,&p,&list_id)||list_id!=3||p!=n)return false;
             *error=NULL;return true;
         }
-        // Add a previously verified saved custom CID to playlist 3.
-        // SimpleMessage fields: i1 CID, i2 slot, i3 playlist ID.
-        if(op==2620){
-            size_t p=24;uint32_t tag=0,cid=0,play_slot=0,list_id=0;
-            if(!varint(b,n,&p,&tag)||tag!=8||!varint(b,n,&p,&cid)||
-               !varint(b,n,&p,&tag)||tag!=16||!varint(b,n,&p,&play_slot)||
-               !varint(b,n,&p,&tag)||tag!=40||!varint(b,n,&p,&list_id)||
-               list_id!=3||p!=n||cid<80000||play_slot<32||play_slot>200||
-               !known||matches!=1||play_slot!=slot){
-                *error="Playlist entry requires verified saved custom CID and playlist ID 3";
-                return false;
+        // Manufacturer M_BOOKMARK_LIST: read back only the reserved list.
+        // This is a read-only command and is safe in recovery mode.
+        if(op==2622){
+            size_t p=24;uint32_t tag=0,list_id=0;
+            if(!varint(b,n,&p,&tag)||tag!=8||
+               !varint(b,n,&p,&list_id)||list_id!=3||p!=n)return false;
+            *error=NULL;return true;
+        }
+        // Actual original SmartDawn custom-playlist writer is M_BOOKMARK_SAVE
+        // (PlayListItems protobuf), NOT Favorites' M_BOOKMARK_ADD.
+        // Experiment allows precisely two existing verified saved effects:
+        // reference CID83928 slot33 and Jack CID85397 slot35.
+        // No factory effect, alternate CID, incomplete playlist or other
+        // index can pass. Bridge also verifies both CIDs in live catalog.
+        if(op==2626){
+            if(read_only||!known||matches!=1||slot!=33)return false;
+            size_t p=24;uint32_t tag=0,list_id=0,amount=0;
+            if(!varint(b,n,&p,&tag)||tag!=8||
+               !varint(b,n,&p,&list_id)||list_id!=3||
+               !varint(b,n,&p,&tag)||tag!=16||
+               !varint(b,n,&p,&amount)||amount!=2)return false;
+            const uint32_t cids[2]={83928U,85397U};
+            const uint32_t slots[2]={33U,35U};
+            for(unsigned i=0;i<2;i++){
+                uint32_t len=0,field=0,cid=0,play_slot=0;
+                if(!varint(b,n,&p,&tag)||tag!=34||
+                   !varint(b,n,&p,&len)||len>16||p+len>n)return false;
+                const size_t end=p+len;
+                if(!varint(b,end,&p,&field)||field!=16||
+                   !varint(b,end,&p,&cid)||cid!=cids[i]||
+                   !varint(b,end,&p,&field)||field!=24||
+                   !varint(b,end,&p,&play_slot)||play_slot!=slots[i]||
+                   p!=end)return false;
             }
+            if(p!=n)return false;
             *error=NULL;return true;
         }
         if(op!=2909&&op!=2606)return false;
