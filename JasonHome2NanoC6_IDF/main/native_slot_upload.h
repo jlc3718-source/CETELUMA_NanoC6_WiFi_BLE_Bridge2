@@ -22,3 +22,6 @@ bool jh2_slot_transfer(const uint8_t *file,size_t size,uint8_t id,
 bool jh2_slot_transfer_file(const char *path,uint32_t cid,uint8_t id,
     uint32_t now,bool known,unsigned matches,uint16_t slot,
     const jh2_slot_io *io,const char **error);
+
+/* Complete 4-KiB-page TinyProgram validation, including protobuf CID and CRC. */
+bool jh2_slot_type3_verified(const char *path,size_t size,uint32_t cid);
