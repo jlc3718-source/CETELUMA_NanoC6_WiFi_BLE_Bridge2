@@ -67,6 +67,14 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
             if(n!=24)return false;
             *error=NULL;return true;
         }
+        // Manufacturer M_BOOKMARK_LIST: read back only the reserved list.
+        // This is a read-only command and is safe in recovery mode.
+        if(op==2622){
+            size_t p=24;uint32_t tag=0,list_id=0;
+            if(!varint(b,n,&p,&tag)||tag!=8||
+               !varint(b,n,&p,&list_id)||list_id!=3||p!=n)return false;
+            *error=NULL;return true;
+        }
         if(read_only){*error="Read-only firmware permits only 205/167/2904/2104/2627/2622";return false;}
         // Narrow, reversible SmartDawn autonomous playlist trial. No flash,
         // erase, reset, uploaded animation packets or factory list changes.
@@ -84,14 +92,6 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
         // Only the first non-factory playlist (ID 3), never Favorites,
         // Sync or Link. Disable and remove operations are safe rollback.
         if(op==2623||op==2624||op==2629){
-            size_t p=24;uint32_t tag=0,list_id=0;
-            if(!varint(b,n,&p,&tag)||tag!=8||
-               !varint(b,n,&p,&list_id)||list_id!=3||p!=n)return false;
-            *error=NULL;return true;
-        }
-        // Manufacturer M_BOOKMARK_LIST: read back only the reserved list.
-        // This is a read-only command and is safe in recovery mode.
-        if(op==2622){
             size_t p=24;uint32_t tag=0,list_id=0;
             if(!varint(b,n,&p,&tag)||tag!=8||
                !varint(b,n,&p,&list_id)||list_id!=3||p!=n)return false;
