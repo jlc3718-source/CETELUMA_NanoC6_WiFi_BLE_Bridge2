@@ -392,7 +392,7 @@ static esp_err_t denied(httpd_req_t *r){
 static esp_err_t health_get(httpd_req_t *r){
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.10-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.11-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     jh2_runtime_boot_diagnostics(o);
     return send_json(r,o);
@@ -462,7 +462,7 @@ static esp_err_t status_get(httpd_req_t *r){
     if(!local_only(r))return denied(r);
     cJSON *o=cJSON_CreateObject();
     cJSON_AddBoolToObject(o,"ok",true);
-    cJSON_AddStringToObject(o,"version","2.0.10-native-upload-flow");
+    cJSON_AddStringToObject(o,"version","2.0.11-native-upload-flow");
     cJSON_AddBoolToObject(o,"webRecoveryAvailable",true);
     jh2_runtime_boot_diagnostics(o);
     cJSON_AddBoolToObject(o,"oracleConfigured",creds_ready);
@@ -1381,7 +1381,7 @@ bool jh2_web_start(void){
     };
     for(size_t i=0;i<sizeof(routes)/sizeof(routes[0]);i++)
         if(httpd_register_uri_handler(web_server,&routes[i])!=ESP_OK)return false;
-    ESP_LOGW(TAG,"2.0.10 OPEN SETUP WIFI AND HTTP READY; no Oracle or filesystem required");
+    ESP_LOGW(TAG,"2.0.11 OPEN SETUP WIFI AND HTTP READY; no Oracle or filesystem required");
     // After the AP is broadcasting and HTTP routes are registered, recover
     // old Oracle secrets and optional Wi-Fi profiles. Failure is nonfatal.
     fs_ready=mount_store();
