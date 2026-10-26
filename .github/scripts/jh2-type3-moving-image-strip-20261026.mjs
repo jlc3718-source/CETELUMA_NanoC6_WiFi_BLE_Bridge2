@@ -71,7 +71,7 @@ try{
  if(!process.env.JH2_TEST_TOKEN)throw Error('Oracle session token not provided by running service');
  await req('/api/session',{token:process.env.JH2_TEST_TOKEN});
  const before=await req('/api/curtain/status');
- if(before.firmware!=='2.0.10'||before.online!==true||before.curtain?.connected!==true)
+ if(before.firmware!=='2.0.11'||before.online!==true||before.curtain?.connected!==true)
   throw Error('Nano 2.0.10 live/connected preflight failed');
  const frames=[];
  for(let i=0;i<8;i++){
