@@ -1,0 +1,15 @@
+name: JH2 2.0.13 one original Jack Run playback test
+on:
+  push:
+    branches: [test/jh2-213-smooth-nano-frames-20261026]
+    paths: ['.github/workflows/jh2-213-original-jack-run-once-20261026.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-one-original-jack-smooth-213, cancel-in-progress: false}
+jobs:
+  playback:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guarded eight original poses, one Nano-local playback, no flash or native upload
+        run: sudo -n python3 .github/scripts/jh2-213-original-jack-run-playback-once-20261026.py
