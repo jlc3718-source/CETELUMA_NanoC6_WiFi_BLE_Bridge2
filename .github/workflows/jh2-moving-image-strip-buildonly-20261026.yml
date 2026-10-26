@@ -2,7 +2,7 @@ name: SmartDawn manufacturer Type3 moving Jack strip offline control
 on:
   push:
     branches: [test/jh2-2010-smartdawn-readonly-20261025]
-    paths: ['.github/workflows/jh2-moving-image-strip-buildonly-20261026.yml']
+    paths: ['.github/workflows/jh2-moving-image-strip-buildonly-20261026.yml', '.github/scripts/jh2-type3-moving-image-strip-20261026.mjs']
 permissions: {contents: read}
 concurrency:
   group: jh2-moving-image-strip-offline
