@@ -1,0 +1,14 @@
+name: SmartDawn 2103 video capability read-only audit
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-smartdawn-video-capability-readonly-20261026.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-smartdawn-video-2103-readonly, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo -n python3 .github/scripts/jh2-smartdawn-capability-command-audit-20261026.py
