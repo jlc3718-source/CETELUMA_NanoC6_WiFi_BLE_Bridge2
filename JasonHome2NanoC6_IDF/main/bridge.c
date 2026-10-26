@@ -1032,7 +1032,10 @@ static void oracle_task(void *ctx){
                 vTaskDelay(pdMS_TO_TICKS(1200));esp_restart();
             }else ESP_LOGW(TAG,"Automatic OTA activation refused: %s",install_error);
         }
-        vTaskDelay(pdMS_TO_TICKS(1100));
+        // If Oracle delivered a command, return its BLE ACK promptly and
+        // request the next queued action without the former 1.1 s idle wait.
+        // Idle connections retain the proven conservative polling cadence.
+        vTaskDelay(pdMS_TO_TICKS(idle_commands?1100:150));
     }
 }
 void jh2_bridge_start(void){
