@@ -1,0 +1,99 @@
+name: JH2 Nano 2.0.11 TinyProgram A-B SIGNED build only NO FLASH
+on:
+  push:
+    branches: [test/jh2-type3-multipage-v2010-20261026]
+    paths: ['.github/workflows/jh2-type3-211-signed-build-only.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-type3-211-build-only, cancel-in-progress: false}
+jobs:
+  signed-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Safety preflight and native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('JasonHome2NanoC6_IDF')
+          table=(p/'partitions.csv').read_text()
+          for item in ['rescue, app, factory, 0x10000, 0x100000','runtime, app, ota_0, 0x110000, 0x160000','runtime_b, app, ota_1, 0x270000, 0x160000','storage, data, spiffs, 0x3D0000, 0x2F000']:
+              assert item in table,item
+          bridge=(p/'main/bridge.c').read_text()
+          assert '#define NATIVE_FW_VERSION "2.0.11"' in bridge
+          assert 'format_if_mount_failed=false' in bridge
+          assert 'nvs_flash_erase(' not in bridge
+          assert 'jh2_slot_type3_verified' in (p/'main/asset_stream.c').read_text()
+          print('JH2_211_PARTITIONS_RECOVERY_SECRETS_UNCHANGED')
+          PY
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c -o /tmp/jh2-211-native-guard
+          /tmp/jh2-211-native-guard
+          gcc -std=c11 -Wall -Wextra -Werror -O2 JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/main/native_slot_upload.c JasonHome2NanoC6_IDF/tests/native_slot_upload_test.c -o /tmp/jh2-211-native-upload
+          /tmp/jh2-211-native-upload
+      - name: Use exact production Oracle and BLE compile flags
+        shell: bash
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Cross compile 2.0.11 runtime (not flashed)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Verify image, sign with existing project key, verify detached ECDSA
+        shell: bash
+        env:
+          OTA_SIGNING_KEY_B64: ${{ secrets.ANDERSON_OTA_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,hashlib
+          from pathlib import Path
+          b=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin').read_bytes()
+          assert 0x100000 < len(b)<=0x160000 and b[0]==0xe9
+          assert b'2.0.11-native-upload-flow' in b
+          marker=b'JH2V200PRIVATEORACLETOKENREPLACEME'.ljust(64,b'_')
+          assert b.count(marker)==1, 'Refuse source without one unpersonalized credential placeholder'
+          root=Path('signed-package');root.mkdir(exist_ok=True)
+          (root/'jh2-runtime-2.0.11.bin').write_bytes(b)
+          sha=hashlib.sha256(b).hexdigest()
+          (root/'release.json').write_text(json.dumps({'product':'jason-home-2-nanoc6','version':'2.0.11','commit':os.environ['GITHUB_SHA'],
+           'files':{'jh2-runtime-2.0.11.bin':{'bytes':len(b),'sha256':sha}}},indent=2)+'\n')
+          print('JH2_211_SHA_TEST_IMAGE',len(b),sha)
+          PY
+          test -n "$OTA_SIGNING_KEY_B64"
+          key="$RUNNER_TEMP/jh2-sign-key.pem"
+          trap 'shred -u "$key" 2>/dev/null || rm -f "$key"' EXIT
+          printf '%s' "$OTA_SIGNING_KEY_B64" | base64 -d > "$key"
+          chmod 600 "$key"
+          python3 JasonHome2NanoC6/tools/sign_manifest.py --key "$key" --release signed-package/release.json --output signed-package/latest.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,base64,hashlib,subprocess,tempfile
+          p=Path('signed-package');sig=json.loads((p/'latest.json').read_text())
+          manifest=json.loads((p/'release.json').read_text())
+          fields=dict(row.split('=',1) for row in sig['payload'].strip().splitlines())
+          fw=(p/'jh2-runtime-2.0.11.bin').read_bytes()
+          assert fields['version']=='2.0.11' and fields['product']=='jason-home-2-nanoc6'
+          assert fields['sha256']==hashlib.sha256(fw).hexdigest() and int(fields['bytes'])==len(fw)
+          assert fields['commit']==manifest['commit']
+          with tempfile.TemporaryDirectory() as t:
+           temp=Path(t);(temp/'payload').write_text(sig['payload'])
+           (temp/'sig').write_bytes(base64.b64decode(sig['signature']))
+           subprocess.run(['openssl','dgst','-sha256','-verify','remote-update/anderson_ota_signing_public.pem',
+             '-signature',str(temp/'sig'),str(temp/'payload')],check=True)
+          print('JH2_211_EXISTING_KEY_ECDSA_VERIFIED_NO_OTA')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-2.0.11-TEST-ONLY-SIGNED
+          path: signed-package/
+          if-no-files-found: error
+          retention-days: 30
