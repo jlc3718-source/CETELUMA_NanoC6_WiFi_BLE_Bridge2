@@ -1,0 +1,27 @@
+name: SmartDawn manufacturer AMX offline reverse audit
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-type3-amx-static-analysis-20261026.yml']
+permissions: {contents: read}
+jobs:
+  static:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n docker exec -i jason-home-2-web node --input-type=module <<'NODE'
+          import crypto from 'node:crypto';
+          const url='https://cdn.daniaokeji.com/data/amx/commons/tuwen.amx';
+          const r=await fetch(url,{signal:AbortSignal.timeout(35000)});
+          if(!r.ok)throw Error('Manufacturer runtime HTTP '+r.status);
+          const b=Buffer.from(await r.arrayBuffer());
+          const sha=crypto.createHash('sha256').update(b).digest('hex');
+          if(b.length!==180||sha!=='3a63706b7f45c89f9a162d8c63dc8d7ddac23077893e64c6e55344d693e34020')throw Error('Not expected manufacturer runtime');
+          const h={size:b.readUInt32LE(0),magic:b.readUInt16LE(4).toString(16),fileVer:b[6],amxVer:b[7],flags:b.readUInt16LE(8),defsize:b.readUInt16LE(10)};
+          for(const [name,p] of Object.entries({cod:12,dat:16,hea:20,stp:24,cip:28,publics:32,natives:36,libraries:40,pubvars:44,tags:48,nametable:52}))
+           h[name]=b.readUInt32LE(p);
+          console.log('JH2_MANUFACTURER_TYPE3_AMX_RUNTIME_ANALYSIS '+JSON.stringify({size:b.length,sha256:sha,header:h,hex:b.toString('hex'),code:h.cod<b.length&&h.dat<=b.length?b.subarray(h.cod,h.dat).toString('hex'):null}));
+          NODE
