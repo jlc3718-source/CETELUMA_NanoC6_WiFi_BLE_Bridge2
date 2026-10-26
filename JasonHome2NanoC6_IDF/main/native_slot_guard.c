@@ -106,7 +106,7 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
         if((seen&required)!=required||values[1]!=b[0]||!values[9]||
            values[4]||values[7]||values[5]!=parts||values[6]!=500||
            !values[3]||values[3]>600000||(values[3]+499)/500!=parts||
-           !((values[2]==0&&path_len)||(values[2]==3&&values[3]==4096)))return false;
+           !((values[2]==0&&path_len)||(values[2]==3&&!path_len&&values[3]>=4096&&values[3]<=32768&&values[3]%4096==0)))return false;
         if(values[2]==0){
             char name[20];int needed=snprintf(name,sizeof(name),"%u.eff",(unsigned)values[9]);
             if(needed<=0||(size_t)needed!=path_len||memcmp(b+path_start,name,path_len))return false;
@@ -123,7 +123,7 @@ bool jh2_slot_validate(jh2_slot_session *s,const char *uuid,
     if(s->next==0){
         const uint8_t *file=b+8;
         bool valid=s->type==3?
-            payload>=8&&memcmp(file,"DN\x01\xfe",4)==0&&le32(file+4)==s->cid:
+            payload>=9&&memcmp(file,"DN\x01\xfe",4)==0&&le32(file+4)==s->cid&&file[8]==s->size/4096:
             payload>=18&&(memcmp(file,"DNMX",4)==0||memcmp(file,"DNCX",4)==0)&&
                 file[4]==3&&file[5]==1&&file[6]==40&&file[7]==0&&
                 file[8]==40&&file[9]==0&&le32(file+14)==s->cid;
