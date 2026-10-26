@@ -1,0 +1,65 @@
+name: SmartDawn safe unlock frozen video frame one time
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-smartdawn-unlock-frozen-frame-once-20261026.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-smartdawn-unlock-frame-2511, cancel-in-progress: false}
+jobs:
+  unlock:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time,base64
+          out={'opcode':2511,'action':'M_UNLOCK_FRAME','frameWrites':0,'nativeUploadWrites':0,'erases':0,'firmwareChanges':0,'reboots':0}
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          cookie=''
+          def req(path,body=None):
+           global cookie
+           h={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})}
+           r=urllib.request.Request('http://127.0.0.1:8081'+path,
+             data=json.dumps(body).encode() if body is not None else None,headers=h)
+           with urllib.request.urlopen(r,timeout=30) as v:
+            if path=='/api/session':cookie=v.headers['Set-Cookie'].split(';')[0]
+            return json.load(v)
+          try:
+           req('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+           s=req('/api/curtain/status');p=s.get('controllerPlayback') or {}
+           out['preflight']={'firmware':s.get('firmware'),'online':s.get('online'),
+            'connected':(s.get('curtain') or {}).get('connected'),
+            'queued':s.get('queued'),'relayStreaming':s.get('relayStreaming'),
+            'cid':p.get('cid'),'slot':p.get('slot'),'state':p.get('state'),'currentFrame':p.get('currentFrame')}
+           if s.get('firmware')!='2.0.11' or not s.get('online') or not (s.get('curtain') or {}).get('connected') or s.get('queued') or s.get('relayStreaming') or p.get('state')!='current' or p.get('cid')!=85397 or p.get('slot')!=35:
+            raise RuntimeError('Frozen Jack native CID not currently confirmed; no BLE command authorized')
+           # Exact proven BLE DDP wrapper from vendor frontend native uploader:
+           # one fragment [seq=10,total=1,remaining=0,flags=0] + 20-byte
+           # DDP [F0,04,id_hi,id_lo,0,0,cmd_hi,cmd_lo,12 zeros].
+           packet=bytearray(20)
+           packet[0:2]=b'\\xf0\\x04';packet[2:4]=b'\\x31\\x20'
+           packet[6]=2511>>8;packet[7]=2511&255
+           frame=bytes([10,1,0,0])+packet
+           cmd=req('/api/curtain/call',{'action':'rawWrite',
+             'payload':{'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(frame).decode()},
+             'idempotencyKey':'smartdawn-native-unlock-frame-2511-one-time-20261026'})
+           cid=cmd.get('commandId');out['commandId']=cid
+           if not isinstance(cid,int):raise RuntimeError('No command ID')
+           out['frameWrites']=1
+           for i in range(65):
+            time.sleep(.6)
+            d=req('/api/curtain/command?id='+str(cid)).get('command') or {}
+            if d.get('state') in ('applied','failed','expired','superseded'):
+             out['ack']={'state':d.get('state'),'result':d.get('result')};break
+           time.sleep(5)
+           s=req('/api/curtain/status');p=s.get('controllerPlayback') or {}
+           out['after']={'online':s.get('online'),'connected':(s.get('curtain') or {}).get('connected'),
+             'queued':s.get('queued'),'relayStreaming':s.get('relayStreaming'),
+             'cid':p.get('cid'),'currentFrame':p.get('currentFrame'),'state':p.get('state')}
+           out['result']='BLE_UNLOCK_APPLIED_VISUAL_UNCONFIRMED' if out.get('ack',{}).get('state')=='applied' else 'UNLOCK_NOT_ACCEPTED_OR_UNCONFIRMED'
+          except Exception as e:
+           out['result']='UNLOCK_TEST_STOPPED';out['error']=str(e)
+          print('JH2_SMARTDAWN_UNLOCK_FRAME_2511',json.dumps(out,default=str),flush=True)
+          PY
