@@ -740,11 +740,27 @@ static void handle_command(const cJSON *row,const cJSON *assets){
             if(mbedtls_base64_decode(bytes,sizeof(bytes),&n,
                 (const unsigned char*)data->valuestring,strlen(data->valuestring))==0){
                 unsigned matches=0;uint16_t slot=0;
+                const uint16_t decoded_op=jh2_slot_command_opcode(bytes,n);
                 const uint32_t assigned_cid=jh2_slot_packet_cid(&native_slot_session,
                     uuid->valuestring,bytes,n);
-                const bool known=assigned_cid?
-                    jh2_ble_catalog_cid(assigned_cid,&matches,&slot):
-                    jh2_ble_target_section(&matches,&slot);
+                // M_BOOKMARK_SAVE 2626 is allowed only with both existing
+                // controller-stored trial effects, independently confirmed
+                // by the Nano's complete, fresh catalog. The packet validator
+                // additionally requires EXACTLY those CIDs and playlist 3.
+                bool known=false;
+                if(decoded_op==2626){
+                    unsigned first_matches=0,second_matches=0;
+                    uint16_t first_slot=0,second_slot=0;
+                    const bool first=jh2_ble_catalog_cid(83928U,&first_matches,&first_slot);
+                    const bool second=jh2_ble_catalog_cid(85397U,&second_matches,&second_slot);
+                    known=first&&second&&first_matches==1&&second_matches==1&&
+                        first_slot==33&&second_slot==35;
+                    matches=known?1:0;slot=known?33:0;
+                }else{
+                    known=assigned_cid?
+                        jh2_ble_catalog_cid(assigned_cid,&matches,&slot):
+                        jh2_ble_target_section(&matches,&slot);
+                }
                 jh2_slot_session next=native_slot_session;
                 if(jh2_slot_validate(&next,uuid->valuestring,bytes,n,
                     (uint32_t)(esp_timer_get_time()/1000),known,matches,slot,
