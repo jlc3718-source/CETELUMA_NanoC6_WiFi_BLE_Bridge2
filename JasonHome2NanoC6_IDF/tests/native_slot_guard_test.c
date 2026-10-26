@@ -35,6 +35,34 @@ int main(void){
   command((unsigned[]){205,167,2904}[i],0,0);
   assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,0,0,true,&error));
  }
+ // Separate frame-unlock and saved-playlist writes are one-shot,
+ // explicitly bounded, non-destructive, and disabled in read-only builds.
+ command(2511,0,0);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,true,&error));
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2660,0,0);field(1,0);vint(26);vint(7);memcpy(buf+n,"JH2TEST",7);n+=7;
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ buf[n-1]='Z';
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2623,0,0);field(1,3);
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2624,0,0);field(1,3);
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2629,0,0);field(1,3);
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2623,0,0);field(1,0);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2620,0,0);field(1,83928);field(2,33);field(5,3);
+ assert(jh2_slot_packet_cid(&state,JH2_SLOT_COMMAND_UUID,buf,n)==83928);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,1,33,false,&error));
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,2,33,false,&error));
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,32,false,&error));
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,true,&error));
+ assert(jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2620,0,0);field(1,83928);field(2,33);field(5,0);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,33,false,&error));
+ command(2620,0,0);field(1,80);field(2,1);field(5,3);
+ assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,1,1,false,&error));
  command(2909,83928,0);
  assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,false,1,32,false,&error));
  assert(!jh2_slot_validate(&state,JH2_SLOT_COMMAND_UUID,buf,n,1,true,2,32,false,&error));
