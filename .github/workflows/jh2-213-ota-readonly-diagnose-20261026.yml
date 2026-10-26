@@ -1,0 +1,14 @@
+name: JH2 2.0.13 OTA read-only diagnosis
+on:
+  push:
+    branches: [test/jh2-213-smooth-nano-frames-20261026]
+    paths: ['.github/workflows/jh2-213-ota-readonly-diagnose-20261026.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read two command ACKs and firmware state with no changes
+        run: sudo -n python3 .github/scripts/jh2-213-ota-readonly-diagnose-20261026.py
