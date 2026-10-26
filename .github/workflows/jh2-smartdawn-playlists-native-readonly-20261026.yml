@@ -1,0 +1,84 @@
+name: SmartDawn read factory playlist mode and names only
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-smartdawn-playlists-native-readonly-20261026.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-curtain-readonly-native-playlists, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,base64,time
+          out={'opcode':2627,'name':'M_PL_LIST','writesToSettings':0,'erases':0,'firmwareChanges':0,'nativeWrites':0}
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          cookie=''
+          def req(path,body=None):
+           global cookie
+           r=urllib.request.Request('http://127.0.0.1:8081'+path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={'Content-Type':'application/json',**({'Cookie':cookie} if cookie else {})})
+           with urllib.request.urlopen(r,timeout=30) as v:
+            if path=='/api/session':cookie=v.headers['Set-Cookie'].split(';')[0]
+            return json.load(v)
+          def var(b,p):
+           x=0
+           for k in range(10):
+            if p>=len(b):raise ValueError('Truncated varint')
+            z=b[p];p+=1;x|=(z&127)<<(7*k)
+            if z<128:return x,p
+           raise ValueError('varint too long')
+          def fields(b):
+           ans={};p=0
+           while p<len(b):
+            x,p=var(b,p);key,wire=x>>3,x&7
+            if wire==0:v,p=var(b,p)
+            elif wire==2:
+             n,p=var(b,p);v=b[p:p+n];p+=n
+            else:raise ValueError('Unsupported wire')
+            ans.setdefault(key,[]).append(v)
+           return ans
+          try:
+           req('/api/session',{'token':env['JASON_HOME_API_TOKEN']})
+           s=req('/api/curtain/status')
+           if s.get('firmware')!='2.0.11' or not s.get('online') or not (s.get('curtain') or {}).get('connected') or s.get('queued') or s.get('relayStreaming'):
+            raise RuntimeError('Nano not ready for non-destructive playlist catalog read')
+           old=req('/api/curtain/notifications?since=0').get('notifications',[])
+           mark=max([n.get('id',0) for n in old]+[0])
+           packet=bytearray(20);packet[:2]=bytes([240,4]);packet[2:4]=bytes([0,10]);packet[6:8]=bytes([2627>>8,2627&255])
+           frame=bytes([10,1,0,0])+packet
+           q=req('/api/curtain/call',{'action':'rawWrite',
+              'payload':{'uuid':'01020074-1972-1925-3022-077119514e44','data':base64.b64encode(frame).decode()},
+              'idempotencyKey':'smartdawn-native-readonly-playlist-catalog-2627-20261026'}) 
+           ident=q['commandId'];out['commandId']=ident
+           for _ in range(45):
+            time.sleep(.65);cmd=req('/api/curtain/command?id='+str(ident))['command']
+            if cmd.get('state') in ('applied','failed','expired','superseded'):
+             out['ack']={'state':cmd['state'],'result':cmd.get('result')};break
+           time.sleep(3)
+           notes=req('/api/curtain/notifications?since='+str(mark)).get('notifications',[])
+           groups={};items=[]
+           for n in notes:
+            try:b=base64.b64decode(n.get('data',''))
+            except:continue
+            if len(b)<5 or b[3]!=0 or not 0<b[1]<100 or b[2]>=b[1]:continue
+            groups.setdefault((b[0],b[1]),{})[b[1]-b[2]-1]=b[4:]
+           for (ident,total),packets in groups.items():
+            if len(packets)!=total:continue
+            body=b''.join(packets[i] for i in range(total))
+            if len(body)<20 or int.from_bytes(body[6:8],'big')!=2627:continue
+            f=fields(body[20:]);raw=body[20:]
+            out['responseCode']=body[14];out['bodyHex']=raw[:1200].hex()
+            out['fieldsSummary']={str(k):[v.hex()[:120] if isinstance(v,bytes) else v for v in vals[:10]] for k,vals in f.items()}
+            items.append(f)
+           out['responseCount']=len(items)
+           out['result']='READ_ONLY_PLAYLIST_LIST_RECEIVED' if items else 'NO_PLAYLIST_RESPONSE_CAPTURED'
+          except Exception as e:
+           out['result']='PLAYLIST_READ_ABORTED';out['error']=str(e)
+          print('JH2_SMARTDAWN_NATIVE_PLAYLIST_AUDIT',json.dumps(out,default=str),flush=True)
+          PY
