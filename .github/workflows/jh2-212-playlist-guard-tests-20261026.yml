@@ -1,0 +1,27 @@
+name: JH2 2.0.12 protected SmartDawn playlist guard tests
+on:
+  push:
+    branches: [test/jh2-212-smartdawn-playlist-guard-20261026]
+    paths: ['.github/workflows/jh2-212-playlist-guard-tests-20261026.yml', 'JasonHome2NanoC6_IDF/main/native_slot_guard.c', 'JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c']
+permissions: {contents: read}
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: GCC compile and negative safety tests only, NO OTA
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -I JasonHome2NanoC6_IDF/main JasonHome2NanoC6_IDF/tests/native_slot_guard_test.c JasonHome2NanoC6_IDF/main/native_slot_guard.c -o /tmp/jh2-playlist-guard
+          /tmp/jh2-playlist-guard
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -I JasonHome2NanoC6_IDF/main JasonHome2NanoC6_IDF/tests/native_slot_upload_test.c JasonHome2NanoC6_IDF/main/native_slot_guard.c JasonHome2NanoC6_IDF/main/native_slot_upload.c -o /tmp/jh2-playlist-upload
+          /tmp/jh2-playlist-upload
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('JasonHome2NanoC6_IDF/main/native_slot_guard.c').read_text()
+          for x in ('op==2511','op==2620','op==2623','op==2624','op==2629','op==2660','list_id!=3','matches!=1','JH2TEST'):
+           assert x in text,x
+          assert 'nvs_flash_erase(' not in text
+          print('JH2_PLAYLIST_GUARD_READONLY_AND_FACTORY_PROTECTION_PASS')
+          PY
