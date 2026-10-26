@@ -106,7 +106,7 @@ try:
  assert out["onlineConfirmed"] and out["bleConfirmed"],"New firmware boot/BLE not confirmed"
  assert (current.get("curtain") or {}).get("mtu",0)>=500,"BLE high MTU not restored"
  out["recoveryVersionPreserved"]="2.0.13"
- out["result"]="NANO_2_0_13_RUNNING_BLE_CONNECTED_SIGNED_OTA"
+ out["result"]="NANO_2_0_14_RUNNING_BLE_CONNECTED_SIGNED_OTA"
 except BaseException as e:
  out["result"]="OTA_NOT_CONFIRMED"
  out["error"]=str(e)
