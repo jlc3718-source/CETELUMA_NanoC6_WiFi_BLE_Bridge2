@@ -148,3 +148,5 @@ jobs:
           if-no-files-found: warn
 
 # Re-run ONE read-only 2904 immediately before new manufacturer CID 85369 commit.
+
+# Oct26 verify CID85369 after reply-parser discrepancy; one read only.
