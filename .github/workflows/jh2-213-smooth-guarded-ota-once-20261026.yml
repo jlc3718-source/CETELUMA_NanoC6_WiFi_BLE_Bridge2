@@ -1,0 +1,20 @@
+name: JH2 2.0.13 frame-pacing signed A-B guarded OTA one-time
+on:
+  push:
+    branches: [test/jh2-213-smooth-nano-frames-20261026]
+    paths: ['.github/workflows/jh2-213-smooth-guarded-ota-once-20261026.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-nano-framepace-213-ota-exclusive, cancel-in-progress: false}
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify signed A-B candidate and installed baseline before one OTA
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-213-smooth-guarded-ota-20261026.py
