@@ -1,0 +1,31 @@
+name: SmartDawn explain 2103 rejection READ ONLY
+on:
+  push:
+    branches: [test/jh2-2010-smartdawn-readonly-20261025]
+    paths: ['.github/workflows/jh2-smartdawn-2103-failure-explain-readonly-20261026.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home'],text=True))[0]['Config']['Env'] if '=' in v)
+          token=env['JASON_HOME_API_TOKEN']
+          req=urllib.request.Request('http://127.0.0.1:8081/api/session',data=json.dumps({'token':token}).encode(),headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as response:
+           cookie=response.headers['Set-Cookie'].split(';')[0]
+          req=urllib.request.Request('http://127.0.0.1:8081/api/curtain/command?id=16746',headers={'Cookie':cookie})
+          with urllib.request.urlopen(req,timeout=30) as response:
+           d=json.load(response)['command']
+          r=d.get('result') or {}
+          print('JH2_SMARTDAWN_2103_COMMAND_RESULT',json.dumps({'id':d.get('id'),'state':d.get('state'),
+           'error':str(r.get('error',''))[:350],'message':str(r.get('message',''))[:350],
+           'bleTransmitted':r.get('bleTransmitted'),'connected':r.get('connected'),
+           'visualConfirmed':r.get('physicalPlaybackConfirmed')}),flush=True)
+          PY
