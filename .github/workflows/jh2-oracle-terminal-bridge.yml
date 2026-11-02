@@ -1,0 +1,30 @@
+name: JH2 Oracle Terminal Diagnostic Bridge
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/jh2-terminal-bridge/requests/active.json'
+      - '.github/workflows/jh2-oracle-terminal-bridge.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jh2-oracle-terminal-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnostics:
+    name: Execute fixed read-only host diagnostics
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm request and execute restricted host commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/jh2_oracle_terminal_bridge.py
