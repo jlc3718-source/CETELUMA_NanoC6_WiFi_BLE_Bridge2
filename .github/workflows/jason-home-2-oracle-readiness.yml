@@ -79,3 +79,5 @@ jobs:
             printf 'Backup helper privilege: %s %s\\n' "$item" "$result"
           done
           echo 'Read-only audit finished. No tokens, backups, database contents, or environment values were printed.'
+
+# Terminal-bridge discovery: inert comment to confirm this owner's existing Oracle self-hosted Actions runner still accepts authenticated GitHub-triggered jobs.
