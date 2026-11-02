@@ -1,5 +1,5 @@
 {
   "schema": 1,
-  "operation": "full_diagnostics",
-  "request_id": "verify_oracle_runner_20261102_001"
+  "operation": "network_diagnostics",
+  "request_id": "verify_reusable_terminal_20261102_002"
 }
