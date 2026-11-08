@@ -177,3 +177,4 @@ assert 'normHex(e)===normHex(savedColors[i])' in web
 # truly custom RGB values must remain untouched by the default-to-preset resolver.
 assert 't.colors[c]=o.colors[c];applyModernEventColors(t);' in main
 assert 'presetIndexForDefault(c)' in t('firmware/src/EventColorThemes.cpp')
+assert 'if(savedColors.some(e=>normHex(e)===t))return t;' in web
