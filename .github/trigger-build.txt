@@ -10,3 +10,4 @@ Trigger Anderson 3.1.73 two-profile auth and stable BLE discovery
 
 Trigger Anderson Home 3.1.74 saved preset color synchronization
 Retry Anderson Home 3.1.74 after runtime version alignment
+Rebuild Anderson 3.1.74 preserving saved RGB values through legacy normalizer
