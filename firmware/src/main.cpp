@@ -392,7 +392,7 @@ static void addEventScheduleJson(JsonObject e,size_t i,int year){
   sc["customTime"]=o.scheduleValid&&o.customTime;sc["start"]=fmtTime(o.startMinutes);sc["end"]=fmtTime(o.endMinutes);sc["builtIn"]=eventWhen(i,year);
 }
 static uint8_t scheduledEventSpeedHint=1;
-Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;if(i<EVENT_COUNT){if(activeEventColorTheme==EventColorTheme::MajorUS)applyMajorUsEventColors(i,t);else if(activeEventColorTheme==EventColorTheme::V3028)applyOriginalEventColors(i,t);else applyModernEventColors(t);}scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,2);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];}return t;}
+Theme applyEventOverrideByIndex(size_t i,const Theme& base){Theme t=base;if(i<EVENT_COUNT){if(activeEventColorTheme==EventColorTheme::MajorUS)applyMajorUsEventColors(i,t);else if(activeEventColorTheme==EventColorTheme::V3028)applyOriginalEventColors(i,t);else applyModernEventColors(t);}scheduledEventSpeedHint=eventSpeed(i);if(i>=EVENT_COUNT||i>=MAX_BUILTIN_EVENTS||!eventOverrides[i].valid)return t;const auto&o=eventOverrides[i];scheduledEventSpeedHint=constrain(o.speed,1,2);t.effect=o.effect;if(o.colorCount){t.colorCount=o.colorCount;for(uint8_t c=0;c<t.colorCount;c++)t.colors[c]=o.colors[c];applyModernEventColors(t);}return t;}
 static Theme effectiveEventTheme(size_t i){return applyEventOverrideByIndex(i,themeFromEvent(i));}
 
 static bool currentLightingNight(tm& night){
