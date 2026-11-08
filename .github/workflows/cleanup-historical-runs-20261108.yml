@@ -1,0 +1,90 @@
+name: One-Time Historical GitHub Actions Cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-historical-runs-20261108.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: one-time-historical-actions-cleanup
+  cancel-in-progress: false
+
+jobs:
+  purge-unneeded-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory runs, existing workflows and protected artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" --jq '.workflow_runs[] | {id,path,name,status,conclusion,created_at}' > "$RUNNER_TEMP/runs.jsonl"
+          gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false) | .workflow_run.id // empty' > "$RUNNER_TEMP/protected-artifact-runs.txt"
+          gh api "/repos/$GITHUB_REPOSITORY/contents/.github/workflows" --jq '.[].path' > "$RUNNER_TEMP/active-workflows.txt"
+      - name: Delete only old completed runs without retained artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_RUN: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import collections,datetime,json,os,pathlib,subprocess
+          t=pathlib.Path(os.environ['RUNNER_TEMP'])
+          runs=[json.loads(s) for s in (t/'runs.jsonl').read_text().splitlines() if s.strip()]
+          artifacts={int(s) for s in (t/'protected-artifact-runs.txt').read_text().splitlines() if s.strip().isdigit()}
+          active=set((t/'active-workflows.txt').read_text().splitlines())
+          latest=collections.defaultdict(list)
+          for run in sorted(runs,key=lambda r:r['created_at'],reverse=True):
+              if run.get('path') in active and run.get('status')=='completed':
+                  latest[run['path']].append(int(run['id']))
+          keep={v for vals in latest.values() for v in vals[:3]}
+          cutoff=datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=10)
+          current=int(os.environ['CURRENT_RUN'])
+          targets=[]
+          reasons=collections.Counter()
+          for run in runs:
+              rid=int(run['id'])
+              name=str(run.get('name') or '').lower()
+              dt=datetime.datetime.fromisoformat(run['created_at'].replace('Z','+00:00'))
+              if rid==current or run.get('status')!='completed':
+                  reasons['active_or_current']+=1;continue
+              if dt>=cutoff:
+                  reasons['recent']+=1;continue
+              if rid in artifacts:
+                  reasons['has_recovery_or_other_artifact']+=1;continue
+              if rid in keep:
+                  reasons['last_three_active_workflow_runs']+=1;continue
+              if any(word in name for word in ('backup','snapshot','recovery')):
+                  reasons['safeguarded_backup_or_recovery_log']+=1;continue
+              targets.append(run)
+          count=0;failed=[]
+          for run in targets[:700]:
+              rid=int(run['id'])
+              p=subprocess.run(['gh','api','--method','DELETE',f'/repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{rid}'],capture_output=True,text=True)
+              if p.returncode==0:count+=1
+              else:failed.append({'id':rid,'error':p.stderr.strip()[:180]})
+          report={'time_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  'total_reviewed':len(runs),'deleted':count,'candidate_count':len(targets),
+                  'remaining_candidates_after_cap':max(0,len(targets)-700),
+                  'protected_reasons':dict(reasons),'failures':failed[:30]}
+          pathlib.Path('actions-cleanup-result.json').write_text(json.dumps(report,indent=2)+'\n')
+          print(json.dumps(report))
+          if failed:raise SystemExit('Some run deletions failed; check report')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: github-history-cleanup-report-20261108
+          path: actions-cleanup-result.json
+          retention-days: 7
+          if-no-files-found: warn
