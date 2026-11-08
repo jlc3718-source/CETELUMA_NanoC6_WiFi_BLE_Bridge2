@@ -56,6 +56,8 @@ jobs:
           if-no-files-found: error
 
   anderson-home:
+    # Anderson was verified in the first run; avoid creating a second duplicate during the Jason retry.
+    if: github.event_name == 'workflow_dispatch'
     name: Verify and archive current Anderson release and full Git history
     runs-on: ubuntu-24.04
     timeout-minutes: 25
