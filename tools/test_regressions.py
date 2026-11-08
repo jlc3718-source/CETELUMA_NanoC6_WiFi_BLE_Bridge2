@@ -166,3 +166,14 @@ assert 'Restore Built-in Schedule' in web and 'Specific date' in web and 'Date r
 assert 'Use custom time for this event' in web and 'Repeat every year' in web
 assert 'resetSchedule:true' in web and 'schedule:{mode:mode.value' in web
 print('Anderson regression source checks passed')
+
+# Live Color Tuning must feed every named quick-color selection from the persisted palette.
+assert 'const selected=savedColors[i]||e;' in web
+assert 'function refreshQuickColors()' in web
+assert 'renderHomeFavoriteGrid(),refreshQuickColors()' in web
+assert 'return semanticColorVisual(t,savedColorLabels[e]);' in web
+assert 'normHex(e)===normHex(savedColors[i])' in web
+# Existing event overrides using named palette defaults must pick up later preset edits;
+# truly custom RGB values must remain untouched by the default-to-preset resolver.
+assert 't.colors[c]=o.colors[c];applyModernEventColors(t);' in main
+assert 'presetIndexForDefault(c)' in t('firmware/src/EventColorThemes.cpp')
