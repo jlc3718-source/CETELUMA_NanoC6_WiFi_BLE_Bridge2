@@ -35,9 +35,31 @@ sudo cp -a "$ROOT/.env" "$WORK/stage/controller/.env"
 sudo tar -C "$ROOT" -czf "$WORK/stage/controller/controller-source.tar.gz" \
   --exclude='./data' --exclude='./node_modules' --exclude='./.git' --exclude='./.env' \
   --exclude='*.log' --exclude='./.cache' .
-sudo tar -C "$ROOT" -czf "$WORK/stage/controller/controller-data-other.tar.gz" --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.sqlite-wal' --exclude='*.sqlite-shm' data
+# Copy changing non-database runtime files into a stable temporary tree first.
+# The live system keeps writing logs/cache while an archive is built.
+sudo python3 - "$ROOT/data" "$GATE/data" "$WORK/stage" <<'PY'
+import os,shutil,sys
+controller,gateway,stage=sys.argv[1:]
+for name,src in [('controller',controller),('gateway',gateway)]:
+    dest=os.path.join(stage,name,'data-other')
+    os.makedirs(dest,exist_ok=True)
+    if not os.path.isdir(src):continue
+    for root,dirs,files in os.walk(src):
+        dirs[:]=[d for d in dirs if not os.path.islink(os.path.join(root,d))]
+        rel=os.path.relpath(root,src)
+        out=os.path.join(dest,rel)
+        os.makedirs(out,exist_ok=True)
+        for filename in files:
+            if filename.endswith(('.sqlite','.sqlite3','.db','.sqlite-wal','.sqlite-shm','.db-wal','.db-shm')):continue
+            source=os.path.join(root,filename)
+            if os.path.islink(source):continue
+            try:shutil.copy2(source,os.path.join(out,filename))
+            except (FileNotFoundError,PermissionError):continue
+PY
+sudo tar -C "$WORK/stage/controller" -czf "$WORK/stage/controller/controller-data-other.tar.gz" data-other
+sudo tar -C "$WORK/stage/gateway" -czf "$WORK/stage/gateway/gateway-data-other.tar.gz" data-other
+sudo rm -rf "$WORK/stage/controller/data-other" "$WORK/stage/gateway/data-other"
 sudo cp -a "$GATE/private.env" "$WORK/stage/gateway/private.env"
-sudo tar -C "$GATE" -czf "$WORK/stage/gateway/gateway-data-other.tar.gz" --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.sqlite-wal' --exclude='*.sqlite-shm' data
 sudo cp -a /etc/nginx "$WORK/stage/system/nginx"
 if sudo test -d /etc/letsencrypt; then sudo cp -a /etc/letsencrypt "$WORK/stage/system/letsencrypt"; fi
 if sudo test -d /home/ubuntu/.jason-home-signing; then sudo cp -a /home/ubuntu/.jason-home-signing "$WORK/stage/system/signing"; fi
