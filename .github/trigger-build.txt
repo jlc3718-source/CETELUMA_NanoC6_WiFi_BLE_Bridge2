@@ -9,3 +9,4 @@ Trigger 3.1.72 BLE discovery update
 Trigger Anderson 3.1.73 two-profile auth and stable BLE discovery
 
 Trigger Anderson Home 3.1.74 saved preset color synchronization
+Retry Anderson Home 3.1.74 after runtime version alignment
