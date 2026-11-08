@@ -1,4 +1,4 @@
-name: Jason Home 2 Oracle Encrypted Private Runtime Snapshot
+name: Fresh Home Recovery Backups
 
 on:
   workflow_dispatch:
@@ -10,18 +10,16 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: jason-home-2-oracle-encrypted-snapshot
-  cancel-in-progress: false
-
 jobs:
-  encrypted-snapshot:
-    name: Capture and validate encrypted private runtime (no service changes)
+  jason-home-2-private:
+    name: Verify and encrypt current Oracle runtime backup
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 25
+    env:
+      JH2_SNAPSHOT_OUT: /home/ubuntu/jh2-private-snapshot-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate key and backup prerequisites
+      - name: Validate encryption prerequisites and script syntax
         shell: bash
         run: |
           set -euo pipefail
@@ -32,31 +30,76 @@ jobs:
           test -s /home/ubuntu/repo/JasonHomeServer/.env
           sudo -n test -s /opt/jason-home-2/private.env
           sudo -n docker inspect jason-home-2-web >/dev/null
-          test ! -e /home/ubuntu/jh2-private-snapshot/oracle-recovery.tar.gz.aes || { echo 'An existing encrypted backup must not be overwritten; aborting.'; exit 1; }
-      - name: Capture consistent live SQLite and verify encrypted private runtime backup
+          test ! -e "$JH2_SNAPSHOT_OUT"
+      - name: Capture current sources, live SQLite, private runtime and verification manifests
+        shell: bash
+        run: bash .github/scripts/jason-home-2-oracle-private-snapshot.sh .github/keys/jason-home-2-oracle-runtime-backup-public.pem
+      - name: Verify fresh encrypted snapshot
         shell: bash
         run: |
           set -euo pipefail
-          bash .github/scripts/jason-home-2-oracle-private-snapshot.sh .github/keys/jason-home-2-oracle-runtime-backup-public.pem
-      - name: Verify encrypted archive and checksum manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT=/home/ubuntu/jh2-private-snapshot
-          test -s "$ROOT/password.rsa-oaep-sha256.enc"
-          test -s "$ROOT/oracle-recovery.tar.gz.aes"
-          test -s "$ROOT/SHA256SUMS.txt"
-          (cd "$ROOT" && sha256sum -c SHA256SUMS.txt >/dev/null)
-          stat -c 'Encrypted artifact present, bytes=%s' "$ROOT/oracle-recovery.tar.gz.aes"
-          echo 'Encrypted archive integrity checks passed; private data not printed.'
-      - name: Upload encrypted files only for transfer to private Drive
+          test -s "$JH2_SNAPSHOT_OUT/password.rsa-oaep-sha256.enc"
+          test -s "$JH2_SNAPSHOT_OUT/oracle-recovery.tar.gz.aes"
+          test -s "$JH2_SNAPSHOT_OUT/SHA256SUMS.txt"
+          (cd "$JH2_SNAPSHOT_OUT" && sha256sum -c SHA256SUMS.txt)
+          echo "VERIFIED_ENCRYPTED_JH2_BACKUP: $JH2_SNAPSHOT_OUT"
+      - name: Upload only encrypted data and verification hashes
         uses: actions/upload-artifact@v4
         with:
-          name: Jason-Home-2-Oracle-Private-Runtime-Encrypted
+          name: Jason-Home-2-Fresh-Encrypted-${{ github.run_id }}
           path: |
-            /home/ubuntu/jh2-private-snapshot/password.rsa-oaep-sha256.enc
-            /home/ubuntu/jh2-private-snapshot/oracle-recovery.tar.gz.aes
-            /home/ubuntu/jh2-private-snapshot/SHA256SUMS.txt
-          retention-days: 1
+            ${{ env.JH2_SNAPSHOT_OUT }}/password.rsa-oaep-sha256.enc
+            ${{ env.JH2_SNAPSHOT_OUT }}/oracle-recovery.tar.gz.aes
+            ${{ env.JH2_SNAPSHOT_OUT }}/SHA256SUMS.txt
+          retention-days: 90
           compression-level: 0
+          if-no-files-found: error
+
+  anderson-home:
+    name: Verify and archive current Anderson release and full Git history
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Capture full source history, tags, and current signed firmware
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --all --tags --force
+          BACKUP="$RUNNER_TEMP/anderson-home-backup"
+          mkdir -p "$BACKUP/release"
+          git bundle create "$BACKUP/repository.bundle" --all
+          git bundle verify "$BACKUP/repository.bundle"
+          VERSION="$(tr -d '\r\n' < FIRMWARE_VERSION.txt)"
+          gh release download "anderson-v$VERSION" --repo "$GITHUB_REPOSITORY" --dir "$BACKUP/release"
+          BACKUP="$BACKUP" VERSION="$VERSION" python3 - <<'PY'
+          import json,hashlib,os,pathlib
+          root=pathlib.Path(os.environ["BACKUP"])/"release"
+          version=os.environ["VERSION"]
+          manifest=json.loads((root/"release.json").read_text())
+          name=f"and_{version}.bin"
+          data=(root/name).read_bytes()
+          assert data and data[0]==0xE9
+          meta=manifest["files"][name]
+          assert meta["bytes"]==len(data)
+          assert meta["sha256"]==hashlib.sha256(data).hexdigest()
+          assert manifest["version"]==version
+          print("VERIFIED_ANDERSON_SIGNED_RELEASE",version,len(data))
+          PY
+          (cd "$BACKUP" && sha256sum repository.bundle release/* > SHA256SUMS.txt)
+          cp FIRMWARE_VERSION.txt "$BACKUP/"
+          tar -C "$BACKUP" -czf "$GITHUB_WORKSPACE/Anderson-Home-Fresh-Backup-$VERSION-${GITHUB_RUN_ID}.tar.gz" .
+          tar -tzf "$GITHUB_WORKSPACE/Anderson-Home-Fresh-Backup-$VERSION-${GITHUB_RUN_ID}.tar.gz" >/dev/null
+          echo "BACKUP_FILE=Anderson-Home-Fresh-Backup-$VERSION-${GITHUB_RUN_ID}.tar.gz" >> "$GITHUB_ENV"
+      - name: Upload verified recovery archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anderson-Home-Fresh-${{ github.run_id }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 90
           if-no-files-found: error
