@@ -82,6 +82,17 @@ jobs:
           print(json.dumps(report))
           if failed:raise SystemExit('Some run deletions failed; check report')
           PY
+      - name: Remove redundant oversized unsplit encrypted artifact after verifying part availability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for id in 13609527747 13609304470 13609881019 13609910795 13609388944 13608614656; do
+            gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$id" --jq '.expired == false' | grep -qx true
+          done
+          gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/artifacts/13609640863"
+          echo "Deleted redundant original 1.24 GB artifact; verified chunks and Oracle source remain."
       - uses: actions/upload-artifact@v4
         if: always()
         with:
