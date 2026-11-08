@@ -31,6 +31,10 @@ for prefix,dir in [('controller',os.path.join(root,'data')),('gateway',os.path.j
             wr.close();rd.close()
 PY
 sudo cp -a "$ROOT/.env" "$WORK/stage/controller/.env"
+# Capture current editable application source, excluding runtime databases and dependency caches.
+sudo tar -C "$ROOT" -czf "$WORK/stage/controller/controller-source.tar.gz" \
+  --exclude='./data' --exclude='./node_modules' --exclude='./.git' --exclude='./.env' \
+  --exclude='*.log' --exclude='./.cache' .
 sudo tar -C "$ROOT" -czf "$WORK/stage/controller/controller-data-other.tar.gz" --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.sqlite-wal' --exclude='*.sqlite-shm' data
 sudo cp -a "$GATE/private.env" "$WORK/stage/gateway/private.env"
 sudo tar -C "$GATE" -czf "$WORK/stage/gateway/gateway-data-other.tar.gz" --exclude='*.sqlite' --exclude='*.sqlite3' --exclude='*.sqlite-wal' --exclude='*.sqlite-shm' data
@@ -43,8 +47,9 @@ curl -fsS http://127.0.0.1:8080/api/health > "$WORK/stage/info/controller-health
 curl -fsS http://127.0.0.1:8081/api/health > "$WORK/stage/info/web-health.json"
 git -C /home/ubuntu/repo rev-parse HEAD > "$WORK/stage/info/production-git-sha.txt"
 sudo chown -R "$(id -u):$(id -g)" "$WORK/stage"
-mkdir -p "$HOME/jh2-private-snapshot"
-OUT="/home/ubuntu/jh2-private-snapshot"
+OUT="${JH2_SNAPSHOT_OUT:-/home/ubuntu/jh2-private-snapshot}"
+mkdir -p "$OUT"
+test ! -e "$OUT/oracle-recovery.tar.gz.aes" || { echo 'Snapshot already exists; refusing overwrite'; exit 1; }
 tar -C "$WORK/stage" -czf "$WORK/private.tar.gz" .
 tar -tzf "$WORK/private.tar.gz" >/dev/null
 PASS="$(openssl rand -hex 32)"
