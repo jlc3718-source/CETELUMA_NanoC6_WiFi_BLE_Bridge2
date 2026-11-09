@@ -1,0 +1,16 @@
+name: JH2 Eufy reuse existing authenticated identity locally
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-eufy-local-id-migrate-20261109.yml']
+permissions: {contents: read}
+jobs:
+  private-identity-migration:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify existing private upstream session without exposing any identity
+        run: |
+          set -euo pipefail
+          sudo -n python3 .github/scripts/jh2-eufy-local-id-from-upstream-20261109.py
