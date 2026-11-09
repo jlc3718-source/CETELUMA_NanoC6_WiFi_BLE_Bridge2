@@ -6,7 +6,7 @@ umask 077
 
 REPO=/home/ubuntu/repo
 APP="$REPO/JasonHomeServer"
-BASE=origin/fix/eufy-auth-100028-backoff-20261108
+BASE=origin/jason-home-cloudflare-rebuild
 FIX=origin/fix/eufy-mega-auth-captcha-2fa-session-20261109
 SERVICE=jason-home
 PORT=8080
@@ -45,6 +45,8 @@ trap rollback EXIT
 [[ -f "$APP/src/server.ts" && -f "$APP/src/eufy/client.ts" ]] || failed "Live source files missing; nothing changed"
 [[ -d "$APP/data" && -f "$APP/data/jason-home.sqlite" ]] || failed "Expected live SQLite database missing; nothing changed"
 git -C "$REPO" rev-parse --verify "$BASE^{commit}" >/dev/null || failed "Base branch not fetched"
+[[ "$(git -C "$REPO" rev-parse "$BASE^{commit}")" == "028aeb27110cf63e19f2ecdc16daafbf87d87fac" ]] ||
+  failed "Original production baseline moved; refusing unreviewed merge"
 git -C "$REPO" rev-parse --verify "$FIX^{commit}" >/dev/null || failed "Repair branch not fetched"
 [[ "$(git -C "$REPO" rev-parse "$FIX:$REL_SERVER")" == "f80b904f13a1b8b2cc17a0c32b5f987a17972c46" ]] ||
   failed "Server source no longer matches reviewed and tested code"
