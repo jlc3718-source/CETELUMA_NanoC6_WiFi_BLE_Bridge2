@@ -11,6 +11,7 @@
  */
 #include "bridge.h"
 #include "native_ble.h"
+#include "eufy_ble.h"
 #include "native_slot_guard.h"
 #include "signed_ota.h"
 #include "asset_stream.h"
@@ -691,6 +692,46 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         append_ack(current,good?"applied":"failed",good?
             "Controller completed continuous native RAM upload; catalog verification required":
             (error?error:"Native RAM upload failed"),good);
+    }else if(strcmp(action->valuestring,"eufyBle")==0){
+        /* Private credential is delivered only inside the existing bearer-
+         * authenticated Nano poll. Do not include it in ACKs or logs. */
+        const cJSON *name=cJSON_GetObjectItemCaseSensitive(payload,"name");
+        const cJSON *mac=cJSON_GetObjectItemCaseSensitive(payload,"mac");
+        const cJSON *serial=cJSON_GetObjectItemCaseSensitive(payload,"serial");
+        const cJSON *account=cJSON_GetObjectItemCaseSensitive(payload,"accountId");
+        const cJSON *operation=cJSON_GetObjectItemCaseSensitive(payload,"operation");
+        const cJSON *on=cJSON_GetObjectItemCaseSensitive(payload,"on");
+        const cJSON *value=cJSON_GetObjectItemCaseSensitive(payload,"value");
+        const cJSON *rgb=cJSON_GetObjectItemCaseSensitive(payload,"rgb");
+        const bool valid=cJSON_IsString(name)&&cJSON_IsString(mac)&&
+            cJSON_IsString(serial)&&cJSON_IsString(account)&&
+            cJSON_IsString(operation)&&name->valuestring&&mac->valuestring&&
+            serial->valuestring&&account->valuestring&&operation->valuestring;
+        eufy_ble_request request={0};
+        if(valid){
+            request.name=name->valuestring;request.mac=mac->valuestring;
+            request.serial=serial->valuestring;request.account_id=account->valuestring;
+            if(!strcmp(operation->valuestring,"power")&&cJSON_IsBool(on)){
+                request.operation=EUFY_BLE_POWER;request.on=cJSON_IsTrue(on);
+            }else if(!strcmp(operation->valuestring,"brightness")&&cJSON_IsNumber(value)&&
+                     value->valueint>=0&&value->valueint<=100){
+                request.operation=EUFY_BLE_BRIGHTNESS;
+                request.brightness=(uint8_t)value->valueint;
+            }else if(!strcmp(operation->valuestring,"color")&&cJSON_IsNumber(rgb)&&
+                     rgb->valuedouble>=0&&rgb->valuedouble<=16777215&&
+                     rgb->valuedouble==(double)rgb->valueint){
+                request.operation=EUFY_BLE_COLOR;
+                const uint32_t color=(uint32_t)rgb->valuedouble;
+                request.red=(uint8_t)(color>>16);request.green=(uint8_t)(color>>8);
+                request.blue=(uint8_t)color;request.lamp_count=60;
+            }
+        }
+        char state[110]="Invalid Eufy local command";
+        bool delivered=valid&&request.operation&&
+                       jh2_eufy_ble_execute(&request,state,sizeof(state));
+        append_ack(current,delivered?"applied":"failed",
+                   delivered?"Eufy encrypted BLE command acknowledged by GATT; physical light unverified":state,
+                   delivered);
     }else if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
         append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
     }else if(strcmp(action->valuestring,"nanoEnterRecovery")==0){
@@ -912,6 +953,7 @@ static cJSON *sync_document(void){
     cJSON_AddNumberToObject(status,"nanoAnimationSpeedPercent",jh2_asset_stream_get_speed());
     cJSON *curtain=cJSON_AddObjectToObject(status,"curtain");
     jh2_ble_status(curtain);
+    jh2_eufy_ble_status(status);
     cJSON_AddBoolToObject(curtain,"sequenceRunning",jh2_native_sequence_running());
     // Forward the Nano's own read-only power + playback decoder result to
     // Oracle alongside native GATT notices, so the APK can compare both.
