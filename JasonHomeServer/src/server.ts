@@ -433,7 +433,7 @@ function verificationStatus(){
   const challenge=activeEufyVerification();
   const kind=challenge?.kind;
   return {ok:true,required:!eufyReady,type:kind==="email"?"email":kind==="captcha"?"captcha":null,
-    image:kind==="captcha"?challenge.image:null,
+    image:challenge?.kind==="captcha"?challenge.image:null,
     message:kind==="email"?"Eufy emailed a one-time code. Enter it to complete the current login.":
       kind==="captcha"?"Enter the displayed CAPTCHA characters to complete this login.":
       "No pending verification. Select Get verification image for one deliberate manual login attempt."};
@@ -456,9 +456,10 @@ async function manualEufyVerification(action:string,answer:string){
   let client:EufyClient,captcha:{id:string;answer:string}|undefined,emailCode:string|undefined;
   if(action==="answer"){
     if(!answer.trim()||answer.length>64)throw new Error("Enter the verification characters or emailed code");
-    client=pending!.client;
-    if(pending!.kind==="captcha")
-      captcha={id:pending!.id,answer:answer.trim()};
+    const challenge=pending!;
+    client=challenge.client;
+    if(challenge.kind==="captcha")
+      captcha={id:challenge.id,answer:answer.trim()};
     else emailCode=answer.trim();
     pendingEufyVerification=null;
   }else client=new EufyClient(meta("install_id")||DEFAULT_INSTALL);
