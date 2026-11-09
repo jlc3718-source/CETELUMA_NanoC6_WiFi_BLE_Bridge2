@@ -312,15 +312,39 @@ async function serializedForDevice<T>(name:string,fn:()=>Promise<T>):Promise<T>{
   }
 }
 
+// Persist Eufy cloud-login cooldown across controller restarts and
+// 30-second scheduler checks. No credentials, tokens or session data are logged.
+const EUFY_AUTH_RETRY_AT_KEY="eufy_auth_retry_at_v1";
+const EUFY_AUTH_RETRY_REASON_KEY="eufy_auth_retry_reason_v1";
+const EUFY_AUTH_LOCKOUT_MS=24*60*60*1000;
+const EUFY_AUTH_OTHER_MS=30*60*1000;
+function eufyAuthRetryAt():number{
+  const value=Number(meta(EUFY_AUTH_RETRY_AT_KEY)||"0");
+  return Number.isFinite(value)&&value>Date.now()?value:0;
+}
+function eufyAuthFailureDelay(error:unknown):number{
+  const message=String((error as any)?.message||error||"");
+  if(/\b100028\b/.test(message))return EUFY_AUTH_LOCKOUT_MS;
+  if(/passport\/login|authentication|auth token|session expired|HTTP 401|login failed/i.test(message))
+    return EUFY_AUTH_OTHER_MS;
+  return 0;
+}
 function markEufyDegraded(error:any){
   const msg=error?.message||String(error||"Eufy transport failure");
   eufyReady=false;readyNames=[];eufyStatus="Degraded: "+msg;
   if(/auth|login|certificate|session|token|401/i.test(msg))eufy=null;
 }
 async function ensureEufy(force=false){
-  if(force){resetPersistentMqtt("Forced Eufy reconnect");eufy=null;eufyReady=false;readyNames=[];preparing=null;}
-  if(eufy&&eufyReady&&readyNames.length===4)return eufy;
+  if(!force&&eufy&&eufyReady&&readyNames.length===4)return eufy;
   if(preparing)return preparing;
+  const notBefore=eufyAuthRetryAt();
+  if(notBefore){
+    const reason=meta(EUFY_AUTH_RETRY_REASON_KEY)||"authentication failure";
+    eufyStatus=`Eufy login paused (${reason}) until ${new Date(notBefore).toISOString()}; no cloud login attempted`;
+    throw new Error(eufyStatus);
+  }
+  // Do not reset an in-flight request or bypass an active cooldown on force.
+  if(force){resetPersistentMqtt("Forced Eufy reconnect");eufy=null;eufyReady=false;readyNames=[];}
   preparing=(async()=>{
     const install=meta("install_id")||DEFAULT_INSTALL;
     let session:EufySession|undefined;
@@ -331,7 +355,11 @@ async function ensureEufy(force=false){
       if(!client.authed)await client.login(EMAIL,PASSWORD);
       await client.prepare();
     }catch(first){
-      if(session){
+      const message=String((first as any)?.message||first||"");
+      // Never transform an active cloud block or MQTT failure into an
+      // immediate second login. Keep saved session on code 100028.
+      if(/\b100028\b/.test(message))throw first;
+      if(session&&/auth|login|session|token|HTTP 401/i.test(message)){
         delMeta("eufy_session");
         client=new EufyClient(install);
         await client.login(EMAIL,PASSWORD);
@@ -341,10 +369,24 @@ async function ensureEufy(force=false){
     const names=client.readyNames();
     for(const n of DEVICE_NAMES)if(!names.includes(n))throw new Error("Missing expected Eufy light: "+n);
     eufy=client;eufyReady=true;readyNames=names;eufyStatus=`Ready ${names.length}/4`;
+    delMeta(EUFY_AUTH_RETRY_AT_KEY);
+    delMeta(EUFY_AUTH_RETRY_REASON_KEY);
     setMeta("eufy_session",JSON.stringify(client.exportSession()));
     return client;
   })().catch((e:any)=>{
-    eufyReady=false;readyNames=[];eufyStatus=e?.message||String(e);throw e;
+    eufyReady=false;readyNames=[];
+    const msg=String(e?.message||e);
+    const delay=eufyAuthFailureDelay(e);
+    if(delay){
+      const previous=Number(meta(EUFY_AUTH_RETRY_AT_KEY)||"0");
+      const notBefore=Math.max(Number.isFinite(previous)?previous:0,Date.now()+delay);
+      const reason=/\b100028\b/.test(msg)?"100028":"authentication error";
+      setMeta(EUFY_AUTH_RETRY_AT_KEY,String(notBefore));
+      setMeta(EUFY_AUTH_RETRY_REASON_KEY,reason);
+      eufyStatus=`Eufy login paused (${reason}) until ${new Date(notBefore).toISOString()}`;
+      console.warn("[EUFY-AUTH-BACKOFF] "+eufyStatus);
+    }else eufyStatus=msg;
+    throw e;
   }).finally(()=>{preparing=null;});
   return preparing;
 }
@@ -1121,6 +1163,16 @@ async function reconcile(ignoreOverride=false,forceSend=false){
         const stored=storedScene(name);
         if(forceSend||!stored||sceneKey(stored)!==sceneKey(scene))changes.push({name,scene,reason,testHalloween});
       }
+    }
+    // Do not enqueue 4 more login attempts every 30 seconds while blocked.
+    // Leave desired_state untouched so recovery replays the correct schedule.
+    const authRetryAt=eufyAuthRetryAt();
+    if(authRetryAt&&changes.length){
+      const evalState={at:new Date(now).toISOString(),owner,action:"eufy-auth-backoff",
+        paused:true,sent:0,errors:[],retryAfter:new Date(authRetryAt).toISOString()};
+      setMeta("last_reconcile",new Date(now).toISOString());
+      setMeta("last_scheduler_eval",JSON.stringify(evalState));
+      return {ok:true,paused:true,reason:"eufy-auth-backoff",sent:0,errors:[],retryAfter:evalState.retryAfter};
     }
     const results=await Promise.all(changes.map(async c=>{
       try{
