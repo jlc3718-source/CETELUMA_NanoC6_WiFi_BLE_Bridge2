@@ -7,6 +7,12 @@ on:
     paths:
       - 'JasonHomeServer/**'
       - '.github/workflows/eufy-mega-auth-validation.yml'
+  pull_request:
+    branches:
+      - fix/eufy-auth-100028-backoff-20261108
+    paths:
+      - 'JasonHomeServer/**'
+      - '.github/workflows/eufy-mega-auth-validation.yml'
   workflow_dispatch:
 
 permissions:
