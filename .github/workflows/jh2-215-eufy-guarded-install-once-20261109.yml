@@ -17,5 +17,6 @@ jobs:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           set -euo pipefail
+          # Signed OTA staging is asynchronous; handler waits for ready before install.
           python3 -m py_compile .github/scripts/jh2-215-eufy-guarded-ota-20261109.py
           sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-215-eufy-guarded-ota-20261109.py
