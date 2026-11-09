@@ -24,7 +24,7 @@ OLD_IMAGE_TAG=""
 failed() { echo "STOP: $*" >&2; exit 1; }
 rollback() {
   local code=$?
-  if [[ $COMPLETED == 1 || $CHANGED != 1 ]]; then return; fi
+  if [[ $COMPLETED == 1 || $CHANGED != 1 ]]; then return "$code"; fi
   set +e
   echo "DEPLOY FAILED: restoring the two prior Eufy source files from backup..."
   cp -a "$BACKUP/client.ts" "$APP/src/eufy/client.ts"
@@ -46,6 +46,10 @@ trap rollback EXIT
 [[ -d "$APP/data" && -f "$APP/data/jason-home.sqlite" ]] || failed "Expected live SQLite database missing; nothing changed"
 git -C "$REPO" rev-parse --verify "$BASE^{commit}" >/dev/null || failed "Base branch not fetched"
 git -C "$REPO" rev-parse --verify "$FIX^{commit}" >/dev/null || failed "Repair branch not fetched"
+[[ "$(git -C "$REPO" rev-parse "$FIX:$REL_SERVER")" == "f80b904f13a1b8b2cc17a0c32b5f987a17972c46" ]] ||
+  failed "Server source no longer matches reviewed and tested code"
+[[ "$(git -C "$REPO" rev-parse "$FIX:$REL_CLIENT")" == "ca0fd04427d86e9cdb9d3e741d8f4f48457c5fe6" ]] ||
+  failed "Eufy client source no longer matches reviewed and tested code"
 git -C "$REPO" diff --quiet HEAD -- "$REL_SERVER" "$REL_CLIENT" || failed "Live files contain local changes; cannot apply safely"
 git -C "$REPO" diff --cached --quiet -- "$REL_SERVER" "$REL_CLIENT" || failed "Live files are staged; cannot apply safely"
 sudo docker inspect "$SERVICE" >/dev/null || failed "Expected Docker container missing"
