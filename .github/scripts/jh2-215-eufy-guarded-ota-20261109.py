@@ -82,6 +82,16 @@ try:
  print("JH2_215_ORACLE_MIRROR_SIGNED_VALIDATED",len(served),flush=True)
  current=status()
  if current.get("firmware")!="2.0.15":
+  # Release NimBLE's SmartDawn GATT allocation during the separate OTA TLS
+  # connection. The curtain retains its last displayed state. A scan command
+  # clears hold_disconnect and reconnects, regardless of OTA success.
+  out["curtainBleRelease"]=command("disconnect","jh2-215-ota-ble-release-once-20261109")
+  for scan_wait in range(18):
+   latest=status()
+   if latest.get("curtain",{}).get("connected") is False:break
+   time.sleep(2)
+  else:raise RuntimeError("SmartDawn BLE release was not confirmed; refusing OTA")
+  out["curtainBleTemporarilyReleased"]=True
   out["firmwareCheck"]=command("nanoFirmwareCheck","jh2-215-eufy_ble-fwcheck-once-20261026")
   out["firstInstall"]=command("nanoInstallUpdate","jh2-215-eufy_ble-stage-once-20261026")
   out["firmwareInstallStarted"]=True
@@ -120,6 +130,20 @@ except BaseException as e:
  if not out["onlineConfirmed"]:
   switch("2.0.14")
   out["approvedRestored"]="2.0.14"
+ # A failed OTA must never strand the preexisting SmartDawn connection offline.
+ if out.get("curtainBleTemporarilyReleased"):
+  try:
+   current=status()
+   if current.get("online") and current.get("curtain",{}).get("connected") is not True:
+    out["curtainReconnect"]=command("scan","jh2-215-ota-restore-scan-once-20261109")
+    for scan_wait in range(35):
+     current=status()
+     if current.get("curtain",{}).get("connected") is True:
+      out["curtainReconnectedAfterFailure"]=True
+      break
+     time.sleep(2)
+  except Exception as restore_error:
+   out["curtainReconnectError"]=str(restore_error)[:130]
  print("JH2_215_OTA_RESULT",json.dumps(out),flush=True)
  raise
 print("JH2_215_OTA_RESULT",json.dumps(out),flush=True)
