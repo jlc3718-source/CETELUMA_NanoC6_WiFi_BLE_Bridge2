@@ -28,6 +28,7 @@
 #include "freertos/task.h"
 #include "effectlist.h"
 #include "native_ble.h"
+#include "eufy_ble.h"
 #include "asset_stream.h"
 #include "native_slot_guard.h"
 #include "bridge.h"
@@ -955,7 +956,7 @@ static void begin_scan(void){
 }
 // Called periodically by the normal main loop, never reentered from GAP.
 static void ble_service_tick(void){
-    if(!ble_host_ready||hold_disconnect||ble_scan_only||
+    if(!ble_host_ready||hold_disconnect||ble_scan_only||jh2_eufy_ble_active()||
        connection!=BLE_HS_CONN_HANDLE_NONE)return;
     const int64_t now=esp_timer_get_time();
     // ESP NimBLE may complete ble_gap_disc_cancel() without delivering a
@@ -1321,6 +1322,7 @@ static void on_sync(void){
     int rc=ble_hs_util_ensure_addr(0);
     if(rc){fail("ensure_address",rc);return;}
     ble_host_ready=true;
+    jh2_eufy_ble_host_ready(true);
     ble_next_retry_us=esp_timer_get_time()+5000000LL;
     ESP_LOGI(TAG,"NIMBLE_NATIVE_READY msys2=%d no_wifi diagnostics_only",
              CONFIG_BT_NIMBLE_MSYS_2_BLOCK_SIZE);
@@ -1328,6 +1330,7 @@ static void on_sync(void){
 }
 static void on_reset(int reason){
     ble_host_ready=false;
+    jh2_eufy_ble_host_ready(false);
     ble_scan_only=false;
     ble_connect_pending=false;
     ble_gap_connecting=false;
@@ -1437,6 +1440,7 @@ void app_main(void){
         failsafe_confirm_after_60s();
         start_ble_after_home_wifi();
         ble_service_tick();
+        jh2_eufy_ble_tick();
         start_oracle_after_home_wifi();
         if(requested && !finished && started_at &&
            esp_timer_get_time()-started_at>20000000LL){
