@@ -92,8 +92,8 @@ try:
    time.sleep(2)
   else:raise RuntimeError("SmartDawn BLE release was not confirmed; refusing OTA")
   out["curtainBleTemporarilyReleased"]=True
-  out["firmwareCheck"]=command("nanoFirmwareCheck","jh2-215-eufy_ble-fwcheck-once-20261026")
-  out["firstInstall"]=command("nanoInstallUpdate","jh2-215-eufy_ble-stage-once-20261026")
+  out["firmwareCheck"]=command("nanoFirmwareCheck","jh2-215-ota-ble-firmware-check-20261109-v2")
+  out["firstInstall"]=command("nanoInstallUpdate","jh2-215-ota-ble-stage-20261109-v2")
   out["firmwareInstallStarted"]=True
  activationIssued=False
  for cycle in range(175):
@@ -109,7 +109,7 @@ try:
     out["bleConfirmed"]=True
     break
   if fw=="2.0.14" and st.get("state")=="ready" and not activationIssued:
-   out["activation"]=command("nanoInstallUpdate","jh2-215-eufy_ble-activate-once-20261026")
+   out["activation"]=command("nanoInstallUpdate","jh2-215-ota-ble-activate-20261109-v2")
    activationIssued=True
   if st.get("state")=="failed" and fw!="2.0.15":
    raise RuntimeError("Verified signed OTA failed: "+str(st.get("message",""))[:150])
