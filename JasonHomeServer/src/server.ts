@@ -320,13 +320,16 @@ const EUFY_AUTO_PAUSE_UNTIL_KEY="eufy_auto_pause_until_v1";
 const EUFY_AUTO_PAUSE_HOURS=24;
 if(meta(EUFY_AUTO_PAUSE_UNTIL_KEY)===null)
   setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+EUFY_AUTO_PAUSE_HOURS*60*60*1000));
-function eufyAutoPauseUntil():number{
-  const until=Number(meta(EUFY_AUTO_PAUSE_UNTIL_KEY)||"0");
-  return Number.isFinite(until)&&until>Date.now()?until:0;
+function eufyAutoLoginPaused():boolean{
+  // Once paused, remain paused until manually re-enabled, even after
+  // 24 hours. Avoid restarting a 100028 login loop unattended.
+  return meta(EUFY_AUTO_PAUSE_UNTIL_KEY)!=="0";
 }
 function eufyAutoPauseStatus(){
-  const until=eufyAutoPauseUntil();
-  return {enabled:until===0,paused:until>0,until:until?new Date(until).toISOString():null};
+  const paused=eufyAutoLoginPaused();
+  const until=Number(meta(EUFY_AUTO_PAUSE_UNTIL_KEY)||"0");
+  return {enabled:!paused,paused,minimumPauseUntil:
+    paused&&Number.isFinite(until)&&until>0?new Date(until).toISOString():null};
 }
 const EUFY_AUTH_RETRY_AT_KEY="eufy_auth_retry_at_v1";
 const EUFY_AUTH_RETRY_REASON_KEY="eufy_auth_retry_reason_v1";
@@ -353,9 +356,8 @@ async function ensureEufy(force=false){
   if(preparing)return preparing;
   // force means a human-requested reconnect. Never block that explicitly
   // initiated path; only the scheduler and background cloud requests are paused.
-  const autoPauseUntil=force?0:eufyAutoPauseUntil();
-  if(autoPauseUntil){
-    eufyStatus=`Automatic Eufy cloud access paused until ${new Date(autoPauseUntil).toISOString()}; manual reconnect is available`;
+  if(!force&&eufyAutoLoginPaused()){
+    eufyStatus="Automatic Eufy cloud access paused until re-enabled in Devices; manual reconnect is available";
     throw new Error(eufyStatus);
   }
   const notBefore=force?0:eufyAuthRetryAt();
@@ -1246,10 +1248,10 @@ async function reconcile(ignoreOverride=false,forceSend=false){
     // Do not enqueue 4 more login attempts every 30 seconds while blocked.
     // Leave desired_state untouched so recovery replays the correct schedule.
     const authRetryAt=eufyAuthRetryAt();
-    const autoPauseUntil=eufyAutoPauseUntil();
-    if((authRetryAt||autoPauseUntil)&&changes.length){
+    const autoPaused=eufyAutoLoginPaused();
+    if((authRetryAt||autoPaused)&&changes.length){
       const evalState={at:new Date(now).toISOString(),owner,action:"eufy-auto-signin-paused",
-        paused:true,sent:0,errors:[],retryAfter:new Date(autoPauseUntil||authRetryAt).toISOString()};
+        paused:true,sent:0,errors:[],retryAfter:authRetryAt?new Date(authRetryAt).toISOString():null};
       setMeta("last_reconcile",new Date(now).toISOString());
       setMeta("last_scheduler_eval",JSON.stringify(evalState));
       return {ok:true,paused:true,reason:"eufy-auto-signin-paused",sent:0,errors:[],retryAfter:evalState.retryAfter};
