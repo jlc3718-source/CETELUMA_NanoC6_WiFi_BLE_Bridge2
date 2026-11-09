@@ -896,9 +896,12 @@ async function factoryTestAll(lightId:number,target="All",mode="compatible"){
   return {ok:sent===names.length,lightId,name:preset?.name||null,target,mode:"compatible",sequence,customized:!!preset?.customized,compatible,attempted:names.length,sent,skipped,results,note:"Factory recipe translated to the captured native 0x0206 command set for reliable visible output."};
 }
 
+// Status requests stay local. Only explicit refresh=1 is allowed to
+// initiate cloud authentication while the 24-hour auto pause is active.
 async function statusPayload(refresh=false){
   if(refresh){
-    try{await ensureEufy(false);}catch{}
+    // refresh=1 is an explicit manual Test Oracle request.
+    try{await ensureEufy(!eufyReady);}catch{}
   }
   const now=new Date();
   const astro=astronomy(now,LAT,LON,TZ);
@@ -1405,7 +1408,9 @@ const server=http.createServer(async(req,res)=>{
       const value:any=await readJson(req);
       if(typeof value?.enabled!=="boolean")return json(res,400,{ok:false,error:"enabled must be a boolean"});
       if(value.enabled){
-        delMeta(EUFY_AUTO_PAUSE_UNTIL_KEY);
+        // Persist an explicit user override; never reinitialize the 24-hour
+        // pause just because the Docker service restarted afterward.
+        setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,"0");
         delMeta(EUFY_AUTH_RETRY_AT_KEY);
         delMeta(EUFY_AUTH_RETRY_REASON_KEY);
       }else setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+24*60*60*1000));
