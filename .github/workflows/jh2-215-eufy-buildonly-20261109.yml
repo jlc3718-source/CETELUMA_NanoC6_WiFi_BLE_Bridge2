@@ -1,0 +1,70 @@
+name: JH2 Nano Eufy BLE 2.0.15 safe build only
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['JasonHome2NanoC6_IDF/**', '.github/workflows/jh2-215-eufy-buildonly-20261109.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: jh2-eufy-215-build-only, cancel-in-progress: false}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protocol test with synthetic identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=gnu11 -Wall -Wextra -Werror -O2 -DEUFY_E10_HOST_TEST \
+             -I JasonHome2NanoC6_IDF/main \
+             JasonHome2NanoC6_IDF/main/eufy_e10.c \
+             JasonHome2NanoC6_IDF/tests/test_eufy_e10.c -lcrypto -o /tmp/e10test
+          /tmp/e10test
+      - name: Safety preflight on exact 2.0.14 source lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('JasonHome2NanoC6_IDF')
+          bridge=(p/'main/bridge.c').read_text()
+          assert '#define NATIVE_FW_VERSION "2.0.15"' in bridge
+          assert 'format_if_mount_failed=false' in bridge
+          assert 'static cJSON *https_json_sync(' in bridge
+          assert 'jh2_eufy_ble_execute' in bridge
+          assert 'jh2_eufy_ble_status(status)' in bridge
+          assert 'nvs_flash_erase(' not in bridge
+          assert 'CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2' in (p/'sdkconfig.defaults').read_text()
+          assert '"eufy_ble.c"' in (p/'main/CMakeLists.txt').read_text()
+          assert 'jh2_eufy_ble_tick()' in (p/'main/main.c').read_text()
+          for item in ['rescue, app, factory, 0x10000, 0x100000',
+                        'runtime, app, ota_0, 0x110000, 0x160000',
+                        'runtime_b, app, ota_1, 0x270000, 0x160000']:
+            assert item in (p/'partitions.csv').read_text()
+          print('JH2_NANO_215_DUAL_BLE_RECOVERY_PRESERVATION_PASS')
+          PY
+      - name: Production compile flags
+        run: |
+          cat >> JasonHome2NanoC6_IDF/sdkconfig.defaults <<'EOF'
+          CONFIG_JH2_NATIVE_ENABLE_ORACLE=y
+          CONFIG_JH2_NATIVE_BROWSER_OTA_COMPAT=y
+          CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n
+          EOF
+      - name: Cross compile ESP-IDF 5.5.1 for ESP32-C6 without installing
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Verify output only
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          b=Path('JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin').read_bytes()
+          assert 0x100000<len(b)<=0x160000 and b[0]==0xe9
+          assert b'2.0.15' in b and b'JH2TEST' in b
+          print('JH2_215_FIRMWARE_BUILT_NO_FLASH',len(b))
+          PY
