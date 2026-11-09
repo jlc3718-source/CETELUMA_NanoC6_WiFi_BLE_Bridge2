@@ -1,0 +1,20 @@
+name: JH2 2.0.15 Eufy BLE guarded A-B OTA installation once
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-215-eufy-guarded-install-once-20261109.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-nano-215-eufy-signed-ota-exclusive, cancel-in-progress: false}
+jobs:
+  guarded-install:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict preflight and signed OTA; refuse while streaming, preserve A-B recovery
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-215-eufy-guarded-ota-20261109.py
