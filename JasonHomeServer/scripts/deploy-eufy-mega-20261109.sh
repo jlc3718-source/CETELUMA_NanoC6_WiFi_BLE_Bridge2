@@ -82,17 +82,20 @@ import sqlite3,sys,time
 with sqlite3.connect(sys.argv[1],timeout=20) as db:
     db.execute("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         ("eufy_auto_pause_until_v1",str(int(time.time()*1000)+24*60*60*1000)))
+    # Preserve the existing user-requested Eufy scheduler stop across rollback.
+    db.execute("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        ("automation_owner","direct"))
 PY
 
 echo "Backup verified; applying reviewed authentication-only code patch..."
-git -C "$REPO" apply --3way "$PATCH"
 CHANGED=1
+git -C "$REPO" apply --3way "$PATCH"
 
 echo "Building Docker image without stopping the old container..."
 (cd "$APP" && sudo docker compose build "$SERVICE")
 echo "Replacing only the Eufy backend container..."
-(cd "$APP" && sudo docker compose up -d --no-deps --force-recreate "$SERVICE")
 RESTARTED=1
+(cd "$APP" && sudo docker compose up -d --no-deps --force-recreate "$SERVICE")
 
 HEALTHY=0
 for i in $(seq 1 45); do
