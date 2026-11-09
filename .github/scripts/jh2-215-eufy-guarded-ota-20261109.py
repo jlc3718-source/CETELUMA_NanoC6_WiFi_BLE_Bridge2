@@ -20,20 +20,20 @@ with tempfile.TemporaryDirectory() as temp:
  (p/"signature").write_bytes(base64.b64decode(m["signature"],validate=True))
  subprocess.run(["openssl","dgst","-sha256","-verify",str(repo/"remote-update/anderson_ota_signing_public.pem"),
      "-signature",str(p/"signature"),str(p/"payload")],check=True)
-env=dict(v.split("=",1) for v in json.loads(subprocess.check_output(["docker","inspect","jason-home"],text=True))[0]["Config"]["Env"] if "=" in v)
-token=env.get("JASON_HOME_API_TOKEN")
-assert token and len(token)>=32,"Oracle session secret unavailable"
-cookie=""
+# Since November 2026 the JH2 web control routes require the owner's
+# maintenance Bearer credential for non-browser mutations. The legacy
+# /api/session cookie authorizes only a read-only status exception.
+container=json.loads(subprocess.check_output(["docker","inspect","jason-home-2-web"],text=True))[0]
+env=dict(v.split("=",1) for v in container["Config"]["Env"] if "=" in v)
+token=env.get("JH2_UPSTREAM_TOKEN")
+assert token and len(token)>=32,"JH2 maintenance token unavailable from running web container"
 def req(path,body=None,timeout=40):
- global cookie
- headers={"Content-Type":"application/json",**({"Cookie":cookie} if cookie else {})}
+ headers={"Content-Type":"application/json","Authorization":"Bearer "+token}
  r=urllib.request.Request("http://127.0.0.1:8081"+path,
     data=json.dumps(body).encode() if body is not None else None,
     headers=headers,method="POST" if body is not None else "GET")
  with urllib.request.urlopen(r,timeout=timeout) as z:
-  if path=="/api/session":cookie=z.headers["Set-Cookie"].split(";")[0]
   return json.load(z)
-req("/api/session",{"token":token})
 def status():return req("/api/curtain/status")
 def command(action,key):
  reply=req("/api/curtain/call",{"action":action,"payload":{},"idempotencyKey":key})
@@ -43,6 +43,7 @@ def command(action,key):
   time.sleep(2)
   state=req("/api/curtain/command?id="+str(ident)).get("command",{})
   if state.get("state") in ("applied","failed","superseded","expired"):
+   if state.get("state")!="applied":raise RuntimeError(action+" "+state.get("state","unknown")+": "+str((state.get("result") or {}).get("message",""))[:180])
    return {"id":ident,"state":state.get("state"),"message":str((state.get("result") or {}).get("message",""))[:180]}
  raise RuntimeError("Nano did not finish command "+action)
 before=status()
@@ -107,7 +108,7 @@ try:
  assert (current.get("eufyLocalBle") or {}).get("supported") is True, "Eufy BLE feature not reported by new Nano firmware"
  assert (current.get("curtain") or {}).get("mtu",0)>=500,"BLE high MTU not restored"
  out["recoveryVersionPreserved"]="2.0.14"
- out["result"]="NANO_2_0_14_RUNNING_BLE_CONNECTED_SIGNED_OTA"
+ out["result"]="NANO_2_0_15_RUNNING_SMARTDAWN_BLE_CONNECTED_EUFY_BLE_AVAILABLE"
 except BaseException as e:
  out["result"]="OTA_NOT_CONFIRMED"
  out["error"]=str(e)
