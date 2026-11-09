@@ -43,8 +43,11 @@ def command(action,key):
   time.sleep(2)
   state=req("/api/curtain/command?id="+str(ident)).get("command",{})
   if state.get("state") in ("applied","failed","superseded","expired"):
-   if state.get("state")!="applied":raise RuntimeError(action+" "+state.get("state","unknown")+": "+str((state.get("result") or {}).get("message",""))[:180])
-   return {"id":ident,"state":state.get("state"),"message":str((state.get("result") or {}).get("message",""))[:180]}
+   msg=str((state.get("result") or {}).get("message",""))[:180]
+   if state.get("state")=="failed" and action=="nanoInstallUpdate" and "Downloading signed firmware" in msg:
+    return {"id":ident,"state":"staging","message":"Signed firmware downloading; awaiting Nano OTA ready"}
+   if state.get("state")!="applied":raise RuntimeError(action+" "+state.get("state","unknown")+": "+msg)
+   return {"id":ident,"state":state.get("state"),"message":msg}
  raise RuntimeError("Nano did not finish command "+action)
 before=status()
 out["before"]={"firmware":before.get("firmware"),"online":before.get("online"),
