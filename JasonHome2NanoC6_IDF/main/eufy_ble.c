@@ -1,0 +1,292 @@
+/* Dedicated, short-lived Eufy E10 GATT central. SmartDawn owns another
+ * connection and is NEVER disconnected from this module. An explicit Oracle
+ * request targets one of four allowlisted controller names, then completes.
+ * No BLE packet, Eufy account ID or session key is printed or returned.
+ */
+#include "eufy_ble.h"
+#include "eufy_e10.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "nimble/nimble_port.h"
+#include "host/ble_hs.h"
+#include "host/ble_gap.h"
+#include "host/ble_gatt.h"
+#include "host/ble_uuid.h"
+#include "host/util/util.h"
+#include "os/os_mbuf.h"
+#include "esp_log.h"
+static const char *TAG="EUFY_E10";
+static const ble_uuid128_t SERVICE=BLE_UUID128_INIT(
+  0x25,0x20,0x56,0x7c,0x05,0xcf,0x6e,0xb4,0xc5,0x41,0x02,0x03,0x01,0x00,0x85,0x8c);
+static const ble_uuid128_t WRITE=BLE_UUID128_INIT(
+  0x25,0x20,0x56,0x7c,0x05,0xcf,0x6e,0xb4,0xc5,0x41,0x02,0x03,0x02,0x00,0x85,0x8c);
+static const ble_uuid128_t NOTIFY=BLE_UUID128_INIT(
+  0x25,0x20,0x56,0x7c,0x05,0xcf,0x6e,0xb4,0xc5,0x41,0x02,0x03,0x03,0x00,0x85,0x8c);
+enum { ST_IDLE=0, ST_QUEUED, ST_SCANNING, ST_FOUND, ST_CONNECTING,
+       ST_DISCOVERING, ST_SUBSCRIBING, ST_HANDSHAKE, ST_WAIT_KEY,
+       ST_COMMAND, ST_FINISHED };
+typedef struct {
+    volatile int stage;
+    volatile bool busy,host_ready,result;
+    volatile int64_t deadline;
+    uint8_t mac[6];ble_addr_t peer;
+    uint16_t connection,service_start,service_end,writer,notifier,cccd,mtu;
+    uint8_t step;bool session_notified,is_e22;
+    eufy_ble_op operation;bool on;
+    uint8_t brightness,red,green,blue,lamps;
+    eufy_e10_t crypto;
+    char result_stage[100];
+} eufy_controller;
+static eufy_controller ctl={.connection=BLE_HS_CONN_HANDLE_NONE};
+static SemaphoreHandle_t lock=NULL,completed=NULL;
+static void reset_crypto(void){eufy_e10_clear(&ctl.crypto);}
+static bool parse_mac(const char *text,uint8_t out[6]){
+    if(!text||strlen(text)!=17)return false;
+    unsigned b[6];
+    for(int i=0;i<17;i++)if((i+1)%3==0){if(text[i]!=':')return false;}
+    else if(!((text[i]>='0'&&text[i]<='9')||(text[i]>='a'&&text[i]<='f')||
+              (text[i]>='A'&&text[i]<='F')))return false;
+    if(sscanf(text,"%2x:%2x:%2x:%2x:%2x:%2x",
+              &b[0],&b[1],&b[2],&b[3],&b[4],&b[5])!=6)return false;
+    for(int i=0;i<6;i++)out[i]=(uint8_t)b[5-i];
+    return true;
+}
+static bool recognized(const char *name){
+    return name&&(!strcmp(name,"Pool")||!strcmp(name,"House")||
+                 !strcmp(name,"Garage")||!strcmp(name,"Shed"));
+}
+static void finish(bool result,const char *why){
+    if(!ctl.busy)return;
+    ctl.result=result;
+    snprintf(ctl.result_stage,sizeof(ctl.result_stage),"%s",why?why:"Eufy BLE unavailable");
+    ctl.busy=false;ctl.stage=ST_FINISHED;
+    reset_crypto();
+    if(ctl.connection!=BLE_HS_CONN_HANDLE_NONE){
+        ble_gap_terminate(ctl.connection,BLE_ERR_REM_USER_CONN_TERM);
+        ctl.connection=BLE_HS_CONN_HANDLE_NONE;
+    }
+    if(completed)xSemaphoreGive(completed);
+}
+static int gap_event(struct ble_gap_event *e,void *unused);
+static void fail(const char *step,int rc){
+    /* Diagnostic step + return code only; never include account/serial/packets. */
+    ESP_LOGW(TAG,"local command stage=%s failed code=%d",step,rc);
+    finish(false,step);
+}
+static int write_done(uint16_t conn,const struct ble_gatt_error *e,
+                      struct ble_gatt_attr *attr,void *arg);
+static bool send_step(void){
+    if(!ctl.busy||ctl.connection==BLE_HS_CONN_HANDLE_NONE||ctl.step>=5)return false;
+    uint8_t frame[EUFY_E10_FRAME_MAX];time_t now=time(NULL);
+    if(now<1600000000){fail("device_clock_unavailable",0);return false;}
+    int len=eufy_e10_handshake(&ctl.crypto,ctl.step,(uint32_t)now,frame,sizeof(frame));
+    if(len<0 || len>(int)ble_att_mtu(ctl.connection)-3){
+        fail("handshake_frame_size",len);return false;
+    }
+    int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,write_done,NULL);
+    memset(frame,0,sizeof(frame));
+    if(rc){fail("handshake_write",rc);return false;}
+    ctl.stage=ST_HANDSHAKE;return true;
+}
+static bool send_command(void){
+    if(!ctl.busy||!ctl.crypto.session_valid||ctl.connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    uint8_t frame[EUFY_E10_FRAME_MAX];const time_t now=time(NULL);
+    int len=-1;
+    if(ctl.operation==EUFY_BLE_POWER)
+        len=eufy_e10_power(&ctl.crypto,(uint32_t)now,ctl.on,frame,sizeof(frame));
+    else if(ctl.operation==EUFY_BLE_BRIGHTNESS)
+        len=eufy_e10_brightness(&ctl.crypto,(uint32_t)now,ctl.brightness,frame,sizeof(frame));
+    else if(ctl.operation==EUFY_BLE_COLOR)
+        len=eufy_e10_color(&ctl.crypto,(uint32_t)now,ctl.is_e22,ctl.red,ctl.green,
+                           ctl.blue,ctl.lamps,frame,sizeof(frame));
+    if(len<0||len>(int)ble_att_mtu(ctl.connection)-3){
+        fail("command_frame_size_or_mtu",len);return false;
+    }
+    ctl.stage=ST_COMMAND;
+    int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,write_done,NULL);
+    memset(frame,0,sizeof(frame));
+    if(rc){fail("command_gatt_write",rc);return false;}
+    return true;
+}
+static int write_done(uint16_t conn,const struct ble_gatt_error *e,
+                      struct ble_gatt_attr *attr,void *arg){
+    (void)conn;(void)attr;(void)arg;
+    if(!ctl.busy)return 0;
+    if(e->status){fail("gatt_write_ack",e->status);return 0;}
+    if(ctl.stage==ST_COMMAND){
+        finish(true,"eufy_gatt_write_acknowledged_physical_light_unverified");
+        return 0;
+    }
+    if(ctl.stage!=ST_HANDSHAKE)return 0;
+    ctl.step++;
+    if(ctl.step<5)send_step();
+    else if(ctl.crypto.session_valid)send_command();
+    else ctl.stage=ST_WAIT_KEY;
+    return 0;
+}
+static int subscribe_done(uint16_t conn,const struct ble_gatt_error *e,
+                          struct ble_gatt_attr *attr,void *arg){
+    (void)conn;(void)attr;(void)arg;
+    if(e->status){fail("cccd_write",e->status);return 0;}
+    ctl.step=0;send_step();return 0;
+}
+static int dsc_found(uint16_t conn,const struct ble_gatt_error *e,
+                     uint16_t chr_handle,const struct ble_gatt_dsc *dsc,void *arg){
+    (void)conn;(void)chr_handle;(void)arg;
+    if(e->status==0){
+        if(ble_uuid_u16(&dsc->uuid.u)==BLE_GATT_DSC_CLT_CFG_UUID16)ctl.cccd=dsc->handle;
+        return 0;
+    }
+    if(e->status!=BLE_HS_EDONE||!ctl.cccd){fail("notification_cccd_missing",e->status);return 0;}
+    const uint8_t enable[2]={1,0};ctl.stage=ST_SUBSCRIBING;
+    int rc=ble_gattc_write_flat(ctl.connection,ctl.cccd,enable,2,subscribe_done,NULL);
+    if(rc)fail("cccd_write_launch",rc);
+    return 0;
+}
+static int chr_found(uint16_t conn,const struct ble_gatt_error *e,
+                     const struct ble_gatt_chr *chr,void *arg){
+    (void)conn;(void)arg;
+    if(e->status==0){
+        if(ble_uuid_cmp(&chr->uuid.u,&WRITE.u)==0)ctl.writer=chr->val_handle;
+        if(ble_uuid_cmp(&chr->uuid.u,&NOTIFY.u)==0)ctl.notifier=chr->val_handle;
+        return 0;
+    }
+    if(e->status!=BLE_HS_EDONE||!ctl.writer||!ctl.notifier){
+        fail("eufy_characteristic_missing",e->status);return 0;
+    }
+    int rc=ble_gattc_disc_all_dscs(ctl.connection,ctl.notifier,ctl.service_end,dsc_found,NULL);
+    if(rc)fail("eufy_descriptor_discovery",rc);
+    return 0;
+}
+static int svc_found(uint16_t conn,const struct ble_gatt_error *e,
+                     const struct ble_gatt_svc *svc,void *arg){
+    (void)conn;(void)arg;
+    if(e->status==0){
+        if(ble_uuid_cmp(&svc->uuid.u,&SERVICE.u)==0){
+            ctl.service_start=svc->start_handle;ctl.service_end=svc->end_handle;
+        }return 0;
+    }
+    if(e->status!=BLE_HS_EDONE||!ctl.service_start){
+        fail("eufy_service_missing",e->status);return 0;
+    }
+    int rc=ble_gattc_disc_all_chrs(ctl.connection,ctl.service_start,ctl.service_end,chr_found,NULL);
+    if(rc)fail("eufy_characteristic_discovery",rc);
+    return 0;
+}
+static int mtu_done(uint16_t conn,const struct ble_gatt_error *e,uint16_t mtu,void *arg){
+    (void)arg;
+    if(!ctl.busy)return 0;
+    if(e->status!=0){fail("eufy_mtu_negotiation",e->status);return 0;}
+    ctl.mtu=mtu;ctl.stage=ST_DISCOVERING;
+    int rc=ble_gattc_disc_all_svcs(conn,svc_found,NULL);
+    if(rc)fail("eufy_service_discovery",rc);
+    return 0;
+}
+static int gap_event(struct ble_gap_event *e,void *unused){
+    (void)unused;
+    switch(e->type){
+    case BLE_GAP_EVENT_DISC:
+        if(!ctl.busy||ctl.stage!=ST_SCANNING)return 0;
+        if(memcmp(e->disc.addr.val,ctl.mac,6)!=0)return 0;
+        ctl.peer=e->disc.addr;ctl.stage=ST_FOUND;
+        ble_gap_disc_cancel();return 0;
+    case BLE_GAP_EVENT_DISC_COMPLETE:
+        if(ctl.busy&&ctl.stage==ST_SCANNING)fail("eufy_scan_no_target",0);
+        return 0;
+    case BLE_GAP_EVENT_CONNECT:
+        if(!ctl.busy)return 0;
+        if(e->connect.status){fail("eufy_gatt_connect",e->connect.status);return 0;}
+        ctl.connection=e->connect.conn_handle;ctl.stage=ST_DISCOVERING;
+        {int rc=ble_gattc_exchange_mtu(ctl.connection,mtu_done,NULL);
+         if(rc)fail("eufy_mtu_request",rc);}
+        return 0;
+    case BLE_GAP_EVENT_NOTIFY_RX:
+        if(!ctl.busy || e->notify_rx.conn_handle!=ctl.connection ||
+           e->notify_rx.attr_handle!=ctl.notifier)return 0;
+        {const uint16_t len=OS_MBUF_PKTLEN(e->notify_rx.om);
+         if(len>EUFY_E10_FRAME_MAX||len<10)return 0;
+         uint8_t b[EUFY_E10_FRAME_MAX];
+         if(os_mbuf_copydata(e->notify_rx.om,0,len,b)!=0)return 0;
+         int state=eufy_e10_notification(&ctl.crypto,b,len);
+         memset(b,0,sizeof(b));
+         if(state==1){
+             ctl.session_notified=true;
+             if(ctl.step>=5&&ctl.stage==ST_WAIT_KEY)send_command();
+         }}
+        return 0;
+    case BLE_GAP_EVENT_DISCONNECT:
+        if(e->disconnect.conn.conn_handle==ctl.connection){
+            ctl.connection=BLE_HS_CONN_HANDLE_NONE;
+            if(ctl.busy)fail("eufy_disconnected",e->disconnect.reason);
+        }return 0;
+    default:return 0;
+    }
+}
+void jh2_eufy_ble_host_ready(bool ready){ctl.host_ready=ready;}
+bool jh2_eufy_ble_active(void){return ctl.busy;}
+void jh2_eufy_ble_tick(void){
+    if(!ctl.host_ready || !ctl.busy)return;
+    if(esp_timer_get_time()>ctl.deadline){fail("eufy_command_timeout",0);return;}
+    if(ctl.stage==ST_QUEUED){
+        if(ble_gap_disc_active())return;/* never interrupt SmartDawn's scan */
+        uint8_t own=0;if(ble_hs_id_infer_auto(0,&own)!=0)return;
+        struct ble_gap_disc_params params={0};
+        params.passive=0;params.filter_duplicates=0;
+        int rc=ble_gap_disc(own,12000,&params,gap_event,NULL);
+        if(rc){fail("eufy_scan_start",rc);return;}
+        ctl.stage=ST_SCANNING;
+    }else if(ctl.stage==ST_FOUND){
+        if(ble_gap_disc_active())return;
+        uint8_t own=0;if(ble_hs_id_infer_auto(0,&own)!=0){fail("eufy_address",0);return;}
+        ctl.stage=ST_CONNECTING;
+        int rc=ble_gap_connect(own,&ctl.peer,15000,NULL,gap_event,NULL);
+        if(rc)fail("eufy_connect_start",rc);
+    }
+}
+bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
+    if(stage && n)snprintf(stage,n,"Eufy BLE unavailable");
+    if(!r||!recognized(r->name)||!r->mac||!r->serial||!r->account_id||
+       (r->operation!=EUFY_BLE_POWER&&r->operation!=EUFY_BLE_BRIGHTNESS&&r->operation!=EUFY_BLE_COLOR))
+        return false;
+    if(!lock)lock=xSemaphoreCreateMutex();
+    if(!completed)completed=xSemaphoreCreateBinary();
+    if(!lock||!completed||xSemaphoreTake(lock,pdMS_TO_TICKS(500))!=pdTRUE)return false;
+    if(ctl.busy || !ctl.host_ready){xSemaphoreGive(lock);return false;}
+    uint8_t address[6];
+    if(!parse_mac(r->mac,address) || !eufy_e10_init(&ctl.crypto,r->serial,r->account_id)){
+        xSemaphoreGive(lock);return false;
+    }
+    while(xSemaphoreTake(completed,0)==pdTRUE){}
+    memcpy(ctl.mac,address,6);
+    ctl.is_e22=!strcmp(r->name,"Garage")||!strcmp(r->name,"Shed");
+    ctl.operation=r->operation;ctl.on=r->on;ctl.brightness=r->brightness;
+    ctl.red=r->red;ctl.green=r->green;ctl.blue=r->blue;
+    ctl.lamps=r->lamp_count?r->lamp_count:60;
+    ctl.connection=BLE_HS_CONN_HANDLE_NONE;
+    ctl.service_start=ctl.service_end=ctl.writer=ctl.notifier=ctl.cccd=0;
+    ctl.step=0;ctl.session_notified=false;ctl.mtu=0;
+    ctl.result=false;ctl.result_stage[0]=0;
+    ctl.deadline=esp_timer_get_time()+48000000LL;ctl.stage=ST_QUEUED;ctl.busy=true;
+    xSemaphoreGive(lock);
+    bool woke=xSemaphoreTake(completed,pdMS_TO_TICKS(50000))==pdTRUE;
+    if(!woke)finish(false,"eufy_command_timeout");
+    bool ok=ctl.result;
+    if(stage&&n)snprintf(stage,n,"%s",ctl.result_stage[0]?ctl.result_stage:"eufy_transport_unavailable");
+    return ok;
+}
+void jh2_eufy_ble_status(cJSON *obj){
+    if(!obj)return;
+    cJSON *ble=cJSON_AddObjectToObject(obj,"eufyLocalBle");
+    if(!ble)return;
+    cJSON_AddBoolToObject(ble,"supported",true);
+    cJSON_AddBoolToObject(ble,"busy",ctl.busy);
+    cJSON_AddBoolToObject(ble,"connected",ctl.connection!=BLE_HS_CONN_HANDLE_NONE);
+    cJSON_AddStringToObject(ble,"state",ctl.busy?"processing":
+                ctl.result?"last-command-delivered":"idle-or-unavailable");
+    /* Do not report serial, account ID, MAC, ciphertext or session key. */
+}
