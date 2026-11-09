@@ -40,3 +40,5 @@ jobs:
         run: npm run test:auth-offline
       - name: Existing lighting and scheduler regression suite
         run: npm test
+      - name: Parse guarded Oracle deployment script (no execution)
+        run: bash -n scripts/deploy-eufy-mega-20261109.sh
