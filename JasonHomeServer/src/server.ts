@@ -412,6 +412,61 @@ async function ensureEufy(force=false){
   return preparing;
 }
 
+// Explicit manual CAPTCHA flow. Challenges live only in process memory;
+// never persist the image, answer or Eufy credentials to logs or SQLite.
+let pendingEufyCaptcha:{client:EufyClient;id:string;image:string;expiresAt:number}|null=null;
+function activeEufyCaptcha(){
+  if(pendingEufyCaptcha&&pendingEufyCaptcha.expiresAt>Date.now())return pendingEufyCaptcha;
+  pendingEufyCaptcha=null;
+  return null;
+}
+function verificationStatus(){
+  const challenge=activeEufyCaptcha();
+  return {ok:true,required:!eufyReady,type:challenge?"captcha":null,
+    image:challenge?.image||null,
+    message:challenge?"Enter the characters shown to finish the Eufy login":
+      "No Eufy CAPTCHA has been supplied. Select Get verification image for one manual login attempt."};
+}
+async function finishManualEufyLogin(client:EufyClient){
+  await client.prepare();
+  const names=client.readyNames();
+  for(const name of DEVICE_NAMES)if(!names.includes(name))throw new Error("Missing expected Eufy light: "+name);
+  eufy=client;eufyReady=true;readyNames=names;eufyStatus=`Ready ${names.length}/4`;
+  setMeta("eufy_session",JSON.stringify(client.exportSession()));
+  delMeta(EUFY_AUTH_RETRY_AT_KEY);
+  delMeta(EUFY_AUTH_RETRY_REASON_KEY);
+  pendingEufyCaptcha=null;
+}
+async function manualEufyVerification(action:string,answer:string){
+  if(action!=="start"&&action!=="answer")throw new Error("Invalid Eufy verification action");
+  if(action==="answer"&&!activeEufyCaptcha())throw new Error("CAPTCHA expired or was not requested; get a new image");
+  let client:EufyClient, captcha:{id:string;answer:string}|undefined;
+  if(action==="answer"){
+    const challenge=activeEufyCaptcha()!;
+    if(!answer.trim()||answer.length>64)throw new Error("Enter the CAPTCHA characters");
+    client=challenge.client;
+    captcha={id:challenge.id,answer:answer.trim()};
+    pendingEufyCaptcha=null;
+  }else{
+    pendingEufyCaptcha=null;
+    client=new EufyClient(meta("install_id")||DEFAULT_INSTALL);
+  }
+  try{
+    await client.login(EMAIL,PASSWORD,captcha);
+    await finishManualEufyLogin(client);
+    return {ok:true,required:false,type:null,image:null,readyNames:[...readyNames]};
+  }catch(error:any){
+    if(error instanceof EufyCaptchaRequired){
+      pendingEufyCaptcha={client,id:error.captchaId,image:error.image,expiresAt:Date.now()+5*60*1000};
+      return verificationStatus();
+    }
+    // Don't report success or fabricate an image when Eufy only returned 100028.
+    const message=String(error?.message||error||"Manual Eufy login failed");
+    eufyStatus=message;
+    throw error;
+  }
+}
+
 function nativeFactoryLightId(scene:Scene):number|null{
   const m=/^Exact Native Factory #(\d+)$/.exec(String(scene?.effect||""));
   if(!m)return null;
@@ -1336,6 +1391,14 @@ const server=http.createServer(async(req,res)=>{
     if(!authorized(req))return json(res,401,{ok:false,error:"Unauthorized"});
 
     if(method==="GET"&&path==="/api/status")return json(res,200,{...await statusPayload(false),autoLogin:eufyAutoPauseStatus()});
+    if(method==="GET"&&path==="/api/eufy/verification")
+      return json(res,200,verificationStatus());
+    if(method==="POST"&&path==="/api/eufy/verification"){
+      const body:any=await readJson(req);
+      const action=String(body?.action||"");
+      const answer=String(body?.answer||"");
+      return json(res,200,await manualEufyVerification(action,answer));
+    }
     if(method==="GET"&&path==="/api/eufy/auto-login")
       return json(res,200,{ok:true,...eufyAutoPauseStatus()});
     if(method==="POST"&&path==="/api/eufy/auto-login"){
