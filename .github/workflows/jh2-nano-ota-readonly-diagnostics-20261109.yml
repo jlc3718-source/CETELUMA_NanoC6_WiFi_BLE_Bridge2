@@ -1,0 +1,31 @@
+name: JH2 Nano OTA read-only diagnostics
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-nano-ota-readonly-diagnostics-20261109.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read authenticated Nano status only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import subprocess,json,urllib.request
+          d=json.loads(subprocess.check_output(["docker","inspect","jason-home-2-web"],text=True))[0]
+          env=dict(x.split("=",1) for x in d["Config"]["Env"] if "=" in x)
+          token=env.get("JH2_UPSTREAM_TOKEN")
+          assert token and len(token)>31
+          req=urllib.request.Request("http://127.0.0.1:8081/api/curtain/status",
+            headers={"Authorization":"Bearer "+token})
+          with urllib.request.urlopen(req,timeout=12) as response:s=json.load(response)
+          fields=["firmware","online","signedOta","queued","relayStreaming","lastSeen"]
+          print("NANO_OTA_STATUS",json.dumps({k:s.get(k) for k in fields},sort_keys=True))
+          curtain=s.get("curtain") or {}
+          filtered={k:v for k,v in curtain.items() if any(w in k.lower() for w in ["heap","wifi","memory","mtu","connected","rssi","frag","alloc","stack","conn","error"])}
+          print("NANO_RUNTIME_DIAGNOSTICS",json.dumps(filtered,sort_keys=True)[:5500])
+          PY
