@@ -32,6 +32,14 @@ export function calibratedFactoryPreset(model:string,preset:EufyFactoryPreset):E
   })};
 }
 
+// An actual image challenge returned by Eufy's passport login. The image
+// stays in process memory; it is never logged or persisted in SQLite.
+export class EufyCaptchaRequired extends Error {
+  constructor(public readonly captchaId:string,public readonly image:string){
+    super("Eufy CAPTCHA image is ready for verification");
+    this.name="EufyCaptchaRequired";
+  }
+}
 export class EufyClient {
   region="us-pr";bootstrap="";share="";ident="";token="";uid="";accountUid="";
   authed=false;lights=new Map<string,any>();creds:MqttCredentials|null=null;
@@ -66,20 +74,39 @@ export class EufyClient {
       const h=this.baseHeaders();h["content-type"]=types[attempt];this.signedHeaders(h,this.share,this.ident,cipher);if(authenticated)this.authHeaders(h);if(scope)h["app-name"]=scope;
       const r=await this.raw(`app-${service}-${this.region}.eufy.com`,path,cipher,h),code=Number(r.code??-1);
       if(r._http===200&&code===0){let d=r.data;if(typeof d==="string"&&d)d=JSON.parse(aesDecryptText(d,this.share));return d??{};}
+      if(path==="/passport/login"){
+        // Eufy returns a CAPTCHA as code 100032 (and sometimes 100033).
+        // Some Mega responses encrypt data, so handle either wire form.
+        let challenge:any=r.data;
+        if(typeof challenge==="string"){
+          try{challenge=JSON.parse(aesDecryptText(challenge,this.share));}
+          catch{try{challenge=JSON.parse(challenge);}catch{challenge=null;}}
+        }
+        if(challenge&&typeof challenge==="object"){
+          const entry=challenge.captcha&&typeof challenge.captcha==="object"?challenge.captcha:challenge;
+          const image=String(entry.item||entry.image||"");
+          const id=String(entry.captcha_id??entry.captchaId??"");
+          if((code===100032||code===100033)&&
+             /^data:image\/(?:png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(image)&&image.length<=300000)
+            throw new EufyCaptchaRequired(id,image);
+        }
+      }
       if(attempt===0&&(code===4416||code===10000||r._http===400))continue;
       if(code===401||r._http===401){this.authed=false;this.lights.clear();this.creds=null;}
       throw new Error(`Eufy ${path} failed: HTTP ${r._http}, code ${code}`);
     }
     throw new Error(`Eufy ${path} failed`);
   }
-  async login(email:string,password:string){
+  async login(email:string,password:string,captcha?:{id:string;answer:string}){
     if(this.authed)return;
-    const h=this.baseHeaders();h["content-type"]="application/json";
-    const est=await this.raw("mega-us-pr.eufy.com","/passport/estimate_domain",JSON.stringify({ab:"us",mode:1}),h);
-    if(est.code!==0)throw new Error(`Eufy region lookup failed: HTTP ${est._http}, code ${est.code}`);
-    const blob=JSON.stringify(est.data||{});this.region=blob.includes("-eu-")?"eu-pr":"us-pr";const domain=est.data?.domain||est.data?.host||"";if(domain&&!domain.startsWith("mega-")&&allowedApi(domain))this.bootstrap=domain;
-    await this.exchange();
-    const enc=encryptPassword(password),body:any={email,password:enc.cipherText,ab:"US",client_secret_info:{public_key:enc.publicKey},verify_code:"",login_id:"",answer:"",captcha_id:""};
+    if(!captcha||!this.share){
+      const h=this.baseHeaders();h["content-type"]="application/json";
+      const est=await this.raw("mega-us-pr.eufy.com","/passport/estimate_domain",JSON.stringify({ab:"us",mode:1}),h);
+      if(est.code!==0)throw new Error(`Eufy region lookup failed: HTTP ${est._http}, code ${est.code}`);
+      const blob=JSON.stringify(est.data||{});this.region=blob.includes("-eu-")?"eu-pr":"us-pr";const domain=est.data?.domain||est.data?.host||"";if(domain&&!domain.startsWith("mega-")&&allowedApi(domain))this.bootstrap=domain;
+      await this.exchange();
+    }
+    const enc=encryptPassword(password),body:any={email,password:enc.cipherText,ab:"US",client_secret_info:{public_key:enc.publicKey},verify_code:"",login_id:"",answer:captcha?.answer||"",captcha_id:captcha?.id||""};
     const result=await this.signed("passport","/passport/login",body,!!this.token),fa=result?.fa_info;if(fa&&fa.info)throw new Error("Eufy email verification is required before cloud deployment");
     this.uid=result.ap_cloud_user_id||result.user_id||result.userId||"";this.accountUid=result.user_id||result.userId||this.uid;this.token=result.auth_token||result.token||"";
     if(!this.uid||!this.accountUid||!this.token)throw new Error("Eufy login returned no usable session");
