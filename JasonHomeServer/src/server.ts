@@ -4,7 +4,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { EufyClient, type EufySession } from "./eufy/client.js";
+import { EufyClient, EufyCaptchaRequired, type EufySession } from "./eufy/client.js";
 import { isBrightnessOnlyControl } from "./eufy/light-commands.js";
 import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
@@ -314,6 +314,20 @@ async function serializedForDevice<T>(name:string,fn:()=>Promise<T>):Promise<T>{
 
 // Persist Eufy cloud-login cooldown across controller restarts and
 // 30-second scheduler checks. No credentials, tokens or session data are logged.
+// Default to a 24-hour automatic cloud pause from the first deployment.
+// Manual login/CAPTCHA requests remain available throughout the pause.
+const EUFY_AUTO_PAUSE_UNTIL_KEY="eufy_auto_pause_until_v1";
+const EUFY_AUTO_PAUSE_HOURS=24;
+if(meta(EUFY_AUTO_PAUSE_UNTIL_KEY)===null)
+  setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+EUFY_AUTO_PAUSE_HOURS*60*60*1000));
+function eufyAutoPauseUntil():number{
+  const until=Number(meta(EUFY_AUTO_PAUSE_UNTIL_KEY)||"0");
+  return Number.isFinite(until)&&until>Date.now()?until:0;
+}
+function eufyAutoPauseStatus(){
+  const until=eufyAutoPauseUntil();
+  return {enabled:until===0,paused:until>0,until:until?new Date(until).toISOString():null};
+}
 const EUFY_AUTH_RETRY_AT_KEY="eufy_auth_retry_at_v1";
 const EUFY_AUTH_RETRY_REASON_KEY="eufy_auth_retry_reason_v1";
 const EUFY_AUTH_LOCKOUT_MS=24*60*60*1000;
@@ -337,7 +351,14 @@ function markEufyDegraded(error:any){
 async function ensureEufy(force=false){
   if(!force&&eufy&&eufyReady&&readyNames.length===4)return eufy;
   if(preparing)return preparing;
-  const notBefore=eufyAuthRetryAt();
+  // force means a human-requested reconnect. Never block that explicitly
+  // initiated path; only the scheduler and background cloud requests are paused.
+  const autoPauseUntil=force?0:eufyAutoPauseUntil();
+  if(autoPauseUntil){
+    eufyStatus=`Automatic Eufy cloud access paused until ${new Date(autoPauseUntil).toISOString()}; manual reconnect is available`;
+    throw new Error(eufyStatus);
+  }
+  const notBefore=force?0:eufyAuthRetryAt();
   if(notBefore){
     const reason=meta(EUFY_AUTH_RETRY_REASON_KEY)||"authentication failure";
     eufyStatus=`Eufy login paused (${reason}) until ${new Date(notBefore).toISOString()}; no cloud login attempted`;
@@ -1167,12 +1188,13 @@ async function reconcile(ignoreOverride=false,forceSend=false){
     // Do not enqueue 4 more login attempts every 30 seconds while blocked.
     // Leave desired_state untouched so recovery replays the correct schedule.
     const authRetryAt=eufyAuthRetryAt();
-    if(authRetryAt&&changes.length){
-      const evalState={at:new Date(now).toISOString(),owner,action:"eufy-auth-backoff",
-        paused:true,sent:0,errors:[],retryAfter:new Date(authRetryAt).toISOString()};
+    const autoPauseUntil=eufyAutoPauseUntil();
+    if((authRetryAt||autoPauseUntil)&&changes.length){
+      const evalState={at:new Date(now).toISOString(),owner,action:"eufy-auto-signin-paused",
+        paused:true,sent:0,errors:[],retryAfter:new Date(autoPauseUntil||authRetryAt).toISOString()};
       setMeta("last_reconcile",new Date(now).toISOString());
       setMeta("last_scheduler_eval",JSON.stringify(evalState));
-      return {ok:true,paused:true,reason:"eufy-auth-backoff",sent:0,errors:[],retryAfter:evalState.retryAfter};
+      return {ok:true,paused:true,reason:"eufy-auto-signin-paused",sent:0,errors:[],retryAfter:evalState.retryAfter};
     }
     const results=await Promise.all(changes.map(async c=>{
       try{
@@ -1313,7 +1335,19 @@ const server=http.createServer(async(req,res)=>{
     }
     if(!authorized(req))return json(res,401,{ok:false,error:"Unauthorized"});
 
-    if(method==="GET"&&path==="/api/status")return json(res,200,await statusPayload(url.searchParams.get("refresh")==="1"));
+    if(method==="GET"&&path==="/api/status")return json(res,200,{...await statusPayload(false),autoLogin:eufyAutoPauseStatus()});
+    if(method==="GET"&&path==="/api/eufy/auto-login")
+      return json(res,200,{ok:true,...eufyAutoPauseStatus()});
+    if(method==="POST"&&path==="/api/eufy/auto-login"){
+      const value:any=await readJson(req);
+      if(typeof value?.enabled!=="boolean")return json(res,400,{ok:false,error:"enabled must be a boolean"});
+      if(value.enabled){
+        delMeta(EUFY_AUTO_PAUSE_UNTIL_KEY);
+        delMeta(EUFY_AUTH_RETRY_AT_KEY);
+        delMeta(EUFY_AUTH_RETRY_REASON_KEY);
+      }else setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+24*60*60*1000));
+      return json(res,200,{ok:true,...eufyAutoPauseStatus()});
+    }
     if(method==="GET"&&path==="/api/devices")return json(res,200,{ok:true,devices:(await statusPayload(false)).devices});
     if(method==="POST"&&path==="/api/automation/ownership"){
       const input:any=await readJson(req),owner=String(input?.owner||"").toLowerCase();
