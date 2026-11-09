@@ -1,0 +1,24 @@
+name: JH2 Nano pre-update active-show safety status
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-nano-show-safe-state-20261109.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect active curtain playback before safe BLE firmware upgrade
+        run: |
+          sudo -n python3 - <<'PY'
+          import subprocess,json,urllib.request
+          env=dict(v.split('=',1) for v in json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web']))[0]['Config']['Env'] if '=' in v)
+          token=env['JH2_UPSTREAM_TOKEN']
+          r=urllib.request.Request('http://127.0.0.1:8081/api/curtain/status',headers={'Authorization':'Bearer '+token})
+          with urllib.request.urlopen(r,timeout=12) as z:s=json.load(z)
+          keys=['firmware','online','queued','relayStreaming','lastPlayable','startupShow','showSequence','desired','manualUntil','signedOta','eufyLocalConfigured']
+          doc={k:s.get(k) for k in keys}
+          print('SAFE_PLAYBACK_STATUS',json.dumps(doc,sort_keys=True)[:5500])
+          PY
