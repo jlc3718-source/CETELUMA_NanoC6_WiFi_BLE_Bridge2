@@ -1,0 +1,18 @@
+name: JH2 Nano E120 E22 local E10 brightness100 GATT test
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-216-eufy-brightness-smoke-20261110.yml']
+permissions: {contents: read}
+jobs:
+  brightness:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test two device models without changing stored effects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-216-eufy-brightness-smoke-20261110.py
+          sudo -n python3 .github/scripts/jh2-216-eufy-brightness-smoke-20261110.py
