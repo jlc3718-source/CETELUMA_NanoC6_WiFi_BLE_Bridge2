@@ -57,6 +57,7 @@ typedef struct {
     uint8_t mac[6]; /* NimBLE byte order (LSB first). */
     int64_t seen_us,connected_us,gatt_us,attempt_us,failure_us;
     int8_t rssi;
+    int64_t probe_us,contact_us;
     unsigned attempts,completed,failures;
     char failure[48];
 } eufy_presence;
@@ -70,6 +71,68 @@ static volatile bool bg_scanning=false,closing=false;
 static volatile int64_t bg_scan_at=0,bg_scan_finished=0,bg_next_scan=0;
 static uint16_t closing_handle=BLE_HS_CONN_HANDLE_NONE;
 static unsigned bg_scan_count=0;
+/* Bounded inventory of the actual BLE advertisements the Nano hears.
+ * Only address, human-readable advertised name, RSSI and age are reported.
+ * Devices with rotating addresses may appear separately; never assume
+ * identity or Eufy control capability from an advertisement alone. */
+#define JH2_BLE_INVENTORY_MAX 24
+typedef struct {
+    uint8_t address[6],address_type;
+    char name[26];
+    int8_t rssi;
+    int64_t last_us;
+} ble_inventory_item;
+static ble_inventory_item inventory[JH2_BLE_INVENTORY_MAX];
+static int inventory_count=0;
+static int index_by_mac(const uint8_t addr[6]);
+static const char *unit_by_addr(const uint8_t a[6]){
+    int n=index_by_mac(a);
+    return n>=0?units[n].name:"";
+}
+static void advertised_name(const struct ble_gap_disc_desc *a,char name[26]){
+    name[0]=0;
+    size_t i=0;
+    while(i+1<a->length_data){
+        uint8_t size=a->data[i];
+        if(size==0||i+1+size>a->length_data)break;
+        uint8_t type=a->data[i+1];
+        if((type==0x09||type==0x08)&&size>1){
+            size_t n=size-1;
+            if(n>25)n=25;
+            for(size_t j=0;j<n;j++){
+                uint8_t b=a->data[i+2+j];
+                name[j]=(b>=32&&b<=126)?(char)b:'_';
+            }
+            name[n]=0;
+            return;
+        }
+        i+=1+size;
+    }
+}
+static void record_advert(const struct ble_gap_disc_desc *a){
+    const int64_t now=esp_timer_get_time();
+    int k=-1;
+    for(int i=0;i<inventory_count;i++)
+        if(inventory[i].address_type==a->addr.type&&
+           memcmp(inventory[i].address,a->addr.val,6)==0){k=i;break;}
+    if(k<0){
+        if(inventory_count<JH2_BLE_INVENTORY_MAX)k=inventory_count++;
+        else{
+            k=0;
+            for(int i=1;i<JH2_BLE_INVENTORY_MAX;i++)
+                if(inventory[i].last_us<inventory[k].last_us)k=i;
+        }
+        memset(&inventory[k],0,sizeof(inventory[k]));
+        memcpy(inventory[k].address,a->addr.val,6);
+        inventory[k].address_type=a->addr.type;
+    }
+    inventory[k].last_us=now;
+    inventory[k].rssi=a->rssi;
+    char name[26];
+    advertised_name(a,name);
+    if(name[0])snprintf(inventory[k].name,sizeof(inventory[k].name),"%s",name);
+}
+
 static int index_by_name(const char *name){
     if(!name)return -1;
     for(int i=0;i<4;i++)if(!strcmp(name,units[i].name))return i;
@@ -80,6 +143,7 @@ static int index_by_mac(const uint8_t addr[6]){
     return -1;
 }
 static void observe(const struct ble_gap_disc_desc *advert){
+    record_advert(advert);
     const int i=index_by_mac(advert->addr.val);
     if(i>=0){units[i].seen_us=esp_timer_get_time();units[i].rssi=advert->rssi;}
 }
@@ -140,7 +204,11 @@ static void finish(bool result,const char *why){
     last_phase=ctl.stage;
     if(ctl.active_index>=0&&ctl.active_index<4){
         eufy_presence *u=&units[ctl.active_index];
-        if(result){u->gatt_us=esp_timer_get_time();u->completed++;}
+        if(result){
+            u->contact_us=esp_timer_get_time();u->completed++;
+            if(ctl.operation==EUFY_BLE_PROBE)u->probe_us=u->contact_us;
+            else u->gatt_us=u->contact_us;
+        }
         else{u->failure_us=esp_timer_get_time();u->failures++;
              snprintf(u->failure,sizeof(u->failure),"%s",why?why:"unknown");}
     }
@@ -180,6 +248,10 @@ static bool send_step(void){
 }
 static bool send_command(void){
     if(!ctl.busy||!ctl.crypto.session_valid||ctl.connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    if(ctl.operation==EUFY_BLE_PROBE){
+        finish(true,"eufy_encrypted_session_verified_no_light_command");
+        return true;
+    }
     uint8_t frame[EUFY_E10_FRAME_MAX];const time_t now=time(NULL);
     int len=-1;
     if(ctl.operation==EUFY_BLE_POWER)
@@ -396,7 +468,8 @@ void jh2_eufy_ble_tick(void){
 bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
     if(stage && n)snprintf(stage,n,"Eufy BLE unavailable");
     if(!r||!recognized(r->name)||!r->mac||!r->serial||!r->account_id||
-       (r->operation!=EUFY_BLE_POWER&&r->operation!=EUFY_BLE_BRIGHTNESS&&r->operation!=EUFY_BLE_COLOR))
+       (r->operation!=EUFY_BLE_POWER&&r->operation!=EUFY_BLE_BRIGHTNESS&&
+        r->operation!=EUFY_BLE_COLOR&&r->operation!=EUFY_BLE_PROBE))
         return false;
     if(!lock)lock=xSemaphoreCreateMutex();
     if(!completed)completed=xSemaphoreCreateBinary();
@@ -481,6 +554,24 @@ void jh2_eufy_ble_status(cJSON *obj){
     cJSON_AddBoolToObject(ble,"surveyRunning",bg_scanning);
     cJSON_AddNumberToObject(ble,"lastSurveyAgeSeconds",age_seconds(bg_scan_finished));
     cJSON_AddNumberToObject(ble,"surveyCount",bg_scan_count);
+    cJSON *found=cJSON_AddArrayToObject(ble,"scanResults");
+    for(int i=0;found&&i<inventory_count;i++){
+        const ble_inventory_item *v=&inventory[i];
+        const int age=age_seconds(v->last_us);
+        if(age<0||age>300)continue;
+        cJSON *item=cJSON_CreateObject();
+        if(!item)continue;
+        char address[18];
+        snprintf(address,sizeof(address),"%02X:%02X:%02X:%02X:%02X:%02X",
+            v->address[5],v->address[4],v->address[3],
+            v->address[2],v->address[1],v->address[0]);
+        cJSON_AddStringToObject(item,"address",address);
+        cJSON_AddStringToObject(item,"name",v->name);
+        cJSON_AddStringToObject(item,"savedName",unit_by_addr(v->address));
+        cJSON_AddNumberToObject(item,"rssiDbm",v->rssi);
+        cJSON_AddNumberToObject(item,"ageSeconds",age);
+        cJSON_AddItemToArray(found,item);
+    }
     cJSON *list=cJSON_AddArrayToObject(ble,"devices");
     for(int i=0;i<4&&list;i++){
         const eufy_presence *u=&units[i];
@@ -498,6 +589,8 @@ void jh2_eufy_ble_status(cJSON *obj){
         cJSON_AddNumberToObject(item,"lastAdvertisementAgeSeconds",since);
         cJSON_AddNumberToObject(item,"rssiDbm",u->seen_us?u->rssi:0);
         cJSON_AddNumberToObject(item,"lastGattAckAgeSeconds",age_seconds(u->gatt_us));
+        cJSON_AddNumberToObject(item,"lastProbeAgeSeconds",age_seconds(u->probe_us));
+        cJSON_AddNumberToObject(item,"lastContactAgeSeconds",age_seconds(u->contact_us));
         cJSON_AddNumberToObject(item,"lastAttemptAgeSeconds",age_seconds(u->attempt_us));
         cJSON_AddNumberToObject(item,"lastConnectedAgeSeconds",age_seconds(u->connected_us));
         cJSON_AddNumberToObject(item,"lastFailureAgeSeconds",age_seconds(u->failure_us));
