@@ -1,0 +1,20 @@
+name: JH2 2.0.15 rebuild saved Turkey Day animations from Oracle GIFs
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-215-rebuild-show-from-gifs-20261109.yml']
+permissions: {contents: read}
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild existing seven 40x40 clips with exact saved durations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/jh2-gif-recovery"
+          "$RUNNER_TEMP/jh2-gif-recovery/bin/pip" -q install "Pillow==11.3.0"
+          "$RUNNER_TEMP/jh2-gif-recovery/bin/python" -m py_compile .github/scripts/jh2-215-rebuild-exact-saved-show-20261109.py
+          sudo -n "$RUNNER_TEMP/jh2-gif-recovery/bin/python" .github/scripts/jh2-215-rebuild-exact-saved-show-20261109.py
