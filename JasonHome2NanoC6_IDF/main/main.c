@@ -1399,6 +1399,8 @@ static void start_ble_after_home_wifi(void){
     ESP_LOGW(TAG,"2.0.6 BLE startup attempt finished; setup AP retained");
 }
 
+/* Radio TX control reads the existing connection handle; never reconnects BLE. */
+uint16_t jh2_ble_connection_handle(void){return connection;}
 void app_main(void){
     // Deliberately NEVER erase NVS; production Wi-Fi and pairing data survive.
     esp_err_t rc=nvs_flash_init();
