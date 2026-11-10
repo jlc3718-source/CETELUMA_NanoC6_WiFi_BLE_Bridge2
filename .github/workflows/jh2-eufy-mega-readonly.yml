@@ -31,4 +31,5 @@ jobs:
         env:
           EUFY_EMAIL: ${{ secrets.EUFY_EMAIL }}
           EUFY_PASSWORD: ${{ secrets.EUFY_PASSWORD }}
+          JH2_SHADOW_ID_KEY: '42760043531'
         run: node sdk-readonly-check.mjs
