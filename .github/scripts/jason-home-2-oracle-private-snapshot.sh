@@ -9,8 +9,8 @@ GATE=/opt/jason-home-2
 # Commands requiring privilege use individually authorized noninteractive sudo.
 test -s "$ROOT/.env" && test -s "$ROOT/data/jason-home.sqlite" && sudo test -s "$GATE/private.env"
 WORK="$(mktemp -d)"
-RESTORE_NAME="jh2-restore-test-$"
-RESTORE_IMAGE="jason-home-2-restore-test:$"
+RESTORE_NAME="jh2-restore-test-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+RESTORE_IMAGE="jason-home-2-restore-test:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 restore_cleanup() {
   sudo docker rm -f "$RESTORE_NAME" >/dev/null 2>&1 || true
   sudo docker image rm "$RESTORE_IMAGE" >/dev/null 2>&1 || true
