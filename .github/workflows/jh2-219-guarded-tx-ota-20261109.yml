@@ -1,0 +1,21 @@
+name: JH2 Nano 2.0.19 guarded signed OTA and actual PHY TX-power test
+on:
+  push:
+    branches: [feature/jh2-nano-real-tx-power-20261109]
+    paths: ['.github/workflows/jh2-219-guarded-tx-ota-20261109.yml']
+permissions: {contents: read}
+concurrency: {group: jh2-production-signed-ota-singleton, cancel-in-progress: false}
+jobs:
+  upgrade:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - name: Signed A/B upgrade with saved curtain show and Wi-Fi plus BLE PHY verification
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-219-guarded-tx-ota-20261109.py
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-219-guarded-tx-ota-20261109.py
