@@ -18,4 +18,6 @@ void jh2_eufy_ble_tick(void); /* caller's 1-second main loop, never the NimBLE c
 bool jh2_eufy_ble_active(void);
 /* Only one Eufy command at once. Blocks caller's Oracle bridge task, not BLE host. */
 bool jh2_eufy_ble_execute(const eufy_ble_request *request, char *stage, size_t stage_len);
+/* Trigger a non-invasive BLE advertisement scan; never touches lamp state. */
+bool jh2_eufy_ble_rescan(char *status, size_t max_length);
 void jh2_eufy_ble_status(cJSON *object); /* status only, never identity or secrets */
