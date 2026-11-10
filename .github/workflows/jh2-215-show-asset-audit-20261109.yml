@@ -1,0 +1,49 @@
+name: JH2 lost startup show asset audit read only
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-215-show-asset-audit-20261109.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check each archived show source and compiled asset without modification
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import sqlite3,json,subprocess
+          d=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          root=[x['Source'] for x in d['Mounts'] if x['Destination']=='/data'][0]
+          with sqlite3.connect('file:'+root+'/jason-home-2.sqlite?mode=ro',uri=True) as db:
+           db.row_factory=sqlite3.Row
+           rows=db.execute("SELECT id,name,items_json FROM curtain_internet_shows WHERE name='Turkey Day'").fetchall()
+           print('SHOW_TABLE_COUNTS',len(rows))
+           for row in rows:
+            items=json.loads(row['items_json'])
+            print('SHOW_ENTRY',json.dumps({'name':row['name'],'items':len(items)}))
+            for item in items:
+             id=item.get('id')
+             found=db.execute("SELECT id,kind,length(gif) as bytes FROM curtain_internet_art WHERE id=?",(id,)).fetchone()
+             candidates=[]
+             recent=db.execute("SELECT id,action,state,source,payload FROM curtain_commands WHERE action='asset' ORDER BY id DESC LIMIT 2500").fetchall()
+             for c in recent:
+              try:sha=json.loads(c['payload']).get('sha256')
+              except:continue
+              asset=db.execute("SELECT metadata,length(bytes) bytes FROM curtain_assets WHERE sha=?",(sha,)).fetchone()
+              if not asset:continue
+              try:m=json.loads(asset['metadata'])
+              except:continue
+              if ((m.get('playbackProfile') or {}).get('sourceId')==id):
+               candidates.append((c['source'],c['state'],m.get('format'),asset['bytes']))
+             print('SOURCE_ASSET_AVAILABILITY',json.dumps({'sourceSuffix':id[-6:],'gifPresent':bool(found),
+              'gifBytes':found['bytes'] if found else 0,
+              'kind':found['kind'] if found else None,
+              'compiledDistinct':len(set(str(x) for x in candidates)),
+              'recentAssets':candidates[:5]}))
+           print('CURTAIN_COMPILED_TOTAL',db.execute('SELECT count(*) FROM curtain_assets').fetchone()[0])
+           print('CURTAIN_SHOW_COMMAND_SOURCES',[(r['source'],r['state'],r['count']) for r in db.execute(
+             "SELECT source,state,count(*) count FROM curtain_commands WHERE action='asset' GROUP BY source,state ORDER BY count(*) DESC LIMIT 10")])
+          PY
