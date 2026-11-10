@@ -462,7 +462,31 @@ static int gap_event(struct ble_gap_event *e,void *unused){
          memset(b,0,sizeof(b));
          if(state==1){
              ctl.session_notified=true;
-             if(ctl.step>=5&&ctl.stage==ST_WAIT_KEY)send_command();
+             if(ctl.step>=5&&ctl.stage==ST_WAIT_KEY){
+                 ctl.preflight=(ctl.operation==EUFY_BLE_COLOR||ctl.operation==EUFY_BLE_DYNAMIC);
+                 if(ctl.preflight)query_device_state();else send_command();
+             }
+         }else if(state==2){
+             if(ctl.crypto.last_ack_result>0&&
+                 (ctl.stage==ST_COMMAND||ctl.stage==ST_QUERYING))
+                 fail("eufy_device_rejected_command",ctl.crypto.last_ack_result);
+         }else if(state==4&&ctl.stage==ST_QUERYING){
+             if(ctl.preflight){
+                 ctl.preflight=false;
+                 if(!ctl.crypto.state_has_segments||ctl.crypto.state_segments<1||
+                    ctl.crypto.state_segments>120){
+                     fail("eufy_segment_count_unverified",0);
+                 }else{
+                     ctl.lamps=(uint8_t)ctl.crypto.state_segments;
+                     send_command();
+                 }
+             }else if(expected_device_state()){
+                 finish(true,ctl.operation==EUFY_BLE_PROBE?
+                    "eufy_encrypted_device_state_read_verified_no_light_change":
+                    "eufy_device_state_verified_physical_leds_unobserved");
+             }else if(ctl.readback_retries++<2){
+                 (void)query_device_state();
+             }else fail("eufy_device_state_mismatch",0);
          }}
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
