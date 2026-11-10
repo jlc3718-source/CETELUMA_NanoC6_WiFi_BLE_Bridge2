@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "cJSON.h"
-typedef enum { EUFY_BLE_POWER=1, EUFY_BLE_BRIGHTNESS=2, EUFY_BLE_COLOR=3, EUFY_BLE_PROBE=4 } eufy_ble_op;
+typedef enum { EUFY_BLE_POWER=1, EUFY_BLE_BRIGHTNESS=2, EUFY_BLE_COLOR=3, EUFY_BLE_PROBE=4, EUFY_BLE_DYNAMIC=5, EUFY_BLE_PRESET=6 } eufy_ble_op;
 typedef struct {
     const char *name;           /* Pool / House / Garage / Shed, validated */
     const char *mac;            /* exact MAC from saved Eufy controller */
@@ -11,7 +11,11 @@ typedef struct {
     const char *account_id;     /* private 40-byte Eufy account identifier */
     eufy_ble_op operation;
     bool on;
-    uint8_t brightness, red, green, blue, lamp_count;
+    uint8_t brightness, red, green, blue, lamp_count, speed;
+    uint16_t effect_id; /* 20000-20006 dynamic or static */
+    uint32_t preset_cloud_id;
+    const uint8_t *preset_tail; /* validated E22 0x020D a3.. layers, never identity */
+    size_t preset_tail_len;
 } eufy_ble_request;
 void jh2_eufy_ble_host_ready(bool ready);
 void jh2_eufy_ble_tick(void); /* caller's 1-second main loop, never the NimBLE callback */
