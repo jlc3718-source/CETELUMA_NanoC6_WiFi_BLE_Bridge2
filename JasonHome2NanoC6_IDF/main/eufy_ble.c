@@ -506,6 +506,9 @@ void jh2_eufy_ble_tick(void){
     if(!ctl.host_ready)return;
     const int64_t now_us=esp_timer_get_time();
     if(!ctl.busy){
+        /* No automatic Eufy BLE work during Wi-Fi primary operation. An
+         * explicit diagnostic survey or outage-fallback command can still run. */
+        if(!bg_manual_scan_request)return;
         /* Passive 4.5-second radio survey every two minutes, only when idle.
          * It never disconnects SmartDawn, never sends a power command, and
          * defers to any existing BLE GAP activity. */
@@ -577,7 +580,8 @@ bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
     if(stage && n)snprintf(stage,n,"Eufy BLE unavailable");
     if(!r||!recognized(r->name)||!r->mac||!r->serial||!r->account_id||
        (r->operation!=EUFY_BLE_POWER&&r->operation!=EUFY_BLE_BRIGHTNESS&&
-        r->operation!=EUFY_BLE_COLOR&&r->operation!=EUFY_BLE_PROBE))
+        r->operation!=EUFY_BLE_COLOR&&r->operation!=EUFY_BLE_PROBE&&
+        r->operation!=EUFY_BLE_DYNAMIC&&r->operation!=EUFY_BLE_PRESET))
         return false;
     if(!lock)lock=xSemaphoreCreateMutex();
     if(!completed)completed=xSemaphoreCreateBinary();
@@ -589,6 +593,15 @@ bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
     if(closing){if(stage&&n)snprintf(stage,n,"eufy_gatt_disconnect_pending");
        xSemaphoreGive(lock);return false;}
     uint8_t address[6];
+    if((r->operation==EUFY_BLE_PRESET&&
+        (strcmp(r->name,"Shed")&&strcmp(r->name,"Garage")))||
+       (r->operation==EUFY_BLE_PRESET&&
+        (!r->preset_tail||r->preset_tail_len<16||r->preset_tail_len>191))||
+       (r->operation==EUFY_BLE_DYNAMIC&&
+        (r->effect_id<20000||r->effect_id>20006||r->speed<1||r->speed>10))){
+        if(stage&&n)snprintf(stage,n,"Unsupported Eufy model or effect format");
+        xSemaphoreGive(lock);return false;
+    }
     if(!parse_mac(r->mac,address) || !eufy_e10_init(&ctl.crypto,r->serial,r->account_id)){
         xSemaphoreGive(lock);return false;
     }
@@ -603,10 +616,15 @@ bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
     ctl.is_e22=!strcmp(r->name,"Garage")||!strcmp(r->name,"Shed");
     ctl.operation=r->operation;ctl.on=r->on;ctl.brightness=r->brightness;
     ctl.red=r->red;ctl.green=r->green;ctl.blue=r->blue;
-    ctl.lamps=r->lamp_count?r->lamp_count:60;
+    ctl.lamps=0; /* never assume a physical segment count */
+    ctl.effect_id=r->effect_id;ctl.speed=r->speed?r->speed:5;
+    ctl.preset_cloud_id=r->preset_cloud_id;
+    ctl.preset_tail_len=r->preset_tail_len;
+    if(r->preset_tail_len&&r->preset_tail)memcpy(ctl.preset_tail,r->preset_tail,r->preset_tail_len);
     ctl.connection=BLE_HS_CONN_HANDLE_NONE;
     ctl.service_start=ctl.service_end=ctl.writer=ctl.notifier=ctl.cccd=0;
     ctl.step=0;ctl.session_notified=false;ctl.mtu=0;
+    ctl.preflight=false;ctl.readback_retries=0;
     ctl.result=false;ctl.result_stage[0]=0;
     ctl.deadline=esp_timer_get_time()+48000000LL;
     scan_reports=scan_match_count=scan_deferred=scan_starts=connected_count=notify_count=handshake_ack_count=0;
@@ -657,6 +675,9 @@ void jh2_eufy_ble_status(cJSON *obj){
     cJSON_AddNumberToObject(ble,"gattConnections",connected_count);
     cJSON_AddNumberToObject(ble,"notificationCount",notify_count);
     cJSON_AddNumberToObject(ble,"handshakeWriteAcks",handshake_ack_count);
+    cJSON_AddBoolToObject(ble,"deviceReadbackRequired",true);
+    cJSON_AddBoolToObject(ble,"e22PresetFallbackAvailable",true);
+    cJSON_AddBoolToObject(ble,"automaticScansDisabledForWifiPriority",true);
     cJSON_AddNumberToObject(ble,"gattMtu",ctl.mtu);
     cJSON_AddNumberToObject(ble,"lastFailureCode",last_failure_code);
     cJSON_AddStringToObject(ble,"lastResult",ctl.busy?"in_progress":ctl.result_stage);
@@ -712,6 +733,16 @@ void jh2_eufy_ble_status(cJSON *obj){
         cJSON_AddNumberToObject(item,"ackCount",u->completed);
         cJSON_AddNumberToObject(item,"failureCount",u->failures);
         cJSON_AddStringToObject(item,"lastFailureStage",u->failure);
+        cJSON_AddBoolToObject(item,"realStateReported",u->reported_state_valid);
+        cJSON_AddNumberToObject(item,"lastRealStateAgeSeconds",age_seconds(u->reported_at_us));
+        if(u->reported_state_valid){
+            cJSON_AddBoolToObject(item,"reportedPower",u->reported_power);
+            cJSON_AddNumberToObject(item,"reportedBrightness",u->reported_brightness);
+            cJSON_AddNumberToObject(item,"reportedSegments",u->reported_segments);
+            cJSON_AddNumberToObject(item,"reportedEffectId",u->reported_effect_id);
+            cJSON_AddNumberToObject(item,"reportedCloudEffectId",u->reported_cloud_effect_id);
+            cJSON_AddNumberToObject(item,"reportedMode",u->reported_mode);
+        }
         cJSON_AddStringToObject(item,"connectionPhase",
             ctl.busy&&ctl.active_index==i?phase_name(ctl.stage):"idle");
         cJSON_AddItemToArray(list,item);
