@@ -88,38 +88,6 @@ export class EufyClient {
     if(session)this.importSession(session);
   }
   private trace(event:EufyLoginTraceEvent){try{this.traceSink?.(event);}catch{}}
-  private async raw(host:string,path:string,body:string,headers:Record<string,string>):Promise<any>{
-    if(!allowedApi(host))throw new Error(`Unexpected Eufy API hostname: ${host}`);
-    const stage=eufyTraceStep(path);
-    if(stage)this.trace({stage,state:"running"});
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
-    let httpStatus:number|undefined;
-    try{
-      const response=await fetch(`https://${host}${path}`,{method:"POST",headers,body,redirect:"manual",signal:controller.signal});
-      httpStatus=response.status;
-      const text=await response.text();
-      let obj:any;try{obj=JSON.parse(text);}catch{
-        if(stage)this.trace({stage,state:"failed",httpStatus,note:"invalid_json"});
-        throw new Error(`Eufy ${path} HTTP ${response.status} returned non-JSON`);
-      }
-      obj._http=response.status;
-      const code=Number(obj?.code);
-      if(stage){
-        const state=response.status===200&&code===0?"complete":
-          path==="/passport/login"&&(code===100032||code===100033)?"waiting":"failed";
-        this.trace({stage,state,httpStatus:response.status,...(Number.isInteger(code)&&code>=0?{code}:{})});
-      }
-      return obj;
-    }catch(e:any){
-      if(e?.name==="AbortError"){
-        if(stage)this.trace({stage,state:"failed",httpStatus,note:"timeout"});
-        throw new Error(`Eufy ${path} request timeout`);
-      }
-      if(stage&&e?.message&&!String(e.message).includes("returned non-JSON"))
-        this.trace({stage,state:"failed",httpStatus,note:"network_error"});
-      throw e;
-    }finally{clearTimeout(timer);}
-  }
   importSession(s:EufySession){
     if(s.openudid&&s.openudid!==this.installId)return; // Never reuse a token with another device identity.
     this.region=/^(us|eu)-pr$/.test(s.region)?s.region:"us-pr";
@@ -146,13 +114,37 @@ export class EufyClient {
   private authHeaders(h:Record<string,string>){if(this.token){h["x-auth-token"]=this.token;h.authorization=this.token;h.gtoken=md5(this.accountUid);}}
   private async raw(host:string,path:string,body:string,headers:Record<string,string>):Promise<any>{
     if(!allowedApi(host))throw new Error(`Unexpected Eufy API hostname: ${host}`);
+    const stage=eufyTraceStep(path);
+    if(stage)this.trace({stage,state:"running"});
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    let httpStatus:number|undefined,traceRecorded=false;
     try{
       const response=await fetch(`https://${host}${path}`,{method:"POST",headers,body,redirect:"manual",signal:controller.signal});
+      httpStatus=response.status;
       const text=await response.text();
-      let obj:any;try{obj=JSON.parse(text);}catch{throw new Error(`Eufy ${path} HTTP ${response.status} returned non-JSON`);}obj._http=response.status;return obj;
+      let obj:any;
+      try{
+        obj=JSON.parse(text);
+        if(!obj||typeof obj!=="object"||Array.isArray(obj))throw new Error("invalid response shape");
+      }catch{
+        if(stage){this.trace({stage,state:"failed",httpStatus,note:"invalid_json"});traceRecorded=true;}
+        throw new Error(`Eufy ${path} HTTP ${response.status} returned invalid JSON`);
+      }
+      obj._http=response.status;
+      const code=Number(obj.code);
+      if(stage){
+        const state=response.status===200&&code===0?"complete":
+          path==="/passport/login"&&(code===100032||code===100033)?"waiting":"failed";
+        this.trace({stage,state,httpStatus:response.status,...(Number.isInteger(code)&&code>=0?{code}:{})});
+        traceRecorded=true;
+      }
+      return obj;
     }catch(e:any){
-      if(e?.name==="AbortError")throw new Error(`Eufy ${path} request timeout`);
+      if(e?.name==="AbortError"){
+        if(stage&&!traceRecorded)this.trace({stage,state:"failed",httpStatus,note:"timeout"});
+        throw new Error(`Eufy ${path} request timeout`);
+      }
+      if(stage&&!traceRecorded)this.trace({stage,state:"failed",httpStatus,note:"network_error"});
       throw e;
     }finally{clearTimeout(timer);}
   }
