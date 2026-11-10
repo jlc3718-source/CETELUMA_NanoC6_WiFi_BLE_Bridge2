@@ -1,0 +1,62 @@
+name: JH2 live Eufy Shed diagnostic (no light changes)
+on:
+  push:
+    branches: [feature/jh2-nano-ble-coex-2-0-20-20261109]
+    paths: ['.github/workflows/jh2-eufy-shed-readonly-diagnostic-20261109.yml']
+permissions: {contents: read}
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Safe Eufy BLE diagnostics — Shed and Garage encrypted probes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,time
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          env=dict(row.split('=',1) for row in info['Config']['Env'] if '=' in row)
+          token=env['JH2_UPSTREAM_TOKEN'];assert len(token)>=32
+          def call(path,body=None):
+              req=urllib.request.Request('http://127.0.0.1:8081'+path,method='POST' if body else 'GET',
+                  data=json.dumps(body).encode() if body else None,
+                  headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=25) as response:return json.load(response)
+          def summary(label):
+              status=call('/api/eufy/local-ble/status')
+              print(label,'nano',status.get('nanoFirmware'),'online',status.get('nanoOnline'),
+                  'configured',status.get('configured'),flush=True)
+              for d in status.get('devices',[]):
+                  fields=('name','model','availability','connectionPhase','rssiDbm',
+                      'lastAdvertisementAgeSeconds','lastGattAckAgeSeconds','lastProbeAgeSeconds',
+                      'lastContactAgeSeconds','lastConnectedAgeSeconds','lastFailureAgeSeconds',
+                      'lastFailureStage','attemptCount','ackCount','failureCount')
+                  row={k:d.get(k) for k in fields}
+                  cmd=d.get('lastCommand') or {}
+                  row['lastCommand']={k:cmd.get(k) for k in ('id','operation','state','bleTransmitted','detail')}
+                  print(label,'device',json.dumps(row,sort_keys=True),flush=True)
+              t=status.get('transport') or {}
+              fields=('phase','state','busy','lastFailureCode','lastResult','scanStarts',
+                  'gattConnections','notificationCount','handshakeWriteAcks',
+                  'surveysDeferredDuringCurtainStreaming')
+              print(label,'transport',json.dumps({k:t.get(k) for k in fields},sort_keys=True),flush=True)
+          summary('JH2_PRE')
+          for name in ('Shed','Garage'):
+              response=call('/api/eufy/local-ble/command',{'target':name,'operation':'probe'})
+              ids=response.get('commandIds',[])
+              assert len(ids)==1
+              cid=ids[0]
+              print('JH2_PROBE_QUEUED',name,cid,flush=True)
+              for i in range(90):
+                  time.sleep(2)
+                  row=call('/api/curtain/command?id='+str(cid)).get('command') or {}
+                  if row.get('state') in ('applied','failed','expired','superseded'):
+                      result=row.get('result') or {}
+                      print('JH2_PROBE_RESULT',json.dumps({'name':name,'id':cid,'state':row.get('state'),
+                          'message':result.get('message'),'bleTransmitted':result.get('bleTransmitted')},
+                          sort_keys=True),flush=True)
+                      break
+              else:print('JH2_PROBE_TIMEOUT',name,cid,flush=True)
+              summary('JH2_AFTER_'+name.upper())
+          PY
