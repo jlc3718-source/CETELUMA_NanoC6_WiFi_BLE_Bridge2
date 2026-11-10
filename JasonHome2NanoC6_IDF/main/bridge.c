@@ -117,7 +117,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.20"
+#define NATIVE_FW_VERSION "2.0.21"
 /* Actual ESP32-C6 RF controls. Values are hardware read back, not web targets.
  * Never change Wi-Fi association or disconnect a BLE connection here.
  * Retained targets are reapplied after Wi-Fi/Bluetooth become ready.
@@ -944,8 +944,9 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         const bool complete=jh2_eufy_ble_rescan(message,sizeof(message));
         append_ack(current,complete?"applied":"failed",message,false);
     }else if(strcmp(action->valuestring,"eufyBle")==0){
-        /* Private credential is delivered only inside the existing bearer-
-         * authenticated Nano poll. Do not include it in ACKs or logs. */
+        /* The Wi-Fi-first Oracle router delivers credentials only in the
+         * authenticated Nano poll. Never print or return identity or frames.
+         * The Nano now requires actual encrypted Eufy state readback. */
         const cJSON *name=cJSON_GetObjectItemCaseSensitive(payload,"name");
         const cJSON *mac=cJSON_GetObjectItemCaseSensitive(payload,"mac");
         const cJSON *serial=cJSON_GetObjectItemCaseSensitive(payload,"serial");
@@ -954,11 +955,16 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         const cJSON *on=cJSON_GetObjectItemCaseSensitive(payload,"on");
         const cJSON *value=cJSON_GetObjectItemCaseSensitive(payload,"value");
         const cJSON *rgb=cJSON_GetObjectItemCaseSensitive(payload,"rgb");
+        const cJSON *effect=cJSON_GetObjectItemCaseSensitive(payload,"effectId");
+        const cJSON *speed=cJSON_GetObjectItemCaseSensitive(payload,"speed");
+        const cJSON *tail=cJSON_GetObjectItemCaseSensitive(payload,"tailHex");
+        const cJSON *cloud=cJSON_GetObjectItemCaseSensitive(payload,"lightId");
         const bool valid=cJSON_IsString(name)&&cJSON_IsString(mac)&&
             cJSON_IsString(serial)&&cJSON_IsString(account)&&
             cJSON_IsString(operation)&&name->valuestring&&mac->valuestring&&
             serial->valuestring&&account->valuestring&&operation->valuestring;
         eufy_ble_request request={0};
+        uint8_t preset_bytes[191]={0};
         if(valid){
             request.name=name->valuestring;request.mac=mac->valuestring;
             request.serial=serial->valuestring;request.account_id=account->valuestring;
@@ -970,23 +976,61 @@ static void handle_command(const cJSON *row,const cJSON *assets){
                      value->valueint>=0&&value->valueint<=100){
                 request.operation=EUFY_BLE_BRIGHTNESS;
                 request.brightness=(uint8_t)value->valueint;
-            }else if(!strcmp(operation->valuestring,"color")&&cJSON_IsNumber(rgb)&&
+            }else if((!strcmp(operation->valuestring,"color")||
+                      !strcmp(operation->valuestring,"dynamic"))&&
+                     cJSON_IsNumber(rgb)&&
                      rgb->valuedouble>=0&&rgb->valuedouble<=16777215&&
                      rgb->valuedouble==(double)rgb->valueint){
-                request.operation=EUFY_BLE_COLOR;
                 const uint32_t color=(uint32_t)rgb->valuedouble;
                 request.red=(uint8_t)(color>>16);request.green=(uint8_t)(color>>8);
-                request.blue=(uint8_t)color;request.lamp_count=60;
+                request.blue=(uint8_t)color;
+                if(!strcmp(operation->valuestring,"color"))request.operation=EUFY_BLE_COLOR;
+                else if(cJSON_IsNumber(effect)&&cJSON_IsNumber(speed)&&
+                        effect->valuedouble>=20000&&effect->valuedouble<=20006&&
+                        effect->valuedouble==(double)effect->valueint&&
+                        speed->valuedouble>=1&&speed->valuedouble<=10&&
+                        speed->valuedouble==(double)speed->valueint){
+                    request.operation=EUFY_BLE_DYNAMIC;
+                    request.effect_id=(uint16_t)effect->valueint;
+                    request.speed=(uint8_t)speed->valueint;
+                }
+            }else if(!strcmp(operation->valuestring,"preset")&&
+                     (!strcmp(name->valuestring,"Garage")||!strcmp(name->valuestring,"Shed"))&&
+                     cJSON_IsString(tail)&&tail->valuestring&&
+                     cJSON_IsNumber(cloud)&&cloud->valuedouble>=1&&
+                     cloud->valuedouble<=16777215&&
+                     cloud->valuedouble==(double)cloud->valueint){
+                const size_t n=strlen(tail->valuestring);
+                if(n>=32&&n<=382&&!(n&1)){
+                    bool ok=true;
+                    for(size_t i=0;i<n;i+=2){
+                        const char hi=tail->valuestring[i],lo=tail->valuestring[i+1];
+                        const int x=isxdigit((unsigned char)hi)?
+                          (hi<='9'?hi-'0':(tolower((unsigned char)hi)-'a'+10)):-1;
+                        const int y=isxdigit((unsigned char)lo)?
+                          (lo<='9'?lo-'0':(tolower((unsigned char)lo)-'a'+10)):-1;
+                        if(x<0||y<0){ok=false;break;}
+                        preset_bytes[i/2]=(uint8_t)((x<<4)|y);
+                    }
+                    const uint32_t embedded=(uint32_t)preset_bytes[2]|
+                      ((uint32_t)preset_bytes[3]<<8)|
+                      ((uint32_t)preset_bytes[4]<<16)|
+                      ((uint32_t)preset_bytes[5]<<24);
+                    if(ok&&preset_bytes[0]==0xA3&&preset_bytes[1]==4&&
+                       embedded==(uint32_t)cloud->valueint){
+                        request.operation=EUFY_BLE_PRESET;
+                        request.preset_tail=preset_bytes;
+                        request.preset_tail_len=n/2;
+                        request.preset_cloud_id=embedded;
+                    }
+                }
             }
         }
-        char state[110]="Invalid Eufy local command";
-        bool delivered=valid&&request.operation&&
-                       jh2_eufy_ble_execute(&request,state,sizeof(state));
+        char result[110]="Invalid or unsupported Eufy BLE fallback command";
+        const bool applied=valid&&request.operation&&
+                          jh2_eufy_ble_execute(&request,result,sizeof(result));
         const bool is_probe=valid&&request.operation==EUFY_BLE_PROBE;
-        append_ack(current,delivered?"applied":"failed",
-                   delivered?(is_probe?"Eufy encrypted BLE session verified; no light command sent":
-                     "Eufy encrypted BLE command acknowledged by GATT; physical light unverified"):state,
-                   delivered&&!is_probe);
+        append_ack(current,applied?"applied":"failed",result,applied&&!is_probe);
     }else if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
         append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
     }else if(strcmp(action->valuestring,"nanoEnterRecovery")==0){
