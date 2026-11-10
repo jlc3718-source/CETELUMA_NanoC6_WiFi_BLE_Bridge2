@@ -1,0 +1,58 @@
+name: JH2 E22 gallery BLE capacity READ-ONLY catalog audit
+on:
+  push:
+    branches: [feature/jh2-eufy-wifi-primary-ble-fallback-20261109]
+    paths: ['.github/workflows/jh2-e22-live-catalog-readonly-coverage-20261109.yml']
+permissions: {contents: read}
+jobs:
+  coverage:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Audit 65 vendor presets against exact currently deployed E22 encoder, no Bluetooth writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import subprocess,urllib.request,json
+          container='jason-home-2-web'
+          d=json.loads(subprocess.check_output(['docker','inspect',container],text=True))[0]
+          env=dict(x.split('=',1) for x in d['Config']['Env'] if '=' in x)
+          def get(port,path):
+            req=urllib.request.Request('http://127.0.0.1:'+str(port)+path,
+              headers={'Authorization':'Bearer '+env['JH2_UPSTREAM_TOKEN']})
+            with urllib.request.urlopen(req,timeout=25) as res:return json.load(res)
+          catalog=get(8080,'/api/eufy/factory-presets')
+          presets=catalog.get('presets') or []
+          data=json.dumps(presets,ensure_ascii=True)
+          js="""import {e22GalleryTail} from './curtain_bridge.mjs';
+          import {readFileSync} from 'node:fs';
+          const list=JSON.parse(readFileSync(0,'utf8'));
+          const yes=[],no=[];
+          for(const e of list){
+           try{
+             const out=e22GalleryTail(e);
+             yes.push({lightId:e.lightId,name:e.name,bytes:out.tailHex.length/2});
+           }catch(error){
+             no.push({lightId:e.lightId,name:e.name,reason:String(error.message||error).slice(0,110)});
+           }
+          }
+          const promoted=['Halloween','Christmas Day','Early Spring','Birthday','Veterans Day'];
+          console.log('E22_REAL_CATALOG_COVERAGE',JSON.stringify({total:list.length,
+           encoded:yes.length,rejected:no.length,minBytes:Math.min(...yes.map(x=>x.bytes)),
+           maxBytes:Math.max(...yes.map(x=>x.bytes)),
+           selected:yes.filter(e=>promoted.some(n=>e.name.includes(n))).slice(0,12),
+           rejectedExamples:no.slice(0,14)}));
+          """
+          proc=subprocess.run(['docker','exec','-i','-w',d['Config']['WorkingDir'],
+             container,'node','--input-type=module','-e',js],input=data,
+             text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=100)
+          if proc.returncode:
+            print('CATALOG_TEST_ERROR',proc.stderr[:1800]);raise RuntimeError('Catalog audit failed')
+          print(proc.stdout,flush=True)
+          cloud=get(8080,'/api/status')
+          e=cloud.get('eufy') or {}
+          print('E22_WIFI_STATUS',json.dumps({'ready':e.get('ready'),
+            'readyNames':e.get('readyNames'),'status':str(e.get('status') or '')[:90],
+            'eufyKeys':[k for k in e if not any(q in k.lower() for q in ('token','password','key','secret','mac','serial','account'))][:30]}),flush=True)
+          PY
