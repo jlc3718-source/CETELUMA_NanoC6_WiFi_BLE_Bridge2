@@ -2,7 +2,7 @@ name: JH2 Nano 2.0.16 encrypted Eufy BLE signed BUILD ONLY
 on:
   push:
     branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
-    paths: ['.github/workflows/jh2-216-eufy-signed-buildonly-20261109.yml', 'JasonHome2NanoC6_IDF/**']
+    paths: ['.github/workflows/jh2-216-eufy-signed-buildonly-20261110.yml', 'JasonHome2NanoC6_IDF/**']
 permissions: {contents: read}
 concurrency: {group: jh2-216-eufy-signed-build-only, cancel-in-progress: false}
 jobs:
