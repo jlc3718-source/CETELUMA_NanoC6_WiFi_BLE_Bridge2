@@ -9,7 +9,14 @@ GATE=/opt/jason-home-2
 # Commands requiring privilege use individually authorized noninteractive sudo.
 test -s "$ROOT/.env" && test -s "$ROOT/data/jason-home.sqlite" && sudo test -s "$GATE/private.env"
 WORK="$(mktemp -d)"
-trap 'sudo rm -rf "$WORK"' EXIT
+RESTORE_NAME="jh2-restore-test-$"
+RESTORE_IMAGE="jason-home-2-restore-test:$"
+restore_cleanup() {
+  sudo docker rm -f "$RESTORE_NAME" >/dev/null 2>&1 || true
+  sudo docker image rm "$RESTORE_IMAGE" >/dev/null 2>&1 || true
+  sudo rm -rf "$WORK"
+}
+trap restore_cleanup EXIT
 mkdir -p "$WORK/stage/controller" "$WORK/stage/gateway" "$WORK/stage/system" "$WORK/stage/info"
 # Online SQLite backup avoids copying a live WAL database in a torn/inconsistent state.
 sudo python3 - "$ROOT" "$GATE" "$WORK/stage" <<'PY'
@@ -74,6 +81,65 @@ mkdir -p "$OUT"
 test ! -e "$OUT/oracle-recovery.tar.gz.aes" || { echo 'Snapshot already exists; refusing overwrite'; exit 1; }
 tar -C "$WORK/stage" -czf "$WORK/private.tar.gz" .
 tar -tzf "$WORK/private.tar.gz" >/dev/null
+
+# Extract the captured runtime into a disposable restore tree. This validates
+# the same plaintext archive produced by the encrypted snapshot before any
+# production deployment is allowed to proceed.
+RESTORE_ROOT="$WORK/restore-test"
+mkdir -p "$RESTORE_ROOT"
+tar -C "$RESTORE_ROOT" -xzf "$WORK/private.tar.gz"
+test -s "$RESTORE_ROOT/controller/.env"
+test -s "$RESTORE_ROOT/controller/db/jason-home.sqlite"
+test -s "$RESTORE_ROOT/controller/controller-source.tar.gz"
+test -s "$RESTORE_ROOT/gateway/private.env"
+python3 - "$RESTORE_ROOT" <<'PY'
+import os,sqlite3,sys
+root=sys.argv[1]
+for name in ("controller","gateway"):
+    dbroot=os.path.join(root,name,"db")
+    if not os.path.isdir(dbroot):continue
+    for current,_,files in os.walk(dbroot):
+        for filename in files:
+            if not filename.endswith((".sqlite",".sqlite3",".db")):continue
+            path=os.path.join(current,filename)
+            db=sqlite3.connect("file:"+path+"?mode=ro",uri=True)
+            assert db.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+            db.close()
+PY
+
+# Build the captured controller source and boot it with the restored database
+# in a network-isolated temporary container. No Eufy login or device commands
+# can leave this container, and production files are never mounted into it.
+RESTORE_SOURCE="$RESTORE_ROOT/controller/source"
+mkdir -p "$RESTORE_SOURCE"
+sudo tar -C "$RESTORE_SOURCE" -xzf "$RESTORE_ROOT/controller/controller-source.tar.gz"
+sudo docker build -q -t "$RESTORE_IMAGE" "$RESTORE_SOURCE" >/dev/null
+sudo docker run -d --name "$RESTORE_NAME" --network none \
+  --env-file "$RESTORE_ROOT/controller/.env" \
+  -e PORT=18080 -e JASON_HOME_DB=/data/jason-home.sqlite -e JASON_HOME_BUILD_SHA=restore-smoke \
+  -v "$RESTORE_ROOT/controller/db/jason-home.sqlite:/data/jason-home.sqlite" \
+  "$RESTORE_IMAGE" >/dev/null
+sudo docker exec -i "$RESTORE_NAME" node --input-type=module - <<'JS'
+const base="http://127.0.0.1:"+(process.env.PORT||"18080");
+const token=process.env.JASON_HOME_API_TOKEN;
+if(!token)throw new Error("Restored API token missing");
+let health=null;
+for(let i=0;i<30;i++){
+  try{
+    const response=await fetch(base+"/api/health");
+    const value=await response.json();
+    if(response.ok&&value?.ok&&value?.build?.sha==="restore-smoke"){health=value;break;}
+  }catch{}
+  await new Promise(resolve=>setTimeout(resolve,1000));
+}
+if(!health)throw new Error("Restored controller did not become healthy");
+const response=await fetch(base+"/api/eufy/login-trace",{headers:{Authorization:"Bearer "+token}});
+const trace=await response.json();
+if(!response.ok||!trace?.ok||typeof trace.paused!=="boolean"||!Array.isArray(trace.events))
+  throw new Error("Restored authenticated Eufy trace route failed");
+console.log("RESTORE_TEST_PASS: restored controller health and authenticated trace route");
+JS
+
 PASS="$(openssl rand -hex 32)"
 printf '%s' "$PASS" | openssl pkeyutl -encrypt -pubin -inkey "$PUBLIC_KEY" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out "$OUT/password.rsa-oaep-sha256.enc"
 openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 -in "$WORK/private.tar.gz" -out "$OUT/oracle-recovery.tar.gz.aes" -pass "pass:$PASS"
