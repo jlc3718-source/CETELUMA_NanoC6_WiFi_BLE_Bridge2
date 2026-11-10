@@ -1,0 +1,27 @@
+name: JH2 read-only E22 preset layer structure
+on:
+  push:
+    branches: [feature/jh2-eufy-wifi-primary-ble-fallback-20261109]
+    paths: ['.github/workflows/jh2-catalog-layer-metadata-readonly-20261109.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Read factory effect layer schemas only, never send control
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,urllib.request,subprocess
+          c=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          env=dict(x.split('=',1) for x in c['Config']['Env'] if '=' in x)
+          req=urllib.request.Request('http://127.0.0.1:8080/api/eufy/factory-presets',
+                  headers={'Authorization':'Bearer '+env['JH2_UPSTREAM_TOKEN']})
+          with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
+          for p in (data.get('presets') or [])[:6]:
+            public={k:p.get(k) for k in ['lightId','name','brightness','speed','layerExecutionMode','buildableE22','buildableE120Experimental','colors']}
+            print('CATALOG_SAMPLE',json.dumps(public)[:1300],flush=True)
+            for l in (p.get('layers') or [])[:2]:
+              print('LAYER_FIELDS',json.dumps(l)[:1800],flush=True)
+          PY
