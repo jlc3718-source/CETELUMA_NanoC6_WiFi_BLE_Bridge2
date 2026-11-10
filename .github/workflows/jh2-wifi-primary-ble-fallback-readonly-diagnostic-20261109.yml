@@ -1,0 +1,53 @@
+name: JH2 read-only cloud-vs-BLE routing and effect metadata diagnostic
+on:
+  push:
+    branches: [feature/jh2-eufy-wifi-primary-ble-fallback-20261109]
+    paths: ['.github/workflows/jh2-wifi-primary-ble-fallback-readonly-diagnostic-20261109.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Read nonsecret cloud readiness and factory scene schemas, NO lighting writes
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,urllib.error
+          info=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          env=dict(e.split('=',1) for e in info['Config']['Env'] if '=' in e)
+          token=env['JH2_UPSTREAM_TOKEN']
+          def get(port,path):
+            req=urllib.request.Request('http://127.0.0.1:'+str(port)+path,headers={'Authorization':'Bearer '+token})
+            try:
+              with urllib.request.urlopen(req,timeout=14) as r:return json.load(r)
+            except Exception as e:return {'requestFailed':type(e).__name__}
+          status=get(8080,'/api/status')
+          light=status.get('eufy') or {}
+          print('ROUTING_CLOUD',json.dumps({'ready':light.get('ready'),
+            'readyNames':light.get('readyNames'),'status':str(light.get('status') or '')[:95],
+            'automationOwner':status.get('automationOwner'),'overrideActive':(status.get('override') or {}).get('active')}),flush=True)
+          cal=status.get('calendar') or {}
+          curr=cal.get('current') or {}
+          sc=curr.get('scene') or {}
+          print('ROUTING_CALENDAR',json.dumps({'currentId':curr.get('id'),'sceneKeys':sorted(sc.keys()),
+            'effect':sc.get('effect'),'colorsLength':len(sc.get('colors') or []),
+            'target':sc.get('target'),'power':sc.get('power')}),flush=True)
+          for ep in ['/api/eufy/factory-presets','/api/eufy/factory-promotions']:
+            j=get(8080,ep)
+            print('ROUTING_CATALOG',ep,'keys',sorted(j.keys()),flush=True)
+            for key in ('presets','promotions','effects'):
+              entries=j.get(key)
+              if isinstance(entries,list):
+                print('ROUTING_ITEMS',ep,key,'count',len(entries),flush=True)
+                for v in entries[:2]:
+                  if isinstance(v,dict):
+                    print('ROUTING_ITEM_KEYS',key,sorted(v.keys()),
+                      'nested', {k:sorted(val.keys()) for k,val in v.items()
+                        if isinstance(val,dict) and k in ('preset','data','effect','params','lightEffect','recipe')},flush=True)
+          local=get(8081,'/api/eufy/local-ble/status')
+          print('ROUTING_NANO',json.dumps({'firmware':local.get('nanoFirmware'),
+            'online':local.get('nanoOnline'),'configured':local.get('configured'),
+            'devices':[{'name':d.get('name'),'rssi':d.get('rssiDbm'),
+              'lastGattAckAge':d.get('lastGattAckAgeSeconds')} for d in (local.get('devices') or [])]}),flush=True)
+          PY
