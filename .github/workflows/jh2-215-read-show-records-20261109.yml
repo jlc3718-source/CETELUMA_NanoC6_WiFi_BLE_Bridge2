@@ -1,0 +1,59 @@
+name: JH2 2.0.15 diagnose saved show without editing
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-215-read-show-records-20261109.yml']
+permissions: {contents: read}
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect exact retained startup-show and asset records
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import sqlite3,json,subprocess,urllib.request
+          d=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          env=dict(v.split('=',1) for v in d['Config']['Env'] if '=' in v)
+          token=env['JH2_UPSTREAM_TOKEN']
+          def req(path):
+           r=urllib.request.Request('http://127.0.0.1:8081'+path,headers={'Authorization':'Bearer '+token})
+           with urllib.request.urlopen(r,timeout=12) as h:return json.load(h)
+          s=req('/api/curtain/status')
+          start=req('/api/curtain/startup-show')
+          out={'firmware':s.get('firmware'),'online':s.get('online'),
+           'curtainConnected':(s.get('curtain') or {}).get('connected'),
+           'liveSequence':s.get('showSequence'),'startupSummary':s.get('startupShow'),
+           'startupEndpointKeys':list((start.get('startupShow') or {}).keys()),
+           'startupEndpointMode':(start.get('startupShow') or {}).get('mode'),
+           'startupEndpointItemCount':len((start.get('startupShow') or {}).get('items') or []),
+           'eufyBLE':(s.get('eufyLocalBle') or {}).get('supported')}
+          print('JH2_LIVE_SHOW_STATE',json.dumps(out)[:4400])
+          mounts=[x for x in d['Mounts'] if x['Destination']=='/data' and x['Type']=='bind']
+          path=mounts[0]['Source']+'/jason-home-2.sqlite'
+          with sqlite3.connect('file:'+path+'?mode=ro',uri=True) as con:
+           con.row_factory=sqlite3.Row
+           def meta(k):
+            row=con.execute('SELECT value FROM meta WHERE key=?',(k,)).fetchone()
+            return json.loads(row['value']) if row else None
+           v2=meta('curtainStartupShowV2')
+           v1=meta('curtainStartupShowV1')
+           live=meta('curtainShowSequenceV2')
+           chosen=v2 or v1
+           saved=con.execute('SELECT name,items_json FROM curtain_internet_shows WHERE id=?',
+             ((chosen or {}).get('showId',''),)).fetchone()
+           db_items=json.loads(saved['items_json']) if saved else []
+           first=(v2 or {}).get('items') or []
+           assets=sum(1 for i in first if con.execute('SELECT 1 FROM curtain_assets WHERE sha=?',(i.get('sha256',''),)).fetchone())
+           summary={'v2Present':bool(v2),'v2Mode':(v2 or {}).get('mode'),
+            'v2Name':(v2 or {}).get('name'),'v2Items':len(first),
+            'v1Present':bool(v1),'activeSequencePresent':bool(live),
+            'activeSequenceRunning':(live or {}).get('running'),
+            'dbShowPresent':bool(saved),'dbShowName':saved['name'] if saved else None,
+            'dbShowItems':len(db_items),'itemsJsonMatches':bool(v2 and saved and v2.get('itemsJson')==saved['items_json']),
+            'itemIdsDurationMatch':len(first)==len(db_items) and all(a.get('id')==b.get('id') and a.get('seconds')==b.get('seconds') for a,b in zip(first,db_items)),
+            'compiledAssetsPresent':assets}
+           print('JH2_PRIVATE_SHOW_RECORD_AUDIT',json.dumps(summary,sort_keys=True))
+          PY
