@@ -113,7 +113,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.17"
+#define NATIVE_FW_VERSION "2.0.18"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -715,7 +715,9 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         if(valid){
             request.name=name->valuestring;request.mac=mac->valuestring;
             request.serial=serial->valuestring;request.account_id=account->valuestring;
-            if(!strcmp(operation->valuestring,"power")&&cJSON_IsBool(on)){
+            if(!strcmp(operation->valuestring,"probe")){
+                request.operation=EUFY_BLE_PROBE;
+            }else if(!strcmp(operation->valuestring,"power")&&cJSON_IsBool(on)){
                 request.operation=EUFY_BLE_POWER;request.on=cJSON_IsTrue(on);
             }else if(!strcmp(operation->valuestring,"brightness")&&cJSON_IsNumber(value)&&
                      value->valueint>=0&&value->valueint<=100){
@@ -733,9 +735,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         char state[110]="Invalid Eufy local command";
         bool delivered=valid&&request.operation&&
                        jh2_eufy_ble_execute(&request,state,sizeof(state));
+        const bool is_probe=valid&&request.operation==EUFY_BLE_PROBE;
         append_ack(current,delivered?"applied":"failed",
-                   delivered?"Eufy encrypted BLE command acknowledged by GATT; physical light unverified":state,
-                   delivered);
+                   delivered?(is_probe?"Eufy encrypted BLE session verified; no light command sent":
+                     "Eufy encrypted BLE command acknowledged by GATT; physical light unverified"):state,
+                   delivered&&!is_probe);
     }else if(strcmp(action->valuestring,"status")==0||strcmp(action->valuestring,"nanoInfo")==0){
         append_ack(current,"applied","Native ESP-IDF connected to Oracle",false);
     }else if(strcmp(action->valuestring,"nanoEnterRecovery")==0){
