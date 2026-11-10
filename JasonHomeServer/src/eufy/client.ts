@@ -59,12 +59,35 @@ function captchaImage(value:unknown):string {
     sample.toString("ascii",0,3)==="GIF"?"gif":"";
   return type?`data:image/${type};base64,${raw}`:"";
 }
+export type EufyLoginTraceStep = "region"|"key_exchange"|"login"|"verification"|"device_discovery"|"mqtt_credentials"|"mqtt_connect"|"ready"|"other";
+export interface EufyLoginTraceEvent {
+  stage:EufyLoginTraceStep;
+  state:"running"|"complete"|"waiting"|"failed"|"skipped";
+  httpStatus?:number;
+  code?:number;
+  note?:"timeout"|"network_error"|"invalid_json"|"mqtt_start_failed"|"lazy_mqtt"|"saved_session";
+}
+type EufyLoginTraceSink=(event:EufyLoginTraceEvent)=>void;
+function eufyTraceStep(path:string):EufyLoginTraceStep|null {
+  if(path==="/passport/estimate_domain")return "region";
+  if(path==="/openapi/oauth/key/exchange")return "key_exchange";
+  if(path==="/passport/login")return "login";
+  if(path==="/passport/generate/captcha"||path==="/app/sendmsg/verify_code")return "verification";
+  if(path==="/app/house/get_house_list"||path==="/app/house/get_devs_list")return "device_discovery";
+  if(path==="/app/devicemanage/get_user_mqtt_info")return "mqtt_credentials";
+  return null;
+}
 export class EufyClient {
   region="us-pr";bootstrap="";share="";ident="";token="";uid="";accountUid="";
   authed=false;lights=new Map<string,any>();creds:MqttCredentials|null=null;
   private keyCreatedAt=0;private tokenExpiresAt=0;private pendingEmailCode=false;
   private phoneModel="JasonHomeOracle";
-  constructor(private installId:string,session?:EufySession){if(session)this.importSession(session);}
+  private readonly traceSink?:EufyLoginTraceSink;
+  constructor(private installId:string,session?:EufySession,traceSink?:EufyLoginTraceSink){
+    this.traceSink=traceSink;
+    if(session)this.importSession(session);
+  }
+  private trace(event:EufyLoginTraceEvent){try{this.traceSink?.(event);}catch{}}
   importSession(s:EufySession){
     if(s.openudid&&s.openudid!==this.installId)return; // Never reuse a token with another device identity.
     this.region=/^(us|eu)-pr$/.test(s.region)?s.region:"us-pr";
@@ -91,13 +114,37 @@ export class EufyClient {
   private authHeaders(h:Record<string,string>){if(this.token){h["x-auth-token"]=this.token;h.authorization=this.token;h.gtoken=md5(this.accountUid);}}
   private async raw(host:string,path:string,body:string,headers:Record<string,string>):Promise<any>{
     if(!allowedApi(host))throw new Error(`Unexpected Eufy API hostname: ${host}`);
+    const stage=eufyTraceStep(path);
+    if(stage)this.trace({stage,state:"running"});
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    let httpStatus:number|undefined,traceRecorded=false;
     try{
       const response=await fetch(`https://${host}${path}`,{method:"POST",headers,body,redirect:"manual",signal:controller.signal});
+      httpStatus=response.status;
       const text=await response.text();
-      let obj:any;try{obj=JSON.parse(text);}catch{throw new Error(`Eufy ${path} HTTP ${response.status} returned non-JSON`);}obj._http=response.status;return obj;
+      let obj:any;
+      try{
+        obj=JSON.parse(text);
+        if(!obj||typeof obj!=="object"||Array.isArray(obj))throw new Error("invalid response shape");
+      }catch{
+        if(stage){this.trace({stage,state:"failed",httpStatus,note:"invalid_json"});traceRecorded=true;}
+        throw new Error(`Eufy ${path} HTTP ${response.status} returned invalid JSON`);
+      }
+      obj._http=response.status;
+      const code=Number(obj.code);
+      if(stage){
+        const state=response.status===200&&code===0?"complete":
+          path==="/passport/login"&&(code===100032||code===100033)?"waiting":"failed";
+        this.trace({stage,state,httpStatus:response.status,...(Number.isInteger(code)&&code>=0?{code}:{})});
+        traceRecorded=true;
+      }
+      return obj;
     }catch(e:any){
-      if(e?.name==="AbortError")throw new Error(`Eufy ${path} request timeout`);
+      if(e?.name==="AbortError"){
+        if(stage&&!traceRecorded)this.trace({stage,state:"failed",httpStatus,note:"timeout"});
+        throw new Error(`Eufy ${path} request timeout`);
+      }
+      if(stage&&!traceRecorded)this.trace({stage,state:"failed",httpStatus,note:"network_error"});
       throw e;
     }finally{clearTimeout(timer);}
   }
@@ -169,14 +216,16 @@ export class EufyClient {
     this.tokenExpiresAt=Number(result.token_expires_at)||0;
     if(!this.uid||!this.accountUid||!this.token)throw new Error("Eufy login returned no usable session");
     if(result?.fa_info?.info){
-      if(emailCode)throw new EufyEmailCodeRequired();
+      if(emailCode){this.trace({stage:"verification",state:"waiting"});throw new EufyEmailCodeRequired();}
       // The limited token MUST accompany sendmsg and the follow-up login.
       this.pendingEmailCode=true;
       await this.signed("push","/app/sendmsg/verify_code",
         {biz_type:1004,message_type:2,transaction:String(Date.now())},true);
+      this.trace({stage:"verification",state:"waiting"});
       throw new EufyEmailCodeRequired();
     }
     this.pendingEmailCode=false;
+    this.trace({stage:"verification",state:"skipped"});
     // Rebind the key-ident to the full account token; persist the new ECDH
     // session with the token, avoiding a key exchange on every restart.
     this.share="";this.ident="";this.keyCreatedAt=0;
@@ -203,8 +252,11 @@ export class EufyClient {
     await this.findLights();
     await this.certificate();
     if(mqttConnectionMode()==="persistent"){
-      await Promise.allSettled([...this.lights.keys()].map(name=>warmPersistentMqtt(this.creds!,this.target(name),this.installId)));
-    }
+      this.trace({stage:"mqtt_connect",state:"running"});
+      const outcomes=await Promise.allSettled([...this.lights.keys()].map(name=>warmPersistentMqtt(this.creds!,this.target(name),this.installId)));
+      const failures=outcomes.filter(x=>x.status==="rejected").length;
+      this.trace({stage:"mqtt_connect",state:failures?"failed":"complete",...(failures?{note:"mqtt_start_failed" as const}:{})});
+    }else this.trace({stage:"mqtt_connect",state:"skipped",note:"lazy_mqtt"});
   }
   private spec(name:string){const s=LIGHTS.find(x=>x.name===name);if(!s)throw new Error(`Unknown light ${name}`);return s;}
   private target(name:string):MqttTarget{

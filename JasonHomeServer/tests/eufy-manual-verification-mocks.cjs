@@ -26,6 +26,7 @@ class FakeClient {
 const fixture={
   EufyClient:FakeClient,EufyCaptchaRequired:Captcha,EufyEmailCodeRequired:Email,
   meta:()=>null,setMeta:()=>{writes++;},delMeta:()=>{},
+  beginEufyLoginTrace:()=>{},recordEufyLoginTrace:()=>{},recordEufyLoginFailure:()=>{},
   DEFAULT_INSTALL:'fixture-id',EMAIL:'test@example.invalid',PASSWORD:'not-a-real-password',
   DEVICE_NAMES:['Pool','House','Garage','Shed'],EUFY_AUTH_RETRY_AT_KEY:'retry',EUFY_AUTH_RETRY_REASON_KEY:'reason',
   EUFY_AUTH_LOCKOUT_MS:86400000,

@@ -110,6 +110,7 @@ async function run(){
     eufy:null,eufyReady:false,readyNames:[],preparing:null,eufyStatus:'',pendingEufyVerification:null,
     EufyCaptchaRequired:clientCtx.Captcha,EufyEmailCodeRequired:clientCtx.Email,
     resetPersistentMqtt:()=>{},eufyAuthRetryAt:()=>0,
+    beginEufyLoginTrace:()=>{},recordEufyLoginTrace:()=>{},recordEufyLoginFailure:()=>{},
     eufyAutoLoginPaused:()=>true,eufyAuthFailureDelay:()=>0,
     meta:key=>key==='install_id'?'fixture-id':key==='eufy_session'?JSON.stringify({token:'stored'}):null,
     setMeta:()=>{},delMeta:()=>{},

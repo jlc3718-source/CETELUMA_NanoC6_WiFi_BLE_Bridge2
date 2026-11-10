@@ -4,7 +4,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { EufyClient, EufyCaptchaRequired, EufyEmailCodeRequired, type EufySession } from "./eufy/client.js";
+import { EufyClient, EufyCaptchaRequired, EufyEmailCodeRequired, type EufyLoginTraceEvent, type EufyLoginTraceStep, type EufySession } from "./eufy/client.js";
 import { isBrightnessOnlyControl } from "./eufy/light-commands.js";
 import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
@@ -331,6 +331,62 @@ function eufyAutoPauseStatus(){
   return {enabled:!paused,paused,minimumPauseUntil:
     paused&&Number.isFinite(until)&&until>0?new Date(until).toISOString():null};
 }
+
+const EUFY_LOGIN_TRACE_KEY="eufy_login_trace_v1";
+const EUFY_LOGIN_TRACE_ATTEMPT_KEY="eufy_login_trace_attempt_v1";
+const EUFY_LOGIN_TRACE_STEPS=new Set<EufyLoginTraceStep>(["region","key_exchange","login","verification","device_discovery","mqtt_credentials","mqtt_connect","ready","other"]);
+function beginEufyLoginTrace(){
+  const attempt=Date.now();
+  setMeta(EUFY_LOGIN_TRACE_ATTEMPT_KEY,String(attempt));
+  setMeta(EUFY_LOGIN_TRACE_KEY,JSON.stringify({attempt,events:[]}));
+}
+function recordEufyLoginTrace(event:EufyLoginTraceEvent){
+  if(!event||!EUFY_LOGIN_TRACE_STEPS.has(event.stage))return;
+  const state=["running","complete","waiting","failed","skipped"].includes(event.state)?event.state:null;
+  if(!state)return;
+  const attempt=Number(meta(EUFY_LOGIN_TRACE_ATTEMPT_KEY)||0)||Date.now();
+  let existing:any={};
+  try{existing=JSON.parse(meta(EUFY_LOGIN_TRACE_KEY)||"{}");}catch{}
+  const events=Array.isArray(existing?.events)?existing.events.filter((x:any)=>x&&x.attempt===attempt):[];
+  const entry:any={at:Date.now(),attempt,stage:event.stage,state};
+  if(typeof event.httpStatus==="number"&&Number.isInteger(event.httpStatus)&&event.httpStatus>=100&&event.httpStatus<=599)entry.httpStatus=event.httpStatus;
+  if(typeof event.code==="number"&&Number.isInteger(event.code)&&event.code>=0&&event.code<=999999)entry.code=event.code;
+  if(["timeout","network_error","invalid_json","mqtt_start_failed","lazy_mqtt","saved_session"].includes(String(event.note)))entry.note=event.note;
+  events.push(entry);
+  setMeta(EUFY_LOGIN_TRACE_KEY,JSON.stringify({attempt,events:events.slice(-40)}));
+}
+function recordEufyLoginFailure(error:unknown){
+  const attempt=Number(meta(EUFY_LOGIN_TRACE_ATTEMPT_KEY)||0)||Date.now();
+  let saved:any={};
+  try{saved=JSON.parse(meta(EUFY_LOGIN_TRACE_KEY)||"{}");}catch{}
+  const events=Array.isArray(saved?.events)?saved.events:[];
+  const last=events[events.length-1];
+  // The HTTP layer already recorded the exact failing API endpoint and code.
+  if(last&&last.attempt===attempt&&last.state==="failed")return;
+  const message=String((error as any)?.message||error||"");
+  const codeMatch=/\bcode\s*(\d{1,6})\b/i.exec(message)||/\b(100028|100032|100033)\b/.exec(message);
+  const httpMatch=/\bHTTP\s*(\d{3})\b/i.exec(message);
+  const stage:EufyLoginTraceStep=/mqtt.*certificate|certificate missing|user_mqtt_info/i.test(message)?"mqtt_credentials":
+    /no known eufy light|missing expected eufy light|house\/get_devs_list|device discovery/i.test(message)?"device_discovery":
+    /captcha|verification|verify_code|2fa/i.test(message)?"verification":
+    /mqtt|broker|device timeout/i.test(message)?"mqtt_connect":
+    /key exchange|key\/exchange/i.test(message)?"key_exchange":
+    /estimate_domain|region lookup/i.test(message)?"region":
+    /passport\/login|100028|login|auth|token|session|401/i.test(message)?"login":"other";
+  recordEufyLoginTrace({stage,state:"failed",...(httpMatch?{httpStatus:Number(httpMatch[1])}:{}),...(codeMatch?{code:Number(codeMatch[1]||codeMatch[0])}:{})});
+}
+function eufyLoginTraceStatus(){
+  let saved:any={};
+  try{saved=JSON.parse(meta(EUFY_LOGIN_TRACE_KEY)||"{}");}catch{}
+  const attempt=Number(saved?.attempt||meta(EUFY_LOGIN_TRACE_ATTEMPT_KEY)||0)||0;
+  const events=(Array.isArray(saved?.events)?saved.events:[]).filter((x:any)=>x&&x.attempt===attempt)
+    .map((x:any)=>({at:Number(x.at)||0,stage:String(x.stage||""),state:String(x.state||""),
+      ...(Number.isInteger(x.httpStatus)?{httpStatus:x.httpStatus}:{}),...(Number.isInteger(x.code)?{code:x.code}:{}),
+      ...(typeof x.note==="string"?{note:x.note}:{})}));
+  const pending=activeEufyVerification();
+  return {ok:true,attemptId:attempt||null,ready:eufyReady,readyNames:[...readyNames],
+    paused:eufyAutoLoginPaused(),verification:pending?.kind||null,events};
+}
 const EUFY_AUTH_RETRY_AT_KEY="eufy_auth_retry_at_v1";
 const EUFY_AUTH_RETRY_REASON_KEY="eufy_auth_retry_reason_v1";
 const EUFY_AUTH_LOCKOUT_MS=24*60*60*1000;
@@ -366,6 +422,9 @@ async function ensureEufy(force=false){
     eufyStatus=`Eufy login paused (${reason}) until ${new Date(notBefore).toISOString()}; no cloud login attempted`;
     throw new Error(eufyStatus);
   }
+  // A trace is read-only state for the Devices screen; creating one here records only an explicitly
+  // allowed login attempt and never starts a second request.
+  beginEufyLoginTrace();
   // Do not reset an in-flight request or bypass an active cooldown on force.
   if(force){resetPersistentMqtt("Forced Eufy reconnect");eufy=null;eufyReady=false;readyNames=[];}
   preparing=(async()=>{
@@ -376,16 +435,22 @@ async function ensureEufy(force=false){
     // A single automatic preparation MUST NOT fall through to a second
     // password login when the stored session is rejected. Explicit manual
     // reconnect starts from a clean client and attempts login exactly once.
-    const client=new EufyClient(install,force?undefined:session);
+    const client=new EufyClient(install,force?undefined:session,recordEufyLoginTrace);
     try{
-      if(!client.authed)await client.login(EMAIL,PASSWORD);
+      if(client.authed){
+        recordEufyLoginTrace({stage:"region",state:"skipped",note:"saved_session"});
+        recordEufyLoginTrace({stage:"key_exchange",state:"skipped",note:"saved_session"});
+        recordEufyLoginTrace({stage:"login",state:"skipped",note:"saved_session"});
+      }else await client.login(EMAIL,PASSWORD);
       await client.prepare();
     }catch(first){
       if(first instanceof EufyCaptchaRequired){
+        recordEufyLoginTrace({stage:"verification",state:"waiting"});
         pendingEufyVerification={kind:"captcha",client,id:first.captchaId,
           image:first.image,expiresAt:Date.now()+5*60*1000};
         setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+24*60*60*1000));
       }else if(first instanceof EufyEmailCodeRequired){
+        recordEufyLoginTrace({stage:"verification",state:"waiting"});
         pendingEufyVerification={kind:"email",client,expiresAt:Date.now()+10*60*1000};
         setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+24*60*60*1000));
       }
@@ -394,6 +459,7 @@ async function ensureEufy(force=false){
     const names=client.readyNames();
     for(const n of DEVICE_NAMES)if(!names.includes(n))throw new Error("Missing expected Eufy light: "+n);
     eufy=client;eufyReady=true;readyNames=names;eufyStatus=`Ready ${names.length}/4`;
+    recordEufyLoginTrace({stage:"ready",state:"complete"});
     delMeta(EUFY_AUTH_RETRY_AT_KEY);
     delMeta(EUFY_AUTH_RETRY_REASON_KEY);
     setMeta("eufy_session",JSON.stringify(client.exportSession()));
@@ -401,6 +467,7 @@ async function ensureEufy(force=false){
   })().catch((e:any)=>{
     eufyReady=false;readyNames=[];
     const msg=String(e?.message||e);
+    if(!(e instanceof EufyCaptchaRequired)&&!(e instanceof EufyEmailCodeRequired))recordEufyLoginFailure(e);
     const delay=eufyAuthFailureDelay(e);
     if(delay){
       const previous=Number(meta(EUFY_AUTH_RETRY_AT_KEY)||"0");
@@ -443,6 +510,7 @@ async function finishManualEufyLogin(client:EufyClient){
   const names=client.readyNames();
   for(const name of DEVICE_NAMES)if(!names.includes(name))throw new Error("Missing expected Eufy light: "+name);
   eufy=client;eufyReady=true;readyNames=names;eufyStatus=`Ready ${names.length}/4`;
+  recordEufyLoginTrace({stage:"ready",state:"complete"});
   setMeta("eufy_session",JSON.stringify(client.exportSession()));
   delMeta(EUFY_AUTH_RETRY_AT_KEY);
   delMeta(EUFY_AUTH_RETRY_REASON_KEY);
@@ -462,21 +530,27 @@ async function manualEufyVerification(action:string,answer:string){
       captcha={id:challenge.id,answer:answer.trim()};
     else emailCode=answer.trim();
     pendingEufyVerification=null;
-  }else client=new EufyClient(meta("install_id")||DEFAULT_INSTALL);
+  }else{
+    beginEufyLoginTrace();
+    client=new EufyClient(meta("install_id")||DEFAULT_INSTALL,undefined,recordEufyLoginTrace);
+  }
   try{
     await client.login(EMAIL,PASSWORD,captcha,emailCode);
     await finishManualEufyLogin(client);
     return {ok:true,required:false,type:null,image:null,readyNames:[...readyNames]};
   }catch(error:any){
     if(error instanceof EufyCaptchaRequired){
+      recordEufyLoginTrace({stage:"verification",state:"waiting"});
       pendingEufyVerification={kind:"captcha",client,id:error.captchaId,
         image:error.image,expiresAt:Date.now()+5*60*1000};
       return verificationStatus();
     }
     if(error instanceof EufyEmailCodeRequired){
+      recordEufyLoginTrace({stage:"verification",state:"waiting"});
       pendingEufyVerification={kind:"email",client,expiresAt:Date.now()+10*60*1000};
       return verificationStatus();
     }
+    recordEufyLoginFailure(error);
     const message=String(error?.message||error||"Manual Eufy login failed");
     // Don't discard an email challenge just because a single code was wrong.
     // A server cooldown/error 100028 is different: do NOT encourage resubmission.
@@ -1421,6 +1495,8 @@ const server=http.createServer(async(req,res)=>{
     if(method==="GET"&&path==="/api/status")return json(res,200,{...await statusPayload(false),autoLogin:eufyAutoPauseStatus()});
     if(method==="GET"&&path==="/api/eufy/verification")
       return json(res,200,verificationStatus());
+    if(method==="GET"&&path==="/api/eufy/login-trace")
+      return json(res,200,eufyLoginTraceStatus());
     if(method==="POST"&&path==="/api/eufy/verification"){
       const body:any=await readJson(req);
       const action=String(body?.action||"");
