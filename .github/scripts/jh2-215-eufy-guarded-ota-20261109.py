@@ -56,7 +56,17 @@ out["before"]={"firmware":before.get("firmware"),"online":before.get("online"),
  "queue":before.get("queued"),"relayStreaming":before.get("relayStreaming")}
 assert before.get("firmware")=="2.0.14" and before.get("online") is True
 assert before.get("curtain",{}).get("connected") is True and int(before.get("queued") or 0)==0
-assert before.get("relayStreaming") is False
+active_show=before.get("showSequence") or {}
+startup_show=before.get("startupShow") or {}
+saved_show=None
+if active_show.get("running") is True:
+ assert startup_show.get("mode")=="sequence" and startup_show.get("name")==active_show.get("name"),"Do not interrupt unknown active scene"
+ saved=req("/api/curtain/internet-art/shows")
+ matching=[x for x in saved.get("shows",[]) if x.get("id")==startup_show.get("showId")]
+ assert len(matching)==1 and len(matching[0].get("items",[]))>=2,"Cannot restore live show: saved items missing"
+ saved_show=matching[0]
+else:
+ assert before.get("relayStreaming") is False,"Unknown active animation: refuse OTA"
 assert int(before.get("curtain",{}).get("mtu") or 0)>=500,"Native high-MTU BLE required"
 assert before.get("curtain",{}).get("nanoLocalCacheSupported") is True,"Verified Nano storage required"
 assert before.get("signedOta",{}).get("state") in ("idle","failed"),"Concurrent signed OTA activity"
@@ -82,18 +92,28 @@ try:
  print("JH2_215_ORACLE_MIRROR_SIGNED_VALIDATED",len(served),flush=True)
  current=status()
  if current.get("firmware")!="2.0.15":
+  if saved_show:
+   out["showPauseRequested"]=True
+   reply=req("/api/curtain/show-sequence",{"operation":"stop"})
+   assert reply.get("ok") is True,"Cannot stop saved show safely"
+   for stop_wait in range(50):
+    paused=status()
+    if paused.get("relayStreaming") is False and int(paused.get("queued") or 0)==0:break
+    time.sleep(2)
+   else:raise RuntimeError("Curtain playback did not stop cleanly; OTA cancelled")
+   out["showPaused"]=True
   # Release NimBLE's SmartDawn GATT allocation during the separate OTA TLS
   # connection. The curtain retains its last displayed state. A scan command
   # clears hold_disconnect and reconnects, regardless of OTA success.
-  out["curtainBleRelease"]=command("disconnect","jh2-215-ota-ble-release-once-20261109")
+  out["curtainBleRelease"]=command("disconnect","jh2-215-ota-ble-release-20261109-v3")
   for scan_wait in range(18):
    latest=status()
    if latest.get("curtain",{}).get("connected") is False:break
    time.sleep(2)
   else:raise RuntimeError("SmartDawn BLE release was not confirmed; refusing OTA")
   out["curtainBleTemporarilyReleased"]=True
-  out["firmwareCheck"]=command("nanoFirmwareCheck","jh2-215-ota-ble-firmware-check-20261109-v2")
-  out["firstInstall"]=command("nanoInstallUpdate","jh2-215-ota-ble-stage-20261109-v2")
+  out["firmwareCheck"]=command("nanoFirmwareCheck","jh2-215-ota-ble-firmware-check-20261109-v3")
+  out["firstInstall"]=command("nanoInstallUpdate","jh2-215-ota-ble-stage-20261109-v3")
   out["firmwareInstallStarted"]=True
  activationIssued=False
  for cycle in range(175):
@@ -109,7 +129,7 @@ try:
     out["bleConfirmed"]=True
     break
   if fw=="2.0.14" and st.get("state")=="ready" and not activationIssued:
-   out["activation"]=command("nanoInstallUpdate","jh2-215-ota-ble-activate-20261109-v2")
+   out["activation"]=command("nanoInstallUpdate","jh2-215-ota-ble-activate-20261109-v3")
    activationIssued=True
   if st.get("state")=="failed" and fw!="2.0.15":
    raise RuntimeError("Verified signed OTA failed: "+str(st.get("message",""))[:150])
@@ -135,7 +155,7 @@ except BaseException as e:
   try:
    current=status()
    if current.get("online") and current.get("curtain",{}).get("connected") is not True:
-    out["curtainReconnect"]=command("scan","jh2-215-ota-restore-scan-once-20261109")
+    out["curtainReconnect"]=command("scan","jh2-215-ota-restore-scan-20261109-v3")
     for scan_wait in range(35):
      current=status()
      if current.get("curtain",{}).get("connected") is True:
@@ -144,6 +164,23 @@ except BaseException as e:
      time.sleep(2)
   except Exception as restore_error:
    out["curtainReconnectError"]=str(restore_error)[:130]
+ if out.get("showPauseRequested") and saved_show:
+  try:
+   now=status()
+   if now.get("online") and now.get("curtain",{}).get("connected") is True and not (now.get("showSequence") or {}).get("running"):
+    restore=req("/api/curtain/show-sequence",{"operation":"start","showId":saved_show["id"],
+     "name":saved_show["name"],"items":saved_show["items"]})
+    out["showRestoredAfterFailure"]=restore.get("ok") is True
+   else:out["showRestoreDeferred"]="Nano or SmartDawn not ready"
+  except Exception as err:
+   out["showRestoreError"]=str(err)[:130]
  print("JH2_215_OTA_RESULT",json.dumps(out),flush=True)
  raise
+if saved_show and not (current.get("showSequence") or {}).get("running"):
+ try:
+  restore=req("/api/curtain/show-sequence",{"operation":"start","showId":saved_show["id"],
+   "name":saved_show["name"],"items":saved_show["items"]})
+  out["showRestoredAfterSuccess"]=restore.get("ok") is True
+ except Exception as err:
+  out["showRestoreError"]=str(err)[:130]
 print("JH2_215_OTA_RESULT",json.dumps(out),flush=True)
