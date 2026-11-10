@@ -1,0 +1,18 @@
+name: JH2 Nano full Bluetooth scan and red-green encrypted response verification
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-218-fullscan-and-response-verify-20261110.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check all scanned devices and encrypted session response of four Eufy lights
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-218-inventory-and-response-verify-20261110.py
+          sudo -n python3 .github/scripts/jh2-218-inventory-and-response-verify-20261110.py
