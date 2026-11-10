@@ -11,6 +11,7 @@
  */
 #include "bridge.h"
 #include "esp_wifi.h"
+#include "esp_coexist.h"
 #include "esp_bt.h"
 #include "nvs.h"
 #include "native_ble.h"
@@ -116,7 +117,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.19"
+#define NATIVE_FW_VERSION "2.0.20"
 /* Actual ESP32-C6 RF controls. Values are hardware read back, not web targets.
  * Never change Wi-Fi association or disconnect a BLE connection here.
  * Retained targets are reapplied after Wi-Fi/Bluetooth become ready.
@@ -247,6 +248,108 @@ static bool radio_command(const cJSON *payload,char *message,size_t cap){
     if(is_wifi)radio_wifi_target=dbm;else radio_ble_target=dbm;
     snprintf(message,cap,"%s TX power applied, read back, and persisted: %d dBm",
              is_wifi?"Wi-Fi":"BLE",dbm);
+    return true;
+}
+
+
+/* ESP32-C6 Wi-Fi/BLE coex: software API ACK, not physical airtime readback.
+ * Balanced is the safe default; Bluetooth Preferred is opt-in. Both settings
+ * survive reboots in a separate NVS namespace. Avoid any Wi-Fi reconnect.
+ */
+static bool coex_loaded=false,coex_accepted=false;
+static int coex_target=0,coex_wifi_ps_target=0;
+static const char *coex_name(int v){return v==1?"bluetooth":"balanced";}
+static const char *coex_ps_name(int v){return v==1?"minModem":"off";}
+static void coex_load(void){
+    if(coex_loaded)return;
+    coex_loaded=true;
+    nvs_handle_t n;
+    if(nvs_open("jh2_coex",NVS_READONLY,&n)!=ESP_OK)return;
+    uint8_t b=0;
+    if(nvs_get_u8(n,"prefer",&b)==ESP_OK&&b<=1)coex_target=b;
+    if(nvs_get_u8(n,"wifi_ps",&b)==ESP_OK&&b<=1)coex_wifi_ps_target=b;
+    nvs_close(n);
+}
+static bool coex_save(const char *key,int value){
+    nvs_handle_t n;
+    if(nvs_open("jh2_coex",NVS_READWRITE,&n)!=ESP_OK)return false;
+    esp_err_t e=nvs_set_u8(n,key,(uint8_t)value);
+    if(e==ESP_OK)e=nvs_commit(n);
+    nvs_close(n);
+    return e==ESP_OK;
+}
+static int coex_wifi_ps_actual(void){
+    wifi_ps_type_t mode=WIFI_PS_NONE;
+    if(esp_wifi_get_ps(&mode)!=ESP_OK)return -1;
+    return mode==WIFI_PS_NONE?0:mode==WIFI_PS_MIN_MODEM?1:2;
+}
+static void coex_restore(void){
+    coex_load();
+    if(!coex_accepted){
+        if(esp_coex_preference_set(coex_target==1?ESP_COEX_PREFER_BT:ESP_COEX_PREFER_BALANCE)==ESP_OK)
+            coex_accepted=true;
+    }
+    if(coex_wifi_ps_actual()!=coex_wifi_ps_target)
+        (void)esp_wifi_set_ps(coex_wifi_ps_target?WIFI_PS_MIN_MODEM:WIFI_PS_NONE);
+}
+static void coex_status(cJSON *status){
+    coex_restore();
+    cJSON *c=cJSON_AddObjectToObject(status,"nanoCoexistence");
+    if(!c)return;
+    cJSON_AddBoolToObject(c,"supported",true);
+    cJSON_AddBoolToObject(c,"preferenceAccepted",coex_accepted);
+    cJSON_AddStringToObject(c,"preferenceTarget",coex_name(coex_target));
+    if(coex_accepted)cJSON_AddStringToObject(c,"preferenceApplied",coex_name(coex_target));
+    else cJSON_AddNullToObject(c,"preferenceApplied");
+    cJSON_AddStringToObject(c,"wifiPowerSaveTarget",coex_ps_name(coex_wifi_ps_target));
+    const int actual=coex_wifi_ps_actual();
+    if(actual<=1&&actual>=0)cJSON_AddStringToObject(c,"wifiPowerSaveApplied",coex_ps_name(actual));
+    else cJSON_AddNullToObject(c,"wifiPowerSaveApplied");
+    cJSON_AddStringToObject(c,"source","ESP-IDF preference API success; Wi-Fi PS readback");
+    cJSON_AddBoolToObject(c,"backgroundSurveyPausedForStreaming",true);
+}
+static bool coex_command(const cJSON *payload,char *message,size_t size){
+    if(!cJSON_IsObject(payload)||!payload->child||payload->child->next){
+        snprintf(message,size,"Exactly one coexistence setting required");return false;
+    }
+    const cJSON *pref=cJSON_GetObjectItemCaseSensitive(payload,"preference");
+    const cJSON *ps=cJSON_GetObjectItemCaseSensitive(payload,"wifiPowerSave");
+    if((pref!=NULL)==(ps!=NULL)){
+        snprintf(message,size,"Unknown or conflicting coexistence setting");return false;
+    }
+    const cJSON *v=pref?pref:ps;
+    if(!cJSON_IsString(v)||!v->valuestring){
+        snprintf(message,size,"Invalid coexistence setting");return false;
+    }
+    const int choice=pref?(strcmp(v->valuestring,"bluetooth")==0?1:
+        strcmp(v->valuestring,"balanced")==0?0:-1):
+        (strcmp(v->valuestring,"minModem")==0?1:
+         strcmp(v->valuestring,"off")==0?0:-1);
+    if(choice<0){snprintf(message,size,"Unsupported coexistence mode");return false;}
+    coex_load();
+    if(pref){
+        esp_err_t err=esp_coex_preference_set(choice?ESP_COEX_PREFER_BT:ESP_COEX_PREFER_BALANCE);
+        if(err!=ESP_OK){
+            snprintf(message,size,"ESP-IDF coexistence API rejected mode: %s",esp_err_to_name(err));
+            return false;
+        }
+        coex_accepted=true;
+        if(!coex_save("prefer",choice)){
+            snprintf(message,size,"Coexistence API accepted but NVS persistence failed");return false;
+        }
+        coex_target=choice;
+        snprintf(message,size,"ESP-IDF coexistence mode accepted and persisted: %s",coex_name(choice));
+        return true;
+    }
+    esp_err_t err=esp_wifi_set_ps(choice?WIFI_PS_MIN_MODEM:WIFI_PS_NONE);
+    if(err!=ESP_OK||coex_wifi_ps_actual()!=choice){
+        snprintf(message,size,"Wi-Fi power-save change rejected or hardware readback differed");return false;
+    }
+    if(!coex_save("wifi_ps",choice)){
+        snprintf(message,size,"Wi-Fi PS changed but NVS persistence failed");return false;
+    }
+    coex_wifi_ps_target=choice;
+    snprintf(message,size,"Wi-Fi power save verified and persisted: %s",coex_ps_name(choice));
     return true;
 }
 
@@ -675,7 +778,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         return;
     }
 #endif
-    if(strcmp(action->valuestring,"nanoTxPower")==0){
+    if(strcmp(action->valuestring,"nanoCoexistence")==0){
+        char result[170]={0};
+        bool ok=coex_command(payload,result,sizeof(result));
+        append_ack(current,ok?"applied":"failed",result,false);
+    }else if(strcmp(action->valuestring,"nanoTxPower")==0){
         char result[170]={0};
         bool ok=radio_command(payload,result,sizeof(result));
         append_ack(current,ok?"applied":"failed",result,false);
@@ -1083,6 +1190,7 @@ static cJSON *sync_document(void){
     cJSON *status=cJSON_AddObjectToObject(body,"status");
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
     radio_status(status);
+    coex_status(status);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
     // Live reset diagnostics let Oracle distinguish a Nano reboot from
     // an ordinary Bluetooth connection cycle; no credentials included.
