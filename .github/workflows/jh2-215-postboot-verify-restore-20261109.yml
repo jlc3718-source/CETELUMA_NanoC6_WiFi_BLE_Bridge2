@@ -1,0 +1,20 @@
+name: JH2 verify Nano 2.0.15 Eufy BLE and restore saved show
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-215-postboot-verify-restore-20261109.yml']
+permissions: {contents: read}
+jobs:
+  verify-and-restore:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify signed new firmware, retain recovery, and restore live holiday show
+        shell: bash
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-215-postboot-verify-and-restore-20261109.py
+          sudo -n --preserve-env=GITHUB_WORKSPACE python3 .github/scripts/jh2-215-postboot-verify-and-restore-20261109.py
