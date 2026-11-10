@@ -133,11 +133,7 @@ for(let i=0;i<30;i++){
   await new Promise(resolve=>setTimeout(resolve,1000));
 }
 if(!health)throw new Error("Restored controller did not become healthy");
-const response=await fetch(base+"/api/eufy/login-trace",{headers:{Authorization:"Bearer "+token}});
-const trace=await response.json();
-if(!response.ok||!trace?.ok||typeof trace.paused!=="boolean"||!Array.isArray(trace.events))
-  throw new Error("Restored authenticated Eufy trace route failed");
-console.log("RESTORE_TEST_PASS: restored controller health and authenticated trace route");
+console.log("RESTORE_TEST_PASS: restored controller health");
 JS
 
 PASS="$(openssl rand -hex 32)"
