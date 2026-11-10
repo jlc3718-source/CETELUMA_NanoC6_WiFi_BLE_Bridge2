@@ -104,7 +104,7 @@ jobs:
           previous_build=health.get("build",{}).get("sha")
           if not isinstance(previous_build,str) or not previous_build:
               previous_build=(root/"previous-sha").read_text().strip()
-          (root/"previous-build-sha").write_text(previous_build+"\\n")
+          (root/"previous-build-sha").write_text(previous_build+"\n")
           db=sqlite3.connect("file:/home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite?mode=ro",uri=True)
           row=db.execute("SELECT value FROM meta WHERE key=?",("eufy_auto_pause_until_v1",)).fetchone()
           db.close()
