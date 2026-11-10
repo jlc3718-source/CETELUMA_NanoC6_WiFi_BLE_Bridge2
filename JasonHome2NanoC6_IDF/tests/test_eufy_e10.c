@@ -39,7 +39,48 @@ int main(void){
     assert(n>100&&n<247&&f[7]==0x42&&f[8]==6&&xorsum(f,n)==0);
     n=eufy_e10_color(&s,0x12345678,true,1,2,3,60,f,sizeof(f));
     assert(n>100&&n<247&&f[7]==0x42&&f[8]==6&&xorsum(f,n)==0);
+
+    /* Authenticated state query and real device-reply parsing, no contact
+     * with physical lights in this deterministic host-side fixture. */
+    n=eufy_e10_read_status(&s,0x12345678,f,sizeof(f));
+    assert(n>60&&f[7]==0x42&&f[8]==0x00&&xorsum(f,n)==0);
+    const uint8_t state_payload[]={0,
+        0xa1,1,1, 0xa2,1,55, 0xa3,2,20,0,
+        0xa4,2,0x26,0x4e, 0xa6,4,0x88,0x27,0,0, 0xa8,1,2};
+    size_t plen=sizeof(state_payload),block=((plen/16)+1)*16;
+    uint8_t plain[64]={0},coded[64]={0},reply[74]={0};
+    memcpy(plain,state_payload,plen);
+    memset(plain+plen,(int)(block-plen),block-plen);
+    encrypt(s.session_key,s.serial_iv,plain,block,coded);
+    size_t reply_n=block+10;
+    reply[0]=0xff;reply[1]=9;reply[2]=(uint8_t)reply_n;
+    reply[3]=(uint8_t)(reply_n>>8);reply[4]=10;reply[6]=2;
+    reply[7]=0x4a;reply[8]=0x00;
+    memcpy(reply+9,coded,block);reply[reply_n-1]=xorsum(reply,reply_n-1);
+    assert(eufy_e10_notification(&s,reply,reply_n)==4);
+    assert(s.state_valid&&s.state_has_segments&&s.state_segments==20);
+    assert(s.state_has_power&&s.state_power);
+    assert(s.state_has_brightness&&s.state_brightness==55);
+    assert(s.state_has_effect&&s.state_effect_id==20006);
+    assert(s.state_has_cloud_effect&&s.state_cloud_effect_id==10120);
+    uint8_t preset_tail[24]={0xa3,4,0x88,0x27,0,0,0xa4,1,40,0xa5,1,1,
+      0xa6,1,0,0xa8,1,0,0xa9,4,1,2,3,4};
+    n=eufy_e10_preset(&s,0x12345678,preset_tail,sizeof(preset_tail),f,sizeof(f));
+    assert(n>60&&f[7]==0x42&&f[8]==0x0d&&xorsum(f,n)==0);
+    n=eufy_e10_dynamic(&s,0x12345678,true,20000,5,255,0,0,20,f,sizeof(f));
+    assert(n>60&&f[7]==0x42&&f[8]==0x06&&xorsum(f,n)==0);
+    const uint8_t rejected[]={1};
+    plen=sizeof(rejected);block=16;
+    memset(plain,0,sizeof(plain));plain[0]=1;memset(plain+1,15,15);
+    encrypt(s.session_key,s.serial_iv,plain,16,coded);
+    reply_n=26;memset(reply,0,sizeof(reply));
+    reply[0]=0xff;reply[1]=9;reply[2]=(uint8_t)reply_n;reply[4]=11;
+    reply[6]=2;reply[7]=0x4a;reply[8]=0x0d;
+    memcpy(reply+9,coded,16);reply[reply_n-1]=xorsum(reply,reply_n-1);
+    assert(eufy_e10_notification(&s,reply,reply_n)==2);
+    assert(s.last_ack_opcode==0x0a0d&&s.last_ack_result==1);
+    (void)rejected;
     packet[41]^=1;assert(eufy_e10_notification(&s,packet,sizeof(packet))==-1);
     eufy_e10_clear(&s);assert(!s.session_valid);
-    puts("E10 framing, AES session, power/brightness/color, checksum tests PASS");
+    puts("E10/E22 session, encrypted state query, real 020D ACK and dynamic RGBWW checksum tests PASS");
 }
