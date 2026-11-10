@@ -1,0 +1,34 @@
+name: JH2 Eufy Mega read-only account check
+on:
+  push:
+    branches:
+      - experiment/eufy-mega-readonly-2026-11-09
+    paths:
+      - '.github/workflows/jh2-eufy-mega-readonly.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jh2-eufy-mega-readonly
+  cancel-in-progress: false
+jobs:
+  read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.5.0'
+      - name: Install pinned Mega SDK away from production
+        working-directory: experiments/eufy-mega-readonly
+        run: |
+          npm init -y >/dev/null
+          npm install --no-save --no-audit --no-fund @mega-yfue/eufy-sdk@0.5.0
+      - name: Attempt one read-only login and inventory
+        timeout-minutes: 3
+        working-directory: experiments/eufy-mega-readonly
+        env:
+          EUFY_EMAIL: ${{ secrets.EUFY_EMAIL }}
+          EUFY_PASSWORD: ${{ secrets.EUFY_PASSWORD }}
+        run: node sdk-readonly-check.mjs
