@@ -47,7 +47,7 @@ jobs:
           await assert.rejects(wifiFirstEufyControl({live:disrupted,payload:{target:'All',power:true},
            relay:refuse,sendWifi:dispatch}),/2.0.21/);
           assert.equal(sent.length,0);assert.equal(enqueued.length,0);
-          await assert.rejects(wifiFirstEufyControl({live:disrupted,payload:{target:'All',
+          await assert.rejects(wifiFirstEufyControl({live:{eufy:{ready:false,readyNames:['House','Garage','Shed']}},payload:{target:'All',
            lightId:10296,tailHex:'a30438280000'},relay,sendWifi:dispatch}),/factory|gallery|E120|payload/i);
           assert.equal(sent.length,0);assert.equal(enqueued.length,0);
           const safe=await eufyScheduleFallbackTick({cloud:{...healthy,calendar:{
@@ -75,6 +75,9 @@ jobs:
           """
           # docker exec stdin is unit-test code, no device credentials or network
           result=subprocess.run(['docker','exec','-i','-w',root,container,'node','--input-type=module'],
-             input=js,text=True,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=120)
+             input=js,text=True,check=False,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=120)
           print(result.stdout,flush=True)
+          if result.returncode:
+              print('READ_ONLY_ROUTER_TEST_STDERR',result.stderr[:3000],flush=True)
+              raise RuntimeError('Read-only mock router tests failed')
           PY
