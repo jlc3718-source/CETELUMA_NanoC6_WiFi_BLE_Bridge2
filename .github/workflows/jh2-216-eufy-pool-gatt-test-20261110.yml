@@ -1,0 +1,18 @@
+name: JH2 Nano 2.0.16 diagnostic single Pool Eufy GATT ON test
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-216-eufy-pool-gatt-test-20261110.yml']
+permissions: {contents: read}
+jobs:
+  pool:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Eufy Nano BLE diagnostic single Pool power ON and GATT receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-216-eufy-pool-gatt-test-20261110.py
+          sudo -n python3 .github/scripts/jh2-216-eufy-pool-gatt-test-20261110.py
