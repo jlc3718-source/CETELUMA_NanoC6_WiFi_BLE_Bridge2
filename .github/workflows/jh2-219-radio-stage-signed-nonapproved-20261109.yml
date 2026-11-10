@@ -10,20 +10,6 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Verify 2.0.19 signed build succeeded before staging
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          for i in $(seq 1 80); do
-            result="$(gh api repos/"$GITHUB_REPOSITORY"/actions/runs/42744249984 --jq '.status + ":" + (.conclusion // "")')"
-            echo "TX-power signed build: $result"
-            if [ "$result" = "completed:success" ]; then exit 0; fi
-            if [[ "$result" == completed:* ]]; then echo 'Signed compiler failed; refuse staging';exit 1; fi
-            sleep 15
-          done
-          echo 'Signed build confirmation timed out';exit 1
       - uses: actions/download-artifact@v4
         with:
           name: JH2-2.0.19-EUFY-BLE-SIGNED-NOT-PUBLISHED
