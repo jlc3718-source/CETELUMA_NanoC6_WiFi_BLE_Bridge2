@@ -1,0 +1,18 @@
+name: JH2 Nano 2.0.17 five-device Bluetooth status and passive scan smoke
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-217-ble-status-live-smoke-20261110.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check per-Eufy and SmartDawn BLE live status and manual non-invasive scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-217-ble-status-live-smoke-20261110.py
+          sudo -n python3 .github/scripts/jh2-217-ble-status-live-smoke-20261110.py
