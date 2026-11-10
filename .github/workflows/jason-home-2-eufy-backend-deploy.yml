@@ -70,7 +70,7 @@ jobs:
           if run.get("path")!=".github/workflows/jason-home-2-oracle-encrypted-snapshot.yml" or run.get("head_branch")!="main":
               raise SystemExit("Backup run came from an unexpected workflow or branch")
           script=json.loads((root/"jh2-snapshot-script.json").read_text())
-          if script.get("sha")!="b600e0a9ab9059199f8bcd4ac62be70dd357260b":
+          if script.get("sha")!="5f2d55013eddaf135fa0beafca9400af10a56a5d":
               raise SystemExit("Backup run did not use the current restore-test script")
           if not any(a.get("name")==expected and not a.get("expired",True) and int(a.get("size_in_bytes") or 0)>0 for a in artifacts):
               raise SystemExit("Verified encrypted Jason Home 2 backup artifact is missing")
