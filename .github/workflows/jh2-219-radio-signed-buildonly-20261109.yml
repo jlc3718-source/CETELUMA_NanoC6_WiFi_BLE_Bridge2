@@ -2,9 +2,9 @@ name: JH2 Nano 2.0.19 real Wi-Fi + BLE TX-power signed BUILD ONLY
 on:
   push:
     branches: [feature/jh2-nano-real-tx-power-20261109]
-    paths: ['.github/workflows/jh2-219-eufy-fullscan-signed-buildonly-20261110.yml', 'JasonHome2NanoC6_IDF/**']
+    paths: ['.github/workflows/jh2-219-radio-signed-buildonly-20261109.yml', 'JasonHome2NanoC6_IDF/**']
 permissions: {contents: read}
-concurrency: {group: jh2-219-eufy-signed-build-only, cancel-in-progress: false}
+concurrency: {group: jh2-219-radio-signed-build-only, cancel-in-progress: false}
 jobs:
   signed-test:
     runs-on: ubuntu-24.04
