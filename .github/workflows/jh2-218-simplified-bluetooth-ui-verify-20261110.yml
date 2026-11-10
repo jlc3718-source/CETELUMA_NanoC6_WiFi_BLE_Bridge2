@@ -39,6 +39,7 @@ jobs:
           script=match.group(1)
           assert all(token in script for token in ['jhBleRange','jhBleResponse','jhBleInventory','jhBleScan','jhBleTestAll','TESTING','NO RESPONSE'])
           assert 'jh2SmartDawnBleState' not in script
+          assert 'jh2LegacyEufyCloudControls' in script and 'Advanced: Eufy cloud controls' in script
           with tempfile.TemporaryDirectory() as path:
            p=pathlib.Path(path)/'bluetooth-panel.js'
            p.write_text(script)
