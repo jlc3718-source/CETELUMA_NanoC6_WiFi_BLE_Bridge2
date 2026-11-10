@@ -1,0 +1,36 @@
+name: JH2 Eufy UI command queue read-only status
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-eufy-ui-pending-command-diagnostic-20261109.yml']
+permissions: {contents: read}
+jobs:
+  status:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Eufy probe command states without logging credentials
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import subprocess, json, urllib.request, time
+          d=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web'],text=True))[0]
+          token=dict(x.split('=',1) for x in d['Config']['Env'] if '=' in x)['JH2_UPSTREAM_TOKEN']
+          req=urllib.request.Request('http://127.0.0.1:8081/api/eufy/local-ble/status',
+             headers={'Authorization':'Bearer '+token})
+          with urllib.request.urlopen(req,timeout=12) as f:result=json.load(f)
+          def simple(c):
+           return {'id':c.get('id'),'name':c.get('name'),'operation':c.get('operation'),
+             'state':c.get('state'),'ageSeconds':round((time.time()*1000-c['createdAt'])/1000) if isinstance(c.get('createdAt'),(int,float)) else None,
+             'detail':str(c.get('detail') or '')[:90]}
+          print('JH2_UI_QUEUED_PROBE_STATUS',json.dumps({'firmware':result.get('nanoFirmware'),
+            'nanoOnline':result.get('nanoOnline'),
+            'activeTarget':(result.get('transport') or {}).get('activeTarget'),
+            'busy':(result.get('transport') or {}).get('busy'),
+            'phase':(result.get('transport') or {}).get('phase'),
+            'commands':[simple(x) for x in (result.get('commands') or [])[-15:]],
+            'devices':[{'name':x.get('name'),'seen':x.get('lastAdvertisementAgeSeconds'),
+              'probeAge':x.get('lastProbeAgeSeconds'),'lastFailure':x.get('lastFailureStage')} for x in (result.get('devices') or [])]
+          },sort_keys=True))
+          PY
