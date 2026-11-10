@@ -113,7 +113,7 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.16"
+#define NATIVE_FW_VERSION "2.0.17"
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -692,6 +692,10 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         append_ack(current,good?"applied":"failed",good?
             "Controller completed continuous native RAM upload; catalog verification required":
             (error?error:"Native RAM upload failed"),good);
+    }else if(strcmp(action->valuestring,"eufyBleScan")==0){
+        char message[110]={0};
+        const bool complete=jh2_eufy_ble_rescan(message,sizeof(message));
+        append_ack(current,complete?"applied":"failed",message,false);
     }else if(strcmp(action->valuestring,"eufyBle")==0){
         /* Private credential is delivered only inside the existing bearer-
          * authenticated Nano poll. Do not include it in ACKs or logs. */
