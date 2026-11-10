@@ -46,6 +46,13 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID" \
             -o "$RUNNER_TEMP/jh2-backup-run.json"
+          RUN_HEAD_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["head_sha"])' "$RUNNER_TEMP/jh2-backup-run.json")"
+          test -n "$RUN_HEAD_SHA"
+          curl --max-time 20 -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/scripts/jason-home-2-oracle-private-snapshot.sh?ref=$RUN_HEAD_SHA" \
+            -o "$RUNNER_TEMP/jh2-snapshot-script.json"
           curl --max-time 20 -fsS \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -62,8 +69,9 @@ jobs:
               raise SystemExit("Backup and restore-test workflow has not succeeded")
           if run.get("path")!=".github/workflows/jason-home-2-oracle-encrypted-snapshot.yml" or run.get("head_branch")!="main":
               raise SystemExit("Backup run came from an unexpected workflow or branch")
-          if run.get("head_sha")!="3ea27ed04109139dc93c89fe664e7dbc00c8b3d6":
-              raise SystemExit("Backup run did not use the restore-test version of the snapshot script")
+          script=json.loads((root/"jh2-snapshot-script.json").read_text())
+          if script.get("sha")!="b600e0a9ab9059199f8bcd4ac62be70dd357260b":
+              raise SystemExit("Backup run did not use the current restore-test script")
           if not any(a.get("name")==expected and not a.get("expired",True) and int(a.get("size_in_bytes") or 0)>0 for a in artifacts):
               raise SystemExit("Verified encrypted Jason Home 2 backup artifact is missing")
           print("Backup artifact and isolated restore test: PASS")
