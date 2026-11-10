@@ -4,7 +4,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { EufyClient, EufyCaptchaRequired, type EufySession } from "./eufy/client.js";
+import { EufyClient, EufyCaptchaRequired, EufyEmailCodeRequired, type EufySession } from "./eufy/client.js";
 import { isBrightnessOnlyControl } from "./eufy/light-commands.js";
 import { canBuildFactoryFields, dedupeFactoryPresetsByName } from "./eufy/factory-presets.js";
 import { astronomy, nextScheduleEvent, resolveScheduleState } from "./scheduler.js";
@@ -373,21 +373,23 @@ async function ensureEufy(force=false){
     let session:EufySession|undefined;
     const raw=meta("eufy_session");
     if(raw){try{session=JSON.parse(raw);}catch{}}
-    let client=new EufyClient(install,session);
+    // A single automatic preparation MUST NOT fall through to a second
+    // password login when the stored session is rejected. Explicit manual
+    // reconnect starts from a clean client and attempts login exactly once.
+    const client=new EufyClient(install,force?undefined:session);
     try{
       if(!client.authed)await client.login(EMAIL,PASSWORD);
       await client.prepare();
     }catch(first){
-      const message=String((first as any)?.message||first||"");
-      // Never transform an active cloud block or MQTT failure into an
-      // immediate second login. Keep saved session on code 100028.
-      if(/\b100028\b/.test(message))throw first;
-      if(session&&/auth|login|session|token|HTTP 401/i.test(message)){
-        delMeta("eufy_session");
-        client=new EufyClient(install);
-        await client.login(EMAIL,PASSWORD);
-        await client.prepare();
-      }else throw first;
+      if(first instanceof EufyCaptchaRequired){
+        pendingEufyVerification={kind:"captcha",client,id:first.captchaId,
+          image:first.image,expiresAt:Date.now()+5*60*1000};
+        setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+24*60*60*1000));
+      }else if(first instanceof EufyEmailCodeRequired){
+        pendingEufyVerification={kind:"email",client,expiresAt:Date.now()+10*60*1000};
+        setMeta(EUFY_AUTO_PAUSE_UNTIL_KEY,String(Date.now()+24*60*60*1000));
+      }
+      throw first;
     }
     const names=client.readyNames();
     for(const n of DEVICE_NAMES)if(!names.includes(n))throw new Error("Missing expected Eufy light: "+n);
@@ -414,20 +416,27 @@ async function ensureEufy(force=false){
   return preparing;
 }
 
-// Explicit manual CAPTCHA flow. Challenges live only in process memory;
-// never persist the image, answer or Eufy credentials to logs or SQLite.
-let pendingEufyCaptcha:{client:EufyClient;id:string;image:string;expiresAt:number}|null=null;
-function activeEufyCaptcha(){
-  if(pendingEufyCaptcha&&pendingEufyCaptcha.expiresAt>Date.now())return pendingEufyCaptcha;
-  pendingEufyCaptcha=null;
+// Explicit manual CAPTCHA and email 2FA flow. Challenge answers and images
+// are kept only in process memory; credentials, verification codes and images
+// are never stored in SQLite or application logs.
+type PendingEufyVerification=
+  |{kind:"captcha";client:EufyClient;id:string;image:string;expiresAt:number}
+  |{kind:"email";client:EufyClient;expiresAt:number};
+let pendingEufyVerification:PendingEufyVerification|null=null;
+function activeEufyVerification():PendingEufyVerification|null{
+  if(pendingEufyVerification&&pendingEufyVerification.expiresAt>Date.now())
+    return pendingEufyVerification;
+  pendingEufyVerification=null;
   return null;
 }
 function verificationStatus(){
-  const challenge=activeEufyCaptcha();
-  return {ok:true,required:!eufyReady,type:challenge?"captcha":null,
-    image:challenge?.image||null,
-    message:challenge?"Enter the characters shown to finish the Eufy login":
-      "No Eufy CAPTCHA has been supplied. Select Get verification image for one manual login attempt."};
+  const challenge=activeEufyVerification();
+  const kind=challenge?.kind;
+  return {ok:true,required:!eufyReady,type:kind==="email"?"email":kind==="captcha"?"captcha":null,
+    image:challenge?.kind==="captcha"?challenge.image:null,
+    message:kind==="email"?"Eufy emailed a one-time code. Enter it to complete the current login.":
+      kind==="captcha"?"Enter the displayed CAPTCHA characters to complete this login.":
+      "No pending verification. Select Get verification image for one deliberate manual login attempt."};
 }
 async function finishManualEufyLogin(client:EufyClient){
   await client.prepare();
@@ -437,33 +446,47 @@ async function finishManualEufyLogin(client:EufyClient){
   setMeta("eufy_session",JSON.stringify(client.exportSession()));
   delMeta(EUFY_AUTH_RETRY_AT_KEY);
   delMeta(EUFY_AUTH_RETRY_REASON_KEY);
-  pendingEufyCaptcha=null;
+  pendingEufyVerification=null;
 }
 async function manualEufyVerification(action:string,answer:string){
   if(action!=="start"&&action!=="answer")throw new Error("Invalid Eufy verification action");
-  if(action==="answer"&&!activeEufyCaptcha())throw new Error("CAPTCHA expired or was not requested; get a new image");
-  let client:EufyClient, captcha:{id:string;answer:string}|undefined;
+  const pending=activeEufyVerification();
+  if(action==="start"&&pending)return verificationStatus(); // Never spend a second login while a challenge is open.
+  if(action==="answer"&&!pending)throw new Error("Verification expired or was not requested; start a new manual login");
+  let client:EufyClient,captcha:{id:string;answer:string}|undefined,emailCode:string|undefined;
   if(action==="answer"){
-    const challenge=activeEufyCaptcha()!;
-    if(!answer.trim()||answer.length>64)throw new Error("Enter the CAPTCHA characters");
+    if(!answer.trim()||answer.length>64)throw new Error("Enter the verification characters or emailed code");
+    const challenge=pending!;
     client=challenge.client;
-    captcha={id:challenge.id,answer:answer.trim()};
-    pendingEufyCaptcha=null;
-  }else{
-    pendingEufyCaptcha=null;
-    client=new EufyClient(meta("install_id")||DEFAULT_INSTALL);
-  }
+    if(challenge.kind==="captcha")
+      captcha={id:challenge.id,answer:answer.trim()};
+    else emailCode=answer.trim();
+    pendingEufyVerification=null;
+  }else client=new EufyClient(meta("install_id")||DEFAULT_INSTALL);
   try{
-    await client.login(EMAIL,PASSWORD,captcha);
+    await client.login(EMAIL,PASSWORD,captcha,emailCode);
     await finishManualEufyLogin(client);
     return {ok:true,required:false,type:null,image:null,readyNames:[...readyNames]};
   }catch(error:any){
     if(error instanceof EufyCaptchaRequired){
-      pendingEufyCaptcha={client,id:error.captchaId,image:error.image,expiresAt:Date.now()+5*60*1000};
+      pendingEufyVerification={kind:"captcha",client,id:error.captchaId,
+        image:error.image,expiresAt:Date.now()+5*60*1000};
       return verificationStatus();
     }
-    // Don't report success or fabricate an image when Eufy only returned 100028.
+    if(error instanceof EufyEmailCodeRequired){
+      pendingEufyVerification={kind:"email",client,expiresAt:Date.now()+10*60*1000};
+      return verificationStatus();
+    }
     const message=String(error?.message||error||"Manual Eufy login failed");
+    // Don't discard an email challenge just because a single code was wrong.
+    // A server cooldown/error 100028 is different: do NOT encourage resubmission.
+    if(pending?.kind==="email"&&!/\b100028\b/.test(message))
+      pendingEufyVerification=pending;
+    if(/\b100028\b/.test(message)){
+      const notBefore=Date.now()+EUFY_AUTH_LOCKOUT_MS;
+      setMeta(EUFY_AUTH_RETRY_AT_KEY,String(notBefore));
+      setMeta(EUFY_AUTH_RETRY_REASON_KEY,"100028");
+    }
     eufyStatus=message;
     throw error;
   }

@@ -5,7 +5,12 @@ import { OP_SETUP, OP_COLOR, OP_SHOW, buildEffect, calibratedColor, catalogPrese
 import { buildFactoryFields, collectFactoryEffectIds, normalizeFactoryEntry, reverseFactoryPresetDirection, type EufyFactoryPreset } from "./factory-presets.js";
 import { powerFields, statusFields } from "./wire.js";
 
-export interface EufySession { region:string; bootstrap:string; token:string; uid:string; accountUid:string; }
+export interface EufySession {
+  region:string; bootstrap:string; token:string; uid:string; accountUid:string;
+  /** Key-ident/share must be restored together with the token; never log these. */
+  share?:string; ident?:string; keyCreatedAt?:number; tokenExpiresAt?:number;
+  openudid?:string; phoneModel?:string;
+}
 interface LightSpec { name:string; model:string; serials:string[]; lampCount:number; }
 const REVERSED_INSTALLATIONS=new Set(["Pool","Shed"]);
 const LIGHTS:LightSpec[]=[
@@ -40,13 +45,49 @@ export class EufyCaptchaRequired extends Error {
     this.name="EufyCaptchaRequired";
   }
 }
+export class EufyEmailCodeRequired extends Error {
+  constructor(){super("Eufy email verification code required");this.name="EufyEmailCodeRequired";}
+}
+/** Allow only image data, never a remote image URL or arbitrary HTML from an API response. */
+function captchaImage(value:unknown):string {
+  const raw=typeof value==="string"?value.trim():"";
+  if(/^data:image\/(?:png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(raw)&&raw.length<=300000)return raw;
+  if(!/^[A-Za-z0-9+/=]{64,300000}$/.test(raw))return "";
+  const sample=Buffer.from(raw.slice(0,64),"base64");
+  const type=sample.subarray(0,8).equals(Buffer.from("89504e470d0a1a0a","hex"))?"png":
+    sample.subarray(0,3).equals(Buffer.from("ffd8ff","hex"))?"jpeg":
+    sample.toString("ascii",0,3)==="GIF"?"gif":"";
+  return type?`data:image/${type};base64,${raw}`:"";
+}
 export class EufyClient {
   region="us-pr";bootstrap="";share="";ident="";token="";uid="";accountUid="";
   authed=false;lights=new Map<string,any>();creds:MqttCredentials|null=null;
+  private keyCreatedAt=0;private tokenExpiresAt=0;private pendingEmailCode=false;
+  private phoneModel="JasonHomeOracle";
   constructor(private installId:string,session?:EufySession){if(session)this.importSession(session);}
-  importSession(s:EufySession){this.region=s.region||"us-pr";this.bootstrap=s.bootstrap||"";this.token=s.token||"";this.uid=s.uid||"";this.accountUid=s.accountUid||"";this.authed=!!(this.token&&this.uid&&this.accountUid);this.share="";this.ident="";this.lights.clear();this.creds=null;}
-  exportSession():EufySession{return {region:this.region,bootstrap:this.bootstrap,token:this.token,uid:this.uid,accountUid:this.accountUid};}
-  private baseHeaders():Record<string,string>{return {"app-name":"eufy_mega","app-version":"6.0.41_26142","app_version":"6.0.41_26142","os-type":"android","os_type":"android","os-version":"36","os_version":"36","phone-model":"JasonHomeOracle","phone_model":"JasonHomeOracle","model-type":"PHONE","country":"US","ab_code":"US","openudid":this.installId,"language":"en","test-flag":"false","user-agent":"ktor-client","accept":"application/json","accept-charset":"UTF-8"};}
+  importSession(s:EufySession){
+    if(s.openudid&&s.openudid!==this.installId)return; // Never reuse a token with another device identity.
+    this.region=/^(us|eu)-pr$/.test(s.region)?s.region:"us-pr";
+    this.bootstrap=s.bootstrap&&allowedApi(s.bootstrap)?s.bootstrap:"";
+    this.token=s.token||"";this.uid=s.uid||"";this.accountUid=s.accountUid||"";
+    this.phoneModel=typeof s.phoneModel==="string"&&s.phoneModel.length<100?s.phoneModel:"JasonHomeOracle";
+    this.tokenExpiresAt=Number(s.tokenExpiresAt)||0;
+    const until=this.tokenExpiresAt>1e12?this.tokenExpiresAt/1000:this.tokenExpiresAt;
+    this.authed=!!(this.token&&this.uid&&this.accountUid&&(!until||until>nowSec()+60));
+    const keyAge=Date.now()-(Number(s.keyCreatedAt)||0);
+    const keyOk=this.authed&&keyAge>=0&&keyAge<12*3600_000&&
+      /^[0-9a-f]{32}$/i.test(s.share||"")&&typeof s.ident==="string"&&s.ident.length>0&&s.ident.length<128;
+    this.share=keyOk?s.share!:"";this.ident=keyOk?s.ident!:"";this.keyCreatedAt=keyOk?Number(s.keyCreatedAt):0;
+    this.lights.clear();this.creds=null;this.pendingEmailCode=false;
+  }
+  exportSession():EufySession{
+    if(!this.authed)throw new Error("Cannot persist an incomplete Eufy login");
+    return {region:this.region,bootstrap:this.bootstrap,token:this.token,uid:this.uid,
+      accountUid:this.accountUid,share:this.share,ident:this.ident,
+      keyCreatedAt:this.keyCreatedAt,tokenExpiresAt:this.tokenExpiresAt,
+      openudid:this.installId,phoneModel:this.phoneModel};
+  }
+  private baseHeaders():Record<string,string>{return {"app-name":"eufy_mega","app-version":"6.0.41_26142","app_version":"6.0.41_26142","os-type":"android","os_type":"android","os-version":"36","os_version":"36","phone-model":this.phoneModel,"phone_model":this.phoneModel,"model-type":"PHONE","country":"US","ab_code":"US","openudid":this.installId,"language":"en","test-flag":"false","user-agent":"ktor-client","accept":"application/json","accept-charset":"UTF-8"};}
   private authHeaders(h:Record<string,string>){if(this.token){h["x-auth-token"]=this.token;h.authorization=this.token;h.gtoken=md5(this.accountUid);}}
   private async raw(host:string,path:string,body:string,headers:Record<string,string>):Promise<any>{
     if(!allowedApi(host))throw new Error(`Unexpected Eufy API hostname: ${host}`);
@@ -66,7 +107,7 @@ export class EufyClient {
     const h=this.baseHeaders();this.authHeaders(h);h["content-type"]="application/json";this.signedHeaders(h,LOCAL_KEY_HEX,this.ident,encrypted);
     const host=this.bootstrap||`app-openapi-${this.region}.eufy.com`,r=await this.raw(host,"/openapi/oauth/key/exchange",JSON.stringify({client_public_key:encrypted}),h);
     if(r.code!==0)throw new Error(`Eufy key exchange failed: HTTP ${r._http}, code ${r.code}`);
-    const server=aesDecryptText(r.data.server_public_key,LOCAL_KEY_HEX);this.share=Buffer.from(ecdh.secret(server)).toString("hex").slice(0,32);
+    const server=aesDecryptText(r.data.server_public_key,LOCAL_KEY_HEX);this.share=Buffer.from(ecdh.secret(server)).toString("hex").slice(0,32);this.keyCreatedAt=Date.now();
   }
   private async signed(service:string,path:string,body:any,authenticated:boolean,scope?:string):Promise<any>{
     if(!this.share)await this.exchange();const cipher=aesEncryptText(JSON.stringify(body),this.share),types=path.startsWith("/passport/")?["text/plain","application/json"]:["application/json","text/plain"];
@@ -74,22 +115,26 @@ export class EufyClient {
       const h=this.baseHeaders();h["content-type"]=types[attempt];this.signedHeaders(h,this.share,this.ident,cipher);if(authenticated)this.authHeaders(h);if(scope)h["app-name"]=scope;
       const r=await this.raw(`app-${service}-${this.region}.eufy.com`,path,cipher,h),code=Number(r.code??-1);
       if(r._http===200&&code===0){let d=r.data;if(typeof d==="string"&&d)d=JSON.parse(aesDecryptText(d,this.share));return d??{};}
-      if(path==="/passport/login"){
-        // Eufy returns a CAPTCHA as code 100032 (and sometimes 100033).
-        // Some Mega responses encrypt data, so handle either wire form.
+      if(path==="/passport/login"&&(code===100032||code===100033)){
+        // Mega returns a challenge *error*. Newer clients obtain the image
+        // separately at /passport/generate/captcha, using this ECDH session.
         let challenge:any=r.data;
         if(typeof challenge==="string"){
           try{challenge=JSON.parse(aesDecryptText(challenge,this.share));}
           catch{try{challenge=JSON.parse(challenge);}catch{challenge=null;}}
         }
-        if(challenge&&typeof challenge==="object"){
-          const entry=challenge.captcha&&typeof challenge.captcha==="object"?challenge.captcha:challenge;
-          const image=String(entry.item||entry.image||"");
-          const id=String(entry.captcha_id??entry.captchaId??"");
-          if((code===100032||code===100033)&&
-             /^data:image\/(?:png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(image)&&image.length<=300000)
-            throw new EufyCaptchaRequired(id,image);
+        const inline=challenge&&typeof challenge==="object"?
+          (challenge.captcha&&typeof challenge.captcha==="object"?challenge.captcha:challenge):{};
+        let id=String(inline.captcha_id??inline.captchaId??"");
+        let image=captchaImage(inline.item??inline.image);
+        if(!id||!image){
+          // One request only, and ONLY after a specific CAPTCHA error.
+          const generated=await this.signed("passport","/passport/generate/captcha",{},false);
+          id=String(generated?.captcha_id??generated?.captchaId??"");
+          image=captchaImage(generated?.item??generated?.image);
         }
+        if(id&&image)throw new EufyCaptchaRequired(id,image);
+        throw new Error("Eufy requires a CAPTCHA but returned no usable challenge image");
       }
       if(attempt===0&&(code===4416||code===10000||r._http===400))continue;
       if(code===401||r._http===401){this.authed=false;this.lights.clear();this.creds=null;}
@@ -97,20 +142,46 @@ export class EufyClient {
     }
     throw new Error(`Eufy ${path} failed`);
   }
-  async login(email:string,password:string,captcha?:{id:string;answer:string}){
+  async login(email:string,password:string,captcha?:{id:string;answer:string},emailCode?:string){
     if(this.authed)return;
-    if(!captcha||!this.share){
+    if(emailCode&&(!this.pendingEmailCode||!this.token||!this.share))
+      throw new Error("No pending Eufy email verification; start a manual login first");
+    if(captcha&&(!this.share||!this.ident))
+      throw new Error("Eufy CAPTCHA session has expired; start a new manual login");
+    if(!captcha&&!emailCode){
       const h=this.baseHeaders();h["content-type"]="application/json";
       const est=await this.raw("mega-us-pr.eufy.com","/passport/estimate_domain",JSON.stringify({ab:"us",mode:1}),h);
       if(est.code!==0)throw new Error(`Eufy region lookup failed: HTTP ${est._http}, code ${est.code}`);
-      const blob=JSON.stringify(est.data||{});this.region=blob.includes("-eu-")?"eu-pr":"us-pr";const domain=est.data?.domain||est.data?.host||"";if(domain&&!domain.startsWith("mega-")&&allowedApi(domain))this.bootstrap=domain;
+      const blob=JSON.stringify(est.data||{});this.region=blob.includes("-eu-")?"eu-pr":"us-pr";
+      const domain=est.data?.domain||est.data?.host||"";
+      if(domain&&!domain.startsWith("mega-")&&allowedApi(domain))this.bootstrap=domain;
       await this.exchange();
     }
-    const enc=encryptPassword(password),body:any={email,password:enc.cipherText,ab:"US",client_secret_info:{public_key:enc.publicKey},verify_code:"",login_id:"",answer:captcha?.answer||"",captcha_id:captcha?.id||""};
-    const result=await this.signed("passport","/passport/login",body,!!this.token),fa=result?.fa_info;if(fa&&fa.info)throw new Error("Eufy email verification is required before cloud deployment");
-    this.uid=result.ap_cloud_user_id||result.user_id||result.userId||"";this.accountUid=result.user_id||result.userId||this.uid;this.token=result.auth_token||result.token||"";
+    const enc=encryptPassword(password);
+    const credentials={email,password:enc.cipherText,ab:"US",client_secret_info:{public_key:enc.publicKey}};
+    const body:any=emailCode
+      ?{...credentials,verify_code:emailCode,login_id:""}
+      :{...credentials,verify_code:"",login_id:"",answer:captcha?.answer||"",captcha_id:captcha?.id||""};
+    const result=await this.signed("passport","/passport/login",body,!!this.token);
+    this.uid=String(result.ap_cloud_user_id||result.user_id||result.userId||"");
+    this.accountUid=String(result.user_id||result.userId||this.uid);
+    this.token=String(result.auth_token||result.token||"");
+    this.tokenExpiresAt=Number(result.token_expires_at)||0;
     if(!this.uid||!this.accountUid||!this.token)throw new Error("Eufy login returned no usable session");
-    this.share="";await this.exchange();this.authed=true;
+    if(result?.fa_info?.info){
+      if(emailCode)throw new EufyEmailCodeRequired();
+      // The limited token MUST accompany sendmsg and the follow-up login.
+      this.pendingEmailCode=true;
+      await this.signed("push","/app/sendmsg/verify_code",
+        {biz_type:1004,message_type:2,transaction:String(Date.now())},true);
+      throw new EufyEmailCodeRequired();
+    }
+    this.pendingEmailCode=false;
+    // Rebind the key-ident to the full account token; persist the new ECDH
+    // session with the token, avoiding a key exchange on every restart.
+    this.share="";this.ident="";this.keyCreatedAt=0;
+    await this.exchange();
+    this.authed=true;
   }
   private requireLogin(){if(!this.authed)throw new Error("Eufy cloud session is not authenticated");}
   async findLights(){

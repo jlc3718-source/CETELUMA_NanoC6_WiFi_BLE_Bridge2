@@ -1,0 +1,44 @@
+name: Eufy Mega authentication offline validation
+
+on:
+  push:
+    branches:
+      - fix/eufy-mega-auth-captcha-2fa-session-20261109
+    paths:
+      - 'JasonHomeServer/**'
+      - '.github/workflows/eufy-mega-auth-validation.yml'
+  pull_request:
+    branches:
+      - fix/eufy-auth-100028-backoff-20261108
+    paths:
+      - 'JasonHomeServer/**'
+      - '.github/workflows/eufy-mega-auth-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-and-mocks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: JasonHomeServer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: JasonHomeServer/package-lock.json
+      - name: Install development dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Strict TypeScript check
+        run: npm run check
+      - name: Mock Eufy CAPTCHA, 2FA and session recovery (no cloud requests)
+        run: npm run test:auth-offline
+      - name: Existing lighting and scheduler regression suite
+        run: npm test
+      - name: Parse guarded Oracle deployment script (no execution)
+        run: bash -n scripts/deploy-eufy-mega-20261109.sh
