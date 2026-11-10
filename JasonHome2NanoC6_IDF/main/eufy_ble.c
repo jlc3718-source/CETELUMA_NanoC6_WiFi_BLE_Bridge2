@@ -269,13 +269,49 @@ static bool send_step(void){
     if(rc){fail("handshake_write",rc);return false;}
     stage_set(ST_HANDSHAKE);return true;
 }
+
+/* An Eufy GATT write ACK proves transport only. Decrypt the device's 0x0A00
+ * reply to a read-only 0x0200 query before confirming a light operation. */
+static int status_query_done(uint16_t conn,const struct ble_gatt_error *e,
+                              struct ble_gatt_attr *attr,void *arg){
+    (void)conn;(void)attr;(void)arg;
+    if(ctl.busy&&e->status!=0)fail("eufy_status_query_write",e->status);
+    return 0;
+}
+static bool query_device_state(void){
+    if(!ctl.busy||!ctl.crypto.session_valid||ctl.connection==BLE_HS_CONN_HANDLE_NONE)return false;
+    uint8_t frame[EUFY_E10_FRAME_MAX];const time_t now=time(NULL);
+    if(now<1600000000){fail("device_clock_unavailable",0);return false;}
+    const int len=eufy_e10_read_status(&ctl.crypto,(uint32_t)now,frame,sizeof(frame));
+    if(len<0||len>(int)ble_att_mtu(ctl.connection)-3){
+        fail("eufy_status_frame_size_or_mtu",len);return false;
+    }
+    stage_set(ST_QUERYING);
+    int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,status_query_done,NULL);
+    memset(frame,0,sizeof(frame));
+    if(rc){fail("eufy_status_query_start",rc);return false;}
+    return true;
+}
+static bool expected_device_state(void){
+    const eufy_e10_t *c=&ctl.crypto;
+    if(!c->state_valid)return false;
+    if(ctl.operation==EUFY_BLE_PROBE)return true;
+    if(ctl.operation==EUFY_BLE_POWER)return c->state_has_power&&c->state_power==ctl.on;
+    if(ctl.operation==EUFY_BLE_BRIGHTNESS)
+        return c->state_has_brightness&&c->state_brightness==ctl.brightness;
+    if(ctl.operation==EUFY_BLE_COLOR||ctl.operation==EUFY_BLE_DYNAMIC)
+        return c->state_has_effect&&c->state_effect_id==
+            (ctl.operation==EUFY_BLE_COLOR?20006u:(uint32_t)ctl.effect_id);
+    if(ctl.operation==EUFY_BLE_PRESET)
+        return (c->state_has_cloud_effect&&c->state_cloud_effect_id==ctl.preset_cloud_id)||
+               (c->state_has_effect&&c->state_effect_id==ctl.preset_cloud_id);
+    return false;
+}
 static bool send_command(void){
     if(!ctl.busy||!ctl.crypto.session_valid||ctl.connection==BLE_HS_CONN_HANDLE_NONE)return false;
-    if(ctl.operation==EUFY_BLE_PROBE){
-        finish(true,"eufy_encrypted_session_verified_no_light_command");
-        return true;
-    }
+    if(ctl.operation==EUFY_BLE_PROBE)return query_device_state();
     uint8_t frame[EUFY_E10_FRAME_MAX];const time_t now=time(NULL);
+    if(now<1600000000){fail("device_clock_unavailable",0);return false;}
     int len=-1;
     if(ctl.operation==EUFY_BLE_POWER)
         len=eufy_e10_power(&ctl.crypto,(uint32_t)now,ctl.on,frame,sizeof(frame));
@@ -284,11 +320,19 @@ static bool send_command(void){
     else if(ctl.operation==EUFY_BLE_COLOR)
         len=eufy_e10_color(&ctl.crypto,(uint32_t)now,ctl.is_e22,ctl.red,ctl.green,
                            ctl.blue,ctl.lamps,frame,sizeof(frame));
+    else if(ctl.operation==EUFY_BLE_DYNAMIC)
+        len=eufy_e10_dynamic(&ctl.crypto,(uint32_t)now,ctl.is_e22,ctl.effect_id,ctl.speed,
+                            ctl.red,ctl.green,ctl.blue,ctl.lamps,frame,sizeof(frame));
+    else if(ctl.operation==EUFY_BLE_PRESET)
+        len=eufy_e10_preset(&ctl.crypto,(uint32_t)now,
+                           ctl.preset_tail,ctl.preset_tail_len,frame,sizeof(frame));
     if(len<0||len>(int)ble_att_mtu(ctl.connection)-3){
         fail("command_frame_size_or_mtu",len);return false;
     }
+    ctl.crypto.last_ack_result=-1;
+    ctl.readback_retries=0;
     stage_set(ST_COMMAND);
-    int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,write_done,NULL);
+    const int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,write_done,NULL);
     memset(frame,0,sizeof(frame));
     if(rc){fail("command_gatt_write",rc);return false;}
     return true;
@@ -299,16 +343,22 @@ static int write_done(uint16_t conn,const struct ble_gatt_error *e,
     if(!ctl.busy)return 0;
     if(e->status){fail("gatt_write_ack",e->status);return 0;}
     if(ctl.stage==ST_COMMAND){
-        finish(true,"eufy_gatt_write_acknowledged_physical_light_unverified");
+        if(ctl.crypto.last_ack_result>0){
+            fail("eufy_device_rejected_command",ctl.crypto.last_ack_result);return 0;
+        }
+        (void)query_device_state();
         return 0;
     }
     if(ctl.stage!=ST_HANDSHAKE)return 0;
     ctl.step++;handshake_ack_count++;
     if(ctl.step<5)send_step();
-    else if(ctl.crypto.session_valid)send_command();
-    else stage_set(ST_WAIT_KEY);
+    else if(ctl.crypto.session_valid){
+        ctl.preflight=(ctl.operation==EUFY_BLE_COLOR||ctl.operation==EUFY_BLE_DYNAMIC);
+        if(ctl.preflight)query_device_state();else send_command();
+    }else stage_set(ST_WAIT_KEY);
     return 0;
 }
+
 static int subscribe_done(uint16_t conn,const struct ble_gatt_error *e,
                           struct ble_gatt_attr *attr,void *arg){
     (void)conn;(void)attr;(void)arg;
