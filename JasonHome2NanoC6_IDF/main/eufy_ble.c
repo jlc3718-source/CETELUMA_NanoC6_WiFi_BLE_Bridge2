@@ -44,6 +44,30 @@ typedef struct {
 } eufy_controller;
 static eufy_controller ctl={.connection=BLE_HS_CONN_HANDLE_NONE};
 static SemaphoreHandle_t lock=NULL,completed=NULL;
+/* Postmortem telemetry: bounded stage counters only; no addresses, packets or keys. */
+static volatile int last_phase=ST_IDLE,last_failure_code=0;
+static volatile unsigned scan_reports=0,scan_match_count=0,scan_deferred=0;
+static volatile unsigned scan_starts=0,connected_count=0,notify_count=0,handshake_ack_count=0;
+static volatile int64_t stage_since=0;
+static const char *phase_name(int stage){
+    switch(stage){
+    case ST_IDLE:return "idle";
+    case ST_QUEUED:return "waiting-for-scan";
+    case ST_SCANNING:return "scanning";
+    case ST_FOUND:return "scan-match";
+    case ST_CONNECTING:return "connecting";
+    case ST_DISCOVERING:return "discovering-gatt";
+    case ST_SUBSCRIBING:return "enabling-notify";
+    case ST_HANDSHAKE:return "e10-handshake";
+    case ST_WAIT_KEY:return "e10-session-key";
+    case ST_COMMAND:return "sending-command";
+    case ST_FINISHED:return "finished";
+    default:return "unknown";
+    }
+}
+static void stage_set(int stage){
+    ctl.stage=stage;stage_since=esp_timer_get_time();
+}
 static void reset_crypto(void){eufy_e10_clear(&ctl.crypto);}
 static bool parse_mac(const char *text,uint8_t out[6]){
     if(!text||strlen(text)!=17)return false;
@@ -63,8 +87,9 @@ static bool recognized(const char *name){
 static void finish(bool result,const char *why){
     if(!ctl.busy)return;
     ctl.result=result;
+    last_phase=ctl.stage;
     snprintf(ctl.result_stage,sizeof(ctl.result_stage),"%s",why?why:"Eufy BLE unavailable");
-    ctl.busy=false;ctl.stage=ST_FINISHED;
+    ctl.busy=false;stage_set(ST_FINISHED);
     reset_crypto();
     if(ctl.connection!=BLE_HS_CONN_HANDLE_NONE){
         ble_gap_terminate(ctl.connection,BLE_ERR_REM_USER_CONN_TERM);
@@ -75,7 +100,8 @@ static void finish(bool result,const char *why){
 static int gap_event(struct ble_gap_event *e,void *unused);
 static void fail(const char *step,int rc){
     /* Diagnostic step + return code only; never include account/serial/packets. */
-    ESP_LOGW(TAG,"local command stage=%s failed code=%d",step,rc);
+    last_failure_code=rc;
+    ESP_LOGW(TAG,"local command stage=%s phase=%s code=%d",step,phase_name(ctl.stage),rc);
     finish(false,step);
 }
 static int write_done(uint16_t conn,const struct ble_gatt_error *e,
@@ -91,7 +117,7 @@ static bool send_step(void){
     int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,write_done,NULL);
     memset(frame,0,sizeof(frame));
     if(rc){fail("handshake_write",rc);return false;}
-    ctl.stage=ST_HANDSHAKE;return true;
+    stage_set(ST_HANDSHAKE);return true;
 }
 static bool send_command(void){
     if(!ctl.busy||!ctl.crypto.session_valid||ctl.connection==BLE_HS_CONN_HANDLE_NONE)return false;
@@ -107,7 +133,7 @@ static bool send_command(void){
     if(len<0||len>(int)ble_att_mtu(ctl.connection)-3){
         fail("command_frame_size_or_mtu",len);return false;
     }
-    ctl.stage=ST_COMMAND;
+    stage_set(ST_COMMAND);
     int rc=ble_gattc_write_flat(ctl.connection,ctl.writer,frame,(uint16_t)len,write_done,NULL);
     memset(frame,0,sizeof(frame));
     if(rc){fail("command_gatt_write",rc);return false;}
@@ -123,10 +149,10 @@ static int write_done(uint16_t conn,const struct ble_gatt_error *e,
         return 0;
     }
     if(ctl.stage!=ST_HANDSHAKE)return 0;
-    ctl.step++;
+    ctl.step++;handshake_ack_count++;
     if(ctl.step<5)send_step();
     else if(ctl.crypto.session_valid)send_command();
-    else ctl.stage=ST_WAIT_KEY;
+    else stage_set(ST_WAIT_KEY);
     return 0;
 }
 static int subscribe_done(uint16_t conn,const struct ble_gatt_error *e,
@@ -143,7 +169,7 @@ static int dsc_found(uint16_t conn,const struct ble_gatt_error *e,
         return 0;
     }
     if(e->status!=BLE_HS_EDONE||!ctl.cccd){fail("notification_cccd_missing",e->status);return 0;}
-    const uint8_t enable[2]={1,0};ctl.stage=ST_SUBSCRIBING;
+    const uint8_t enable[2]={1,0};stage_set(ST_SUBSCRIBING);
     int rc=ble_gattc_write_flat(ctl.connection,ctl.cccd,enable,2,subscribe_done,NULL);
     if(rc)fail("cccd_write_launch",rc);
     return 0;
@@ -182,7 +208,7 @@ static int mtu_done(uint16_t conn,const struct ble_gatt_error *e,uint16_t mtu,vo
     (void)arg;
     if(!ctl.busy)return 0;
     if(e->status!=0){fail("eufy_mtu_negotiation",e->status);return 0;}
-    ctl.mtu=mtu;ctl.stage=ST_DISCOVERING;
+    ctl.mtu=mtu;stage_set(ST_DISCOVERING);
     int rc=ble_gattc_disc_all_svcs(conn,svc_found,NULL);
     if(rc)fail("eufy_service_discovery",rc);
     return 0;
@@ -192,8 +218,10 @@ static int gap_event(struct ble_gap_event *e,void *unused){
     switch(e->type){
     case BLE_GAP_EVENT_DISC:
         if(!ctl.busy||ctl.stage!=ST_SCANNING)return 0;
+        scan_reports++;
         if(memcmp(e->disc.addr.val,ctl.mac,6)!=0)return 0;
-        ctl.peer=e->disc.addr;ctl.stage=ST_FOUND;
+        scan_match_count++;
+        ctl.peer=e->disc.addr;stage_set(ST_FOUND);
         ble_gap_disc_cancel();return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
         if(ctl.busy&&ctl.stage==ST_SCANNING)fail("eufy_scan_no_target",0);
@@ -201,14 +229,14 @@ static int gap_event(struct ble_gap_event *e,void *unused){
     case BLE_GAP_EVENT_CONNECT:
         if(!ctl.busy)return 0;
         if(e->connect.status){fail("eufy_gatt_connect",e->connect.status);return 0;}
-        ctl.connection=e->connect.conn_handle;ctl.stage=ST_DISCOVERING;
+        ctl.connection=e->connect.conn_handle;connected_count++;stage_set(ST_DISCOVERING);
         {int rc=ble_gattc_exchange_mtu(ctl.connection,mtu_done,NULL);
          if(rc)fail("eufy_mtu_request",rc);}
         return 0;
     case BLE_GAP_EVENT_NOTIFY_RX:
         if(!ctl.busy || e->notify_rx.conn_handle!=ctl.connection ||
            e->notify_rx.attr_handle!=ctl.notifier)return 0;
-        {const uint16_t len=OS_MBUF_PKTLEN(e->notify_rx.om);
+        {notify_count++;const uint16_t len=OS_MBUF_PKTLEN(e->notify_rx.om);
          if(len>EUFY_E10_FRAME_MAX||len<10)return 0;
          uint8_t b[EUFY_E10_FRAME_MAX];
          if(os_mbuf_copydata(e->notify_rx.om,0,len,b)!=0)return 0;
@@ -233,17 +261,17 @@ void jh2_eufy_ble_tick(void){
     if(!ctl.host_ready || !ctl.busy)return;
     if(esp_timer_get_time()>ctl.deadline){fail("eufy_command_timeout",0);return;}
     if(ctl.stage==ST_QUEUED){
-        if(ble_gap_disc_active())return;/* never interrupt SmartDawn's scan */
-        uint8_t own=0;if(ble_hs_id_infer_auto(0,&own)!=0)return;
+        if(ble_gap_disc_active()){scan_deferred++;return;}/* never interrupt SmartDawn's scan */
+        uint8_t own=0;if(ble_hs_id_infer_auto(0,&own)!=0){fail("eufy_own_address",0);return;}
         struct ble_gap_disc_params params={0};
         params.passive=0;params.filter_duplicates=0;
         int rc=ble_gap_disc(own,12000,&params,gap_event,NULL);
         if(rc){fail("eufy_scan_start",rc);return;}
-        ctl.stage=ST_SCANNING;
+        scan_starts++;stage_set(ST_SCANNING);
     }else if(ctl.stage==ST_FOUND){
         if(ble_gap_disc_active())return;
         uint8_t own=0;if(ble_hs_id_infer_auto(0,&own)!=0){fail("eufy_address",0);return;}
-        ctl.stage=ST_CONNECTING;
+        stage_set(ST_CONNECTING);
         int rc=ble_gap_connect(own,&ctl.peer,15000,NULL,gap_event,NULL);
         if(rc)fail("eufy_connect_start",rc);
     }
@@ -271,7 +299,9 @@ bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
     ctl.service_start=ctl.service_end=ctl.writer=ctl.notifier=ctl.cccd=0;
     ctl.step=0;ctl.session_notified=false;ctl.mtu=0;
     ctl.result=false;ctl.result_stage[0]=0;
-    ctl.deadline=esp_timer_get_time()+48000000LL;ctl.stage=ST_QUEUED;ctl.busy=true;
+    ctl.deadline=esp_timer_get_time()+48000000LL;
+    scan_reports=scan_match_count=scan_deferred=scan_starts=connected_count=notify_count=handshake_ack_count=0;
+    last_failure_code=0;stage_set(ST_QUEUED);ctl.busy=true;
     xSemaphoreGive(lock);
     bool woke=xSemaphoreTake(completed,pdMS_TO_TICKS(50000))==pdTRUE;
     if(!woke)finish(false,"eufy_command_timeout");
@@ -288,5 +318,16 @@ void jh2_eufy_ble_status(cJSON *obj){
     cJSON_AddBoolToObject(ble,"connected",ctl.connection!=BLE_HS_CONN_HANDLE_NONE);
     cJSON_AddStringToObject(ble,"state",ctl.busy?"processing":
                 ctl.result?"last-command-delivered":"idle-or-unavailable");
+    cJSON_AddStringToObject(ble,"phase",phase_name(ctl.busy?ctl.stage:last_phase));
+    cJSON_AddNumberToObject(ble,"scanReports",scan_reports);
+    cJSON_AddNumberToObject(ble,"scanMatches",scan_match_count);
+    cJSON_AddNumberToObject(ble,"scanDeferred",scan_deferred);
+    cJSON_AddNumberToObject(ble,"scanStarts",scan_starts);
+    cJSON_AddNumberToObject(ble,"gattConnections",connected_count);
+    cJSON_AddNumberToObject(ble,"notificationCount",notify_count);
+    cJSON_AddNumberToObject(ble,"handshakeWriteAcks",handshake_ack_count);
+    cJSON_AddNumberToObject(ble,"gattMtu",ctl.mtu);
+    cJSON_AddNumberToObject(ble,"lastFailureCode",last_failure_code);
+    cJSON_AddStringToObject(ble,"lastResult",ctl.busy?"in_progress":ctl.result_stage);
     /* Do not report serial, account ID, MAC, ciphertext or session key. */
 }
