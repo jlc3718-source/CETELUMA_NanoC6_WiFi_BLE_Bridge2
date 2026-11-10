@@ -358,7 +358,7 @@ void jh2_eufy_ble_tick(void){
         return;
     }
     if(ctl.stage==ST_CONNECTING&&now_us-stage_since>11000000LL){
-        const int rc=ble_gap_connect_cancel();
+        const int rc=ble_gap_conn_cancel();
         last_failure_code=rc;
         if(ctl.connect_tries<2)stage_set(ST_CONNECT_RETRY);
         else fail("eufy_connect_timeout",rc);
@@ -436,6 +436,25 @@ bool jh2_eufy_ble_execute(const eufy_ble_request *r,char *stage,size_t n){
     bool ok=ctl.result;
     if(stage&&n)snprintf(stage,n,"%s",ctl.result_stage[0]?ctl.result_stage:"eufy_transport_unavailable");
     return ok;
+}
+bool jh2_eufy_ble_rescan(char *status,size_t len){
+    if(status&&len)snprintf(status,len,"Bluetooth survey unavailable");
+    if(!ctl.host_ready||ctl.busy||closing)return false;
+    const int64_t before=bg_scan_finished;
+    bg_next_scan=0;
+    /* Survey is started on the regular app tick, never inside NimBLE callback.
+     * It never modifies Eufy light state or disconnects the SmartDawn curtain. */
+    for(int i=0;i<180;i++){
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if(bg_scan_finished>before){
+            if(status&&len)snprintf(status,len,
+                "BLE advertisement survey completed; no advertisement is not proof of offline power");
+            return true;
+        }
+        if(!ctl.host_ready||ctl.busy)return false;
+    }
+    if(status&&len)snprintf(status,len,"BLE survey deferred by active radio or connection");
+    return false;
 }
 void jh2_eufy_ble_status(cJSON *obj){
     if(!obj)return;
