@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "cJSON.h"
-typedef enum { EUFY_BLE_POWER=1, EUFY_BLE_BRIGHTNESS=2, EUFY_BLE_COLOR=3 } eufy_ble_op;
+typedef enum { EUFY_BLE_POWER=1, EUFY_BLE_BRIGHTNESS=2, EUFY_BLE_COLOR=3, EUFY_BLE_PROBE=4 } eufy_ble_op;
 typedef struct {
     const char *name;           /* Pool / House / Garage / Shed, validated */
     const char *mac;            /* exact MAC from saved Eufy controller */
