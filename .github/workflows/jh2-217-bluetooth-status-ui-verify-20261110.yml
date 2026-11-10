@@ -1,0 +1,46 @@
+name: JH2 Devices Bluetooth status UI and API read-only verification
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-217-bluetooth-status-ui-verify-20261110.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check latest server status, HTML and embedded controller JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess,urllib.request,re,tempfile,pathlib
+          d=json.loads(subprocess.check_output(['docker','inspect','jason-home-2-web']))[0]
+          token=dict(x.split('=',1) for x in d['Config']['Env'] if '=' in x)['JH2_UPSTREAM_TOKEN']
+          def get(path):
+           r=urllib.request.Request('http://127.0.0.1:8081'+path,headers={'Authorization':'Bearer '+token})
+           with urllib.request.urlopen(r,timeout=12) as f:return f.read().decode('utf-8','replace')
+          j=json.loads(get('/api/eufy/local-ble/status'))
+          assert j.get('nanoOnline') and j.get('nanoFirmware')
+          assert len(j.get('devices') or [])==4
+          assert (j.get('smartDawn') or {}).get('connected') is True
+          assert all('lastGattAckAgeSeconds' in x and 'availability' in x for x in j['devices'])
+          print('JH2_BLUETOOTH_STATUS_FOUR_DEVICES_AND_SMARTDAWN_API_PASS')
+          page=''
+          for candidate in ['/jason-home-2/','/','/anderson_home.html','/jason-home-2/anderson_home.html']:
+           try:
+            p=get(candidate)
+            if 'jh2EufyLocalBleUi' in p and len(p)>10000:page=p;break
+           except Exception:pass
+          assert page, 'Could not locate actual served Devices page'
+          match=re.search(r'<script id="jh2EufyLocalBleUi">(.*?)</script>',page,re.S)
+          assert match,'Missing live Bluetooth UI script'
+          script=match.group(1)
+          assert 'eufyBlePresence-' in script and 'jh2SmartDawnBleState' in script and 'eufyLocalScan' in script
+          with tempfile.TemporaryDirectory() as path:
+           p=pathlib.Path(path)/'bluetooth-panel.js'
+           p.write_text(script)
+           subprocess.run(['node','--check',str(p)],check=True,stdout=subprocess.DEVNULL)
+          print('JH2_BLUETOOTH_STATUS_LIVE_HTML_AND_BROWSER_JAVASCRIPT_SYNTAX_PASS')
+          PY
