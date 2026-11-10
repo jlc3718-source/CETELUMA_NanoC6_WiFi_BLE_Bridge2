@@ -10,6 +10,9 @@
  * enables functional migration without replacing the production Nano.
  */
 #include "bridge.h"
+#include "esp_wifi.h"
+#include "esp_bt.h"
+#include "nvs.h"
 #include "native_ble.h"
 #include "eufy_ble.h"
 #include "native_slot_guard.h"
@@ -113,7 +116,140 @@ static ack_record acks[MAX_ACKS]={0};
 static size_t ack_count=0;
 static uint64_t last_command=0;
 static uint64_t restart_after_ack=0;
-#define NATIVE_FW_VERSION "2.0.18"
+#define NATIVE_FW_VERSION "2.0.19"
+/* Actual ESP32-C6 RF controls. Values are hardware read back, not web targets.
+ * Never change Wi-Fi association or disconnect a BLE connection here.
+ * Retained targets are reapplied after Wi-Fi/Bluetooth become ready.
+ */
+extern uint16_t jh2_ble_connection_handle(void);
+static const int8_t radio_wifi_dbm[]={2,5,7,8,11,13,14,15,16,18,20};
+static const int8_t radio_wifi_qdbm[]={8,20,28,34,44,52,56,60,66,72,80};
+static const int8_t radio_ble_dbm[]={-15,-12,-9,-6,-3,0,3,6,9,12,15,18,20};
+static const esp_power_level_t radio_ble_levels[]={
+    ESP_PWR_LVL_N15,ESP_PWR_LVL_N12,ESP_PWR_LVL_N9,ESP_PWR_LVL_N6,
+    ESP_PWR_LVL_N3,ESP_PWR_LVL_N0,ESP_PWR_LVL_P3,ESP_PWR_LVL_P6,
+    ESP_PWR_LVL_P9,ESP_PWR_LVL_P12,ESP_PWR_LVL_P15,ESP_PWR_LVL_P18,
+    ESP_PWR_LVL_P20
+};
+static bool radio_loaded=false;
+static int radio_wifi_target=-1,radio_ble_target=-100;
+static int radio_wifi_index(int val){
+    for(size_t i=0;i<sizeof(radio_wifi_dbm);i++)
+        if(radio_wifi_dbm[i]==val)return (int)i;
+    return -1;
+}
+static int radio_ble_index(int val){
+    for(size_t i=0;i<sizeof(radio_ble_dbm);i++)
+        if(radio_ble_dbm[i]==val)return (int)i;
+    return -1;
+}
+static int radio_ble_from_level(esp_power_level_t level){
+    for(size_t i=0;i<sizeof(radio_ble_dbm);i++)
+        if(radio_ble_levels[i]==level)return radio_ble_dbm[i];
+    return -100;
+}
+static int radio_wifi_current(void){
+    int8_t q=0;
+    if(esp_wifi_get_max_tx_power(&q)!=ESP_OK)return -1;
+    for(size_t i=0;i<sizeof(radio_wifi_qdbm);i++)
+        if(q==radio_wifi_qdbm[i])return radio_wifi_dbm[i];
+    return -1;
+}
+static int radio_ble_current(void){
+    return radio_ble_from_level(esp_ble_tx_power_get_enhanced(
+        ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT,0));
+}
+static void radio_load_targets(void){
+    if(radio_loaded)return;
+    radio_loaded=true;
+    nvs_handle_t h;
+    if(nvs_open("jh2_tx_power",NVS_READONLY,&h)!=ESP_OK)return;
+    int8_t value;
+    if(nvs_get_i8(h,"wifi_dbm",&value)==ESP_OK&&radio_wifi_index(value)>=0)
+        radio_wifi_target=value;
+    if(nvs_get_i8(h,"ble_dbm",&value)==ESP_OK&&radio_ble_index(value)>=0)
+        radio_ble_target=value;
+    nvs_close(h);
+}
+static bool radio_save_target(bool wifi,int val){
+    nvs_handle_t h;
+    if(nvs_open("jh2_tx_power",NVS_READWRITE,&h)!=ESP_OK)return false;
+    esp_err_t err=nvs_set_i8(h,wifi?"wifi_dbm":"ble_dbm",(int8_t)val);
+    if(err==ESP_OK)err=nvs_commit(h);
+    nvs_close(h);
+    return err==ESP_OK;
+}
+static bool radio_apply_wifi(int dbm){
+    const int i=radio_wifi_index(dbm);
+    if(i<0||esp_wifi_set_max_tx_power(radio_wifi_qdbm[i])!=ESP_OK)return false;
+    return radio_wifi_current()==dbm;
+}
+static bool radio_apply_ble(int dbm){
+    const int i=radio_ble_index(dbm);
+    if(i<0)return false;
+    esp_power_level_t level=radio_ble_levels[i];
+    if(esp_ble_tx_power_set_enhanced(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT,0,level)!=ESP_OK)
+        return false;
+    if(esp_ble_tx_power_set_enhanced(ESP_BLE_ENHANCED_PWR_TYPE_SCAN,0,level)!=ESP_OK)
+        return false;
+    if(esp_ble_tx_power_set_enhanced(ESP_BLE_ENHANCED_PWR_TYPE_INIT,0,level)!=ESP_OK)
+        return false;
+    uint16_t handle=jh2_ble_connection_handle();
+    if(handle!=UINT16_MAX&&esp_ble_tx_power_set_enhanced(
+        ESP_BLE_ENHANCED_PWR_TYPE_CONN,handle,level)!=ESP_OK)return false;
+    return radio_ble_current()==dbm;
+}
+static void radio_restore(void){
+    radio_load_targets();
+    if(radio_wifi_target>=0&&radio_wifi_current()!=radio_wifi_target)
+        (void)radio_apply_wifi(radio_wifi_target);
+    if(radio_ble_target>=-15&&radio_ble_current()!=radio_ble_target)
+        (void)radio_apply_ble(radio_ble_target);
+}
+static void radio_status(cJSON *status){
+    radio_restore();
+    cJSON *tx=cJSON_AddObjectToObject(status,"nanoTxPower");
+    cJSON_AddBoolToObject(tx,"supported",true);
+    cJSON_AddStringToObject(tx,"source","ESP32-C6 PHY readback");
+    const int wifi=radio_wifi_current(),ble=radio_ble_current();
+    if(wifi>=0)cJSON_AddNumberToObject(tx,"wifiAppliedDbm",wifi);
+    else cJSON_AddNullToObject(tx,"wifiAppliedDbm");
+    if(ble>=-15)cJSON_AddNumberToObject(tx,"bleAppliedDbm",ble);
+    else cJSON_AddNullToObject(tx,"bleAppliedDbm");
+    if(radio_wifi_target>=0)cJSON_AddNumberToObject(tx,"wifiTargetDbm",radio_wifi_target);
+    else cJSON_AddNullToObject(tx,"wifiTargetDbm");
+    if(radio_ble_target>=-15)cJSON_AddNumberToObject(tx,"bleTargetDbm",radio_ble_target);
+    else cJSON_AddNullToObject(tx,"bleTargetDbm");
+}
+static bool radio_command(const cJSON *payload,char *message,size_t cap){
+    if(!cJSON_IsObject(payload)){snprintf(message,cap,"Invalid radio payload");return false;}
+    const cJSON *wifi=cJSON_GetObjectItemCaseSensitive(payload,"wifiDbm");
+    const cJSON *ble=cJSON_GetObjectItemCaseSensitive(payload,"bleDbm");
+    if((wifi!=NULL)==(ble!=NULL)){
+        snprintf(message,cap,"Change exactly one radio at a time");return false;
+    }
+    const bool is_wifi=wifi!=NULL;
+    const cJSON *value=is_wifi?wifi:ble;
+    if(!cJSON_IsNumber(value)||value->valuedouble!=(double)value->valueint ||
+       (is_wifi?radio_wifi_index(value->valueint):radio_ble_index(value->valueint))<0){
+        snprintf(message,cap,"Unsupported TX power step");return false;
+    }
+    int dbm=value->valueint;
+    const bool applied=is_wifi?radio_apply_wifi(dbm):radio_apply_ble(dbm);
+    if(!applied){
+        snprintf(message,cap,"%s PHY rejected setting or readback differs",is_wifi?"Wi-Fi":"BLE");
+        return false;
+    }
+    if(!radio_save_target(is_wifi,dbm)){
+        snprintf(message,cap,"%s power changed but NVS persistence FAILED",is_wifi?"Wi-Fi":"BLE");
+        return false;
+    }
+    if(is_wifi)radio_wifi_target=dbm;else radio_ble_target=dbm;
+    snprintf(message,cap,"%s TX power applied, read back, and persisted: %d dBm",
+             is_wifi?"Wi-Fi":"BLE",dbm);
+    return true;
+}
+
 static uint32_t committed_notice_cursor=0;
 static SemaphoreHandle_t ack_lock;
 
@@ -539,7 +675,11 @@ static void handle_command(const cJSON *row,const cJSON *assets){
         return;
     }
 #endif
-    if(strcmp(action->valuestring,"sequenceStart")==0){
+    if(strcmp(action->valuestring,"nanoTxPower")==0){
+        char result[170]={0};
+        bool ok=radio_command(payload,result,sizeof(result));
+        append_ack(current,ok?"applied":"failed",result,false);
+    }else if(strcmp(action->valuestring,"sequenceStart")==0){
         cJSON *items=cJSON_GetObjectItemCaseSensitive(payload,"effects");
         cJSON *interval=cJSON_GetObjectItemCaseSensitive(payload,"intervalSeconds");
         uint8_t effects[88]={0};int n=cJSON_IsArray(items)?cJSON_GetArraySize(items):0;
@@ -942,6 +1082,7 @@ static cJSON *sync_document(void){
     cJSON_AddStringToObject(body,"bootId",boot_id);
     cJSON *status=cJSON_AddObjectToObject(body,"status");
     cJSON_AddStringToObject(status,"firmware",NATIVE_FW_VERSION);
+    radio_status(status);
     cJSON_AddNumberToObject(status,"uptimeSeconds",(double)(esp_timer_get_time()/1000000));
     // Live reset diagnostics let Oracle distinguish a Nano reboot from
     // an ordinary Bluetooth connection cycle; no credentials included.
