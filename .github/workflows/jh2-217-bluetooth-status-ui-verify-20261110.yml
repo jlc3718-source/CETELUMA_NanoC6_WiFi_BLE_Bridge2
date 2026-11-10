@@ -41,6 +41,6 @@ jobs:
           with tempfile.TemporaryDirectory() as path:
            p=pathlib.Path(path)/'bluetooth-panel.js'
            p.write_text(script)
-           subprocess.run(['node','--check',str(p)],check=True,stdout=subprocess.DEVNULL)
+           subprocess.run(['docker','exec','-i','jason-home-2-web','node','--check'],input=script.encode('utf-8'),check=True,stdout=subprocess.DEVNULL)
           print('JH2_BLUETOOTH_STATUS_LIVE_HTML_AND_BROWSER_JAVASCRIPT_SYNTAX_PASS')
           PY
