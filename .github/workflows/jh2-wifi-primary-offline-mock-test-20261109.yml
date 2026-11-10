@@ -1,0 +1,80 @@
+name: JH2 Wi-Fi first/BLE outage routing READ-ONLY mock verification
+on:
+  push:
+    branches: [feature/jh2-eufy-wifi-primary-ble-fallback-20261109]
+    paths: ['.github/workflows/jh2-wifi-primary-offline-mock-test-20261109.yml']
+permissions: {contents: read}
+jobs:
+  mock:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Read-only test actual deployed Node router against simulated readiness (no network writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,subprocess
+          container='jason-home-2-web'
+          details=json.loads(subprocess.check_output(['docker','inspect',container],text=True))[0]
+          root=details['Config']['WorkingDir']
+          assert root and root.startswith('/') and '..' not in root
+          js=r"""
+          import assert from 'node:assert/strict';
+          import {wifiFirstEufyControl,eufyScheduleFallbackTick,e22GalleryTail} from './curtain_bridge.mjs';
+          let sent=[],enqueued=[];
+          const relay={
+           status(){return {online:true,firmware:'2.0.21',eufyLocalBle:{supported:true}}},
+           eufyLocalConfigured(){return true},
+           enqueue(action,payload){enqueued.push({action,payload});return {id:enqueued.length}},
+           command(){return {state:'applied',result:{message:'verified'}}}
+          };
+          const healthy={eufy:{ready:true,readyNames:['Pool','House','Garage','Shed']}};
+          const disrupted={eufy:{ready:false,readyNames:['Pool','House','Garage']}};
+          const dispatch=async p=>{sent.push(p);return {ok:true,queued:false}};
+          let r=await wifiFirstEufyControl({live:healthy,payload:{target:'All',power:true},
+           relay,sendWifi:dispatch,source:'test'});
+          assert.equal(sent.length,1);assert.equal(enqueued.length,0);
+          assert.equal(r.ok,true);
+          sent=[];enqueued=[];
+          r=await wifiFirstEufyControl({live:disrupted,payload:{target:'All',power:true},
+           relay,sendWifi:dispatch,source:'test'});
+          assert.deepEqual(sent.map(x=>x.target),['Pool','House','Garage']);
+          assert.deepEqual(enqueued.map(x=>x.payload.name),['Shed']);
+          assert.equal(enqueued[0].payload.operation,'power');
+          sent=[];enqueued=[];
+          const refuse={...relay,status(){return {online:true,firmware:'2.0.20',eufyLocalBle:{supported:true}}}};
+          await assert.rejects(wifiFirstEufyControl({live:disrupted,payload:{target:'All',power:true},
+           relay:refuse,sendWifi:dispatch}),/2.0.21/);
+          assert.equal(sent.length,0);assert.equal(enqueued.length,0);
+          await assert.rejects(wifiFirstEufyControl({live:disrupted,payload:{target:'All',
+           lightId:10296,tailHex:'a30438280000'},relay,sendWifi:dispatch}),/factory|gallery|E120|payload/i);
+          assert.equal(sent.length,0);assert.equal(enqueued.length,0);
+          const safe=await eufyScheduleFallbackTick({cloud:{...healthy,calendar:{
+           current:{id:'test',scene:{power:true,effect:'Flow1',colors:[0xff0000]}}}},relay});
+          assert.equal(safe.bluetoothCommands,0);assert.equal(enqueued.length,0);
+          const scene={eufy:{readyNames:['Pool','House','Garage'],ready:false},
+           calendar:{current:{id:'test-night',scene:{power:true,effect:'Flow1',colors:[0xff0000],speed:3}}}};
+          const f1=await eufyScheduleFallbackTick({cloud:scene,relay});
+          assert.equal(f1.queued.length,1);
+          assert.deepEqual(enqueued.map(e=>e.payload.name),['Shed','Shed']);
+          const n=enqueued.length;
+          await eufyScheduleFallbackTick({cloud:scene,relay});
+          assert.equal(enqueued.length,n);
+          await eufyScheduleFallbackTick({cloud:{...healthy,calendar:scene.calendar},relay});
+          assert.equal(enqueued.length,n);
+          console.log('JH2_WIFI_PRIMARY_ONLY_WHEN_READY_AND_TARGETED_OFFLINE_BLE_MOCK_PASS');
+          console.log('JH2_EUFY_SCHEDULE_FALLBACK_DEDUP_WIFI_RECOVERY_PASS');
+          // Serializer sanity with synthetic catalog structure; no actual effect transmitted.
+          const example={lightId:10296,buildableE22:true,speed:5,layerExecutionMode:0,
+           layers:[{current_layer_type:1,colors:'ff0000',layer_range:[0,100],layer_speed:5}]};
+          const tail=e22GalleryTail(example);
+          assert.equal(tail.lightId,10296);
+          assert.ok(tail.tailHex.startsWith('a30438280000'));
+          console.log('JH2_E22_GALLERY_TLV_SERIALIZATION_TEST_PASS',tail.tailHex.length/2);
+          """
+          # docker exec stdin is unit-test code, no device credentials or network
+          result=subprocess.run(['docker','exec','-i','-w',root,container,'node','--input-type=module'],
+             input=js,text=True,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=120)
+          print(result.stdout,flush=True)
+          PY
