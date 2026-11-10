@@ -1,0 +1,58 @@
+name: JH2 Nano ESP32-C6 real TX-power firmware build only
+on:
+  push:
+    branches: [feature/jh2-nano-real-tx-power-20261109]
+    paths:
+      - 'JasonHome2NanoC6_IDF/**'
+      - '.github/workflows/jh2-radio-tx-power-build.yml'
+permissions: {contents: read}
+jobs:
+  build:
+    name: Compile ESP-IDF 5.5.1, retain partition and OTA safety
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify hardware readback and nondestructive firmware safeguards
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('JasonHome2NanoC6_IDF')
+          src=(p/'main/bridge.c').read_text()
+          main=(p/'main/main.c').read_text()
+          for s in ['NATIVE_FW_VERSION "2.0.19"','esp_wifi_set_max_tx_power','esp_wifi_get_max_tx_power',
+                    'esp_ble_tx_power_set_enhanced','esp_ble_tx_power_get_enhanced','nanoTxPower',
+                    'radio_status(status)','radio_save_target','radio_restore']:
+              assert s in src,s
+          assert 'jh2_ble_connection_handle(void)' in main
+          assert 'nvs_flash_erase(' not in main
+          cfg=(p/'sdkconfig.defaults').read_text()
+          assert 'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y' in cfg
+          assert 'CONFIG_JH2_NATIVE_READONLY_ACCEPTANCE=n' in cfg
+          print('RADIO_RF_API_READBACK_OTA_ROLLBACK_GATES_PASS')
+          PY
+      - name: Compile native ESP32-C6 firmware using official toolchain
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: esp32c6
+          path: JasonHome2NanoC6_IDF
+          command: idf.py build
+      - name: Verify produced candidate (never deploy automatically)
+        run: |
+          set -euo pipefail
+          test -s JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          test -s JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
+          sha256sum JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+          echo 'TX_POWER_NATIVE_COMPILED_BUILD_ONLY_NOT_INSTALLED'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JH2-NanoC6-2.0.19-TX-power-UNSIGNED-BUILD-ONLY
+          path: |
+            JasonHome2NanoC6_IDF/build/jh2_native_ble_probe.bin
+            JasonHome2NanoC6_IDF/build/bootloader/bootloader.bin
+            JasonHome2NanoC6_IDF/build/partition_table/partition-table.bin
+            JasonHome2NanoC6_IDF/build/flasher_args.json
+          if-no-files-found: error
+          retention-days: 14
