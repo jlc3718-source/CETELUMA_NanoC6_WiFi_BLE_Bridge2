@@ -81,24 +81,98 @@ int eufy_e10_handshake(eufy_e10_t *ctx,int step,uint32_t seconds,uint8_t *out,si
                    frame(ctx,codes[step],1,payload,n,out,cap);
     wipe(payload,sizeof(payload));return rc;
 }
-int eufy_e10_notification(eufy_e10_t *ctx,const uint8_t *in,size_t len){
-    if(!ctx || !in || len<10 || len>EUFY_E10_FRAME_MAX || in[0]!=0xff || in[1]!=9 ||
-       ((size_t)in[2]|((size_t)in[3]<<8))!=len)return -1;
-    uint8_t xor=0;for(size_t i=0;i<len;i++)xor^=in[i];if(xor)return -1;
-    uint16_t command=(uint16_t)((in[7]<<8)|in[8]);
-    if(command==0x0801 || command==0x0829 || command==0x0803 || command==0x0805)return 0;
-    if(command!=0x4822 || !((len-10)>0 && !((len-10)&15)))return -1;
-    uint8_t plain[EUFY_E10_FRAME_MAX];size_t n=len-10;
-    int rc=aes_cbc(false,ctx->initial_key,ctx->serial_iv,in+9,n,plain);
-    if(rc){wipe(plain,sizeof(plain));return -1;}
-    uint8_t pad=plain[n-1];if(pad<1||pad>16||pad>n){wipe(plain,sizeof(plain));return -1;}
-    for(size_t i=n-pad;i<n;i++)if(plain[i]!=pad){wipe(plain,sizeof(plain));return -1;}
-    int result=-1;
-    for(size_t i=0;i+18<=n-pad;i++)if(plain[i]==0xA1&&plain[i+1]==0x10){
-        memcpy(ctx->session_key,plain+i+2,16);ctx->session_valid=true;result=1;break;
+
+/* 0x0204 pushed state and 0x0A00 query replies are the only device-state
+ * evidence. GATT write completion alone must never update desired state. */
+static void eufy_parse_state(eufy_e10_t *ctx,const uint8_t *p,size_t n){
+    if(!ctx||!p||n<3)return;
+    bool anything=false;
+    for(size_t i=0;i+2<=n;){
+        const uint8_t tag=p[i],len=p[i+1];
+        i+=2;
+        if(i+len>n)break;
+        uint32_t value=0;
+        if(len>=1&&len<=4){
+            for(uint8_t k=0;k<len;k++)value|=(uint32_t)p[i+k]<<(8*k);
+            switch(tag){
+            case 0xA1:ctx->state_has_power=true;ctx->state_power=value!=0;anything=true;break;
+            case 0xA2:ctx->state_has_brightness=true;ctx->state_brightness=(uint8_t)value;anything=true;break;
+            case 0xA3:ctx->state_has_segments=true;ctx->state_segments=(uint16_t)value;anything=true;break;
+            case 0xA4:ctx->state_has_effect=true;ctx->state_effect_id=value;anything=true;break;
+            case 0xA6:ctx->state_has_cloud_effect=true;ctx->state_cloud_effect_id=value;anything=true;break;
+            case 0xA7:if(len==1){ctx->state_has_mode=true;ctx->state_mode=(uint8_t)value;}break;
+            case 0xA8:if(len==1){ctx->state_has_mode=true;ctx->state_mode=(uint8_t)value;}break;
+            default:break;
+            }
+        }
+        i+=len;
     }
-    wipe(plain,sizeof(plain));return result;
+    if(anything){ctx->state_valid=true;ctx->state_generation++;}
 }
+static int eufy_decrypt_notification(eufy_e10_t *ctx,const uint8_t *in,size_t len,
+                                     const uint8_t key[16],uint8_t *plain,size_t *plain_len){
+    const size_t n=len-10;
+    if(n<16 || n>EUFY_E10_FRAME_MAX || (n&15))return -1;
+    if(aes_cbc(false,key,ctx->serial_iv,in+9,n,plain)!=0)return -1;
+    const uint8_t pad=plain[n-1];
+    if(!pad||pad>16||pad>n)return -1;
+    for(size_t i=n-pad;i<n;i++)if(plain[i]!=pad)return -1;
+    *plain_len=n-pad;
+    return 0;
+}
+int eufy_e10_notification(eufy_e10_t *ctx,const uint8_t *in,size_t len){
+    if(!ctx||!in||len<10||len>EUFY_E10_FRAME_MAX||in[0]!=0xff||in[1]!=9||
+       ((size_t)in[2]|((size_t)in[3]<<8))!=len)return -1;
+    uint8_t crc=0;for(size_t i=0;i<len;i++)crc^=in[i];if(crc)return -1;
+    const uint16_t opcode=(uint16_t)((in[7]<<8)|in[8]);
+    if(opcode==0x0801||opcode==0x0829||opcode==0x0803||opcode==0x0805)return 0;
+    if(opcode==0x4822){
+        uint8_t plain[EUFY_E10_FRAME_MAX];size_t n=0;
+        if(eufy_decrypt_notification(ctx,in,len,ctx->initial_key,plain,&n)<0){
+            wipe(plain,sizeof(plain));return -1;
+        }
+        int result=-1;
+        for(size_t i=0;i+18<=n;i++)if(plain[i]==0xA1&&plain[i+1]==0x10){
+            memcpy(ctx->session_key,plain+i+2,16);
+            ctx->session_valid=true;
+            ctx->last_ack_result=-1;
+            result=1;break;
+        }
+        wipe(plain,sizeof(plain));return result;
+    }
+    /* Some hardware emits unencrypted 0x0Axx acknowledgements. */
+    if((opcode==0x0A01||opcode==0x0A06||opcode==0x0A0D)&&len>=11){
+        ctx->last_ack_opcode=opcode;
+        ctx->last_ack_result=(int8_t)in[9];
+        ctx->ack_generation++;
+        return 2;
+    }
+    if(!ctx->session_valid)return -1;
+    if(opcode!=0x4204&&opcode!=0x4A00&&
+       opcode!=0x4A01&&opcode!=0x4A06&&opcode!=0x4A0D)return -1;
+    uint8_t plain[EUFY_E10_FRAME_MAX];size_t n=0;
+    if(eufy_decrypt_notification(ctx,in,len,ctx->session_key,plain,&n)<0){
+        wipe(plain,sizeof(plain));return -1;
+    }
+    int result=-1;
+    if(opcode==0x4204){
+        eufy_parse_state(ctx,plain,n);
+        result=ctx->state_valid?3:-1;
+    }else if(opcode==0x4A00){
+        if(n>1&&plain[0]==0){
+            eufy_parse_state(ctx,plain+1,n-1);
+            result=ctx->state_valid?4:-1;
+        }
+    }else if(n>=1){
+        ctx->last_ack_opcode=(uint16_t)(opcode&~0x4000);
+        ctx->last_ack_result=(int8_t)plain[0];
+        ctx->ack_generation++;
+        result=2;
+    }
+    wipe(plain,sizeof(plain));
+    return result;
+}
+
 static int command(eufy_e10_t *ctx,uint32_t seconds,uint16_t opcode,
                    const uint8_t *params,size_t count,uint8_t *out,size_t cap){
     if(!ctx || !ctx->session_valid || count>210)return -1;
@@ -116,18 +190,40 @@ int eufy_e10_brightness(eufy_e10_t *ctx,uint32_t seconds,uint8_t percent,
     uint8_t p[]={0xA4,1,(uint8_t)(percent>100?100:percent)};
     return command(ctx,seconds,0x0201,p,sizeof(p),out,cap);
 }
+
+int eufy_e10_read_status(eufy_e10_t *ctx,uint32_t seconds,uint8_t *out,size_t cap){
+    const uint8_t mask[]={0xA3,2,0xFF,0xFF};
+    return command(ctx,seconds,0x0200,mask,sizeof(mask),out,cap);
+}
+int eufy_e10_preset(eufy_e10_t *ctx,uint32_t seconds,
+                    const uint8_t *tail,size_t tail_len,uint8_t *out,size_t cap){
+    /* Encrypted E22 0x020D is ignored above 240 bytes of AES ciphertext.
+     * 48-byte envelope + tail + padding must remain <=240. */
+    if(!tail||tail_len<16||tail_len>191)return -1;
+    if(tail[0]!=0xA3||tail[1]!=4)return -1;
+    return command(ctx,seconds,0x020D,tail,tail_len,out,cap);
+}
+int eufy_e10_dynamic(eufy_e10_t *ctx,uint32_t seconds,bool is_e22,
+                     uint16_t effect_id,uint8_t speed,
+                     uint8_t red,uint8_t green,uint8_t blue,
+                     uint8_t lamps,uint8_t *out,size_t cap){
+    if(effect_id<20000||effect_id>20006||speed<1||speed>10||lamps<1||lamps>120)return -1;
+    uint8_t p[210];size_t n=0;
+#define APP(...) do { const uint8_t b[]={__VA_ARGS__};if(n+sizeof(b)>sizeof(p))return -1;memcpy(p+n,b,sizeof(b));n+=sizeof(b); }while(0)
+    APP(0xA3,2,(uint8_t)effect_id,(uint8_t)(effect_id>>8));
+    APP(0xA5,1,speed);
+    if(is_e22){APP(0xA6,6,1,red,green,blue,0,0);}
+    else{APP(0xA6,5,1,red,green,blue,0);}
+    APP(0xA7,(uint8_t)(lamps+1),lamps);
+    for(uint8_t i=0;i<lamps;i++)p[n++]=i;
+    APP(0xA8,1,100);APP(0xA9,5,0,0,0,0,0);
+    APP(0xAA,1,0);APP(0xAC,4,0,0,0,0);APP(0xAE,1,0);APP(0xB0,1,7);
+#undef APP
+    const int rc=command(ctx,seconds,0x0206,p,n,out,cap);
+    wipe(p,sizeof(p));return rc;
+}
 int eufy_e10_color(eufy_e10_t *ctx,uint32_t seconds,bool is_e22,
                    uint8_t red,uint8_t green,uint8_t blue,uint8_t lamps,
                    uint8_t *out,size_t cap){
-    if(lamps==0 || lamps>120)return -1;
-    uint8_t p[210];size_t n=0;
-#define APP(...) do { const uint8_t b[]={__VA_ARGS__}; if(n+sizeof(b)>sizeof(p))return -1;memcpy(p+n,b,sizeof(b));n+=sizeof(b); }while(0)
-    APP(0xA3,2,0x26,0x4E);
-    APP(0xA4,2,0,0);APP(0xA5,1,1);
-    if(is_e22){APP(0xA6,6,1,red,green,blue,0,0);}else{APP(0xA6,5,1,red,green,blue,0);}
-    APP(0xA7,(uint8_t)(lamps+1),lamps);
-    for(uint8_t i=0;i<lamps;i++)p[n++]=i;
-    APP(0xA8,1,100);APP(0xA9,5,0,0,0,0,0);APP(0xAA,1,0);APP(0xAE,1,0);APP(0xB0,1,0);
-#undef APP
-    int rc=command(ctx,seconds,0x0206,p,n,out,cap);wipe(p,sizeof(p));return rc;
+    return eufy_e10_dynamic(ctx,seconds,is_e22,20006,5,red,green,blue,lamps,out,cap);
 }
