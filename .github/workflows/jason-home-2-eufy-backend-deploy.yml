@@ -1,0 +1,254 @@
+name: Jason Home 2 Eufy Backend Safe Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact tested Eufy authentication repair commit
+        required: true
+        type: string
+      backup_run_id:
+        description: Successful Oracle snapshot and restore-test run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: jason-home-2-oracle-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'jlc3718-source/CETELUMA_NanoC6_WiFi_BLE_Bridge2'
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 25
+    env:
+      DEPLOY_SHA: ${{ inputs.sha }}
+      BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+      GH_TOKEN: ${{ github.token }}
+      JASON_HOME_BUILD_SHA: ${{ inputs.sha }}
+      STATE_DIR: /tmp/jh2-deploy-${{ github.run_id }}
+
+    steps:
+      - name: Validate exact candidate and restore-tested backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$DEPLOY_SHA" = "bf8eea4a23b3b89d8c84c6392cf47ead01339c0f"
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BACKUP_RUN_ID" =~ ^[0-9]+$ ]]
+          curl --max-time 20 -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID" \
+            -o "$RUNNER_TEMP/jh2-backup-run.json"
+          curl --max-time 20 -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$BACKUP_RUN_ID/artifacts" \
+            -o "$RUNNER_TEMP/jh2-backup-artifacts.json"
+          python3 - "$RUNNER_TEMP" "$BACKUP_RUN_ID" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          run_id=sys.argv[2]
+          run=json.loads((root/"jh2-backup-run.json").read_text())
+          artifacts=json.loads((root/"jh2-backup-artifacts.json").read_text()).get("artifacts",[])
+          expected="Jason-Home-2-Fresh-Encrypted-"+run_id
+          if run.get("status")!="completed" or run.get("conclusion")!="success":
+              raise SystemExit("Backup and restore-test workflow has not succeeded")
+          if run.get("path")!=".github/workflows/jason-home-2-oracle-encrypted-snapshot.yml" or run.get("head_branch")!="main":
+              raise SystemExit("Backup run came from an unexpected workflow or branch")
+          if run.get("head_sha")!="3ea27ed04109139dc93c89fe664e7dbc00c8b3d6":
+              raise SystemExit("Backup run did not use the restore-test version of the snapshot script")
+          if not any(a.get("name")==expected and not a.get("expired",True) and int(a.get("size_in_bytes") or 0)>0 for a in artifacts):
+              raise SystemExit("Verified encrypted Jason Home 2 backup artifact is missing")
+          print("Backup artifact and isolated restore test: PASS")
+          PY
+
+      - name: Capture rollback state and confirm auto-login is paused
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          install -d -m 700 "$STATE_DIR"
+          cd /home/ubuntu/repo
+          git rev-parse HEAD > "$STATE_DIR/previous-sha"
+          cd /home/ubuntu/repo/JasonHomeServer
+          test -s .env
+          test -s data/jason-home.sqlite
+          sha256sum .env > "$STATE_DIR/env.sha256"
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          test -n "$TOKEN"
+          curl --max-time 10 -fsS http://127.0.0.1:8080/api/health > "$STATE_DIR/health-before.json"
+          curl --max-time 10 -fsS -H "Authorization: Bearer $TOKEN" \
+            http://127.0.0.1:8080/api/status > "$STATE_DIR/status-before.json"
+          python3 - "$STATE_DIR" <<'PY'
+          import json,pathlib,sqlite3,sys
+          root=pathlib.Path(sys.argv[1])
+          health=json.loads((root/"health-before.json").read_text())
+          status=json.loads((root/"status-before.json").read_text())
+          if not health.get("ok") or not status.get("ok"):
+              raise SystemExit("Current controller health/status check failed")
+          db=sqlite3.connect("file:/home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite?mode=ro",uri=True)
+          row=db.execute("SELECT value FROM meta WHERE key=?",("eufy_auto_pause_until_v1",)).fetchone()
+          db.close()
+          paused=True if row is None else str(row[0])!="0"
+          if not paused:
+              raise SystemExit("Automatic Eufy login is enabled; stopping to avoid an unattended login during restart")
+          print("Current controller and paused auto-login state: PASS")
+          PY
+          sudo docker image inspect jasonhomeserver-jason-home:latest >/dev/null
+          sudo docker tag jasonhomeserver-jason-home:latest jasonhomeserver-jason-home:rollback
+          touch "$STATE_DIR/deploy-may-have-stopped"
+
+      - name: Fetch exact commit and build while production remains online
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo
+          git fetch origin "$DEPLOY_SHA"
+          git cat-file -e "$DEPLOY_SHA^{commit}"
+          git reset --hard "$DEPLOY_SHA"
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          test -s JasonHomeServer/Dockerfile
+          test -s JasonHomeServer/package-lock.json
+          cd /home/ubuntu/repo/JasonHomeServer
+          sha256sum -c "$STATE_DIR/env.sha256" >/dev/null
+          sudo --preserve-env=JASON_HOME_BUILD_SHA docker compose build jason-home
+
+      - name: Stop controller and capture final SQLite rollback point
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose stop jason-home
+          python3 - "$STATE_DIR" <<'PY'
+          import pathlib,sqlite3,sys
+          state=pathlib.Path(sys.argv[1])
+          source="/home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite"
+          target=state/"rollback.sqlite"
+          src=sqlite3.connect("file:"+source+"?mode=ro",uri=True)
+          dst=sqlite3.connect(target)
+          with dst: src.backup(dst)
+          ok=dst.execute("PRAGMA integrity_check").fetchone()[0]
+          dst.close();src.close()
+          if ok!="ok":raise SystemExit("Rollback database integrity check failed")
+          db=sqlite3.connect("file:"+str(target)+"?mode=ro",uri=True)
+          row=db.execute("SELECT value FROM meta WHERE key=?",("eufy_auto_pause_until_v1",)).fetchone()
+          db.close()
+          paused=True if row is None else str(row[0])!="0"
+          if not paused:raise SystemExit("Eufy auto-login pause state changed before deployment")
+          print("Final rollback database integrity and auto-login pause: PASS")
+          PY
+          sha256sum -c "$STATE_DIR/env.sha256" >/dev/null
+
+      - name: Start the exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo --preserve-env=JASON_HOME_BUILD_SHA docker compose up -d --no-build jason-home
+
+      - name: Verify deployed API and preserved runtime state
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/repo/JasonHomeServer
+          for i in $(seq 1 60); do
+            if curl --max-time 5 -fsS http://127.0.0.1:8080/api/health > "$STATE_DIR/health-after.json"; then
+              break
+            fi
+            sleep 2
+          done
+          test -s "$STATE_DIR/health-after.json"
+          TOKEN="$(sed -n 's/^JASON_HOME_API_TOKEN=//p' .env)"
+          curl --max-time 10 -fsS -H "Authorization: Bearer $TOKEN" \
+            http://127.0.0.1:8080/api/status > "$STATE_DIR/status-after.json"
+          curl --max-time 10 -fsS -H "Authorization: Bearer $TOKEN" \
+            http://127.0.0.1:8080/api/eufy/login-trace > "$STATE_DIR/trace-after.json"
+          curl --max-time 10 -fsS -H "Authorization: Bearer $TOKEN" \
+            http://127.0.0.1:8080/api/eufy/auto-login > "$STATE_DIR/auto-login-after.json"
+          python3 - "$STATE_DIR" "$DEPLOY_SHA" <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          sha=sys.argv[2]
+          health=json.loads((root/"health-after.json").read_text())
+          before=json.loads((root/"status-before.json").read_text())
+          status=json.loads((root/"status-after.json").read_text())
+          trace=json.loads((root/"trace-after.json").read_text())
+          auto=json.loads((root/"auto-login-after.json").read_text())
+          if not health.get("ok") or health.get("build",{}).get("sha")!=sha:
+              raise SystemExit("Health/build SHA verification failed")
+          if not status.get("ok") or status.get("build",{}).get("sha")!=sha:
+              raise SystemExit("Authenticated status/build SHA verification failed")
+          if not trace.get("ok") or not isinstance(trace.get("events"),list) or trace.get("paused") is not True:
+              raise SystemExit("Authenticated Eufy login trace or pause verification failed")
+          if not auto.get("ok") or auto.get("paused") is not True or auto.get("enabled") is not False:
+              raise SystemExit("Automatic Eufy login is not safely paused")
+          oldloc=before.get("location",{})
+          newloc=status.get("location",{})
+          if oldloc and any(oldloc.get(k)!=newloc.get(k) for k in ("zip","lat","lon","timeZone")):
+              raise SystemExit("Existing scheduler location changed")
+          oldcal=before.get("calendar",{})
+          newcal=status.get("calendar",{})
+          for key in ("enabled","synced","eventCount"):
+              if key in oldcal and oldcal.get(key)!=newcal.get(key):
+                  raise SystemExit("Existing holiday calendar state changed: "+key)
+          print("Deployed commit:",sha)
+          print("Health, login-trace, paused auto-login, scheduler location, and calendar state: PASS")
+          PY
+          sha256sum -c "$STATE_DIR/env.sha256" >/dev/null
+
+      - name: Roll back failed deployment
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s "$STATE_DIR/previous-sha" ]; then
+            echo "No production checkout was changed; rollback not needed."
+            exit 0
+          fi
+          PREVIOUS_SHA="$(cat "$STATE_DIR/previous-sha")"
+          cd /home/ubuntu/repo
+          git reset --hard "$PREVIOUS_SHA"
+          if [ ! -e "$STATE_DIR/deploy-may-have-stopped" ]; then
+            echo "Production container was never stopped; existing service remains online."
+            exit 0
+          fi
+          cd /home/ubuntu/repo/JasonHomeServer
+          sudo docker compose stop jason-home || true
+          if [ -s "$STATE_DIR/rollback.sqlite" ]; then
+            python3 - "$STATE_DIR/rollback.sqlite" <<'PY'
+          import os,sqlite3,sys
+          src=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True)
+          dst=sqlite3.connect("/home/ubuntu/repo/JasonHomeServer/data/jason-home.sqlite")
+          with dst:src.backup(dst)
+          ok=dst.execute("PRAGMA integrity_check").fetchone()[0]
+          dst.close();src.close()
+          if ok!="ok":raise SystemExit("Restored rollback database failed integrity check")
+          PY
+          fi
+          if sudo docker image inspect jasonhomeserver-jason-home:rollback >/dev/null 2>&1; then
+            sudo docker tag jasonhomeserver-jason-home:rollback jasonhomeserver-jason-home:latest
+            sudo docker compose up -d --no-build jason-home
+          else
+            echo "Rollback image missing; refusing to claim recovery succeeded."
+            exit 1
+          fi
+          for i in $(seq 1 30); do
+            curl --max-time 5 -fsS http://127.0.0.1:8080/api/health >/dev/null && break
+            sleep 2
+          done
+          curl --max-time 5 -fsS http://127.0.0.1:8080/api/health >/dev/null
+          echo "Previous image and database restored; controller health: PASS"
+
+      - name: Deployment record
+        if: success()
+        shell: bash
+        run: |
+          echo "Jason Home 2 Eufy backend deployed at $DEPLOY_SHA"
+          echo "Verified encrypted backup and restore-test run: $BACKUP_RUN_ID"
