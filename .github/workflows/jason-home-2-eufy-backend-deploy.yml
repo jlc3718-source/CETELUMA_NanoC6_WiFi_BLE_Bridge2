@@ -77,7 +77,7 @@ jobs:
           print("Backup artifact and isolated restore test: PASS")
           PY
 
-      - name: Capture rollback state and confirm auto-login is paused
+      - name: Capture rollback state and Eufy auto-login preference
         shell: bash
         run: |
           set -euo pipefail
@@ -109,9 +109,8 @@ jobs:
           row=db.execute("SELECT value FROM meta WHERE key=?",("eufy_auto_pause_until_v1",)).fetchone()
           db.close()
           paused=True if row is None else str(row[0])!="0"
-          if not paused:
-              raise SystemExit("Automatic Eufy login is enabled; stopping to avoid an unattended login during restart")
-          print("Current controller and paused auto-login state: PASS")
+          (root/"expected-eufy-paused").write_text("true" if paused else "false")
+          print("Current controller and Eufy auto-login preference captured")
           PY
           sudo docker image inspect jasonhomeserver-jason-home:latest >/dev/null
           sudo docker tag jasonhomeserver-jason-home:latest jasonhomeserver-jason-home:rollback
@@ -153,8 +152,9 @@ jobs:
           row=db.execute("SELECT value FROM meta WHERE key=?",("eufy_auto_pause_until_v1",)).fetchone()
           db.close()
           paused=True if row is None else str(row[0])!="0"
-          if not paused:raise SystemExit("Eufy auto-login pause state changed before deployment")
-          print("Final rollback database integrity and auto-login pause: PASS")
+          expected=(state/"expected-eufy-paused").read_text().strip()=="true"
+          if paused!=expected:raise SystemExit("Eufy auto-login preference changed before deployment")
+          print("Final rollback database integrity and auto-login preference: PASS")
           PY
           sha256sum -c "$STATE_DIR/env.sha256" >/dev/null
 
@@ -197,10 +197,11 @@ jobs:
               raise SystemExit("Health/build SHA verification failed")
           if not status.get("ok") or status.get("build",{}).get("sha")!=sha:
               raise SystemExit("Authenticated status/build SHA verification failed")
-          if not trace.get("ok") or not isinstance(trace.get("events"),list) or trace.get("paused") is not True:
-              raise SystemExit("Authenticated Eufy login trace or pause verification failed")
-          if not auto.get("ok") or auto.get("paused") is not True or auto.get("enabled") is not False:
-              raise SystemExit("Automatic Eufy login is not safely paused")
+          expected_paused=(root/"expected-eufy-paused").read_text().strip()=="true"
+          if not trace.get("ok") or not isinstance(trace.get("events"),list) or trace.get("paused") is not expected_paused:
+              raise SystemExit("Authenticated Eufy login trace or preserved auto-login state verification failed")
+          if not auto.get("ok") or auto.get("paused") is not expected_paused or auto.get("enabled") != (not expected_paused):
+              raise SystemExit("Eufy auto-login preference was not preserved")
           oldloc=before.get("location",{})
           newloc=status.get("location",{})
           if oldloc and any(oldloc.get(k)!=newloc.get(k) for k in ("zip","lat","lon","timeZone")):
@@ -211,7 +212,7 @@ jobs:
               if key in oldcal and oldcal.get(key)!=newcal.get(key):
                   raise SystemExit("Existing holiday calendar state changed: "+key)
           print("Deployed commit:",sha)
-          print("Health, login-trace, paused auto-login, scheduler location, and calendar state: PASS")
+          print("Health, login-trace, auto-login preference, scheduler location, and calendar state: PASS")
           PY
           sha256sum -c "$STATE_DIR/env.sha256" >/dev/null
 
