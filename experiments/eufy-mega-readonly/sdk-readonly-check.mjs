@@ -10,7 +10,7 @@ const email=process.env.EUFY_EMAIL;
 const password=process.env.EUFY_PASSWORD;
 if(!email||!password){console.log("JH2_MEGA_TEST: missing credential secrets");process.exit(2);}
 const dir=await mkdtemp(join(tmpdir(),"jh2-eufy-mega-"));
-const openudid=createHash("sha256").update("jh2-eufy-mega-readonly:2026-11-09:"+String(process.env.GITHUB_RUN_ID||"one-time")).digest("hex").slice(0,40);
+const openudid=createHash("sha256").update("jh2-eufy-mega-readonly:2026-11-09:"+String(process.env.JH2_SHADOW_ID_KEY||process.env.GITHUB_RUN_ID||"one-time")).digest("hex").slice(0,40);
 const client=new EufyMega({email,password,countryCode:"US",openudid,
  store:new FileSessionStore(join(dir,"session.json"))});
 const abort=setTimeout(()=>{console.log("JH2_MEGA_TEST: timeout; no retries");process.exit(124)},90000);
@@ -29,15 +29,19 @@ try {
  } else {
   console.log("JH2_MEGA_TEST: login successful");
   const inventory=await client.getDevices();
-  const lights={E120:0,E22:0,other:0};
+  const modelCounts={};let smartLights=0,readings=0;
   for(const d of inventory){
-    // Never print identity fields. Model identifiers are not personal data.
-    const type=String(d?.model||d?.modelCode||"").toUpperCase();
-    if(type.includes("E120"))lights.E120++;
-    else if(type.includes("E22"))lights.E22++;
-    else lights.other++;
+    // getDevices() returns bound Device objects. info() reads metadata without commands.
+    const info=d?.info?.();
+    const code=String(info?.model||d?.model||"unknown").replace(/[^A-Za-z0-9_-]/g,"").slice(0,24)||"unknown";
+    modelCounts[code]=(modelCounts[code]||0)+1;
+    const light=d?.smartLight?.();
+    if(light){
+      smartLights++;
+      if(light.power!==undefined||light.brightness!==undefined)readings++;
+    }
   }
-  console.log("JH2_MEGA_TEST: inventory "+JSON.stringify({total:inventory.length,models:lights}));
+  console.log("JH2_MEGA_TEST: inventory "+JSON.stringify({total:inventory.length,modelCodes:modelCounts,smartLightDevices:smartLights,smartLightsReportingState:readings}));
   console.log("JH2_MEGA_TEST: read-only validation complete; no light control methods invoked");
  }
 } catch(error) {
