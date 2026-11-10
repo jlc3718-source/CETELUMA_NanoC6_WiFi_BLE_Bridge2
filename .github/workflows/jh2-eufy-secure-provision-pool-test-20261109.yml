@@ -1,0 +1,18 @@
+name: JH2 Nano Eufy BLE secure identity import and first Pool GATT ON test
+on:
+  push:
+    branches: [feature/jh2-nano-eufy-from-2.0.14-20261109]
+    paths: ['.github/workflows/jh2-eufy-secure-provision-pool-test-20261109.yml']
+permissions: {contents: read}
+jobs:
+  provision-and-test:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: One-time private Eufy identity import and single-device local BLE GATT probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/jh2-eufy-decrypt-provision-test-20261109.py
+          sudo -n python3 .github/scripts/jh2-eufy-decrypt-provision-test-20261109.py
