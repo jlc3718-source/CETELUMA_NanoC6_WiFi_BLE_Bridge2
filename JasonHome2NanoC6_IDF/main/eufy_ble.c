@@ -5,6 +5,7 @@
  */
 #include "eufy_ble.h"
 #include "eufy_e10.h"
+#include "asset_stream.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -71,6 +72,8 @@ static volatile bool bg_scanning=false,closing=false;
 static volatile int64_t bg_scan_at=0,bg_scan_finished=0,bg_next_scan=0;
 static uint16_t closing_handle=BLE_HS_CONN_HANDLE_NONE;
 static unsigned bg_scan_count=0;
+static volatile unsigned bg_stream_survey_skips=0;
+static volatile bool bg_manual_scan_request=false;
 /* Bounded inventory of the actual BLE advertisements the Nano hears.
  * Only address, human-readable advertised name, RSSI and age are reported.
  * Devices with rotating addresses may appear separately; never assume
@@ -412,6 +415,17 @@ void jh2_eufy_ble_tick(void){
         /* Passive 4.5-second radio survey every two minutes, only when idle.
          * It never disconnects SmartDawn, never sends a power command, and
          * defers to any existing BLE GAP activity. */
+        /* During active curtain streaming, suppress only optional passive
+         * inventory surveys, never explicit scans or Eufy control commands.
+         * This avoids a 4.5 s RF scan competing with live BLE frames.
+         * A manual user-requested survey always bypasses suppression. */
+        if(jh2_asset_stream_active()&&!bg_manual_scan_request){
+            if(now_us>bg_next_scan){
+                bg_next_scan=now_us+120000000LL;
+                ++bg_stream_survey_skips;
+            }
+            return;
+        }
         if(!closing&&!bg_scanning&&!ble_gap_disc_active()&&
            now_us>bg_next_scan&&now_us>15000000LL){
             uint8_t own=0;
@@ -514,18 +528,21 @@ bool jh2_eufy_ble_rescan(char *status,size_t len){
     if(status&&len)snprintf(status,len,"Bluetooth survey unavailable");
     if(!ctl.host_ready||ctl.busy||closing)return false;
     const int64_t before=bg_scan_finished;
+    bg_manual_scan_request=true;
     bg_next_scan=0;
     /* Survey is started on the regular app tick, never inside NimBLE callback.
      * It never modifies Eufy light state or disconnects the SmartDawn curtain. */
     for(int i=0;i<180;i++){
         vTaskDelay(pdMS_TO_TICKS(100));
         if(bg_scan_finished>before){
+            bg_manual_scan_request=false;
             if(status&&len)snprintf(status,len,
                 "BLE advertisement survey completed; no advertisement is not proof of offline power");
             return true;
         }
-        if(!ctl.host_ready||ctl.busy)return false;
+        if(!ctl.host_ready||ctl.busy){bg_manual_scan_request=false;return false;}
     }
+    bg_manual_scan_request=false;
     if(status&&len)snprintf(status,len,"BLE survey deferred by active radio or connection");
     return false;
 }
@@ -554,6 +571,9 @@ void jh2_eufy_ble_status(cJSON *obj){
     cJSON_AddBoolToObject(ble,"surveyRunning",bg_scanning);
     cJSON_AddNumberToObject(ble,"lastSurveyAgeSeconds",age_seconds(bg_scan_finished));
     cJSON_AddNumberToObject(ble,"surveyCount",bg_scan_count);
+    cJSON_AddNumberToObject(ble,"surveysDeferredDuringCurtainStreaming",bg_stream_survey_skips);
+    cJSON_AddBoolToObject(ble,"automaticSurveySuppressedNow",
+        jh2_asset_stream_active()&&!bg_manual_scan_request);
     cJSON *found=cJSON_AddArrayToObject(ble,"scanResults");
     for(int i=0;found&&i<inventory_count;i++){
         const ble_inventory_item *v=&inventory[i];
