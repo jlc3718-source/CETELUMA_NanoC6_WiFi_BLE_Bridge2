@@ -30,7 +30,7 @@ static const ble_uuid128_t NOTIFY=BLE_UUID128_INIT(
   0x25,0x20,0x56,0x7c,0x05,0xcf,0x6e,0xb4,0xc5,0x41,0x02,0x03,0x03,0x00,0x85,0x8c);
 enum { ST_IDLE=0, ST_QUEUED, ST_SCANNING, ST_FOUND, ST_CONNECTING,
        ST_DISCOVERING, ST_SUBSCRIBING, ST_HANDSHAKE, ST_WAIT_KEY,
-       ST_COMMAND, ST_FINISHED, ST_CONNECT_RETRY };
+       ST_COMMAND, ST_FINISHED, ST_CONNECT_RETRY, ST_QUERYING };
 typedef struct {
     volatile int stage;
     volatile bool busy,host_ready,result;
@@ -40,7 +40,11 @@ typedef struct {
     uint8_t step;bool session_notified,is_e22;
     uint8_t connect_tries;int active_index;
     eufy_ble_op operation;bool on;
-    uint8_t brightness,red,green,blue,lamps;
+    uint8_t brightness,red,green,blue,lamps,speed;
+    uint16_t effect_id;
+    uint32_t preset_cloud_id;
+    uint8_t preset_tail[191];size_t preset_tail_len;
+    bool preflight;uint8_t readback_retries;
     eufy_e10_t crypto;
     char result_stage[100];
 } eufy_controller;
@@ -60,6 +64,11 @@ typedef struct {
     int8_t rssi;
     int64_t probe_us,contact_us;
     unsigned attempts,completed,failures;
+    bool reported_state_valid,reported_power;
+    uint8_t reported_brightness,reported_mode;
+    uint16_t reported_segments;
+    uint32_t reported_effect_id,reported_cloud_effect_id;
+    int64_t reported_at_us;
     char failure[48];
 } eufy_presence;
 static eufy_presence units[4]={
@@ -179,6 +188,7 @@ static const char *phase_name(int stage){
     case ST_COMMAND:return "sending-command";
     case ST_FINISHED:return "finished";
     case ST_CONNECT_RETRY:return "retrying-connection";
+    case ST_QUERYING:return "querying-device-state";
     default:return "unknown";
     }
 }
@@ -207,6 +217,16 @@ static void finish(bool result,const char *why){
     last_phase=ctl.stage;
     if(ctl.active_index>=0&&ctl.active_index<4){
         eufy_presence *u=&units[ctl.active_index];
+        if(ctl.crypto.state_valid){
+            u->reported_state_valid=true;
+            u->reported_power=ctl.crypto.state_power;
+            u->reported_brightness=ctl.crypto.state_brightness;
+            u->reported_segments=ctl.crypto.state_segments;
+            u->reported_effect_id=ctl.crypto.state_effect_id;
+            u->reported_cloud_effect_id=ctl.crypto.state_cloud_effect_id;
+            u->reported_mode=ctl.crypto.state_mode;
+            u->reported_at_us=esp_timer_get_time();
+        }
         if(result){
             u->contact_us=esp_timer_get_time();u->completed++;
             if(ctl.operation==EUFY_BLE_PROBE)u->probe_us=u->contact_us;
