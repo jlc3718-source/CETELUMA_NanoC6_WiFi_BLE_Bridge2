@@ -198,6 +198,11 @@ def check():
         raise ValueError('OTA browser-version synchronization is missing')
     if '["firmware","Firmware"],["transmit","Transmit Power"]' not in V3_JS.read_text():
         raise ValueError('Transmit Power is not Settings tab 10')
+    # Inspect the minified, shipped HTML, not just the JS source: an uncalled
+    # function expression was previously eliminated during minification.
+    for marker in ('v3TransmitPowerPanel', 'txWifiLevel', 'txBleLevel', '/api/transmit-power'):
+        if marker not in html:
+            raise ValueError(f'Transmit Power UI missing from shipped firmware: {marker}')
     for name, page in rendered_pages().items():
         page = page.decode()
         PageIds().feed(page)
