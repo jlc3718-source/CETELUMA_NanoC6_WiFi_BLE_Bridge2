@@ -19,6 +19,10 @@ assert 'Date.now()+35e3' in (ROOT/'firmware/web/index.html').read_text()
 assert 'if(connecting()){scanQueued=true;return true;}' in ble
 assert 'request.hasPreferredType=slots[i].hasObservedAddressType' in ble
 assert 'getLastError()' in ble and 'client->setConnectTimeout(5000)' in ble
+assert 'client->getService("FFF0")' in ble and 'svc->getCharacteristic("FFF3")' in ble
+assert 'client->getService("FFE0")' in ble and 'svc->getCharacteristic("FFE1")' in ble
+assert 'client->getServices(true)' in ble and 'lastServices' in hdr
+assert 'if(result.failureReason==2)slot.lastServices=result.serviceUuids' in ble
 assert 'lastAutoScanAt' in hdr and 'automaticScan' in ble
 assert 'slot.address.equalsIgnoreCase(device.address)' in ble
 assert '(uint32_t)(n-lastAutoScanAt)>=90000UL' in ble

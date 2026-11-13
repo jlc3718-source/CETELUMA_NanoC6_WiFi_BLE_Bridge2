@@ -10,7 +10,7 @@
 #endif
 
 struct BleFound { String name; String address; int rssi; uint8_t addressType=0; bool connectable=false; };
-struct BleSlotInfo { String name; String address; String protocol; bool connected; uint32_t attempts=0, failures=0; bool scanPerformed=false, seenInLastScan=false; String lastFailure; int lastLinkError=0, observedAddressType=-1; };
+struct BleSlotInfo { String name; String address; String protocol; bool connected; uint32_t attempts=0, failures=0; bool scanPerformed=false, seenInLastScan=false; String lastFailure; String lastServices; int lastLinkError=0, observedAddressType=-1; };
 
 class BleController {
  public:
@@ -59,6 +59,7 @@ class BleController {
     uint8_t observedAddressType=0;
     bool hasObservedAddressType=false;
     int lastLinkError=0;
+    String lastServices;
     PendingFrame power,brightness,color;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
@@ -79,7 +80,7 @@ class BleController {
   bool scanQueued=false,automaticScan=false;
 #ifndef MOCK_BLE
   struct ConnectRequest { char address[18]; uint8_t preferredType=0; bool hasPreferredType=false; };
-  struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; uint8_t failureReason; int linkError; };
+  struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; uint8_t failureReason; int linkError; char serviceUuids[96]{}; };
   QueueHandle_t connectRequests=nullptr,connectResults=nullptr;
   TaskHandle_t connectTask=nullptr,scanTask=nullptr;
   bool connectPending=false;

@@ -26,3 +26,4 @@ Trigger Anderson v3.1.80: apply the 6500ms duration to the actual BLE scan-start
 Build Anderson 3.1.81: recover queued scans, observe BLE address types, periodically rediscover, expose link errors (2026-11-13)
 Trigger 3.1.81 full queued scan timeout allowance (35s) before production release (2026-11-13)
 Build Anderson 3.1.82: align BLE scan window with interval for Wi-Fi coexistence per Espressif recommendation (2026-11-13)
+Build Anderson 3.1.83: add FFE0/FFE1 Lotus-family service fallback and log GATT service UUIDs when connection succeeds but control service missing (2026-11-13)
