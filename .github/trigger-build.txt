@@ -20,3 +20,4 @@ Build Anderson 3.1.78 fix missing transmit power JS runtime and test release bun
 Trigger Anderson 3.1.79 extended BLE discovery, scan-result priority, and reconnect diagnostics (2026-11-13)
 
 Rerun Anderson 3.1.79 build after updating the BLE scan-window test expectation (2026-11-13)
+Build Anderson 3.1.79 using NimBLE-Arduino 2.5.2 RPA identity-cache fix (2026-11-13)
