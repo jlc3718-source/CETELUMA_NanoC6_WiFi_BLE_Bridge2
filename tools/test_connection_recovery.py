@@ -22,6 +22,8 @@ assert 'getLastError()' in ble and 'client->setConnectTimeout(5000)' in ble
 assert 'client->getService("FFF0")' in ble and 'svc->getCharacteristic("FFF3")' in ble
 assert 'client->getService("FFE0")' in ble and 'svc->getCharacteristic("FFE1")' in ble
 assert 'client->getServices(true)' in ble and 'lastServices' in hdr
+assert 'client->getServices(false)' in ble and 'if(cachedServices.empty())services=&client->getServices(true)' in ble
+assert 'client->isConnected()?"No services returned (GATT discovery error "' in ble
 assert 'if(result.failureReason==2)slot.lastServices=result.serviceUuids' in ble
 assert 'lastAutoScanAt' in hdr and 'automaticScan' in ble
 assert 'slot.address.equalsIgnoreCase(device.address)' in ble
