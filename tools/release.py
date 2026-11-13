@@ -190,6 +190,14 @@ def check():
         raise ValueError(f'Firmware source version {runtime.group(1)} does not match {ver}')
     if f'>v{ver}<' not in html:
         raise ValueError('Rendered UI version mismatch')
+    # Release gate: the visible revision must track the running firmware and
+    # Transmit Power must remain the tenth Settings tab in the packaged UI.
+    if f'id="firmwareRevisionLive" data-embedded-version="{ver}"' not in html:
+        raise ValueError('Live firmware revision marker is missing or stale')
+    if 'ANDERSON_FIRMWARE_REVISION_SYNC_V1' not in V3_JS.read_text():
+        raise ValueError('OTA browser-version synchronization is missing')
+    if '["firmware","Firmware"],["transmit","Transmit Power"]' not in V3_JS.read_text():
+        raise ValueError('Transmit Power is not Settings tab 10')
     for name, page in rendered_pages().items():
         page = page.decode()
         PageIds().feed(page)
