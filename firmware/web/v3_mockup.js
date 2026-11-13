@@ -83,3 +83,66 @@ transmitPowerPane(i.get("transmit")),n.forEach(e=>i.get((e=>{if(e.classList.cont
   };
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',start,{once:true}):start();
 })();
+
+/* ANDERSON_FIRMWARE_REVISION_SYNC_V1
+ * The running controller is authoritative. A restored mobile browser page can
+ * outlive an OTA update; show the live revision and force a cache-busted reload
+ * if the packaged page version does not match the running firmware.
+ */
+(() => {
+  const id = 'firmwareRevisionLive';
+  let pending = false;
+  async function checkRunningRevision() {
+    if (pending || document.hidden) return;
+    const node = document.getElementById(id);
+    if (!node) return;
+    pending = true;
+    try {
+      const response = await fetch('/api/firmware?revisionCheck=' + Date.now(), {
+        cache: 'no-store',
+        headers: {'Cache-Control': 'no-cache'}
+      });
+      if (!response.ok) return;
+      const info = await response.json();
+      const version = String(info.version || '').trim();
+      if (!/^\d+\.\d+\.\d+[a-z]?$/.test(version)) return;
+      node.textContent = 'v' + version;
+      node.title = 'Running firmware, verified live from the NanoC6';
+      const embedded = node.dataset.embeddedVersion || '';
+      if (embedded && embedded !== version) {
+        const url = new URL(location.href);
+        if (url.searchParams.get('andersonUiVersion') !== version) {
+          url.searchParams.set('andersonUiVersion', version);
+          url.searchParams.set('andersonUiRefresh', String(Date.now()));
+          location.replace(url.toString());
+        } else {
+          node.title = 'Running v' + version + '; browser is still showing an outdated interface. Reopen the controller page.';
+        }
+      }
+    } catch (_) {
+      // The last live value remains visible if the Wi-Fi link is unavailable.
+    } finally {
+      pending = false;
+    }
+  }
+  const start = () => {
+    checkRunningRevision();
+    window.addEventListener('pageshow', checkRunningRevision);
+    window.addEventListener('anderson-profile-selected', checkRunningRevision);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) checkRunningRevision();
+    });
+    document.addEventListener('click', event => {
+      if (event.target.closest('.tab[data-tab="settings"],.v3SettingsTab[data-settings-tab="firmware"]')) {
+        setTimeout(checkRunningRevision, 200);
+      }
+    });
+    setInterval(() => {
+      const settings = document.querySelector('.page[data-page="settings"].active');
+      if (settings && !document.hidden) checkRunningRevision();
+    }, 15000);
+  };
+  document.readyState === 'loading'
+    ? document.addEventListener('DOMContentLoaded', start, {once: true})
+    : start();
+})();
