@@ -15,6 +15,7 @@ assert 'failureRetryMs' in ble
 # Recovery checks: a longer active scan, results retained despite simultaneous reconnect, and per-slot failure counters.
 assert 'scan(uint32_t ms=6500)' in hdr
 assert 'scanQueued' in hdr and 'asyncScanBusy||scanQueued' in hdr
+assert 'Date.now()+35e3' in (ROOT/'firmware/web/index.html').read_text()
 assert 'if(connecting()){scanQueued=true;return true;}' in ble
 assert 'request.hasPreferredType=slots[i].hasObservedAddressType' in ble
 assert 'getLastError()' in ble and 'client->setConnectTimeout(5000)' in ble
