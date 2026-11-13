@@ -84,15 +84,21 @@ void BleController::connectionWorker(void* context){auto* self=static_cast<BleCo
       result.failureReason=2;result.linkError=client->getLastError();
       String serviceList;
       if(client->isConnected()){
-        const auto& services=client->getServices(true);
-        for(const auto* service:services){
+        // getService() performs a blocking UUID discovery for each queried service.
+        // Do not immediately clear the cache and repeat the whole procedure: use the
+        // discovered database first, and only run one full discovery if all UUID
+        // lookups yielded no service objects.
+        const auto& cachedServices=client->getServices(false);
+        const std::vector<NimBLERemoteService*>* services=&cachedServices;
+        if(cachedServices.empty())services=&client->getServices(true);
+        for(const auto* service:*services){
           if(!service)continue;
           if(serviceList.length())serviceList+=", ";
           serviceList+=service->getUUID().toString().c_str();
           if(serviceList.length()>70)break;
         }
       }
-      if(!serviceList.length())serviceList="No services returned";
+      if(!serviceList.length())serviceList=client->isConnected()?"No services returned (GATT discovery error "+String(client->getLastError())+")":"Disconnected during GATT discovery";
       serviceList.toCharArray(result.serviceUuids,sizeof(result.serviceUuids));
       NimBLEDevice::deleteClient(client);
     }
