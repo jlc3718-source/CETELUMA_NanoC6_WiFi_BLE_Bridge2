@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <NimBLEDevice.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
@@ -68,12 +69,36 @@ bool otaUploadAllowed=false,otaUploadOk=false,otaRecoveryRequest=false,otaExtern
 bool otaAutoRebootPending=false;uint32_t otaAutoRebootAt=0;
 static bool firmwareOperationBusy(){return otaExternalClaimed||otaAutoRebootPending||Update.isRunning()||remoteUpdateOperationBusy();}
 
+static uint8_t wifiTxIndex=7; // 19.5 dBm; retain the prior maximum-power default.
+static int8_t bleTxDbm=3; // The existing Anderson BLE default was +3 dBm.
+static bool bleTxReady=false;
+static constexpr wifi_power_t WIFI_TX_VALUES[]={
+  WIFI_POWER_8_5dBm,WIFI_POWER_11dBm,WIFI_POWER_13dBm,WIFI_POWER_15dBm,
+  WIFI_POWER_17dBm,WIFI_POWER_18_5dBm,WIFI_POWER_19dBm,WIFI_POWER_19_5dBm};
+static constexpr int8_t BLE_TX_VALUES[]={-12,-9,-6,-3,0,3,6,9,12,15,18};
+static bool supportedBleTx(int v){for(int8_t level:BLE_TX_VALUES)if(level==v)return true;return false;}
+static void loadRadioTxSettings(){
+  Preferences p;if(!p.begin("anderson-tx",true))return;
+  uint8_t savedWifi=p.getUChar("wifi",7);int8_t savedBle=p.getChar("ble",3);p.end();
+  if(savedWifi<sizeof(WIFI_TX_VALUES)/sizeof(WIFI_TX_VALUES[0]))wifiTxIndex=savedWifi;
+  if(supportedBleTx(savedBle))bleTxDbm=savedBle;
+}
+static String radioTxJson(){
+  JsonDocument d;d["wifiIndex"]=wifiTxIndex;d["wifiDbm"]=(float)((int)WIFI_TX_VALUES[wifiTxIndex])/4.0f;
+  d["bleDbm"]=bleTxDbm;d["wifiActualDbm"]=(float)((int)WiFi.getTxPower())/4.0f;
+#ifndef MOCK_BLE
+  if(bleTxReady){int current=NimBLEDevice::getPower();if(current!=0xFF)d["bleActualDbm"]=current;}
+#endif
+  d["ok"]=true;String out;serializeJson(d,out);return out;
+}
+
+
 static String colorHex(uint32_t c){char b[8];snprintf(b,sizeof(b),"#%06lX",(unsigned long)c);return b;}
 static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return def;int h=s.substring(0,2).toInt(),m=s.substring(3,5).toInt();if(h<0||h>23||m<0||m>59)return def;return h*60+m;}
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.74";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.75";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -617,10 +642,10 @@ void evaluateSchedule(bool force=false){
   Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=s.schedule2Brightness;bool changed=!power||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;power=true;runningTheme=t;if(changed||force)applyRunning(true);
 }
 void startAP(){
-  WiFi.mode(WIFI_AP_STA);WiFi.softAP("AndersonHome-Setup","andersonhome");setupAP=true;
+  WiFi.mode(WIFI_AP_STA);WiFi.setTxPower(WIFI_TX_VALUES[wifiTxIndex]);WiFi.softAP("AndersonHome-Setup","andersonhome");setupAP=true;
 }
 void connectWiFi(){
-  auto&s=store.get();WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(true);
+  auto&s=store.get();WiFi.mode(WIFI_STA);WiFi.setTxPower(WIFI_TX_VALUES[wifiTxIndex]);WiFi.setSleep(false);WiFi.setAutoReconnect(true);
   if(!s.ssid.length()){startAP();return;}WiFi.begin(s.ssid.c_str(),s.password.c_str());
   uint32_t start=millis();while(WiFi.status()!=WL_CONNECTED && millis()-start<18000){delay(250);}
   if(WiFi.status()==WL_CONNECTED){wifiWasConnected=true;setupAP=false;configTzTime(s.tz.c_str(),"pool.ntp.org","time.nist.gov");}
@@ -836,6 +861,43 @@ void setupRoutes(){
   });
   server.on("/api/system",HTTP_GET,[]{if(!requireAdmin())return;sendJson(systemJson());});
 
+  server.on("/api/transmit-power",HTTP_GET,[]{
+    if(!requireAdmin())return;sendJson(radioTxJson());
+  });
+  server.on("/api/transmit-power",HTTP_POST,[]{
+    if(!requireAdmin())return;
+    if(firmwareOperationBusy()){server.send(409,"application/json","{\"ok\":false,\"error\":\"Firmware operation in progress\"}");return;}
+    JsonDocument d;if(!body(d))return;
+    if(!d["wifiIndex"].is<int>()||!d["bleDbm"].is<int>()){server.send(400,"application/json","{\"ok\":false,\"error\":\"Both power levels must be integers\"}");return;}
+    int wantedWifi=d["wifiIndex"].as<int>(),wantedBle=d["bleDbm"].as<int>();
+    if(wantedWifi<0||wantedWifi>=(int)(sizeof(WIFI_TX_VALUES)/sizeof(WIFI_TX_VALUES[0]))||!supportedBleTx(wantedBle)){
+      server.send(400,"application/json","{\"ok\":false,\"error\":\"Unsupported transmit power level\"}");return;
+    }
+    uint8_t oldWifi=wifiTxIndex;int8_t oldBle=bleTxDbm;
+    if(!WiFi.setTxPower(WIFI_TX_VALUES[wantedWifi])){server.send(500,"application/json","{\"ok\":false,\"error\":\"Wi-Fi radio rejected the requested level\"}");return;}
+#ifndef MOCK_BLE
+    if(bleTxReady&&!NimBLEDevice::setPower((int8_t)wantedBle)){
+      WiFi.setTxPower(WIFI_TX_VALUES[oldWifi]);
+      server.send(500,"application/json","{\"ok\":false,\"error\":\"Bluetooth radio rejected the requested level\"}");return;
+    }
+#endif
+    Preferences p;bool saved=false;
+    if(p.begin("anderson-tx",false)){
+      p.putUChar("wifi",(uint8_t)wantedWifi);p.putChar("ble",(int8_t)wantedBle);
+      saved=p.getUChar("wifi",255)==wantedWifi&&p.getChar("ble",127)==wantedBle;p.end();
+    }
+    if(!saved){
+      WiFi.setTxPower(WIFI_TX_VALUES[oldWifi]);
+#ifndef MOCK_BLE
+      if(bleTxReady)NimBLEDevice::setPower(oldBle);
+#endif
+      server.send(500,"application/json","{\"ok\":false,\"error\":\"Could not verify persistent radio settings\"}");return;
+    }
+    wifiTxIndex=(uint8_t)wantedWifi;bleTxDbm=(int8_t)wantedBle;
+    sendJson(radioTxJson());
+  });
+
+
   server.on("/api/palette-migration",HTTP_GET,[]{if(!requireAdmin())return;sendJson(paletteColorMigrationStatusJson());});
   server.on("/api/palette-migration",HTTP_POST,[]{
     if(!requireAdmin())return;if(firmwareOperationBusy()){server.send(409,"application/json","{\"ok\":false,\"error\":\"A firmware operation is already active\"}");return;}JsonDocument d;if(!body(d))return;String action=d["action"]|String("");bool ok=false;if(action=="restore")ok=restoreOriginalPaletteColors();else if(action=="apply")ok=reapplyCorrectedPaletteColors();else{server.send(400,"application/json","{\"ok\":false,\"error\":\"Use action restore or apply\"}");return;}if(!ok){server.send(500,"application/json","{\"ok\":false,\"error\":\"Palette migration operation failed verification\"}");return;}sendJson(paletteColorMigrationStatusJson());delay(250);ESP.restart();
@@ -936,13 +998,16 @@ static void checkScheduledMaintenanceReboot(){
 void setup(){
   delay(500);pinMode(BLUE_LED,OUTPUT);pinMode(USER_BUTTON,INPUT_PULLUP);digitalWrite(BLUE_LED,HIGH);
   loopWatchdogActive=beginControllerWatchdog();WiFi.onEvent(onWiFiEvent);
-  store.begin();loadPinAuthConfig();noteBootAttempt();connectWiFi();setupMdns();
+  store.begin();loadRadioTxSettings();loadPinAuthConfig();noteBootAttempt();connectWiFi();setupMdns();
   setupRoutes();server.begin();networkServerStarted=true;lastStationIp=(uint32_t)WiFi.localIP();
   remoteUpdateNoteBoot(ANDERSON_FIRMWARE_VERSION,ANDERSON_BUILD_COMMIT);
   if(remoteUpdateBootCheck(ANDERSON_FIRMWARE_VERSION,[]{server.handleClient();feedControllerWatchdog();})){delay(80);ESP.restart();return;}
   bootFirmwareCheckPending=false;
   if(bootRecoveryMode){digitalWrite(BLUE_LED,LOW);return;}
-  eventStateBegin();eventCategoriesBegin();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();settingsBackupInitialize();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventColorPresetOverrides();loadEventOverrides();ble.begin(&store.get());
+  eventStateBegin();eventCategoriesBegin();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();settingsBackupInitialize();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventColorPresetOverrides();loadEventOverrides();ble.begin(&store.get());bleTxReady=true;
+#ifndef MOCK_BLE
+  NimBLEDevice::setPower(bleTxDbm);
+#endif
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;
   evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;bootHealthyAfter=millis()+BOOT_HEALTHY_GRACE_MS;digitalWrite(BLUE_LED,LOW);
 }
