@@ -9,8 +9,8 @@
 #include <freertos/task.h>
 #endif
 
-struct BleFound { String name; String address; int rssi; };
-struct BleSlotInfo { String name; String address; String protocol; bool connected; uint32_t attempts=0, failures=0; bool scanPerformed=false, seenInLastScan=false; String lastFailure; };
+struct BleFound { String name; String address; int rssi; uint8_t addressType=0; bool connectable=false; };
+struct BleSlotInfo { String name; String address; String protocol; bool connected; uint32_t attempts=0, failures=0; bool scanPerformed=false, seenInLastScan=false; String lastFailure; int lastLinkError=0, observedAddressType=-1; };
 
 class BleController {
  public:
@@ -25,7 +25,7 @@ class BleController {
   String protocolName() const;
   std::vector<BleFound> scan(uint32_t ms=6500);
   bool startScan(uint32_t ms=6500);
-  bool scanInProgress() const { return asyncScanBusy; }
+  bool scanInProgress() const { return asyncScanBusy||scanQueued; }
   bool consumeScanResults(std::vector<BleFound>& out);
   bool selectAndConnect(const String& address);
   bool removeController(uint8_t slot);
@@ -56,6 +56,9 @@ class BleController {
     uint32_t connectionAttempts=0,connectionFailures=0;
     uint8_t lastFailure=0; // 0 none, 1 BLE link failed, 2 GATT characteristic missing
     bool seenLastScan=false;
+    uint8_t observedAddressType=0;
+    bool hasObservedAddressType=false;
+    int lastLinkError=0;
     PendingFrame power,brightness,color;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
@@ -65,17 +68,18 @@ class BleController {
   AppSettings* cfg=nullptr;
   uint8_t target=0,nextServiceSlot=0;
   uint32_t lastEffect=0,lastStaticReassert=0,lastControlReassert=0;
-  uint32_t startedAt=0,lastScanAt=0,lastScanDeviceCount=0;
+  uint32_t startedAt=0,lastScanAt=0,lastScanDeviceCount=0,lastAutoScanAt=0;
   bool connectionChanged=false;
   Theme activeTheme;
   uint8_t activeBrightness=0,activeSpeed=0;
   bool activeValid=false;
   std::vector<BleFound> asyncScanResults;
   volatile bool asyncScanBusy=false,asyncScanReady=false;
-  uint32_t asyncScanMs=2500;
+  uint32_t asyncScanMs=6500;
+  bool scanQueued=false,automaticScan=false;
 #ifndef MOCK_BLE
-  struct ConnectRequest { char address[18]; };
-  struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; uint8_t failureReason; };
+  struct ConnectRequest { char address[18]; uint8_t preferredType=0; bool hasPreferredType=false; };
+  struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; uint8_t failureReason; int linkError; };
   QueueHandle_t connectRequests=nullptr,connectResults=nullptr;
   TaskHandle_t connectTask=nullptr,scanTask=nullptr;
   bool connectPending=false;

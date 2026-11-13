@@ -14,6 +14,13 @@ assert 'p->generation!=generation' in ble
 assert 'failureRetryMs' in ble
 # Recovery checks: a longer active scan, results retained despite simultaneous reconnect, and per-slot failure counters.
 assert 'scan(uint32_t ms=6500)' in hdr
+assert 'scanQueued' in hdr and 'asyncScanBusy||scanQueued' in hdr
+assert 'if(connecting()){scanQueued=true;return true;}' in ble
+assert 'request.hasPreferredType=slots[i].hasObservedAddressType' in ble
+assert 'getLastError()' in ble and 'client->setConnectTimeout(5000)' in ble
+assert 'lastAutoScanAt' in hdr and 'automaticScan' in ble
+assert 'slot.address.equalsIgnoreCase(device.address)' in ble
+assert '(uint32_t)(n-lastAutoScanAt)>=90000UL' in ble
 assert 'startScan(uint32_t ms=6500)' in hdr
 assert 'ble.startScan()' in (ROOT/'firmware/src/main.cpp').read_text()
 assert 'sc->setWindow(60)' in ble and 'sc->getResults(ms,false)' in ble
