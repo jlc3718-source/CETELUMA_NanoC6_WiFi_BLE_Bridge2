@@ -25,3 +25,4 @@ Retry Anderson 3.1.79 without redundant NimBLE clearResults; align extended scan
 Trigger Anderson v3.1.80: apply the 6500ms duration to the actual BLE scan-start API (2026-11-13)
 Build Anderson 3.1.81: recover queued scans, observe BLE address types, periodically rediscover, expose link errors (2026-11-13)
 Trigger 3.1.81 full queued scan timeout allowance (35s) before production release (2026-11-13)
+Build Anderson 3.1.82: align BLE scan window with interval for Wi-Fi coexistence per Espressif recommendation (2026-11-13)

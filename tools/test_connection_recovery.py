@@ -24,7 +24,7 @@ assert 'slot.address.equalsIgnoreCase(device.address)' in ble
 assert '(uint32_t)(n-lastAutoScanAt)>=90000UL' in ble
 assert 'startScan(uint32_t ms=6500)' in hdr
 assert 'ble.startScan()' in (ROOT/'firmware/src/main.cpp').read_text()
-assert 'sc->setWindow(60)' in ble and 'sc->getResults(ms,false)' in ble
+assert 'sc->setWindow(80)' in ble and 'sc->getResults(ms,false)' in ble
 assert 'slot.seenLastScan' in ble and 'connectionFailures' in hdr
 assert 'result.failureReason' in ble and '?5000UL:12000UL' in ble
 assert 'ble.consumeScanResults(found)' in (ROOT/'firmware/src/main.cpp').read_text()
