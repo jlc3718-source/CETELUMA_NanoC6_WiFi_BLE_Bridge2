@@ -14,6 +14,8 @@ assert 'p->generation!=generation' in ble
 assert 'failureRetryMs' in ble
 # Recovery checks: a longer active scan, results retained despite simultaneous reconnect, and per-slot failure counters.
 assert 'scan(uint32_t ms=6500)' in hdr
+assert 'startScan(uint32_t ms=6500)' in hdr
+assert 'ble.startScan()' in (ROOT/'firmware/src/main.cpp').read_text()
 assert 'sc->setWindow(60)' in ble and 'sc->getResults(ms,false)' in ble
 assert 'slot.seenLastScan' in ble and 'connectionFailures' in hdr
 assert 'result.failureReason' in ble and '?5000UL:12000UL' in ble

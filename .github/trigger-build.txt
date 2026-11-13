@@ -22,3 +22,4 @@ Trigger Anderson 3.1.79 extended BLE discovery, scan-result priority, and reconn
 Rerun Anderson 3.1.79 build after updating the BLE scan-window test expectation (2026-11-13)
 Build Anderson 3.1.79 using NimBLE-Arduino 2.5.2 RPA identity-cache fix (2026-11-13)
 Retry Anderson 3.1.79 without redundant NimBLE clearResults; align extended scan regression checks (2026-11-13)
+Trigger Anderson v3.1.80: apply the 6500ms duration to the actual BLE scan-start API (2026-11-13)

@@ -154,4 +154,5 @@ assert 'kelly' not in main.lower() and 'kelly' not in html.lower()
 assert 'sc->setWindow(60)' in ble and 'sc->setMaxResults(0xFF)' not in ble
 assert 'sc->clearResults()' not in ble
 assert 'scan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
+assert 'startScan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
 print('PASS: two-profile configuration, migration, and stable scan settings')

@@ -24,7 +24,7 @@ class BleController {
   String address() const;
   String protocolName() const;
   std::vector<BleFound> scan(uint32_t ms=6500);
-  bool startScan(uint32_t ms=2500);
+  bool startScan(uint32_t ms=6500);
   bool scanInProgress() const { return asyncScanBusy; }
   bool consumeScanResults(std::vector<BleFound>& out);
   bool selectAndConnect(const String& address);
