@@ -85,8 +85,8 @@ def render_ui():
     # The displayed revision comes from the release version even though the stable base page
     # intentionally remains unchanged to keep UI releases small and reviewable.
     html, count = re.subn(
-        r'<strong>v\d+\.\d+\.\d+[a-z]?</strong>',
-        f'<strong>v{ver}</strong>',
+        r'<strong id="firmwareRevisionLive" data-embedded-version="\d+\.\d+\.\d+[a-z]?">v\d+\.\d+\.\d+[a-z]?</strong>',
+        f'<strong id="firmwareRevisionLive" data-embedded-version="{ver}">v{ver}</strong>',
         html,
         count=1,
     )
