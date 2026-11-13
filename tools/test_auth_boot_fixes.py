@@ -151,7 +151,7 @@ with tempfile.TemporaryDirectory() as directory:
 assert 'profile=="shirley"?ROLE_USER:ROLE_NONE' in main
 assert 'schema<5' in main and 'd["version"]=5' in main
 assert 'kelly' not in main.lower() and 'kelly' not in html.lower()
-assert 'sc->setWindow(40)' in ble and 'sc->setMaxResults(0xFF)' not in ble
+assert 'sc->setWindow(60)' in ble and 'sc->setMaxResults(0xFF)' not in ble
 assert 'sc->clearResults()' not in ble
 assert 'scan(uint32_t ms=2500)' in (ROOT/'firmware/include/BleController.h').read_text()
 print('PASS: two-profile configuration, migration, and stable scan settings')

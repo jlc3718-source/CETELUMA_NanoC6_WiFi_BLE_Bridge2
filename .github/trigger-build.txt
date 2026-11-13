@@ -18,3 +18,5 @@ Trigger Anderson Home v3.1.76 build: Transmit Power under Settings, tab 10 (2026
 Trigger v3.1.77: OTA live revision and mobile stale page recovery with Settings tab 10 (2026-11-13)
 Build Anderson 3.1.78 fix missing transmit power JS runtime and test release bundled UI (2026-11-13)
 Trigger Anderson 3.1.79 extended BLE discovery, scan-result priority, and reconnect diagnostics (2026-11-13)
+
+Rerun Anderson 3.1.79 build after updating the BLE scan-window test expectation (2026-11-13)
