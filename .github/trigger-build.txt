@@ -13,3 +13,4 @@ Retry Anderson Home 3.1.74 after runtime version alignment
 Rebuild Anderson 3.1.74 preserving saved RGB values through legacy normalizer
 
 Trigger Anderson Home 3.1.75 Transmit Power release build and signed OTA publish
+Rebuild Anderson Home 3.1.75 after repairing release branch ancestry (2026-11-13)
