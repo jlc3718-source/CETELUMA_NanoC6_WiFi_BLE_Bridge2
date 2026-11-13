@@ -12,6 +12,12 @@ assert 'if(serviced)nextServiceSlot=' in ble
 assert 'canWriteNoResponse()' in ble and 'const bool requestAck=!canNoResponse' in ble
 assert 'p->generation!=generation' in ble
 assert 'failureRetryMs' in ble
+# Recovery checks: a longer active scan, results retained despite simultaneous reconnect, and per-slot failure counters.
+assert 'scan(uint32_t ms=6500)' in hdr
+assert 'sc->setWindow(60)' in ble and 'sc->clearResults()' in ble
+assert 'slot.seenLastScan' in ble and 'connectionFailures' in hdr
+assert 'result.failureReason' in ble and '?5000UL:12000UL' in ble
+assert 'ble.consumeScanResults(found)' in (ROOT/'firmware/src/main.cpp').read_text()
 assert 'STATIC_REASSERT_INTERVAL_MS=30000UL' in ble
 assert 'syncTheme.effect==Effect::Jump&&count==1' in ble
 assert 'normalized.effect==Effect::Breath' not in ble
