@@ -15,3 +15,4 @@ Rebuild Anderson 3.1.74 preserving saved RGB values through legacy normalizer
 Trigger Anderson Home 3.1.75 Transmit Power release build and signed OTA publish
 Rebuild Anderson Home 3.1.75 after repairing release branch ancestry (2026-11-13)
 Trigger Anderson Home v3.1.76 build: Transmit Power under Settings, tab 10 (2026-11-13)
+Trigger v3.1.77: OTA live revision and mobile stale page recovery with Settings tab 10 (2026-11-13)
