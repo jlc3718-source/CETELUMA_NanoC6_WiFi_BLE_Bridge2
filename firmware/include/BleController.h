@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "Types.h"
+#include "WledController.h"
 #ifndef MOCK_BLE
 #include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
@@ -33,6 +34,10 @@ class BleController {
   void setTarget(uint8_t target); // 0=all, 1=slot A, 2=slot B
   uint8_t getTarget() const { return target; }
   BleSlotInfo slotInfo(uint8_t slot) const;
+  bool usesWled(uint8_t slot) const;
+  void refreshTransport(uint8_t slot);
+  WledSlotInfo wledInfo(uint8_t slot) const { return wled.slotInfo(slot); }
+  void retryWled(uint8_t slot) { wled.retry(slot); }
   uint32_t lastScanCount() const { return lastScanDeviceCount; }
   bool scanCompleted() const { return lastScanAt!=0; }
   void setPower(bool on);
@@ -67,6 +72,7 @@ class BleController {
 #endif
   } slots[2];
   AppSettings* cfg=nullptr;
+  WledController wled;
   uint8_t target=0,nextServiceSlot=0;
   uint32_t lastEffect=0,lastStaticReassert=0,lastControlReassert=0;
   uint32_t startedAt=0,lastScanAt=0,lastScanDeviceCount=0,lastAutoScanAt=0;

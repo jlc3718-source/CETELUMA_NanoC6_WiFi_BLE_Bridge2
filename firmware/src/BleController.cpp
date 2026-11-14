@@ -19,9 +19,11 @@ void BleController::begin(AppSettings* settings){
   if(connectRequests&&connectResults&&xTaskCreate(connectionWorker,"anderson-ble",4096,this,1,&connectTask)!=pdPASS)connectTask=nullptr;
   if(!connectTask){if(connectRequests)vQueueDelete(connectRequests);if(connectResults)vQueueDelete(connectResults);connectRequests=nullptr;connectResults=nullptr;}
 #endif
+  for(uint8_t i=0;i<2;i++)wled.configure(i,usesWled(i),i?cfg->wledHost2:cfg->wledHost);
 }
 
 bool BleController::slotConnected(uint8_t i) const{if(i>1)return false;
+  if(usesWled(i))return wled.connected(i);
 #ifdef MOCK_BLE
   return slots[i].address.length()>0;
 #else
@@ -30,9 +32,11 @@ bool BleController::slotConnected(uint8_t i) const{if(i>1)return false;
 }
 bool BleController::connected() const{return slotConnected(0)||slotConnected(1);} int BleController::connectedCount() const{return (slotConnected(0)?1:0)+(slotConnected(1)?1:0);}
 String BleController::name() const{if(slotConnected(0)&&slotConnected(1))return "2 controllers";if(slotConnected(0))return slots[0].name;if(slotConnected(1))return slots[1].name;return "";}
-String BleController::address() const{if(slotConnected(0)&&slotConnected(1))return "MULTI";if(slotConnected(0))return slots[0].address;if(slotConnected(1))return slots[1].address;return "";}
-String BleController::protocolName() const{return "ELK-BLEDDM / Lotus Lantern";}
-BleSlotInfo BleController::slotInfo(uint8_t i) const{BleSlotInfo x;if(i>1)return x;x.name=slots[i].name;x.address=slots[i].address;x.protocol=protocolName();x.connected=slotConnected(i);x.attempts=slots[i].connectionAttempts;x.failures=slots[i].connectionFailures;x.scanPerformed=lastScanAt!=0;x.seenInLastScan=slots[i].seenLastScan;x.lastFailure=slots[i].lastFailure==1?"BLE link failed":slots[i].lastFailure==2?"Light GATT service unavailable":String("");x.lastLinkError=slots[i].lastLinkError;x.lastServices=slots[i].lastServices;x.observedAddressType=slots[i].hasObservedAddressType?(int)slots[i].observedAddressType:-1;return x;}
+String BleController::address() const{if(slotConnected(0)&&slotConnected(1))return "MULTI";if(slotConnected(0))return slotInfo(0).address;if(slotConnected(1))return slotInfo(1).address;return "";}
+String BleController::protocolName() const{return usesWled(0)||usesWled(1)?"WLED Wi-Fi / Lotus Bluetooth":"ELK-BLEDDM / Lotus Lantern";}
+bool BleController::usesWled(uint8_t i) const{return cfg&&i<2&&(i?cfg->wledEnabled2:cfg->wledEnabled);}
+void BleController::refreshTransport(uint8_t i){if(i>1||!cfg)return;disconnectSlot(i);++slots[i].generation;slots[i].nextConnectAt=millis();wled.configure(i,usesWled(i),i?cfg->wledHost2:cfg->wledHost);activeValid=false;}
+BleSlotInfo BleController::slotInfo(uint8_t i) const{BleSlotInfo x;if(i>1)return x;x.name=slots[i].name;x.address=slots[i].address;x.protocol="ELK-BLEDDM / Lotus Lantern";x.connected=slotConnected(i);if(usesWled(i)){auto wi=wled.slotInfo(i);x.address=wi.host;x.protocol="WLED Wi-Fi";x.attempts=wi.attempts;x.failures=wi.failures;x.lastFailure=wi.error;return x;}x.attempts=slots[i].connectionAttempts;x.failures=slots[i].connectionFailures;x.scanPerformed=lastScanAt!=0;x.seenInLastScan=slots[i].seenLastScan;x.lastFailure=slots[i].lastFailure==1?"BLE link failed":slots[i].lastFailure==2?"Light GATT service unavailable":String("");x.lastLinkError=slots[i].lastLinkError;x.lastServices=slots[i].lastServices;x.observedAddressType=slots[i].hasObservedAddressType?(int)slots[i].observedAddressType:-1;return x;}
 void BleController::clearPending(uint8_t i){if(i>1)return;slots[i].power=PendingFrame();slots[i].brightness=PendingFrame();slots[i].color=PendingFrame();++slots[i].commandGeneration;}
 void BleController::clearAllPending(){clearPending(0);clearPending(1);}
 void BleController::setTarget(uint8_t t){t=t<=2?t:0;if(target==t)return;target=t;clearAllPending();activeValid=false;}
@@ -105,7 +109,7 @@ void BleController::connectionWorker(void* context){auto* self=static_cast<BleCo
     xQueueSend(self->connectResults,&result,portMAX_DELAY);
   }
 }
-bool BleController::requestConnection(uint8_t i){if(i>1||connectPending||asyncScanBusy||!connectTask||slots[i].address.length()!=17)return false;ConnectRequest request{};slots[i].address.toCharArray(request.address,sizeof(request.address));request.hasPreferredType=slots[i].hasObservedAddressType&&(slots[i].observedAddressType==BLE_ADDR_PUBLIC||slots[i].observedAddressType==BLE_ADDR_RANDOM);request.preferredType=slots[i].observedAddressType;disconnectSlot(i);pendingSlot=i;pendingGeneration=slots[i].generation;connectPending=xQueueSend(connectRequests,&request,0)==pdTRUE;if(connectPending)++slots[i].connectionAttempts;return connectPending;}
+bool BleController::requestConnection(uint8_t i){if(i>1||usesWled(i)||connectPending||asyncScanBusy||!connectTask||slots[i].address.length()!=17)return false;ConnectRequest request{};slots[i].address.toCharArray(request.address,sizeof(request.address));request.hasPreferredType=slots[i].hasObservedAddressType&&(slots[i].observedAddressType==BLE_ADDR_PUBLIC||slots[i].observedAddressType==BLE_ADDR_RANDOM);request.preferredType=slots[i].observedAddressType;disconnectSlot(i);pendingSlot=i;pendingGeneration=slots[i].generation;connectPending=xQueueSend(connectRequests,&request,0)==pdTRUE;if(connectPending)++slots[i].connectionAttempts;return connectPending;}
 #endif
 
 bool BleController::selectAndConnect(const String& addr){String advertisedName;
@@ -114,7 +118,7 @@ bool BleController::selectAndConnect(const String& addr){String advertisedName;
 #else
   advertisedName=addr=="MOCK-B"?"ELK-BLEDDM 06":"ELK-BLEDDM AB";
 #endif
-  int slot=-1;for(int i=0;i<2;i++)if(slots[i].address.equalsIgnoreCase(addr))slot=i;for(int i=0;i<2&&slot<0;i++)if(!slots[i].address.length())slot=i;if(slot<0)slot=1;
+  int slot=-1;for(int i=0;i<2;i++)if(slots[i].address.equalsIgnoreCase(addr))slot=i;for(int i=0;i<2&&slot<0;i++)if(!slots[i].address.length()&&!usesWled(i))slot=i;if(slot<0)return false;
 #ifndef MOCK_BLE
   if(addr.length()!=17||!connectTask||NimBLEAddress(std::string(addr.c_str()),BLE_ADDR_PUBLIC).isNull())return false;
 #endif
@@ -131,7 +135,7 @@ void BleController::disconnectSlot(uint8_t i){if(i>1)return;clearPending(i);
 #endif
 }
 bool BleController::removeController(uint8_t i){if(i>1)return false;disconnectSlot(i);++slots[i].generation;slots[i].name="";slots[i].address="";saveSlots();activeValid=false;return true;}
-bool BleController::renameController(uint8_t i,const String& requestedName){if(i>1||!slots[i].address.length())return false;String clean=requestedName;clean.trim();if(!clean.length())return false;if(clean.length()>32)clean=clean.substring(0,32);slots[i].name=clean;saveSlots();return true;}
+bool BleController::renameController(uint8_t i,const String& requestedName){if(i>1||(!slots[i].address.length()&&!usesWled(i)))return false;String clean=requestedName;clean.trim();if(!clean.length())return false;if(clean.length()>32)clean=clean.substring(0,32);slots[i].name=clean;saveSlots();return true;}
 
 bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slotConnected(i))return false;
 #ifdef MOCK_BLE
@@ -141,15 +145,16 @@ bool BleController::writeSlot(uint8_t i,const uint8_t* data,size_t len){if(!slot
 #endif
 }
 void BleController::enqueueFrame(uint8_t i,PendingFrame& p,const uint8_t* data,size_t len,bool reliable){if(i>1||!data||!len||len>sizeof(p.data))return;memcpy(p.data,data,len);p.len=(uint8_t)len;p.sendsRemaining=reliable?2:1;p.failures=0;p.dueAt=millis();p.generation=++slots[i].commandGeneration;p.pending=true;}
-void BleController::enqueueToTargets(uint8_t kind,const uint8_t* data,size_t len,bool reliable){for(uint8_t i=0;i<2;i++){if(!slotTargeted(i)||!slotConnected(i))continue;PendingFrame* p=kind==0?&slots[i].power:(kind==1?&slots[i].brightness:&slots[i].color);enqueueFrame(i,*p,data,len,reliable);}}
-void BleController::servicePendingWrites(uint32_t now){bool serviced=false;for(uint8_t pass=0;pass<2;pass++){uint8_t i=(uint8_t)((nextServiceSlot+pass)%2);if(!slotConnected(i)){clearPending(i);continue;}PendingFrame* choices[3]={&slots[i].power,&slots[i].brightness,&slots[i].color};for(auto* p:choices){if(!p->pending||(int32_t)(now-p->dueAt)<0)continue;uint32_t generation=p->generation;bool ok=writeSlot(i,p->data,p->len);if(!p->pending||p->generation!=generation)break;if(ok){p->failures=0;if(p->sendsRemaining>0)--p->sendsRemaining;if(!p->sendsRemaining)p->pending=false;else p->dueAt=millis()+RELIABLE_RETRY_DELAY_MS;}else{if(p->failures<255)++p->failures;p->dueAt=millis()+failureRetryMs(p->failures);}serviced=true;break;}}if(serviced)nextServiceSlot=(uint8_t)((nextServiceSlot+1)%2);}
+void BleController::enqueueToTargets(uint8_t kind,const uint8_t* data,size_t len,bool reliable){for(uint8_t i=0;i<2;i++){if(usesWled(i)||!slotTargeted(i)||!slotConnected(i))continue;PendingFrame* p=kind==0?&slots[i].power:(kind==1?&slots[i].brightness:&slots[i].color);enqueueFrame(i,*p,data,len,reliable);}}
+void BleController::servicePendingWrites(uint32_t now){bool serviced=false;for(uint8_t pass=0;pass<2;pass++){uint8_t i=(uint8_t)((nextServiceSlot+pass)%2);if(usesWled(i)||!slotConnected(i)){clearPending(i);continue;}PendingFrame* choices[3]={&slots[i].power,&slots[i].brightness,&slots[i].color};for(auto* p:choices){if(!p->pending||(int32_t)(now-p->dueAt)<0)continue;uint32_t generation=p->generation;bool ok=writeSlot(i,p->data,p->len);if(!p->pending||p->generation!=generation)break;if(ok){p->failures=0;if(p->sendsRemaining>0)--p->sendsRemaining;if(!p->sendsRemaining)p->pending=false;else p->dueAt=millis()+RELIABLE_RETRY_DELAY_MS;}else{if(p->failures<255)++p->failures;p->dueAt=millis()+failureRetryMs(p->failures);}serviced=true;break;}}if(serviced)nextServiceSlot=(uint8_t)((nextServiceSlot+1)%2);}
 
 void BleController::setPower(bool on){
+  for(uint8_t i=0;i<2;i++)if(slotTargeted(i)&&usesWled(i))wled.setPower(i,on);
   if(!on){for(uint8_t i=0;i<2;i++)if(slotTargeted(i))clearPending(i);activeValid=false;}
   uint8_t f[9]={0x7E,0x04,0x04,(uint8_t)(on?0xF0:0x00),0x00,(uint8_t)(on?0x01:0x00),0xFF,0x00,0xEF};enqueueToTargets(0,f,9,true);
 }
-void BleController::setColor(uint32_t c,bool reliable){uint8_t f[9]={0x7E,0x07,0x05,0x03,r8(c),g8(c),b8(c),0x10,0xEF};enqueueToTargets(2,f,9,reliable);}
-void BleController::setBrightness(uint8_t B,bool reliable){B=constrain(B,0,100);uint8_t f[9]={0x7E,0x04,0x01,B,0x00,0x00,0x00,0x00,0xEF};enqueueToTargets(1,f,9,reliable);}
+void BleController::setColor(uint32_t c,bool reliable){for(uint8_t i=0;i<2;i++)if(slotTargeted(i)&&usesWled(i))wled.setColor(i,c);uint8_t f[9]={0x7E,0x07,0x05,0x03,r8(c),g8(c),b8(c),0x10,0xEF};enqueueToTargets(2,f,9,reliable);}
+void BleController::setBrightness(uint8_t B,bool reliable){B=constrain(B,0,100);for(uint8_t i=0;i<2;i++)if(slotTargeted(i)&&usesWled(i))wled.setBrightness(i,B);uint8_t f[9]={0x7E,0x04,0x01,B,0x00,0x00,0x00,0x00,0xEF};enqueueToTargets(1,f,9,reliable);}
 
 void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,uint32_t nowMs,bool force){
   const Theme& syncTheme=t;
@@ -165,19 +170,20 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
 }
 
 void BleController::loop(){
+  wled.loop();
 #ifndef MOCK_BLE
   if(automaticScan&&!asyncScanBusy&&asyncScanReady){std::vector<BleFound> observed;consumeScanResults(observed);automaticScan=false;}
   if(connectTask&&!asyncScanBusy){ConnectResult result{};if(connectPending&&xQueueReceive(connectResults,&result,0)==pdTRUE){auto& slot=slots[pendingSlot];connectPending=false;if(slot.generation==pendingGeneration&&result.client){slot.client=result.client;slot.chr=result.chr;slot.lastFailure=0;slot.lastLinkError=0;slot.lastServices="";clearPending(pendingSlot);activeValid=false;connectionChanged=true;}else{if(result.client)NimBLEDevice::deleteClient(result.client);if(slot.generation==pendingGeneration){++slot.connectionFailures;slot.lastFailure=result.failureReason;slot.lastLinkError=result.linkError;if(result.failureReason==2)slot.lastServices=result.serviceUuids;}}if(slot.generation==pendingGeneration){uint32_t n=millis();slot.nextConnectAt=n+((uint32_t)(n-startedAt)<60000UL?5000UL:12000UL);}}uint32_t n=millis();
     for(uint8_t i=0;i<2;i++)if(slotConnected(i))slots[i].nextConnectAt=n;
     if(!connectPending&&scanQueued){scanQueued=false;startScan(asyncScanMs);}
     if(!connectPending&&!asyncScanBusy&&!scanQueued&&!asyncScanReady&&connectedCount()==0
-       &&(slots[0].address.length()||slots[1].address.length())
+       &&((!usesWled(0)&&slots[0].address.length())||(!usesWled(1)&&slots[1].address.length()))
        &&(slots[0].connectionFailures+slots[1].connectionFailures)>=3
        &&(lastAutoScanAt==0?(uint32_t)(n-startedAt)>=60000UL:(uint32_t)(n-lastAutoScanAt)>=90000UL)){
       if(startScan(6500)){automaticScan=true;lastAutoScanAt=n;}
     }
     if(!connectPending&&!asyncScanBusy&&!scanQueued)for(uint8_t i=0;i<2;i++){
-      if(slots[i].address.length()&&!slotConnected(i)&&(int32_t)(n-slots[i].nextConnectAt)>=0){
+      if(!usesWled(i)&&slots[i].address.length()&&!slotConnected(i)&&(int32_t)(n-slots[i].nextConnectAt)>=0){
         if(requestConnection(i))break;slots[i].nextConnectAt=n+30000UL;
       }
     }

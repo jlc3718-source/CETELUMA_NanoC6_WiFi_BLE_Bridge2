@@ -4,6 +4,25 @@ set -euo pipefail
 : "${GH_TOKEN:?GH_TOKEN is required}"
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 
+# A preparation release is not live hardware acceptance. Preserve every existing
+# recovery generation until the recorded target checks have actually passed.
+ACCEPTANCE_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/remote-update/hardware-acceptance.json"
+if [[ -f "$ACCEPTANCE_FILE" ]]; then
+  if ! python3 - "$ACCEPTANCE_FILE" <<'PY'
+import json,sys
+try:
+    record=json.load(open(sys.argv[1]))
+    ready=record.get('schema')==1 and record.get('pending') is False
+except (OSError,ValueError):
+    ready=False
+sys.exit(0 if ready else 1)
+PY
+  then
+    echo 'Anderson retention deferred: waiting for live hardware acceptance; prior releases and build artifacts are preserved.'
+    exit 0
+  fi
+fi
+
 BUILD_WORKFLOW_NAME="${ANDERSON_BUILD_WORKFLOW_NAME:-Build Anderson Home Firmware}"
 LEGACY_BUILD_WORKFLOW_NAME="Run Wi-Fi Scan Fix v3.0.10"
 CURRENT_RUN_ID="${GITHUB_RUN_ID:-0}"

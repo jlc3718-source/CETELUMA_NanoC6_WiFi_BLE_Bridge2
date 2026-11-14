@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "pending": true,
+  "version": "3.1.85",
+  "reason": "WLED preparation release; replacement controllers have not arrived.",
+  "required": [
+    "Verify the Nano boots the signed release and existing saved data remains intact",
+    "Assign the new WLED controllers to House and Garage",
+    "Verify both actual light strings respond to color, brightness, Solid, Jump, Breath, Strobe and ON/OFF",
+    "Verify schedule commands and ordinary disconnect/reconnect recovery",
+    "Back up the working live state and verify the prior release remains a recovery path"
+  ]
+}

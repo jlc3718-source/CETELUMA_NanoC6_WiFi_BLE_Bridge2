@@ -27,3 +27,5 @@ Build Anderson 3.1.81: recover queued scans, observe BLE address types, periodic
 Trigger 3.1.81 full queued scan timeout allowance (35s) before production release (2026-11-13)
 Build Anderson 3.1.82: align BLE scan window with interval for Wi-Fi coexistence per Espressif recommendation (2026-11-13)
 Build Anderson 3.1.83: add FFE0/FFE1 Lotus-family service fallback and log GATT service UUIDs when connection succeeds but control service missing (2026-11-13)
+
+Build Anderson 3.1.85: optional House/Garage WLED Wi-Fi transport, preserved BLE identities, existing effects/schedules, asynchronous recovery (2026-11-13)

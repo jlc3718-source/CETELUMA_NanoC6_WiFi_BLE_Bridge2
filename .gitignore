@@ -4,3 +4,4 @@ tools/node_modules/
 .pio-build-cache/
 release/
 __pycache__/
+.anderson-web-cache/
