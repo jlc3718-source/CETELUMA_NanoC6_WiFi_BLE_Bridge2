@@ -3,6 +3,7 @@
 Firmware 3.1.85 adds an optional WLED Wi-Fi connection for each existing light slot.
 It supports the SP803E and other controllers running the standard WLED JSON API.
 Both slots continue using their saved Bluetooth connections until explicitly changed.
+Version 3.1.86 fixes the panel placement in **Settings tab 6 — Controllers**.
 The Amazon short link supplied with the order could not be resolved during preparation;
 the ordered model has not been independently confirmed.
 

@@ -95,6 +95,22 @@ int main(){
     subprocess.run([*command, str(source), '-o', str(folder/'wled')], check=True)
     subprocess.run([str(folder/'wled')], check=True)
 
+# Exercise the actual panel router: renamed controller headings must stay in tab 6.
+layout = (ROOT/'firmware/web/v3_mockup.js').read_text()
+routing = layout.split('n.forEach(e=>i.get((', 1)[1].split(')(e)).appendChild(e))', 1)[0]
+import json
+settings = layout.split('function settingsSubTabs(){', 1)[1]
+tabs = json.loads(settings.split(',s=', 1)[1].split(',o=el(', 1)[0])
+assert tabs[5] == ['controllers', 'Controllers'], tabs
+subprocess.run(['node'], input='const assert=require("node:assert/strict");const q=(_,node)=>({textContent:node.heading||""});const route='+routing+';'+r'''
+const panel=(id,heading)=>({id,heading,classList:{contains:()=>false}});
+assert.equal(route(panel('v3Controllers','Light Controllers')),'controllers');
+assert.equal(route(panel('v3Controllers','House and Garage')),'controllers');
+assert.equal(route(panel('systemMonitorPanel','System Monitor')),'general');
+assert.equal(route(panel('liveColorTunerPanel','Live Color Tuning')),'preview');
+console.log('PASS: Bluetooth and WLED setup route to Settings tab 6 using stable panel identity');
+''', text=True, check=True)
+
 html = (ROOT/'firmware/web/index.html').read_text()
 javascript = html.split('// ANDERSON_WLED_CONNECTIONS:', 1)[1].split('function applyState(', 1)[0]
 javascript = '// ANDERSON_WLED_CONNECTIONS:' + javascript

@@ -29,3 +29,5 @@ Build Anderson 3.1.82: align BLE scan window with interval for Wi-Fi coexistence
 Build Anderson 3.1.83: add FFE0/FFE1 Lotus-family service fallback and log GATT service UUIDs when connection succeeds but control service missing (2026-11-13)
 
 Build Anderson 3.1.85: optional House/Garage WLED Wi-Fi transport, preserved BLE identities, existing effects/schedules, asynchronous recovery (2026-11-13)
+
+Build Anderson 3.1.86: route Bluetooth and WLED setup to Settings tab 6 using the controller panel ID (2026-11-13)

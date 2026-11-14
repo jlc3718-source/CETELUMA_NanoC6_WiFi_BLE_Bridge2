@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "pending": true,
-  "version": "3.1.85",
+  "version": "3.1.86",
   "reason": "WLED preparation release; replacement controllers have not arrived.",
   "required": [
     "Verify the Nano boots the signed release and existing saved data remains intact",
