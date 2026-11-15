@@ -1,4 +1,6 @@
 #include "SettingsStore.h"
+#include <ArduinoJson.h>
+#include "WledState.h"
 
 static bool putStringChecked(Preferences& p,const char* key,const String& value){String old=p.getString(key,"__ANDERSON_MISSING__");if(old==value)return true;p.putString(key,value);return p.getString(key,"__ANDERSON_VERIFY__")==value;}
 static bool putUShortChecked(Preferences& p,const char* key,uint16_t value){if(p.getUShort(key,(uint16_t)(value^0xFFFF))==value)return true;return p.putUShort(key,value)>0&&p.getUShort(key,(uint16_t)(value^0xFFFF))==value;}
@@ -11,10 +13,27 @@ void SettingsStore::begin(){
   s.onMinutes=prefs.getUShort("on",17*60);s.offMinutes=prefs.getUShort("off",23*60);s.leadDays=prefs.getUChar("lead",2);s.trailDays=prefs.getUChar("trail",0);s.overlap=prefs.getUChar("overlap",0);
   s.schedulerEnabled=prefs.getBool("sched",true);s.schedule2Enabled=prefs.getBool("sched2",true);s.schedule1StartAtDusk=prefs.getBool("s1dusk",false);s.schedule2EndMinutes=prefs.getUShort("s2end",6*60);s.schedule2EndAtDawn=prefs.getBool("s2dawn",true);s.schedule2Brightness=prefs.getUChar("s2bright",10);if(s.schedule2EndMinutes>=1440)s.schedule2EndMinutes=6*60;if(s.schedule2Brightness<1||s.schedule2Brightness>100)s.schedule2Brightness=10;s.enabledMask=prefs.getULong64("enabled",UINT64_MAX);s.favoriteMask=prefs.getULong64("favorite",(1ULL<<26)|(1ULL<<27)|(1ULL<<29));
   s.bleAddress=prefs.getString("bleaddr","");s.bleProtocol=prefs.getUChar("bleproto",0);s.bleAddress2=prefs.getString("bleaddr2","");s.bleProtocol2=prefs.getUChar("bleproto2",0);s.bleName=prefs.getString("blename","");s.bleName2=prefs.getString("blename2","");s.pixelCount=prefs.getUShort("pixels",100);
+  JsonDocument wled;
+  if(!deserializeJson(wled,prefs.getString("wledcfg","{}"))&&(wled["schema"]|0)==1){
+    String a=wled["host1"]|String(""),b=wled["host2"]|String("");
+    if(!a.length()||validWledHost(a.c_str())){s.wledHost=a;s.wledEnabled=(wled["enabled1"]|false)&&a.length();}
+    if(!b.length()||validWledHost(b.c_str())){s.wledHost2=b;s.wledEnabled2=(wled["enabled2"]|false)&&b.length();}
+    if(s.wledEnabled&&s.wledEnabled2&&a.equalsIgnoreCase(b))s.wledEnabled2=false;
+  }
 }
 bool SettingsStore::writeSettings(const AppSettings& v){return putStringChecked(prefs,"tz",v.tz)&&putUShortChecked(prefs,"on",v.onMinutes)&&putUShortChecked(prefs,"off",v.offMinutes)&&putUCharChecked(prefs,"lead",v.leadDays)&&putUCharChecked(prefs,"trail",v.trailDays)&&putUCharChecked(prefs,"overlap",v.overlap)&&putBoolChecked(prefs,"sched",v.schedulerEnabled)&&putBoolChecked(prefs,"sched2",v.schedule2Enabled)&&putBoolChecked(prefs,"s1dusk",v.schedule1StartAtDusk)&&putUShortChecked(prefs,"s2end",v.schedule2EndMinutes)&&putBoolChecked(prefs,"s2dawn",v.schedule2EndAtDawn)&&putUCharChecked(prefs,"s2bright",v.schedule2Brightness);}
 bool SettingsStore::saveSettings(const AppSettings& next){AppSettings previous=s;if(!writeSettings(next)){writeSettings(previous);return false;}s=next;return true;}
 bool SettingsStore::saveBle(){return putStringChecked(prefs,"bleaddr",s.bleAddress)&&putUCharChecked(prefs,"bleproto",s.bleProtocol)&&putStringChecked(prefs,"bleaddr2",s.bleAddress2)&&putUCharChecked(prefs,"bleproto2",s.bleProtocol2)&&putStringChecked(prefs,"blename",s.bleName)&&putStringChecked(prefs,"blename2",s.bleName2)&&putUShortChecked(prefs,"pixels",s.pixelCount);}
-bool SettingsStore::saveAll(){return writeSettings(s)&&putU64Checked(prefs,"enabled",s.enabledMask)&&putU64Checked(prefs,"favorite",s.favoriteMask)&&saveBle();}
+bool SettingsStore::saveWled(const AppSettings& next){
+  if((next.wledHost.length()&&!validWledHost(next.wledHost.c_str()))||(next.wledHost2.length()&&!validWledHost(next.wledHost2.c_str())))return false;
+  if((next.wledEnabled&&!next.wledHost.length())||(next.wledEnabled2&&!next.wledHost2.length()))return false;
+  if(next.wledEnabled&&next.wledEnabled2&&next.wledHost.equalsIgnoreCase(next.wledHost2))return false;
+  JsonDocument d;d["schema"]=1;d["host1"]=next.wledHost;d["enabled1"]=next.wledEnabled;d["host2"]=next.wledHost2;d["enabled2"]=next.wledEnabled2;
+  String raw;serializeJson(d,raw);
+  // One NVS value commits both transports atomically; BLE keys are never touched.
+  if(!putStringChecked(prefs,"wledcfg",raw))return false;
+  s.wledHost=next.wledHost;s.wledHost2=next.wledHost2;s.wledEnabled=next.wledEnabled;s.wledEnabled2=next.wledEnabled2;return true;
+}
+bool SettingsStore::saveAll(){return writeSettings(s)&&putU64Checked(prefs,"enabled",s.enabledMask)&&putU64Checked(prefs,"favorite",s.favoriteMask)&&saveBle()&&saveWled(s);}
 bool SettingsStore::saveWiFi(const String& ssid,const String& pass){String oldSsid=s.ssid,oldPass=s.password;if(!putStringChecked(prefs,"ssid",ssid)||!putStringChecked(prefs,"pass",pass)){putStringChecked(prefs,"ssid",oldSsid);putStringChecked(prefs,"pass",oldPass);return false;}s.ssid=ssid;s.password=pass;return true;}
 bool SettingsStore::clearWiFi(){return saveWiFi("","");}

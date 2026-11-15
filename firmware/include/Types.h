@@ -53,6 +53,11 @@ struct AppSettings {
   uint8_t bleProtocol = 0;
   uint8_t bleProtocol2 = 0;
   uint16_t pixelCount = 100;
+  // Opt-in Wi-Fi transports. Original BLE identities stay intact for rollback.
+  bool wledEnabled = false;
+  bool wledEnabled2 = false;
+  String wledHost;
+  String wledHost2;
 };
 
 inline const char* effectName(Effect e) {

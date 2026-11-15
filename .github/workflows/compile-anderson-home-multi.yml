@@ -37,6 +37,8 @@ jobs:
         run: python tools/test_audit_fixes.py
       - name: Check BLE connection and queue recovery
         run: python tools/test_connection_recovery.py
+      - name: Check WLED state delivery and offline recovery
+        run: python tools/test_wled.py
       - name: Check profile races, OFF priority, and boot updater
         run: python tools/test_auth_boot_fixes.py
       - name: Simulate solar dates and OTA failure paths
@@ -99,6 +101,8 @@ jobs:
         run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
         run: pio run -d firmware -e m5stack-nanoc6 -j 4
+      - name: Check WLED JSON protocol with the installed ArduinoJson dependency
+        run: python tools/test_wled.py --require-protocol
       - name: Capture linker diagnostics
         run: |
           set -euo pipefail
