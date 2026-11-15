@@ -2,7 +2,6 @@
 #include <Arduino.h>
 #include <vector>
 #include "Types.h"
-#include "WledController.h"
 #ifndef MOCK_BLE
 #include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
@@ -10,8 +9,8 @@
 #include <freertos/task.h>
 #endif
 
-struct BleFound { String name; String address; int rssi; uint8_t addressType=0; bool connectable=false; };
-struct BleSlotInfo { String name; String address; String protocol; bool connected; uint32_t attempts=0, failures=0; bool scanPerformed=false, seenInLastScan=false; String lastFailure; String lastServices; int lastLinkError=0, observedAddressType=-1; };
+struct BleFound { String name; String address; int rssi; };
+struct BleSlotInfo { String name; String address; String protocol; bool connected; };
 
 class BleController {
  public:
@@ -24,9 +23,9 @@ class BleController {
   String name() const;
   String address() const;
   String protocolName() const;
-  std::vector<BleFound> scan(uint32_t ms=6500);
-  bool startScan(uint32_t ms=6500);
-  bool scanInProgress() const { return asyncScanBusy||scanQueued; }
+  std::vector<BleFound> scan(uint32_t ms=2500);
+  bool startScan(uint32_t ms=2500);
+  bool scanInProgress() const { return asyncScanBusy; }
   bool consumeScanResults(std::vector<BleFound>& out);
   bool selectAndConnect(const String& address);
   bool removeController(uint8_t slot);
@@ -34,12 +33,6 @@ class BleController {
   void setTarget(uint8_t target); // 0=all, 1=slot A, 2=slot B
   uint8_t getTarget() const { return target; }
   BleSlotInfo slotInfo(uint8_t slot) const;
-  bool usesWled(uint8_t slot) const;
-  void refreshTransport(uint8_t slot);
-  WledSlotInfo wledInfo(uint8_t slot) const { return wled.slotInfo(slot); }
-  void retryWled(uint8_t slot) { wled.retry(slot); }
-  uint32_t lastScanCount() const { return lastScanDeviceCount; }
-  bool scanCompleted() const { return lastScanAt!=0; }
   void setPower(bool on);
   void setBrightness(uint8_t pct,bool reliable=true);
   void setColor(uint32_t rgb,bool reliable=true);
@@ -58,13 +51,6 @@ class BleController {
     String name;
     String address;
     uint32_t generation=0,nextConnectAt=0,commandGeneration=0;
-    uint32_t connectionAttempts=0,connectionFailures=0;
-    uint8_t lastFailure=0; // 0 none, 1 BLE link failed, 2 GATT characteristic missing
-    bool seenLastScan=false;
-    uint8_t observedAddressType=0;
-    bool hasObservedAddressType=false;
-    int lastLinkError=0;
-    String lastServices;
     PendingFrame power,brightness,color;
 #ifndef MOCK_BLE
     NimBLEClient* client=nullptr;
@@ -72,21 +58,19 @@ class BleController {
 #endif
   } slots[2];
   AppSettings* cfg=nullptr;
-  WledController wled;
   uint8_t target=0,nextServiceSlot=0;
   uint32_t lastEffect=0,lastStaticReassert=0,lastControlReassert=0;
-  uint32_t startedAt=0,lastScanAt=0,lastScanDeviceCount=0,lastAutoScanAt=0;
+  uint32_t startedAt=0;
   bool connectionChanged=false;
   Theme activeTheme;
   uint8_t activeBrightness=0,activeSpeed=0;
   bool activeValid=false;
   std::vector<BleFound> asyncScanResults;
   volatile bool asyncScanBusy=false,asyncScanReady=false;
-  uint32_t asyncScanMs=6500;
-  bool scanQueued=false,automaticScan=false;
+  uint32_t asyncScanMs=2500;
 #ifndef MOCK_BLE
-  struct ConnectRequest { char address[18]; uint8_t preferredType=0; bool hasPreferredType=false; };
-  struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; uint8_t failureReason; int linkError; char serviceUuids[96]{}; };
+  struct ConnectRequest { char address[18]; };
+  struct ConnectResult { NimBLEClient* client; NimBLERemoteCharacteristic* chr; };
   QueueHandle_t connectRequests=nullptr,connectResults=nullptr;
   TaskHandle_t connectTask=nullptr,scanTask=nullptr;
   bool connectPending=false;

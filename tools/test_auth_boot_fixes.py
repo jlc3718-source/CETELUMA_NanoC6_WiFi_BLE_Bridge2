@@ -120,8 +120,6 @@ class BleController{
  public:
  struct Frame{bool pending=false;};struct Slot{Frame power,brightness,color;unsigned generation=0;}slots[2];
  int target=0;bool activeValid=true;uint8_t lastFrame[9]{};
- bool wifi[2]{};bool usesWled(uint8_t i){return wifi[i];}
- struct {bool on[2]{};int calls[2]{};void setPower(uint8_t i,bool value){on[i]=value;++calls[i];}}wled;
  bool slotTargeted(uint8_t i){return target==0||target==i+1;}
  void clearPending(uint8_t i){slots[i].power={};slots[i].brightness={};slots[i].color={};++slots[i].generation;}
  void enqueueToTargets(int kind,const uint8_t* frame,size_t len,bool reliable){assert(kind==0&&len==9&&reliable);for(int i=0;i<9;++i)lastFrame[i]=frame[i];for(uint8_t i=0;i<2;++i)if(slotTargeted(i))slots[i].power.pending=true;}
@@ -141,9 +139,6 @@ int main(){
  controller.setPower(false);assert(!controller.slots[0].brightness.pending&&!controller.slots[0].color.pending);
  assert(controller.slots[1].brightness.pending&&controller.slots[1].color.pending&&controller.slots[1].generation==1);
  controller.setPower(true);assert(controller.lastFrame[3]==0xF0&&controller.lastFrame[5]==1);
- controller.wifi[0]=true;controller.target=2;controller.setPower(false);assert(controller.wled.calls[0]==0);
- controller.target=0;controller.setPower(false);assert(controller.wled.calls[0]==1&&!controller.wled.on[0]);
- controller.setPower(true);assert(controller.wled.calls[0]==2&&controller.wled.on[0]);
  std::cout<<"PASS: actual boot-check failure/current/install paths feed the idle callback; OFF clears targeted old frames and preserves untargeted controllers\n";
 }
 '''
@@ -156,9 +151,7 @@ with tempfile.TemporaryDirectory() as directory:
 assert 'profile=="shirley"?ROLE_USER:ROLE_NONE' in main
 assert 'schema<5' in main and 'd["version"]=5' in main
 assert 'kelly' not in main.lower() and 'kelly' not in html.lower()
-assert 'sc->setWindow(80)' in ble and 'sc->setInterval(80)' in ble and 'sc->setMaxResults(0xFF)' not in ble
+assert 'sc->setWindow(40)' in ble and 'sc->setMaxResults(0xFF)' not in ble
 assert 'sc->clearResults()' not in ble
-assert 'scan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
-assert 'startScan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
-assert 'scanQueued' in (ROOT/'firmware/include/BleController.h').read_text()
+assert 'scan(uint32_t ms=2500)' in (ROOT/'firmware/include/BleController.h').read_text()
 print('PASS: two-profile configuration, migration, and stable scan settings')

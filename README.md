@@ -1,10 +1,8 @@
 # Anderson Home NanoC6 Light Controller
 
-Current Anderson firmware source: **v3.1.86** (previous release artifact: **v3.1.85**).
+Current Anderson firmware source: **v3.1.87** (restored functional baseline **v3.1.74**, previous published release **v3.1.86**).
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
-
-WLED Wi-Fi controllers are supported per House/Garage slot. Existing Bluetooth setup remains active until explicitly changed. See [WLED setup and arrival checks](docs/WLED_SETUP.md).
 
 - NVS settings, schedules, colors, Shirley/Jason PINs, BLE control, signed OTA, and the dual-slot partition map are preserved.
 - Favorite Colors are the firmware-locked sixteen-color master palette. The UI renders them as labeled rectangular color tiles; add/delete controls are intentionally unavailable, and changing the palette requires a new firmware build.

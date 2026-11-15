@@ -8,7 +8,6 @@ class SettingsStore {
   bool saveAll();
   bool saveSettings(const AppSettings& next);
   bool saveBle();
-  bool saveWled(const AppSettings& next);
   bool saveWiFi(const String& ssid,const String& pass);
   bool clearWiFi();
  private:
