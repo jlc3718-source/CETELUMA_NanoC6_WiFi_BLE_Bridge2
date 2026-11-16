@@ -3,7 +3,7 @@
 #include <math.h>
 
 static uint8_t r8(uint32_t c){return (c>>16)&0xFF;} static uint8_t g8(uint32_t c){return (c>>8)&0xFF;} static uint8_t b8(uint32_t c){return c&0xFF;}
-static uint32_t softwareEffectIntervalMs(uint8_t speedLevel){static constexpr uint32_t intervalsMs[5]={2000,1000,500,250,100};return intervalsMs[constrain(speedLevel,1,5)-1];}
+static uint32_t softwareEffectIntervalMs(uint8_t speedLevel){static constexpr uint32_t intervalsMs[5]={15000,8000,4000,2000,1000};return intervalsMs[constrain(speedLevel,1,5)-1];}
 static constexpr uint32_t RELIABLE_RETRY_DELAY_MS=100UL;
 static constexpr uint32_t STATIC_REASSERT_INTERVAL_MS=30000UL;
 static constexpr uint32_t CONTROL_REASSERT_INTERVAL_MS=30000UL;
