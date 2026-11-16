@@ -1,10 +1,8 @@
 # Anderson Home NanoC6 Light Controller
 
-Current Anderson firmware source: **v3.1.91** (corrected manual ON from dark schedule scene, accurate schedule power state, and all-controller master targeting; prior **v3.1.89**).
+Current Anderson firmware source: **v3.1.92** (previous verified release artifact: **v3.1.69**).
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
-
-WLED Wi-Fi controllers are supported per House/Garage slot. Existing Bluetooth setup remains active until explicitly changed. See [WLED setup and arrival checks](docs/WLED_SETUP.md).
 
 - NVS settings, schedules, colors, Shirley/Jason PINs, BLE control, signed OTA, and the dual-slot partition map are preserved.
 - Favorite Colors are the firmware-locked sixteen-color master palette. The UI renders them as labeled rectangular color tiles; add/delete controls are intentionally unavailable, and changing the palette requires a new firmware build.
@@ -18,5 +16,5 @@ Build dependencies: `python -m pip install -r tools/requirements-build.txt` and 
 
 Release path: `python tools/release.py bump`, `python tools/release.py prepare`, `python tools/test_maintenance.py`, then push one `codex/release-current` branch. CI produces `and_<version>.bin` plus exact-commit, checksum, and embedded-page provenance. `AGENTS.md` defines release/OTA verification, Anderson retention and the separate Jason Home 2 housekeeping policy.
 
-Normal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
+Restoration: v3.1.92 uses the exact v3.1.73 Anderson Home application baseline from commit deabdf3b6cc9e1ef0f85ec08b036cc37fd58c4a0 (only release identity changed). Changes made after October 25, 2026 to the Nano firmware and web interface are not included.\n\nNormal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
 Serial recovery only: full image at **0x0**, Erase OFF. Never flash APP-only at 0x0.

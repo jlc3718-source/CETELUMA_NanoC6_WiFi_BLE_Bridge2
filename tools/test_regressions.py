@@ -15,11 +15,6 @@ assert 'eventEffectiveWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
 assert 't.effect=Effect::Breath' not in sched
 assert 'Effect::Breath' not in ev
 assert 'if(syncTheme.effect==Effect::Breath)' in ble
-assert 'intervalsMs[5]={15000,8000,4000,2000,1000}' in ble
-assert 'return[0,15000,8000,4000,2000,1000][+e]||4000' in web
-assert 'manualPendingSettings' in web and 'manualPendingSettings[key]' in web
-assert 'n.value=e,n.dispatchEvent(new Event("change",{bubbles:!0}))' in mock
-assert 'Math.floor(t/interval)' in mock
 assert 'normalized.effect==Effect::Breath' not in ble
 assert 'case Effect::Breath: return "Breath";' in types
 assert 'if (s=="Breath" || s=="Pulse") return Effect::Breath;' in types
@@ -171,15 +166,3 @@ assert 'Restore Built-in Schedule' in web and 'Specific date' in web and 'Date r
 assert 'Use custom time for this event' in web and 'Repeat every year' in web
 assert 'resetSchedule:true' in web and 'schedule:{mode:mode.value' in web
 print('Anderson regression source checks passed')
-
-# Live Color Tuning must feed every named quick-color selection from the persisted palette.
-assert 'const selected=savedColors[i]||e;' in web
-assert 'function refreshQuickColors()' in web
-assert 'renderHomeFavoriteGrid(),refreshQuickColors()' in web
-assert 'return semanticColorVisual(t,savedColorLabels[e]);' in web
-assert 'normHex(e)===normHex(savedColors[i])' in web
-# Existing event overrides using named palette defaults must pick up later preset edits;
-# truly custom RGB values must remain untouched by the default-to-preset resolver.
-assert 't.colors[c]=o.colors[c];applyModernEventColors(t);' in main
-assert 'presetIndexForDefault(c)' in t('firmware/src/EventColorThemes.cpp')
-assert 'if(savedColors.some(e=>normHex(e)===t))return t;' in web
