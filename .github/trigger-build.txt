@@ -35,3 +35,5 @@ Build Anderson 3.1.86: route Bluetooth and WLED setup to Settings tab 6 using th
 Rebuild v3.1.87 using exact Anderson Home v3.1.74 firmware implementation; new signed OTA version for automatic upgrade (2026-11-15)
 
 Build Anderson 3.1.88: republish exact v3.1.86 firmware behavior as newer signed OTA release (2026-11-15)
+
+Build Anderson 3.1.89: surface ON/OFF and Resume Schedule command outcomes, including session and connection failures (2026-11-15)

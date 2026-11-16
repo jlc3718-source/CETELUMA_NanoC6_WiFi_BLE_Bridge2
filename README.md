@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current Anderson firmware source: **v3.1.88** (restored **v3.1.86** functionality; previous published release **v3.1.87**).
+Current Anderson firmware source: **v3.1.89** (v3.1.86 controller behavior with explicit ON/OFF and Resume Schedule command acknowledgments and errors; previous release **v3.1.88**).
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
 

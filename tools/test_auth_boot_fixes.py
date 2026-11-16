@@ -162,3 +162,12 @@ assert 'scan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').rea
 assert 'startScan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
 assert 'scanQueued' in (ROOT/'firmware/include/BleController.h').read_text()
 print('PASS: two-profile configuration, migration, and stable scan settings')
+
+# User-visible manual controls must report outcomes, not quietly claim preview success.
+assert 'Sending "+(command.power?"ON":"OFF")+" command to Nano' in html
+assert 'Nano accepted "+(state.power?"ON":"OFF")' in html
+assert 'ON/OFF command failed: ' in html
+assert 'Resume Schedule failed: ' in html
+assert 'Preview mode — schedule resumed.' not in html
+assert '#statusMsg:not(:empty)' in html
+print('PASS: visible power and schedule command acknowledgments and errors')
