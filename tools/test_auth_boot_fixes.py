@@ -171,3 +171,19 @@ assert 'Resume Schedule failed: ' in html
 assert 'Preview mode — schedule resumed.' not in html
 assert '#statusMsg:not(:empty)' in html
 print('PASS: visible power and schedule command acknowledgments and errors')
+
+# Regression: dark schedule default cannot masquerade as an ON command.
+scheduled=between(main,'void evaluateSchedule(bool force=false){','void startAP(){')
+control=between(main,'server.on("/api/control"','server.on("/api/events"')
+resume=between(main,'server.on("/api/resume"','server.on("/api/control"')
+assert 'const bool scheduledPower=themeHasVisibleColor(t);' in scheduled
+assert 'power=scheduledPower;runningTheme=t;' in scheduled
+assert 'if(!power){ble.setPower(false);return;}' in scheduled
+assert 'if(masterPowerCommand)ble.setTarget(0);' in control
+assert 'runningTheme=restoredManualTheme();' in control
+assert 'hasLastVisibleTheme=true' in main
+assert 't.name=="Off"' in main
+assert 't.colors[0]=0xE08700' in main
+assert 'Waiting for time sync before resuming schedule' in resume
+assert 'No active lighting scene; scheduled power OFF.' in html
+print('PASS: dark schedule OFF, master ON restores visible scene across both targets')

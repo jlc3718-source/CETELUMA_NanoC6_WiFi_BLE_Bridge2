@@ -44,6 +44,17 @@ bool manualOverride=false,power=true;
 static time_t manualOverrideUntil=0;
 uint8_t brightness=100,speedLevel=1;
 Theme runningTheme;
+static Theme lastVisibleTheme;
+static bool hasLastVisibleTheme=false;
+static bool themeHasVisibleColor(const Theme& t){
+  if(t.name=="Off")return false;
+  for(uint8_t i=0;i<t.colorCount&&i<8;i++)if((t.colors[i]&0xFFFFFFUL)!=0UL)return true;
+  return false;
+}
+static Theme restoredManualTheme(){
+  if(hasLastVisibleTheme&&themeHasVisibleColor(lastVisibleTheme))return lastVisibleTheme;
+  Theme t;t.name="Yellow";t.effect=Effect::Solid;t.colors[0]=0xE08700;t.colorCount=1;return t;
+}
 static bool tonightOptionOverride=false;
 static time_t tonightOptionUntil=0;
 static String tonightOptionId;
@@ -98,7 +109,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.89";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.90";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -549,7 +560,7 @@ String loginPreviewJson(){
   String out;serializeJson(d,out);return out;
 }
 String stateJson(){
-  JsonDocument d;d["firmwareVersion"]=ANDERSON_FIRMWARE_VERSION;d["power"]=power;d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();addTheme(r,runningTheme);
+  JsonDocument d;d["firmwareVersion"]=ANDERSON_FIRMWARE_VERSION;d["power"]=power;d["sceneHasLightOutput"]=themeHasVisibleColor(runningTheme);d["brightness"]=brightness;d["speed"]=speedLevel;JsonObject r=d["running"].to<JsonObject>();addTheme(r,runningTheme);
   auto&s=store.get();JsonObject cfg=d["settings"].to<JsonObject>();cfg["on"]=fmtTime(s.onMinutes);cfg["off"]=fmtTime(s.offMinutes);cfg["lead"]=s.leadDays;cfg["trail"]=s.trailDays;cfg["overlap"]=s.overlap;cfg["tz"]=s.tz;cfg["scheduler"]=s.schedulerEnabled;cfg["scheduler2"]=s.schedule2Enabled;cfg["schedule1StartAtDusk"]=s.schedule1StartAtDusk;cfg["schedule2End"]=fmtTime(s.schedule2EndMinutes);cfg["schedule2EndAtDawn"]=s.schedule2EndAtDawn;cfg["schedule2Brightness"]=s.schedule2Brightness;
   tm l{};if(timeValid()){time_t n=time(nullptr);localtime_r(&n,&l);uint16_t dawn=scheduler.civilDawnMinutes(l),dusk=scheduler.civilDuskMinutes(l);cfg["dawn"]=fmtDisplayTime(dawn);cfg["dusk"]=fmtDisplayTime(dusk);String s1Start=s.schedule1StartAtDusk?(String("dusk (")+fmtDisplayTime(dusk)+")"):fmtDisplayTime(s.onMinutes),s2End=s.schedule2EndAtDawn?(String("dawn (")+fmtDisplayTime(dawn)+")"):fmtDisplayTime(s.schedule2EndMinutes);d["scheduleWindow"]=String("Schedule 1 ")+s1Start+" - "+fmtDisplayTime(s.offMinutes)+" • Schedule 2 "+fmtDisplayTime(s.offMinutes)+" - "+s2End+" at "+String(s.schedule2Brightness)+"%";d["nextEvent"]=scheduler.nextEventLabel(l);
     const String nextLabel=d["nextEvent"].as<String>();
@@ -644,6 +655,7 @@ static void maybeWeeklySettingsBackup(){if(!timeValid()||firmwareOperationBusy()
 
 void applyRunning(bool force=false){
   if(!power){ble.setPower(false);return;}
+  if(themeHasVisibleColor(runningTheme)){lastVisibleTheme=runningTheme;hasLastVisibleTheme=true;}
   ble.applyTheme(runningTheme,brightness,speedLevel,millis(),force);
 }
 void evaluateSchedule(bool force=false){
@@ -655,7 +667,11 @@ void evaluateSchedule(bool force=false){
   if(manualOverride){if(!manualOverrideUntil){manualOverrideUntil=nextPlannedScheduleChange(n);if(force)applyRunning(true);return;}if(n<manualOverrideUntil){if(force)applyRunning(true);return;}manualOverride=false;manualOverrideUntil=0;}tm l{};localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
   ble.setTarget(0);brightness=100;speedLevel=1;bool schedule1Active=s.schedulerEnabled&&scheduler.inRunWindow(l);bool schedule2Active=s.schedule2Enabled&&scheduler.inSchedule2Window(l);if(!schedule1Active&&!schedule2Active){if(power){power=false;ble.setPower(false);}return;}
   tm themeLocal=l;if(schedule2Active&&!schedule1Active){int mins=l.tm_hour*60+l.tm_min;uint16_t schedule1Start=s.schedule1StartAtDusk?scheduler.civilDuskMinutes(l):s.onMinutes;if(mins<schedule1Start){themeLocal.tm_mday-=1;themeLocal.tm_isdst=-1;mktime(&themeLocal);}}
-  Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=s.schedule2Brightness;bool changed=!power||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;power=true;runningTheme=t;if(changed||force)applyRunning(true);
+  Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=s.schedule2Brightness;const bool scheduledPower=themeHasVisibleColor(t);
+  bool changed=power!=scheduledPower||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;
+  power=scheduledPower;runningTheme=t;
+  if(!power){ble.setPower(false);return;}
+  if(changed||force)applyRunning(true);
 }
 void startAP(){
   WiFi.mode(WIFI_AP_STA);WiFi.setTxPower(WIFI_TX_VALUES[wifiTxIndex]);WiFi.softAP("AndersonHome-Setup","andersonhome");setupAP=true;
@@ -754,17 +770,24 @@ void setupRoutes(){
   });
   server.on("/api/login-preview",HTTP_GET,[]{if(!bootAllowsControls())return;sendJson(loginPreviewJson());});
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
-  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;manualOverride=false;manualOverrideUntil=0;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";power=true;brightness=100;speedLevel=1;evaluateSchedule(true);sendJson(stateJson());});
+  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;if(!timeValid()){sendJson("{\"ok\":false,\"error\":\"Waiting for time sync before resuming schedule\"}",503);return;}manualOverride=false;manualOverrideUntil=0;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";evaluateSchedule(true);sendJson(stateJson());});
 
   server.on("/api/control",HTTP_POST,[]{
     if(!requireUser())return;JsonDocument d;if(!body(d))return;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";manualOverride=true;manualOverrideUntil=timeValid()?nextPlannedScheduleChange(time(nullptr)):0;
     const bool sceneRequested=!d["name"].isNull()||!d["effect"].isNull()||d["colors"].is<JsonArray>();
+    const bool masterPowerCommand=!d["power"].isNull()&&!sceneRequested;
+    if(masterPowerCommand)ble.setTarget(0);
     if(!d["power"].isNull())power=d["power"].as<bool>();else if(sceneRequested)power=true;
     if(!d["brightness"].isNull())brightness=constrain(d["brightness"].as<int>(),1,100);
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
     if(!d["name"].isNull())runningTheme.name=d["name"].as<String>();
     if(!d["effect"].isNull())runningTheme.effect=effectFromString(d["effect"].as<String>());
     if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=strtoul(s.c_str(),nullptr,16);}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;}}
+    // Restore a visible scene when manual ON (or a new effect) starts from the scheduler's dark Off placeholder.
+    if(power&&!d["colors"].is<JsonArray>()&&(masterPowerCommand||sceneRequested)&&!themeHasVisibleColor(runningTheme)){
+      const bool effectRequested=!d["effect"].isNull();const Effect chosenEffect=runningTheme.effect;
+      runningTheme=restoredManualTheme();if(effectRequested)runningTheme.effect=chosenEffect;
+    }
     applyRunning(true);sendJson(stateJson());
   });
 
