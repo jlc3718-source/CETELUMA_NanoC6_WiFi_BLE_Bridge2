@@ -15,6 +15,11 @@ assert 'eventEffectiveWindowActiveOn(i,l,cfg->leadDays,cfg->trailDays)' in sched
 assert 't.effect=Effect::Breath' not in sched
 assert 'Effect::Breath' not in ev
 assert 'if(syncTheme.effect==Effect::Breath)' in ble
+assert 'intervalsMs[5]={15000,8000,4000,2000,1000}' in ble
+assert 'return[0,15000,8000,4000,2000,1000][+e]||4000' in web
+assert 'manualPendingSettings' in web and 'manualPendingSettings[key]' in web
+assert 'n.value=e,n.dispatchEvent(new Event("change",{bubbles:!0}))' in mock
+assert 'Math.floor(t/interval)' in mock
 assert 'normalized.effect==Effect::Breath' not in ble
 assert 'case Effect::Breath: return "Breath";' in types
 assert 'if (s=="Breath" || s=="Pulse") return Effect::Breath;' in types
