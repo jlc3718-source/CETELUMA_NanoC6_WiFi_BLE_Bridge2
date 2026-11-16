@@ -67,6 +67,14 @@ async function login(id,token){choose(id);get('profilePin').value='1234';const t
  inFlight.resolve(response({power:true,name:'old blue'}));await flush();const latest=requests.shift();
  assert.equal(latest.url,'/api/control');assert.deepEqual(JSON.parse(latest.options.body),{power:false});latest.resolve(response({power:false}));
  await Promise.all([first,second,off]);assert.deepEqual(Array.from(vm.runInContext('applied',context),s=>s.power),[false]);assert.equal(requests.length,0);
+ // A fast speed change, Solid choice, and another speed change must merge into the final command.
+ const speedChange=context.manual({speed:1});await flush();const oldSpeed=requests.shift();
+ const solidChoice=context.manual({effect:'Solid'});const latestSpeed=context.manual({speed:2});
+ oldSpeed.resolve(response({power:true,running:{effect:'Jump'}}));await flush();const merged=requests.shift();
+ assert.equal(merged.url,'/api/control');assert.deepEqual(JSON.parse(merged.options.body),{speed:2,effect:'Solid'});
+ merged.resolve(response({power:true,running:{effect:'Solid'}}));
+ await Promise.all([speedChange,solidChoice,latestSpeed]);assert.equal(requests.length,0);
+ assert.equal(vm.runInContext('applied.at(-1).running.effect',context),'Solid');
  // An old state request cannot suppress the fresh request or clear its promise.
  const oldState=context.loadState(),oldStateResponse=requests.shift();
  ++window.andersonAuthEpoch;window.andersonAuthToken='newer-token';vm.runInContext('stateRequest=null',context);
