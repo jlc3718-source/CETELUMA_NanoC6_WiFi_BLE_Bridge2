@@ -39,3 +39,5 @@ Build Anderson 3.1.88: republish exact v3.1.86 firmware behavior as newer signed
 Build Anderson 3.1.89: surface ON/OFF and Resume Schedule command outcomes, including session and connection failures (2026-11-15)
 
 Build Anderson 3.1.90: fix dark Off scene masquerading as ON, restore last visible manual theme, target both controllers (2026-11-15)
+
+Build Anderson 3.1.91: slow physical effects and previews, always reassert Solid, preserve rapid speed/effect commands, regression tests (2026-11-15)
