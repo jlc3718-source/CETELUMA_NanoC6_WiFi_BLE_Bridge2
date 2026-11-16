@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current Anderson firmware source: **v3.1.92** (previous verified release artifact: **v3.1.69**).
+Current Anderson firmware release: **v3.1.93**, built from the exact v3.1.74 firmware/UI source baseline at 2f7aee06f6f70099f3c536d7b9b4e4c12c84484b (only release identity changed). Previous verified release: **v3.1.92**.
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
 
@@ -16,5 +16,5 @@ Build dependencies: `python -m pip install -r tools/requirements-build.txt` and 
 
 Release path: `python tools/release.py bump`, `python tools/release.py prepare`, `python tools/test_maintenance.py`, then push one `codex/release-current` branch. CI produces `and_<version>.bin` plus exact-commit, checksum, and embedded-page provenance. `AGENTS.md` defines release/OTA verification, Anderson retention and the separate Jason Home 2 housekeeping policy.
 
-Restoration: v3.1.92 uses the exact v3.1.73 Anderson Home application baseline from commit deabdf3b6cc9e1ef0f85ec08b036cc37fd58c4a0 (only release identity changed). Changes made after October 25, 2026 to the Nano firmware and web interface are not included.\n\nNormal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
+Normal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
 Serial recovery only: full image at **0x0**, Erase OFF. Never flash APP-only at 0x0.
