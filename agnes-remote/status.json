@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1794985776,
+  "updated_unix": 1794985795,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -26,8 +26,8 @@
     },
     {
       "scene": "04_running",
-      "status": "missing_url",
-      "video_ready": false
+      "status": "downloaded",
+      "video_ready": true
     },
     {
       "scene": "05_boot",
