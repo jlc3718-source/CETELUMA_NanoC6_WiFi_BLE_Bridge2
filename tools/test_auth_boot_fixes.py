@@ -67,6 +67,14 @@ async function login(id,token){choose(id);get('profilePin').value='1234';const t
  inFlight.resolve(response({power:true,name:'old blue'}));await flush();const latest=requests.shift();
  assert.equal(latest.url,'/api/control');assert.deepEqual(JSON.parse(latest.options.body),{power:false});latest.resolve(response({power:false}));
  await Promise.all([first,second,off]);assert.deepEqual(Array.from(vm.runInContext('applied',context),s=>s.power),[false]);assert.equal(requests.length,0);
+ // A fast speed change, Solid choice, and another speed change must merge into the final command.
+ const speedChange=context.manual({speed:1});await flush();const oldSpeed=requests.shift();
+ const solidChoice=context.manual({effect:'Solid'});const latestSpeed=context.manual({speed:2});
+ oldSpeed.resolve(response({power:true,running:{effect:'Jump'}}));await flush();const merged=requests.shift();
+ assert.equal(merged.url,'/api/control');assert.deepEqual(JSON.parse(merged.options.body),{speed:2,effect:'Solid'});
+ merged.resolve(response({power:true,running:{effect:'Solid'}}));
+ await Promise.all([speedChange,solidChoice,latestSpeed]);assert.equal(requests.length,0);
+ assert.equal(vm.runInContext('applied.at(-1).running.effect',context),'Solid');
  // An old state request cannot suppress the fresh request or clear its promise.
  const oldState=context.loadState(),oldStateResponse=requests.shift();
  ++window.andersonAuthEpoch;window.andersonAuthToken='newer-token';vm.runInContext('stateRequest=null',context);
@@ -120,6 +128,8 @@ class BleController{
  public:
  struct Frame{bool pending=false;};struct Slot{Frame power,brightness,color;unsigned generation=0;}slots[2];
  int target=0;bool activeValid=true;uint8_t lastFrame[9]{};
+ bool wifi[2]{};bool usesWled(uint8_t i){return wifi[i];}
+ struct {bool on[2]{};int calls[2]{};void setPower(uint8_t i,bool value){on[i]=value;++calls[i];}}wled;
  bool slotTargeted(uint8_t i){return target==0||target==i+1;}
  void clearPending(uint8_t i){slots[i].power={};slots[i].brightness={};slots[i].color={};++slots[i].generation;}
  void enqueueToTargets(int kind,const uint8_t* frame,size_t len,bool reliable){assert(kind==0&&len==9&&reliable);for(int i=0;i<9;++i)lastFrame[i]=frame[i];for(uint8_t i=0;i<2;++i)if(slotTargeted(i))slots[i].power.pending=true;}
@@ -139,6 +149,9 @@ int main(){
  controller.setPower(false);assert(!controller.slots[0].brightness.pending&&!controller.slots[0].color.pending);
  assert(controller.slots[1].brightness.pending&&controller.slots[1].color.pending&&controller.slots[1].generation==1);
  controller.setPower(true);assert(controller.lastFrame[3]==0xF0&&controller.lastFrame[5]==1);
+ controller.wifi[0]=true;controller.target=2;controller.setPower(false);assert(controller.wled.calls[0]==0);
+ controller.target=0;controller.setPower(false);assert(controller.wled.calls[0]==1&&!controller.wled.on[0]);
+ controller.setPower(true);assert(controller.wled.calls[0]==2&&controller.wled.on[0]);
  std::cout<<"PASS: actual boot-check failure/current/install paths feed the idle callback; OFF clears targeted old frames and preserves untargeted controllers\n";
 }
 '''
@@ -151,7 +164,34 @@ with tempfile.TemporaryDirectory() as directory:
 assert 'profile=="shirley"?ROLE_USER:ROLE_NONE' in main
 assert 'schema<5' in main and 'd["version"]=5' in main
 assert 'kelly' not in main.lower() and 'kelly' not in html.lower()
-assert 'sc->setWindow(40)' in ble and 'sc->setMaxResults(0xFF)' not in ble
+assert 'sc->setWindow(80)' in ble and 'sc->setInterval(80)' in ble and 'sc->setMaxResults(0xFF)' not in ble
 assert 'sc->clearResults()' not in ble
-assert 'scan(uint32_t ms=2500)' in (ROOT/'firmware/include/BleController.h').read_text()
+assert 'scan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
+assert 'startScan(uint32_t ms=6500)' in (ROOT/'firmware/include/BleController.h').read_text()
+assert 'scanQueued' in (ROOT/'firmware/include/BleController.h').read_text()
 print('PASS: two-profile configuration, migration, and stable scan settings')
+
+# User-visible manual controls must report outcomes, not quietly claim preview success.
+assert 'Sending "+(command.power?"ON":"OFF")+" command to Nano' in html
+assert 'Nano accepted "+(state.power?"ON":"OFF")' in html
+assert 'ON/OFF command failed: ' in html
+assert 'Resume Schedule failed: ' in html
+assert 'Preview mode — schedule resumed.' not in html
+assert '#statusMsg:not(:empty)' in html
+print('PASS: visible power and schedule command acknowledgments and errors')
+
+# Regression: dark schedule default cannot masquerade as an ON command.
+scheduled=between(main,'void evaluateSchedule(bool force=false){','void startAP(){')
+control=between(main,'server.on("/api/control"','server.on("/api/events"')
+resume=between(main,'server.on("/api/resume"','server.on("/api/control"')
+assert 'const bool scheduledPower=themeHasVisibleColor(t);' in scheduled
+assert 'power=scheduledPower;runningTheme=t;' in scheduled
+assert 'if(!power){ble.setPower(false);return;}' in scheduled
+assert 'if(masterPowerCommand)ble.setTarget(0);' in control
+assert 'runningTheme=restoredManualTheme();' in control
+assert 'hasLastVisibleTheme=true' in main
+assert 't.name=="Off"' in main
+assert 't.colors[0]=0xE08700' in main
+assert 'Waiting for time sync before resuming schedule' in resume
+assert 'No active lighting scene; scheduled power OFF.' in html
+print('PASS: dark schedule OFF, master ON restores visible scene across both targets')
