@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 11,
+  "sequence": 12,
   "updated": "2026-11-18",
-  "purpose": "verify managed reference-guided 7-scene runner deployment"
+  "purpose": "confirm full managed pipeline status and exact HTTP throttling codes"
 }
