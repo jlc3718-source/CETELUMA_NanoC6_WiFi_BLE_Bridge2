@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1794992404,
+  "updated_unix": 1794992516,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -48,8 +48,8 @@
       "scene": "06_night",
       "status": "retrying",
       "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "07_morning",
