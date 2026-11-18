@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 7,
+  "sequence": 8,
   "updated": "2026-11-18",
-  "purpose": "refresh status on user request"
+  "purpose": "verify HTTP status publication"
 }
