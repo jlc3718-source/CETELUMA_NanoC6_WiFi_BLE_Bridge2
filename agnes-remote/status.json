@@ -1,11 +1,11 @@
 {
-  "updated_unix": 1795019980,
+  "updated_unix": 1795020109,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 14,
+    "sequence": 15,
     "command": "status",
-    "timestamp": 1795016053,
+    "timestamp": 1795020026,
     "result": "ok"
   },
   "scenes": [
@@ -13,50 +13,50 @@
       "scene": "01_electrician",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "02_gear",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "03_setup",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "04_running",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "05_boot",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "06_night",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "07_morning",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     }
   ]
 }
