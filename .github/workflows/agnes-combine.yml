@@ -130,3 +130,5 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+# All-AI assembly rerun for revision sd300-all-ai-accurate-mounting-2026-11-18-c
