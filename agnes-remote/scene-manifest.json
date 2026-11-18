@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "revision": "sd300-rebuild-2026-11-18-b",
+  "revision": "sd300-all-ai-accurate-mounting-2026-11-18-c",
   "model": "agnes-video-2.5-flash",
   "seconds": "12",
   "size": "720P",
@@ -10,51 +10,57 @@
     {
       "id": "01_electrician",
       "mode": "text",
-      "prompt": "Photorealistic vertical 9:16 commercial, one continuous 12-second shot. After a long rainy electrical installation shift, a weathered adult electrician wearing a dark work jacket, tool belt, mud-splashed work pants and brown leather boots walks slowly from a white service truck toward his real home at autumn dusk. Rain beads on his coat, mud sticks to boots, natural tired body language; low tracking camera follows his steps. Background: genuine working-class driveway and trees, not a studio. No tools displayed on pedestals, no appliance yet, no brand or text overlays, no cartoon effects, no jump cuts, no duplicate limbs. Keep this same electrician recognizable for the next scene."
+      "prompt": "ALL-NEW AI-GENERATED PHOTOREALISTIC CINEMATIC VIDEO. Vertical 9:16, uninterrupted 12-second take at wet autumn twilight. The same believable adult electrician, short dark beard, navy rain jacket, dark work pants, brown muddy leather high-top boots, black-and-red work gloves, walks slowly from his white electrical-service van to the doorway of his home after a muddy shift. Show his tired body language, real wet footprints and heavy weather, steady low tracking camera. No product in this introductory scene, no toolbox as a hero prop, no cuts, no scrolling text, no artificial effects. Audio: realistic footsteps on damp concrete, a soft outside wind and rain ambience, no narration or music."
     },
     {
       "id": "02_gear",
       "mode": "text",
-      "prompt": "Photorealistic vertical 9:16 continuous close-up filmed on a real home's entryway floor after rain. A pair of very muddy brown leather electrician work boots, wet laces and water droplets, with damp red-and-black heavy-duty work gloves. The electrician removes the boots and sets the gloves beside them on a small dark entry mat; hand enters then exits. Natural shallow depth of field, real wet leather texture, realistic motion and slight reflections. The muddy boots and gloves are the only focus: no toolbox standing alone, no generic dryer, no fake hardware, no product replacement, no floating objects, no text or logos."
+      "prompt": "ALL-NEW AI-GENERATED PHOTOREALISTIC VIDEO. Vertical 9:16, one continuous 12-second take inside the SAME electrician's modest mudroom with medium-brown wood paneling and a dark rubber boot mat. The short-bearded electrician in a navy jacket places exactly two soaked muddy brown work boots and a matching pair of black-and-red electrician gloves on the mat, leaving the boots upright beside each other. Show true leather texture, wet laces, water droplets, and mud splashes. The boots and gloves must remain separate on the mat in this scene; no dryer, toolbox, imaginary gadget, extra pairs or brand morphing. Camera gently moves closer, no cut. Audio: boots gently set on floor, wet fabric creak, room ambience only, no music or narration."
     },
     {
       "id": "03_setup",
       "mode": "reference",
-      "prompt": "IMPORTANT: The attached official Airthereal SD300 product image is an exact identity reference. Keep the SAME physical appliance geometry and orange-and-dark-gray color, the same centered digital control panel, real orange drying supports and realistic proportions in every frame. Photorealistic 12-second vertical product demonstration in a practical wood-paneled utility room. Show an electrician's hands carefully placing two wet muddy work boots onto the actual SD300 orange upward air outlets, then stepping back. Medium shot with entire appliance visible for most of the scene. The product is a shoe and gear DRYER, NOT a toolbox, power tool, suitcase, speaker or box. No white substitute towers, duplicate parts, abstract props, incorrect brand, morphing, fake text overlays, cuts or unexplained objects.",
+      "prompt": "ALL-NEW AI-GENERATED IMAGE-REFERENCE-GUIDED CINEMATIC VIDEO, VERTICAL 9:16, ONE STEADY 12-SECOND TAKE. The references show the EXACT Airthereal SD300. Recreate its one low BRIGHT ORANGE RECTANGULAR BASE, four DARK CHARCOAL-GRAY UPRIGHT TUBES (TWO TALL REAR POSTS with angled ORANGE hinged nozzles, TWO SHORTER FRONT POSTS), and one single CENTERED charcoal control housing with tiny rectangular RED-AND-BLUE DIGITAL DISPLAY. Never create or swap another appliance. In a wood-paneled mudroom, the electrician places EXACTLY TWO wet black/brown leather work boots INVERTED onto the two TALL REAR POSTS: each open boot cuff slides downward over one tall rear tube; the boot SOLES face upward/outward. Then places TWO black-and-red work gloves with open cuffs down onto the TWO SHORT FRONT POSTS; fingers point UP. Show all four garments remaining attached to their own posts and the full SD300 from base to boots. No misplaced gloves, no floating items, no prop swap, no magic. Sound: quiet handling and clothing rustle, no music, no narration, no edits.",
       "images": [
-        "https://cdn.shopify.com/s/files/1/0006/0823/9674/files/531-10-SD300-A_01.webp?v=1792998717"
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
       ]
     },
     {
       "id": "04_running",
       "mode": "reference",
-      "prompt": "Use the attached official Airthereal SD300 image as the unchanging exact product identity. Photorealistic vertical continuous shot of the real orange-and-dark-gray SD300 shoe dryer operating with two wet work boots fitted on its actual orange air outlets. Its central digital control panel is illuminated. A human finger presses the power/mode control once and withdraws. Show subtle realistic airflow implied only by small fabric movement, never visible steam or magical effects. Hold a steady close-to-medium product-focused angle and correct perspective for 12 seconds. The dryer never disappears, no isolated boots, NO generic toolbox, no strange appliance, no changing controls, no spelling overlays, no hard cuts.",
+      "prompt": "ALL-NEW AI-GENERATED VERTICAL 9:16 REALISTIC PRODUCT VIDEO. Reference images depict ONE EXACT SD300, not a toolbox. The orange rectangular base supports FOUR fixed charcoal-gray tubes, TWO TALL REAR supports each holding ONE INVERTED BOOT with SOLE pointing UP; TWO SHORTER FRONT supports each hold ONE RED-AND-BLACK GLOVE cuff-down, fingers UP. CENTER charcoal housing with small glowing red/blue rectangular control screen. Same two muddy boots and two gloves stay securely attached and never change geometry. Slow steady 12-second mid-to-close push with full unit visible, finger touches actual power/mode interface ONCE; drying airflow is invisible (no steam, heat waves or flames). Accurate sound design: quiet continuous AIR FAN HUM/LOW BLOWER WHIR and a small soft button beep; the fan remains audible through this entire scene. No voiceover, no music, no generated title, no second appliance, no morphing or cuts.",
       "images": [
-        "https://cdn.shopify.com/s/files/1/0006/0823/9674/files/531-10-SD300-A_01.webp?v=1792998717"
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
       ]
     },
     {
       "id": "05_boot",
       "mode": "reference",
-      "prompt": "The attached official photo shows the exact real Airthereal SD300: retain its dark-gray center housing, bright orange base and drying tubes, and authentic front digital display. Photorealistic vertical 12-second macro product demo. Close on the real control panel with a hand deliberately selecting the existing Boot Mode; keep the boots mounted on the device partly visible at both sides. A gentle camera push in, then hold still to let viewers see the control panel. No mode-changing fantasy icons, no fabricated labels, no giant floating toolboxes, no disappearing dryer, no fake steam, no subtitle text generated inside the footage.",
+      "prompt": "ALL-NEW FULLY AI-GENERATED CINEMATIC VERTICAL 9:16 SD300 PRODUCT CLOSE-UP. Absolute same physical SD300 as reference photographs: bright orange ONE-piece rectangular base, FOUR fixed charcoal upright pipes (two rear tall boot tubes and two front short glove tubes), central charcoal housing and small landscape black screen with red/blue LED icons. TWO black muddy work boots are INVERTED over tall rear pipes with SOLES ABOVE; TWO red-and-black gloves mounted CUFF DOWN on short front pipes with glove fingers UP, not balanced loose or placed on the base. Adult electrician's index finger presses an existing mode button once, then moves away; close shot keeps screen, support tube origins and some of the attached boots/gloves visible. 12-second smooth stable take, no text invented on screen. Audio: slight button press/beep over constant quiet real-world fan blower sound, no music or narration, no appliance redesign.",
       "images": [
-        "https://cdn.shopify.com/s/files/1/0006/0823/9674/files/531-10-SD300-A_01.webp?v=1792998717"
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
       ]
     },
     {
       "id": "06_night",
       "mode": "reference",
-      "prompt": "Use the provided official Airthereal SD300 reference image to preserve the exact orange-and-dark-gray shoe dryer. NIGHT MODE demonstration, photorealistic vertical 12-second single take. Start on the REAL SD300 illuminated control panel as a human finger touches its Night Mode control, then slowly pull back just enough to see the same full dryer with wet work boots correctly fitted on the orange air outlets. Dim warm utility-room lighting suggests a quiet overnight drying cycle, subtle realistic control illumination. The SD300 must stay clearly visible at all times. Absolutely NO generic toolbox, NO empty room or standalone box, NO white appliances, no floating UI, no morphs, no made-up product, no scene change. Composition requirement: the actual gray-and-orange dryer and its two boot-support arms occupy at least 65 percent of the shot, visible throughout, while one real finger presses the Night Mode control. Do not replace the device with an anonymous square tool case.",
+      "prompt": "ALL-NEW FULLY AI-GENERATED 12-SECOND VERTICAL 9:16 NIGHT-MODE COMMERCIAL IN A DIM WOOD-PANELED MUDROOM. Reference images must be treated as a FIXED SD300 product CAD-like identity: unchanged orange rectangular base; two tall dark-gray rear pipes with orange pivot nozzles holding exactly two upside-down work BOOTS by their cuffs (SOLES UP); two shorter dark-gray front pipes holding exactly two red-and-black work GLOVES by their cuffs (GLOVE FINGERS UP); single centered gray controller and small red/blue display. Camera holds the entire real product in frame throughout. Finger chooses night mode on the real single display, scene darkens softly but product does not disappear or transform. No bedside toolbox, no extra posts, no magical light effects, no floating clothing, no white replacement appliance. Audio: one soft mode-selection beep, then a LOWER, QUIETER CONTINUOUS AIR-FAN HUM throughout night mode. No music, no narration.",
       "images": [
-        "https://cdn.shopify.com/s/files/1/0006/0823/9674/files/531-10-SD300-A_01.webp?v=1792998717"
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_07.webp?v=1792998718&width=1946"
       ]
     },
     {
       "id": "07_morning",
       "mode": "reference",
-      "prompt": "The provided reference image shows the exact real orange-and-charcoal-gray Airthereal SD300 shoe-and-gear dryer. Photorealistic vertical 12-second morning conclusion: warm dawn light enters a practical mudroom; the electrician approaches the SAME SD300 with two leather work boots on its orange supports, switches it off, removes the boots, and gets ready for a new day. Include the whole appliance in the first and final moments; maintain its actual geometry, digital display, colors and proportions. Show a real person handling real boots, not a toolbox, no unrelated objects, no altered appliance, no text overlays, no jump cut, no exaggerated effects.",
+      "prompt": "ALL-NEW FULLY AI-GENERATED PHOTOREALISTIC 12-SECOND VERTICAL 9:16 MORNING SCENE. Exact SAME orange-and-charcoal Airthereal SD300 unchanged in the modest wood-paneled mudroom, same FOUR upright supports and CENTER black/red digital display. Exactly two brown/black leather boots are UPSIDE DOWN on two TALL REAR gray supports, SOLES UP, boot cuffs covering the tall rear nozzle; exactly two black-and-red gloves are mounted cuff-down on the TWO SHORTER FRONT supports, finger tips UP. Warm sunrise light enters. The SAME bearded electrician switches the central controller OFF and carefully slides one boot upwards off the rear tube; remaining footwear remains correctly attached. Do not turn it into a toolbox, suitcase, white dryer or altered unit, no scene cut or on-screen text. Audio: gentle button click, fan slows to silence, boots moving, natural early morning ambience. No voiceover/music.",
       "images": [
-        "https://cdn.shopify.com/s/files/1/0006/0823/9674/files/531-10-SD300-A_01.webp?v=1792998717"
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
       ]
     }
   ]
