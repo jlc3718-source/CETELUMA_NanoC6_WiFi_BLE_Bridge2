@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795021545,
+  "updated_unix": 1795022916,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -11,38 +11,38 @@
   "scenes": [
     {
       "scene": "01_electrician",
-      "status": "retrying",
+      "status": "queued",
       "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "02_gear",
       "status": "retrying",
       "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118171447262414421B0yGOc4j)"
     },
     {
       "scene": "03_setup",
       "status": "retrying",
       "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118171447523869703EGnjlrKN)"
     },
     {
       "scene": "04_running",
       "status": "retrying",
       "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 202611181714477840860742GPjHJgZ)"
     },
     {
       "scene": "05_boot",
-      "status": "retrying",
-      "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "status": "downloaded",
+      "video_ready": true,
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "06_night",
@@ -56,6 +56,13 @@
       "status": "downloaded",
       "video_ready": true,
       "http": 200,
+      "error": ""
+    },
+    {
+      "scene": "_rate_limit",
+      "status": "unknown",
+      "video_ready": false,
+      "http": null,
       "error": ""
     }
   ]
