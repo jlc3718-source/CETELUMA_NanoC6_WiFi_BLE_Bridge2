@@ -1,48 +1,62 @@
 {
-  "updated_unix": 1794986212,
+  "updated_unix": 1794987111,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 6,
+    "sequence": 7,
     "command": "status",
-    "timestamp": 1794985830,
+    "timestamp": 1794986221,
     "result": "ok"
   },
   "scenes": [
     {
       "scene": "01_electrician",
       "status": "retrying",
-      "video_ready": false
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 202611180731419924477mizMFxZS)"
     },
     {
       "scene": "02_gear",
       "status": "retrying",
-      "video_ready": false
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118073141273095173t0RRSlEh)"
     },
     {
       "scene": "03_setup",
       "status": "retrying",
-      "video_ready": false
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118073141562857202UuSsjPJu)"
     },
     {
       "scene": "04_running",
       "status": "downloaded",
-      "video_ready": true
+      "video_ready": true,
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "05_boot",
       "status": "retrying",
-      "video_ready": false
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118073141858436513RHN1sJSm)"
     },
     {
       "scene": "06_night",
       "status": "retrying",
-      "video_ready": false
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118073142865730613zs5WtA7m)"
     },
     {
       "scene": "07_morning",
       "status": "retrying",
-      "video_ready": false
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261118073143139954023B1c38Cju)"
     }
   ]
 }
