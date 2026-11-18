@@ -1,6 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 1,
-  "updated": "2026-11-18"
+  "sequence": 2,
+  "updated": "2026-11-18",
+  "purpose": "verify remote poller without affecting video jobs"
 }
