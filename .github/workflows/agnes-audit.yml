@@ -85,6 +85,8 @@ jobs:
           state_path=Path('/home/ubuntu/agnes-sd300/state.json')
           if state_path.exists():
             states=json.loads(state_path.read_text())
+            rl=states.get('_rate_limit',{})
+            print('RATE_LIMIT_MODE',str(rl.get('source','none')),'SECONDS',rl.get('delay_seconds'),'RETRY_UNIX',round(rl.get('until',0)),'LEFT',max(0,round(rl.get('until',0)-time.time())))
             for name,info in sorted(states.items()):
               if not isinstance(info,dict):continue
               print('SCENE_RESULT',name,'status='+str(info.get('status')),'http='+str(info.get('http')),'id_set='+str(bool(info.get('id'))),'error='+str(info.get('error',''))[:130])
