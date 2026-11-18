@@ -1,62 +1,62 @@
 {
-  "updated_unix": 1795016018,
-  "runner_active": "inactive",
+  "updated_unix": 1795019980,
+  "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 13,
+    "sequence": 14,
     "command": "status",
-    "timestamp": 1795000313,
+    "timestamp": 1795016053,
     "result": "ok"
   },
   "scenes": [
     {
       "scene": "01_electrician",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "02_gear",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "03_setup",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "04_running",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "05_boot",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "06_night",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "07_morning",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     }
   ]
 }
