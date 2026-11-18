@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 20,
+  "sequence": 21,
   "updated": "2026-11-18",
-  "purpose": "live update for hyperrealistic SD300 7-scene video redo"
+  "purpose": "on-demand latest hyperrealistic SD300 seven-scene generation status"
 }
