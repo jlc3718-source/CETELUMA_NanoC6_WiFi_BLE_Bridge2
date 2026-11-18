@@ -1,11 +1,11 @@
 {
-  "updated_unix": 1795000260,
-  "runner_active": "active",
+  "updated_unix": 1795016018,
+  "runner_active": "inactive",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 12,
+    "sequence": 13,
     "command": "status",
-    "timestamp": 1794992550,
+    "timestamp": 1795000313,
     "result": "ok"
   },
   "scenes": [
@@ -25,15 +25,15 @@
     },
     {
       "scene": "03_setup",
-      "status": "retrying",
-      "video_ready": false,
-      "http": 503,
-      "error": "video queue is full, please retry later (request id: 20261118111100292853099DwmJFxSC)"
+      "status": "downloaded",
+      "video_ready": true,
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "04_running",
-      "status": "in_progress",
-      "video_ready": false,
+      "status": "downloaded",
+      "video_ready": true,
       "http": 200,
       "error": ""
     },
@@ -46,10 +46,10 @@
     },
     {
       "scene": "06_night",
-      "status": "retrying",
-      "video_ready": false,
-      "http": 503,
-      "error": "video queue is full, please retry later (request id: 20261118111059250849261nvLS1mB)"
+      "status": "downloaded",
+      "video_ready": true,
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "07_morning",
