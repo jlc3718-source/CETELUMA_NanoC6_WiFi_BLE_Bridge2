@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "command": "restart",
-  "sequence": 3,
+  "command": "status",
+  "sequence": 4,
   "updated": "2026-11-18",
-  "purpose": "verify phone-free service restart"
+  "purpose": "trigger independent status synchronization"
 }
