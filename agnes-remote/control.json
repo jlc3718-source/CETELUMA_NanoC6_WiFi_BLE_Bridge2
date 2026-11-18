@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 25,
+  "sequence": 26,
   "updated": "2026-11-18",
-  "purpose": "latest SD300 hyperrealism progress check"
+  "purpose": "forced SD300 hyperrealism live status refresh"
 }
