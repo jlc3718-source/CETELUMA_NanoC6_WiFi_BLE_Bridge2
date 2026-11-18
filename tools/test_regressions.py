@@ -104,8 +104,10 @@ assert 'verify_ota_manifest.py' in publisher and 'ANDERSON_OTA_SIGNING_KEY_B64' 
 assert "cp publish-input/latest.json ../anderson-ota/latest.json" in publisher
 assert 'git add latest.json remote-update' in publisher
 assert 'setInterval(()=>qa(\'select[data-v3-effect-preview="1"]\')' not in mock
-assert '/360' in mock and 'Math.floor' in mock and 'length' in mock
-assert '/240' in mock and '%2==0' in mock and 'Math.floor' in mock
+assert 'const paintPreview=' in mock and 'speedInterval(speed)' in mock and 'dataset.previewPhase' in mock
+assert '"Jump"===s' in mock and 'Math.floor(t/interval)%n.length' in mock
+assert '"Strobe"===s' in mock and 'Math.max(120,interval/2)' in mock and 'e%2==0' in mock
+assert '"Breath"===s' in mock and 'Math.sin(2*Math.PI*t/(interval*8))' in mock
 assert "const active=Math.floor(now/360)%dots.length" not in mock
 assert "dot.style.background='#f3fbff'" not in mock
 assert 'v3HomeName">My Home' not in mock
