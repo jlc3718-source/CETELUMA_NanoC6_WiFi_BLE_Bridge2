@@ -1,8 +1,7 @@
 {
   "version": 1,
-  "command": "regenerate",
-  "scene": "04_running",
-  "sequence": 9,
+  "command": "status",
+  "sequence": 10,
   "updated": "2026-11-18",
-  "purpose": "regenerate rejected scene 4"
+  "purpose": "force new Agnes live status synchronization"
 }
