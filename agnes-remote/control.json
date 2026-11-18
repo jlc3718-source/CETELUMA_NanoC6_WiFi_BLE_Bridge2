@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 16,
+  "sequence": 17,
   "updated": "2026-11-18",
-  "purpose": "fresh 7-clip all-AI redo progress check"
+  "purpose": "fresh status check of seven all-AI SD300 scenes"
 }
