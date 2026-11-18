@@ -63,5 +63,15 @@ jobs:
               else:
                 print('RUNNER_LINE',i,line[:350])
           print('=== END_SANITIZED_SOURCE ===')
+          print('=== SHOPIFY_IMAGE_PROBE ===')
+          import urllib.request,json
+          try:
+            u='https://airthereal.com/products/sd300-shoe-dryer.js'
+            with urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=12) as resp:
+              d=json.loads(resp.read())
+            im=d.get('images') or []
+            print('PRODUCT',str(d.get('title',''))[:100],'IMAGES',len(im),'FIRST_URL',str(im[0])[:350] if im else '')
+          except Exception as e:print('PRODUCT_REFERENCE_UNAVAILABLE',type(e).__name__,str(e)[:120])
+          print('=== END_SHOPIFY_IMAGE_PROBE ===')
           print('AGNES_AUDIT_DONE')
           PY
