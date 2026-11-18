@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 14,
-  "updated": "2026-11-18T15:33:00Z",
-  "purpose": "fresh status of revised SD300 scenes"
+  "sequence": 15,
+  "updated": "2026-11-18",
+  "purpose": "verify first API responses for full-AI corrected SD300 redo"
 }
