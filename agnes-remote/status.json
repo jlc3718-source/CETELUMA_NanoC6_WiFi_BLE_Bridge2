@@ -1,11 +1,11 @@
 {
-  "updated_unix": 1795029928,
-  "runner_active": "inactive",
+  "updated_unix": 1795030898,
+  "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 16,
+    "sequence": 17,
     "command": "status",
-    "timestamp": 1795020176,
+    "timestamp": 1795029989,
     "result": "ok"
   },
   "scenes": [
@@ -32,10 +32,10 @@
     },
     {
       "scene": "04_running",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "05_boot",
