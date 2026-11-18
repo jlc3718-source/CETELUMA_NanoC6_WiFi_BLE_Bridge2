@@ -1,7 +1,8 @@
 {
   "version": 1,
-  "command": "status",
-  "sequence": 8,
+  "command": "regenerate",
+  "scene": "04_running",
+  "sequence": 9,
   "updated": "2026-11-18",
-  "purpose": "verify HTTP status publication"
+  "purpose": "regenerate rejected scene 4"
 }
