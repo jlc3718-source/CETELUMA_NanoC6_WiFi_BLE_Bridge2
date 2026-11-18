@@ -53,5 +53,15 @@ jobs:
           for svc in ('agnes-sd300','agnes-remote','agnes-publish'):
             r=subprocess.run(['systemctl','is-active',svc],capture_output=True,text=True)
             print('SERVICE',svc,r.stdout.strip())
+          print('=== SANITIZED_RUNNER_SOURCE ===')
+          import re
+          source=Path('/home/ubuntu/agnes-sd300/run.py')
+          if source.exists():
+            for i,line in enumerate(source.read_text().splitlines(),1):
+              if re.search(r'(?i)(key|secret|token|password|authorization|bearer|credential)',line):
+                print('RUNNER_LINE',i,'[SENSITIVE LINE OMITTED]')
+              else:
+                print('RUNNER_LINE',i,line[:350])
+          print('=== END_SANITIZED_SOURCE ===')
           print('AGNES_AUDIT_DONE')
           PY
