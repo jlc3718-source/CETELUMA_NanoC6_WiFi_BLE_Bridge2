@@ -1,0 +1,48 @@
+{
+  "updated_unix": 1794985726,
+  "runner_active": "active",
+  "remote_active": "active",
+  "last_remote_command": {
+    "sequence": 3,
+    "command": "restart",
+    "timestamp": 1794985409,
+    "result": "ok"
+  },
+  "scenes": [
+    {
+      "scene": "01_electrician",
+      "status": "retrying",
+      "video_ready": false
+    },
+    {
+      "scene": "02_gear",
+      "status": "retrying",
+      "video_ready": false
+    },
+    {
+      "scene": "03_setup",
+      "status": "retrying",
+      "video_ready": false
+    },
+    {
+      "scene": "04_running",
+      "status": "missing_url",
+      "video_ready": false
+    },
+    {
+      "scene": "05_boot",
+      "status": "retrying",
+      "video_ready": false
+    },
+    {
+      "scene": "06_night",
+      "status": "retrying",
+      "video_ready": false
+    },
+    {
+      "scene": "07_morning",
+      "status": "retrying",
+      "video_ready": false
+    }
+  ]
+}
