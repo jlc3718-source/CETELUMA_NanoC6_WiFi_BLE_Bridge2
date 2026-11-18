@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 23,
+  "sequence": 24,
   "updated": "2026-11-18",
-  "purpose": "requested latest generation status after human-motion correction"
+  "purpose": "fresh check SD300 fully AI-generated corrected human and product scenes"
 }
