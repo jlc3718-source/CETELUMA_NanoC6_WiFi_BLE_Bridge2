@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 15,
+  "sequence": 16,
   "updated": "2026-11-18",
-  "purpose": "verify first API responses for full-AI corrected SD300 redo"
+  "purpose": "fresh 7-clip all-AI redo progress check"
 }
