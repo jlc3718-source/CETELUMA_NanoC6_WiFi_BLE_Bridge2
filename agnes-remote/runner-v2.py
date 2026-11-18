@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Airthereal SD300 seven-scene runner. GitHub-managed; credentials remain on Oracle."""
+"""Airthereal SD300 nine-scene runner. GitHub-managed; credentials remain on Oracle."""
 import json,os,sys,time,urllib.error,urllib.parse,urllib.request,math
 from datetime import datetime,timezone
 from email.utils import parsedate_to_datetime
@@ -15,9 +15,9 @@ TERMINAL={'downloaded','blocked','failed'}
 
 def load_config(path=CONFIG):
     c=json.loads(Path(path).read_text())
-    expected=['01_electrician','02_gear','03_setup','04_running','05_boot','06_night','07_morning']
+    expected=['01_electrician','02_gear','03_setup','04_running','05_boot','06_night','07_morning','08_morning_detail','09_ready_for_work']
     if c.get('version')!=2 or [s.get('id') for s in c.get('scenes',[])]!=expected:
-        raise ValueError('manifest must contain the seven expected scenes in order')
+        raise ValueError('manifest must contain the nine expected scenes in order')
     if c.get('model')!='agnes-video-2.5-flash' or c.get('size')!='720P':
         raise ValueError('unsupported Agnes model/size')
     if c.get('aspect_ratio') not in ('9:16','16:9') or not 4<=int(c.get('seconds',0))<=12:

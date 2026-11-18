@@ -27,7 +27,7 @@ def main():
     svc=sh('systemctl','show','-p','ExecStart','--value',SERVICE).stdout
     if 'run.py' not in svc or 'agnes-sd300' not in svc:raise SystemExit('unexpected systemd ExecStart; refusing deploy')
     cfg=json.loads(newcfg.read_text())
-    if cfg.get('version')!=2 or len(cfg.get('scenes',[]))!=7:raise SystemExit('unvalidated manifest')
+    if cfg.get('version')!=2 or len(cfg.get('scenes',[]))!=9:raise SystemExit('unvalidated manifest')
     old=read_json(ROOT/'scene-manifest.json',{})
     prev={s['id']:s for s in old.get('scenes',[])}
     global_keys=('model','seconds','size','aspect_ratio')

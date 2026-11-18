@@ -1,9 +1,5 @@
-name: Assemble SD300 complete seven-clip video
+name: Assemble SD300 complete nine-clip video
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/agnes-combine.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,8 +30,9 @@ jobs:
           from pathlib import Path
 
           root=Path('/home/ubuntu/agnes-sd300')
-          names=['01_electrician','02_gear','03_setup','04_running','05_boot','06_night','07_morning']
-          output=Path(os.environ['GITHUB_WORKSPACE'])/'Airthereal_SD300_Full_7_Clips.mp4'
+          names=[s['id'] for s in json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'agnes-remote/scene-manifest.json').read_text())['scenes']]
+          if len(names)!=9:raise RuntimeError('Expected nine AI scenes')
+          output=Path(os.environ['GITHUB_WORKSPACE'])/'Airthereal_SD300_Full_9_Clips_108s.mp4'
           paths=[root/(name+'.mp4') for name in names]
           if not shutil.which('ffprobe') or not shutil.which('ffmpeg'):
               print('MISSING_FFMPEG: ffmpeg/ffprobe required',flush=True)
@@ -52,6 +49,7 @@ jobs:
           durations=[float(m['format'].get('duration',0)) for m in metadata]
           if any(d<3 or d>30 for d in durations):raise RuntimeError('Invalid source clip durations '+str(durations))
           source_duration=sum(durations)
+          if source_duration<90:raise RuntimeError('Source runtime must exceed 90 seconds')
           for name,p,m,dur in zip(names,paths,metadata,durations):
               streams=m['streams']
               video=next((s for s in streams if s.get('codec_type')=='video'),None)
@@ -125,8 +123,8 @@ jobs:
       - name: Attach the complete movie for download
         uses: actions/upload-artifact@v4
         with:
-          name: Airthereal_SD300_Full_7_Clips
-          path: Airthereal_SD300_Full_7_Clips.mp4
+          name: Airthereal_SD300_Full_9_Clips_108s
+          path: Airthereal_SD300_Full_9_Clips_108s.mp4
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
