@@ -1,0 +1,125 @@
+name: Assemble SD300 complete seven-clip video
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/agnes-combine.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agnes-final-video
+  cancel-in-progress: false
+jobs:
+  combine:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assemble, validate, and publish full SD300 film
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,shutil,subprocess,tempfile,time,sys
+          from pathlib import Path
+
+          root=Path('/home/ubuntu/agnes-sd300')
+          names=['01_electrician','02_gear','03_setup','04_running','05_boot','06_night','07_morning']
+          output=Path(os.environ['GITHUB_WORKSPACE'])/'Airthereal_SD300_Full_7_Clips.mp4'
+          paths=[root/(name+'.mp4') for name in names]
+          if not shutil.which('ffprobe') or not shutil.which('ffmpeg'):
+              print('MISSING_FFMPEG: ffmpeg/ffprobe required',flush=True)
+              raise SystemExit(3)
+          state=json.loads((root/'state.json').read_text())
+          for n,p in zip(names,paths):
+              if not p.is_file() or p.stat().st_size<2000 or state.get(n,{}).get('status')!='downloaded':
+                  raise RuntimeError(f'Clip unavailable or not downloaded: {n}')
+          def probe(p):
+              q=subprocess.run(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(p)],
+                               text=True,capture_output=True,check=True,timeout=35)
+              return json.loads(q.stdout)
+          metadata=[probe(p) for p in paths]
+          durations=[float(m['format'].get('duration',0)) for m in metadata]
+          if any(d<3 or d>30 for d in durations):raise RuntimeError('Invalid source clip durations '+str(durations))
+          source_duration=sum(durations)
+          for name,p,m,dur in zip(names,paths,metadata,durations):
+              streams=m['streams']
+              video=next((s for s in streams if s.get('codec_type')=='video'),None)
+              if not video:raise RuntimeError('No video track: '+name)
+              print('SOURCE',name,'seconds',round(dur,2),'size',p.stat().st_size,
+                    'video',video.get('codec_name'),video.get('width'),video.get('height'),
+                    'audio',[s.get('codec_name') for s in streams if s.get('codec_type')=='audio'],flush=True)
+          def concat(files,dest):
+              with tempfile.NamedTemporaryFile('w',suffix='.txt',delete=False) as fh:
+                  for p in files:fh.write("file '"+str(p).replace("'","'\\''")+"'\n")
+                  listing=fh.name
+              try:
+                  command=['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y','-f','concat','-safe','0',
+                           '-i',listing,'-map','0:v:0','-map','0:a:0?','-c','copy','-movflags','+faststart',str(dest)]
+                  subprocess.run(command,check=True,timeout=600)
+              finally:Path(listing).unlink(missing_ok=True)
+          def usable(p):
+              if not p.is_file() or p.stat().st_size<2000:return False
+              data=probe(p)
+              dur=float(data['format'].get('duration',0))
+              if abs(dur-source_duration)>max(4,0.07*source_duration):return False
+              streams=data.get('streams',[])
+              return any(s.get('codec_type')=='video' for s in streams)
+          signatures=[]
+          for m in metadata:
+              stream=m['streams']
+              signatures.append(tuple((s.get('codec_type'),s.get('codec_name'),s.get('width'),
+                                       s.get('height'),s.get('sample_rate'),s.get('channels'),
+                                       s.get('pix_fmt')) for s in stream if s.get('codec_type') in ('video','audio')))
+          work=output.with_name('sd300.tmp.mp4')
+          if len(set(signatures))==1:
+              print('ASSEMBLY_MODE stream-copy',flush=True)
+              try:concat(paths,work)
+              except Exception as e:print('COPY_FAILED',str(e)[:400],flush=True)
+          if not usable(work):
+              print('ASSEMBLY_MODE per-clip-normalization',flush=True)
+              work.unlink(missing_ok=True)
+              norm_dir=Path(tempfile.mkdtemp(prefix='agnes-join-'))
+              normalized=[]
+              try:
+                  for i,(p,m) in enumerate(zip(paths,metadata),1):
+                      target=norm_dir/f'{i:02}.mp4'
+                      has_audio=any(s.get('codec_type')=='audio' for s in m['streams'])
+                      argv=['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y','-i',str(p)]
+                      if not has_audio:argv+=['-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000']
+                      argv+=['-map','0:v:0','-map','0:a:0' if has_audio else '1:a:0',
+                             '-vf','scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p',
+                             '-c:v','libx264','-preset','veryfast','-crf','21','-c:a','aac',
+                             '-ar','48000','-ac','2','-b:a','128k','-shortest',
+                             '-movflags','+faststart',str(target)]
+                      print('NORMALIZING',i,'of',len(paths),flush=True)
+                      subprocess.run(argv,check=True,timeout=600)
+                      normalized.append(target)
+                  concat(normalized,work)
+              finally:shutil.rmtree(norm_dir,ignore_errors=True)
+          if not usable(work):raise RuntimeError('Final MP4 validation failed')
+          final_meta=probe(work)
+          print('FINAL_DURATION',final_meta['format'].get('duration'),'SOURCE_TOTAL',round(source_duration,2),
+                'BYTES',work.stat().st_size,flush=True)
+          subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-i',str(work),
+                          '-map','0:v:0','-f','null','-'],check=True,timeout=600)
+          os.replace(work,output)
+          destination=Path('/var/www/agnes-public/videos')/output.name
+          if destination.exists():
+              backup=destination.with_name(destination.stem+'.previous.mp4')
+              subprocess.run(['sudo','-n','cp','-p',str(destination),str(backup)],check=True,timeout=35)
+          subprocess.run(['sudo','-n','install','-m','644',str(output),str(destination)],check=True,timeout=90)
+          print('ASSEMBLED_VIDEO_PATH',str(destination),'SIZE',destination.stat().st_size,flush=True)
+          print('AGNES_COMPLETE_VIDEO_READY',str(output),'seconds',final_meta['format'].get('duration'),flush=True)
+          PY
+      - name: Attach the complete movie for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Airthereal_SD300_Full_7_Clips
+          path: Airthereal_SD300_Full_7_Clips.mp4
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
