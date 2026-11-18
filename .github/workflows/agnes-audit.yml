@@ -73,5 +73,15 @@ jobs:
             print('PRODUCT',str(d.get('title',''))[:100],'IMAGES',len(im),'FIRST_URL',str(im[0])[:350] if im else '')
           except Exception as e:print('PRODUCT_REFERENCE_UNAVAILABLE',type(e).__name__,str(e)[:120])
           print('=== END_SHOPIFY_IMAGE_PROBE ===')
+          print('=== MANAGED_RUNNER_DIAGNOSTICS ===')
+          import datetime
+          for p in (Path('/home/ubuntu/agnes-sd300/run.py'),Path('/home/ubuntu/agnes-sd300/scene-manifest.json'),Path('/home/ubuntu/agnes-sd300/state.json')):
+            print('RUNTIME_FILE',p.name,'mtime',datetime.datetime.fromtimestamp(p.stat().st_mtime,datetime.timezone.utc).isoformat() if p.exists() else 'missing')
+          for cmd in (['systemctl','is-active','agnes-sd300.service'],['systemctl','show','agnes-sd300.service','--property=ExecMainStatus,ExecMainPID,NRestarts,SubState'],['journalctl','-u','agnes-sd300.service','-n','35','--no-pager','-o','cat']):
+            out=subprocess.run(cmd,capture_output=True,text=True,timeout=10)
+            txt=(out.stdout or '')+' '+(out.stderr or '')
+            txt=re.sub(r'(?i)(bearer\s+)[a-z0-9._-]+',r'\1[REDACTED]',txt)
+            print('DIAG',cmd[0],cmd[1:3],txt[-2200:])
+          print('=== END_MANAGED_DIAGNOSTICS ===')
           print('AGNES_AUDIT_DONE')
           PY
