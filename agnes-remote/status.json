@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795045349,
+  "updated_unix": 1795046024,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -57,6 +57,27 @@
       "video_ready": false,
       "http": null,
       "error": "new storyboard revision; resubmitting"
+    },
+    {
+      "scene": "08_morning_detail",
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
+    },
+    {
+      "scene": "09_ready_for_work",
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
+    },
+    {
+      "scene": "_rate_limit",
+      "status": "unknown",
+      "video_ready": false,
+      "http": null,
+      "error": ""
     }
   ]
 }
