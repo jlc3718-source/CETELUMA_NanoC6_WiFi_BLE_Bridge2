@@ -1,0 +1,57 @@
+name: Agnes remote runner audit (no changes)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/agnes-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect Agnes runner structure without exposing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,os,subprocess,hashlib
+          from pathlib import Path
+          for p in (Path('/home/ubuntu/agnes-sd300/run.py'),Path('/opt/agnes-remote/poller.py')):
+            print('FILE',str(p),'exists',p.exists(),'owner',p.stat().st_uid if p.exists() else None)
+            if not p.exists():continue
+            s=p.read_text(); t=ast.parse(s)
+            print('LENGTH',len(s),'SHA',hashlib.sha256(s.encode()).hexdigest()[:18])
+            for n in t.body:
+              if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                print('FUNCTION',n.name,'args',[a.arg for a in n.args.args],'line',n.lineno)
+              elif isinstance(n,ast.Assign):
+                targets=[x.id for x in n.targets if isinstance(x,ast.Name)]
+                if targets:
+                  name=targets[0]
+                  if name not in ('key','KEY','token','TOKEN','headers','HEADERS','api_key','API_KEY'):
+                    shape=type(n.value).__name__
+                    print('TOP_ASSIGN',name,shape,'line',n.lineno,'keys', [k.value if isinstance(k,ast.Constant) and isinstance(k.value,str) else '?' for k in n.value.keys] if isinstance(n.value,ast.Dict) else '','items',len(n.value.elts) if isinstance(n.value,(ast.List,ast.Tuple)) else '')
+            for n in ast.walk(t):
+              if isinstance(n,ast.Call):
+                fn=n.func
+                f=(getattr(fn.value,'id','')+'.'+fn.attr) if isinstance(fn,ast.Attribute) else (fn.id if isinstance(fn,ast.Name) else '')
+                if f in ('requests.post','requests.get','urllib.request.urlopen','urlopen','json.dumps','json.loads'):
+                  print('CALL',f,'line',n.lineno,'kwargs',[a.arg for a in n.keywords])
+              if isinstance(n,ast.Dict):
+                keys=[k.value for k in n.keys if isinstance(k,ast.Constant) and isinstance(k.value,str)]
+                if any(x in ('prompt','model','image_url','first_frame','image','url','duration','aspect_ratio','input','scene') for x in keys):
+                  print('DICT_KEYS',n.lineno,keys)
+              if isinstance(n,ast.Constant) and isinstance(n.value,str) and len(n.value)>100:
+                if any(x in n.value.lower() for x in ('boot dryer','sd300','electrician','night mode','muddy')):
+                  print('PROMPT_TEXT',n.lineno,repr(n.value[:850]))
+          print('SUDO_NONINTERACTIVE',subprocess.run(['sudo','-n','true'],capture_output=True).returncode)
+          for svc in ('agnes-sd300','agnes-remote','agnes-publish'):
+            r=subprocess.run(['systemctl','is-active',svc],capture_output=True,text=True)
+            print('SERVICE',svc,r.stdout.strip())
+          print('AGNES_AUDIT_DONE')
+          PY
