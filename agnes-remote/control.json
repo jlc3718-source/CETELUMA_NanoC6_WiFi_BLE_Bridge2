@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 12,
-  "updated": "2026-11-18",
-  "purpose": "confirm full managed pipeline status and exact HTTP throttling codes"
+  "sequence": 13,
+  "updated": "2026-11-18T11:11:00Z",
+  "purpose": "manual fresh status check for seven revised clips"
 }
