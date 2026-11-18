@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import ast,os,subprocess,hashlib
+          import ast,os,subprocess,hashlib,time
           from pathlib import Path
           for p in (Path('/home/ubuntu/agnes-sd300/run.py'),Path('/opt/agnes-remote/poller.py')):
             print('FILE',str(p),'exists',p.exists(),'owner',p.stat().st_uid if p.exists() else None)
