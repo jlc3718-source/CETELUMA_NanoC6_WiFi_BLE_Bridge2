@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 6,
+  "sequence": 7,
   "updated": "2026-11-18",
-  "purpose": "sync verified completed scene 04"
+  "purpose": "refresh status on user request"
 }
