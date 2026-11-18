@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "command": "status",
-  "sequence": 2,
+  "command": "restart",
+  "sequence": 3,
   "updated": "2026-11-18",
-  "purpose": "verify remote poller without affecting video jobs"
+  "purpose": "verify phone-free service restart"
 }
