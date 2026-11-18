@@ -1,11 +1,11 @@
 {
-  "updated_unix": 1794985726,
+  "updated_unix": 1794985776,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 3,
-    "command": "restart",
-    "timestamp": 1794985409,
+    "sequence": 4,
+    "command": "status",
+    "timestamp": 1794985740,
     "result": "ok"
   },
   "scenes": [
