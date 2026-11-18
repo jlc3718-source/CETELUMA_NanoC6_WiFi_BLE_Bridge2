@@ -1,11 +1,11 @@
 {
-  "updated_unix": 1795020109,
+  "updated_unix": 1795021545,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 15,
+    "sequence": 16,
     "command": "status",
-    "timestamp": 1795020026,
+    "timestamp": 1795020176,
     "result": "ok"
   },
   "scenes": [
@@ -53,10 +53,10 @@
     },
     {
       "scene": "07_morning",
-      "status": "retrying",
-      "video_ready": false,
-      "http": 429,
-      "error": "The rate exceeds the limit. Please try again later"
+      "status": "downloaded",
+      "video_ready": true,
+      "http": 200,
+      "error": ""
     }
   ]
 }
