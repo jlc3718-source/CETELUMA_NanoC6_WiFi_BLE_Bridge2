@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 10,
+  "sequence": 11,
   "updated": "2026-11-18",
-  "purpose": "force new Agnes live status synchronization"
+  "purpose": "verify managed reference-guided 7-scene runner deployment"
 }
