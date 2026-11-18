@@ -22,6 +22,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            echo 'Installing ffmpeg and ffprobe on existing Oracle runner'
+            sudo -n apt-get update -qq
+            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
           python3 - <<'PY'
           import json,os,shutil,subprocess,tempfile,time,sys
           from pathlib import Path
