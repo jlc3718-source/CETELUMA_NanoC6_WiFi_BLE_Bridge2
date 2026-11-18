@@ -1,7 +1,7 @@
 {
   "version": 1,
   "command": "status",
-  "sequence": 5,
+  "sequence": 6,
   "updated": "2026-11-18",
-  "purpose": "verify metadata video URL fix and sync output"
+  "purpose": "sync verified completed scene 04"
 }
