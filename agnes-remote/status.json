@@ -1,27 +1,27 @@
 {
-  "updated_unix": 1795033688,
+  "updated_unix": 1795034191,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 21,
+    "sequence": 22,
     "command": "status",
-    "timestamp": 1795032697,
+    "timestamp": 1795033720,
     "result": "ok"
   },
   "scenes": [
     {
       "scene": "01_electrician",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "02_gear",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "03_setup",
