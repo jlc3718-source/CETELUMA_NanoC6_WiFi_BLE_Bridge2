@@ -6,6 +6,9 @@ on:
     paths:
       - 'agnes-remote/control.json'
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Agnes remote deployment']
+    types: [completed]
 permissions:
   contents: write
 concurrency:
