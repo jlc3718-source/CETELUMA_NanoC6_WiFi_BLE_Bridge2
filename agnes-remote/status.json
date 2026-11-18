@@ -1,11 +1,11 @@
 {
-  "updated_unix": 1794988459,
+  "updated_unix": 1794990738,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
-    "sequence": 8,
-    "command": "status",
-    "timestamp": 1794987124,
+    "sequence": 9,
+    "command": "regenerate",
+    "timestamp": 1794990415,
     "result": "ok"
   },
   "scenes": [
@@ -14,40 +14,40 @@
       "status": "retrying",
       "video_ready": false,
       "http": 503,
-      "error": "video queue is full, please retry later (request id: 20261118075241899783362OhGv9gmz)"
+      "error": "video queue is full, please retry later (request id: 202611180832055041527893sHp5AZ2)"
     },
     {
       "scene": "02_gear",
       "status": "retrying",
       "video_ready": false,
       "http": 503,
-      "error": "video queue is full, please retry later (request id: 202611180752421729855744xWYT5d2)"
+      "error": "video queue is full, please retry later (request id: 20261118083205762060158nZSJJi0z)"
     },
     {
       "scene": "03_setup",
-      "status": "retrying",
+      "status": "queued",
       "video_ready": false,
-      "http": 503,
-      "error": "video queue is full, please retry later (request id: 20261118075242433562290NBkOWfLp)"
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "04_running",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 202611180832063477040802v67dWt6)"
     },
     {
       "scene": "05_boot",
       "status": "retrying",
       "video_ready": false,
       "http": 503,
-      "error": "video queue is full, please retry later (request id: 20261118075245381051386VR7ZQ3o7)"
+      "error": "video queue is full, please retry later (request id: 202611180832065980073830sOemK1d)"
     },
     {
       "scene": "06_night",
-      "status": "queued",
-      "video_ready": false,
+      "status": "downloaded",
+      "video_ready": true,
       "http": 200,
       "error": ""
     },
@@ -56,7 +56,7 @@
       "status": "retrying",
       "video_ready": false,
       "http": 503,
-      "error": "video queue is full, please retry later (request id: 20261118075245972052946we8KYKws)"
+      "error": "video queue is full, please retry later (request id: 20261118083206855110583jWlejMXi)"
     }
   ]
 }
