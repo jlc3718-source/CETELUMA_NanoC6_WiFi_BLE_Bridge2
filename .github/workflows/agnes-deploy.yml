@@ -26,6 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile agnes-remote/runner-v2.py agnes-remote/deploy.py
+          python3 agnes-remote/test_rate_limit.py
           python3 agnes-remote/runner-v2.py --check-config agnes-remote/scene-manifest.json
       - name: Single atomic installer - private credentials stay on the VM
         shell: bash

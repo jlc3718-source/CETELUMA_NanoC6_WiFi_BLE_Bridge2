@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Airthereal SD300 seven-scene runner. GitHub-managed; credentials remain on Oracle."""
-import json,os,sys,time,urllib.error,urllib.parse,urllib.request
+import json,os,sys,time,urllib.error,urllib.parse,urllib.request,math
+from datetime import datetime,timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 ROOT=Path('/home/ubuntu/agnes-sd300')
@@ -50,11 +52,49 @@ def http_call(url,token,payload=None,timeout=55):
             raw=r.read(2_000_000)
             try:res=json.loads(raw)
             except (ValueError,UnicodeDecodeError):res={'error':'non-json response'}
-            return r.status,res
+            return r.status,res,r.headers
     except urllib.error.HTTPError as e:
         try:res=json.loads(e.read(16000))
         except Exception:res={'error':'HTTP failure'}
-        return e.code,res
+        return e.code,res,e.headers
+
+
+def retry_after_seconds(headers, now=None):
+    """Honor HTTP Retry-After delta seconds or RFC HTTP date, when supplied."""
+    if not headers:return None
+    value=headers.get('Retry-After')
+    if not value:return None
+    value=str(value).strip()
+    try:
+        seconds=float(value)
+        if math.isfinite(seconds) and seconds>=0:
+            return max(1,math.ceil(seconds))
+    except (TypeError,ValueError):
+        pass
+    try:
+        date=parsedate_to_datetime(value)
+        if date.tzinfo is None:date=date.replace(tzinfo=timezone.utc)
+        current=time.time() if now is None else now
+        delta=date.timestamp()-current
+        if math.isfinite(delta) and delta>0:return max(1,math.ceil(delta))
+    except (ValueError,TypeError,OverflowError,IndexError):
+        pass
+    return None
+
+def record_rate_limit(state,scene,headers, now=None):
+    """One 429 throttles ALL scenes, not just the current scene."""
+    current=time.time() if now is None else now
+    previous=state.get('_rate_limit',{})
+    failures=int(previous.get('failures',0))+1
+    header_delay=retry_after_seconds(headers,current)
+    # If server has no Retry-After, use bounded exponential backoff.
+    wait=header_delay if header_delay is not None else min(900,15*2**min(failures-1,6))
+    until=current+wait
+    state['_rate_limit']={'until':until,'failures':failures,
+                          'delay_seconds':wait,'source':'retry-after' if header_delay is not None else 'exponential'}
+    scene['next_retry_unix']=math.ceil(until)
+    scene['retry_after_seconds']=wait
+    scene['retry_source']=state['_rate_limit']['source']
 
 def get_detail(d):
     if not isinstance(d,dict):return {}
@@ -103,15 +143,24 @@ def download_video(name,url):
     os.replace(tmp,out)
 
 def cycle(c,state,token):
+    if state.get('_rate_limit',{}).get('until',0)>time.time():
+        return
     for s in c['scenes']:
+        if state.get('_rate_limit',{}).get('until',0)>time.time():
+            break
         name=s['id'];x=state.setdefault(name,{})
         if x.get('status') in TERMINAL:continue
+        rate_limited=False
         try:
             if not x.get('id'):
-                code,d=http_call(API,token,request_body(c,s))
+                code,d,headers=http_call(API,token,request_body(c,s))
                 v=get_detail(d)
                 job=v.get('id') or v.get('video_id') or v.get('task_id')
                 x['http']=code;x['error']=error_text(d)
+                if code==429:
+                    record_rate_limit(state,x,headers)
+                    rate_limited=True
+                elif code<500:state.pop('_rate_limit',None)
                 if code in (400,401,403,422):
                     x['status']='blocked'
                 elif code==200 or code==201 or code==202:
@@ -121,12 +170,16 @@ def cycle(c,state,token):
                 else:
                     x['status']='retrying'
             else:
-                code,d=http_call(API+'/'+urllib.parse.quote(str(x['id']),safe=''),token)
+                code,d,headers=http_call(API+'/'+urllib.parse.quote(str(x['id']),safe=''),token)
                 if code==404:
                     q=urllib.parse.urlencode({'video_id':x['id'],'model_name':c['model']})
-                    code,d=http_call(POLL+'?'+q,token)
+                    code,d,headers=http_call(POLL+'?'+q,token)
                 v=get_detail(d)
                 x['http']=code
+                if code==429:
+                    record_rate_limit(state,x,headers)
+                    rate_limited=True
+                elif code<500:state.pop('_rate_limit',None)
                 if code in (400,401,403,422):x['status']='blocked';x['error']=error_text(d)
                 elif code in (429,503):x['status']='retrying';x['error']=error_text(d)
                 elif code>=400:x['status']='retrying';x['error']=error_text(d)
@@ -147,6 +200,7 @@ def cycle(c,state,token):
             x['status']='retrying';x['error']=(type(e).__name__+': '+str(e))[:220]
         x['revision']=c['revision']
         atomic_json(STATE,state)
+        if rate_limited:break
 
 def main():
     if len(sys.argv)==3 and sys.argv[1]=='--check-config':
@@ -164,6 +218,6 @@ def main():
     while True:
         cycle(c,state,token)
         if all(state.get(s['id'],{}).get('status') in TERMINAL for s in c['scenes']):break
-        time.sleep(1)
+        time.sleep(max(1,min(60,state.get('_rate_limit',{}).get('until',0)-time.time())))
 
 if __name__=='__main__':main()
