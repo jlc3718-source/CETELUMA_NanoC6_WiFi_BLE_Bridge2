@@ -1,0 +1,47 @@
+name: Preview current SD300 AI gear clip
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify and export current generated gear clip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, shutil, subprocess
+          from pathlib import Path
+          root=Path('/home/ubuntu/agnes-sd300')
+          expected='sd300-photoreal-black-laceup-108sec-i'
+          manifest=json.loads((root/'scene-manifest.json').read_text())
+          state=json.loads((root/'state.json').read_text())
+          name='02_gear'
+          if manifest.get('revision')!=expected or len(manifest.get('scenes',[]))!=9:
+              raise SystemExit('Active revision does not match requested nine-scene build')
+          x=state.get(name,{})
+          if x.get('revision')!=expected or x.get('status')!='downloaded':
+              raise SystemExit('Current gear clip is not yet downloaded for revision '+expected)
+          path=root/(name+'.mp4')
+          if not path.is_file() or path.stat().st_size<100000:
+              raise SystemExit('Gear MP4 not present or too short to be valid')
+          result=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=nokey=1:noprint_wrappers=1',str(path)],capture_output=True,text=True,check=True)
+          duration=float(result.stdout.strip())
+          if not 4<=duration<=20:raise SystemExit('Unexpected source duration')
+          print('VERIFIED_CURRENT_GEAR_AI_CLIP',expected,'duration',duration,'bytes',path.stat().st_size,flush=True)
+          shutil.copy2(path,Path(os.environ['GITHUB_WORKSPACE'])/'SD300_AI_Gear_12s_Current.mp4')
+          PY
+      - name: Upload completed clip for visual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: SD300_AI_Gear_12s_Current
+          path: SD300_AI_Gear_12s_Current.mp4
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
