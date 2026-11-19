@@ -49,4 +49,4 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile agnes-remote/review.py
-          sudo -n --preserve-env=SD300_SCENE,SD300_DECISION,SD300_REASON python3 agnes-remote/review.py
+          sudo -n env SD300_SCENE="$SD300_SCENE" SD300_DECISION="$SD300_DECISION" SD300_REASON="$SD300_REASON" python3 agnes-remote/review.py
