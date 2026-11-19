@@ -1,0 +1,52 @@
+name: Review one SD300 AI scene
+on:
+  workflow_dispatch:
+    inputs:
+      scene:
+        description: Exact scene ID
+        required: true
+        type: choice
+        options:
+          - 01_electrician
+          - 02_gear
+          - 03_setup
+          - 04_running
+          - 05_boot
+          - 06_night
+          - 07_morning
+          - 08_morning_detail
+          - 09_ready_for_work
+      decision:
+        description: Mark reviewed clip as approved or reject and retry
+        required: true
+        type: choice
+        options:
+          - reject
+          - approve
+      reason:
+        description: Reason for the review decision
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: agnes-sd300-state-mutation
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate and apply scene decision on Oracle
+        shell: bash
+        env:
+          SD300_SCENE: ${{ inputs.scene }}
+          SD300_DECISION: ${{ inputs.decision }}
+          SD300_REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agnes-remote/review.py
+          sudo -n --preserve-env=SD300_SCENE,SD300_DECISION,SD300_REASON python3 agnes-remote/review.py
