@@ -39,8 +39,14 @@ jobs:
               raise SystemExit(3)
           state=json.loads((root/'state.json').read_text())
           for n,p in zip(names,paths):
-              if not p.is_file() or p.stat().st_size<2000 or state.get(n,{}).get('status')!='downloaded':
-                  raise RuntimeError(f'Clip unavailable or not downloaded: {n}')
+              info=state.get(n,{})
+              if (not p.is_file() or p.stat().st_size<2000 or info.get('status')!='downloaded' or
+                  info.get('approved') is not True or info.get('review_status')!='approved'):
+                  raise RuntimeError(f'Clip not visually approved for assembly: {n}')
+              import hashlib
+              actual_hash=hashlib.sha256(p.read_bytes()).hexdigest()
+              if info.get('approved_sha256')!=actual_hash:
+                  raise RuntimeError(f'Approved clip checksum mismatch: {n}')
           def probe(p):
               q=subprocess.run(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(p)],
                                text=True,capture_output=True,check=True,timeout=35)
