@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795047023,
+  "updated_unix": 1795047624,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -13,64 +13,64 @@
       "scene": "01_electrician",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 2026111900135237001554UAy87LZX)"
     },
     {
       "scene": "02_gear",
-      "status": "retrying",
+      "status": "queued",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "03_setup",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261119001352629347723z9jWc38h)"
     },
     {
       "scene": "04_running",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 429,
+      "error": "The rate exceeds the limit. Please try again later"
     },
     {
       "scene": "05_boot",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261119001349668851501MYsxeH7h)"
     },
     {
       "scene": "06_night",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261119001349937584242rCmcn0h5)"
     },
     {
       "scene": "07_morning",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261119001350197259046IYfFigCN)"
     },
     {
       "scene": "08_morning_detail",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261119001350457858881fSzLV6Aa)"
     },
     {
       "scene": "09_ready_for_work",
       "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "new storyboard revision; resubmitting"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261119001350745762361CW3BYvXI)"
     },
     {
       "scene": "_rate_limit",
