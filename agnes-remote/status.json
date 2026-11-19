@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795049588,
+  "updated_unix": 1795049756,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -11,10 +11,10 @@
   "scenes": [
     {
       "scene": "01_electrician",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "retrying",
+      "video_ready": false,
+      "http": null,
+      "error": "new storyboard revision; resubmitting"
     },
     {
       "scene": "02_gear",
