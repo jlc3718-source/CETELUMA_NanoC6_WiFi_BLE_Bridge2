@@ -1,0 +1,74 @@
+name: Export new SD300 scenes for QC
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sd300-qc-exports
+  cancel-in-progress: false
+jobs:
+  export:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export only newly downloaded unapproved scene versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, subprocess
+          from pathlib import Path
+          root=Path('/home/ubuntu/agnes-sd300')
+          state=json.loads((root/'state.json').read_text())
+          cfg=json.loads((root/'scene-manifest.json').read_text())
+          export_dir=Path(os.environ['GITHUB_WORKSPACE'])/'sd300-review'
+          marker=root/'qc-previewed.json'
+          seen=json.loads(marker.read_text()) if marker.exists() else {}
+          new={}
+          records=[]
+          for scene in cfg['scenes']:
+              key=scene['id']
+              x=state.get(key,{})
+              path=root/(key+'.mp4')
+              if (x.get('status')!='downloaded' or x.get('approved') is True or
+                  x.get('revision')!=cfg['revision'] or not path.is_file() or
+                  path.stat().st_size<50000):
+                  continue
+              fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
+              if seen.get(key)==fingerprint: continue
+              export_dir.mkdir(parents=True,exist_ok=True)
+              dest=export_dir/(key+'.mp4')
+              shutil.copy2(path,dest)
+              # Recheck the copied file before marking this candidate exported.
+              if hashlib.sha256(dest.read_bytes()).hexdigest()!=fingerprint:
+                  dest.unlink(missing_ok=True)
+                  continue
+              contact=export_dir/(key+'.jpg')
+              subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y',
+                  '-i',str(dest),'-vf','fps=1/3,scale=200:-1,tile=2x2',
+                  '-frames:v','1',str(contact)],check=True,timeout=90)
+              records.append({'scene':key,'sha256':fingerprint,
+                   'revision':cfg['revision'],'review_attempts':x.get('review_attempts',0)})
+              new[key]=fingerprint
+          if records:
+              (export_dir/'manifest.json').write_text(json.dumps(records,indent=2)+'\n')
+              tmp=marker.with_suffix('.tmp')
+              tmp.write_text(json.dumps({**seen,**new},indent=2)+'\n')
+              os.replace(tmp,marker)
+              print('NEW_QC_SCENES',json.dumps([r['scene'] for r in records]),flush=True)
+          else:
+              print('NO_NEW_QC_CLIPS',flush=True)
+          PY
+      - name: Attach new clips and visual contact sheets
+        uses: actions/upload-artifact@v4
+        with:
+          name: sd300-new-qc-clips-${{ github.run_id }}
+          path: sd300-review/
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 14
