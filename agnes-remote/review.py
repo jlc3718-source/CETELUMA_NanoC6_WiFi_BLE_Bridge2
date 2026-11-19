@@ -93,7 +93,7 @@ def main():
         atomic_state(state_path, state)
         print("REVIEW_APPLIED", cfg["revision"], scene, decision, flush=True)
     finally:
-        if was_active:
+        if was_active or decision == "reject":
             cmd("systemctl", "start", SERVICE)
 
 if __name__ == "__main__":
