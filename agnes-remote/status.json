@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795095044,
+  "updated_unix": 1795124626,
   "runner_active": "inactive",
   "remote_active": "active",
   "last_remote_command": {
@@ -25,10 +25,10 @@
     },
     {
       "scene": "03_setup",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "failed",
+      "video_ready": false,
+      "http": null,
+      "error": "QC failed five times; paused for manual inspection"
     },
     {
       "scene": "04_running",
@@ -46,10 +46,10 @@
     },
     {
       "scene": "06_night",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "failed",
+      "video_ready": false,
+      "http": null,
+      "error": "QC failed five times; paused for manual inspection"
     },
     {
       "scene": "07_morning",
