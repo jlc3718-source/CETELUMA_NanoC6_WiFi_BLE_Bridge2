@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "revision": "sd300-photoreal-black-laceup-108sec-i",
+  "revision": "sd300-review-gated-black-gear-j",
   "model": "agnes-video-2.5-flash",
   "seconds": "12",
   "size": "720P",
@@ -14,8 +14,12 @@
     },
     {
       "id": "02_gear",
-      "mode": "text",
-      "prompt": "ENTIRELY AI GENERATED. In a simple lived-in home mudroom with medium-brown wood paneling and dark ribbed floor mat, use the owner's actual style of gear: TWO black high-top lace-up work boots with worn tread, dull muddy scuffs and black fabric/leather uppers, and TWO red-and-black Milwaukee work gloves with dark textured palms and red cuffs. Show boots and gloves ALREADY REMOVED and RESTING SIDE BY SIDE on the mat, not worn by a person. Outside is rainy dusk through window, so boots arrived lightly damp from previous rain. Show only stationary soft moisture beads, small wet patches on leather/fabric, and existing tiny puddle marks on rubber mat. IMPORTANT: NO falling/dripping stream from above, NO liquid being poured, NO man urinating, NO person standing over or leaning toward boots, NO spraying, NO cleaning action. Nothing pours or drops onto boots. Single calm low camera close-up, realistic original wrinkles, scuffed texture, gravity and stable geometry. No cartoon boots or gloves, no object morphing, no fake gloss. Quiet room tone and very soft rainy window ambience only, no speech or music. Gear MUST be the owner's real BLACK TRADITIONAL LACE-UP ELECTRICIAN WORK BOOTS, with visible laces, metal eyelets, charcoal synthetic/leather fabric uppers, scuffed toe caps, lugged outsoles; absolutely NO muck boots, NO slip-on rubber wellies, NO tall waterproof pull-on rubber boots, NO brown leather boots. Gloves are red-black Milwaukee work gloves with naturally textured seams, NOT cartoon gloves."
+      "mode": "reference",
+      "prompt": "Completely AI-generated realistic live-action 12-second close-up based strictly on the owner's ACTUAL uploaded reference photographs. In a plain wood-paneled mudroom with pale wood-look flooring, a black rectangular tray with raised side edges sits on the floor. On the tray are exactly TWO REALISTIC USED BLACK LACE-UP ELECTRICIAN WORK BOOTS, standing UPRIGHT, with eyelets, laces, thick charcoal padded ankle collars, scuffed black and gray textured leather/fabric uppers, dented rubber toe caps, and dull dusty tread, identical to the provided photographs. On the pale floor in the foreground beside the tray are exactly TWO RED AND BLACK MILWAUKEE WORK GLOVES, palms black, backs red with subtle white maker marks; the gloves rest naturally flat and motionless. Nothing else is placed above the boots. The black tray is empty except for the two boots. This is a STATIC arrangement throughout the clip, perfectly still objects and entirely DRY surfaces. Show real imperfections, dusty surface scratches, fabric stitching and naturally distributed room shadows. Use subdued indoor room light, static tripod camera with almost imperceptible focus breathing and gentle sound of an ordinary quiet room. All surfaces are matte, NOT GLOSSY. No shiny coatings or theatrical action. No boots being worn, no hand, no people, no moving props. Do not introduce any new objects or effects. Maintain EXACT shapes, colors, relative locations, and physical arrangement throughout. The boots MUST BE BLACK traditional lace-up high-top work boots — no slip-on rubber muck boots, no brown pull-on boots. No CGI, animated toy aesthetic or morphing. No titles, narration, voice or background music.",
+      "images": [
+        "https://dynamic.heygen.ai/image/4e7e3cac8aaa4967a5597e57683c8a0a/original.jpg",
+        "https://dynamic.heygen.ai/image/cf0079534053445795a376acb0c59146/original.jpg"
+      ]
     },
     {
       "id": "03_setup",
