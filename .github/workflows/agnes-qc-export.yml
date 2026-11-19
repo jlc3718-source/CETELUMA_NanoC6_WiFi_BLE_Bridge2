@@ -20,6 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m py_compile agnes-remote/review.py
           python3 - <<'PY'
           import hashlib, json, os, shutil, subprocess
           from pathlib import Path
