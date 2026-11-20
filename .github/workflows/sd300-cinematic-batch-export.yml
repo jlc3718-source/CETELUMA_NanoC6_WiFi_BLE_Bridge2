@@ -54,6 +54,10 @@ jobs:
           (public/'SD300_BATCH_EXPORT_SHA256.txt').write_text(fingerprint+'\n')
           print('SD300_EXPORT_READY',target.name,'bytes='+str(target.stat().st_size))
           PY
+      - name: Show recent sanitized SD300 batch runner events
+        shell: bash
+        run: |
+          journalctl -u sd300-cinematic-batch-v3.service -n 55 --no-pager -o cat 2>/dev/null | grep '^SD300_BATCH_V3' | tail -25 || true
       - name: Attach final film with user-approved narration
         uses: actions/upload-artifact@v4
         with:
