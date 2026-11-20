@@ -81,14 +81,14 @@ def main():
             if pub.is_file():
                 shutil.move(str(pub), str(folder / (scene + ".published-rejected.mp4")))
             attempts = int(x.get("review_attempts", 0)) + 1
-            x.update({"id": None, "status": "retrying" if attempts < 5 else "failed",
+            # QC rejection is not a provider failure: retry indefinitely until approved.
+            # Provider HTTP 429/503 safeguards and backoff remain in runner-v2.py.
+            x.update({"id": None, "status": "retrying",
                       "approved": False, "review_status": "rejected",
                       "approved_sha256": None, "review_attempts": attempts,
                       "reviewed_at_utc": stamp, "review_reason": reason,
-                      "http": None,
-                      "error": "Visual QC rejected; regeneration pending" if attempts < 5
-                              else "QC failed five times; paused for manual inspection"})
-            print("SCENE_REJECTED", scene, "attempts", attempts, "retrying", attempts < 5, flush=True)
+                      "http": None, "error": "Visual QC rejected; regeneration pending"})
+            print("SCENE_REJECTED", scene, "attempts", attempts, "retrying", True, flush=True)
         state[scene] = x
         atomic_state(state_path, state)
         print("REVIEW_APPLIED", cfg["revision"], scene, decision, flush=True)
