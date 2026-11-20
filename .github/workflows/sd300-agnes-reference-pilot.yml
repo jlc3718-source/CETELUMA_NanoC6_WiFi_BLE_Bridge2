@@ -1,4 +1,4 @@
-name: SD300 Agnes full-model video-reference pilot
+name: SD300 Agnes free 12-second Flash keyframe pilot
 on:
   push:
     branches: [main]
@@ -15,7 +15,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
     timeout-minutes: 9
     steps:
-      - name: Render source-faithful opening with Agnes Video 2.5
+      - name: Generate 12s outdoor opening with Agnes free Video 2.5 Flash
         shell: bash
         run: |
           set -euo pipefail
@@ -26,15 +26,16 @@ jobs:
           root.mkdir(mode=0o700,parents=True,exist_ok=True)
           key=Path('/home/ubuntu/agnes-sd300/key').read_text().strip()
           url='https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/fa54c58f-9b51-457e-8051-99efb53753a3.mp4'
-          payload={'model':'agnes-video-2.5','mode':'reference','seconds':'10',
-             'size':'1080P','aspect_ratio':'9:16','n':1,
-             'prompt':('Faithful, ultra-photorealistic luxury commercial video-to-video remaster of the referenced REAL 10-second outdoor work-gear clip. '+
+          payload={'model':'agnes-video-2.5-flash','mode':'keyframe','seconds':'12',
+             'size':'720P','aspect_ratio':'9:16','n':1,
+             'prompt':('Photorealistic 12-second luxury commercial recreation from the exact real opening and ending photo frames of the outdoor work-gear shot. '+
                'Match the actual reference every moment: worn black work boots, red and black Milwaukee work gloves, wet gravel, grass and fallen leaves. '+
                'Keep EXACT boot and glove silhouettes, color, logos, textures, placement, movement and timing, and identical camera angle and composition. '+
                'Visually refine into immaculate cinematic documentary-grade detail, balanced dynamic range, rich true blacks, natural material texture, clear fine detail, and realistic professional lighting. '+
                'Do not add, remove, substitute or morph any object; no AI-fake footwear, new hands, people, cartoon rendering, artificial water spray, logos, captions, or scene changes. '+
                'Strictly no added audio, voice, music or narration.'),
-             'videos':[{'url':url}]}
+             'first_frame':'https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/bcd69a62-cda9-40d8-9b8d-e80e345a48cf.jpg',
+             'last_frame':'https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/100912f6-c4ba-4ebc-ab9f-b338af6e285a.jpg'}
           req=urllib.request.Request('https://apihub.agnes-ai.com/v1/videos',
             data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,
               'Content-Type':'application/json','Accept':'application/json'})
@@ -49,7 +50,7 @@ jobs:
           result=body.get('data') or body.get('result') or body
           if not isinstance(result,dict):result={}
           vid=result.get('video_id') or result.get('id') or result.get('task_id')
-          state={'model':'agnes-video-2.5','status':'submitted' if vid else 'blocked',
+          state={'model':'agnes-video-2.5-flash','status':'submitted' if vid else 'blocked',
                  'http':code,'video_id':str(vid) if vid else None,'created_at':int(time.time())}
           if code>=400 or not vid:
               state['error']=str(body.get('message') or body.get('error') or body.get('detail') or '')[:250]
@@ -60,7 +61,7 @@ jobs:
           print('PILOT_VIDEO_ID',vid,flush=True)
           for attempt in range(19):
               time.sleep(15)
-              q=urllib.parse.urlencode({'video_id':str(vid),'model_name':'agnes-video-2.5'})
+              q=urllib.parse.urlencode({'video_id':str(vid),'model_name':'agnes-video-2.5-flash'})
               try:
                   with urllib.request.urlopen(urllib.request.Request('https://apihub.agnes-ai.com/agnesapi?'+q,
                     headers={'Authorization':'Bearer '+key,'Accept':'application/json'}),timeout=35) as resp: info=json.load(resp)
