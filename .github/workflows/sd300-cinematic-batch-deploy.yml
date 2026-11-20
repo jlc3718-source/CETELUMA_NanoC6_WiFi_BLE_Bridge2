@@ -75,7 +75,8 @@ jobs:
           EOF
           sudo -n install -m 644 "$unit" /etc/systemd/system/sd300-cinematic-batch-v3.service
           sudo -n systemctl daemon-reload
-          sudo -n systemctl enable --now sd300-cinematic-batch-v3.service
+          sudo -n systemctl enable sd300-cinematic-batch-v3.service
+          sudo -n systemctl restart sd300-cinematic-batch-v3.service
           sleep 3
           systemctl is-active sd300-cinematic-batch-v3.service
           systemctl show sd300-cinematic-batch-v3.service --property=ExecMainStatus,NRestarts,SubState
