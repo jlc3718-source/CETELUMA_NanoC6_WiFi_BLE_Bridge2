@@ -1,0 +1,59 @@
+name: Recover paused SD300 QC scenes
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agnes-sd300-state-mutation
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Clear legacy five-attempt QC pauses only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json,os,subprocess,time,uuid
+          from pathlib import Path
+          root=Path('/home/ubuntu/agnes-sd300')
+          statefile=root/'state.json'
+          manifest=json.loads((root/'scene-manifest.json').read_text())
+          assert len(manifest['scenes'])==9
+          service='agnes-sd300.service'
+          subprocess.run(['systemctl','stop',service],check=True,timeout=45)
+          try:
+              st=statefile.stat()
+              state=json.loads(statefile.read_text())
+              ids={'03_setup','04_running','06_night'}
+              changed=[]
+              for scene in ids:
+                  item=state.get(scene,{})
+                  if item.get('status')!='failed' or 'QC failed five times' not in str(item.get('error','')):
+                      continue
+                  if item.get('approved') is True:
+                      continue
+                  item.update(status='retrying',id=None,http=None,approved=False,approved_sha256=None,
+                              error='Legacy QC attempt cap cleared; regeneration pending')
+                  changed.append(scene)
+              if changed:
+                  folder=root/'managed-backups'/('qc-cap-recovery-'+time.strftime('%Y%m%d-%H%M%S',time.gmtime())+'-'+uuid.uuid4().hex[:6])
+                  folder.mkdir(parents=True,exist_ok=False)
+                  import shutil
+                  shutil.copy2(statefile,folder/'state.json.before-recovery')
+                  temp=statefile.with_name('state.json.recover-'+uuid.uuid4().hex+'.tmp')
+                  try:
+                      with temp.open('w') as f:
+                          json.dump(state,f,indent=2);f.write('\n');f.flush();os.fsync(f.fileno())
+                      os.chown(temp,st.st_uid,st.st_gid)
+                      os.chmod(temp,st.st_mode & 0o777)
+                      os.replace(temp,statefile)
+                  finally:
+                      temp.unlink(missing_ok=True)
+              print('QC_PAUSE_CLEARED',','.join(sorted(changed)) if changed else 'none',flush=True)
+          finally:
+              subprocess.run(['systemctl','start',service],check=True,timeout=45)
+              print('RUNNER_ACTIVE',subprocess.run(['systemctl','is-active',service],capture_output=True,text=True).stdout.strip(),flush=True)
+          PY
