@@ -1,0 +1,42 @@
+name: SD300 Agnes API and video-input preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sd300-agnes-api-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Verify Agnes API models and opening reference without exposing credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          from pathlib import Path
+          key=Path('/home/ubuntu/agnes-sd300/key').read_text().strip()
+          req=urllib.request.Request('https://apihub.agnes-ai.com/v1/models',
+              headers={'Authorization':'Bearer '+key,'Accept':'application/json'})
+          try:
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  d=json.load(r)
+                  raw=d.get('data',[]) if isinstance(d,dict) else []
+                  ids={str(x.get('id')) for x in raw if isinstance(x,dict)}
+                  print('AGNES_API_HTTP',r.status)
+                  print('AGNES_VIDEO_25_AVAILABLE', 'agnes-video-2.5' in ids)
+                  print('AGNES_FLASH_AVAILABLE', 'agnes-video-2.5-flash' in ids)
+                  print('AGNES_MODEL_COUNT',len(ids))
+          except urllib.error.HTTPError as e:
+              print('AGNES_API_HTTP',e.code)
+              raise
+          video='https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/fa54c58f-9b51-457e-8051-99efb53753a3.mp4'
+          req=urllib.request.Request(video,method='HEAD')
+          with urllib.request.urlopen(req,timeout=25) as r:
+              print('AGNES_REFERENCE_HTTP',r.status)
+              print('AGNES_REFERENCE_BYTES',r.headers.get('Content-Length','unreported'))
+          PY
