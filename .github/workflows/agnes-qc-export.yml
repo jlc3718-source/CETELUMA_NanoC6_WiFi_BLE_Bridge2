@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      include_previously_exported:
+        description: Re-export all unapproved current-revision MP4s for independent QC
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -18,6 +23,8 @@ jobs:
           persist-credentials: false
       - name: Export only newly downloaded unapproved scene versions
         shell: bash
+        env:
+          SD300_FORCE_EXPORT: \${{ inputs.include_previously_exported || 'false' }}
         run: |
           set -euo pipefail
           python3 -m py_compile agnes-remote/review.py
@@ -30,6 +37,7 @@ jobs:
           export_dir=Path(os.environ['GITHUB_WORKSPACE'])/'sd300-review'
           marker=root/'qc-previewed.json'
           seen=json.loads(marker.read_text()) if marker.exists() else {}
+          force=os.environ.get('SD300_FORCE_EXPORT','false').lower()=='true'
           new={}
           records=[]
           for scene in cfg['scenes']:
@@ -41,7 +49,7 @@ jobs:
                   path.stat().st_size<50000):
                   continue
               fingerprint=hashlib.sha256(path.read_bytes()).hexdigest()
-              if seen.get(key)==fingerprint: continue
+              if not force and seen.get(key)==fingerprint: continue
               export_dir.mkdir(parents=True,exist_ok=True)
               dest=export_dir/(key+'.mp4')
               shutil.copy2(path,dest)
