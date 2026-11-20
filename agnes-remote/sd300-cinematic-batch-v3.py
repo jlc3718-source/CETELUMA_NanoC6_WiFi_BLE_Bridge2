@@ -203,7 +203,7 @@ def submit(scene, cfg, state, key):
         return item["job_id"]
     payload = {
         "model": cfg["model"], "mode": cfg["mode"],
-        "seconds": cfg["seconds"], "size": cfg["size"],
+        "seconds": str(cfg["seconds"]), "size": cfg["size"],
         "aspect_ratio": cfg["aspect_ratio"], "n": 1,
         "images": scene["reference_images"], "prompt": scene["prompt"]
     }
