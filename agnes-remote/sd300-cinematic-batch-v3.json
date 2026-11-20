@@ -127,5 +127,7 @@
       ],
       "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Real SD300 orange dryer base, short front gray glove prongs, taller rear boot mounts, central charcoal display, user's original work boots and red/black Milwaukee gloves on nearby mat. Premium realistic concluding camera drift."
     }
-  ]
+  ],
+  "voiceover_sha256": "2226f449b01dd5a0dd62c2ef6a0e72df9e186207b7acf0c89b20ed0a61f88613",
+  "voiceover_seconds": 103.2
 }
