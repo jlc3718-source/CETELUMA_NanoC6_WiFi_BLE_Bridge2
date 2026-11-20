@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795146071,
+  "updated_unix": 1795147248,
   "runner_active": "active",
   "remote_active": "active",
   "last_remote_command": {
@@ -25,17 +25,17 @@
     },
     {
       "scene": "03_setup",
-      "status": "failed",
+      "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "QC failed five times; paused for manual inspection"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261120040046477404575DOyPXod0)"
     },
     {
       "scene": "04_running",
-      "status": "failed",
+      "status": "retrying",
       "video_ready": false,
-      "http": null,
-      "error": "QC failed five times; paused for manual inspection"
+      "http": 503,
+      "error": "video queue is full, please retry later (request id: 20261120040046742269213LTRt8RO6)"
     },
     {
       "scene": "05_boot",
@@ -46,10 +46,10 @@
     },
     {
       "scene": "06_night",
-      "status": "failed",
+      "status": "queued",
       "video_ready": false,
-      "http": null,
-      "error": "QC failed five times; paused for manual inspection"
+      "http": 200,
+      "error": ""
     },
     {
       "scene": "07_morning",
