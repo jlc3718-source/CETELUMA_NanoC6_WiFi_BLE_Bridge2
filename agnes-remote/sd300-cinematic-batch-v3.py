@@ -61,8 +61,7 @@ def error_text(obj):
 def request(url, token, payload=None, timeout=55):
     headers = {"Authorization": "Bearer " + token,
                "Content-Type": "application/json",
-               "Accept": "application/json",
-               "User-Agent": "SD300-cinematic-batch/3"}
+               "Accept": "application/json"}
     raw = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(url, data=raw, headers=headers)
     try:
