@@ -5,8 +5,6 @@ on:
     paths:
       - '.github/workflows/sd300-agnes-reference-pilot.yml'
   workflow_dispatch:
-  schedule:
-    - cron: '7-57/10 * * * *'
 permissions:
   contents: read
 concurrency:
