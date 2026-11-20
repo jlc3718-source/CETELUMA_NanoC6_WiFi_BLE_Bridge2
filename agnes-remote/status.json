@@ -1,5 +1,5 @@
 {
-  "updated_unix": 1795127669,
+  "updated_unix": 1795137863,
   "runner_active": "inactive",
   "remote_active": "active",
   "last_remote_command": {
@@ -32,10 +32,10 @@
     },
     {
       "scene": "04_running",
-      "status": "downloaded",
-      "video_ready": true,
-      "http": 200,
-      "error": ""
+      "status": "failed",
+      "video_ready": false,
+      "http": null,
+      "error": "QC failed five times; paused for manual inspection"
     },
     {
       "scene": "05_boot",
