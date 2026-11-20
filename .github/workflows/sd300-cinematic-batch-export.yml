@@ -1,0 +1,75 @@
+name: SD300 cinematic batch status and finished video export
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-cinematic-batch-export.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '3-58/10 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: sd300-cinematic-batch-export
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - name: Check the actual Oracle Agnes batch and export only a new finished MP4
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess, os, shutil, hashlib
+          root=Path('/home/ubuntu/agnes-sd300-remake')
+          public=Path(os.environ['GITHUB_WORKSPACE'])
+          statefile=root/'batch-v3-state.json'
+          status=subprocess.run(['systemctl','is-active','sd300-cinematic-batch-v3.service'],
+                                capture_output=True,text=True,timeout=10).stdout.strip()
+          print('SD300_BATCH_SERVICE_STATUS',status)
+          if not statefile.is_file():
+              print('SD300_BATCH_STATE_MISSING')
+              raise SystemExit(0)
+          state=json.loads(statefile.read_text())
+          cfg=json.loads((root/'sd300-cinematic-batch-v3.json').read_text())
+          for item in cfg['scenes']:
+              x=state.get('scenes',{}).get(item['id'],{})
+              print('SD300_SCENE',item['id'],'status='+str(x.get('status','waiting')),
+                    'http='+str(x.get('http','')),'accepted='+str(bool(x.get('job_id'))),
+                    'attempts='+str(x.get('attempts',0)),
+                    'bytes='+str(x.get('file_bytes',0)))
+          print('SD300_ASSEMBLY_STATUS',state.get('assemble_status','not_started'))
+          target=root/cfg['output_name']
+          marker=root/'batch-v3-exported.sha256'
+          if state.get('assemble_status')!='completed' or not target.is_file():
+              print('SD300_EXPORT_PENDING')
+              raise SystemExit(0)
+          fingerprint=hashlib.sha256(target.read_bytes()).hexdigest()
+          if marker.exists() and marker.read_text().strip()==fingerprint:
+              print('SD300_EXPORT_ALREADY_DONE')
+              raise SystemExit(0)
+          shutil.copy2(target,public/target.name)
+          (public/'SD300_BATCH_EXPORT_SHA256.txt').write_text(fingerprint+'\n')
+          print('SD300_EXPORT_READY',target.name,'bytes='+str(target.stat().st_size))
+          PY
+      - name: Attach final film with user-approved narration
+        uses: actions/upload-artifact@v4
+        with:
+          name: SD300-Cinematic-AI-Complete-Approved-Voice
+          path: |
+            SD300_Cinematic_AI_Full_103s_Approved_Voice.mp4
+            SD300_BATCH_EXPORT_SHA256.txt
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Mark the film exported only after a successful artifact upload
+        shell: bash
+        run: |
+          if [ -s SD300_BATCH_EXPORT_SHA256.txt ]; then
+            cp SD300_BATCH_EXPORT_SHA256.txt /home/ubuntu/agnes-sd300-remake/batch-v3-exported.sha256
+            echo SD300_FINAL_FILM_PUBLISHED_TO_GITHUB_ARTIFACTS
+          else
+            echo SD300_NOT_READY_YET
+          fi
