@@ -1,0 +1,36 @@
+name: SD300 Agnes Oracle restore preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sd300-agnes-restore-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Verify dedicated Agnes runner without changing services or exposing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess,shutil
+          from pathlib import Path
+          root=Path('/home/ubuntu/agnes-sd300')
+          service_names=['agnes-sd300.service','agnes-remote.service','agnes-publish.service']
+          def active(service):
+              p=subprocess.run(['systemctl','is-active',service],capture_output=True,text=True,timeout=15)
+              return p.stdout.strip() or 'unavailable'
+          result={'agnes_root_exists':root.is_dir(),
+                  'runner_source_exists':(root/'run.py').is_file(),
+                  'scene_manifest_exists':(root/'scene-manifest.json').is_file(),
+                  'agnes_key_present':(root/'key').is_file(),
+                  'ffmpeg_available':bool(shutil.which('ffmpeg')),
+                  'services':{s:active(s) for s in service_names}}
+          print('SD300_AGNES_RESTORE_PREFLIGHT='+json.dumps(result,sort_keys=True),flush=True)
+          if not (result['agnes_root_exists'] and result['agnes_key_present']):
+              print('BLOCKED: dedicated Agnes files or private credential missing. No services changed.',flush=True)
+          PY
