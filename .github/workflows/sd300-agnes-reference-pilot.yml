@@ -1,4 +1,4 @@
-name: SD300 Agnes free 12-second Flash keyframe pilot
+name: SD300 Agnes cinematic AI remake Flash 12-second pilot
 on:
   push:
     branches: [main]
@@ -28,22 +28,24 @@ jobs:
           root.mkdir(mode=0o700,parents=True,exist_ok=True)
           key=Path('/home/ubuntu/agnes-sd300/key').read_text().strip()
           url='https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/fa54c58f-9b51-457e-8051-99efb53753a3.mp4'
-          payload={'model':'agnes-video-2.5-flash','mode':'keyframe','seconds':'12',
+          payload={'model':'agnes-video-2.5-flash','mode':'reference','seconds':'12',
              'size':'720P','aspect_ratio':'9:16','n':1,
-             'prompt':('Photorealistic 12-second luxury commercial recreation from the exact real opening and ending photo frames of the outdoor work-gear shot. '+
-               'Match the actual reference every moment: worn black work boots, red and black Milwaukee work gloves, wet gravel, grass and fallen leaves. '+
-               'Keep EXACT boot and glove silhouettes, color, logos, textures, placement, movement and timing, and identical camera angle and composition. '+
-               'Visually refine into immaculate cinematic documentary-grade detail, balanced dynamic range, rich true blacks, natural material texture, clear fine detail, and realistic professional lighting. '+
-               'Do not add, remove, substitute or morph any object; no AI-fake footwear, new hands, people, cartoon rendering, artificial water spray, logos, captions, or scene changes. '+
-               'Strictly no added audio, voice, music or narration.'),
-             'first_frame':'https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/bcd69a62-cda9-40d8-9b8d-e80e345a48cf.jpg',
-             'last_frame':'https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/100912f6-c4ba-4ebc-ab9f-b338af6e285a.jpg'}
+             'prompt':('A VISIBLE cinematic AI commercial remake of the exact real work gear in the photo references, NOT a plain replay of the input phone footage. '+
+               'This must look unmistakably like an expensive professional, hyperreal product-ad shot: theatrical natural side-lighting and luminous highlights across wet leather and woven fabric; '+
+               'visibly rich cinematic teal-shadow and golden-highlight color grade; luxurious deep blacks; crisp microfiber and rubber textures; detailed droplets and realistic damp fabric; professionally balanced highlights with elegant shallow depth of field and subtle cinematic bloom. '+
+               'Introduce a physically realistic slow controlled push-in and slight lateral parallax from overhead, starting on the wet red-and-black Milwaukee gloves and landing on the two scuffed black lace-up work boots. '+
+               'The same EXACT two boots, two Milwaukee gloves, brand markings, water spigot, blue hose, grass, autumn leaves, concrete pad and visible shoe at the bottom must remain accurate to the supplied reference images. '+
+               'Keep every subject identity, footwear shape, glove material and actual real equipment true to reference; no product substitutions, no redesign, no added people or invented machinery. '+
+               'Improve dramatically the advertising cinematography, depth, lighting, color and surface realism, while remaining genuinely photographic and free from cartoon or illustration aesthetics. '+
+               'One continuous smooth cinematic shot. No text, titles, voice, soundtrack or music.'),
+             'images':['https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/bcd69a62-cda9-40d8-9b8d-e80e345a48cf.jpg',
+                       'https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/100912f6-c4ba-4ebc-ab9f-b338af6e285a.jpg']}
           previous={}
-          statusfile=root/'pilot.json'
+          statusfile=root/'pilot_v2.json'
           if statusfile.is_file():
               try: previous=json.loads(statusfile.read_text())
               except (ValueError,OSError): previous={}
-          if previous.get('status')=='downloaded' and (root/'pilot_00.mp4').is_file():
+          if previous.get('status')=='downloaded' and (root/'pilot_v2_00.mp4').is_file():
               print('PILOT_ALREADY_DOWNLOADED',flush=True)
               raise SystemExit(0)
           if previous.get('status')=='blocked' and previous.get('http') in (400,401,403,422):
@@ -101,10 +103,10 @@ jobs:
                  'http':code,'video_id':str(vid) if vid else None,'created_at':int(time.time())}
           if code>=400 or not vid:
               state['error']=str(body.get('message') or body.get('error') or body.get('detail') or '')[:250]
-              (root/'pilot.json').write_text(json.dumps(state,indent=2)+'\n')
+              (root/'pilot_v2.json').write_text(json.dumps(state,indent=2)+'\n')
               print('PILOT_BLOCKED',code,state['error'],flush=True)
               raise SystemExit(0)
-          (root/'pilot.json').write_text(json.dumps(state,indent=2)+'\n')
+          (root/'pilot_v2.json').write_text(json.dumps(state,indent=2)+'\n')
           print('PILOT_VIDEO_ID',vid,flush=True)
           for attempt in range(19):
               time.sleep(15)
@@ -119,11 +121,11 @@ jobs:
               if not isinstance(r,dict):r=info
               status=str(r.get('status') or info.get('status') or 'unknown').lower()
               state['status']=status
-              (root/'pilot.json').write_text(json.dumps(state,indent=2)+'\n')
+              (root/'pilot_v2.json').write_text(json.dumps(state,indent=2)+'\n')
               print('PILOT_STATUS',attempt+1,status,flush=True)
               if status in ('failed','error','canceled','cancelled'):
                   state['error']=str(info.get('message') or info.get('error') or r.get('message') or '')[:250]
-                  (root/'pilot.json').write_text(json.dumps(state,indent=2)+'\n')
+                  (root/'pilot_v2.json').write_text(json.dumps(state,indent=2)+'\n')
                   break
               if status in ('completed','succeeded','success','done'):
                   video_url=r.get('url') or r.get('video_url') or (r.get('metadata') or {}).get('url') or info.get('url') or (info.get('metadata') or {}).get('url')
@@ -131,12 +133,12 @@ jobs:
                   try:
                       with urllib.request.urlopen(video_url,timeout=180) as resp:data=resp.read(80000001)
                       assert 10000<len(data)<=80000000 and b'ftyp' in data[:64], 'Video failed MP4 validation'
-                      out=root/'pilot_00.mp4'
-                      tmp=root/'pilot_00.tmp'
+                      out=root/'pilot_v2_00.mp4'
+                      tmp=root/'pilot_v2_00.tmp'
                       tmp.write_bytes(data);tmp.replace(out)
                       state['file_bytes']=len(data)
                       state['status']='downloaded'
-                      (root/'pilot.json').write_text(json.dumps(state,indent=2)+'\n')
+                      (root/'pilot_v2.json').write_text(json.dumps(state,indent=2)+'\n')
                       print('PILOT_VIDEO_DOWNLOADED_BYTES',len(data),flush=True)
                   except Exception as err:
                       print('PILOT_DOWNLOAD_FAILED',type(err).__name__,flush=True)
@@ -146,8 +148,8 @@ jobs:
       - name: Attach pilot preview when available
         uses: actions/upload-artifact@v4
         with:
-          name: SD300-Agnes-Reference-Pilot
-          path: /home/ubuntu/agnes-sd300-remake/pilot_00.mp4
+          name: SD300-Agnes-Cinematic-Opening-V2
+          path: /home/ubuntu/agnes-sd300-remake/pilot_v2_00.mp4
           if-no-files-found: ignore
           retention-days: 14
           compression-level: 0
