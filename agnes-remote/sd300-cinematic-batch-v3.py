@@ -263,11 +263,8 @@ def poll(scene, cfg, state, key, job):
         if (ROOT / "STOP").exists():
             raise SystemExit("SD300 batch stopped by STOP flag")
         try:
-            url = API + "/" + urllib.parse.quote(job, safe="")
-            code, obj, headers = request(url, key)
-            if code == 404:
-                args = urllib.parse.urlencode({"video_id": job, "model_name": cfg["model"]})
-                code, obj, headers = request(POLL + "?" + args, key)
+            args = urllib.parse.urlencode({"video_id": job, "model_name": cfg["model"]})
+            code, obj, headers = request(POLL + "?" + args, key)
         except (OSError, TimeoutError) as error:
             failures += 1
             update_item(state, scene_id, status="poll_network_retry",
