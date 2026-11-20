@@ -1,0 +1,30 @@
+name: SD300 Agnes secure recovery public key
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sd300-agnes-secure-key.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Generate a private on-Oracle RSA key and print only public half
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$HOME/.sd300-agnes-restore"
+          mkdir -p "$root"
+          chmod 700 "$root"
+          if [ ! -s "$root/private.pem" ]; then
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$root/private.pem" 2>/dev/null
+            chmod 600 "$root/private.pem"
+          fi
+          openssl pkey -in "$root/private.pem" -pubout -out "$root/public.pem"
+          echo SD300_RECOVERY_PUBLIC_KEY_BEGIN
+          cat "$root/public.pem"
+          echo SD300_RECOVERY_PUBLIC_KEY_END
