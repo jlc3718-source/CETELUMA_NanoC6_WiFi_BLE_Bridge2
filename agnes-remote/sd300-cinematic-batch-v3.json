@@ -1,0 +1,131 @@
+{
+  "version": 3,
+  "revision": "sd300-11-scene-cinematic-v3-user-approved-part1-20261120",
+  "model": "agnes-video-2.5-flash",
+  "mode": "reference",
+  "seconds": 12,
+  "size": "720P",
+  "aspect_ratio": "9:16",
+  "retry_seconds_queue_full": 1,
+  "voiceover_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6aa171d7-2d40-40d2-a31b-fcb345ac324d.mp3",
+  "output_name": "SD300_Cinematic_AI_Full_103s_Approved_Voice.mp4",
+  "scenes": [
+    {
+      "id": "00_approved_cinematic_opening",
+      "name": "Approved original outdoor cinematic AI opening",
+      "approved": true,
+      "target_seconds": 10,
+      "source_file": "pilot_v2_00.mp4"
+    },
+    {
+      "id": "01_cinematic",
+      "name": "Outdoor to indoor transition",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6de7b2f3-6d13-4c02-93c6-2e28fcbf0786.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/2845ad19-a9ec-4d8a-a321-590bd075db8a.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Actual black lace-up work boots and red-black Milwaukee gloves transition from wet grassy yard and stone pad to the true Airthereal SD300 dryer standing in a wood-paneled mudroom. Use an elegant realistic match cut, never morph one object into another."
+    },
+    {
+      "id": "02_cinematic",
+      "name": "Dryer and work gear close-up",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/49b775fe-f421-43ae-82a5-86ca734211c4.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/139e7bb3-73f7-4b9f-9867-7f1033ac261a.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Airthereal SD300 real dark gray controller, bright orange four-attachment base, two long rear boot shafts, two short front glove nozzles, true worn black work boots and red/black gloves. Boot soles must remain solid and unpierced; attachments inside openings."
+    },
+    {
+      "id": "03_cinematic",
+      "name": "Attachment detail",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/7c0189b8-08f7-443d-a150-d69ef12cda30.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/cf633f63-7e67-44ae-8e05-5dacaeaa5729.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: True original worn boots and Milwaukee work gloves over the SD300 dryer, branded gloves in close focus and thick boot treads. Preserve exact short glove supports and rear longer boots, orange front housings."
+    },
+    {
+      "id": "04_cinematic",
+      "name": "Front control panel introduction",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/5bde67af-bf3d-4d8e-8c22-44c304ffb248.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/f8d2887f-37a8-4147-91b5-0e5410a6ca45.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Tight truthful SD300 display with softly glowing digits, black plastic housing and black-and-orange supports. A single realistic hand approaches control, correct anatomy and realistic panel marks; no invented digits."
+    },
+    {
+      "id": "05_cinematic",
+      "name": "Finger presses controls",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/e1ab236e-32d3-4fdf-9543-fd64d1aa13fe.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8a822077-423d-421a-8f75-3fb0d7f9a600.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Macro ad close-up of the single real hand pressing the Airthereal SD300 genuine control buttons; digital segments and numbers are accurate to photo reference. Never morph hands or change panel shape."
+    },
+    {
+      "id": "06_cinematic",
+      "name": "Digital timer readout",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/0e23d6d6-a106-465a-b401-1f82c2cc4aad.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/36e0d952-630b-4902-99a4-459be03050db.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Tight SD300 front face and display; deep charcoal housing, red lit digits, orange attachment base, boots and gloves in frame. No fictitious branding, avoid erroneous glyphs and floating numerals."
+    },
+    {
+      "id": "07_cinematic",
+      "name": "Continuing SD300 settings",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/25db7913-93bd-42bc-981a-85096fcd18b4.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/f95be540-8fe1-4b54-9767-108d4a650de3.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: The same Airthereal SD300 control demonstration with real digital readout, original black gloves and orange supports, wood wall. Camera naturally steadies over control display, subtle premium bokeh."
+    },
+    {
+      "id": "08_cinematic",
+      "name": "Wider machine reveal",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/7d989364-3169-4187-aaf0-80528586b7e2.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/1bfb046b-503e-4772-acd5-459bd4fc5a50.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Transition from accurate controller close-up to wider setup view. Whole real SD300 dryer with tall boot tubes, orange four-arm arrangement, wood wall and pale counter. Preserve authentic actual components, no tube through boot soles."
+    },
+    {
+      "id": "09_cinematic",
+      "name": "Boots and gloves after cycle",
+      "approved": false,
+      "target_seconds": 10,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/9b94e4c1-68f4-45de-a861-868579645112.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/e0119071-7787-4593-b44b-20d39bec87d9.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Actual boots and red-black gloves detached and resting beside the orange SD300 unit on pale wood-look surface with wood-panel wall. Two boots and two gloves only; realistic aftermath of drying."
+    },
+    {
+      "id": "10_cinematic",
+      "name": "SD300 closing product shot",
+      "approved": false,
+      "target_seconds": 3.2,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/71948cd3-c053-4bcf-97e2-a19c821b867b.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/b104ec35-eddc-437e-a167-f6047f56089c.jpg"
+      ],
+      "prompt": "TRUE 12-second photorealistic cinematic commercial remake using the supplied REAL reference photos. Match the visually approved cinematic Part 1: strongly enhanced premium light shaping, deep naturally textured blacks, atmospheric warm specular highlights, clean shadow detail, tasteful golden-slate high-end film grading, cinematic depth of field and a controlled slow dolly glide. This is a visually transformed luxury commercial, not a near-identical phone recording. Always keep the product geometry physically accurate, real photographic hardware, correct boot and glove appearance, genuine Airthereal SD300 dryer proportions, intact boot soles, no impossible adapter rods, no added objects or missing gear. Real human anatomy if hands appear. No new dialogue, subtitles, graphics, music, text overlays, brands not present in photos, cartoons, AI plastic look, incorrect display text or floating pieces. Vertical composition, one coherent shot. Scene: Real SD300 orange dryer base, short front gray glove prongs, taller rear boot mounts, central charcoal display, user's original work boots and red/black Milwaukee gloves on nearby mat. Premium realistic concluding camera drift."
+    }
+  ]
+}
