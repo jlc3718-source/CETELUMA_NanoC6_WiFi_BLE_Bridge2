@@ -1,0 +1,43 @@
+name: SD300 cancel and clean dedicated Oracle assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Stop SD300 runner and delete only SD300 assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import shutil,subprocess
+          root=Path('/home/ubuntu/agnes-sd300')
+          public=Path('/var/www/agnes-public/videos')
+          service='agnes-sd300.service'
+          def cmd(*args):
+              r=subprocess.run(args,capture_output=True,text=True,timeout=60)
+              print('COMMAND',args[1:],r.returncode,r.stdout.strip(),r.stderr.strip()[:150])
+              return r
+          if not root.exists() or not root.is_dir() or root.is_symlink():
+              print('SD300_ROOT_ABSENT');raise SystemExit(0)
+          if not (root/'run.py').is_file() or not (root/'scene-manifest.json').is_file():
+              raise SystemExit('Unexpected SD300 root contents; refusing deletion')
+          result=cmd('systemctl','stop',service)
+          if result.returncode:raise SystemExit('Cannot stop SD300 service')
+          result=cmd('systemctl','disable',service)
+          if result.returncode:raise SystemExit('Cannot disable SD300 service')
+          if cmd('systemctl','is-active','--quiet',service).returncode==0:
+              raise SystemExit('SD300 service still active')
+          # This is the dedicated SD300 project directory only.
+          shutil.rmtree(root)
+          ids=('01_electrician','02_gear','03_setup','04_running','05_boot',
+               '06_night','07_morning','08_morning_detail','09_ready_for_work')
+          for scene in ids:
+              p=public/(scene+'.mp4')
+              if p.is_file() and not p.is_symlink():p.unlink()
+          print('SD300_ORACLE_CLEANUP_COMPLETE',not root.exists(),flush=True)
+          PY
