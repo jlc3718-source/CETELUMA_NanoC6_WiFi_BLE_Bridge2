@@ -28,7 +28,8 @@ jobs:
           statefile=root/'batch-v3-state.json'
           status=subprocess.run(['systemctl','is-active','sd300-cinematic-batch-v3.service'],
                                 capture_output=True,text=True,timeout=10).stdout.strip()
-          print('SD300_BATCH_SERVICE_STATUS',status)\n          print('SD300_BATCH_STATUS_CHECK_V3')
+          print('SD300_BATCH_SERVICE_STATUS',status)
+          print('SD300_BATCH_STATUS_CHECK_V3')
           print('SD300_BATCH_STATUS_CHECK_REVISION','v3-generation-active')
           if not statefile.is_file():
               print('SD300_BATCH_STATE_MISSING')
