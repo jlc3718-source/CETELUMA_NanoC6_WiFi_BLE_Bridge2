@@ -76,7 +76,7 @@ jobs:
                       # Agnes queue-full is temporary. Retry each second; do not create a second job after an accepted ID.
                       statusfile.write_text(json.dumps({'model':'agnes-video-2.5-flash',
                           'status':'queue_full_retrying','http':503,'attempts':attempts,
-                          'updated_at':int(time.time()),'video_id':None},indent=2)+'\\n')
+                          'updated_at':int(time.time()),'video_id':None},indent=2)+'\n')
                       if attempts==1 or attempts%30==0:
                           print('PILOT_503_QUEUE_FULL_ATTEMPT',attempts,'RETRY_IN_SECONDS',1,flush=True)
                       time.sleep(1)
@@ -88,7 +88,7 @@ jobs:
                       except (ValueError,TypeError):delay=min(900,15*2**min(rate_failures-1,6))
                       statusfile.write_text(json.dumps({'model':'agnes-video-2.5-flash',
                           'status':'rate_limited','http':429,'attempts':attempts,
-                          'retry_seconds':delay,'updated_at':int(time.time()),'video_id':None},indent=2)+'\\n')
+                          'retry_seconds':delay,'updated_at':int(time.time()),'video_id':None},indent=2)+'\n')
                       print('PILOT_429_RETRY_AFTER_SECONDS',delay,flush=True)
                       time.sleep(delay)
                       continue
