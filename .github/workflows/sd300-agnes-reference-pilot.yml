@@ -108,7 +108,7 @@ jobs:
               raise SystemExit(0)
           (root/'pilot_v2.json').write_text(json.dumps(state,indent=2)+'\n')
           print('PILOT_VIDEO_ID',vid,flush=True)
-          for attempt in range(19):
+          for attempt in range(180):
               time.sleep(15)
               q=urllib.parse.urlencode({'video_id':str(vid),'model_name':'agnes-video-2.5-flash'})
               try:
