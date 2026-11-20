@@ -24,7 +24,7 @@ jobs:
       - name: Export only newly downloaded unapproved scene versions
         shell: bash
         env:
-          SD300_FORCE_EXPORT: \${{ inputs.include_previously_exported || 'false' }}
+          SD300_FORCE_EXPORT: ${{ inputs.include_previously_exported || 'false' }}
         run: |
           set -euo pipefail
           python3 -m py_compile agnes-remote/review.py
