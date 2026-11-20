@@ -356,8 +356,19 @@ def assemble(cfg, state):
     ensure_voice(cfg)
     dest = ROOT / cfg["output_name"]
     if dest.is_file() and dest.stat().st_size > 10000000:
-        log("ALREADY_ASSEMBLED", dest)
-        return
+        existing = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                                   "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
+                                   str(dest)], check=True, capture_output=True, text=True)
+        duration_existing = float(existing.stdout.strip())
+        if 103.0 <= duration_existing <= 103.35:
+            state["assemble_status"] = "completed"
+            state["final_name"] = dest.name
+            state["final_bytes"] = dest.stat().st_size
+            state["final_duration"] = duration_existing
+            atomic_json(STATE, state)
+            publish_status(state)
+            log("ALREADY_ASSEMBLED_AND_VERIFIED", dest, duration_existing)
+            return
     norm_dir = ROOT / "normalized-v3"
     norm_dir.mkdir(exist_ok=True)
     paths = []
@@ -395,14 +406,19 @@ def assemble(cfg, state):
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
                     "-i", str(dest), "-map", "0:v:0", "-f", "null", "-"],
                    check=True, timeout=900)
-    subprocess.run(["sudo", "-n", "install", "-m", "644", str(dest),
-                    str(PUBLIC / dest.name)], check=True, timeout=60)
+    # The final local file is the source of truth; public delivery is best effort.
     state["assemble_status"] = "completed"
     state["final_name"] = dest.name
     state["final_bytes"] = dest.stat().st_size
     state["final_duration"] = duration
     atomic_json(STATE, state)
     publish_status(state)
+    try:
+        subprocess.run(["sudo", "-n", "install", "-m", "644", str(dest),
+                        str(PUBLIC / dest.name)], check=True, timeout=60)
+        log("PUBLIC_VIDEO_INSTALLED", dest.name)
+    except (OSError, subprocess.SubprocessError) as error:
+        log("PUBLIC_INSTALL_FAILED_ARTIFACT_EXPORT_STILL_READY", type(error).__name__)
     log("ASSEMBLED_COMPLETE", dest, "duration", duration, "bytes", dest.stat().st_size)
 
 def main():
