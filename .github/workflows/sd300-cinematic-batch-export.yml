@@ -39,7 +39,7 @@ jobs:
               print('SD300_SCENE',item['id'],'status='+str(x.get('status','waiting')),
                     'http='+str(x.get('http','')),'accepted='+str(bool(x.get('job_id'))),
                     'attempts='+str(x.get('attempts',0)),
-                    'bytes='+str(x.get('file_bytes',0)))
+                    'bytes='+str(x.get('file_bytes',0)), 'error='+str(x.get('error',''))[:180])
           print('SD300_ASSEMBLY_STATUS',state.get('assemble_status','not_started'))
           target=root/cfg['output_name']
           marker=root/'batch-v3-exported.sha256'
