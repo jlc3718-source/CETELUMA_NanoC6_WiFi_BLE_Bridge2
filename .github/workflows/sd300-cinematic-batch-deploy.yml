@@ -1,0 +1,82 @@
+name: SD300 cinematic AI batch deploy
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agnes-remote/sd300-cinematic-batch-v3.py'
+      - 'agnes-remote/sd300-cinematic-batch-v3.json'
+      - '.github/workflows/sd300-cinematic-batch-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sd300-cinematic-v3-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate script and scene references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agnes-remote/sd300-cinematic-batch-v3.py
+          python3 - <<'PY'
+          import json
+          d=json.load(open('agnes-remote/sd300-cinematic-batch-v3.json'))
+          assert len(d['scenes'])==11 and d['scenes'][0]['approved'] is True
+          assert sum(float(x['target_seconds']) for x in d['scenes'])==103.2
+          assert all(len(s['reference_images'])==2 and s['prompt'] for s in d['scenes'][1:])
+          assert d['model']=='agnes-video-2.5-flash' and d['seconds']==12 and d['size']=='720P'
+          print('SD300_BATCH_CONFIG_VALID scenes=11 model=free-flash seconds=12 runtime=103.2')
+          PY
+      - name: Install only the dedicated SD300 cinematic batch service
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agnes-sd300-remake
+          if [ -L "$root" ]; then echo 'Unexpected symlink; refusing install'; exit 2; fi
+          test -s /home/ubuntu/agnes-sd300/key
+          test -s "$root/pilot_v2_00.mp4"
+          command -v ffmpeg
+          command -v ffprobe
+          sudo -n install -d -o ubuntu -g ubuntu -m 755 "$root"
+          if [ -f "$root/sd300-cinematic-batch-v3.py" ]; then
+            cp -p "$root/sd300-cinematic-batch-v3.py" "$root/sd300-cinematic-batch-v3.before-deploy.py"
+          fi
+          if [ -f "$root/sd300-cinematic-batch-v3.json" ]; then
+            cp -p "$root/sd300-cinematic-batch-v3.json" "$root/sd300-cinematic-batch-v3.before-deploy.json"
+          fi
+          sudo -n install -o ubuntu -g ubuntu -m 644 agnes-remote/sd300-cinematic-batch-v3.py "$root/sd300-cinematic-batch-v3.py"
+          sudo -n install -o ubuntu -g ubuntu -m 644 agnes-remote/sd300-cinematic-batch-v3.json "$root/sd300-cinematic-batch-v3.json"
+          unit="$RUNNER_TEMP/sd300-cinematic-batch-v3.service"
+          cat >"$unit" <<'EOF'
+          [Unit]
+          Description=Airthereal SD300 Agnes Cinematic AI 11 Scene Batch
+          After=network-online.target
+          Wants=network-online.target
+          [Service]
+          Type=simple
+          User=ubuntu
+          Group=ubuntu
+          WorkingDirectory=/home/ubuntu/agnes-sd300-remake
+          ExecStart=/usr/bin/python3 /home/ubuntu/agnes-sd300-remake/sd300-cinematic-batch-v3.py
+          Restart=on-failure
+          RestartSec=30
+          StartLimitIntervalSec=0
+          TimeoutStopSec=20
+          NoNewPrivileges=false
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo -n install -m 644 "$unit" /etc/systemd/system/sd300-cinematic-batch-v3.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now sd300-cinematic-batch-v3.service
+          sleep 3
+          systemctl is-active sd300-cinematic-batch-v3.service
+          systemctl show sd300-cinematic-batch-v3.service --property=ExecMainStatus,NRestarts,SubState
+          echo SD300_BATCH_V3_DEPLOYED
