@@ -1,0 +1,30 @@
+name: SD300 V8 live generation status
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-full-ai-v8-status.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Check V8 and legacy V4 without changing jobs
+        run: |
+          echo V8_SERVICE=$(systemctl is-active sd300-full-ai-v8.service || true)
+          echo V4_SERVICE=$(systemctl is-active sd300-full-ai-v4.service || true)
+          journalctl -u sd300-full-ai-v8.service -n 15 --no-pager -o cat || true
+          python3 - <<'PY'
+          import json,pathlib
+          for version,root in [('v8','/home/ubuntu/agnes-sd300-v8'),('v4','/home/ubuntu/agnes-sd300-remake')]:
+              p=pathlib.Path(root)/('full-ai-'+version+'-state.json')
+              if not p.exists():
+                  print(version,'STATE_MISSING')
+                  continue
+              s=json.loads(p.read_text())
+              print(version,'UPDATED',s.get('updated_utc'),'ASSEMBLY',s.get('assemble_status'))
+              for k,v in s.get('scenes',{}).items():
+                  print(version,'SCENE',k,'status',v.get('status'),'http',v.get('http'),'attempts',v.get('attempts'),'bytes',v.get('file_bytes'),'job',bool(v.get('job_id')),'error',str(v.get('error',''))[:110])
+          PY
