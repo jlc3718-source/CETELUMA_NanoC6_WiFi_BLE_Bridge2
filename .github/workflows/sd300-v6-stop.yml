@@ -1,0 +1,16 @@
+name: Stop rejected SD300 V6
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-v6-stop.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stop:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    steps:
+      - run: |
+          sudo -n systemctl stop sd300-full-ai-v6.service || true
+          sudo -n systemctl reset-failed sd300-full-ai-v6.service || true
+          echo V6_SERVICE=$(systemctl is-active sd300-full-ai-v6.service || true)
