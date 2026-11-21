@@ -1,0 +1,37 @@
+name: SD300 V9 locate authentic source video
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-v9-source-inspect.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Identify original source media and processing tools
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          roots=['/home/ubuntu/agnes-sd300-remake','/home/ubuntu/agnes-sd300-v5','/home/ubuntu/agnes-sd300-v6','/home/ubuntu/agnes-sd300-v8','/home/ubuntu']
+          seen=set()
+          for root in roots:
+              if not os.path.isdir(root): continue
+              for base,dirs,files in os.walk(root):
+                  depth=base[len(root):].count('/')
+                  dirs[:]=[d for d in dirs if not d.startswith('.') and d not in ('node_modules','venv','.venv','site-packages') and depth<3]
+                  for f in files:
+                      if f.lower().endswith(('.mp4','.mov','.mkv','.webm')) and ('sd300' in f.lower() or 'original' in f.lower() or 'source' in f.lower() or 'commercial' in f.lower()):
+                          p=os.path.join(base,f)
+                          if p not in seen:
+                              seen.add(p);print('VIDEO',p,os.path.getsize(p))
+          PY
+          command -v ffmpeg || true
+          python3 - <<'PY'
+          import importlib.util
+          for m in ['torch','diffusers','cv2']:
+              print('PY_MODULE',m,bool(importlib.util.find_spec(m)))
+          PY
