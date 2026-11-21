@@ -28,3 +28,5 @@ jobs:
               for k,v in s.get('scenes',{}).items():
                   print(version,'SCENE',k,'status',v.get('status'),'http',v.get('http'),'attempts',v.get('attempts'),'bytes',v.get('file_bytes'),'job',bool(v.get('job_id')),'error',str(v.get('error',''))[:110])
           PY
+
+# status refresh 2026-11-21 01:33 EST
