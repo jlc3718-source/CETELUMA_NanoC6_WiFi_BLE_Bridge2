@@ -1,0 +1,29 @@
+name: SD300 V8 finished movie export
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-full-ai-v8-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 15
+    steps:
+      - name: Verify finished video and audio
+        run: |
+          set -euo pipefail
+          f=/home/ubuntu/agnes-sd300-v8/SD300_Full_AI_V8_Stylized_Flash_Original_Voice_103s.mp4
+          test -s "$f"
+          ffprobe -v error -show_entries stream=codec_type:format=duration,size -of json "$f"
+          cp "$f" SD300_Full_AI_V8_Stylized_Flash_Original_Voice_103s.mp4
+          sha256sum "$f" > SD300_V8_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SD300-V8-Complete-Movie
+          path: |
+            SD300_Full_AI_V8_Stylized_Flash_Original_Voice_103s.mp4
+            SD300_V8_SHA256.txt
+          compression-level: 0
+          retention-days: 30
