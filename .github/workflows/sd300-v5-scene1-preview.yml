@@ -1,0 +1,27 @@
+name: SD300 V5 Scene 1 preview
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-v5-scene1-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Copy verified scene one
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=/home/ubuntu/agnes-sd300-v5/v5_00.mp4
+          test -s "$f"
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 "$f"
+          cp "$f" SD300_V5_Scene_01_Hyperreal.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SD300-V5-Scene-01-Hyperreal
+          path: SD300_V5_Scene_01_Hyperreal.mp4
+          compression-level: 0
+          retention-days: 30
