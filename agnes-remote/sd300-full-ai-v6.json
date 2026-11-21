@@ -1,0 +1,151 @@
+{
+  "revision": "sd300-v6-creative-text-to-video-20261121",
+  "description": "V6 brand-new AI commercial environments and shots, no source frame conditioning, no V5 reuse; original voiceover unchanged.",
+  "model": "agnes-video-2.5-flash",
+  "mode": "text",
+  "seconds": 12,
+  "size": "720P",
+  "aspect_ratio": "9:16",
+  "retry_seconds_queue_full": 1,
+  "voiceover_seconds": 103.2,
+  "voiceover_sha256": "2226f449b01dd5a0dd62c2ef6a0e72df9e186207b7acf0c89b20ed0a61f88613",
+  "voiceover_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6aa171d7-2d40-40d2-a31b-fcb345ac324d.mp3",
+  "output_name": "SD300_Full_AI_V6_New_Commercial_Original_Voice_103s.mp4",
+  "scenes": [
+    {
+      "id": "v6_00",
+      "name": "Hose-free outdoor work gear",
+      "approved": false,
+      "target_seconds": 5.2,
+      "original_reference_window": [
+        0,
+        5.2
+      ],
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/96b014b1-9bbe-42ff-bf27-5c5424651745.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/52cafd62-742b-4037-b5c6-279de3bdf5b5.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Photoreal opening outdoors at a wet rural construction worksite at dawn: close-up of muddy black lace-up work boots and red-and-black Milwaukee work gloves resting on a wooden bench. Cinematography unlike a handheld home recording; gentle lateral tracking, shallow natural depth of field, no people."
+    },
+    {
+      "id": "v6_01",
+      "name": "Move indoors to fully loaded SD300",
+      "approved": false,
+      "target_seconds": 7.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/f90c6448-04c0-4554-82c4-9f907934daf8.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/c5b168d6-a3ae-448e-9cb3-433ab8991223.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Cinematic transition to a clean professional mudroom workshop with pale oak bench and soft window light. The real Airthereal SD300 orange-and-grey boot and glove dryer is standing ready on the bench, accurate orange base and grey digital front, natural tripod camera push-in."
+    },
+    {
+      "id": "v6_02",
+      "name": "Establish accurate dryer and mounted equipment",
+      "approved": false,
+      "target_seconds": 9.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/754146b2-4f61-4807-8716-71142073b3f5.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/050fa470-d298-4f23-9e86-6a392e51cbbd.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Wide hero view in a professional workshop: orange Airthereal SD300 with two upright drying posts for inverted black work boots and two shorter glove mounts for red-and-black Milwaukee gloves, all attached correctly. Realistic product dimensions, steady shot."
+    },
+    {
+      "id": "v6_03",
+      "name": "Close-up loaded SD300",
+      "approved": false,
+      "target_seconds": 9.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/1926e0d9-3bf7-4c4b-8fda-3ff7986042ea.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/1ce8a5e5-e175-4d9e-897b-2d25b350c72c.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Macro editorial product photography moving shot: water droplets and scuffed rubber texture on the black boots, fabric weave and wear marks on red Milwaukee gloves, correctly positioned on the Airthereal dryer in a clean workshop."
+    },
+    {
+      "id": "v6_04",
+      "name": "Product control panel approach",
+      "approved": false,
+      "target_seconds": 9.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/a603da13-c3e6-4ade-ad28-69c05e75c46e.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/ef908669-f170-4ce9-9bc8-850c2081a562.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Commercial medium shot of the real dryer in a workshop. A worker's anatomically correct hand gently reaches toward the digital control panel, accurate product proportions and continuous real-world physics."
+    },
+    {
+      "id": "v6_05",
+      "name": "Realistic finger presses front control",
+      "approved": false,
+      "target_seconds": 9.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/1c5e446c-e61c-4563-af19-93951cb7ee35.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/e43bc4fb-32b1-48aa-8f79-5a7cbb87c5e0.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Tight macro shot of one real human index finger pressing a single physical button on the Airthereal SD300 digital control panel, skin pores and believable pressure/contact, no panel deformation."
+    },
+    {
+      "id": "v6_06",
+      "name": "Digital display operation",
+      "approved": false,
+      "target_seconds": 9.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/c2d5a2ff-b27e-43f4-81a5-cd501e93f037.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/10e7dc2f-8a6a-4075-95ee-017a4db1eb11.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Elegant photoreal detail of the SD300's real illuminated display and control markings; soft daylight, steady exposure, realistic LCD/LED segments and reflections."
+    },
+    {
+      "id": "v6_07",
+      "name": "SD300 settings demonstration",
+      "approved": false,
+      "target_seconds": 9.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6b28ac42-0598-4e24-b76d-2c3aab0864fa.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/ad22a2d4-c9b7-489e-9385-9f33ac10a350.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Slow controlled side-to-front camera move around the Airthereal SD300 on a workbench, keeping all boots and Milwaukee gloves fixed and supported with no morphing or removal."
+    },
+    {
+      "id": "v6_08",
+      "name": "Return from control panel to whole dryer",
+      "approved": false,
+      "target_seconds": 10.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/4aa24eeb-f778-4c20-b78d-2d7e39ee8d63.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6b4277a5-1292-4f87-a0ce-82a8774baa3d.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Wide product-in-use shot in a bright modern mudroom; boots and gloves securely mounted on the Airthereal SD300, accurate hose-free drying apparatus, cinematic dolly out."
+    },
+    {
+      "id": "v6_09",
+      "name": "Full dryer loaded three-quarter view",
+      "approved": false,
+      "target_seconds": 10.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/654aa0b7-b5ba-4349-8147-d7286096a629.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/2e7bce4a-40bf-4dfc-a3cf-82aa5424c9ff.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Premium commercial three-quarter hero shot of the actual orange-and-grey Airthereal SD300, two black work boots and two red Milwaukee gloves attached, natural realistic shadows and polished studio daylight."
+    },
+    {
+      "id": "v6_10",
+      "name": "Clean closing product hero with all four items attached",
+      "approved": false,
+      "target_seconds": 12.5,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/3acf85c0-6817-42e3-adf4-621fd0010abf.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8acced9a-c274-4314-8d68-6adfe4b8115b.jpg"
+      ],
+      "prompt": "GENERATE A COMPLETELY NEW ORIGINAL LIVE-ACTION-STYLE COMMERCIAL SHOT FROM TEXT, NOT A RECREATION OF ANY SOURCE FOOTAGE. High-end photoreal commercial cinematography, realistic human anatomy and movement, accurate Airthereal SD300 product shape, boots and Milwaukee gloves, coherent physically plausible motion, believable real surfaces and lighting. No cartoon, video game look, synthetic skin, product redesign, morphing, extra attachments, adapters through boot soles, strobing, flares, hose, running water, removing equipment, subtitles, sound or dialogue. Scene: Final high-end photoreal product hero shot: Airthereal SD300 orange base, grey digital panel, two black work boots on rear drying mounts, two red-and-black Milwaukee gloves on front mounts. Slow smooth camera push, no titles, all equipment stays attached through final frame."
+    }
+  ]
+}
