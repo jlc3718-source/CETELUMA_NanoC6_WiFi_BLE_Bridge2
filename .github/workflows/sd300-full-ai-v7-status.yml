@@ -1,0 +1,30 @@
+name: SD300 V7 Oracle live status
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-full-ai-v7-status.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: V7 service and scene state
+        shell: bash
+        run: |
+          echo V7_SERVICE=$(systemctl is-active sd300-full-ai-v7.service || true)
+          journalctl -u sd300-full-ai-v7.service -n 18 --no-pager -o cat || true
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('/home/ubuntu/agnes-sd300-v7/full-ai-v7-state.json')
+          if not p.exists():
+              print('V7_STATE missing')
+          else:
+              s=json.loads(p.read_text())
+              print('V7_UPDATED',s.get('updated_utc'))
+              print('V7_ASSEMBLY',s.get('assemble_status'))
+              for k,v in s.get('scenes',{}).items():
+                  print('V7_SCENE',k,'status='+str(v.get('status')),'http='+str(v.get('http')),'attempts='+str(v.get('attempts')),'bytes='+str(v.get('file_bytes')),'job='+str(bool(v.get('job_id'))),'error='+str(v.get('error',''))[:100])
+          PY
