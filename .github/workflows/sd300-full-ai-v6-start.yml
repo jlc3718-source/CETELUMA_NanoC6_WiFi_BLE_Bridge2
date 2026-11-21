@@ -1,0 +1,38 @@
+name: SD300 V6 new cinematic AI generation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-full-ai-v6-start.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  start-v6:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure V5 stopped and launch V6
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n systemctl stop sd300-full-ai-v5.service || true
+          echo V5_SERVICE=$(systemctl is-active sd300-full-ai-v5.service || true)
+          root=/home/ubuntu/agnes-sd300-v6
+          mkdir -p "$root"
+          cp agnes-remote/sd300-full-ai-v6.py "$root/sd300-full-ai-v6.py"
+          cp agnes-remote/sd300-full-ai-v6.json "$root/sd300-full-ai-v6.json"
+          python3 -m py_compile "$root/sd300-full-ai-v6.py"
+          python3 - <<'PY'
+          import json
+          c=json.load(open('/home/ubuntu/agnes-sd300-v6/sd300-full-ai-v6.json'))
+          assert c['mode']=='text' and len(c['scenes'])==11
+          assert all(x['id'].startswith('v6_') for x in c['scenes'])
+          print('V6_NEW_COMMERCIAL_CONFIG_VERIFIED')
+          PY
+          if ! systemctl is-active --quiet sd300-full-ai-v6.service; then
+            sudo -n systemd-run --unit=sd300-full-ai-v6 --property=Restart=on-failure --property=RestartSec=30 /usr/bin/python3 "$root/sd300-full-ai-v6.py"
+          fi
+          sleep 3
+          echo V6_SERVICE=$(systemctl is-active sd300-full-ai-v6.service || true)
+          journalctl -u sd300-full-ai-v6.service -n 15 --no-pager -o cat || true
