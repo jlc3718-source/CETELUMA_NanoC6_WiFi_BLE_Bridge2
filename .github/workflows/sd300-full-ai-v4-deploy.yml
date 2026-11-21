@@ -1,0 +1,85 @@
+name: SD300 full AI v4 deploy
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agnes-remote/sd300-full-ai-v4.py'
+      - 'agnes-remote/sd300-full-ai-v4.json'
+      - '.github/workflows/sd300-full-ai-v4-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sd300-full-ai-v4-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify all generated scene references and validate code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agnes-remote/sd300-full-ai-v4.py
+          python3 - <<'PY'
+          import json
+          d=json.load(open('agnes-remote/sd300-full-ai-v4.json'))
+          scenes=d['scenes']
+          assert d['model']=='agnes-video-2.5-flash' and d['seconds']==12
+          assert d['size']=='720P' and d['mode']=='keyframe'
+          assert len(scenes)==11
+          assert round(sum(float(s['target_seconds']) for s in scenes),3)==103.2
+          assert all(not s.get('approved') and len(s['reference_images'])==2 for s in scenes)
+          assert all(s['reference_images'][0]!=s['reference_images'][1] for s in scenes)
+          assert all('strobe' in s['prompt'].lower() and 'hose' in s['prompt'].lower() for s in scenes)
+          print('SD300_FULL_AI_V4_CONFIG_VALID 11-new-AI-scenes runtime=103.2 seconds')
+          PY
+      - name: Install only SD300 full AI v4 independent service
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agnes-sd300-remake
+          test -d "$root"
+          test -s /home/ubuntu/agnes-sd300/key
+          command -v ffmpeg
+          command -v ffprobe
+          test -f "$root/SD300_original_approved_voiceover.m4a"
+          sha256sum "$root/SD300_original_approved_voiceover.m4a"
+          if [ -s "$root/sd300-full-ai-v4.py" ]; then
+            cp -p "$root/sd300-full-ai-v4.py" "$root/sd300-full-ai-v4.before-deploy.py"
+          fi
+          if [ -s "$root/sd300-full-ai-v4.json" ]; then
+            cp -p "$root/sd300-full-ai-v4.json" "$root/sd300-full-ai-v4.before-deploy.json"
+          fi
+          sudo -n install -o ubuntu -g ubuntu -m 644 agnes-remote/sd300-full-ai-v4.py "$root/sd300-full-ai-v4.py"
+          sudo -n install -o ubuntu -g ubuntu -m 644 agnes-remote/sd300-full-ai-v4.json "$root/sd300-full-ai-v4.json"
+          cat >"$RUNNER_TEMP/sd300-full-ai-v4.service" <<'EOF'
+          [Unit]
+          Description=SD300 All Newly Generated AI Remake with Original Voiceover
+          After=network-online.target
+          Wants=network-online.target
+          StartLimitIntervalSec=0
+          [Service]
+          Type=simple
+          User=ubuntu
+          Group=ubuntu
+          WorkingDirectory=/home/ubuntu/agnes-sd300-remake
+          ExecStart=/usr/bin/python3 /home/ubuntu/agnes-sd300-remake/sd300-full-ai-v4.py
+          Restart=on-failure
+          RestartSec=30
+          TimeoutStopSec=20
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo -n install -m 644 "$RUNNER_TEMP/sd300-full-ai-v4.service" /etc/systemd/system/sd300-full-ai-v4.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable sd300-full-ai-v4.service
+          sudo -n systemctl restart sd300-full-ai-v4.service
+          sleep 3
+          systemctl is-active sd300-full-ai-v4.service
+          systemctl show sd300-full-ai-v4.service --property=ExecMainStatus,NRestarts,SubState
+          echo SD300_FULL_AI_V4_SERVICE_DEPLOYED
