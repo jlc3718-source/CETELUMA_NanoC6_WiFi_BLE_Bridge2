@@ -1,0 +1,88 @@
+name: SD300 full AI v4 status and export
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sd300-full-ai-v4-export.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: sd300-full-ai-v4-export
+  cancel-in-progress: false
+jobs:
+  verify-export:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 20
+    steps:
+      - name: Inspect actual full AI generation and export if completed
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo SD300_FULL_AI_SERVICE=$(systemctl is-active sd300-full-ai-v4.service || true)
+          echo SD300_FULL_AI_SERVICE_RESTARTS=$(systemctl show sd300-full-ai-v4.service --property=NRestarts --value || true)
+          journalctl -u sd300-full-ai-v4.service -n 40 --no-pager -o cat | tail -20 | sed -E 's/(Bearer |api_key|token=)[^ ]+/\1[REDACTED]/g' || true
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess, hashlib, os, shutil
+          root=Path('/home/ubuntu/agnes-sd300-remake')
+          work=Path(os.environ['GITHUB_WORKSPACE'])
+          cfg=json.loads((root/'sd300-full-ai-v4.json').read_text())
+          statefile=root/'full-ai-v4-state.json'
+          if not statefile.exists():
+              print('SD300_FULL_AI_V4_NO_STATE')
+              raise SystemExit(0)
+          s=json.loads(statefile.read_text())
+          print('SD300_FULL_AI_V4_STATE_REV',s.get('revision'))
+          for item in cfg['scenes']:
+              x=s.get('scenes',{}).get(item['id'],{})
+              print('SD300_FULL_AI_SCENE',item['id'],
+                    'status='+str(x.get('status','waiting')),
+                    'http='+str(x.get('http','')),
+                    'job='+str(bool(x.get('job_id'))),
+                    'attempts='+str(x.get('attempts',0)),
+                    'bytes='+str(x.get('file_bytes',0)),
+                    'error='+str(x.get('error',''))[:100])
+          print('SD300_FULL_AI_ASSEMBLY_STATUS',s.get('assemble_status','pending'))
+          name=cfg['output_name']
+          video=root/name
+          marker=root/'full-ai-v4-exported.sha256'
+          if s.get('assemble_status')!='completed' or not video.is_file():
+              print('SD300_FULL_AI_EXPORT_NOT_READY')
+              raise SystemExit(0)
+          digest=hashlib.sha256(video.read_bytes()).hexdigest()
+          if marker.is_file() and marker.read_text().strip()==digest:
+              print('SD300_FULL_AI_EXPORT_ALREADY_DONE')
+              raise SystemExit(0)
+          probe=subprocess.run(['ffprobe','-v','error','-show_entries','stream=codec_type:format=duration','-of','json',str(video)],
+               capture_output=True,text=True,check=True)
+          meta=json.loads(probe.stdout)
+          if not (103.0<=float(meta['format']['duration'])<=103.4):
+              raise RuntimeError('Final duration invalid')
+          if not {'video','audio'}.issubset({x['codec_type'] for x in meta['streams']}):
+              raise RuntimeError('Final media streams invalid')
+          shutil.copy2(video,work/name)
+          (work/'SD300_Full_AI_V4_SHA256.txt').write_text(digest+'\n')
+          print('SD300_FULL_AI_EXPORT_READY',name,'bytes',video.stat().st_size)
+          PY
+      - name: Upload full AI movie and verification if ready
+        uses: actions/upload-artifact@v4
+        with:
+          name: SD300-Full-AI-Cinematic-V4-Original-Voice
+          path: |
+            SD300_Full_AI_Generated_No_Strobes_No_Hose_Original_Voice_v4_103s.mp4
+            SD300_Full_AI_V4_SHA256.txt
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Mark finished export
+        shell: bash
+        run: |
+          if [ -s SD300_Full_AI_V4_SHA256.txt ]; then
+            cp SD300_Full_AI_V4_SHA256.txt /home/ubuntu/agnes-sd300-remake/full-ai-v4-exported.sha256
+            echo SD300_FULL_AI_V4_GITHUB_ARTIFACT_READY
+          else
+            echo SD300_FULL_AI_V4_STILL_GENERATING
+          fi
