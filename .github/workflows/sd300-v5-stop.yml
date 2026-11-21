@@ -1,0 +1,19 @@
+name: Stop rejected SD300 V5
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-v5-stop.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stop:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Stop V5 generator without affecting V4 or home systems
+        run: |
+          set -euo pipefail
+          sudo -n systemctl stop sd300-full-ai-v5.service || true
+          sudo -n systemctl reset-failed sd300-full-ai-v5.service || true
+          echo V5_SERVICE=$(systemctl is-active sd300-full-ai-v5.service || true)
