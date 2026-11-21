@@ -1,0 +1,38 @@
+name: SD300 V7 Agnes 2.0 20-second stylized AI
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-full-ai-v7-start.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  start-v7:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stop V6 and launch V7
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n systemctl stop sd300-full-ai-v6.service || true
+          echo V6_SERVICE=$(systemctl is-active sd300-full-ai-v6.service || true)
+          root=/home/ubuntu/agnes-sd300-v7
+          mkdir -p "$root"
+          cp agnes-remote/sd300-full-ai-v7.py "$root/sd300-full-ai-v7.py"
+          cp agnes-remote/sd300-full-ai-v7.json "$root/sd300-full-ai-v7.json"
+          python3 -m py_compile "$root/sd300-full-ai-v7.py"
+          python3 - <<'PY'
+          import json
+          c=json.load(open('/home/ubuntu/agnes-sd300-v7/sd300-full-ai-v7.json'))
+          assert c['model']=='agnes-video-v2.0' and c['seconds']==20 and len(c['scenes'])==6
+          assert abs(sum(x['target_seconds'] for x in c['scenes'])-103.2)<0.001
+          print('V7_MODEL_DURATION_AND_TIMELINE_VALID')
+          PY
+          if ! systemctl is-active --quiet sd300-full-ai-v7.service; then
+            sudo -n systemd-run --unit=sd300-full-ai-v7 --property=Restart=on-failure --property=RestartSec=30 /usr/bin/python3 "$root/sd300-full-ai-v7.py"
+          fi
+          sleep 3
+          echo V7_SERVICE=$(systemctl is-active sd300-full-ai-v7.service || true)
+          journalctl -u sd300-full-ai-v7.service -n 15 --no-pager -o cat || true
