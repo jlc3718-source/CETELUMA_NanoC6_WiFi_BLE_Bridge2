@@ -223,8 +223,13 @@ def submit(scene, cfg, state, key):
         "model": cfg["model"], "mode": cfg["mode"],
         "seconds": str(cfg["seconds"]), "size": cfg["size"],
         "aspect_ratio": cfg["aspect_ratio"], "n": 1,
-        "images": scene["reference_images"], "prompt": scene["prompt"]
+        "prompt": scene["prompt"]
     }
+    if cfg["mode"] == "keyframe":
+        payload["first_frame"] = scene["reference_images"][0]
+        payload["last_frame"] = scene["reference_images"][1]
+    else:
+        payload["images"] = scene["reference_images"]
     failures, queue_attempts = 0, int(item.get("attempts", 0))
     while True:
         if (ROOT / "STOP").exists():
