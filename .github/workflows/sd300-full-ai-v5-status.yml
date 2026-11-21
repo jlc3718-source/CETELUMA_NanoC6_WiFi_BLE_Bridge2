@@ -30,3 +30,5 @@ jobs:
               for k,v in sorted(s.get('scenes',{}).items()):
                   print('SD300_V5_SCENE',k,'status='+str(v.get('status')),'http='+str(v.get('http')),'attempts='+str(v.get('attempts')),'bytes='+str(v.get('file_bytes',0)),'job='+str(bool(v.get('job_id'))))
           PY
+
+# Refresh V5 live status
