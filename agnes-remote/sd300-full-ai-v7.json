@@ -1,0 +1,91 @@
+{
+  "revision": "sd300-v7-2.0-stylized-20s-20261121",
+  "description": "Six original 20-second Agnes 2.0 slightly stylized cinematic AI scenes, 103.2-second original approved voiceover",
+  "model": "agnes-video-v2.0",
+  "mode": "text",
+  "seconds": 20,
+  "size": "720P",
+  "aspect_ratio": "9:16",
+  "retry_seconds_queue_full": 1,
+  "voiceover_seconds": 103.2,
+  "voiceover_sha256": "2226f449b01dd5a0dd62c2ef6a0e72df9e186207b7acf0c89b20ed0a61f88613",
+  "voiceover_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6aa171d7-2d40-40d2-a31b-fcb345ac324d.mp3",
+  "output_name": "SD300_Full_AI_V7_Stylized_2_0_Original_Voice_103s.mp4",
+  "scenes": [
+    {
+      "id": "v7_00",
+      "name": "Hose-free outdoor work gear",
+      "approved": false,
+      "target_seconds": 20,
+      "original_reference_window": [
+        0,
+        5.2
+      ],
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/96b014b1-9bbe-42ff-bf27-5c5424651745.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/52cafd62-742b-4037-b5c6-279de3bdf5b5.jpg"
+      ],
+      "prompt": "A NEW ORIGINAL HIGH-QUALITY SLIGHTLY CARTOONY 3D ANIMATED PRODUCT COMMERCIAL, premium Pixar-adjacent stylized realism, gently exaggerated appealing shapes and rich colors, realistic physically coherent movement, clear accurate orange-and-grey Airthereal SD300 boot and glove dryer, black work boots and red-and-black Milwaukee work gloves, product proportions and attachments consistent throughout, smooth camera moves and art-directed lighting, visibly AI animated rather than recreating the original recording. No uncanny human anatomy, no extra equipment, no tubes, no glitches, no flashing. Storyboard: Photoreal opening outdoors at a wet rural construction worksite at dawn: close-up of muddy black lace-up work boots and red-and-black Milwaukee work gloves resting on a wooden bench. Cinematography unlike a handheld home recording; gentle lateral tracking, shallow natural depth of field, no people. Then smoothly transition to: Cinematic transition to a clean professional mudroom workshop with pale oak bench and soft window light. The real Airthereal SD300 orange-and-grey boot and glove dryer is standing ready on the bench, accurate orange base and grey digital front, natural tripod camera push-in."
+    },
+    {
+      "id": "v7_01",
+      "name": "Establish accurate dryer and mounted equipment",
+      "approved": false,
+      "target_seconds": 20,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/754146b2-4f61-4807-8716-71142073b3f5.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/050fa470-d298-4f23-9e86-6a392e51cbbd.jpg"
+      ],
+      "prompt": "A NEW ORIGINAL HIGH-QUALITY SLIGHTLY CARTOONY 3D ANIMATED PRODUCT COMMERCIAL, premium Pixar-adjacent stylized realism, gently exaggerated appealing shapes and rich colors, realistic physically coherent movement, clear accurate orange-and-grey Airthereal SD300 boot and glove dryer, black work boots and red-and-black Milwaukee work gloves, product proportions and attachments consistent throughout, smooth camera moves and art-directed lighting, visibly AI animated rather than recreating the original recording. No uncanny human anatomy, no extra equipment, no tubes, no glitches, no flashing. Storyboard: Wide hero view in a professional workshop: orange Airthereal SD300 with two upright drying posts for inverted black work boots and two shorter glove mounts for red-and-black Milwaukee gloves, all attached correctly. Realistic product dimensions, steady shot. Then smoothly transition to: Macro editorial product photography moving shot: water droplets and scuffed rubber texture on the black boots, fabric weave and wear marks on red Milwaukee gloves, correctly positioned on the Airthereal dryer in a clean workshop."
+    },
+    {
+      "id": "v7_02",
+      "name": "Product control panel approach",
+      "approved": false,
+      "target_seconds": 20,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/a603da13-c3e6-4ade-ad28-69c05e75c46e.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/ef908669-f170-4ce9-9bc8-850c2081a562.jpg"
+      ],
+      "prompt": "A NEW ORIGINAL HIGH-QUALITY SLIGHTLY CARTOONY 3D ANIMATED PRODUCT COMMERCIAL, premium Pixar-adjacent stylized realism, gently exaggerated appealing shapes and rich colors, realistic physically coherent movement, clear accurate orange-and-grey Airthereal SD300 boot and glove dryer, black work boots and red-and-black Milwaukee work gloves, product proportions and attachments consistent throughout, smooth camera moves and art-directed lighting, visibly AI animated rather than recreating the original recording. No uncanny human anatomy, no extra equipment, no tubes, no glitches, no flashing. Storyboard: Commercial medium shot of the real dryer in a workshop. A worker's anatomically correct hand gently reaches toward the digital control panel, accurate product proportions and continuous real-world physics. Then smoothly transition to: Tight macro shot of one real human index finger pressing a single physical button on the Airthereal SD300 digital control panel, skin pores and believable pressure/contact, no panel deformation."
+    },
+    {
+      "id": "v7_03",
+      "name": "Digital display operation",
+      "approved": false,
+      "target_seconds": 20,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/c2d5a2ff-b27e-43f4-81a5-cd501e93f037.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/10e7dc2f-8a6a-4075-95ee-017a4db1eb11.jpg"
+      ],
+      "prompt": "A NEW ORIGINAL HIGH-QUALITY SLIGHTLY CARTOONY 3D ANIMATED PRODUCT COMMERCIAL, premium Pixar-adjacent stylized realism, gently exaggerated appealing shapes and rich colors, realistic physically coherent movement, clear accurate orange-and-grey Airthereal SD300 boot and glove dryer, black work boots and red-and-black Milwaukee work gloves, product proportions and attachments consistent throughout, smooth camera moves and art-directed lighting, visibly AI animated rather than recreating the original recording. No uncanny human anatomy, no extra equipment, no tubes, no glitches, no flashing. Storyboard: Elegant photoreal detail of the SD300's real illuminated display and control markings; soft daylight, steady exposure, realistic LCD/LED segments and reflections. Then smoothly transition to: Slow controlled side-to-front camera move around the Airthereal SD300 on a workbench, keeping all boots and Milwaukee gloves fixed and supported with no morphing or removal."
+    },
+    {
+      "id": "v7_04",
+      "name": "Return from control panel to whole dryer",
+      "approved": false,
+      "target_seconds": 20,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/4aa24eeb-f778-4c20-b78d-2d7e39ee8d63.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6b4277a5-1292-4f87-a0ce-82a8774baa3d.jpg"
+      ],
+      "prompt": "A NEW ORIGINAL HIGH-QUALITY SLIGHTLY CARTOONY 3D ANIMATED PRODUCT COMMERCIAL, premium Pixar-adjacent stylized realism, gently exaggerated appealing shapes and rich colors, realistic physically coherent movement, clear accurate orange-and-grey Airthereal SD300 boot and glove dryer, black work boots and red-and-black Milwaukee work gloves, product proportions and attachments consistent throughout, smooth camera moves and art-directed lighting, visibly AI animated rather than recreating the original recording. No uncanny human anatomy, no extra equipment, no tubes, no glitches, no flashing. Storyboard: Wide product-in-use shot in a bright modern mudroom; boots and gloves securely mounted on the Airthereal SD300, accurate hose-free drying apparatus, cinematic dolly out. Then smoothly transition to: Premium commercial three-quarter hero shot of the actual orange-and-grey Airthereal SD300, two black work boots and two red Milwaukee gloves attached, natural realistic shadows and polished studio daylight."
+    },
+    {
+      "id": "v7_05",
+      "name": "Clean closing product hero with all four items attached",
+      "approved": false,
+      "target_seconds": 3.2,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/3acf85c0-6817-42e3-adf4-621fd0010abf.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8acced9a-c274-4314-8d68-6adfe4b8115b.jpg"
+      ],
+      "prompt": "A NEW ORIGINAL HIGH-QUALITY SLIGHTLY CARTOONY 3D ANIMATED PRODUCT COMMERCIAL, premium Pixar-adjacent stylized realism, gently exaggerated appealing shapes and rich colors, realistic physically coherent movement, clear accurate orange-and-grey Airthereal SD300 boot and glove dryer, black work boots and red-and-black Milwaukee work gloves, product proportions and attachments consistent throughout, smooth camera moves and art-directed lighting, visibly AI animated rather than recreating the original recording. No uncanny human anatomy, no extra equipment, no tubes, no glitches, no flashing. Storyboard: Final high-end photoreal product hero shot: Airthereal SD300 orange base, grey digital panel, two black work boots on rear drying mounts, two red-and-black Milwaukee gloves on front mounts. Slow smooth camera push, no titles, all equipment stays attached through final frame."
+    }
+  ]
+}
