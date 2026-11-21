@@ -1,0 +1,127 @@
+{
+  "revision": "sd300-v8-stylized-flash-20261121",
+  "description": "Nine new 12-second slightly cartoon-stylized AI commercial clips using available Agnes 2.5 Flash; preserve approved 103.2s voiceover",
+  "model": "agnes-video-2.5-flash",
+  "mode": "text",
+  "seconds": 12,
+  "size": "720P",
+  "aspect_ratio": "9:16",
+  "retry_seconds_queue_full": 1,
+  "voiceover_seconds": 103.2,
+  "voiceover_sha256": "2226f449b01dd5a0dd62c2ef6a0e72df9e186207b7acf0c89b20ed0a61f88613",
+  "voiceover_url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6aa171d7-2d40-40d2-a31b-fcb345ac324d.mp3",
+  "output_name": "SD300_Full_AI_V8_Stylized_Flash_Original_Voice_103s.mp4",
+  "scenes": [
+    {
+      "id": "v8_00",
+      "name": "Hose-free outdoor work gear",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": [
+        0,
+        5.2
+      ],
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/96b014b1-9bbe-42ff-bf27-5c5424651745.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/52cafd62-742b-4037-b5c6-279de3bdf5b5.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. Rainy outdoor worksite at dawn, wet muddy black work boots and red-and-black Milwaukee gloves resting on a bench, appealing slightly cartoony premium 3D animation."
+    },
+    {
+      "id": "v8_01",
+      "name": "Establish accurate dryer and mounted equipment",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/754146b2-4f61-4807-8716-71142073b3f5.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/050fa470-d298-4f23-9e86-6a392e51cbbd.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. A clean bright workshop reveals the real orange and gray Airthereal SD300 boot and glove dryer on a wooden workbench, confident smooth camera push-in."
+    },
+    {
+      "id": "v8_02",
+      "name": "Product control panel approach",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/a603da13-c3e6-4ade-ad28-69c05e75c46e.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/ef908669-f170-4ce9-9bc8-850c2081a562.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. Hero shot of the Airthereal SD300, boots and Milwaukee gloves securely fitted on their correct drying posts, clear attractive slightly stylized geometry."
+    },
+    {
+      "id": "v8_03",
+      "name": "Digital display operation",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/c2d5a2ff-b27e-43f4-81a5-cd501e93f037.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/10e7dc2f-8a6a-4075-95ee-017a4db1eb11.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. Close-up of rain droplets on black boots and fabric detail on Milwaukee gloves, then the correctly mounted gear on the SD300."
+    },
+    {
+      "id": "v8_04",
+      "name": "Return from control panel to whole dryer",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/4aa24eeb-f778-4c20-b78d-2d7e39ee8d63.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/6b4277a5-1292-4f87-a0ce-82a8774baa3d.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. A worker arrives at the workshop, places damp boots and gloves beside the dryer; natural stylized human anatomy and physically plausible motion."
+    },
+    {
+      "id": "v8_05",
+      "name": "Clean closing product hero with all four items attached",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/3acf85c0-6817-42e3-adf4-621fd0010abf.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8acced9a-c274-4314-8d68-6adfe4b8115b.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. An accurate human finger presses a control on the SD300 display; clean readable product face, stable markings, no morphing."
+    },
+    {
+      "id": "v8_06",
+      "name": "Clean closing product hero with all four items attached",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/3acf85c0-6817-42e3-adf4-621fd0010abf.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8acced9a-c274-4314-8d68-6adfe4b8115b.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. The SD300 operates with black boots and Milwaukee gloves on their mounts, gentle stylized warm-air visualization without hoses, smoke or flashes."
+    },
+    {
+      "id": "v8_07",
+      "name": "Clean closing product hero with all four items attached",
+      "approved": false,
+      "target_seconds": 12,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/3acf85c0-6817-42e3-adf4-621fd0010abf.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8acced9a-c274-4314-8d68-6adfe4b8115b.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. A smooth cinematic camera orbit around the SD300 in a cozy mudroom; all equipment remains securely attached."
+    },
+    {
+      "id": "v8_08",
+      "name": "Clean closing product hero with all four items attached",
+      "approved": false,
+      "target_seconds": 7.2,
+      "original_reference_window": null,
+      "reference_images": [
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/3acf85c0-6817-42e3-adf4-621fd0010abf.jpg",
+        "https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8acced9a-c274-4314-8d68-6adfe4b8115b.jpg"
+      ],
+      "prompt": "Original premium stylized 3D animated product commercial. Slightly cartoony, charming and polished with rich colors, soft rounded edges and physically plausible motion; NOT strict photorealism, NOT copying original footage. Maintain faithful geometry of Airthereal SD300 orange-and-gray boot and glove dryer, black work boots, red-and-black Milwaukee gloves, correct attachment positions and stable product shape. No hose, distorted equipment, extra fingers, floating objects, flashes, or on-screen captions. Final polished commercial hero shot of the real orange-and-gray SD300 with black boots and red Milwaukee gloves, premium subtly cartoon-stylized animation, slow dolly in, no titles."
+    }
+  ]
+}
