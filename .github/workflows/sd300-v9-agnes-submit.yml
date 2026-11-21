@@ -1,0 +1,27 @@
+name: SD300 V9 Agnes submission preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-v9-agnes-submit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  submit:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate V9 source and Agnes source-video capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "V9 prompt committed:"
+          test -s agnes-remote/SD300_V9_AGNES_SOURCE_VIDEO_PROMPT.txt
+          echo "ORACLE_SOURCE_SEARCH:"
+          for f in /home/ubuntu/agnes-sd300-v9/SD300_Premium_Cinematic_Original_Voice_1440p.mp4 /home/ubuntu/agnes-sd300-v8/SD300_Premium_Cinematic_Original_Voice_1440p.mp4 /home/ubuntu/agnes-sd300/SD300_Premium_Cinematic_Original_Voice_1440p.mp4; do
+            if test -s "$f"; then echo "FOUND $f"; ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 "$f"; fi
+          done
+          echo "AGNES_CLIENT_MODES:"
+          grep -nE 'API =|mode.*:|video_url|video_input|source_video|input_video' agnes-remote/sd300-full-ai-v8.py | head -35 || true
+          echo "SAFETY: No text-to-video submission; original source must be accessible to Agnes."
