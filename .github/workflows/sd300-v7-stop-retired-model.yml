@@ -1,0 +1,18 @@
+name: Stop SD300 V7 retired model
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-v7-stop-retired-model.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stop:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Stop retired model retries
+        run: |
+          sudo -n systemctl stop sd300-full-ai-v7.service || true
+          sudo -n systemctl reset-failed sd300-full-ai-v7.service || true
+          echo V7_SERVICE=$(systemctl is-active sd300-full-ai-v7.service || true)
