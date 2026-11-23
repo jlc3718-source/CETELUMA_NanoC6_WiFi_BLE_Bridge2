@@ -78,7 +78,7 @@ assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reach
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
 assert '/api/event-color-theme' in main+web and 'eventColors1' in web and 'eventColors3028' in web and 'eventColors3029' in web
 assert 'EventColorTheme' in main and 'eventColorThemeGeneration' in main and 'applyOriginalEventColors' in main
-assert '0xFFFF00' in ev and '0xFFFF44' not in ev and '0xE0B400' not in ev
+assert '0xFFFF00' in ev and 'if(c==0xFFFF44||c==0xE0B400)return 3;' in ev
 assert '{0xFFFF00,0xFFFF00}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
 assert re.search(r'\{name:[\"\']Yellow[\"\'],reference:[\"\']#FFFF00[\"\'],output:[\"\']#FFFF00[\"\']\}',web)
 assert '#E08700' in web

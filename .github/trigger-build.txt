@@ -1,1 +1,1 @@
-Build Anderson Home v3.1.95 — named sRGB colors in UI and real BLE/WLED output — align regression tests — recognize canonical expanded preset defaults
+Build Anderson Home v3.1.95 — named sRGB colors in UI and real BLE/WLED output — align regression tests — recognize canonical expanded preset defaults — preserve historical Yellow alias checks
