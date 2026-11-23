@@ -1,6 +1,6 @@
 # Anderson Home NanoC6 Light Controller
 
-Current Anderson firmware source: **v3.1.94** (restored the complete v3.1.91 TX power, expanded Bluetooth diagnostics, WLED controls, and subsequent ON/OFF/speed refinements as a forward-only OTA release; prior production v3.1.93).
+Current Anderson firmware source: **v3.1.95** (named colors now use recognizable sRGB for previews and BLE/WLED output, preserving previous saved settings).
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
 

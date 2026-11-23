@@ -1,23 +1,47 @@
 #include "ColorCorrection.h"
 #include <math.h>
 
+// Recognize the sixteen historical Anderson output codes without changing other
+// custom RGB colors. Both BLE and WLED transports use the named color's sRGB.
+uint32_t andersonNamedOutputColor(uint32_t color){
+  color &= 0xFFFFFFUL;
+  switch(color){
+    case 0xFF0D00: return 0xFF7A00;
+    case 0xFF0024: return 0xFF69B4;
+    case 0xE08700: return 0xFFFF00;
+    case 0x28FF00: return 0x00FF00;
+    case 0x00BD4C: return 0x00FFFF;
+    case 0x0D00FF: return 0x0000FF;
+    case 0x5B00E6: return 0x8000FF;
+    case 0xFFFFFA: return 0xFFFFFF;
+    case 0x00B4B4: return 0x008080;
+    case 0x0096FF: return 0x4DB8FF;
+    case 0xFFA000: return 0xFFB000;
+    case 0xB464FF: return 0xB57EDC;
+    case 0x001478: return 0x001F5B;
+    case 0x87002D: return 0x800020;
+    case 0xA0A5AF: return 0xA7ADB5;
+    default: return color;
+  }
+}
+
 const AndersonColorPaletteEntry ANDERSON_COLOR_PALETTE[] = {
   {0xFF0000,0xFF0000}, // Red
-  {0xFF0D00,0xFF0D00}, // Orange
-  {0xFF0024,0xFF0024}, // Pink
-  {0xE08700,0xE08700}, // Yellow
-  {0x28FF00,0x28FF00}, // Green
-  {0x00BD4C,0x00BD4C}, // Cyan
-  {0x0D00FF,0x0D00FF}, // Blue
-  {0x5B00E6,0x5B00E6}, // Purple
-  {0xFFFFFA,0xFFFFFA}, // White
-  {0x00B4B4,0x00B4B4}, // Teal
-  {0x0096FF,0x0096FF}, // Sky Blue
-  {0xFFA000,0xFFA000}, // Amber Gold
-  {0xB464FF,0xB464FF}, // Lavender
-  {0x001478,0x001478}, // Navy Blue
-  {0x87002D,0x87002D}, // Burgundy
-  {0xA0A5AF,0xA0A5AF}, // Silver Gray
+  {0xFF7A00,0xFF7A00}, // Orange
+  {0xFF69B4,0xFF69B4}, // Pink
+  {0xFFFF00,0xFFFF00}, // Yellow
+  {0x00FF00,0x00FF00}, // Green
+  {0x00FFFF,0x00FFFF}, // Cyan
+  {0x0000FF,0x0000FF}, // Blue
+  {0x8000FF,0x8000FF}, // Purple
+  {0xFFFFFF,0xFFFFFF}, // White
+  {0x008080,0x008080}, // Teal
+  {0x4DB8FF,0x4DB8FF}, // Sky Blue
+  {0xFFB000,0xFFB000}, // Amber Gold
+  {0xB57EDC,0xB57EDC}, // Lavender
+  {0x001F5B,0x001F5B}, // Navy Blue
+  {0x800020,0x800020}, // Burgundy
+  {0xA7ADB5,0xA7ADB5}, // Silver Gray
 };
 const size_t ANDERSON_COLOR_PALETTE_COUNT=sizeof(ANDERSON_COLOR_PALETTE)/sizeof(ANDERSON_COLOR_PALETTE[0]);
 
@@ -101,7 +125,7 @@ static float deltaE2000(const LabColor& x,const LabColor& y){
 
 uint32_t andersonCorrectColor(uint32_t original){
   original&=0xFFFFFF;
-  for(const auto& d:DIRECT_MAP)if(d.source==original)return d.output;
+  for(const auto& d:DIRECT_MAP)if(d.source==original)return andersonNamedOutputColor(d.output);
   LabColor source=rgbToLab(original);float best=1.0e9f;uint32_t output=original;
   for(size_t i=0;i<ANDERSON_COLOR_PALETTE_COUNT;i++){
     float distance=deltaE2000(source,rgbToLab(ANDERSON_COLOR_PALETTE[i].reference));

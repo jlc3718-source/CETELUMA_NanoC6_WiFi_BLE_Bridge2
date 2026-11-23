@@ -33,6 +33,8 @@ jobs:
         run: python tools/test_maintenance.py
       - name: Check Anderson source regressions
         run: python tools/test_regressions.py
+      - name: Verify all named color swatches and LED output conversions
+        run: python tools/test_named_colors.py
       - name: Check audited delivery invariants
         run: python tools/test_audit_fixes.py
       - name: Check BLE connection and queue recovery

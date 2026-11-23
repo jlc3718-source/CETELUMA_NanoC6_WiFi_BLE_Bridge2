@@ -61,8 +61,8 @@ static bool transformPresetJson(const String& original,String& corrected){
 }
 static bool transformFavoriteJson(const String& original,String& corrected){
   (void)original;JsonDocument d;JsonArray a=d.to<JsonArray>();
-  a.add("#FF0000");a.add("#FF0D00");a.add("#FF0024");a.add("#E08700");a.add("#28FF00");a.add("#00BD4C");a.add("#0D00FF");a.add("#5B00E6");a.add("#FFFFFA");
-  a.add("#00B4B4");a.add("#0096FF");a.add("#FFA000");a.add("#B464FF");a.add("#001478");a.add("#87002D");a.add("#A0A5AF");
+  a.add("#FF0000");a.add("#FF7A00");a.add("#FF69B4");a.add("#FFFF00");a.add("#00FF00");a.add("#00FFFF");a.add("#0000FF");a.add("#8000FF");a.add("#FFFFFF");
+  a.add("#008080");a.add("#4DB8FF");a.add("#FFB000");a.add("#B57EDC");a.add("#001F5B");a.add("#800020");a.add("#A7ADB5");
   serializeJson(d,corrected);return true;
 }
 static String transformEventRaw(const String& original){
