@@ -29,3 +29,8 @@ A separate HTTPS diagnostic receiver runs on Oracle at `https://oracle-home-dev.
 ## Direct GitHub diagnostics (v3.1.98)
 
 Controller logs upload directly over certificate-validated HTTPS to the **private** `jlc3718-source/anderson-home-diagnostics` repository. No Oracle relay. Settings → GitHub Diagnostics accepts one fine-grained GitHub token with **Contents read/write permission limited to the diagnostics repository**. The token remains in controller NVS and is not included in releases or status JSON. Device uploads time-grouped immutable JSON files under `events/YYYY-MM-DD/` containing command, BLE/WLED outcome, connection, restart, Wi-Fi and status events. The legacy Oracle receiver is unused by this firmware. Authentication must be configured on the controller once; until then no events are uploaded.
+
+
+## v3.1.99 GitHub HTTPS upload trust fix
+
+Keep verified TLS enabled for direct GitHub logs. Include the current Sectigo Public Server Authentication Root E46 trust certificate (seen on `api.github.com` on 2026-11-23) in addition to the DigiCert trust roots; no changes to gamma calibration, BLE/WLED commands, or authentication permissions.

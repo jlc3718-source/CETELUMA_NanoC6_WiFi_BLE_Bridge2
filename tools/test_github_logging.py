@@ -11,7 +11,7 @@ ui=(ROOT/'firmware/web/index.html').read_text()
 checks={
  'private target': 'api.github.com/repos/jlc3718-source/anderson-home-diagnostics/contents/events/' in d,
  'no Oracle runtime path': 'oracle-home-dev' not in d.lower() and 'oracle diagnostics' not in ui.lower(),
- 'TLS certificate validation': 'client.setCACert(GITHUB_CA)' in d and 'setInsecure' not in d,
+ 'TLS certificate validation': 'client.setCACert(GITHUB_CA)' in d and 'setInsecure' not in d and 'MIIDRjCCAsug' in d,
  'no token in source': 'github_pat_' not in d and 'ghp_' not in d,
  'private controller NVS': 'p.begin("anderson-gh"' in d,
  'GitHub content write': 'http.PUT(body)' in d and 'mbedtls_base64_encode' in d,
@@ -27,7 +27,7 @@ checks={
  'manual commands retained': 'AndersonDiagnostics::record(11,diagSlot' in m,
  'UI pairing': 'id="diagToken"' in ui and 'GitHub Diagnostics' in ui,
  'original RGB still calibrated': '0xE08700' in m and 'andersonNamedOutputColor(' not in m,
- 'firmware version bumped': 'ANDERSON_FIRMWARE_VERSION="3.1.98"' in m,
+ 'firmware version bumped': 'ANDERSON_FIRMWARE_VERSION="3.1.99"' in m,
 }
 assert all(checks.values()),'GitHub logging invariants: '+', '.join(k for k,v in checks.items() if not v)
 print("PASS: direct private GitHub diagnostics, no Oracle dependency, token kept in NVS")

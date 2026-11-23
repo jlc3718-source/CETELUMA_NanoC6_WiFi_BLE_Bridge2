@@ -13,3 +13,4 @@ Anderson v3.1.97: link slim GCC15 LTO objects through the vendor compiler and pl
 Anderson v3.1.97: update toolchain security gate for proven GCC15 LTO linker and archive settings.
 Build Anderson 3.1.98 direct private-GitHub diagnostics (no Oracle) with existing color calibration preserved.
 Verify GitHub direct logging tests and binary (v3.1.98).
+Anderson v3.1.99: trust the live api.github.com Sectigo chain for verified direct diagnostic uploads.
