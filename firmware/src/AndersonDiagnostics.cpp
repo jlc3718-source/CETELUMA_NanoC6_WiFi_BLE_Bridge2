@@ -167,12 +167,12 @@ void uploader(void*) {
         write["type"]=kind==5?"color":(kind==4?"power":(kind==1?"brightness":"other"));
         if(kind==5&&batch[i].frameLen>=7){
           char hex[8];snprintf(hex,sizeof(hex),"#%02X%02X%02X",f[4],f[5],f[6]);
-          write["rgb"]=hex;
+          write["rgb"]=String(hex);
         }else if(kind==1&&batch[i].frameLen>=4)write["brightness"]=f[3];
         else if(kind==4&&batch[i].frameLen>=6)write["power"]=f[5]!=0;
         char raw[19]={};
         for(uint8_t j=0;j<batch[i].frameLen&&j<9;j++)snprintf(raw+j*2,3,"%02X",f[j]);
-        write["frame"]=raw;
+        write["frame"]=String(raw);
       }
     }
     String json;serializeJson(packet,json);
