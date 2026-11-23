@@ -1,1 +1,2 @@
 Build Anderson Home v3.1.100 — enrich existing GitHub diagnostics with scene origin, requested palette/effect, target, power/brightness/speed, actual sampled BLE payload; preserve all existing events and intervals.
+Validation rerun: updated scheduler source test and safe copied RGB/frame strings, 2026-11-23.
