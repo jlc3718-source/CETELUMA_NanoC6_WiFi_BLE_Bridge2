@@ -179,7 +179,7 @@ assert 'const selected=savedColors[i]||e;' in web
 assert 'function refreshQuickColors()' in web
 assert 'renderHomeFavoriteGrid(),refreshQuickColors()' in web
 assert 'return semanticColorVisual(t,savedColorLabels[e]);' in web
-assert 'normHex(e)===normHex(savedColors[i])' in web
+assert 'function semanticColorVisual(e,t=""){const n=t||semanticColorName(e);return SEMANTIC_COLOR_VISUAL[n]' in web
 # Existing event overrides using named palette defaults must pick up later preset edits;
 # truly custom RGB values must remain untouched by the default-to-preset resolver.
 assert 't.colors[c]=o.colors[c];applyModernEventColors(t);' in main

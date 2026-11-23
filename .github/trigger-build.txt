@@ -4,3 +4,4 @@ Build Anderson v3.1.95 with explicit SDK mbedTLS headers for signed OTA.
 Locate mbedTLS SHA256 headers among installed C6 platform packages.
 Build Anderson v3.1.95 with IDF 6.1 / Mbed TLS 4 PSA SHA256 support.
 Anderson v3.1.96: restore original calibrated LED output; UI-only named-color swatches and previews.
+Anderson v3.1.96: verify calibrated LED value preservation and UI-only color correction.
