@@ -44,3 +44,32 @@ else:
     env.PrependENVPath("PATH", str(bin_dir))
     env.Replace(CXX=str(compiler), CC=str(bin_dir / "riscv32-esp-elf-gcc"))
     print("Anderson local GCC:", compiler)
+
+# Direct mbedTLS use by the signed OTA verifier requires the ESP32-C6 SDK
+# public headers. PIO's Arduino-only CPPPATH sometimes omits this SDK component
+# even though the prebuilt framework and mbedcrypto libraries are installed.
+core_dir = Path(os.environ.get("PLATFORMIO_CORE_DIR") or Path.home() / ".platformio")
+libs_package = env.PioPlatform().get_package_dir("framework-arduinoespressif32-libs")
+libs_roots = [Path(libs_package)] if libs_package else []
+libs_roots.append(core_dir / "packages" / "framework-arduinoespressif32-libs")
+mbedtls_header = None
+for sdk_root in libs_roots:
+    if not sdk_root.is_dir():
+        continue
+    # Prefer the official SDK's mbedTLS include tree; do not add any foreign
+    # crypto implementation or change signed-update verification.
+    direct = sdk_root / "esp32c6" / "include" / "mbedtls" / "mbedtls" / "include" / "mbedtls" / "sha256.h"
+    if direct.is_file():
+        mbedtls_header = direct
+        break
+    for candidate in (sdk_root / "esp32c6").rglob("sha256.h"):
+        if candidate.parent.name == "mbedtls":
+            mbedtls_header = candidate
+            break
+    if mbedtls_header:
+        break
+if mbedtls_header is None:
+    raise RuntimeError("ESP32-C6 SDK mbedTLS headers are missing; cannot safely build signed OTA")
+mbedtls_include = mbedtls_header.parent.parent
+env.AppendUnique(CPPPATH=[str(mbedtls_include)])
+print("Anderson ESP32-C6 signed OTA mbedTLS headers:", mbedtls_include)

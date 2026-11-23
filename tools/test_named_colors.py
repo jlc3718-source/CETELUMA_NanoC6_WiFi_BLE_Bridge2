@@ -39,3 +39,8 @@ assert 'sha256sum --check -' in workflow
 assert 'ANDERSON_GCC_BIN_DIR' in workflow and 'ANDERSON_GCC_BIN_DIR' in script
 assert 'env.Replace(CXX=str(compiler), CC=str(gcc))' in script
 assert 'env.PrependENVPath("PATH", str(bin_dir))' in script
+
+script=(ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+assert 'mbedtls_header.parent.parent' in script
+assert 'env.AppendUnique(CPPPATH=[str(mbedtls_include)])' in script
+assert 'cannot safely build signed OTA' in script
