@@ -19,7 +19,7 @@ if bin_env:
     env.PrependENVPath("PATH", str(bin_dir))
     # A full path prevents PIO's nested SCons environment from resolving an
     # older compiler or missing binary by name.
-    env.Replace(CXX=str(compiler), CC=str(gcc))
+    env.Replace(CXX=str(compiler), CC=str(gcc), LINK=str(compiler))
     print("Anderson: verified vendor GCC 15.2:", compiler)
 else:
     # Local developer build: keep PIO-managed toolchain support, with an
@@ -42,8 +42,17 @@ else:
         raise RuntimeError("ESP32-C6 GCC not found; configure ANDERSON_GCC_BIN_DIR")
     bin_dir = compiler.parent
     env.PrependENVPath("PATH", str(bin_dir))
-    env.Replace(CXX=str(compiler), CC=str(bin_dir / "riscv32-esp-elf-gcc"))
+    env.Replace(CXX=str(compiler), CC=str(bin_dir / "riscv32-esp-elf-gcc"), LINK=str(compiler))
     print("Anderson local GCC:", compiler)
+
+# Slim LTO objects require the GCC driver, linker plugin, and plugin-aware
+# archiver. Linking through ld directly silently discards application objects.
+env.AppendUnique(LINKFLAGS=["-flto", "-fuse-linker-plugin"])
+gcc_ar = bin_dir / "riscv32-esp-elf-gcc-ar"
+gcc_ranlib = bin_dir / "riscv32-esp-elf-gcc-ranlib"
+if gcc_ar.is_file() and gcc_ranlib.is_file():
+    env.Replace(AR=str(gcc_ar), RANLIB=str(gcc_ranlib))
+print("Anderson LTO driver/linker:", env.get("LINK"))
 
 # ESP-IDF 6.1 / Mbed TLS 4 replaces old mbedtls/sha256.h with PSA Crypto.
 # Locate the ESP32-C6 SDK's public PSA and PK include trees and expose them
