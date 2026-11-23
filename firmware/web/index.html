@@ -291,6 +291,15 @@
       </div>
       <div id="sysDetails" class="card sysDetails">Waiting for live telemetry…</div>
     </div>
+    <div id="andersonLoggingPanel" class="panel">
+      <strong>Oracle Diagnostics</strong><div class="sub">Automatic controller, command, Wi-Fi, Bluetooth and WLED connection logs are securely uploaded to Oracle. Private controller settings are unchanged. Logs are retained for 90 days.</div>
+      <div class="card small" id="diagStatus" role="status" aria-live="polite" style="margin-top:10px">Checking diagnostic upload status...</div>
+      <label class="row" style="margin-top:10px"><input type="checkbox" id="diagEnabled"><span class="small">Send diagnostics to Oracle</span></label>
+      <div class="label">Oracle ingest token (paste once; never shown again)</div>
+      <input id="diagToken" class="field" type="password" maxlength="111" autocomplete="new-password" placeholder="Paste the private pairing token">
+      <button id="diagSave" type="button" class="btn primary" style="width:100%;margin-top:10px">Save Diagnostic Logging</button>
+      <div class="sub" style="margin-top:8px">Logging runs independently of the phone app. During an outage, the Nano buffers up to 24 significant events in RAM. No lighting frames or personal login credentials are uploaded.</div>
+    </div>
     <div id="liveColorTunerPanel" class="panel">
       <strong>Live Color Tuning</strong><div class="sub">Fine-tune an exact RGB output while watching the selected light controller respond. Use the wheel, HEX, or RGB fields for exact tuning. You can overwrite an existing named preset, but you cannot add preset slots here.</div>
       <div id="liveColorWheel" class="rgbWheel liveColorTuneWheel"><div id="liveColorMarker" class="rgbWheelMarker"></div></div>
@@ -570,4 +579,36 @@ function overlapHelp(){const e=$("overlapMode").value;$("overlapHelp").textConte
 
 
 
+<script>
+(function(){
+  const node=id=>document.getElementById(id);
+  const status=node("diagStatus"),enable=node("diagEnabled"),token=node("diagToken");
+  let refreshBusy=false;
+  function display(d){
+    enable.checked=!!d.enabled;
+    const flags=[d.enabled?"Sending to Oracle":"Not sending",d.paired?"Token configured":"Pairing token required",
+      (d.pending||0)+" buffered",(d.uploaded||0)+" delivered",
+      (d.dropped||0)+" overwritten","HTTP "+(d.lastHttp??"—")];
+    status.textContent=flags.join(" • ");
+  }
+  async function refresh(){
+    if(refreshBusy)return;
+    refreshBusy=true;
+    try{display(await api("/api/diagnostics"))}
+    catch(e){status.textContent="Diagnostics status unavailable: "+e.message}
+    finally{refreshBusy=false}
+  }
+  node("diagSave").addEventListener("click",async()=>{
+    const desired=enable.checked,secret=token.value.trim();
+    if(secret && secret.length<40){status.textContent="A pairing token must be at least 40 characters.";return}
+    status.textContent="Saving diagnostic logging...";
+    try{
+      const data=await post("/api/diagnostics",{enabled:desired,token:secret});
+      token.value="";display(data);
+    }catch(e){status.textContent="Diagnostics settings were not saved: "+e.message}
+  });
+  document.querySelector('[data-tab="settings"]')?.addEventListener("click",refresh);
+  window.addEventListener("anderson-profile-selected",e=>{if(e.detail?.id==="jason")refresh()});
+})();
+</script>
 </body></html>

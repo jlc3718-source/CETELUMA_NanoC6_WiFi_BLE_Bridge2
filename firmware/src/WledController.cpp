@@ -1,4 +1,5 @@
 #include "WledController.h"
+#include "AndersonDiagnostics.h"
 #include "BoundedHttpBody.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -76,6 +77,7 @@ void WledController::worker(void* context){
   }
 }
 void WledController::loop(){
+  static uint32_t lastOkLog[2]={},lastFailedLog[2]={};
   const uint32_t now=millis();
   if(task&&pending){
     Result result{};
@@ -83,8 +85,8 @@ void WledController::loop(){
       pending=false;
       if(result.slot<2&&slots[result.slot].accept(result.generation)){
         auto& s=slots[result.slot];
-        if(result.ok){if(result.probe)peers[result.slot]=result.peer;s.success(now,result.probe,result.revision);errors[result.slot]="";}
-        else{s.failure(now);errors[result.slot]=result.error;}
+        if(result.ok){if(result.probe)peers[result.slot]=result.peer;s.success(now,result.probe,result.revision);errors[result.slot]="";if(result.probe||!lastOkLog[result.slot]||(uint32_t)(now-lastOkLog[result.slot])>=30000UL){lastOkLog[result.slot]=now;AndersonDiagnostics::record(result.probe?16:9,(int8_t)result.slot,(int32_t)result.revision,result.probe?"wled-probe-ok":"wled-ack");}}
+        else{s.failure(now);errors[result.slot]=result.error;if(!lastFailedLog[result.slot]||(uint32_t)(now-lastFailedLog[result.slot])>=5000UL){lastFailedLog[result.slot]=now;AndersonDiagnostics::record(result.probe?17:10,(int8_t)result.slot,(int32_t)s.failures,result.error);}}
       }
     }
   }

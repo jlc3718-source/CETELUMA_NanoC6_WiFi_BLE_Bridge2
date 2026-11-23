@@ -31,6 +31,7 @@
 #include "RemoteUpdate.h"
 #include "BuildIdentity.h"
 #include "LoopWatchdog.h"
+#include "AndersonDiagnostics.h"
 
 static constexpr int BLUE_LED=7;
 static constexpr int USER_BUTTON=9;
@@ -677,6 +678,7 @@ void evaluateSchedule(bool force=false){
   bool changed=power!=scheduledPower||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;
   power=scheduledPower;runningTheme=t;
   if(!power){ble.setPower(false);return;}
+  if(changed){AndersonDiagnostics::record(12,-1,(power?1:0)|((int32_t)brightness<<8),runningTheme.name.c_str());}
   if(changed||force)applyRunning(true);
 }
 void startAP(){
@@ -707,6 +709,12 @@ static void onWiFiEvent(arduino_event_id_t event,arduino_event_info_t info){
 static void maintainWiFiConnection(){
   if(Update.isRunning()||otaAutoRebootPending)return;
   uint32_t now=millis();
+  static int8_t priorOnline=-1;
+  const bool online=WiFi.status()==WL_CONNECTED;
+  if(priorOnline!=(int8_t)online){
+    priorOnline=online;
+    AndersonDiagnostics::record(1,-1,online?WiFi.RSSI():(int32_t)wifiLastDisconnectReason.load(),online?"wifi-online":"wifi-offline");
+  }
   uint32_t currentIp=(uint32_t)WiFi.localIP();
   if(WiFi.status()==WL_CONNECTED&&currentIp!=0){
     wifiOfflineTimerStarted=false;
@@ -794,7 +802,11 @@ void setupRoutes(){
       const bool effectRequested=!d["effect"].isNull();const Effect chosenEffect=runningTheme.effect;
       runningTheme=restoredManualTheme();if(effectRequested)runningTheme.effect=chosenEffect;
     }
-    applyRunning(true);sendJson(stateJson());
+    applyRunning(true);
+    const int8_t diagSlot=ble.getTarget()?((int8_t)ble.getTarget()-1):-1;
+    AndersonDiagnostics::record(11,diagSlot,(power?1:0)|((int32_t)brightness<<8)|((int32_t)speedLevel<<16),runningTheme.name.c_str());
+    if(sceneRequested)for(uint8_t i=0;i<runningTheme.colorCount&&i<8;i++)AndersonDiagnostics::record(11,diagSlot,(int32_t)(runningTheme.colors[i]&0xFFFFFFUL),"scene-rgb");
+    sendJson(stateJson());
   });
 
   server.on("/api/events",HTTP_GET,[]{
@@ -1043,6 +1055,22 @@ void setupRoutes(){
   server.on("/api/ble/target",HTTP_POST,[]{
     if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;if(role<ROLE_ADMIN&&t!=0){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can select individual controllers\"}");return;}ble.setTarget(t);applyRunning(true);sendJson(stateJson());
   });
+  server.on("/api/diagnostics",HTTP_GET,[]{
+    if(!requireAdmin())return;
+    JsonDocument d;AndersonDiagnostics::status(d.to<JsonObject>());
+    String json;serializeJson(d,json);sendJson(json);
+  });
+  server.on("/api/diagnostics",HTTP_POST,[]{
+    if(!requireAdmin())return;
+    JsonDocument d;if(!body(d))return;
+    if(!d["enabled"].is<bool>()){sendJson("{\"ok\":false,\"error\":\"Enabled must be true or false\"}",400);return;}
+    const String token=d["token"]|String("");
+    if(!AndersonDiagnostics::configure(token,d["enabled"].as<bool>())){
+      sendJson("{\"ok\":false,\"error\":\"Logging token must contain 40-111 URL-safe characters\"}",400);return;
+    }
+    JsonDocument out;AndersonDiagnostics::status(out.to<JsonObject>());out["ok"]=true;
+    String json;serializeJson(out,json);sendJson(json);
+  });
   server.onNotFound([](){server.send(404,"text/plain","Not found");});
 }
 
@@ -1068,6 +1096,7 @@ void setup(){
   if(remoteUpdateBootCheck(ANDERSON_FIRMWARE_VERSION,[]{server.handleClient();feedControllerWatchdog();})){delay(80);ESP.restart();return;}
   bootFirmwareCheckPending=false;
   if(bootRecoveryMode){digitalWrite(BLUE_LED,LOW);return;}
+  AndersonDiagnostics::begin();
   eventStateBegin();eventCategoriesBegin();customFsReady=storageHealthCheck();if(customFsReady){migrateLegacyCustomStorage();runPaletteColorMigration();migrateMasterCalendarV1();settingsBackupInitialize();}seedMasterSceneFavoritesV4();loadEventColorTheme();loadEventColorPresetOverrides();loadEventOverrides();ble.begin(&store.get());bleTxReady=true;
 #ifndef MOCK_BLE
   NimBLEDevice::setPower(bleTxDbm);
@@ -1086,7 +1115,7 @@ void loop(){
   markBootHealthy();
   server.handleClient();ble.loop();
   if(ble.consumeConnectionChange())applyRunning(true);
-  maintainWiFiConnection();maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();
+  maintainWiFiConnection();AndersonDiagnostics::tick(firmwareOperationBusy());maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
