@@ -61,7 +61,8 @@ uint8_t tail=0,count=0;
 uint32_t seq=0,bootId=0,dropped=0;
 uint32_t lastSendMs=0,lastSnapshotMs=0,uploaded=0;
 int lastHttp=0;
-bool active=false,suspended=false,workerStarted=false;
+bool active=false,workerStarted=false;
+volatile bool suspended=false;
 char bearer[112]{};
 
 void uploader(void*) {
@@ -141,7 +142,7 @@ void begin() {
   }
   lastHttp=200;
   record(0,-1,0,"nano-boot");
-  if(!workerStarted){
+  if(active&&!workerStarted){
     TaskHandle_t task=nullptr;
     workerStarted=xTaskCreate(uploader,"anderson-diag",8192,nullptr,1,&task)==pdPASS;
   }
@@ -164,6 +165,10 @@ bool configure(const String& newToken,bool enabled){
   if(newToken.length())newToken.toCharArray(bearer,sizeof(bearer));
   active=enabled;lastSendMs=0;lastHttp=200;
   portEXIT_CRITICAL(&lock);
+  if(enabled&&!workerStarted){
+    TaskHandle_t task=nullptr;
+    workerStarted=xTaskCreate(uploader,"anderson-diag",8192,nullptr,1,&task)==pdPASS;
+  }
   record(18,-1,enabled?1:0,"diagnostics-config");
   return true;
 }

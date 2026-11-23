@@ -95,6 +95,7 @@ GitHub runner queue vary.
 - `firmware/src/main.cpp`: API routes, auth, NVS custom data, OTA, main loop.
 - `firmware/src/RemoteUpdate.cpp`: signed remote-update discovery/download/install.
 - `firmware/src/BleController.cpp`: dual-controller BLE and software effects.
+- `firmware/src/AndersonDiagnostics.cpp`: opt-in bounded async HTTPS event uploading to the isolated Oracle diagnostics service; never add static credentials or hold up light control.
 - `firmware/src/Scheduler.cpp`, `EventCatalog.cpp`: timing/event resolution and the single built-in event palette.
 - `firmware/src/SettingsStore.cpp`: persistent device settings.
 - `tools/release.py`, `.github/workflows/compile-anderson-home-multi.yml`: release path.

@@ -20,3 +20,7 @@ Release path: `python tools/release.py bump`, `python tools/release.py prepare`,
 
 Normal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
 Serial recovery only: full image at **0x0**, Erase OFF. Never flash APP-only at 0x0.
+
+## Oracle diagnostics (v3.1.97)
+
+A separate HTTPS diagnostic receiver runs on Oracle at `https://oracle-home-dev.150.136.245.51.sslip.io/anderson-logs/` with its own SQLite database, ingestion credentials and read/export credentials. It does not modify Jason Home 2 or the frozen Android APK. The Nano uses an asynchronous RAM ring of 24 significant events and sends batches over certificate-verified TLS only when an administrator pairs it in Anderson Home → Settings → Oracle Diagnostics. Configure the one-time private ingest token via that panel; it is never returned by the API or written to Git. The receive token resides only in Oracle's root-protected service data directory. Data exports are restricted to the separate admin token; detailed provisioning must be performed through a trusted Oracle administrator session. The release does not automatically enroll a device or claim physical diagnostic delivery before pairing.
