@@ -25,3 +25,6 @@ assert 'andersonNamedOutputColor((uint32_t)c)' in event, 'persisted palette defa
 print('All 16 named palettes, previews, historical inputs, and BLE/WLED outputs match')
 
 assert 'platformio/toolchain-riscv32-esp @ 15.2.0+20251204' in (ROOT/'firmware/platformio.ini').read_text()
+
+assert 'extra_scripts = post:scripts/c6_toolchain_path.py' in (ROOT/'firmware/platformio.ini').read_text()
+assert 'env.PrependENVPath("PATH", str(bin_dir))' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
