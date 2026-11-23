@@ -28,3 +28,5 @@ assert 'platformio/toolchain-riscv32-esp @ 15.2.0+20251204' in (ROOT/'firmware/p
 
 assert 'extra_scripts = post:scripts/c6_toolchain_path.py' in (ROOT/'firmware/platformio.ini').read_text()
 assert 'env.PrependENVPath("PATH", str(bin_dir))' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+
+assert 'core_dir / "packages" / "toolchain-riscv32-esp" / "bin"' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
