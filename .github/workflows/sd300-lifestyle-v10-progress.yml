@@ -1,0 +1,40 @@
+name: SD300 V10 read only progress
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-lifestyle-v10-progress.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  progress:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect V10 generation and verified narration without changing state
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agnes-sd300-lifestyle-v10
+          echo "V10_SERVICE=$(systemctl is-active sd300-lifestyle-v10.service || true)"
+          journalctl -u sd300-lifestyle-v10.service -n 18 --no-pager -o cat | grep -E 'SD300_LIFESTYLE_V10|FATAL|QUEUE_FULL|RATE_LIMITED|ACCEPTED|DOWNLOADED|ASSEMBLED|Started|Stopped' || true
+          python3 - <<'PY'
+          import json,pathlib,subprocess,hashlib
+          root=pathlib.Path('/home/ubuntu/agnes-sd300-lifestyle-v10')
+          f=root/'lifestyle-v10-state.json'
+          if not f.exists():
+            print('V10_STATE=missing')
+          else:
+            d=json.loads(f.read_text())
+            print('V10_REVISION',d.get('revision'),'UPDATED',d.get('updated_utc'),'ASSEMBLY',d.get('assemble_status'))
+            for key,v in d.get('scenes',{}).items():
+              print('SCENE',key,'STATUS',v.get('status'),'HTTP',v.get('http'),'ATTEMPTS',v.get('attempts'),'JOB_ACCEPTED',bool(v.get('job_id')),'FILE_BYTES',v.get('file_bytes'),'ERROR',str(v.get('error',''))[:90])
+          voice=root/'SD300_Lifestyle_V10_voice.m4a'
+          print('V10_NARRATION_INSTALLED',voice.is_file(),'VOICE_BYTES',voice.stat().st_size if voice.exists() else 0)
+          final=root/'Airthereal_SD300_Lifestyle_Representative_AI_V10_52s.mp4'
+          print('V10_FINAL_READY',final.is_file())
+          if final.exists():
+            p=subprocess.run(['ffprobe','-v','error','-show_entries','stream=codec_type:format=duration,size','-of','json',str(final)],capture_output=True,text=True)
+            print('V10_FINAL_FFPROBE',p.stdout[:1200])
+          PY
+# Progress read 1
