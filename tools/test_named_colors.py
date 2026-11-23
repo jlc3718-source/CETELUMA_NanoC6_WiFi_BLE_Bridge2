@@ -23,3 +23,5 @@ assert 'c=andersonNamedOutputColor(c);' in ble, 'BLE and WLED dispatch must be c
 assert 'andersonNamedOutputColor(syncTheme.colors[idx])' in ble, 'breathing interpolation must use corrected RGB'
 assert 'andersonNamedOutputColor((uint32_t)c)' in event, 'persisted palette defaults not translated'
 print('All 16 named palettes, previews, historical inputs, and BLE/WLED outputs match')
+
+assert 'platformio/toolchain-riscv32-esp @ 15.2.0+20251204' in (ROOT/'firmware/platformio.ini').read_text()
