@@ -186,7 +186,7 @@ control=between(main,'server.on("/api/control"','server.on("/api/events"')
 resume=between(main,'server.on("/api/resume"','server.on("/api/control"')
 assert 'const bool scheduledPower=themeHasVisibleColor(t);' in scheduled
 assert 'power=scheduledPower;runningTheme=t;' in scheduled
-assert 'if(!power){ble.setPower(false);return;}' in scheduled
+assert 'if(!power){ble.setPower(false);if(changed||force)recordSceneState(cause);return;}' in scheduled
 assert 'if(masterPowerCommand)ble.setTarget(0);' in control
 assert 'runningTheme=restoredManualTheme();' in control
 assert 'hasLastVisibleTheme=true' in main
