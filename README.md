@@ -1,6 +1,8 @@
 # Anderson Home NanoC6 Light Controller
 
-Current Anderson firmware source: **v3.1.96**. Restores all 16 original calibrated LED RGB values from v3.1.94; named colors now affect only browser swatches/previews. The firmware keeps the verified security and toolchain fixes from v3.1.95.
+Current Anderson firmware source: **v3.1.100**. Restores all 16 original calibrated LED RGB values from v3.1.94; named colors now affect only browser swatches/previews. The firmware keeps the verified security and toolchain fixes from v3.1.95.
+
+v3.1.100: Adds structured GitHub scene snapshots (scene name, source, effect, requested RGB palette, power, brightness, speed, controller target) and exact BLE frames on the existing sampled successful-write events. Existing log codes, frequencies, and uploads remain enabled. Scheduler changes now detect same-name RGB palette updates.
 
 Canonical source: `firmware/`. The frozen Android app displays its web UI.
 

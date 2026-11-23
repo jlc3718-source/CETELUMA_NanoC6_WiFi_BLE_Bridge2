@@ -110,7 +110,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.99";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.100";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -665,21 +665,26 @@ void applyRunning(bool force=false){
   if(themeHasVisibleColor(runningTheme)){lastVisibleTheme=runningTheme;hasLastVisibleTheme=true;}
   ble.applyTheme(runningTheme,brightness,speedLevel,millis(),force);
 }
-void evaluateSchedule(bool force=false){
+static void recordSceneState(const char* source){
+  AndersonDiagnostics::recordScene(source,runningTheme.name.c_str(),effectName(runningTheme.effect),
+      runningTheme.colors,runningTheme.colorCount,power,brightness,speedLevel,(int8_t)ble.getTarget());
+}
+void evaluateSchedule(bool force=false,const char* cause="scheduler"){
   if(!timeValid())return;time_t n=time(nullptr);
   if(tonightOptionOverride){
     if(n<tonightOptionUntil){if(force)applyRunning(true);return;}
     tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";
   }
   if(manualOverride){if(!manualOverrideUntil){manualOverrideUntil=nextPlannedScheduleChange(n);if(force)applyRunning(true);return;}if(n<manualOverrideUntil){if(force)applyRunning(true);return;}manualOverride=false;manualOverrideUntil=0;}tm l{};localtime_r(&n,&l);auto&s=store.get();uint8_t previousBrightness=brightness,previousSpeed=speedLevel;
-  ble.setTarget(0);brightness=100;speedLevel=1;bool schedule1Active=s.schedulerEnabled&&scheduler.inRunWindow(l);bool schedule2Active=s.schedule2Enabled&&scheduler.inSchedule2Window(l);if(!schedule1Active&&!schedule2Active){if(power){power=false;ble.setPower(false);}return;}
+  ble.setTarget(0);brightness=100;speedLevel=1;bool schedule1Active=s.schedulerEnabled&&scheduler.inRunWindow(l);bool schedule2Active=s.schedule2Enabled&&scheduler.inSchedule2Window(l);if(!schedule1Active&&!schedule2Active){const bool changed=power;if(power){power=false;ble.setPower(false);}if(changed||force)recordSceneState(cause);return;}
   tm themeLocal=l;if(schedule2Active&&!schedule1Active){int mins=l.tm_hour*60+l.tm_min;uint16_t schedule1Start=s.schedule1StartAtDusk?scheduler.civilDuskMinutes(l):s.onMinutes;if(mins<schedule1Start){themeLocal.tm_mday-=1;themeLocal.tm_isdst=-1;mktime(&themeLocal);}}
   Theme t;uint8_t cb=100,cs=1;if(resolveCustomSchedule(themeLocal,t,cb,cs)){brightness=cb;speedLevel=cs;}else{scheduledEventSpeedHint=1;t=scheduler.resolve(themeLocal);speedLevel=scheduledEventSpeedHint;}if(schedule2Active&&!schedule1Active)brightness=s.schedule2Brightness;const bool scheduledPower=themeHasVisibleColor(t);
-  bool changed=power!=scheduledPower||runningTheme.name!=t.name||runningTheme.effect!=t.effect||previousBrightness!=brightness||previousSpeed!=speedLevel;
+  bool changed=power!=scheduledPower||runningTheme.name!=t.name||runningTheme.effect!=t.effect||runningTheme.colorCount!=t.colorCount||previousBrightness!=brightness||previousSpeed!=speedLevel;
+  if(!changed)for(uint8_t i=0;i<t.colorCount&&i<8;i++)if(runningTheme.colors[i]!=t.colors[i]){changed=true;break;}
   power=scheduledPower;runningTheme=t;
-  if(!power){ble.setPower(false);return;}
+  if(!power){ble.setPower(false);if(changed||force)recordSceneState(cause);return;}
   if(changed){AndersonDiagnostics::record(12,-1,(power?1:0)|((int32_t)brightness<<8),runningTheme.name.c_str());}
-  if(changed||force)applyRunning(true);
+  if(changed||force){applyRunning(true);recordSceneState(cause);}
 }
 void startAP(){
   WiFi.mode(WIFI_AP_STA);WiFi.setTxPower(WIFI_TX_VALUES[wifiTxIndex]);WiFi.softAP("AndersonHome-Setup","andersonhome");setupAP=true;
@@ -786,7 +791,7 @@ void setupRoutes(){
   });
   server.on("/api/login-preview",HTTP_GET,[]{if(!bootAllowsControls())return;sendJson(loginPreviewJson());});
   server.on("/api/state",HTTP_GET,[]{if(!requireUser())return;sendJson(stateJson());});
-  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;if(!timeValid()){sendJson("{\"ok\":false,\"error\":\"Waiting for time sync before resuming schedule\"}",503);return;}manualOverride=false;manualOverrideUntil=0;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";evaluateSchedule(true);sendJson(stateJson());});
+  server.on("/api/resume",HTTP_POST,[]{if(!requireUser())return;if(!timeValid()){sendJson("{\"ok\":false,\"error\":\"Waiting for time sync before resuming schedule\"}",503);return;}manualOverride=false;manualOverrideUntil=0;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";evaluateSchedule(true,"manual-resume");sendJson(stateJson());});
 
   server.on("/api/control",HTTP_POST,[]{
     if(!requireUser())return;JsonDocument d;if(!body(d))return;tonightOptionOverride=false;tonightOptionUntil=0;tonightOptionId="";manualOverride=true;manualOverrideUntil=timeValid()?nextPlannedScheduleChange(time(nullptr)):0;
@@ -805,6 +810,7 @@ void setupRoutes(){
       runningTheme=restoredManualTheme();if(effectRequested)runningTheme.effect=chosenEffect;
     }
     applyRunning(true);
+    recordSceneState("manual-control");
     const int8_t diagSlot=ble.getTarget()?((int8_t)ble.getTarget()-1):-1;
     AndersonDiagnostics::record(11,diagSlot,(power?1:0)|((int32_t)brightness<<8)|((int32_t)speedLevel<<16),runningTheme.name.c_str());
     if(sceneRequested)for(uint8_t i=0;i<runningTheme.colorCount&&i<8;i++)AndersonDiagnostics::record(11,diagSlot,(int32_t)(runningTheme.colors[i]&0xFFFFFFUL),"scene-rgb");
@@ -839,7 +845,7 @@ void setupRoutes(){
     tm night{};if(!currentLightingNight(night)){server.send(503,"application/json","{\"ok\":false,\"error\":\"Tonight is unavailable\"}");return;}
     Theme chosen;uint8_t br=100,sp=1;if(!tonightOptionById(night,id,chosen,br,sp)){server.send(409,"application/json","{\"ok\":false,\"error\":\"That event is not an eligible option for this lighting night\"}");return;}
     time_t now=time(nullptr);tm local{};localtime_r(&now,&local);auto& cfg=store.get();const bool s1=cfg.schedulerEnabled&&scheduler.inRunWindow(local),s2=cfg.schedule2Enabled&&scheduler.inSchedule2Window(local);if(s2&&!s1)br=cfg.schedule2Brightness;
-    tonightOptionUntil=nextPlannedScheduleChange(now);tonightOptionId=id;tonightOptionOverride=true;manualOverride=false;ble.setTarget(0);power=true;brightness=br;speedLevel=sp;runningTheme=chosen;applyRunning(true);
+    tonightOptionUntil=nextPlannedScheduleChange(now);tonightOptionId=id;tonightOptionOverride=true;manualOverride=false;ble.setTarget(0);power=true;brightness=br;speedLevel=sp;runningTheme=chosen;applyRunning(true);recordSceneState("tonight-option");
     JsonDocument out;out["ok"]=true;out["id"]=id;out["name"]=chosen.name;out["effect"]=effectName(chosen.effect);out["speed"]=sp;out["brightness"]=br;out["until"]=(int64_t)tonightOptionUntil;JsonArray colors=out["colors"].to<JsonArray>();for(uint8_t c=0;c<chosen.colorCount;c++)colors.add(colorHex(chosen.colors[c]));String json;serializeJson(out,json);sendJson(json);
   });
 
@@ -875,7 +881,7 @@ void setupRoutes(){
       if(d["resetSchedule"]|false){if(!clearEventScheduleOverride(i)){server.send(500,"text/plain","Event schedule reset failed");return;}}
       else if(d["schedule"].is<JsonObject>()){JsonObject sc=d["schedule"].as<JsonObject>();String modeName=sc["mode"]|String("default");uint8_t mode=modeName=="date"?1:(modeName=="range"?2:(modeName=="month"?3:0));bool annual=sc["annual"]|true;int requestedYear=sc["year"]|0;uint16_t sy=annual?0:(uint16_t)constrain(requestedYear,2020,2037);uint8_t sm=constrain(sc["startMonth"]|1,1,12),sd=constrain(sc["startDay"]|1,1,31),em=constrain(sc["endMonth"]|sm,1,12),ed=constrain(sc["endDay"]|sd,1,31);if(mode==1){em=sm;ed=sd;}if(mode==3){sd=1;em=sm;ed=eventDaysInMonth(sy?sy:2028,sm);}bool customTime=sc["customTime"]|false;String startText=sc["start"]|String("00:00"),endText=sc["end"]|String("00:00");auto validClock=[](const String& value){if(value.length()!=5||value[2]!=':')return false;for(int k:{0,1,3,4})if(value[k]<'0'||value[k]>'9')return false;int h=value.substring(0,2).toInt(),m=value.substring(3).toInt();return h>=0&&h<24&&m>=0&&m<60;};if(customTime&&(!validClock(startText)||!validClock(endText))){server.send(400,"text/plain","Choose valid event start and end times");return;}uint16_t startMinutes=parseTime(startText,0),endMinutes=parseTime(endText,0);if(mode==0&&!customTime){if(!clearEventScheduleOverride(i)){server.send(500,"text/plain","Event schedule reset failed");return;}}else if(!saveEventScheduleOverride(i,mode,sy,sm,sd,em,ed,customTime,startMinutes,endMinutes)){server.send(400,"text/plain","Event schedule could not be saved. Check the selected dates.");return;}}
     }
-    evaluateSchedule(true);sendJson(stateJson());
+    evaluateSchedule(true,"configuration");sendJson(stateJson());
   });
 
   server.on("/api/backup/status",HTTP_GET,[]{if(!requireAdmin())return;sendJson(settingsBackupStatusJson());});
@@ -886,7 +892,7 @@ void setupRoutes(){
   server.on("/api/settings",HTTP_POST,[]{
     if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;bool adminChange=!d["overlap"].isNull()||!d["on"].isNull()||!d["off"].isNull()||!d["lead"].isNull()||!d["trail"].isNull()||!d["tz"].isNull()||!d["schedule1Dusk"].isNull()||!d["schedule2End"].isNull()||!d["schedule2Dawn"].isNull()||!d["schedule2Brightness"].isNull();if(role<ROLE_ADMIN&&adminChange){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can change controller settings\"}");return;}AppSettings next=store.get();
     if(!d["overlap"].isNull()){String v=d["overlap"].as<String>();next.overlap=v=="split"?1:(v=="combine"?2:0);}if(!d["on"].isNull())next.onMinutes=parseTime(d["on"].as<String>(),next.onMinutes);if(!d["off"].isNull())next.offMinutes=parseTime(d["off"].as<String>(),next.offMinutes);if(!d["lead"].isNull())next.leadDays=constrain(d["lead"].as<int>(),0,14);if(!d["trail"].isNull())next.trailDays=constrain(d["trail"].as<int>(),0,7);if(!d["tz"].isNull())next.tz=d["tz"].as<String>();if(!d["scheduler"].isNull())next.schedulerEnabled=d["scheduler"].as<bool>();if(!d["scheduler2"].isNull())next.schedule2Enabled=d["scheduler2"].as<bool>();if(!d["schedule1Dusk"].isNull())next.schedule1StartAtDusk=d["schedule1Dusk"].as<bool>();if(!d["schedule2End"].isNull())next.schedule2EndMinutes=parseTime(d["schedule2End"].as<String>(),next.schedule2EndMinutes);if(!d["schedule2Dawn"].isNull())next.schedule2EndAtDawn=d["schedule2Dawn"].as<bool>();if(!d["schedule2Brightness"].isNull())next.schedule2Brightness=constrain(d["schedule2Brightness"].as<int>(),1,100);
-    if(!store.saveSettings(next)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Schedule settings write failed; previous settings were retained\"}");return;}if(!d["tz"].isNull())configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");evaluateSchedule(true);sendJson(stateJson());
+    if(!store.saveSettings(next)){server.send(500,"application/json","{\"ok\":false,\"error\":\"Schedule settings write failed; previous settings were retained\"}");return;}if(!d["tz"].isNull())configTzTime(store.get().tz.c_str(),"pool.ntp.org","time.nist.gov");evaluateSchedule(true,"configuration");sendJson(stateJson());
   });
 
   server.on("/api/event-color-theme",HTTP_GET,[]{if(!requireUser())return;JsonDocument d;d["theme"]=eventColorThemeId(activeEventColorTheme);d["name"]=eventColorThemeName(activeEventColorTheme);d["generation"]=eventColorThemeGeneration;String out;serializeJson(d,out);sendJson(out);});
@@ -1055,7 +1061,7 @@ void setupRoutes(){
     if(!requireAdmin())return;JsonDocument d;if(!body(d))return;int slot=d["slot"]|-1;String name=d["name"].as<String>();name.trim();if(slot<0||slot>1){server.send(400,"text/plain","Invalid slot");return;}if(!name.length()||name.length()>32){server.send(400,"text/plain","Controller name must be 1-32 characters");return;}if(!ble.renameController((uint8_t)slot,name)){server.send(404,"text/plain","Controller is not configured");return;}if(!store.saveBle()){server.send(500,"text/plain","Controller name could not be persisted");return;}sendJson(stateJson());
   });
   server.on("/api/ble/target",HTTP_POST,[]{
-    if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;if(role<ROLE_ADMIN&&t!=0){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can select individual controllers\"}");return;}ble.setTarget(t);applyRunning(true);sendJson(stateJson());
+    if(!requireUser())return;uint8_t role=requestRole();JsonDocument d;if(!body(d))return;int t=d["target"]|0;if(t<0||t>2)t=0;if(role<ROLE_ADMIN&&t!=0){server.send(403,"application/json","{\"ok\":false,\"error\":\"Only Jason can select individual controllers\"}");return;}ble.setTarget(t);applyRunning(true);recordSceneState("manual-target");sendJson(stateJson());
   });
   server.on("/api/diagnostics",HTTP_GET,[]{
     if(!requireAdmin())return;
@@ -1104,7 +1110,7 @@ void setup(){
   NimBLEDevice::setPower(bleTxDbm);
 #endif
   runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;
-  evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;bootHealthyAfter=millis()+BOOT_HEALTHY_GRACE_MS;digitalWrite(BLUE_LED,LOW);
+  evaluateSchedule(true,"startup");if(!timeValid())recordSceneState("boot-await-time");if(timeValid())lastScheduleMinute=time(nullptr)/60;bootHealthyAfter=millis()+BOOT_HEALTHY_GRACE_MS;digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
   const uint64_t loopStartUs=(uint64_t)esp_timer_get_time();
@@ -1116,11 +1122,11 @@ void loop(){
   }
   markBootHealthy();
   server.handleClient();ble.loop();
-  if(ble.consumeConnectionChange())applyRunning(true);
+  if(ble.consumeConnectionChange()){applyRunning(true);recordSceneState("ble-reconnect");}
   maintainWiFiConnection();logWiFiConnectionState();AndersonDiagnostics::tick(firmwareOperationBusy());maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
-  if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
+  if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true,"configuration");}
   uint32_t scheduleProbeNow=millis();if((uint32_t)(scheduleProbeNow-lastScheduleMinuteProbe)>=250UL){lastScheduleMinuteProbe=scheduleProbeNow;if(timeValid()){time_t scheduleMinute=time(nullptr)/60;if(scheduleMinute!=lastScheduleMinute){lastScheduleMinute=scheduleMinute;evaluateSchedule();}}else lastScheduleMinute=-1;}
   if(power)applyRunning(false);
   bool pressed=digitalRead(USER_BUTTON)==LOW;if(pressed && !buttonDown)buttonDown=millis();if(!pressed)buttonDown=0;

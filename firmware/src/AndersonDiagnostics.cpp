@@ -85,6 +85,12 @@ struct Event {
   uint8_t code;
   int8_t slot;
   char detail[32];
+  // Fixed-size optional metadata; no dynamic allocation or secrets in the queue.
+  char source[24],effect[12];
+  uint32_t colors[8];
+  uint8_t colorCount=0,power=0,brightness=0,speed=0;
+  int8_t target=0;
+  uint8_t frame[9],frameLen=0;
 };
 portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
 Event ring[CAP]{};
@@ -139,6 +145,35 @@ void uploader(void*) {
       e["code"]=batch[i].code;e["slot"]=batch[i].slot;
       e["value"]=batch[i].value;
       if(batch[i].detail[0])e["detail"]=batch[i].detail;
+      if(batch[i].code==14){
+        JsonObject scene=e["scene"].to<JsonObject>();
+        scene["name"]=batch[i].detail;
+        scene["source"]=batch[i].source;
+        scene["effect"]=batch[i].effect;
+        scene["power"]=batch[i].power!=0;
+        scene["brightness"]=batch[i].brightness;
+        scene["speed"]=batch[i].speed;
+        scene["target"]=batch[i].target; // 0=both, 1=House, 2=Garage
+        JsonArray colors=scene["colors"].to<JsonArray>();
+        for(uint8_t j=0;j<batch[i].colorCount&&j<8;j++){
+          char hex[8];snprintf(hex,sizeof(hex),"#%06lX",(unsigned long)(batch[i].colors[j]&0xFFFFFFUL));
+          colors.add(String(hex));
+        }
+      }
+      if(batch[i].code==7&&batch[i].frameLen){
+        JsonObject write=e["write"].to<JsonObject>();
+        const uint8_t* f=batch[i].frame;
+        const uint8_t kind=batch[i].frameLen>2?f[2]:0;
+        write["type"]=kind==5?"color":(kind==4?"power":(kind==1?"brightness":"other"));
+        if(kind==5&&batch[i].frameLen>=7){
+          char hex[8];snprintf(hex,sizeof(hex),"#%02X%02X%02X",f[4],f[5],f[6]);
+          write["rgb"]=hex;
+        }else if(kind==1&&batch[i].frameLen>=4)write["brightness"]=f[3];
+        else if(kind==4&&batch[i].frameLen>=6)write["power"]=f[5]!=0;
+        char raw[19]={};
+        for(uint8_t j=0;j<batch[i].frameLen&&j<9;j++)snprintf(raw+j*2,3,"%02X",f[j]);
+        write["frame"]=raw;
+      }
     }
     String json;serializeJson(packet,json);
     String encoded;
@@ -185,18 +220,41 @@ void uploader(void*) {
   }
 }
 }
-void record(uint8_t code,int8_t slot,int32_t value,const char* detail) {
-  if(code>=20)return;
-  Event entry{};entry.uptime=millis();
+static void queueEvent(Event& entry) {
+  entry.uptime=millis();
   time_t now=time(nullptr);entry.utc=(now>1700000000&&now<4102444800)?(uint32_t)now:0;
-  entry.code=code;entry.slot=slot;entry.value=value;
-  if(detail)for(size_t i=0;i<sizeof(entry.detail)-1&&detail[i];i++)
-    entry.detail[i]=(detail[i]>=32&&detail[i]<127)?detail[i]:'_';
   portENTER_CRITICAL(&lock);
   entry.seq=++seq;
   if(count==CAP){tail=(tail+1)%CAP;--count;++dropped;}
   ring[(tail+count)%CAP]=entry;++count;
   portEXIT_CRITICAL(&lock);
+}
+void record(uint8_t code,int8_t slot,int32_t value,const char* detail) {
+  if(code>=20)return;
+  Event entry{};entry.code=code;entry.slot=slot;entry.value=value;
+  if(detail)for(size_t i=0;i<sizeof(entry.detail)-1&&detail[i];i++)
+    entry.detail[i]=(detail[i]>=32&&detail[i]<127)?detail[i]:'_';
+  queueEvent(entry);
+}
+void recordScene(const char* source,const char* name,const char* effect,
+                 const uint32_t* colors,uint8_t colorCount,bool power,
+                 uint8_t brightness,uint8_t speed,int8_t target) {
+  Event entry{};entry.code=14;entry.slot=target?target-1:-1;entry.value=power?1:0;
+  snprintf(entry.detail,sizeof(entry.detail),"%s",name?name:"");
+  snprintf(entry.source,sizeof(entry.source),"%s",source?source:"unknown");
+  snprintf(entry.effect,sizeof(entry.effect),"%s",effect?effect:"unknown");
+  entry.colorCount=colors?min((uint8_t)8,colorCount):0;
+  for(uint8_t i=0;i<entry.colorCount;i++)entry.colors[i]=colors[i]&0xFFFFFFUL;
+  entry.power=power?1:0;entry.brightness=brightness;entry.speed=speed;entry.target=target;
+  queueEvent(entry);
+}
+void recordBleWrite(int8_t slot,const uint8_t* frame,size_t length) {
+  if(!frame||length<3)return;
+  Event entry{};entry.code=7;entry.slot=slot;entry.value=frame[2];
+  snprintf(entry.detail,sizeof(entry.detail),"%s","ble-frame-accepted");
+  entry.frameLen=(uint8_t)min(length,sizeof(entry.frame));
+  memcpy(entry.frame,frame,entry.frameLen);
+  queueEvent(entry);
 }
 void begin() {
   bootId=esp_random();

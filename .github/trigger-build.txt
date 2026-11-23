@@ -1,16 +1,1 @@
-Build Anderson Home v3.1.95 — named sRGB colors in UI and real BLE/WLED output — align regression tests — recognize canonical expanded preset defaults — preserve historical Yellow alias checks — compare EventCatalog legacy with corrected EventColorThemes — pin GCC 15.2 RISC-V C6 build toolchain — expose pinned GCC bin PATH in CI — supply pinned toolchain to SCons ENV — use explicit Core package directory fallback — discover nested GCC toolchain executable — align nested GCC discovery regression
-Build Anderson Home 3.1.95 with pinned SHA256-verified official Espressif GCC 15.2.
-Build Anderson v3.1.95 with explicit SDK mbedTLS headers for signed OTA.
-Locate mbedTLS SHA256 headers among installed C6 platform packages.
-Build Anderson v3.1.95 with IDF 6.1 / Mbed TLS 4 PSA SHA256 support.
-Anderson v3.1.96: restore original calibrated LED output; UI-only named-color swatches and previews.
-Anderson v3.1.96: verify calibrated LED value preservation and UI-only color correction.
-Anderson v3.1.97: bounded encrypted Oracle diagnostics, authenticated ingestion, BLE/WLED command and connection logging.
-Anderson v3.1.97: retain standalone Wi-Fi recovery harness while logging Wi-Fi changes independently.
-Anderson v3.1.97: clarify strict certificate verification in diagnostic sender.
-Anderson v3.1.97: enable GCC link-time size optimization to fit the unchanged OTA slot.
-Anderson v3.1.97: link slim GCC15 LTO objects through the vendor compiler and plugin-aware archiver.
-Anderson v3.1.97: update toolchain security gate for proven GCC15 LTO linker and archive settings.
-Build Anderson 3.1.98 direct private-GitHub diagnostics (no Oracle) with existing color calibration preserved.
-Verify GitHub direct logging tests and binary (v3.1.98).
-Anderson v3.1.99: trust the live api.github.com Sectigo chain for verified direct diagnostic uploads.
+Build Anderson Home v3.1.100 — enrich existing GitHub diagnostics with scene origin, requested palette/effect, target, power/brightness/speed, actual sampled BLE payload; preserve all existing events and intervals.

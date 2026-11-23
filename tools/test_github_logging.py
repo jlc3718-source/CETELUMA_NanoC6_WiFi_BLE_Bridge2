@@ -27,7 +27,10 @@ checks={
  'manual commands retained': 'AndersonDiagnostics::record(11,diagSlot' in m,
  'UI pairing': 'id="diagToken"' in ui and 'GitHub Diagnostics' in ui,
  'original RGB still calibrated': '0xE08700' in m and 'andersonNamedOutputColor(' not in m,
- 'firmware version bumped': 'ANDERSON_FIRMWARE_VERSION="3.1.99"' in m,
+ 'firmware version aligned': f'ANDERSON_FIRMWARE_VERSION="{(ROOT / "FIRMWARE_VERSION.txt").read_text().strip()}"' in m,
+ 'rich scene event': 'scene["colors"]' in d and 'scene["source"]' in d and 'scene["effect"]' in d and 'recordSceneState("manual-control")' in m,
+ 'BLE frame details preserve successes': 'recordBleWrite((int8_t)i,p->data,p->len)' in b and 'write["frame"]' in d,
+ 'scheduler can detect RGB changes': 'runningTheme.colors[i]!=t.colors[i]' in m,
 }
 assert all(checks.values()),'GitHub logging invariants: '+', '.join(k for k,v in checks.items() if not v)
 print("PASS: direct private GitHub diagnostics, no Oracle dependency, token kept in NVS")
