@@ -191,7 +191,7 @@ assert 'if(masterPowerCommand)ble.setTarget(0);' in control
 assert 'runningTheme=restoredManualTheme();' in control
 assert 'hasLastVisibleTheme=true' in main
 assert 't.name=="Off"' in main
-assert 't.colors[0]=0xFFFF00' in main
+assert 't.colors[0]=0xE08700' in main
 assert 'Waiting for time sync before resuming schedule' in resume
 assert 'No active lighting scene; scheduled power OFF.' in html
 print('PASS: dark schedule OFF, master ON restores visible scene across both targets')

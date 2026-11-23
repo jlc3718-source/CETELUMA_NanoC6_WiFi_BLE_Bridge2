@@ -1,5 +1,4 @@
 #include "BleController.h"
-#include "ColorCorrection.h"
 #include <algorithm>
 #include <math.h>
 
@@ -154,7 +153,7 @@ void BleController::setPower(bool on){
   if(!on){for(uint8_t i=0;i<2;i++)if(slotTargeted(i))clearPending(i);activeValid=false;}
   uint8_t f[9]={0x7E,0x04,0x04,(uint8_t)(on?0xF0:0x00),0x00,(uint8_t)(on?0x01:0x00),0xFF,0x00,0xEF};enqueueToTargets(0,f,9,true);
 }
-void BleController::setColor(uint32_t c,bool reliable){c=andersonNamedOutputColor(c);for(uint8_t i=0;i<2;i++)if(slotTargeted(i)&&usesWled(i))wled.setColor(i,c);uint8_t f[9]={0x7E,0x07,0x05,0x03,r8(c),g8(c),b8(c),0x10,0xEF};enqueueToTargets(2,f,9,reliable);}
+void BleController::setColor(uint32_t c,bool reliable){for(uint8_t i=0;i<2;i++)if(slotTargeted(i)&&usesWled(i))wled.setColor(i,c);uint8_t f[9]={0x7E,0x07,0x05,0x03,r8(c),g8(c),b8(c),0x10,0xEF};enqueueToTargets(2,f,9,reliable);}
 void BleController::setBrightness(uint8_t B,bool reliable){B=constrain(B,0,100);for(uint8_t i=0;i<2;i++)if(slotTargeted(i)&&usesWled(i))wled.setBrightness(i,B);uint8_t f[9]={0x7E,0x04,0x01,B,0x00,0x00,0x00,0x00,0xEF};enqueueToTargets(1,f,9,reliable);}
 
 void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,uint32_t nowMs,bool force){
@@ -167,7 +166,7 @@ void BleController::applyTheme(const Theme& t,uint8_t bright,uint8_t speedLevel,
   if(!starting&&(uint32_t)(nowMs-lastControlReassert)>=CONTROL_REASSERT_INTERVAL_MS){setPower(true);if(syncTheme.effect!=Effect::Breath)setBrightness(bright,true);lastControlReassert=nowMs;}
   if(syncTheme.effect==Effect::Jump){if(!force&&nowMs-lastEffect<interval)return;lastEffect=nowMs;uint32_t step=(nowMs/interval)%count;setColor(syncTheme.colors[step],true);return;}
   if(syncTheme.effect==Effect::Strobe){uint32_t half=max((uint32_t)45,interval/2);if(!force&&nowMs-lastEffect<half)return;lastEffect=nowMs;uint32_t phase=nowMs/half;if((phase&1)==0)setColor(0x000000,true);else setColor(syncTheme.colors[(phase/2)%count],true);return;}
-  if(syncTheme.effect==Effect::Breath){uint32_t frame=max((uint32_t)55,interval/5);if(!force&&nowMs-lastEffect<frame)return;lastEffect=nowMs;float cycleMs=(float)(interval*8UL),phase=fmodf((float)nowMs,cycleMs)/cycleMs;int idx=(int)(phase*count)%count,nxt=(idx+1)%count;float local=fmodf(phase*count,1.0f);uint32_t a=andersonNamedOutputColor(syncTheme.colors[idx]),z=andersonNamedOutputColor(syncTheme.colors[nxt]);uint8_t R=(uint8_t)(r8(a)+(r8(z)-r8(a))*local),G=(uint8_t)(g8(a)+(g8(z)-g8(a))*local),B=(uint8_t)(b8(a)+(b8(z)-b8(a))*local);uint32_t color=((uint32_t)R<<16)|((uint32_t)G<<8)|B;float wave=0.5f-0.5f*cosf(phase*2.0f*PI);uint8_t level=(uint8_t)max(1.0f,bright*(0.10f+0.90f*wave));setColor(count>1?color:syncTheme.colors[0],starting);setBrightness(level,false);return;}
+  if(syncTheme.effect==Effect::Breath){uint32_t frame=max((uint32_t)55,interval/5);if(!force&&nowMs-lastEffect<frame)return;lastEffect=nowMs;float cycleMs=(float)(interval*8UL),phase=fmodf((float)nowMs,cycleMs)/cycleMs;int idx=(int)(phase*count)%count,nxt=(idx+1)%count;float local=fmodf(phase*count,1.0f);uint32_t a=syncTheme.colors[idx],z=syncTheme.colors[nxt];uint8_t R=(uint8_t)(r8(a)+(r8(z)-r8(a))*local),G=(uint8_t)(g8(a)+(g8(z)-g8(a))*local),B=(uint8_t)(b8(a)+(b8(z)-b8(a))*local);uint32_t color=((uint32_t)R<<16)|((uint32_t)G<<8)|B;float wave=0.5f-0.5f*cosf(phase*2.0f*PI);uint8_t level=(uint8_t)max(1.0f,bright*(0.10f+0.90f*wave));setColor(count>1?color:syncTheme.colors[0],starting);setBrightness(level,false);return;}
 }
 
 void BleController::loop(){

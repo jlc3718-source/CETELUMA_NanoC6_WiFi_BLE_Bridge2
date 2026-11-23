@@ -83,10 +83,10 @@ GitHub runner queue vary.
 - Built-in event palettes are editable through saved per-event overrides. The UI must
   allow visible removal as well as addition of colors while keeping at least one color;
   preserve event identity, ordering, schedules, and unrelated event settings.
-- Named color buttons, previews, and BLE/WLED payloads use the same recognizable sRGB values; historical persisted codes are translated at runtime without clearing settings. Quick Colors must show each color name.
+- Color buttons and tiles use recognizable browser-facing sRGB reference colors for their names while preserving the separate calibrated LED output codes. Quick Colors must show each color name.
 - Built-in event scheduling has three selectable profiles: **1** = the 28 approved Scene Favorites using the basic/original color families, **9** = the expanded holiday calendar using the basic nine-color palette, and **16** = the expanded calendar using the expanded 16-color palette. Per-event edits use one persistent override slot and routine firmware upgrades must preserve those edits.
 - The Favorites page shows a checked Favorite control beside every favorite scene so it can be removed directly from Favorites. The approved built-in Scene Favorites list currently contains 28 entries and the **1** schedule mirrors that list.
-- The current named palette is Red `#FF0000`, Orange `#FF7A00`, Pink `#FF69B4`, Yellow `#FFFF00`, Green `#00FF00`, Cyan `#00FFFF`, Blue `#0000FF`, Purple `#8000FF`, White `#FFFFFF`, Teal `#008080`, Sky Blue `#4DB8FF`, Amber Gold `#FFB000`, Lavender `#B57EDC`, Navy Blue `#001F5B`, Burgundy `#800020`, and Silver Gray `#A7ADB5`. Named swatches and physical output use the same sRGB values; old saved codes are mapped to these values without rewriting NVS. Existing named slots may be tuned/overwritten through Live Color Tuning; do not add or delete palette slots from the UI.
+- The current named palette is Red `#FF0000`, Orange `#FF0D00`, Pink `#FF0024`, Yellow `#E08700`, Green `#28FF00`, Cyan `#00BD4C`, Blue `#0D00FF`, Purple `#5B00E6`, White `#FFFFFA`, Teal `#00B4B4`, Sky Blue `#0096FF`, Amber Gold `#FFA000`, Lavender `#B464FF`, Navy Blue `#001478`, Burgundy `#87002D`, and Silver Gray `#A0A5AF`. Browser-facing swatches use recognizable reference colors while calibrated LED payload values remain separate. Existing named slots may be tuned/overwritten through Live Color Tuning; do not add or delete palette slots from the UI.
 - Settings includes a separate **Backup & Restore** sub-tab. It backs up the user-selected categories automatically once per week and supports manual backup/restore. A failed backup must preserve the previous verified generation; restore must prevalidate the complete snapshot and retain a recoverable prior-state journal until commit.
 
 ## Source map
@@ -101,7 +101,7 @@ GitHub runner queue vary.
 - `.github/scripts/anderson-retention.sh`, `.github/workflows/anderson-retention.yml`:
   current-plus-one build/release retention policy.
 
-- Current event/palette behavior is defined by the 1/9/16 schedule profiles above, with Yellow corrected to `#FFFF00`. Preserve the 16 named slots, historical-color compatibility, and user settings.
+- Current event/palette behavior is defined by the 1/9/16 schedule profiles above, with Yellow calibrated to `#E08700`. Preserve the 16 named slots and the current color-correction table.
 
 ## Project identities and two-generation housekeeping (October 2026)
 

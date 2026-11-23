@@ -1,5 +1,4 @@
 #include "EventColorThemes.h"
-#include "ColorCorrection.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
@@ -227,8 +226,8 @@ static constexpr const char* PRESET_NAMES[]={
   "Teal","Sky Blue","Amber Gold","Lavender","Navy Blue","Burgundy","Silver Gray"
 };
 static constexpr uint32_t PRESET_DEFAULTS[]={
-  0xFF0000,0xFF7A00,0xFF69B4,0xFFFF00,0x00FF00,0x00FFFF,0x0000FF,0x8000FF,0xFFFFFF,
-  0x008080,0x4DB8FF,0xFFB000,0xB57EDC,0x001F5B,0x800020,0xA7ADB5
+  0xFF0000,0xFF0D00,0xFF0024,0xE08700,0x28FF00,0x00BD4C,0x0D00FF,0x5B00E6,0xFFFFFA,
+  0x00B4B4,0x0096FF,0xFFA000,0xB464FF,0x001478,0x87002D,0xA0A5AF
 };
 static_assert(sizeof(PRESET_NAMES)/sizeof(PRESET_NAMES[0])==16,"preset name count");
 static_assert(sizeof(PRESET_DEFAULTS)/sizeof(PRESET_DEFAULTS[0])==16,"preset value count");
@@ -265,8 +264,7 @@ static bool presetLoaded=false;
 
 static int presetIndexForDefault(uint32_t c){
   c&=0xFFFFFF;
-  if(c==0xFFFF44||c==0xE0B400)return 3;
-  c=andersonNamedOutputColor(c);
+  if(c==0xFFFF44||c==0xE0B400||c==0xE08700)return 3;
   for(size_t i=0;i<16;i++)if(PRESET_DEFAULTS[i]==c)return (int)i;
   return -1;
 }
@@ -305,7 +303,7 @@ void loadEventColorPresetOverrides(){
   String raw=p.getString("saved","");p.end();JsonDocument d;
   if(raw.length()&&!deserializeJson(d,raw)&&d.is<JsonArray>()&&d.as<JsonArray>().size()==16){
     size_t i=0;for(JsonVariant v:d.as<JsonArray>()){String s=v.as<String>();s.trim();if(s.startsWith("#"))s.remove(0,1);
-      if(s.length()==6){char* end=nullptr;unsigned long c=strtoul(s.c_str(),&end,16);if(end&&*end=='\0')presetValues[i]=andersonNamedOutputColor((uint32_t)c);}i++;}
+      if(s.length()==6){char* end=nullptr;unsigned long c=strtoul(s.c_str(),&end,16);if(end&&*end=='\0')presetValues[i]=(uint32_t)c&0xFFFFFF;}i++;}
   }
   presetLoaded=true;
 }
