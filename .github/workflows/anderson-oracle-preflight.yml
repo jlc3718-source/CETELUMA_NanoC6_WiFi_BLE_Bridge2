@@ -1,0 +1,53 @@
+name: Anderson Oracle Diagnostics Preflight
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/anderson-oracle-preflight.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect networking and writable service locations without touching production
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess, shutil, re, os, pathlib, socket
+          def command(args):
+              try:
+                  p=subprocess.run(args, capture_output=True, text=True, timeout=12)
+                  return p.returncode,p.stdout
+              except Exception:
+                  return -1,""
+          codes={}
+          for name,argv in [("nginx",["sudo","-n","nginx","-T"]),("nginx_status",["systemctl","is-active","nginx"]),("caddy_status",["systemctl","is-active","caddy"]),("ports",["ss","-lnt"])]:
+              codes[name]=command(argv)
+          nginx=codes["nginx"][1]
+          config_paths=[]
+          for m in re.finditer(r"^# configuration file ([^:]+):$",nginx,re.M):
+              p=m.group(1).strip()
+              if p not in config_paths: config_paths.append(p)
+          def clean(line):
+              return line.strip().strip(";")[:180]
+          selected=[]
+          for ln in nginx.splitlines():
+              if re.search(r"^\s*(listen|server_name|location|proxy_pass)\b",ln):
+                  selected.append(clean(ln))
+          out={
+              "nginx_test_exit":codes["nginx"][0],
+              "nginx_service":codes["nginx_status"][1].strip()[:30],
+              "caddy_service":codes["caddy_status"][1].strip()[:30],
+              "python":shutil.which("python3") is not None,
+              "systemd":shutil.which("systemctl") is not None,
+              "nginx_paths":[p for p in config_paths if p.startswith("/etc/nginx/")][:40],
+              "nginx_directives":selected[:75],
+              "ports":[line.split()[-1] for line in codes["ports"][1].splitlines()[1:] if re.search(r":(80|443|8932|8973)\b",line)][:20],
+              "www_hostnames":sorted(set(re.findall(r"server_name\s+([a-zA-Z0-9.-]+)",nginx)))[:15]
+          }
+          print(json.dumps(out,sort_keys=True))
+          PY
