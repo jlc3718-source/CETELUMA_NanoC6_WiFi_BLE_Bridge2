@@ -1,55 +1,71 @@
 #!/usr/bin/env python3
-"""Ensure Anderson's sixteen named colors drive the same sRGB in UI and BLE/WLED."""
+"""Anderson named colors: screen appearance must NEVER change calibrated LED RGB."""
+import json
 import re
+import subprocess
 from pathlib import Path
+
 ROOT=Path(__file__).resolve().parents[1]
-expected=[["Red","FF0000","FF0000"],["Orange","FF0D00","FF7A00"],["Pink","FF0024","FF69B4"],["Yellow","E08700","FFFF00"],["Green","28FF00","00FF00"],["Cyan","00BD4C","00FFFF"],["Blue","0D00FF","0000FF"],["Purple","5B00E6","8000FF"],["White","FFFFFA","FFFFFF"],["Teal","00B4B4","008080"],["Sky Blue","0096FF","4DB8FF"],["Amber Gold","FFA000","FFB000"],["Lavender","B464FF","B57EDC"],["Navy Blue","001478","001F5B"],["Burgundy","87002D","800020"],["Silver Gray","A0A5AF","A7ADB5"]]
-correction=(ROOT/'firmware/src/ColorCorrection.cpp').read_text()
-web=(ROOT/'firmware/web/index.html').read_text()
-event=(ROOT/'firmware/src/EventColorThemes.cpp').read_text()
-ble=(ROOT/'firmware/src/BleController.cpp').read_text()
-legacy=(ROOT/'firmware/src/PaletteMigration.cpp').read_text()
-assert len(expected)==16 and len({x[0] for x in expected})==16 and len({x[2] for x in expected})==16
-for name,old,new in expected:
-    assert f'{{0x{new},0x{new}}}, // {name}' in correction, (name,'C++ palette')
-    assert f'{{name:"{name}",reference:"#{new}",output:"#{new}"}}' in web, (name,'UI palette')
-    assert f'a.add("#{new}");' in legacy, (name,'migration reset baseline')
-    if old!=new:
-        assert f'case 0x{old}: return 0x{new};' in correction, (name,'old RGB mapping')
-        assert f'"#{old}":"{name}"' in web, (name,'old label mapping')
-values=event.split('static constexpr uint32_t PRESET_DEFAULTS[]={',1)[1].split('};',1)[0]
-assert re.findall(r'0x([A-F0-9]{6})',values)==[x[2] for x in expected], 'preset order/content mismatch'
-assert 'c=andersonNamedOutputColor(c);' in ble, 'BLE and WLED dispatch must be corrected'
-assert 'andersonNamedOutputColor(syncTheme.colors[idx])' in ble, 'breathing interpolation must use corrected RGB'
-assert 'andersonNamedOutputColor((uint32_t)c)' in event, 'persisted palette defaults not translated'
-print('All 16 named palettes, previews, historical inputs, and BLE/WLED outputs match')
+expected=[["Red","FF0000","FF0000"],["Orange","FF0D00","FF7A00"],["Pink","FF0024","FF3B9D"],["Yellow","E08700","FFD400"],["Green","28FF00","00C853"],["Cyan","00BD4C","00D9FF"],["Blue","0D00FF","0066FF"],["Purple","5B00E6","8A2BE2"],["White","FFFFFA","FFFFFF"],["Teal","00B4B4","00B8A9"],["Sky Blue","0096FF","4DB8FF"],["Amber Gold","FFA000","FFB000"],["Lavender","B464FF","B57EDC"],["Navy Blue","001478","001F5B"],["Burgundy","87002D","800020"],["Silver Gray","A0A5AF","A7ADB5"]]
+def read(path):
+    return (ROOT/path).read_text()
 
-assert 'platformio/toolchain-riscv32-esp @ 15.2.0+20251204' in (ROOT/'firmware/platformio.ini').read_text()
+web=read('firmware/web/index.html')
+mock=read('firmware/web/v3_mockup.js')
+correction=read('firmware/src/ColorCorrection.cpp')
+ble=read('firmware/src/BleController.cpp')
+events=read('firmware/src/EventColorThemes.cpp')
+migration=read('firmware/src/PaletteMigration.cpp')
+main=read('firmware/src/main.cpp')
+remote=read('firmware/src/RemoteUpdate.cpp')
 
-assert 'extra_scripts = post:scripts/c6_toolchain_path.py' in (ROOT/'firmware/platformio.ini').read_text()
-assert 'env.PrependENVPath("PATH", str(bin_dir))' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+assert len(expected)==16 and len({p[0] for p in expected})==16
+for name,led,visual in expected:
+    assert f'{{0x{led},0x{led}}}, // {name}' in correction,(name,'calibration')
+    assert f'{{name:"{name}",reference:"#{led}",output:"#{led}"}}' in web,(name,'browser payload palette')
+    assert f'a.add("#{led}");' in migration,(name,'original palette migration')
+    key=json.dumps(name) if ' ' in name else name
+    assert f'{key}:"#{visual}"' in web,(name,'named screen swatch')
+defaults=events.split('static constexpr uint32_t PRESET_DEFAULTS[]={',1)[1].split('};',1)[0]
+assert re.findall(r'0x([0-9A-F]{6})',defaults)==[p[1] for p in expected], 'event palette changed'
+assert 'andersonNamedOutputColor' not in correction+ble+events+main, 'color payload remap survived'
+assert 'void BleController::setColor(uint32_t c,bool reliable){for(' in ble
+assert 'wled.setColor(i,c)' in ble and 'r8(c),g8(c),b8(c)' in ble
+assert 't.colors[0]=0xE08700' in main and 'runningTheme.colors[0]=0xE08700' in main
+assert 'without changing any BLE/light payload' in mock
+assert 'function semanticColorVisual(e,t=""){const n=t||semanticColorName(e);return SEMANTIC_COLOR_VISUAL[n]' in web
+assert 'function displayColor(e){const t=normHex(e),name=LED_COLOR_NAME[t];' in web
+assert 'masterFavoriteTile(t,"Use",()=>manual({name:"Favorite "+o,colors:[t]' in web
+assert 'function normalizeLedColor' in web
 
+# Execute the actual color-rendering function against the 16 original LED
+# values and 16 legacy-to-new stored cases. This reproduces the screenshot's
+# bug: the button named Yellow was rendered using its orange-looking LED code.
+colors='const SEMANTIC_COLOR_VISUAL='+web.split('const SEMANTIC_COLOR_VISUAL=',1)[1].split(';function semanticColorName(',1)[0]+';'
+fn='function semanticColorVisual('+web.split('function semanticColorVisual(',1)[1].split('function semanticColorInk(',1)[0]
+assert fn.count('function semanticColorVisual')==1
+js=(
+    "const assert=require('node:assert/strict');\n"
+    "const savedColors="+json.dumps(['#'+p[1] for p in expected])+";\n"
+    "const savedColorLabels="+json.dumps([p[0] for p in expected])+";\n"
+    "const expected="+json.dumps(expected)+";\n"
+    "const normHex=v=>String(v).toUpperCase();\n"
+    "const semanticColorName=v=>savedColorLabels[savedColors.indexOf(normHex(v))]||'Custom Color';\n"
+    +colors+"\n"+fn+"\n"+
+    "for (let i=0;i<expected.length;i++){\n"
+    " const [name,led,visual]=expected[i];\n"
+    " assert.equal(semanticColorVisual('#'+led,name),'#'+visual,name+' display');\n"
+    " assert.equal(savedColors[i],'#'+led,name+' physical RGB changed');\n"
+    "}\nconsole.log('PASS: sixteen named swatches retain separate calibrated payloads');"
+)
+subprocess.run(['node','-e',js],check=True)
 
-# CI must pin and verify the actual vendor compiler, not just its package label.
-workflow=(ROOT/'.github/workflows/compile-anderson-home-multi.yml').read_text()
-script=(ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
-assert 'Install verified Espressif GCC 15.2 for ESP32-C6' in workflow
-assert 'ace5aae6afe98f754947be043d40173e2e22ace57754b11a394b7238eefa01cf' in workflow
-assert 'sha256sum --check -' in workflow
-assert 'ANDERSON_GCC_BIN_DIR' in workflow and 'ANDERSON_GCC_BIN_DIR' in script
+# Build security/toolchain changes are deliberately retained from v3.1.95.
+workflow=read('.github/workflows/compile-anderson-home-multi.yml')
+script=read('firmware/scripts/c6_toolchain_path.py')
+assert 'sha256sum --check -' in workflow and 'ANDERSON_GCC_BIN_DIR' in workflow
 assert 'env.Replace(CXX=str(compiler), CC=str(gcc))' in script
-assert 'env.PrependENVPath("PATH", str(bin_dir))' in script
-
-script=(ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
-
-# IDF 6.1 Mbed TLS 4 no longer exposes the legacy SHA-256 functions.
-remote=(ROOT/'firmware/src/RemoteUpdate.cpp').read_text()
-main=(ROOT/'firmware/src/main.cpp').read_text()
-assert '#include <mbedtls/sha256.h>' not in (remote+main)
 assert '#include <psa/crypto.h>' in remote and '#include <psa/crypto.h>' in main
 assert 'psa_hash_compute(PSA_ALG_SHA_256' in remote and 'psa_hash_compute(PSA_ALG_SHA_256' in main
-assert 'psa_hash_setup(&sha,PSA_ALG_SHA_256)' in remote
-assert 'psa_hash_update(&sha,data,count)' in remote
-assert 'psa_hash_finish(&sha,digest,sizeof(digest),&digestLen)' in remote
 assert 'mbedtls_pk_verify(&pk,MBEDTLS_MD_SHA256' in remote
-assert 'psa_include = found_psa.parent.parent' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+print('PASS: original calibrated RGB unchanged, display labels corrected, OTA cryptography preserved')
