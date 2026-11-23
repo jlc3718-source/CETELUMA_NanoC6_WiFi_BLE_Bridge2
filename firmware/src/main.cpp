@@ -53,7 +53,7 @@ static bool themeHasVisibleColor(const Theme& t){
 }
 static Theme restoredManualTheme(){
   if(hasLastVisibleTheme&&themeHasVisibleColor(lastVisibleTheme))return lastVisibleTheme;
-  Theme t;t.name="Yellow";t.effect=Effect::Solid;t.colors[0]=0xFFFF00;t.colorCount=1;return t;
+  Theme t;t.name="Yellow";t.effect=Effect::Solid;t.colors[0]=0xE08700;t.colorCount=1;return t;
 }
 static bool tonightOptionOverride=false;
 static time_t tonightOptionUntil=0;
@@ -109,7 +109,7 @@ static uint16_t parseTime(const String& s,uint16_t def){if(s.length()<5)return d
 static String fmtTime(uint16_t m){char b[6];snprintf(b,sizeof(b),"%02d:%02d",m/60,m%60);return b;}
 static String fmtDisplayTime(uint16_t m){uint8_t h=(uint8_t)((m/60U)%24U),min=(uint8_t)(m%60U);const bool pm=h>=12U;uint8_t h12=(uint8_t)(h%12U);if(!h12)h12=12U;char b[12];snprintf(b,sizeof(b),"%u:%02u %s",h12,min,pm?"PM":"AM");return String(b);}
 static bool timeValid(){return time(nullptr)>1700000000;}
-static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.95";
+static constexpr const char* ANDERSON_FIRMWARE_VERSION="3.1.96";
 static bool bootFirmwareCheckPending=true,bootRecoveryMode=false,bootMarkedHealthy=false;
 static uint32_t bootHealthyAfter=0;
 static constexpr uint32_t BOOT_HEALTHY_GRACE_MS=120UL*1000UL;
@@ -303,7 +303,7 @@ static bool storageHealthCheck(){
   return wrote==version.length()&&verify==version;
 }
 
-static bool loadPresetThemeFromArray(JsonArray presets,const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){for(JsonObject o:presets){if(o["id"].as<String>()!=id)continue;if(activeOnly&&!(o["enabled"]|true))return false;t.name=o["name"].as<String>();if(outName)*outName=t.name;t.effect=effectFromString(o["effect"].as<String>());t.colorCount=0;for(JsonVariant v:o["colors"].as<JsonArray>()){if(t.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())t.colors[t.colorCount++]=andersonNamedOutputColor(strtoul(cs.c_str(),nullptr,16));}if(!t.colorCount){t.colors[0]=0xFFFF00;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;}return false;}
+static bool loadPresetThemeFromArray(JsonArray presets,const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){for(JsonObject o:presets){if(o["id"].as<String>()!=id)continue;if(activeOnly&&!(o["enabled"]|true))return false;t.name=o["name"].as<String>();if(outName)*outName=t.name;t.effect=effectFromString(o["effect"].as<String>());t.colorCount=0;for(JsonVariant v:o["colors"].as<JsonArray>()){if(t.colorCount>=8)break;String cs=v.as<String>();if(cs.startsWith("#"))cs.remove(0,1);if(cs.length())t.colors[t.colorCount++]=strtoul(cs.c_str(),nullptr,16);}if(!t.colorCount){t.colors[0]=0xE08700;t.colorCount=1;}br=constrain(o["brightness"]|100,1,100);sp=constrain(o["speed"]|1,1,5);return true;}return false;}
 static bool loadPresetTheme(const String& id,Theme& t,uint8_t& br,uint8_t& sp,String* outName=nullptr,bool activeOnly=false){JsonDocument list;if(deserializeJson(list,presetStoreRaw())||!list.is<JsonArray>())return false;return loadPresetThemeFromArray(list.as<JsonArray>(),id,t,br,sp,outName,activeOnly);}
 static bool resolveCustomSchedule(const tm& l,Theme& t,uint8_t& br,uint8_t& sp,String* scheduleId=nullptr){JsonDocument schedules,presets;if(deserializeJson(schedules,scheduleStoreRaw())||!schedules.is<JsonArray>()||deserializeJson(presets,presetStoreRaw())||!presets.is<JsonArray>())return false;bool found=false;for(JsonObject o:schedules.as<JsonArray>()){if(!(o["enabled"]|true))continue;int m=o["month"]|0,d=o["day"]|0,y=o["year"]|0;bool annual=o["annual"]|true;if(m!=l.tm_mon+1||d!=l.tm_mday||(!annual&&y!=l.tm_year+1900))continue;Theme q;uint8_t qb=100,qs=1;if(loadPresetThemeFromArray(presets.as<JsonArray>(),o["presetId"].as<String>(),q,qb,qs,nullptr,true)){t=q;br=qb;sp=min((uint8_t)2,qs);if(scheduleId)*scheduleId=o["id"].as<String>();found=true;}}return found;}
 
@@ -543,7 +543,7 @@ static void loadEventOverrides(){
       else{int bar=head.indexOf('|');if(bar>0){o.effect=effectFromString(head.substring(0,bar));o.speed=constrain(head.substring(bar+1).toInt(),1,2);}else{o.effect=effectFromString(head);o.speed=1;}}
       if(!head.startsWith("v4|")&&o.effect==Effect::Breath)o.effect=Effect::Jump;
     }
-    String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=andersonNamedOutputColor(strtoul(v.c_str(),nullptr,16));if(comma<0)break;pos=comma+1;}
+    String list=raw.substring(sep+1);int pos=0;while(pos<(int)list.length()&&o.colorCount<8){int comma=list.indexOf(',',pos);String v=comma<0?list.substring(pos):list.substring(pos,comma);v.trim();if(v.startsWith("#"))v.remove(0,1);if(v.length())o.colors[o.colorCount++]=strtoul(v.c_str(),nullptr,16);if(comma<0)break;pos=comma+1;}
     if(!o.colorCount){Theme base=themeFromEvent(i);o.colorCount=min((uint8_t)8,base.colorCount);for(uint8_t c=0;c<o.colorCount;c++)o.colors[c]=base.colors[c];}eventOverrides[i]=o;
   }
   p.end();eventScheduleOverrideGeneration++;
@@ -788,7 +788,7 @@ void setupRoutes(){
     if(!d["speed"].isNull())speedLevel=constrain(d["speed"].as<int>(),1,5);
     if(!d["name"].isNull())runningTheme.name=d["name"].as<String>();
     if(!d["effect"].isNull())runningTheme.effect=effectFromString(d["effect"].as<String>());
-    if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=andersonNamedOutputColor(strtoul(s.c_str(),nullptr,16));}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xFFFF00;runningTheme.colorCount=1;}}
+    if(d["colors"].is<JsonArray>()){JsonArray a=d["colors"].as<JsonArray>();runningTheme.colorCount=0;for(JsonVariant v:a){if(runningTheme.colorCount>=8)break;String s=v.as<String>();if(s.startsWith("#"))s.remove(0,1);runningTheme.colors[runningTheme.colorCount++]=strtoul(s.c_str(),nullptr,16);}if(runningTheme.colorCount==0){runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;}}
     // Restore a visible scene when manual ON (or a new effect) starts from the scheduler's dark Off placeholder.
     if(power&&!d["colors"].is<JsonArray>()&&(masterPowerCommand||sceneRequested)&&!themeHasVisibleColor(runningTheme)){
       const bool effectRequested=!d["effect"].isNull();const Effect chosenEffect=runningTheme.effect;
@@ -1072,7 +1072,7 @@ void setup(){
 #ifndef MOCK_BLE
   NimBLEDevice::setPower(bleTxDbm);
 #endif
-  runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xFFFF00;runningTheme.colorCount=1;
+  runningTheme.name="Yellow";runningTheme.effect=Effect::Jump;runningTheme.colors[0]=0xE08700;runningTheme.colorCount=1;
   evaluateSchedule(true);if(timeValid())lastScheduleMinute=time(nullptr)/60;bootHealthyAfter=millis()+BOOT_HEALTHY_GRACE_MS;digitalWrite(BLUE_LED,LOW);
 }
 void loop(){
