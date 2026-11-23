@@ -69,6 +69,25 @@ for sdk_root in libs_roots:
     if mbedtls_header:
         break
 if mbedtls_header is None:
+    # The pioarduino binary SDK sometimes locates mbedTLS beneath the Arduino
+    # framework rather than the separate libs package. Search only installed
+    # packages and require an ESP32-C6 SDK (or framework-common) header tree.
+    packages_root = core_dir / "packages"
+    for candidate in packages_root.rglob("sha256.h"):
+        p = str(candidate).replace(chr(92), "/")
+        if candidate.parent.name != "mbedtls":
+            continue
+        if not any(s in p for s in ("esp32c6", "framework-arduinoespressif32")):
+            continue
+        mbedtls_header = candidate
+        break
+if mbedtls_header is None:
+    # Diagnostics aid subsequent build repair; no crypto verification bypass.
+    pkgs = core_dir / "packages"
+    available = sorted(p.name for p in pkgs.iterdir()) if pkgs.is_dir() else []
+    print("Anderson SDK installed package names:", available)
+    print("Anderson mbedTLS folder candidates:",
+          [str(p) for p in list(pkgs.glob("**/mbedtls"))[:12]])
     raise RuntimeError("ESP32-C6 SDK mbedTLS headers are missing; cannot safely build signed OTA")
 mbedtls_include = mbedtls_header.parent.parent
 env.AppendUnique(CPPPATH=[str(mbedtls_include)])

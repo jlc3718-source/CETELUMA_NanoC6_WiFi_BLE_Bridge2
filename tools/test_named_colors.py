@@ -44,3 +44,5 @@ script=(ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
 assert 'mbedtls_header.parent.parent' in script
 assert 'env.AppendUnique(CPPPATH=[str(mbedtls_include)])' in script
 assert 'cannot safely build signed OTA' in script
+
+assert 'packages_root.rglob("sha256.h")' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
