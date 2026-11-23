@@ -64,7 +64,9 @@ subprocess.run(['node','-e',js],check=True)
 workflow=read('.github/workflows/compile-anderson-home-multi.yml')
 script=read('firmware/scripts/c6_toolchain_path.py')
 assert 'sha256sum --check -' in workflow and 'ANDERSON_GCC_BIN_DIR' in workflow
-assert 'env.Replace(CXX=str(compiler), CC=str(gcc))' in script
+assert 'env.Replace(CXX=str(compiler), CC=str(gcc), LINK=str(compiler))' in script
+assert 'env.AppendUnique(LINKFLAGS=["-flto", "-fuse-linker-plugin"])' in script
+assert 'env.Replace(AR=str(gcc_ar), RANLIB=str(gcc_ranlib))' in script
 assert '#include <psa/crypto.h>' in remote and '#include <psa/crypto.h>' in main
 assert 'psa_hash_compute(PSA_ALG_SHA_256' in remote and 'psa_hash_compute(PSA_ALG_SHA_256' in main
 assert 'mbedtls_pk_verify(&pk,MBEDTLS_MD_SHA256' in remote
