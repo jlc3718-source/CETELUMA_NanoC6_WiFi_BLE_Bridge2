@@ -48,7 +48,7 @@ jobs:
               "nginx_directives":selected[:75],
               "ports":[line.split()[-1] for line in codes["ports"][1].splitlines()[1:] if re.search(r":(80|443|8932|8973)\b",line)][:20],
               "www_hostnames":sorted(set(re.findall(r"server_name\s+([a-zA-Z0-9.-]+)",nginx)))[:15],
-              "ssl_certs":sorted(set(re.findall(r"^\\s*ssl_certificate\\s+([^;]+);",nginx,re.M)))[:8],
+              "ssl_certs":sorted(set(re.findall(r"^\s*ssl_certificate\s+([^;]+);",nginx,re.M)))[:8],
               "configs":[{"path":p,"length":len(pathlib.Path(p).read_text()) if pathlib.Path(p).exists() else -1} for p in config_paths if p.startswith("/etc/nginx/sites-enabled/")][:8],
               "certbot_available":shutil.which("certbot") is not None
           }
