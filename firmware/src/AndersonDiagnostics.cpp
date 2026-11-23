@@ -14,7 +14,7 @@ constexpr uint8_t CAP=24;
 constexpr uint32_t SEND_INTERVAL=15000UL;
 constexpr uint32_t ERROR_RETRY=30000UL;
 constexpr uint32_t SNAPSHOT_INTERVAL=300000UL;
-// Let's Encrypt ISRG Root X1. Never setInsecure() for diagnostic uploads.
+// Let's Encrypt ISRG Root X1. Require validated certificate chains for uploads.
 const char ROOT_CA[] PROGMEM=R"CERT(-----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh

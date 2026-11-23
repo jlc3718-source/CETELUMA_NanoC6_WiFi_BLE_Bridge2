@@ -7,3 +7,4 @@ Anderson v3.1.96: restore original calibrated LED output; UI-only named-color sw
 Anderson v3.1.96: verify calibrated LED value preservation and UI-only color correction.
 Anderson v3.1.97: bounded encrypted Oracle diagnostics, authenticated ingestion, BLE/WLED command and connection logging.
 Anderson v3.1.97: retain standalone Wi-Fi recovery harness while logging Wi-Fi changes independently.
+Anderson v3.1.97: clarify strict certificate verification in diagnostic sender.
