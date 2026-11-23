@@ -1,0 +1,39 @@
+name: Inspect Anderson Oracle Diagnostic Events (Read Only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/inspect-anderson-logs.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 3
+    steps:
+      - name: Read current Oracle log receipts without changing database, receiver or controllers
+        shell: bash
+        run: |
+          sudo -n python3 - <<'PY'
+          import sqlite3, pathlib, json, datetime, urllib.request
+          from zoneinfo import ZoneInfo
+          db=pathlib.Path('/var/lib/anderson-logs/events.sqlite3')
+          result={'database_exists':db.is_file()}
+          try:
+              with urllib.request.urlopen('http://127.0.0.1:8973/health',timeout=4) as response:
+                  result['receiver_health']=json.load(response)
+          except Exception as exc:
+              result['receiver_health_error']=type(exc).__name__
+          if db.is_file():
+              conn=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True,timeout=3)
+              conn.execute('PRAGMA query_only=ON')
+              result['total_events']=conn.execute('SELECT count(*) FROM events').fetchone()[0]
+              result['recent_1h']=conn.execute("SELECT count(*) FROM events WHERE received >= strftime('%s','now')-3600").fetchone()[0]
+              result['recent_24h']=conn.execute("SELECT count(*) FROM events WHERE received >= strftime('%s','now')-86400").fetchone()[0]
+              result['counts_by_code_1h']=[dict(code=c,count=n) for c,n in conn.execute("SELECT code,count(*) FROM events WHERE received >= strftime('%s','now')-3600 GROUP BY code ORDER BY code")]
+              rows=conn.execute('SELECT received,boot,seq,code,slot,value,detail FROM events ORDER BY id DESC LIMIT 40').fetchall()
+              local=ZoneInfo('America/New_York')
+              result['recent_events']=[dict(local_time=datetime.datetime.fromtimestamp(t,local).isoformat(timespec='seconds'),boot=boot,seq=seq,code=code,slot=slot,value=value,detail=detail) for t,boot,seq,code,slot,value,detail in rows]
+              conn.close()
+          print('ANDERSON_DIAG_READ_ONLY_RESULT='+json.dumps(result,separators=(',',':')))
+          PY
