@@ -38,6 +38,10 @@ jobs:
               path=f'/tmp/anderson-chain-{i}.pem';pathlib.Path(path).write_text(item+'\n')
               p=subprocess.run(['openssl','x509','-in',path,'-noout','-subject','-issuer','-dates'],capture_output=True,text=True)
               print('API_CHAIN',i,p.stdout.strip() or p.stderr.strip()[:300])
+              if i==len(certs)-1:
+                  print('PUBLIC_API_CHAIN_ANCHOR_BEGIN')
+                  print(item)
+                  print('PUBLIC_API_CHAIN_ANCHOR_END')
           print('OPENSSL_VERIFY_SUMMARY',pathlib.Path('/tmp/anderson-sclient-error.txt').read_text()[-1600:])
           if certs:
               options=['openssl','verify','-CAfile','/tmp/anderson-ca.pem']
