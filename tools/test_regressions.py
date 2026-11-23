@@ -78,12 +78,12 @@ assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reach
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
 assert '/api/event-color-theme' in main+web and 'eventColors1' in web and 'eventColors3028' in web and 'eventColors3029' in web
 assert 'EventColorTheme' in main and 'eventColorThemeGeneration' in main and 'applyOriginalEventColors' in main
-assert '0xFFFF00' in ev and 'if(c==0xFFFF44||c==0xE0B400)return 3;' in ev
+assert '0xE08700' in ev and '0xFFFF00' in t('firmware/src/EventColorThemes.cpp') and 'if(c==0xFFFF44||c==0xE0B400)return 3;' in t('firmware/src/EventColorThemes.cpp')
 assert '{0xFFFF00,0xFFFF00}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
 assert re.search(r'\{name:[\"\']Yellow[\"\'],reference:[\"\']#FFFF00[\"\'],output:[\"\']#FFFF00[\"\']\}',web)
 assert '#E08700' in web
 assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorSavePreset' in web
-for value in ['0x008080','0x4DB8FF','0xFFB000','0xB57EDC','0x001F5B','0x800020','0xA7ADB5']: assert value in ev
+for value in ['0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x001478','0x87002D','0xA0A5AF']: assert value in ev
 original=t('firmware/src/EventColorThemes.cpp')
 assert '0x00BD4C' in original and 'ORIGINAL_EVENT_COLOR_INDEX[210][6]' in original and 'ORIGINAL_EVENT_COLOR_COUNT[210]' in original
 assert re.search(r'\{name:[\"\']Navy Blue[\"\'],reference:[\"\']#001F5B[\"\'],output:[\"\']#001F5B[\"\']\}',web)
