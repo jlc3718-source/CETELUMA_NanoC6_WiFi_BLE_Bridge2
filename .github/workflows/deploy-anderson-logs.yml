@@ -1,0 +1,48 @@
+name: Deploy Anderson Home Diagnostic Receiver (Oracle)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "oracle-anderson/**"
+      - ".github/workflows/deploy-anderson-logs.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: oracle-anderson-diagnostics-deploy
+  cancel-in-progress: false
+jobs:
+  test-and-deploy:
+    runs-on: [self-hosted, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate isolated Python receiver and auth/retention tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile oracle-anderson/receiver.py oracle-anderson/deploy.py
+          python3 oracle-anderson/test_receiver.py -v
+      - name: Back up, install, verify Oracle receiver, automatically roll back failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n python3 oracle-anderson/deploy.py
+      - name: Verify public TLS endpoint and protect ingestion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          base="https://oracle-home-dev.150.136.245.51.sslip.io/anderson-logs"
+          with urllib.request.urlopen(base+"/health",timeout=6) as r:
+              health=json.load(r)
+              assert health["ok"] is True and health["service"]=="anderson-logs"
+          try:
+              urllib.request.urlopen(urllib.request.Request(base+"/v1/events",data=b"{}",method="POST"),timeout=6)
+          except urllib.error.HTTPError as e:
+              assert e.code==401,("unexpected unauthenticated upload code",e.code)
+          else:
+              raise AssertionError("Unauthenticated upload was accepted")
+          print(json.dumps({"public_https_healthy":True,"unauthenticated_upload_blocked":True}))
+          PY
