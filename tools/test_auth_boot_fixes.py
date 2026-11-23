@@ -181,7 +181,7 @@ assert '#statusMsg:not(:empty)' in html
 print('PASS: visible power and schedule command acknowledgments and errors')
 
 # Regression: dark schedule default cannot masquerade as an ON command.
-scheduled=between(main,'void evaluateSchedule(bool force=false){','void startAP(){')
+scheduled=between(main,'void evaluateSchedule(bool force=false,const char* cause="scheduler"){','void startAP(){')
 control=between(main,'server.on("/api/control"','server.on("/api/events"')
 resume=between(main,'server.on("/api/resume"','server.on("/api/control"')
 assert 'const bool scheduledPower=themeHasVisibleColor(t);' in scheduled
