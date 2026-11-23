@@ -14,7 +14,7 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <nvs_flash.h>
-#include <mbedtls/sha256.h>
+#include <psa/crypto.h>
 #include <time.h>
 #include <atomic>
 #include "WebUIGzip.h"
@@ -145,7 +145,13 @@ static PinAttemptState pinAttempts[6];
 static bool fourDigitPin(const String& pin){if(pin.length()!=4)return false;for(size_t i=0;i<4;i++)if(pin[i]<'0'||pin[i]>'9')return false;return true;}
 static String hexBytes(const uint8_t* data,size_t len){static const char h[]="0123456789abcdef";String out;out.reserve(len*2);for(size_t i=0;i<len;i++){out+=h[data[i]>>4];out+=h[data[i]&15];}return out;}
 static String randomHex(size_t bytes){uint8_t data[32];if(bytes>sizeof(data))bytes=sizeof(data);esp_fill_random(data,bytes);return hexBytes(data,bytes);}
-static String pinDigest(const String& profile,const String& pin,const String& salt){String material=String("anderson-pin-v1|")+profile+"|"+salt+"|"+pin;uint8_t digest[32];if(mbedtls_sha256((const uint8_t*)material.c_str(),material.length(),digest,0)!=0)return "";return hexBytes(digest,sizeof(digest));}
+static String pinDigest(const String& profile,const String& pin,const String& salt){
+  String material=String("anderson-pin-v1|")+profile+"|"+salt+"|"+pin;
+  if(psa_crypto_init()!=PSA_SUCCESS)return "";
+  uint8_t digest[32];size_t digestLen=0;
+  if(psa_hash_compute(PSA_ALG_SHA_256,(const uint8_t*)material.c_str(),material.length(),digest,sizeof(digest),&digestLen)!=PSA_SUCCESS||digestLen!=sizeof(digest))return "";
+  return hexBytes(digest,sizeof(digest));
+}
 static bool constantTimeEqual(const String& a,const String& b){if(a.length()!=b.length())return false;uint8_t diff=0;for(size_t i=0;i<a.length();i++)diff|=(uint8_t)(a[i]^b[i]);return diff==0;}
 static bool pinRecordConfigured(const String& salt,const String& hash){return salt.length()==32&&hash.length()==64;}
 // Exactly two supported profiles: retained salted PINs must remain valid.

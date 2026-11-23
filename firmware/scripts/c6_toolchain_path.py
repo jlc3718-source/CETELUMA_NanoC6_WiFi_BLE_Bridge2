@@ -45,50 +45,37 @@ else:
     env.Replace(CXX=str(compiler), CC=str(bin_dir / "riscv32-esp-elf-gcc"))
     print("Anderson local GCC:", compiler)
 
-# Direct mbedTLS use by the signed OTA verifier requires the ESP32-C6 SDK
-# public headers. PIO's Arduino-only CPPPATH sometimes omits this SDK component
-# even though the prebuilt framework and mbedcrypto libraries are installed.
+# ESP-IDF 6.1 / Mbed TLS 4 replaces old mbedtls/sha256.h with PSA Crypto.
+# Locate the ESP32-C6 SDK's public PSA and PK include trees and expose them
+# to the application, keeping the pinned-key signature checks intact.
 core_dir = Path(os.environ.get("PLATFORMIO_CORE_DIR") or Path.home() / ".platformio")
-libs_package = env.PioPlatform().get_package_dir("framework-arduinoespressif32-libs")
-libs_roots = [Path(libs_package)] if libs_package else []
-libs_roots.append(core_dir / "packages" / "framework-arduinoespressif32-libs")
-mbedtls_header = None
-for sdk_root in libs_roots:
+libs_pkg = env.PioPlatform().get_package_dir("framework-arduinoespressif32-libs")
+sdk_roots = [Path(libs_pkg)] if libs_pkg else []
+sdk_roots.append(core_dir / "packages" / "framework-arduinoespressif32-libs")
+found_psa = None
+found_root = None
+for sdk_root in sdk_roots:
     if not sdk_root.is_dir():
         continue
-    # Prefer the official SDK's mbedTLS include tree; do not add any foreign
-    # crypto implementation or change signed-update verification.
-    direct = sdk_root / "esp32c6" / "include" / "mbedtls" / "mbedtls" / "include" / "mbedtls" / "sha256.h"
-    if direct.is_file():
-        mbedtls_header = direct
-        break
-    for candidate in (sdk_root / "esp32c6").rglob("sha256.h"):
-        if candidate.parent.name == "mbedtls":
-            mbedtls_header = candidate
+    target = sdk_root / "esp32c6"
+    if not target.is_dir():
+        continue
+    for candidate in target.rglob("crypto.h"):
+        if candidate.parent.name == "psa" and "tf-psa-crypto" in str(candidate):
+            found_psa = candidate
+            found_root = sdk_root
             break
-    if mbedtls_header:
+    if found_psa:
         break
-if mbedtls_header is None:
-    # The pioarduino binary SDK sometimes locates mbedTLS beneath the Arduino
-    # framework rather than the separate libs package. Search only installed
-    # packages and require an ESP32-C6 SDK (or framework-common) header tree.
-    packages_root = core_dir / "packages"
-    for candidate in packages_root.rglob("sha256.h"):
-        p = str(candidate).replace(chr(92), "/")
-        if candidate.parent.name != "mbedtls":
-            continue
-        if not any(s in p for s in ("esp32c6", "framework-arduinoespressif32")):
-            continue
-        mbedtls_header = candidate
-        break
-if mbedtls_header is None:
-    # Diagnostics aid subsequent build repair; no crypto verification bypass.
-    pkgs = core_dir / "packages"
-    available = sorted(p.name for p in pkgs.iterdir()) if pkgs.is_dir() else []
-    print("Anderson SDK installed package names:", available)
-    print("Anderson mbedTLS folder candidates:",
-          [str(p) for p in list(pkgs.glob("**/mbedtls"))[:12]])
-    raise RuntimeError("ESP32-C6 SDK mbedTLS headers are missing; cannot safely build signed OTA")
-mbedtls_include = mbedtls_header.parent.parent
-env.AppendUnique(CPPPATH=[str(mbedtls_include)])
-print("Anderson ESP32-C6 signed OTA mbedTLS headers:", mbedtls_include)
+if found_psa is None:
+    raise RuntimeError("Missing ESP32-C6 PSA Crypto headers: cannot build signed OTA")
+psa_include = found_psa.parent.parent
+mbedtls = found_root / "esp32c6" / "include" / "mbedtls"
+includes = [str(psa_include)]
+for folder in (mbedtls / "mbedtls" / "include",
+               mbedtls / "mbedtls" / "tf-psa-crypto" / "drivers" / "builtin" / "include",
+               mbedtls / "port" / "include"):
+    if folder.is_dir():
+        includes.append(str(folder))
+env.AppendUnique(CPPPATH=includes)
+print("Anderson ESP32-C6 PSA Crypto headers:", psa_include)

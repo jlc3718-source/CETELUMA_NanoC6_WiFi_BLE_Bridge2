@@ -41,8 +41,15 @@ assert 'env.Replace(CXX=str(compiler), CC=str(gcc))' in script
 assert 'env.PrependENVPath("PATH", str(bin_dir))' in script
 
 script=(ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
-assert 'mbedtls_header.parent.parent' in script
-assert 'env.AppendUnique(CPPPATH=[str(mbedtls_include)])' in script
-assert 'cannot safely build signed OTA' in script
 
-assert 'packages_root.rglob("sha256.h")' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+# IDF 6.1 Mbed TLS 4 no longer exposes the legacy SHA-256 functions.
+remote=(ROOT/'firmware/src/RemoteUpdate.cpp').read_text()
+main=(ROOT/'firmware/src/main.cpp').read_text()
+assert '#include <mbedtls/sha256.h>' not in (remote+main)
+assert '#include <psa/crypto.h>' in remote and '#include <psa/crypto.h>' in main
+assert 'psa_hash_compute(PSA_ALG_SHA_256' in remote and 'psa_hash_compute(PSA_ALG_SHA_256' in main
+assert 'psa_hash_setup(&sha,PSA_ALG_SHA_256)' in remote
+assert 'psa_hash_update(&sha,data,count)' in remote
+assert 'psa_hash_finish(&sha,digest,sizeof(digest),&digestLen)' in remote
+assert 'mbedtls_pk_verify(&pk,MBEDTLS_MD_SHA256' in remote
+assert 'psa_include = found_psa.parent.parent' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
