@@ -1,0 +1,38 @@
+name: SD300 V10 render contact sheet QA
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-lifestyle-v10-contact-sheet.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qc:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 8
+    steps:
+      - name: Generate low-resolution scene continuity contact sheet
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agnes-sd300-lifestyle-v10
+          temp=$(mktemp -d)
+          trap 'rm -rf "$temp"' EXIT
+          count=0
+          for id in v10_01_fieldwork v10_02_home v10_03_loading; do
+            src="$root/$id.mp4"
+            test -s "$src" || { echo "NOT_READY=$id"; exit 2; }
+            for ts in 1 4 7; do
+              count=$((count+1))
+              ffmpeg -nostdin -hide_banner -loglevel error -ss "$ts" -i "$src" -frames:v 1 -vf 'scale=180:320:force_original_aspect_ratio=decrease,pad=180:320:(ow-iw)/2:(oh-ih)/2' -q:v 7 "$temp/qa_$(printf '%02d' "$count").jpg"
+            done
+          done
+          ffmpeg -nostdin -hide_banner -loglevel error -pattern_type glob -i "$temp/qa_*.jpg" -vf 'tile=3x3:padding=2:margin=2' -frames:v 1 -q:v 9 "$temp/contact.jpg"
+          size=$(stat -c %s "$temp/contact.jpg")
+          echo "CONTACT_JPEG_BYTES=$size"
+          test "$size" -lt 190000 || { echo "CONTACT_SHEET_TOO_LARGE"; exit 2; }
+          echo 'V10_CONTACT_SHEET_BASE64_BEGIN'
+          base64 -w 0 "$temp/contact.jpg"
+          echo
+          echo 'V10_CONTACT_SHEET_BASE64_END'
+          echo 'CONTACT_SHEET_DONE_3_SCENES_9_FRAMES'
