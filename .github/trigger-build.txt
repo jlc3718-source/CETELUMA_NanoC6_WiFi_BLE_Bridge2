@@ -11,3 +11,4 @@ Anderson v3.1.97: clarify strict certificate verification in diagnostic sender.
 Anderson v3.1.97: enable GCC link-time size optimization to fit the unchanged OTA slot.
 Anderson v3.1.97: link slim GCC15 LTO objects through the vendor compiler and plugin-aware archiver.
 Anderson v3.1.97: update toolchain security gate for proven GCC15 LTO linker and archive settings.
+Build Anderson 3.1.98 direct private-GitHub diagnostics (no Oracle) with existing color calibration preserved.

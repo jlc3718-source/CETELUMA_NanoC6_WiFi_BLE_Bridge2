@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-// Diagnostic event codes are shared with oracle-anderson/receiver.py.
+// Diagnostic event codes are compatible with existing Anderson event history; direct GitHub upload.
 // Independent of BLE/WLED command handling; logging must never block light control.
 namespace AndersonDiagnostics {
 void begin();

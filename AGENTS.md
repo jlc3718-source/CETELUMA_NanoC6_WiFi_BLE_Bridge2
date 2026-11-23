@@ -124,3 +124,5 @@ Oracle-hosted Jason Home 2 depends on private runtime state, including live SQLi
 Git history and protected tags are historical source records; GitHub branches and workflow artifacts must be reviewed separately. Only delete a stale branch after verifying no active deployments, workflows, PRs, protected refs or unreleased changes depend on it. Keep unrelated Silverado/automations code and other projects out of this cleanup.
 
 Treat this as an acceptance criterion for **all future** Anderson Home and Jason Home 2 builds; report separately what was published, what was physically verified and what remains uncleaned.
+
+- v3.1.98 and later: Anderson diagnostic logging uses the direct GitHub Contents API to the private `jlc3718-source/anderson-home-diagnostics` repository. Do not add Oracle as a logger/relay or embed any GitHub token. Preserve gamma, BLE/WLED wire formats, scenes and schedules.

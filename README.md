@@ -21,6 +21,11 @@ Release path: `python tools/release.py bump`, `python tools/release.py prepare`,
 Normal update: automatic signed OTA. Manual fallback: Settings → Firmware Update with the APP-only BIN.
 Serial recovery only: full image at **0x0**, Erase OFF. Never flash APP-only at 0x0.
 
-## Oracle diagnostics (v3.1.97)
+## Oracle diagnostics (v3.1.98)
 
 A separate HTTPS diagnostic receiver runs on Oracle at `https://oracle-home-dev.150.136.245.51.sslip.io/anderson-logs/` with its own SQLite database, ingestion credentials and read/export credentials. It does not modify Jason Home 2 or the frozen Android APK. The Nano uses an asynchronous RAM ring of 24 significant events and sends batches over certificate-verified TLS only when an administrator pairs it in Anderson Home → Settings → Oracle Diagnostics. Configure the one-time private ingest token via that panel; it is never returned by the API or written to Git. The receive token resides only in Oracle's root-protected service data directory. Data exports are restricted to the separate admin token; detailed provisioning must be performed through a trusted Oracle administrator session. The release does not automatically enroll a device or claim physical diagnostic delivery before pairing.
+
+
+## Direct GitHub diagnostics (v3.1.98)
+
+Controller logs upload directly over certificate-validated HTTPS to the **private** `jlc3718-source/anderson-home-diagnostics` repository. No Oracle relay. Settings → GitHub Diagnostics accepts one fine-grained GitHub token with **Contents read/write permission limited to the diagnostics repository**. The token remains in controller NVS and is not included in releases or status JSON. Device uploads time-grouped immutable JSON files under `events/YYYY-MM-DD/` containing command, BLE/WLED outcome, connection, restart, Wi-Fi and status events. The legacy Oracle receiver is unused by this firmware. Authentication must be configured on the controller once; until then no events are uploaded.
