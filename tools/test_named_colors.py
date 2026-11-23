@@ -30,3 +30,5 @@ assert 'extra_scripts = post:scripts/c6_toolchain_path.py' in (ROOT/'firmware/pl
 assert 'env.PrependENVPath("PATH", str(bin_dir))' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
 
 assert 'core_dir / "packages" / "toolchain-riscv32-esp" / "bin"' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+
+assert 'riscv32-esp-elf/bin/riscv32-esp-elf-g++' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()

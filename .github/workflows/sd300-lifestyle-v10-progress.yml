@@ -37,4 +37,4 @@ jobs:
             p=subprocess.run(['ffprobe','-v','error','-show_entries','stream=codec_type:format=duration,size','-of','json',str(final)],capture_output=True,text=True)
             print('V10_FINAL_FFPROBE',p.stdout[:1200])
           PY
-# Progress read 7
+# Progress read 12
