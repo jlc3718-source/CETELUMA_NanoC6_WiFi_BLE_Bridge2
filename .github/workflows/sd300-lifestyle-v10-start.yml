@@ -1,0 +1,51 @@
+name: SD300 V10 Agnes lifestyle film 52s
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-lifestyle-v10-start.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sd300-lifestyle-v10-start
+  cancel-in-progress: false
+jobs:
+  launch:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify isolated Agnes lifestyle V10 production
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agnes-sd300-lifestyle-v10
+          mkdir -p "$root"
+          cp agnes-remote/sd300-lifestyle-v10.py "$root/sd300-lifestyle-v10.py"
+          cp agnes-remote/sd300-lifestyle-v10.json "$root/sd300-lifestyle-v10.json"
+          python3 -m py_compile "$root/sd300-lifestyle-v10.py"
+          python3 - <<'PY'
+          import json,pathlib
+          c=json.loads(pathlib.Path('/home/ubuntu/agnes-sd300-lifestyle-v10/sd300-lifestyle-v10.json').read_text())
+          assert c['model']=='agnes-video-2.5-flash'
+          assert c['size']=='720P' and c['seconds']==12
+          assert c['retry_seconds_queue_full']==1
+          assert len(c['scenes'])==6
+          assert abs(sum(x['target_seconds'] for x in c['scenes'])-52)<0.001
+          assert all(x.get('images') for x in c['scenes'] if x['mode']=='reference')
+          assert pathlib.Path('/home/ubuntu/agnes-sd300/key').is_file()
+          print('V10_AGNES_2_5_FLASH_6_SCENES_52_SECONDS_ONE_SECOND_503_RETRIES_VALID')
+          PY
+          echo "NARRATION_ENGINES:"
+          command -v espeak-ng || command -v espeak || true
+          python3 -c 'import importlib.util; print("edge_tts_available",bool(importlib.util.find_spec("edge_tts")))' || true
+          if systemctl is-active --quiet sd300-lifestyle-v10.service; then
+            echo "V10_ALREADY_ACTIVE_REUSING_EXISTING_SERVICE"
+          else
+            sudo -n systemd-run --unit=sd300-lifestyle-v10 --property=Restart=on-failure --property=RestartSec=60 /usr/bin/python3 "$root/sd300-lifestyle-v10.py"
+          fi
+          sleep 3
+          echo "V10_SERVICE=$(systemctl is-active sd300-lifestyle-v10.service || true)"
+          journalctl -u sd300-lifestyle-v10.service -n 12 --no-pager -o cat || true
