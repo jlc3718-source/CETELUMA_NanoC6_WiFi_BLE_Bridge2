@@ -1,0 +1,51 @@
+name: Diagnose Direct GitHub API TLS Trust
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diag-anderson-github-tls.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect api.github.com verified TLS chain and firmware trust anchors
+        shell: bash
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import re, pathlib, subprocess, tempfile
+          source=pathlib.Path('firmware/src/AndersonDiagnostics.cpp').read_text()
+          roots=re.search(r'const char GITHUB_CA\[\].*?R"CERT\((.*?)\)CERT"',source,re.S).group(1)
+          items=re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----',roots,re.S)
+          print('FIRMWARE_TRUST_ANCHORS',len(items))
+          for i,item in enumerate(items):
+              path=f'/tmp/anderson-root-{i}.pem';pathlib.Path(path).write_text(item+'\n')
+              p=subprocess.run(['openssl','x509','-in',path,'-noout','-subject','-issuer','-dates','-fingerprint','-sha256'],capture_output=True,text=True)
+              print('FIRMWARE_ROOT',i,'parseOK',p.returncode==0,p.stdout.strip() or p.stderr.strip()[:250])
+          pathlib.Path('/tmp/anderson-ca.pem').write_text(roots+'\n')
+          PY
+          openssl s_client -connect api.github.com:443 -servername api.github.com -showcerts </dev/null > /tmp/anderson-sclient.txt 2>/tmp/anderson-sclient-error.txt || true
+          python3 - <<'PY'
+          import re,pathlib,subprocess
+          s=pathlib.Path('/tmp/anderson-sclient.txt').read_text()
+          certs=re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----',s,re.S)
+          print('API_CHAIN_CERTS',len(certs))
+          for i,item in enumerate(certs):
+              path=f'/tmp/anderson-chain-{i}.pem';pathlib.Path(path).write_text(item+'\n')
+              p=subprocess.run(['openssl','x509','-in',path,'-noout','-subject','-issuer','-dates'],capture_output=True,text=True)
+              print('API_CHAIN',i,p.stdout.strip() or p.stderr.strip()[:300])
+          print('OPENSSL_VERIFY_SUMMARY',pathlib.Path('/tmp/anderson-sclient-error.txt').read_text()[-1600:])
+          if certs:
+              options=['openssl','verify','-CAfile','/tmp/anderson-ca.pem']
+              if len(certs)>1:
+                  pathlib.Path('/tmp/anderson-intermediates.pem').write_text('\n'.join(certs[1:])+'\n')
+                  options+=['-untrusted','/tmp/anderson-intermediates.pem']
+              options+=['/tmp/anderson-chain-0.pem']
+              p=subprocess.run(options,capture_output=True,text=True)
+              print('FIRMWARE_TRUST_VERIFIED',p.returncode==0,p.stdout.strip(),p.stderr.strip()[:1000])
+          PY
+          curl -sSL -o /dev/null -w 'API_HTTPS_STATUS %{http_code}\n' --max-time 12 https://api.github.com/ || true
