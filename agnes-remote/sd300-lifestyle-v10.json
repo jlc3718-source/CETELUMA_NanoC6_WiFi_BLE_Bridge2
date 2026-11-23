@@ -1,0 +1,73 @@
+{
+  "revision": "sd300-lifestyle-v10-20261122-52s",
+  "description": "52-second fictional AI lifestyle SD300 mini-film responding to Rebecca's request; no use of original V8 voice or source footage",
+  "model": "agnes-video-2.5-flash",
+  "mode": "text",
+  "seconds": 12,
+  "size": "720P",
+  "aspect_ratio": "9:16",
+  "retry_seconds_queue_full": 1,
+  "voiceover_seconds": 52,
+  "narration": "As an electrical field foreman and part-time technical instructor, I spend long days on my feet. Rain and mud often mean damp boots and gloves when I get home. That's where the Airthereal SD300 fits into my routine. I place my gear on the dryer, select the setting and timer, then let it run while I unwind. After the cycle is finished, the next morning starts a little easier. I'm ready to put on my work gear and head out again. It's one simple part of preparing for another long day in the field.",
+  "output_name": "Airthereal_SD300_Lifestyle_Representative_AI_V10_52s.mp4",
+  "scenes": [
+    {
+      "id": "v10_01_fieldwork",
+      "target_seconds": 9,
+      "mode": "text",
+      "approved": false,
+      "prompt": "AI representative fictional electrician, not an actual recording or likeness of the customer. Ultra-photoreal documentary style, real skin texture and physically accurate motion, restrained low-contrast filmic light, American rural work/home setting, 9:16 portrait. No animation/cartoon look, no deformed hands or walking, no fake labels or captions, no extra objects, no unrealistic drifting. Same adult male foreman throughout: medium build, early 40s, dark navy work jacket, salt-and-pepper beard, brown work boots and worn dark work gloves. One continuous believable scene, subtle camera movement. ACT 1: rainy western New York electrical field work after a long day. Chest-up close shot of same foreman wearing dark navy work jacket and practical hard hat outside a safe powered-down industrial panel with tools on utility cart, brief insert detail of worn black-and-brown boots by a rain-dark concrete slab and work gloves on a bench. One simple static close shot rather than complex walking. Authentic overcast lighting. Do not show dangerous live electrical work, no narration text or scene labels."
+    },
+    {
+      "id": "v10_02_home",
+      "target_seconds": 8,
+      "mode": "text",
+      "approved": false,
+      "prompt": "AI representative fictional electrician, not an actual recording or likeness of the customer. Ultra-photoreal documentary style, real skin texture and physically accurate motion, restrained low-contrast filmic light, American rural work/home setting, 9:16 portrait. No animation/cartoon look, no deformed hands or walking, no fake labels or captions, no extra objects, no unrealistic drifting. Same adult male foreman throughout: medium build, early 40s, dark navy work jacket, salt-and-pepper beard, brown work boots and worn dark work gloves. One continuous believable scene, subtle camera movement. ACT 2: dusk arrival in modest rural home mudroom. Waist-height side profile of foreman gently taking off one pair of heavy damp black/brown leather work boots near a wooden bench, setting worn red-black electrician work gloves beside boots. Damp gear shows subtle rain marks, not exaggerated mud. No dryer visible yet. Natural movement, no deformed legs/feet, natural evening household practical lighting. No text overlays."
+    },
+    {
+      "id": "v10_03_loading",
+      "target_seconds": 11,
+      "mode": "reference",
+      "images": [
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
+      ],
+      "approved": false,
+      "prompt": "AI representative fictional electrician, not an actual recording or likeness of the customer. Ultra-photoreal documentary style, real skin texture and physically accurate motion, restrained low-contrast filmic light, American rural work/home setting, 9:16 portrait. No animation/cartoon look, no deformed hands or walking, no fake labels or captions, no extra objects, no unrealistic drifting. Same adult male foreman throughout: medium build, early 40s, dark navy work jacket, salt-and-pepper beard, brown work boots and worn dark work gloves. One continuous believable scene, subtle camera movement. The product reference images show the actual Airthereal SD300 orange-and-dark-gray boot and glove dryer with actual drying towers, black control face and digital display. Preserve exactly the pictured machine's silhouette, surface materials, supports, correctly oriented orange vents, display position and scale. Never invent a hose, add/remove ports, pierce boots with tubes, replace the brand, create floating gloves, or change geometry; if a control digit is uncertain keep it unreadable rather than inventing one. Boots and gloves must be supported on actual appropriate drying arms only, with natural gravity. Product photo is an identity reference, not an instruction to copy its background. ACT 3: after-work gear preparation in warm wood-paneled home utility room. One Airthereal SD300 on a stable countertop. Detailed close-up of a pair of weathered work boots placed correctly over the manufacturer's upright drying posts, red-black work gloves on their genuinely compatible smaller holders only if the reference supports them, otherwise gloves rest next to machine. The geometry of the actual SD300 and attachments is the priority. Film one graceful fixed three-quarter product shot, hands performing one natural action, no dramatic orbit or impossible physical maneuvers. No captions or voice."
+    },
+    {
+      "id": "v10_04_controls",
+      "target_seconds": 8,
+      "mode": "reference",
+      "images": [
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
+      ],
+      "approved": false,
+      "prompt": "AI representative fictional electrician, not an actual recording or likeness of the customer. Ultra-photoreal documentary style, real skin texture and physically accurate motion, restrained low-contrast filmic light, American rural work/home setting, 9:16 portrait. No animation/cartoon look, no deformed hands or walking, no fake labels or captions, no extra objects, no unrealistic drifting. Same adult male foreman throughout: medium build, early 40s, dark navy work jacket, salt-and-pepper beard, brown work boots and worn dark work gloves. One continuous believable scene, subtle camera movement. The product reference images show the actual Airthereal SD300 orange-and-dark-gray boot and glove dryer with actual drying towers, black control face and digital display. Preserve exactly the pictured machine's silhouette, surface materials, supports, correctly oriented orange vents, display position and scale. Never invent a hose, add/remove ports, pierce boots with tubes, replace the brand, create floating gloves, or change geometry; if a control digit is uncertain keep it unreadable rather than inventing one. Boots and gloves must be supported on actual appropriate drying arms only, with natural gravity. Product photo is an identity reference, not an instruction to copy its background. ACT 4: realistic product operation close-up of original SD300 black control panel and orange unit with the same boots properly mounted. One adult index finger reaches down and presses one physical button only, then withdraws; the machine lights appropriately; warm gentle fan movement and subtle fabric motion, no exaggerated steam. Keep panel geometry and original lettering unchanged, display digits not artificially legible if generation cannot reproduce exactly. Static camera, crisp authentic texture, no added wording."
+    },
+    {
+      "id": "v10_05_evening",
+      "target_seconds": 8,
+      "mode": "reference",
+      "images": [
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
+      ],
+      "approved": false,
+      "prompt": "AI representative fictional electrician, not an actual recording or likeness of the customer. Ultra-photoreal documentary style, real skin texture and physically accurate motion, restrained low-contrast filmic light, American rural work/home setting, 9:16 portrait. No animation/cartoon look, no deformed hands or walking, no fake labels or captions, no extra objects, no unrealistic drifting. Same adult male foreman throughout: medium build, early 40s, dark navy work jacket, salt-and-pepper beard, brown work boots and worn dark work gloves. One continuous believable scene, subtle camera movement. The product reference images show the actual Airthereal SD300 orange-and-dark-gray boot and glove dryer with actual drying towers, black control face and digital display. Preserve exactly the pictured machine's silhouette, surface materials, supports, correctly oriented orange vents, display position and scale. Never invent a hose, add/remove ports, pierce boots with tubes, replace the brand, create floating gloves, or change geometry; if a control digit is uncertain keep it unreadable rather than inventing one. Boots and gloves must be supported on actual appropriate drying arms only, with natural gravity. Product photo is an identity reference, not an instruction to copy its background. ACT 5: calm evening interior with one Airthereal SD300 standing on a stable low wood utility counter by a wall; boots resting correctly on their individual dryer posts, gloves neatly supported if physically appropriate. Warm tungsten lamp from right, blue twilight through a window, soft slow push-in from a safe medium-wide view, slight time passage represented by changing outdoor light only. Appliance itself never morphs, no invented indicator values, no smoke, no fake airflow animation. No onscreen text."
+    },
+    {
+      "id": "v10_06_morning",
+      "target_seconds": 8,
+      "mode": "reference",
+      "images": [
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_01.webp?v=1792998717&width=1946",
+        "https://airthereal.com/cdn/shop/files/531-10-SD300-A_04_AI.webp?v=1792998718&width=1946"
+      ],
+      "approved": false,
+      "prompt": "AI representative fictional electrician, not an actual recording or likeness of the customer. Ultra-photoreal documentary style, real skin texture and physically accurate motion, restrained low-contrast filmic light, American rural work/home setting, 9:16 portrait. No animation/cartoon look, no deformed hands or walking, no fake labels or captions, no extra objects, no unrealistic drifting. Same adult male foreman throughout: medium build, early 40s, dark navy work jacket, salt-and-pepper beard, brown work boots and worn dark work gloves. One continuous believable scene, subtle camera movement. The product reference images show the actual Airthereal SD300 orange-and-dark-gray boot and glove dryer with actual drying towers, black control face and digital display. Preserve exactly the pictured machine's silhouette, surface materials, supports, correctly oriented orange vents, display position and scale. Never invent a hose, add/remove ports, pierce boots with tubes, replace the brand, create floating gloves, or change geometry; if a control digit is uncertain keep it unreadable rather than inventing one. Boots and gloves must be supported on actual appropriate drying arms only, with natural gravity. Product photo is an identity reference, not an instruction to copy its background. ACT 6: cool blue early-morning light through modest rural mudroom window. Same foreman reaches to lift one dry black/brown leather work boot off its genuine SD300 support, after the completed cycle; gloves nearby; he gathers his gear to head to work. Product remains exactly stable and true to photo reference. End with close, premium hero view of unchanged actual orange-and-gray Airthereal SD300 on counter. Avoid walking full-body, no fabricated logos or writing, no sales CTA. This is explicitly an illustrative AI enactment, not real footage."
+    }
+  ]
+}
