@@ -1,0 +1,34 @@
+name: SD300 V10 install verified scene-timed narration
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-lifestyle-v10-narration.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audio:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 6
+    steps:
+      - name: Download, verify and install V10 narration without affecting video generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agnes-sd300-lifestyle-v10
+          mkdir -p "$root"
+          dest="$root/SD300_Lifestyle_V10_voice.m4a"
+          expected=9306317815dfe6b05453480d093bae3328d0acd97c4c1cc7073b00a4abc056a4
+          if test -s "$dest" && echo "$expected  $dest" | sha256sum --check --status; then
+            echo V10_VOICE_ALREADY_VERIFIED
+            exit 0
+          fi
+          tmp="$root/.SD300_Lifestyle_V10_voice.download"
+          curl --fail --location --silent --show-error --retry 3 --connect-timeout 20 --max-time 120 'https://d2ol7oe51mr4n9.cloudfront.net/user_3I78bAgAKSQ09I3KPQ5JmJ4WjHY/8462ea3d-ae87-4c20-91d7-8039f4c6542a.mp3' -o "$tmp"
+          echo "$expected  $tmp" | sha256sum --check --status
+          duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tmp")
+          python3 -c 'import sys; n=float(sys.argv[1]); assert 51.95<=n<=52.05, f"Bad audio duration: {n}"' "$duration"
+          test "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$tmp" | head -1)" != ""
+          mv -f "$tmp" "$dest"
+          echo "V10_NARRATION_INSTALLED_SHA256_VERIFIED"
+          echo "V10_NARRATION_DURATION=$duration"
