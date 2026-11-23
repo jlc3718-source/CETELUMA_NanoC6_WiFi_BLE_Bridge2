@@ -706,15 +706,17 @@ static void onWiFiEvent(arduino_event_id_t event,arduino_event_info_t info){
   }
 }
 // Recover the saved network after router downtime, including startup fallback AP mode.
-static void maintainWiFiConnection(){
-  if(Update.isRunning()||otaAutoRebootPending)return;
-  uint32_t now=millis();
+static void logWiFiConnectionState(){
   static int8_t priorOnline=-1;
   const bool online=WiFi.status()==WL_CONNECTED;
   if(priorOnline!=(int8_t)online){
     priorOnline=online;
     AndersonDiagnostics::record(1,-1,online?WiFi.RSSI():(int32_t)wifiLastDisconnectReason.load(),online?"wifi-online":"wifi-offline");
   }
+}
+static void maintainWiFiConnection(){
+  if(Update.isRunning()||otaAutoRebootPending)return;
+  uint32_t now=millis();
   uint32_t currentIp=(uint32_t)WiFi.localIP();
   if(WiFi.status()==WL_CONNECTED&&currentIp!=0){
     wifiOfflineTimerStarted=false;
@@ -1115,7 +1117,7 @@ void loop(){
   markBootHealthy();
   server.handleClient();ble.loop();
   if(ble.consumeConnectionChange())applyRunning(true);
-  maintainWiFiConnection();AndersonDiagnostics::tick(firmwareOperationBusy());maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();
+  maintainWiFiConnection();logWiFiConnectionState();AndersonDiagnostics::tick(firmwareOperationBusy());maybeWeeklySettingsBackup();checkScheduledMaintenanceReboot();
   if(!otaAutoRebootPending&&!Update.isRunning()){remoteUpdateAutoLoop(ANDERSON_FIRMWARE_VERSION);if(remoteUpdateConsumeRebootRequest()){otaAutoRebootPending=true;otaAutoRebootAt=millis()+1800;}}
   if(otaAutoRebootPending&&(int32_t)(millis()-otaAutoRebootAt)>=0){otaAutoRebootPending=false;delay(40);ESP.restart();}
   if(customScheduleRefreshPending&&(int32_t)(millis()-customScheduleRefreshAt)>=0){customScheduleRefreshPending=false;evaluateSchedule(true);}
