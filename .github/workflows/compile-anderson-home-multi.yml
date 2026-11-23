@@ -102,7 +102,14 @@ jobs:
       - name: Prepare release
         run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
-        run: pio run -d firmware -e m5stack-nanoc6 -j 4
+        run: |
+          set -euo pipefail
+          # PlatformIO's explicit toolchain override is installed but the bin
+          # directory is not automatically added to the subprocess PATH.
+          export PATH="$HOME/.platformio/packages/toolchain-riscv32-esp/bin:$PATH"
+          test -x "$HOME/.platformio/packages/toolchain-riscv32-esp/bin/riscv32-esp-elf-g++"
+          riscv32-esp-elf-g++ --version | head -n 1
+          pio run -d firmware -e m5stack-nanoc6 -j 4
       - name: Check WLED JSON protocol with the installed ArduinoJson dependency
         run: python tools/test_wled.py --require-protocol
       - name: Capture linker diagnostics
