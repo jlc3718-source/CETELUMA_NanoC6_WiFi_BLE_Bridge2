@@ -99,16 +99,37 @@ jobs:
           key: ${{ runner.os }}-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-anderson-objects-v2-${{ hashFiles('firmware/platformio.ini') }}-${{ github.ref_name }}-
+      - name: Install verified Espressif GCC 15.2 for ESP32-C6
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ESP-IDF v6.1 official linux-amd64 compiler archive and checksum.
+          ARCHIVE="$RUNNER_TEMP/anderson-riscv32-esp-elf-15.2.tar.xz"
+          ROOT="$RUNNER_TEMP/anderson-riscv-toolchain"
+          URL="https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20251204/riscv32-esp-elf-15.2.0_20251204-x86_64-linux-gnu.tar.xz"
+          curl -fL --retry 3 --retry-delay 3 --connect-timeout 30 -o "$ARCHIVE" "$URL"
+          printf '%s  %s\n' 'ace5aae6afe98f754947be043d40173e2e22ace57754b11a394b7238eefa01cf' "$ARCHIVE" | sha256sum --check -
+          mkdir -p "$ROOT"
+          tar -xJf "$ARCHIVE" -C "$ROOT"
+          CXX="$(find "$ROOT" -type f -name riscv32-esp-elf-g++ -print -quit)"
+          test -n "$CXX" && test -x "$CXX"
+          BIN_DIR="$(dirname "$CXX")"
+          test -x "$BIN_DIR/riscv32-esp-elf-gcc"
+          "$CXX" --version | head -n 1
+          printf 'int c6_probe(){return 42;}\n' | "$CXX" -x c++ - -march=rv32imac_zicsr_zifencei_zaamo_zalrsc -c -o "$RUNNER_TEMP/anderson-riscv-probe.o"
+          test -s "$RUNNER_TEMP/anderson-riscv-probe.o"
+          echo "ANDERSON_GCC_BIN_DIR=$BIN_DIR" >> "$GITHUB_ENV"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
       - name: Prepare release
         run: python tools/release.py prepare
       - name: Compile NanoC6 firmware
         run: |
           set -euo pipefail
-          # PlatformIO's explicit toolchain override is installed but the bin
-          # directory is not automatically added to the subprocess PATH.
-          export PATH="$HOME/.platformio/packages/toolchain-riscv32-esp/bin:$PATH"
-          test -x "$HOME/.platformio/packages/toolchain-riscv32-esp/bin/riscv32-esp-elf-g++"
-          riscv32-esp-elf-g++ --version | head -n 1
+          # The SHA-256 verified vendor compiler is independent of the
+          # PlatformIO registry's incomplete/conflicting GCC package.
+          test -n "${ANDERSON_GCC_BIN_DIR:-}"
+          test -x "$ANDERSON_GCC_BIN_DIR/riscv32-esp-elf-g++"
+          export PATH="$ANDERSON_GCC_BIN_DIR:$PATH"
           pio run -d firmware -e m5stack-nanoc6 -j 4
       - name: Check WLED JSON protocol with the installed ArduinoJson dependency
         run: python tools/test_wled.py --require-protocol

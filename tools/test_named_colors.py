@@ -29,6 +29,13 @@ assert 'platformio/toolchain-riscv32-esp @ 15.2.0+20251204' in (ROOT/'firmware/p
 assert 'extra_scripts = post:scripts/c6_toolchain_path.py' in (ROOT/'firmware/platformio.ini').read_text()
 assert 'env.PrependENVPath("PATH", str(bin_dir))' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
 
-assert 'core_dir / "packages" / "toolchain-riscv32-esp"' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
 
-assert 'riscv32-esp-elf/bin/riscv32-esp-elf-g++' in (ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+# CI must pin and verify the actual vendor compiler, not just its package label.
+workflow=(ROOT/'.github/workflows/compile-anderson-home-multi.yml').read_text()
+script=(ROOT/'firmware/scripts/c6_toolchain_path.py').read_text()
+assert 'Install verified Espressif GCC 15.2 for ESP32-C6' in workflow
+assert 'ace5aae6afe98f754947be043d40173e2e22ace57754b11a394b7238eefa01cf' in workflow
+assert 'sha256sum --check -' in workflow
+assert 'ANDERSON_GCC_BIN_DIR' in workflow and 'ANDERSON_GCC_BIN_DIR' in script
+assert 'env.Replace(CXX=str(compiler), CC=str(gcc))' in script
+assert 'env.PrependENVPath("PATH", str(bin_dir))' in script

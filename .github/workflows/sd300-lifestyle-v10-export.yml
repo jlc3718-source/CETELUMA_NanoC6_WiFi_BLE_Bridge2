@@ -1,0 +1,29 @@
+name: SD300 V10 completed film download
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/sd300-lifestyle-v10-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 10
+    steps:
+      - name: Validate and stage completed V10 film
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=/home/ubuntu/agnes-sd300-lifestyle-v10/Airthereal_SD300_Lifestyle_Representative_AI_V10_52s.mp4
+          test -s "$file"
+          ffprobe -v error -show_entries format=duration,size -of json "$file"
+          mkdir -p export
+          cp "$file" export/
+          sha256sum "$file" | sed 's|.*/||' > export/Airthereal_SD300_V10_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Airthereal-SD300-Lifestyle-V10-52s-Final
+          path: export/*
+          retention-days: 30
+          compression-level: 0
