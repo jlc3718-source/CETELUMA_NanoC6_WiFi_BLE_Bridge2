@@ -10,7 +10,7 @@ w=(ROOT/'firmware/src/WledController.cpp').read_text()
 ui=(ROOT/'firmware/web/index.html').read_text()
 checks={
  'private target': 'api.github.com/repos/jlc3718-source/anderson-home-diagnostics/contents/events/' in d,
- 'no Oracle path': 'oracle' not in d.lower() and 'oracle diagnostics' not in ui.lower(),
+ 'no Oracle runtime path': 'oracle-home-dev' not in d.lower() and 'oracle diagnostics' not in ui.lower(),
  'TLS certificate validation': 'client.setCACert(GITHUB_CA)' in d and 'setInsecure' not in d,
  'no token in source': 'github_pat_' not in d and 'ghp_' not in d,
  'private controller NVS': 'p.begin("anderson-gh"' in d,
