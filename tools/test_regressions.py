@@ -28,7 +28,7 @@ assert ('const e=["Jump","Breath","Strobe","Solid"]' in mock or "const e=['Jump'
 assert 'v3EffectPicker' in mock and 'v3EffectButton' in mock and 'v3EffectNative' in mock
 assert 'EFFECT_BUTTON_VALUES' not in web and 'enhanceEffectSelect' not in web and 'enhanceEffectButtons' not in web
 assert 'const SEMANTIC_COLOR_VISUAL=' in web and 'semanticColorName' in web and 'semanticColorVisual' in web
-assert re.search(r'Yellow[\"\']?:[\"\']#FFD400',web) and re.search(r'Orange[\"\']?:[\"\']#FF7A00',web)
+assert re.search(r'Yellow[\"\']?:[\"\']#FFFF00',web) and re.search(r'Orange[\"\']?:[\"\']#FF7A00',web)
 assert 'colorNamePill' in web and re.search(r'<span class="colorNamePill"[^>]*>\$\{semanticColorName\([^)]+\)\}</span>', web)
 assert re.search(r'\$\(["\']liveColorCode["\']\)\.textContent=', web)
 assert re.search(r'\.title=[A-Za-z_$][\w$]*\+" "\+[A-Za-z_$][\w$]*', web) and "preset '+hex" not in web
@@ -78,15 +78,15 @@ assert 'Custom-light capacity reached (12)' in main and 'Schedule capacity reach
 assert 'server.on("/api/events/search"' in main and 'eventRequestGeneration' in web
 assert '/api/event-color-theme' in main+web and 'eventColors1' in web and 'eventColors3028' in web and 'eventColors3029' in web
 assert 'EventColorTheme' in main and 'eventColorThemeGeneration' in main and 'applyOriginalEventColors' in main
-assert '0xE08700' in ev and '0xFFFF44' not in ev and '0xE0B400' not in ev
-assert '{0xE08700,0xE08700}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
-assert re.search(r'\{name:[\"\']Yellow[\"\'],reference:[\"\']#E08700[\"\'],output:[\"\']#E08700[\"\']\}',web)
+assert '0xFFFF00' in ev and '0xFFFF44' not in ev and '0xE0B400' not in ev
+assert '{0xFFFF00,0xFFFF00}, // Yellow' in t('firmware/src/ColorCorrection.cpp')
+assert re.search(r'\{name:[\"\']Yellow[\"\'],reference:[\"\']#FFFF00[\"\'],output:[\"\']#FFFF00[\"\']\}',web)
 assert '#E08700' in web
 assert 'liveColorHex' in web and 'liveColorR' in web and 'liveColorSavePreset' in web
 for value in ['0x00B4B4','0x0096FF','0xFFA000','0xB464FF','0x001478','0x87002D','0xA0A5AF']: assert value in ev
 original=t('firmware/src/EventColorThemes.cpp')
 assert '0x00BD4C' in original and 'ORIGINAL_EVENT_COLOR_INDEX[210][6]' in original and 'ORIGINAL_EVENT_COLOR_COUNT[210]' in original
-assert re.search(r'\{name:[\"\']Navy Blue[\"\'],reference:[\"\']#001478[\"\'],output:[\"\']#001478[\"\']\}',web)
+assert re.search(r'\{name:[\"\']Navy Blue[\"\'],reference:[\"\']#001F5B[\"\'],output:[\"\']#001F5B[\"\']\}',web)
 palette_block=re.search(r'const NAMED_COLOR_PALETTE=\[(.*?)\];',web,re.S); assert palette_block and len(re.findall(r'\{name:[\"\']',palette_block.group(1)))==16
 assert 'PALETTE_MIGRATION_REVISION=9' in t('firmware/src/PaletteMigration.cpp')
 
