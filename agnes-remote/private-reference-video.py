@@ -37,16 +37,23 @@ def call(path,payload=None):
   try: obj=json.load(e)
   except Exception: obj={}
   return e.code,obj,e.headers
-def submit(path,payload,label,limit=900):
- end=time.monotonic()+limit
- while time.monotonic()<end:
+def submit(path,payload,label):
+ progress=state.setdefault("submissions",{}).setdefault(label,{})
+ while True:
+  if (ROOT/"STOP").exists():raise SystemExit("Stopped by user")
   code,obj,head=call(path,payload)
-  if code in (200,201,202):return obj
+  progress["http"]=code
+  if code in (200,201,202):
+   progress["status"]="accepted";save();return obj
   if code in (503,429):
    delay=1 if code==503 else max(1,int(float(head.get("Retry-After","15")))) if str(head.get("Retry-After","15")).replace(".","",1).isdigit() else 30
-   print(label,"HTTP",code,"retry",delay,flush=True);time.sleep(delay);continue
+   progress["status"]="queue_full" if code==503 else "rate_limited"
+   progress["retries"]=progress.get("retries",0)+1
+   progress["retry_delay_seconds"]=delay;save()
+   if progress["retries"]==1 or progress["retries"]%30==0:print(label,"HTTP",code,"retry",delay,"count",progress["retries"],flush=True)
+   time.sleep(delay);continue
+  progress["status"]="rejected";save()
   raise RuntimeError(label+" rejected HTTP "+str(code))
- raise RuntimeError(label+" queue retry limit reached")
 def body(obj):
  d=obj.get("data")
  return d if isinstance(d,dict) else obj
@@ -66,11 +73,13 @@ def video(scene,ref):
   if not v:raise RuntimeError("Missing video_id")
   x["video_id"]=v;save();print("AGNES_ACCEPTED",sid,flush=True)
  else: print("REUSING_ACCEPTED_JOB",sid,flush=True)
- end=time.monotonic()+1200; last=""
- while time.monotonic()<end:
+ last=""
+ while True:
+  if (ROOT/"STOP").exists():raise SystemExit("Stopped by user")
   q=urllib.parse.urlencode({"video_id":x["video_id"],"model_name":MODEL})
   code,o,h=call("/agnesapi?"+q);d=body(o)
   status=str(d.get("status",o.get("status","pending"))).lower()
+  x["poll_http"]=code;x["status"]=status;save()
   if status!=last:print(sid,"STATUS",status,flush=True);last=status
   if code==200 and status in ("completed","succeeded","success"):
    url=d.get("url") or o.get("url") or d.get("video_url")
@@ -84,7 +93,7 @@ def video(scene,ref):
   if status in ("failed","error","cancelled","canceled"):raise RuntimeError(sid+" generation failed")
   if code in (400,401,403,422):raise RuntimeError(sid+" poll rejected HTTP "+str(code))
   time.sleep(15 if code==200 else 30)
- raise RuntimeError(sid+" poll window ended; accepted ID retained")
+
 def finish(scene,raw):
  sid=scene["id"];out=ROOT/(sid+".mp4")
  if out.exists() and out.stat().st_size>50000:return out
@@ -100,7 +109,8 @@ def finish(scene,raw):
  cmd(["ffmpeg","-v","error","-nostdin","-i",str(tmp),"-f","null","-"],timeout=240)
  os.replace(tmp,out);print("VIDEO_VERIFIED",sid,flush=True);return out
 def main():
- payload=os.environ.pop("ENCRYPTED_JOB").strip()
+ payload=os.environ.pop("ENCRYPTED_JOB","").strip()
+ if not payload:payload=(ROOT/"encrypted-job.txt").read_text().strip()
  job=decrypt(payload)
  digest=hashlib.sha256(payload.encode()).hexdigest()
  if state.get("input_sha256") not in (None,digest):raise RuntimeError("Different input; refusing to overwrite existing private job")
@@ -113,7 +123,7 @@ def main():
  z=ROOT/"result.zip"
  with zipfile.ZipFile(z,"w",compression=zipfile.ZIP_STORED) as f:
   for p in outputs:f.write(p,p.name)
- dest=Path(os.environ["RUNNER_TEMP"])/"agnes-private-result.enc"
+ dest=ROOT/"agnes-private-result.enc"
  dest.write_bytes(encrypted_output(z.read_bytes(),job["result_public_key"]))
  print("ENCRYPTED_RESULT_READY",dest.stat().st_size,flush=True)
 if __name__=="__main__":
