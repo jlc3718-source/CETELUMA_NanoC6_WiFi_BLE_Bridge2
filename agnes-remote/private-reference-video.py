@@ -63,6 +63,22 @@ def make_ref(job):
  data=obj.get("data")
  if not isinstance(data,list) or not data or not str(data[0].get("url","")).startswith("https://"):raise RuntimeError("Reference image did not return URL")
  state["ref_url"]=data[0]["url"];save();print("REFERENCE_IMAGE_READY",flush=True);return state["ref_url"]
+def find_video_url(obj):
+ d=body(obj)
+ for v in (d,obj):
+  if not isinstance(v,dict):continue
+  for field in ("url","video_url","download_url"):
+   u=v.get(field)
+   if isinstance(u,str) and u.startswith("https://"):return u
+  for field in ("metadata","output","result","videos"):
+   item=v.get(field)
+   for entry in (item if isinstance(item,list) else [item]):
+    if isinstance(entry,str) and entry.startswith("https://"):return entry
+    if isinstance(entry,dict):
+     for key in ("url","video_url","download_url"):
+      u=entry.get(key)
+      if isinstance(u,str) and u.startswith("https://"):return u
+ return None
 def video(scene,ref):
  sid=scene["id"];x=state.setdefault("scenes",{}).setdefault(sid,{})
  raw=ROOT/(sid+"-raw.mp4")
@@ -82,8 +98,10 @@ def video(scene,ref):
   x["poll_http"]=code;x["status"]=status;save()
   if status!=last:print(sid,"STATUS",status,flush=True);last=status
   if code==200 and status in ("completed","succeeded","success"):
-   url=d.get("url") or o.get("url") or d.get("video_url")
-   if not str(url).startswith("https://"):raise RuntimeError("Missing completed URL")
+   url=find_video_url(o)
+   if not url:
+    print("COMPLETED_RESULT_URL_MISSING",sid,flush=True)
+    raise RuntimeError("Missing completed URL")
    with urllib.request.urlopen(url,timeout=120) as resp:
     data=resp.read(100000001)
    if len(data)<50000 or len(data)>100000000 or b"ftyp" not in data[:64]:raise RuntimeError("Invalid output")
@@ -103,7 +121,13 @@ def finish(scene,raw):
  cmd([es,"-v","en-us+m3","-s","157","-w",str(voice),scene["narration"]])
  duration=float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(raw)]).decode())
  vd=float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(voice)]).decode())
- if vd>duration+0.1:raise RuntimeError("Narration exceeds clip")
+ if vd>duration+0.1:
+  rate=min(275,max(158,int(157*vd/max(1,duration-0.2))+2))
+  cmd([es,"-v","en-us+m3","-s",str(rate),"-w",str(voice),scene["narration"]])
+  vd=float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(voice)]).decode())
+ if vd>duration+0.1:
+  print("NARRATION_DURATION_EXCEEDS_CLIP",sid,flush=True)
+  raise RuntimeError("Narration exceeds clip")
  tmp=out.with_name(sid+".tmp.mp4")
  cmd(["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y","-i",str(raw),"-i",str(voice),"-map","0:v:0","-map","1:a:0","-vf","drawtext=text='AI-generated reenactment':fontsize=25:fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=8:x=(w-tw)/2:y=36","-af","apad","-t",str(duration),"-c:v","libx264","-preset","veryfast","-crf","19","-c:a","aac","-b:a","128k","-pix_fmt","yuv420p","-movflags","+faststart",str(tmp)],timeout=240)
  cmd(["ffmpeg","-v","error","-nostdin","-i",str(tmp),"-f","null","-"],timeout=240)
