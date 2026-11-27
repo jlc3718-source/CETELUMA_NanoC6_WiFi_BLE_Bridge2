@@ -1,0 +1,42 @@
+name: Agnes private job status
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/agnes-private-progress.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 4
+    steps:
+      - name: Read only job milestones and query accepted Agnes IDs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, urllib.request, urllib.parse, urllib.error
+          root=pathlib.Path.home()/'.agnes-private-jobs'/'roborock-2026-11'
+          f=root/'state.json'
+          if not f.is_file():
+              print('PRIVATE_JOB_STATE_NOT_CREATED'); raise SystemExit(0)
+          s=json.loads(f.read_text())
+          print('REFERENCE_READY', bool(s.get('ref_url')))
+          print('ACCEPTED_SCENE_COUNT',sum(bool(x.get('video_id')) for x in s.get('scenes',{}).values()))
+          for n,x in enumerate(s.get('scenes',{}).values(),1):
+              v=x.get('video_id')
+              print('SCENE',n,'ACCEPTED',bool(v))
+              if not v: continue
+              try:
+                  k=pathlib.Path('/home/ubuntu/agnes-sd300/key').read_text().strip()
+                  q=urllib.parse.urlencode({'video_id':v,'model_name':'agnes-video-2.5-flash'})
+                  req=urllib.request.Request('https://apihub.agnes-ai.com/agnesapi?'+q,headers={'Authorization':'Bearer '+k,'Accept':'application/json'})
+                  with urllib.request.urlopen(req,timeout=25) as r:
+                      o=json.load(r); d=o.get('data'); d=d if isinstance(d,dict) else o
+                      status=str(d.get('status','unknown')).lower()
+                      allowed={'queued','pending','processing','running','completed','succeeded','success','failed','error','cancelled','canceled','in_progress','submitted','generating'}
+                      print('AGNES_SCENE',n,'HTTP',r.status,'STATUS',status if status in allowed else 'unknown')
+              except urllib.error.HTTPError as e: print('AGNES_SCENE',n,'HTTP',e.code)
+              except Exception as e: print('AGNES_SCENE',n,'READ_ERROR',type(e).__name__)
+          print('VERIFIED_OUTPUT_COUNT',sum(p.stat().st_size>50000 for p in root.glob('*.mp4') if not p.name.endswith('-raw.mp4') and not p.name.endswith('.tmp.mp4')))
+          PY
