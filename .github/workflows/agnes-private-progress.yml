@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths: ['.github/workflows/agnes-private-progress.yml']
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Agnes encrypted private reference video']
+    types: [completed]
 permissions:
   contents: read
 jobs:
@@ -16,12 +19,18 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, pathlib, urllib.request, urllib.parse, urllib.error
+          import subprocess
+          p=subprocess.run(['systemctl','show','agnes-private-roborock.service','--property=ActiveState,SubState,ExecMainStatus'],capture_output=True,text=True)
+          print('SERVICE_STATUS',p.stdout.strip().replace('\n',' '))
           root=pathlib.Path.home()/'.agnes-private-jobs'/'roborock-2026-11'
           f=root/'state.json'
           if not f.is_file():
               print('PRIVATE_JOB_STATE_NOT_CREATED'); raise SystemExit(0)
           s=json.loads(f.read_text())
           print('REFERENCE_READY', bool(s.get('ref_url')))
+          for name, entry in s.get('submissions',{}).items():
+              print('SUBMISSION',name,'HTTP',entry.get('http'),'STATUS',entry.get('status'),'RETRIES',entry.get('retries',0),'DELAY',entry.get('retry_delay_seconds'))
+          print('ENCRYPTED_RESULT_READY', (root/'agnes-private-result.enc').is_file())
           print('ACCEPTED_SCENE_COUNT',sum(bool(x.get('video_id')) for x in s.get('scenes',{}).values()))
           for n,x in enumerate(s.get('scenes',{}).values(),1):
               v=x.get('video_id')
@@ -40,3 +49,21 @@ jobs:
               except Exception as e: print('AGNES_SCENE',n,'READ_ERROR',type(e).__name__)
           print('VERIFIED_OUTPUT_COUNT',sum(p.stat().st_size>50000 for p in root.glob('*.mp4') if not p.name.endswith('-raw.mp4') and not p.name.endswith('.tmp.mp4')))
           PY
+      - name: Stage encrypted finished result if available
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          f="$HOME/.agnes-private-jobs/roborock-2026-11/agnes-private-result.enc"
+          if [ -s "$f" ]; then
+            cp "$f" "$RUNNER_TEMP/agnes-private-result.enc"
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.stage.outputs.ready == 'true'
+        with:
+          name: agnes-private-encrypted-result
+          path: ${{ runner.temp }}/agnes-private-result.enc
+          retention-days: 2
+          compression-level: 0
+          if-no-files-found: error
