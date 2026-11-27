@@ -22,6 +22,12 @@ jobs:
           import subprocess
           p=subprocess.run(['systemctl','show','agnes-private-roborock.service','--property=ActiveState,SubState,ExecMainStatus'],capture_output=True,text=True)
           print('SERVICE_STATUS',p.stdout.strip().replace('\n',' '))
+          import re,shutil
+          journal=subprocess.run(['journalctl','-u','agnes-private-roborock.service','-n','35','--no-pager','-o','cat'],capture_output=True,text=True)
+          print('JOURNAL_READ_EXIT',journal.returncode)
+          for line in journal.stdout.splitlines():
+              if re.fullmatch(r'(?:PRIVATE_INPUT_DECRYPTED_AND_VERIFIED|REFERENCE_IMAGE_READY|FAILED [A-Za-z]+|(?:AGNES_ACCEPTED|REUSING_ACCEPTED_JOB|VIDEO_VERIFIED|COMPLETED_RESULT_URL_MISSING|NARRATION_DURATION_EXCEEDS_CLIP) [0-9A-Za-z_-]+|[0-9A-Za-z_-]+ STATUS [A-Za-z_]+)',line.strip()): print('SAFE_MILESTONE',line.strip())
+          print('TOOLS_AVAILABLE',*[bool(shutil.which(x)) for x in ('ffmpeg','ffprobe','espeak-ng','espeak')])
           root=pathlib.Path.home()/'.agnes-private-jobs'/'roborock-2026-11'
           f=root/'state.json'
           if not f.is_file():
@@ -47,6 +53,7 @@ jobs:
                       print('AGNES_SCENE',n,'HTTP',r.status,'STATUS',status if status in allowed else 'unknown')
               except urllib.error.HTTPError as e: print('AGNES_SCENE',n,'HTTP',e.code)
               except Exception as e: print('AGNES_SCENE',n,'READ_ERROR',type(e).__name__)
+          print('RAW_OUTPUT_COUNT',sum(p.stat().st_size>50000 for p in root.glob('*-raw.mp4')))
           print('VERIFIED_OUTPUT_COUNT',sum(p.stat().st_size>50000 for p in root.glob('*.mp4') if not p.name.endswith('-raw.mp4') and not p.name.endswith('.tmp.mp4')))
           PY
       - name: Stage encrypted finished result if available
