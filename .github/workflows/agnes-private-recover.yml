@@ -1,0 +1,57 @@
+name: Recover existing private Roborock job
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/agnes-private-recover.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agnes-private-reference-video
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify existing private job and recover only its failed service
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$HOME/.agnes-private-jobs/roborock-2026-11"
+          test -s "$root/encrypted-job.txt"
+          test -s "$root/state.json"
+          if systemctl is-active --quiet agnes-private-roborock.service; then
+            echo 'ALREADY_ACTIVE_NO_DUPLICATE'
+            exit 0
+          fi
+          if [ -s "$root/agnes-private-result.enc" ]; then
+            echo 'ALREADY_FINISHED_NO_DUPLICATE'
+            exit 0
+          fi
+          python3 - "$root" <<'PY'
+          import json,sys,pathlib,hashlib
+          r=pathlib.Path(sys.argv[1])
+          s=json.loads((r/'state.json').read_text())
+          assert hashlib.sha256((r/'encrypted-job.txt').read_text().strip().encode()).hexdigest()==s['input_sha256']
+          assert s.get('ref_url') and any(x.get('video_id') for x in s.get('scenes',{}).values())
+          for name,entry in s.get('submissions',{}).items():
+              if name!='REFERENCE_IMAGE' and entry.get('status')=='accepted':
+                  assert s.get('scenes',{}).get(name,{}).get('video_id'), 'Accepted ID not persisted; refusing ambiguous replay'
+          print('ORIGINAL_INPUT_AND_ACCEPTED_IDS_VERIFIED')
+          PY
+          test ! -e "$root/STOP"
+          python3 -m py_compile agnes-remote/private-reference-video.py
+          cp -p "$root/private-reference-video.py" "$root/private-reference-video.py.pre-recovery"
+          cp agnes-remote/private-reference-video.py "$root/private-reference-video.py.new"
+          mv "$root/private-reference-video.py.new" "$root/private-reference-video.py"
+          sudo -n systemctl reset-failed agnes-private-roborock.service || true
+          sudo -n systemd-run --unit=agnes-private-roborock --uid="$(id -u)" --gid="$(id -g)" --setenv=HOME="$HOME" /usr/bin/python3 "$root/private-reference-video.py"
+          sleep 4
+          systemctl show agnes-private-roborock.service --property=ActiveState,SubState,ExecMainStatus
+          systemctl is-active agnes-private-roborock.service
+          echo 'RECOVERY_STARTED_EXISTING_IDS_PRESERVED'
