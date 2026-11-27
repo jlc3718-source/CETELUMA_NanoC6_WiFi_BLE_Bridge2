@@ -117,14 +117,31 @@ def finish(scene,raw):
  if out.exists() and out.stat().st_size>50000:return out
  voice=ROOT/(sid+".wav")
  es=shutil.which("espeak-ng") or shutil.which("espeak")
- if not es:raise RuntimeError("No installed narration engine")
- cmd([es,"-v","en-us+m3","-s","157","-w",str(voice),scene["narration"]])
+ local_bin=ROOT/"tts-local"/"usr"/"bin"/"espeak"
+ local_lib=ROOT/"tts-local"/"usr"/"lib"/"aarch64-linux-gnu"
+ local_data=ROOT/"tts-local"/"usr"/"lib"/"aarch64-linux-gnu"/"espeak-data"
+ if not local_data.exists():local_data=ROOT/"tts-local"/"usr"/"share"/"espeak-data"
  duration=float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(raw)]).decode())
- vd=float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(voice)]).decode())
+ def voice_duration():
+  return float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(voice)]).decode())
+ def synth(rate):
+  if es:
+   cmd([es,"-v","en-us+m3","-s",str(rate),"-w",str(voice),scene["narration"]])
+  elif local_bin.is_file() and local_data.is_dir():
+   env=dict(os.environ,LD_LIBRARY_PATH=str(local_lib)+":"+os.environ.get("LD_LIBRARY_PATH",""))
+   subprocess.run([str(local_bin),"--path="+str(local_data.parent),"-v","en-us+m3","-s",str(rate),"-w",str(voice),scene["narration"]],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True,timeout=120)
+  else:
+   script=ROOT/(sid+"-narration.txt")
+   script.write_text(scene["narration"])
+   # flite reads only the private local narration file; no text is printed.
+   if not all(x.isalnum() or x in "/._-" for x in str(script)):raise RuntimeError("Unsafe narration file path")
+   cmd(["ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y","-f","lavfi","-i","flite=textfile="+str(script)+":voice=kal","-af","atempo="+str(max(0.5,min(2.0,rate/157))),str(voice)])
+ synth(157)
+ vd=voice_duration()
  if vd>duration+0.1:
   rate=min(275,max(158,int(157*vd/max(1,duration-0.2))+2))
-  cmd([es,"-v","en-us+m3","-s",str(rate),"-w",str(voice),scene["narration"]])
-  vd=float(cmd(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(voice)]).decode())
+  synth(rate)
+  vd=voice_duration()
  if vd>duration+0.1:
   print("NARRATION_DURATION_EXCEEDS_CLIP",sid,flush=True)
   raise RuntimeError("Narration exceeds clip")
