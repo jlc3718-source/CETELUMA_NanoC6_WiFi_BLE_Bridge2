@@ -1,0 +1,36 @@
+name: Agnes encrypted private reference video
+on:
+  workflow_dispatch:
+    inputs:
+      encrypted_job:
+        description: RSA-encrypted, authenticated reference package
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: agnes-private-reference-video
+  cancel-in-progress: false
+jobs:
+  generate:
+    runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Generate private videos with existing Agnes account
+        env:
+          ENCRYPTED_JOB: ${{ inputs.encrypted_job }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agnes-remote/private-reference-video.py
+          python3 agnes-remote/private-reference-video.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agnes-private-encrypted-result
+          path: ${{ runner.temp }}/agnes-private-result.enc
+          retention-days: 2
+          compression-level: 0
+          if-no-files-found: error
