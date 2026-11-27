@@ -14,23 +14,41 @@ concurrency:
 jobs:
   generate:
     runs-on: [self-hosted, Linux, ARM64, oracle, jason-home]
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Generate private videos with existing Agnes account
+      - name: Resume private Agnes generation as persistent isolated service
         env:
           ENCRYPTED_JOB: ${{ inputs.encrypted_job }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile agnes-remote/private-reference-video.py
-          python3 agnes-remote/private-reference-video.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: agnes-private-encrypted-result
-          path: ${{ runner.temp }}/agnes-private-result.enc
-          retention-days: 2
-          compression-level: 0
-          if-no-files-found: error
+          umask 077
+          root="$HOME/.agnes-private-jobs/roborock-2026-11"
+          mkdir -p "$root"
+          chmod 700 "$root"
+          if systemctl is-active --quiet agnes-private-roborock.service; then
+            echo 'EXISTING_SERVICE_ACTIVE_NO_DUPLICATE'
+            exit 0
+          fi
+          python3 - <<'PY'
+          import pathlib, os, hashlib, json
+          r=pathlib.Path.home()/'.agnes-private-jobs'/'roborock-2026-11'
+          payload=os.environ['ENCRYPTED_JOB'].strip()
+          digest=hashlib.sha256(payload.encode()).hexdigest()
+          state=r/'state.json'
+          if state.exists() and json.loads(state.read_text()).get('input_sha256') not in (None,digest):
+              raise SystemExit('Different input; refusing to replace existing job')
+          p=r/'encrypted-job.txt'
+          p.write_text(payload)
+          p.chmod(0o600)
+          print('EXISTING_JOB_INPUT_CONFIRMED')
+          PY
+          cp agnes-remote/private-reference-video.py "$root/private-reference-video.py"
+          python3 -m py_compile "$root/private-reference-video.py"
+          sudo -n systemd-run --unit=agnes-private-roborock --uid="$(id -u)" --gid="$(id -g)" --setenv=HOME="$HOME" /usr/bin/python3 "$root/private-reference-video.py"
+          sleep 3
+          systemctl is-active agnes-private-roborock.service
+          echo 'PERSISTENT_GENERATION_STARTED_NO_QUEUE_RETRY_CUTOFF'
